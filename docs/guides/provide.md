@@ -28,7 +28,7 @@ import { createProvider } from '@tapeapi/server'
 const provider = createProvider({
   manifest: JSON.parse(await readFile('manifest.json', 'utf8')),
   signerKey: process.env.SIGNER_KEY,
-  rpcUrls: ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
   quorum: 2,
   methods: {
     blockNumber: async (_params, ctx) => ({ blockNumber: ctx.block }),
@@ -65,10 +65,16 @@ This is the path with no server and no command line.
 1. **Circuit and container.** On [tapeout.net](https://tapeout.net): create a processor, Tape Out a circuit, open its
    container (0.012 BNB). The container's `.tape` name works by itself; no name binding is needed.
 2. **Deploy the service.** In the Cloudflare dashboard: Workers & Pages → Create → Workers → Import a repository → your
-   fork of this repository. Build command `npm ci`, deploy command `npm run deploy:provider`. The Worker starts in
-   setup mode and answers only its health check.
-3. **Open the holder console** at [tapeapi.fun/console](https://tapeapi.fun/console/) in your wallet's in-app browser,
-   connected with the wallet that holds the circuit, and follow steps 4 to 7:
+   fork of this repository. Build command `npm ci`, deploy command `npm run deploy:provider`. The Worker's name in the
+   dashboard must match `name` in your fork's `examples/cloudflare-worker/wrangler.toml` (`my-tapeapi-service`; change
+   both if you want another). The Worker starts in setup mode and answers only its health check.
+3. **Give it your own hostname.** The endpoint is written into the on-chain manifest, so use a hostname you control,
+   such as `api.yourdomain.com`: in the dashboard, Worker → Settings → Domains & Routes → Add → Custom domain. Then add
+   the variable `PUBLIC_URL` = `https://<your host>` (Settings → Variables and Secrets). Setup mode lists `PUBLIC_URL`
+   as missing until it is set.
+4. **Open the holder console** at [tapeapi.fun/console](https://tapeapi.fun/console/) in your wallet's in-app browser,
+   connected with the wallet that holds the circuit. In its service URL field, replace the default
+   `https://api.tapeapi.fun` with `https://<your host>`, then follow the console's steps 4 to 7:
    - **4** reads your circuit, checks you are the holder and that the container is opened;
    - **5** generates the signing key on your phone and shows the variables to add in Cloudflare (`SIGNER_KEY` as a
      secret; the rest are public);
@@ -77,8 +83,11 @@ This is the path with no server and no command line.
    - **7** builds the manifest from what you read and signed, requires the service's copy to match it field for field,
      shows it to you, and writes it on chain with one transaction.
 
-Do all four steps in the same wallet app; the page keeps its progress in that browser. **Never screenshot or send the
-signing key to anyone.**
+Do all four console steps in the same wallet app; the page keeps its progress in that browser. **Never screenshot or
+send the signing key to anyone.**
+
+`npm run deploy:public` deploys the project's own public service (`api.tapeapi.fun`, from
+[`examples/public-api/`](../../examples/public-api/)). It is not for forks: use `npm run deploy:provider`.
 
 ## 3. Go live from a server
 

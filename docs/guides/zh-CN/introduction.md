@@ -25,6 +25,7 @@ DeWEB 是网站，TapeSend 是消息，TapeAPI 是服务。
 
 | 我想要 | 阅读 |
 |---|---|
+| 现在就免费读取有签名的 BNB Chain 数据，或使用公共中继 | [公共 API](public-api.md) |
 | 在应用里调用 TapeAPI 服务 | [调用服务](consume.md) |
 | 把我的代码或现有 API 变成服务 | [运行服务](provide.md) |
 | 在容器之间发送加密消息 | [私密通道](channels.md) |
@@ -48,6 +49,16 @@ BNB Smart Chain，chainId 56。
 | BEM 代币 | `0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a` | TapeOut |
 | ChannelBus | `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707` | TapeAPI：无所有者、无状态、不可升级 |
 | TapeAPIEscrow、ServiceDirectory | 未部署 | TapeAPI |
+
+## 公共服务
+
+由本项目运行的免费 TapeAPI 服务，各自对应处理器 1013（`0xe02c26c7432A7121168AA9B610DE24eCf9a1a414`）上的一个电路。
+它们是服务，不是合约；见[公共 API](public-api.md)。
+
+| 服务 | 身份 | 容器 | 网址 |
+|---|---|---|---|
+| 公共 API（8 个读取方法） | `11.1013.tape` | `0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8` | `https://api.tapeapi.fun` |
+| 公共中继（`relaySend`、`relayHandshake`、`relayRecv`） | `12.1013.tape` | `0x9cD838625251576c199B2DeF7A17e50266843185` | `https://relay.tapeapi.fun` |
 
 ## 规范
 

@@ -31,6 +31,7 @@ trust with a signature anyone can check:
 
 | I want to | Read |
 |---|---|
+| Read BNB Chain data now, free and signed, or use a public relay | [Public API](public-api.md) |
 | Call a TapeAPI service from an app | [Call a service](consume.md) |
 | Offer my code or an existing API as a service | [Run a service](provide.md) |
 | Send encrypted messages between containers | [Private channels](channels.md) |
@@ -55,6 +56,16 @@ BNB Smart Chain, chainId 56.
 | BEM token | `0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a` | TapeOut |
 | ChannelBus | `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707` | TapeAPI: no owner, no state, no upgrade path |
 | TapeAPIEscrow, ServiceDirectory | not deployed | TapeAPI |
+
+## Public services
+
+Free TapeAPI services run by the project, each under its own circuit on processor 1013
+(`0xe02c26c7432A7121168AA9B610DE24eCf9a1a414`). They are services, not contracts; see [Public API](public-api.md).
+
+| Service | Identity | Container | URL |
+|---|---|---|---|
+| Public API (8 read methods) | `11.1013.tape` | `0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8` | `https://api.tapeapi.fun` |
+| Public relay (`relaySend`, `relayHandshake`, `relayRecv`) | `12.1013.tape` | `0x9cD838625251576c199B2DeF7A17e50266843185` | `https://relay.tapeapi.fun` |
 
 ## Specifications
 

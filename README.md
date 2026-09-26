@@ -13,6 +13,39 @@ ecosystem, DeWEB is websites, TapeSend is messaging, and **TapeAPI is services**
 > ChannelBus is deployed (address below). Interfaces may still change. The TAP
 > numbers below are **proposed** to the TapeKit maintainers and not yet assigned.
 
+## Try the live service in 30 seconds
+
+A free public service runs at `https://api.tapeapi.fun` under the TapeOut name `11.1013.tape`. Ask it for the BNB price:
+
+```bash
+curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{"id":"1","params":{}}'
+```
+
+curl shows you the signed envelope (`result`, `container`, `ts`, `block`, `sig`) but does not check it. The SDK does.
+The packages are not on npm yet, so set up the repository once (Node.js 20 or later):
+
+```bash
+git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm install
+```
+
+Save this as `try.mjs` **inside the `tapeapi` directory** (`@tapeapi/sdk` resolves through the repository's workspace;
+a script saved anywhere else fails with `ERR_MODULE_NOT_FOUND`) and run `node try.mjs`:
+
+```js
+import { createTapeAPI } from '@tapeapi/sdk'
+
+const api = createTapeAPI({
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  quorum: 2,
+})
+const svc = await api.resolve('11.1013.tape')             // name -> container -> on-chain manifest -> holder's delegation
+const { result, verified } = await api.call(svc, 'bnbUsd', {})
+console.log(result, verified)                              // verified is true only after the signature checked out
+```
+
+No install at all: the [playground](https://tapeapi.fun/playground/) runs the same SDK in the browser. Every method of
+the public service is listed in [Public API](docs/guides/public-api.md).
+
 ---
 
 ## Why TapeAPI
@@ -86,14 +119,14 @@ const { result, verified } = await api.call(svc, 'blockNumber', {})
 console.log(result.blockNumber, verified)
 ```
 
-On mainnet, resolve by container address or by circuit, with at least two RPC nodes that must agree:
+On mainnet, resolve by TapeOut name, container address or circuit, with at least two RPC nodes that must agree:
 
 ```js
 const api = createTapeAPI({
-  rpcUrls: ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
   quorum: 2,
 })
-const svc = await api.resolve('0x<container>')                     // or { circuits: '0x…', tokenId: '11' }
+const svc = await api.resolve('0x<container>')                     // or '11.1013.tape', or { circuits: '0x…', tokenId: '11' }
 const { result } = await api.call(svc, 'blockNumber', {})
 ```
 

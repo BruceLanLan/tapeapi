@@ -5,7 +5,46 @@
 本指南介绍应用如何找到一个 TapeAPI 服务、调用它，并确认回答是真实的。它使用 `@tapeapi/sdk`，可运行于
 Node 20+、浏览器、DeWEB 站点和 Cloudflare Workers。
 
-## 1. 在本地试用
+## 1. 试用
+
+### 一次性准备
+
+这些包尚未发布到 npm，所以要在仓库的克隆里操作（Node.js 20 或更高版本）：
+
+```bash
+git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm install
+```
+
+把下面的脚本保存为 `.mjs` 文件，**放在 `tapeapi` 目录之内**，然后用 `node <文件>.mjs` 运行。`@tapeapi/sdk` 通过仓库的
+workspace 解析，保存在其它任何位置的脚本都会以 `ERR_MODULE_NOT_FOUND` 失败。
+
+### 调用线上的公共服务
+
+一个免费的公共服务运行在 `https://api.tapeapi.fun`，TapeOut 名称为 `11.1013.tape`。用 curl：
+
+```bash
+curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{"id":"1","params":{}}'
+```
+
+curl 会显示签名信封（`result`、`container`、`ts`、`block`、`sig`），但不会验证它。SDK 从链上解析服务，并在返回之前
+验证回答：
+
+```js
+import { createTapeAPI } from '@tapeapi/sdk'
+
+const api = createTapeAPI({
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  quorum: 2,
+})
+const svc = await api.resolve('11.1013.tape')
+const { result, verified } = await api.call(svc, 'bnbUsd', {})
+console.log(result, verified)
+```
+
+[调试台](https://tapeapi.fun/playground/)在浏览器里运行同一份 SDK，无需安装任何东西；[公共 API](public-api.md) 列出了
+公共服务的全部方法。
+
+### 在本地运行服务
 
 启动最小示例服务。它通过公共节点读取 BNB Chain，并用一把临时密钥签名：
 
@@ -31,13 +70,17 @@ console.log(result.blockNumber, block, verified)
 
 ```js
 const api = createTapeAPI({
-  rpcUrls: ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
   quorum: 2,
 })
 
+const byName = await api.resolve('11.1013.tape')                   // <#ID>.<processor>.tape
 const byContainer = await api.resolve('0x<container address>')
 const byCircuit = await api.resolve({ circuits: '0x<processor contract>', tokenId: '11' })
 ```
+
+TapeOut 名称 `<#ID>.<processor>.tape` 同样从链上读取：处理器编号给出处理器合约（`factory.cpuAt`），该合约加上 `#ID`
+给出容器（`DeWebHub.accountOf`）。它不比 `{ circuits, tokenId }` 形式多引入任何信任；上面三种形式经过同样的检查。
 
 解析（[TAP-20 §3.6](../../../spec/TAP-20.md)）依次执行：
 
@@ -98,8 +141,9 @@ console.log(q.result, 'agreed by', q.agreed)                  // 否则抛出 Ta
 免费方法无需任何东西。付费方法需要一张由消费者签名的凭证（[TAP-22](../../../spec/TAP-22.md)）：
 
 ```js
+const consumer = '0x<your address>'                             // 签署凭证的钱包账户
 const payer = api.payer({
-  consumer: '0x<your address>',
+  consumer,
   signTypedData: (typed) => wallet.request({ method: 'eth_signTypedData_v4', params: [consumer, JSON.stringify(typed)] }),
 })
 const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })

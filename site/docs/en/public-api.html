@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Public API · TapeAPI Docs</title>
+<meta name="description" content="TapeAPI runs a free public service at https://api.tapeapi.fun : signed, block-pinned reads of BNB Smart Chain and of TapeOut itself, with no sign-up and no key.">
+<link rel="stylesheet" href="../docs.css">
+<link rel="alternate" hreflang="zh-CN" href="../zh/public-api.html">
+<script src="../docs.js"></script>
+</head>
+<body data-page="public-api" data-other="../zh/public-api.html" data-l-copy="Copy" data-l-copied="Copied" data-l-none="No results" data-l-light="Light" data-l-dark="Dark" data-l-theme="Theme">
+<header class="top">
+  <button class="ctl menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+  <a class="brand" href="/">TAPEAPI</a><a class="section" href="index.html">Docs</a>
+  <div class="search"><input id="q" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <span class="sp"></span>
+  <a class="ctl" href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a>
+  <button class="ctl" id="lang-btn" type="button" lang="zh-CN">中文</button>
+  <button class="ctl" id="theme-btn" type="button">Theme</button>
+</header>
+<div class="layout">
+<nav class="side" id="side" aria-label="Docs"><div class="group"><p class="gtitle">Getting started</p><ul><li><a href="index.html">Introduction</a></li><li><a href="public-api.html" aria-current="page">Public API</a></li><li><a href="consume.html">Call a service</a></li><li><a href="provide.html">Run a service</a></li></ul></div><div class="group"><p class="gtitle">Features</p><ul><li><a href="channels.html">Private channels</a></li><li><a href="agents.html">AI agents</a></li></ul></div><div class="group"><p class="gtitle">Help</p><ul><li><a href="faq.html">FAQ and troubleshooting</a></li><li><a href="changelog.html">Changelog</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="public-api">Public API</h1>
+<p>TapeAPI runs a free public service at <code>https://api.tapeapi.fun</code>: signed, block-pinned reads of BNB Smart Chain and of TapeOut itself, with no sign-up and no key. Next to it runs a free public relay for private channels. Both are ordinary TapeAPI services; this guide shows what they offer and how to call them.</p>
+<div class="table"><table><thead><tr><th>Service</th><th>Identity</th><th>Container</th><th>Endpoint</th></tr></thead><tbody><tr><td>Public API</td><td><code>11.1013.tape</code></td><td><code>0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8</code></td><td><code>https://api.tapeapi.fun/tapeapi/v1</code></td></tr><tr><td>Public relay</td><td><code>12.1013.tape</code></td><td><code>0x9cD838625251576c199B2DeF7A17e50266843185</code></td><td><code>https://relay.tapeapi.fun/tapeapi/v1</code></td></tr></tbody></table></div>
+<p>Both circuits are on processor 1013, contract <code>0xe02c26c7432A7121168AA9B610DE24eCf9a1a414</code>.</p>
+<h2 id="what-it-is"><a class="anchor" href="#what-it-is" aria-hidden="true">#</a>What it is</h2>
+<ul><li><strong>Free, no key.</strong> Every method costs 0 BEM. You just call it.</li><li><strong>Signed.</strong> Every answer, errors included, is an envelope signed by the key that the holder of <code>11.1013.tape</code> authorised on chain (<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md" rel="noopener">TAP-21</a>). The SDK checks the signature, the delegation and the holder before it returns a result.</li><li><strong>Block-pinned.</strong> Every method except <code>blockNumber</code> reads the chain at one block, by default the latest <code>finalized</code> one, and says which in <code>blockPinned { blockNumber, blockHash, blockRef }</code>. The service reads through three BNB Chain node operators and needs two of them to agree.</li><li><strong>Rate limit.</strong> 600 free calls per minute per IP address, in a fixed one-minute window counted per server instance. Past it the service answers HTTP 429 with a <code>retry-after</code> header (unsigned, code <code>RATE_LIMITED</code>); the SDK throws <code>TapeAPIError('RATE_LIMITED')</code> with <code>e.data.retryAfterS</code>.</li></ul>
+<p>It is a public good, not a platform. The service is the example in <a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/public-api" rel="noopener"><code>examples/public-api/</code></a>, and anyone can run an equivalent one under their own circuit (<a href="provide.html">Run a service</a>). More independent providers of the same methods is exactly what makes cross-checking possible (see below).</p>
+<h2 id="call-it-with-the-sdk"><a class="anchor" href="#call-it-with-the-sdk" aria-hidden="true">#</a>Call it with the SDK</h2>
+<div class="code"><pre data-lang="js"><code>import { createTapeAPI } from '@tapeapi/sdk'
+
+const api = createTapeAPI({
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  quorum: 2,
+})
+
+const svc = await api.resolve('11.1013.tape')   // &lt;#ID&gt;.&lt;processor&gt;.tape
+const { result, block, verified } = await api.call(svc, 'bnbUsd', {})
+console.log(result.bnbUsd, result.blockPinned.blockNumber, verified)</code></pre></div>
+<p><code>api.resolve</code> does not trust the web server: it derives the container from the circuit, reads the manifest from the container's on-chain site and checks it against the chain, then checks the holder's delegation of the signing key (<a href="consume.html">Call a service</a> explains each step). The container address <code>api.resolve('0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8')</code> or <code>api.resolve({ circuits: '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', tokenId: '11' })</code> gives the same service.</p>
+<h2 id="call-it-with-curl"><a class="anchor" href="#call-it-with-curl" aria-hidden="true">#</a>Call it with curl</h2>
+<p>A request is <code>POST {endpoint}/{method}</code> with a JSON body <code>{ &quot;id&quot;, &quot;params&quot; }</code>. The <code>id</code> is any string of 1 to 128 characters and comes back in the answer; <code>params</code> is a JSON object.</p>
+<div class="code"><pre data-lang="bash"><code>curl -s -X POST https://api.tapeapi.fun/tapeapi/v1/bnbUsd \
+  -H 'content-type: application/json' \
+  -d '{&quot;id&quot;:&quot;doc1&quot;,&quot;params&quot;:{}}'</code></pre></div>
+<p>A real answer (hashes and the signature shortened):</p>
+<div class="code"><pre data-lang="json"><code>{
+  &quot;id&quot;: &quot;doc1&quot;,
+  &quot;ok&quot;: true,
+  &quot;result&quot;: {
+    &quot;bnbUsd&quot;: &quot;774.349742334346733873&quot;,
+    &quot;pair&quot;: &quot;0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE&quot;,
+    &quot;blockPinned&quot;: { &quot;blockNumber&quot;: 124183697, &quot;blockHash&quot;: &quot;0xb49b…5d25&quot;, &quot;blockRef&quot;: &quot;hash&quot; }
+  },
+  &quot;container&quot;: &quot;0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8&quot;,
+  &quot;ts&quot;: 1790444986,
+  &quot;block&quot;: 124183699,
+  &quot;sig&quot;: &quot;0x9f96…bd1c&quot;
+}</code></pre></div>
+<p>Two block numbers appear. <code>result.blockPinned.blockNumber</code> is the block the read was evaluated at (the finalized block by default); the envelope's <code>block</code> is the chain head the service saw when it signed. <code>blockRef: &quot;hash&quot;</code> means the nodes evaluated the read at that exact <code>blockHash</code>; <code>&quot;number&quot;</code> would mean a node refused that and the read was made by block number only, which <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-23.md" rel="noopener">TAP-23</a> treats as weaker evidence.</p>
+<p>A failed call is signed too:</p>
+<div class="code"><pre data-lang="json"><code>{ &quot;id&quot;: &quot;doc4&quot;, &quot;ok&quot;: false, &quot;error&quot;: { &quot;code&quot;: &quot;BAD_REQUEST&quot;, &quot;message&quot;: &quot;address must be a 0x address of 40 hex digits&quot; },
+  &quot;container&quot;: &quot;0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8&quot;, &quot;ts&quot;: 1790445009, &quot;block&quot;: 124183752, &quot;sig&quot;: &quot;0xe154…1c&quot; }</code></pre></div>
+<p><strong>curl alone verifies nothing.</strong> Anyone between you and the service could change these bytes. To trust an answer, use the SDK, or recover the signer yourself as described at the end of <a href="consume.html">Call a service</a> and compare it with the signer the holder delegated on chain. The copy of the manifest at <code>https://api.tapeapi.fun/.well-known/tapeapi.json</code> is a convenience for reading; the SDK uses the one on chain.</p>
+<h2 id="methods"><a class="anchor" href="#methods" aria-hidden="true">#</a>Methods</h2>
+<p>Every method is free. <code>block</code> is optional everywhere it appears: a block number, or <code>'finalized'</code> (the default), <code>'safe'</code> or <code>'latest'</code>. Addresses in answers are checksummed; large numbers are decimal strings.</p>
+<div class="table"><table><thead><tr><th>Method</th><th>Params</th><th>Returns</th><th>Example params</th></tr></thead><tbody><tr><td><code>blockNumber</code></td><td>none</td><td><code>blockNumber</code>: the latest block the nodes agree on. Not block-pinned, not for quorum.</td><td><code>{}</code></td></tr><tr><td><code>balance</code></td><td><code>address</code>, <code>block?</code></td><td><code>address</code>, <code>wei</code>, <code>bnb</code> (native BNB), <code>blockPinned</code></td><td><code>{ &quot;address&quot;: &quot;0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE&quot; }</code></td></tr><tr><td><code>tokenInfo</code></td><td><code>token</code>, <code>block?</code></td><td><code>token</code>, <code>name</code>, <code>symbol</code> (each <code>string</code> or <code>null</code>), <code>decimals</code>, <code>totalSupply</code>, <code>blockPinned</code></td><td><code>{ &quot;token&quot;: &quot;0x55d398326f99059fF775485246999027B3197955&quot; }</code></td></tr><tr><td><code>tokenBalance</code></td><td><code>token</code>, <code>address</code>, <code>block?</code></td><td><code>token</code>, <code>address</code>, <code>raw</code>, <code>amount</code> (in token units), <code>symbol</code>, <code>decimals</code>, <code>blockPinned</code></td><td><code>{ &quot;token&quot;: &quot;0x55d398326f99059fF775485246999027B3197955&quot;, &quot;address&quot;: &quot;0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE&quot; }</code></td></tr><tr><td><code>nftOwner</code></td><td><code>contract</code>, <code>tokenId</code> (decimal string), <code>block?</code></td><td><code>contract</code>, <code>tokenId</code>, <code>owner</code>, <code>blockPinned</code></td><td><code>{ &quot;contract&quot;: &quot;0xe02c26c7432A7121168AA9B610DE24eCf9a1a414&quot;, &quot;tokenId&quot;: &quot;11&quot; }</code></td></tr><tr><td><code>pairPrice</code></td><td><code>pair</code> (a PancakeSwap V2 pair), <code>block?</code></td><td><code>pair</code>, <code>token0</code> and <code>token1</code> (<code>address</code>, <code>symbol</code>, <code>decimals</code>), <code>reserves</code> (<code>reserve0</code>, <code>reserve1</code>, <code>blockTimestampLast</code>), <code>price</code> (<code>token0InToken1</code>, <code>token1InToken0</code>), <code>blockPinned</code></td><td><code>{ &quot;pair&quot;: &quot;0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE&quot; }</code></td></tr><tr><td><code>bnbUsd</code></td><td><code>block?</code></td><td><code>bnbUsd</code> (BNB in USDT from the PancakeSwap V2 WBNB/USDT pair), <code>pair</code>, <code>blockPinned</code></td><td><code>{}</code></td></tr><tr><td><code>tapeName</code></td><td><code>name</code> (<code>'&lt;#ID&gt;.&lt;processor&gt;.tape'</code>), or <code>processor</code> and <code>tokenId</code>; <code>block?</code></td><td><code>name</code>, <code>processor</code>, <code>tokenId</code>, <code>circuits</code>, <code>container</code>, <code>holder</code>, <code>opened</code>, <code>tapeapi</code> and <code>channelKeys</code> (<code>{ path, size, sha256 }</code> of the published file, or <code>null</code>), <code>blockPinned</code></td><td><code>{ &quot;name&quot;: &quot;11.1013.tape&quot; }</code></td></tr></tbody></table></div>
+<p>A bad parameter (not an address, a token that is not BEP-20, a circuit that does not exist) comes back as a signed <code>BAD_REQUEST</code> with a message saying which. The live list, with the exact types, is the manifest's <code>methods</code> (<code>svc.manifest.methods</code> after <code>api.resolve</code>).</p>
+<h2 id="prices-and-cross-checking"><a class="anchor" href="#prices-and-cross-checking" aria-hidden="true">#</a>Prices and cross-checking</h2>
+<p><code>pairPrice</code> and <code>bnbUsd</code> are <strong>spot prices</strong> computed from a pool's reserves at one block. A large trade can move them within a block, so do not use them alone for liquidations or anything else an attacker profits from moving. A protocol that relies on a price should add bounds, freshness checks, a time-weighted average and a circuit breaker.</p>
+<p>A signed answer proves who said it, not that it is true. For values that matter, ask a second, independent provider for the same block and accept only identical bytes. Every method whose description starts with <code>[quorum]</code> (all but <code>blockNumber</code>) takes a numeric <code>block</code> for exactly this:</p>
+<div class="code"><pre data-lang="js"><code>const other = await api.resolve('0x&lt;container of another provider&gt;')
+const first = await api.call(svc, 'bnbUsd', {})
+const block = first.result.blockPinned.blockNumber
+const q = await api.callQuorum([svc, other], 'bnbUsd', { block }, { quorum: 2 })
+console.log(q.result.bnbUsd, 'agreed by', q.agreed)   // else TapeAPIError('QUORUM_FAILED')</code></pre></div>
+<p><code>callQuorum</code> refuses services that share a container, a holder or an endpoint origin, since they are one source, not two. Today <code>api.tapeapi.fun</code> is the only public provider of these methods, so the second one has to be run by you or someone else, from <a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/public-api" rel="noopener"><code>examples/public-api/</code></a> or your own code.</p>
+<h2 id="the-public-relay"><a class="anchor" href="#the-public-relay" aria-hidden="true">#</a>The public relay</h2>
+<p>A relay carries <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-26.md" rel="noopener">TAP-26</a> private channels: two containers exchange end-to-end encrypted frames through rooms on the relay, which stores ciphertext and never sees content or identities (it does see room names, sizes and timing). The public relay at <code>https://relay.tapeapi.fun</code>, identity <code>12.1013.tape</code>, container <code>0x9cD838625251576c199B2DeF7A17e50266843185</code>, offers <code>relaySend</code>, <code>relayHandshake</code> and <code>relayRecv</code>, all at zero cost per message.</p>
+<p>Name it in an invite, then carry the channel over it with <code>channel.relayTransport</code>:</p>
+<div class="code"><pre data-lang="js"><code>import { channel } from '@tapeapi/sdk'
+
+const relay = await api.resolve('12.1013.tape')   // container 0x9cD838625251576c199B2DeF7A17e50266843185
+
+const { invite, pending } = channel.createInvite({
+  self: { container: A, chainId: 56, staticSecret: aKeys.secretKey },
+  peer: { container: B, chainId: 56, staticPublic: bKeys.publicKey },
+  relays: [{ url: 'https://relay.tapeapi.fun/tapeapi/v1', container: relay.container }],
+})
+
+// (the invite travels sealed to B; B accepts and posts the accept to the relay)
+const rooms = channel.roomsFor(invite.cid)            // A's rooms, before the handshake completes
+const link = channel.relayTransport({ api, svc: relay, inbound: rooms.toInitiator, outbound: rooms.toResponder })
+const [w] = await link.poll()
+const { ready, session } = channel.completeInvite(pending, channel.decodeWire(w).handshake)
+await link.send(channel.encodeWire(ready))
+await link.send(channel.encodeWire(session.seal('hello')))</code></pre></div>
+<p>The responder opens its own transport on its session's rooms (<code>session.rooms.inbound</code>, <code>session.rooms.outbound</code>); <code>link.start(onWire)</code> keeps polling in the background. To advertise the relay in your container's channel keys, pass <code>--relay https://relay.tapeapi.fun/tapeapi/v1@0x9cD838625251576c199B2DeF7A17e50266843185</code> to <code>scripts/channel-keys.mjs</code>. The full handshake, the other transports and running your own relay are in <a href="channels.html">Private channels</a>.</p>
+<h2 id="limits-and-status"><a class="anchor" href="#limits-and-status" aria-hidden="true">#</a>Limits and status</h2>
+<ul><li>Pre-alpha. Both services are free and run on a best-effort basis, with no SLA and no guarantee of uptime. Methods may be added; a change to the list is published on chain as a new manifest.</li><li>A relay can drop frames or go offline; TAP-26 detects gaps but cannot refill them. Name more than one transport in an invite if the channel matters.</li><li>For anything you depend on, run your own provider or relay as well, and cross-check.</li></ul>
+</article>
+<nav class="pn"><a class="prev" href="index.html"><span>Previous</span>Introduction</a><a class="next" href="consume.html"><span>Next</span>Call a service</a></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/public-api.md" rel="noopener">Edit this page on GitHub</a></p>
+</main>
+<aside class="toc"><p class="gtitle">On this page</p><ul><li class="l2"><a href="#what-it-is">What it is</a></li><li class="l2"><a href="#call-it-with-the-sdk">Call it with the SDK</a></li><li class="l2"><a href="#call-it-with-curl">Call it with curl</a></li><li class="l2"><a href="#methods">Methods</a></li><li class="l2"><a href="#prices-and-cross-checking">Prices and cross-checking</a></li><li class="l2"><a href="#the-public-relay">The public relay</a></li><li class="l2"><a href="#limits-and-status">Limits and status</a></li></ul></aside>
+</div>
+</body>
+</html>

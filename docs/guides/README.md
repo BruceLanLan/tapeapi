@@ -7,6 +7,7 @@ The same guides, with search, are at [tapeapi.fun/docs](https://tapeapi.fun/docs
 | Guide | For | You will |
 |---|---|---|
 | [Introduction](introduction.md) | Everyone new to TapeAPI | Learn what it is, how it works, the on-chain addresses and which guide to read next. |
+| [Public API](public-api.md) | Anyone who wants chain data or a relay now | Call the free public service (8 signed reads of BNB Chain and TapeOut, 7 of them block-pinned) and use the free public relay. |
 | [Call a service](consume.md) | App and backend developers | Resolve a service on chain, call it, verify the answer, pay for calls, require agreement between providers. |
 | [Run a service](provide.md) | API providers | Turn functions or an existing REST API into signed methods, go live from a phone or a server, renew, operate. |
 | [Private channels](channels.md) | Apps, agents and services that talk to each other | Publish channel keys, open an encrypted channel, choose a relay or the chain as the carrier. |

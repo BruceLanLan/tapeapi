@@ -41,9 +41,10 @@
 ## 4. RPC 节点 / RPC nodes
 
 - 读取要求**参与回答的节点全部一致**（不是多数）。节点数等于一致要求时，任何一个节点故障都会让读取失败，运行时会警告。
-- 示例默认 3 选 2：`https://bsc-rpc.publicnode.com,https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io`。
-- `bsc-dataseed*` 不支持 `eth_getLogs`；读 ChannelBus 要用 `bsc-rpc.publicnode.com` 这类节点，它视后端约保留 5,000 到 10,000 个区块（约 40 到 75 分钟）的日志。
-  更久以前的帧需要归档节点。SDK 会在读取范围超出节点保留期时警告一次。
+- 示例与 Worker 默认 3 选 2，三家运营方：`https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io`。
+  `bsc-rpc.publicnode.com` 在 2026-09-27 对每个请求都超时，已移出默认列表。
+- `bsc-dataseed*` 不支持 `eth_getLogs`，默认列表因此读不了 ChannelBus。读 ChannelBus 用 SDK 的 `BUS_RPC_URLS`（48 Club `rpc-bsc.48.club` 与 1RPC `1rpc.io/bnb` 提供日志，2026-09-27 实测至少保留 500,000 个区块；再加一个 dataseed 提供回执），单独建客户端，`timeoutMs` 15000。
+  Reading ChannelBus: use the SDK's `BUS_RPC_URLS` (48 Club and 1RPC serve logs, at least 500,000 blocks back, measured 2026-09-27) in a client of its own. publicnode keeps only 5,000 to 10,000 blocks of logs when it is up.SDK 会在读取范围超出节点保留期时警告一次。中继传输不依赖 `eth_getLogs`。
 
 ## 5. 限流默认值 / Rate limits
 

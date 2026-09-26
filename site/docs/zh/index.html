@@ -20,7 +20,7 @@
   <button class="ctl" id="theme-btn" type="button">主题</button>
 </header>
 <div class="layout">
-<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html" aria-current="page">简介</a></li><li><a href="consume.html">调用服务</a></li><li><a href="provide.html">运行服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div></nav>
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html" aria-current="page">简介</a></li><li><a href="public-api.html">公共 API</a></li><li><a href="consume.html">调用服务</a></li><li><a href="provide.html">运行服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div></nav>
 <main class="doc">
 <article>
 <h1 id="简介">简介</h1>
@@ -30,12 +30,15 @@
 <h2 id="工作原理"><a class="anchor" href="#工作原理" aria-hidden="true">#</a>工作原理</h2>
 <ol><li><strong>身份。</strong> 提供者在 TapeOut 上 Tape Out 一个电路。电路的容器（一个 ERC-6551 账户）就是服务的地址。</li><li><strong>清单。</strong> 提供者把 <code>.well-known/tapeapi.json</code> 写进容器的站点：端点、方法、价格、签名密钥，以及持有者对该密钥的 EIP-712 委托。</li><li><strong>解析。</strong> 客户端通过多个必须一致的 RPC 节点从链上读取清单，核对其哈希，并对照电路当前的持有者核对委托。</li><li><strong>调用。</strong> 客户端发出请求；服务用被委托的密钥签名回答，签名与这次请求绑定。SDK 只在核对通过后才返回结果。</li></ol>
 <h2 id="选择你的路径"><a class="anchor" href="#选择你的路径" aria-hidden="true">#</a>选择你的路径</h2>
-<div class="table"><table><thead><tr><th>我想要</th><th>阅读</th></tr></thead><tbody><tr><td>在应用里调用 TapeAPI 服务</td><td><a href="consume.html">调用服务</a></td></tr><tr><td>把我的代码或现有 API 变成服务</td><td><a href="provide.html">运行服务</a></td></tr><tr><td>在容器之间发送加密消息</td><td><a href="channels.html">私密通道</a></td></tr><tr><td>让 AI 代理安全地使用服务</td><td><a href="agents.html">AI 代理</a></td></tr><tr><td>排查错误</td><td><a href="faq.html">常见问题</a></td></tr></tbody></table></div>
+<div class="table"><table><thead><tr><th>我想要</th><th>阅读</th></tr></thead><tbody><tr><td>现在就免费读取有签名的 BNB Chain 数据，或使用公共中继</td><td><a href="public-api.html">公共 API</a></td></tr><tr><td>在应用里调用 TapeAPI 服务</td><td><a href="consume.html">调用服务</a></td></tr><tr><td>把我的代码或现有 API 变成服务</td><td><a href="provide.html">运行服务</a></td></tr><tr><td>在容器之间发送加密消息</td><td><a href="channels.html">私密通道</a></td></tr><tr><td>让 AI 代理安全地使用服务</td><td><a href="agents.html">AI 代理</a></td></tr><tr><td>排查错误</td><td><a href="faq.html">常见问题</a></td></tr></tbody></table></div>
 <h2 id="状态"><a class="anchor" href="#状态" aria-hidden="true">#</a>状态</h2>
 <p>Pre-alpha，版本 0.1.0。免费层运行在 TapeOut 已部署的合约之上。我们自己的合约未经第三方审计；付费调用的托管合约尚未部署。接口仍可能变化，TAP 编号是向 TapeKit 维护者提议的编号，尚未正式分配。</p>
 <h2 id="链上地址"><a class="anchor" href="#链上地址" aria-hidden="true">#</a>链上地址</h2>
 <p>BNB Smart Chain，chainId 56。</p>
 <div class="table"><table><thead><tr><th>合约</th><th>地址</th><th>所有者</th></tr></thead><tbody><tr><td>DeWebHub</td><td><code>0xe61A9C7213a6Aa616C246a2B569e555B417b25ee</code></td><td>TapeOut</td></tr><tr><td>SiteRegistry</td><td><code>0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6</code></td><td>TapeOut</td></tr><tr><td>处理器工厂</td><td><code>0x68224F668083c29e9800Be2a646d42d18cedF7e2</code></td><td>TapeOut</td></tr><tr><td>BEM 代币</td><td><code>0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a</code></td><td>TapeOut</td></tr><tr><td>ChannelBus</td><td><code>0x486110c35d9b90a9d6D85c8063A065f9e7b6b707</code></td><td>TapeAPI：无所有者、无状态、不可升级</td></tr><tr><td>TapeAPIEscrow、ServiceDirectory</td><td>未部署</td><td>TapeAPI</td></tr></tbody></table></div>
+<h2 id="公共服务"><a class="anchor" href="#公共服务" aria-hidden="true">#</a>公共服务</h2>
+<p>由本项目运行的免费 TapeAPI 服务，各自对应处理器 1013（<code>0xe02c26c7432A7121168AA9B610DE24eCf9a1a414</code>）上的一个电路。它们是服务，不是合约；见<a href="public-api.html">公共 API</a>。</p>
+<div class="table"><table><thead><tr><th>服务</th><th>身份</th><th>容器</th><th>网址</th></tr></thead><tbody><tr><td>公共 API（8 个读取方法）</td><td><code>11.1013.tape</code></td><td><code>0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8</code></td><td><code>https://api.tapeapi.fun</code></td></tr><tr><td>公共中继（<code>relaySend</code>、<code>relayHandshake</code>、<code>relayRecv</code>）</td><td><code>12.1013.tape</code></td><td><code>0x9cD838625251576c199B2DeF7A17e50266843185</code></td><td><code>https://relay.tapeapi.fun</code></td></tr></tbody></table></div>
 <h2 id="规范"><a class="anchor" href="#规范" aria-hidden="true">#</a>规范</h2>
 <p>协议以 TAP 的形式写成，中英双语（以英文为准），采用 CC0。</p>
 <div class="table"><table><thead><tr><th>TAP</th><th>标题</th></tr></thead><tbody><tr><td><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-20.md" rel="noopener">TAP-20</a></td><td>服务身份与清单</td></tr><tr><td><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md" rel="noopener">TAP-21</a></td><td>签名响应信封</td></tr><tr><td><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-22.md" rel="noopener">TAP-22</a></td><td>计量支付</td></tr><tr><td><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-23.md" rel="noopener">TAP-23</a></td><td>带证明的跨链读取</td></tr><tr><td><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-24.md" rel="noopener">TAP-24</a></td><td>意图询价（冻结）</td></tr><tr><td><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-25.md" rel="noopener">TAP-25</a></td><td>可由电路验证的方法</td></tr><tr><td><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-26.md" rel="noopener">TAP-26</a></td><td>私密通道</td></tr><tr><td><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-27.md" rel="noopener">TAP-27</a></td><td>私密群聊</td></tr></tbody></table></div>
@@ -43,10 +46,10 @@
 <h2 id="致谢"><a class="anchor" href="#致谢" aria-hidden="true">#</a>致谢</h2>
 <p>为 TapeOut 做一个服务层的想法来自 <a href="https://x.com/Theairresearch/status/2101640697426448632" rel="noopener">@Theairresearch</a>。 TapeAPI 获得的任何收入，永久 10% 归他们。</p>
 </article>
-<nav class="pn"><span></span><a class="next" href="consume.html"><span>下一篇</span>调用服务</a></nav>
+<nav class="pn"><span></span><a class="next" href="public-api.html"><span>下一篇</span>公共 API</a></nav>
 <p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/introduction.md" rel="noopener">在 GitHub 上编辑此页</a></p>
 </main>
-<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#工作原理">工作原理</a></li><li class="l2"><a href="#选择你的路径">选择你的路径</a></li><li class="l2"><a href="#状态">状态</a></li><li class="l2"><a href="#链上地址">链上地址</a></li><li class="l2"><a href="#规范">规范</a></li><li class="l2"><a href="#致谢">致谢</a></li></ul></aside>
+<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#工作原理">工作原理</a></li><li class="l2"><a href="#选择你的路径">选择你的路径</a></li><li class="l2"><a href="#状态">状态</a></li><li class="l2"><a href="#链上地址">链上地址</a></li><li class="l2"><a href="#公共服务">公共服务</a></li><li class="l2"><a href="#规范">规范</a></li><li class="l2"><a href="#致谢">致谢</a></li></ul></aside>
 </div>
 </body>
 </html>

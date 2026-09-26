@@ -109,6 +109,9 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
     st.calls.push({ to, name, args: Array.from(args) })
     switch (name) {
       case 'accountOf': return encodeReturn('accountOf', [st.accounts.get(String(args[1])) || ZERO_ADDRESS])
+      // Processor number 7 is the test circuits contract; any other number is past the end and reverts, like the factory.
+      // 处理器 7 号是测试电路合约；其他编号超出范围，像工厂一样 revert。
+      case 'cpuAt': if (args[0] === 7n) return encodeReturn('cpuAt', [addr.circuits]); throw Object.assign(new Error('execution reverted'), { code: 3 })
       case 'isCPU':
         if (!eqAddr(to, addr.factory ?? ADDR.factory) && !eqAddr(to, MAINNET_FACTORY)) return '0x'
         return encodeReturn('isCPU', [!st.notCPU.has(String(args[0]).toLowerCase())])

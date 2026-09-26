@@ -4,7 +4,7 @@
 
 ## 0. Read this first
 
-**The TapeAPI contracts are not deployed and have had no external audit.** `contracts/src/ServiceDirectory.sol` and `contracts/src/TapeAPIEscrow.sol` exist, compile and pass 107 Foundry tests, and have been through internal read-only review passes — an internal review by the same team is not an audit. The SDK and the provider runtime are likewise unaudited and pre-alpha.
+**None of the TapeAPI contracts has had an external audit.** One is deployed: `ChannelBus` (`contracts/src/ChannelBus.sol`), the stateless event-only transport for on-chain channels, at `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707` on BNB Smart Chain (chainId 56). The paid-call escrow (`contracts/src/TapeAPIEscrow.sol`) and the service directory (`contracts/src/ServiceDirectory.sol`) are **not deployed**. All three compile and pass 169 Foundry tests, and have been through internal read-only review passes — an internal review by the same team is not an audit. The SDK, the provider runtime and the hosted services listed in §2 are likewise unaudited and pre-alpha.
 
 Do not put funds you cannot lose into any deployment of this code. If you deploy it yourself, you are deploying unaudited code and the risk is yours.
 
@@ -27,13 +27,14 @@ Please do **not** test against other people's live services, provider endpoints 
 
 ## 2. In scope
 
-Anything in this repository:
+Anything in this repository, and the services the project runs from it:
 
-- **Contracts** — `contracts/src/TapeAPIEscrow.sol`, `contracts/src/ServiceDirectory.sol`, `contracts/src/interfaces.sol`. Especially: voucher accounting and replay, allowance and commitment accounting, session authorisation, withdraw delay and settle paths, delegation verification, the label activation gate, and owner powers (the owner must have no ability to pause, upgrade, take user funds, or change anyone's contribution rate).
+- **Contracts** — `contracts/src/ChannelBus.sol` (deployed, address in §0), `contracts/src/TapeAPIEscrow.sol`, `contracts/src/ServiceDirectory.sol`, `contracts/src/interfaces.sol`. For ChannelBus especially: anything that makes it refuse a valid frame, emit a frame other than the one it was sent, or hold state or funds. Especially: voucher accounting and replay, allowance and commitment accounting, session authorisation, withdraw delay and settle paths, delegation verification, the label activation gate, and owner powers (the owner must have no ability to pause, upgrade, take user funds, or change anyone's contribution rate).
 - **SDK** — `@tapeapi/sdk` (`sdk/src/*`). Signature verification and malleability, canonical JSON, the resolution algorithm, container derivation, quorum behaviour, the `dev` / `allowSingleNode` / `allowHttp` / `maxSkewS` switches, RPC handling.
 - **Provider runtime** — `@tapeapi/server` (`server/src/*`). Envelope construction and signing, metering and billing, key handling, request parsing, anything that bills for work not delivered or delivers work unbilled.
 - **Specifications** — `spec/TAP-*.md`. A design-level flaw in the standard is in scope and is the most valuable kind of report: if the spec mandates something unsafe, every conforming implementation inherits it.
 - **Examples and scripts** — including a leak in `scripts/publish-site.mjs` that would let an internal document reach the public site.
+- **Hosted services run by the project** — the holder console `https://tapeapi.fun/console/` (source `site/console/`), the public service `https://api.tapeapi.fun` (`11.1013.tape`, source `examples/public-api/`) and the public relay `https://relay.tapeapi.fun` (`12.1013.tape`, source `examples/cloudflare-worker/relay-worker.js`). Especially: anything that makes the console leak a signing key or get a holder to sign or publish something other than what it shows, and anything that makes either service sign an answer that is not what it read. Test these without disrupting them: no load, flood or denial-of-service testing against the live hosts; run your own copy for that.
 
 ## 3. Out of scope
 
@@ -50,7 +51,7 @@ These are real and may matter to you, but they are not ours to fix. Please repor
 
 These are documented properties, not undisclosed findings — a report saying only this is not a vulnerability report:
 
-- Contracts are unaudited and undeployed; there is no canonical escrow or directory address.
+- Contracts are unaudited. ChannelBus is deployed (§0); the escrow and the directory are not, so there is no canonical escrow or directory address.
 - The escrow owner can change the treasury address (emitting `TreasuryChanged`) and nominate a successor owner. The owner cannot pause, upgrade, seize funds, or set anyone's contribution rate.
 - A single provider's signed response is a single-source feed. Consumers must add their own bounds, freshness checks and kill switch; see the "when not to use this" sections in `examples/*/README.md`.
 - `dev`, `allowSingleNode`, `allowHttp` and `FREE_ALL` deliberately relax safety checks. They are opt-in, and using them in production is a configuration mistake, not a vulnerability — unless you find a way to enable one without the operator opting in.
@@ -59,7 +60,7 @@ These are documented properties, not undisclosed findings — a report saying on
 
 ## 0. 先读这一条（中文）
 
-**TapeAPI 的合约尚未部署，也未经任何外部审计。** `contracts/src/ServiceDirectory.sol` 与 `contracts/src/TapeAPIEscrow.sol` 已写好、可编译、通过 107 个 Foundry 测试，并经过内部只读评审——**同一团队的内部评审不是审计**。SDK 与提供者运行时同样未经审计，处于 pre-alpha。
+**TapeAPI 的合约都未经任何外部审计。** 已部署的只有一个：`ChannelBus`（`contracts/src/ChannelBus.sol`），链上通道所用的无状态、只发事件的传输合约，地址 `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`，位于 BNB Smart Chain（chainId 56）。付费调用托管合约（`contracts/src/TapeAPIEscrow.sol`）与服务目录（`contracts/src/ServiceDirectory.sol`）**尚未部署**。三者均可编译、通过 169 个 Foundry 测试，并经过内部只读评审——**同一团队的内部评审不是审计**。SDK、提供者运行时以及 §2 所列的托管服务同样未经审计，处于 pre-alpha。
 
 不要把输不起的资金放进本代码的任何部署。你自行部署即是在部署未经审计的代码，风险由你承担。
 
@@ -82,13 +83,14 @@ These are documented properties, not undisclosed findings — a report saying on
 
 ## 2. 在范围内
 
-本仓库中的一切：
+本仓库中的一切，以及本项目用它运行的服务：
 
-- **合约**——`contracts/src/TapeAPIEscrow.sol`、`contracts/src/ServiceDirectory.sol`、`contracts/src/interfaces.sol`。尤其是：凭证记账与重放、额度与承诺记账、会话授权、提现延迟与结算路径、委托校验、标签激活门槛，以及 owner 权力（owner 必须无法暂停、升级、取走用户资金或更改任何人的贡献比例）。
+- **合约**——`contracts/src/ChannelBus.sol`（已部署，地址见 §0）、`contracts/src/TapeAPIEscrow.sol`、`contracts/src/ServiceDirectory.sol`、`contracts/src/interfaces.sol`。对 ChannelBus 尤其关注：任何让它拒收合法帧、发出与所收内容不同的帧，或让合约持有状态或资金的情形。尤其是：凭证记账与重放、额度与承诺记账、会话授权、提现延迟与结算路径、委托校验、标签激活门槛，以及 owner 权力（owner 必须无法暂停、升级、取走用户资金或更改任何人的贡献比例）。
 - **SDK**——`@tapeapi/sdk`（`sdk/src/*`）。签名校验与可延展性、规范 JSON、解析算法、容器推导、法定人数行为、`dev` / `allowSingleNode` / `allowHttp` / `maxSkewS` 开关、RPC 处理。
 - **提供者运行时**——`@tapeapi/server`（`server/src/*`）。信封构造与签名、计量与计费、密钥处理、请求解析，以及任何"没交付却计费"或"交付了却不计费"的情形。
 - **规范**——`spec/TAP-*.md`。标准层面的设计缺陷在范围内，**而且是最有价值的一类报告**：规范若要求了不安全的做法，所有合规实现都会继承它。
 - **示例与脚本**——包括 `scripts/publish-site.mjs` 中可能让内部文档流到公网的泄漏。
+- **本项目运行的托管服务**——持有人控制台 `https://tapeapi.fun/console/`（源码 `site/console/`）、公共服务 `https://api.tapeapi.fun`（`11.1013.tape`，源码 `examples/public-api/`）与公共中继 `https://relay.tapeapi.fun`（`12.1013.tape`，源码 `examples/cloudflare-worker/relay-worker.js`）。尤其是：任何让控制台泄露签名密钥、或让持有人签署或发布与页面所示不同内容的方法，以及任何让这两个服务对并非其所读的内容签名的方法。测试时不要干扰它们：不要对线上主机做压测、洪水或拒绝服务测试；这类测试请用你自己的副本。
 
 ## 3. 不在范围内
 
@@ -105,7 +107,7 @@ These are documented properties, not undisclosed findings — a report saying on
 
 以下是已记录在案的性质，不是未披露的发现——只说这些的报告不构成漏洞报告：
 
-- 合约未经审计且未部署；**不存在规范的托管或目录地址**。
+- 合约未经审计。ChannelBus 已部署（见 §0）；托管合约与目录尚未部署，因此**不存在规范的托管或目录地址**。
 - 托管合约的 owner 可以更换金库地址（会发出 `TreasuryChanged`）并提名继任 owner。owner 无法暂停、升级、没收资金，也无法设定任何人的贡献比例。
 - 单个提供者的签名响应是单一来源数据。消费者必须自行加上界限、新鲜度检查与 kill switch；见 `examples/*/README.md` 中各自的「什么时候不要用这个」一节。
 - `dev`、`allowSingleNode`、`allowHttp` 与 `FREE_ALL` 是有意放宽安全检查的开关。它们需要显式启用，在生产中使用属于配置错误而非漏洞——除非你找到**无需运营者主动开启即可启用其中之一**的方法。

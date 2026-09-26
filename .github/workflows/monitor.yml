@@ -1,0 +1,70 @@
+# Checks the live services every 30 minutes (scripts/monitor.mjs, read-only, no secrets beyond GITHUB_TOKEN).
+# A problem opens the issue "Monitor: service problem" (GitHub emails the repo owner: that is the alert), or comments
+# on it if it is already open. A healthy run closes it. The job stays green on a service problem so the only alert is
+# the issue; it goes red only when the workflow itself breaks.
+# 每 30 分钟检查线上服务。有问题就开 issue "Monitor: service problem"（GitHub 会给仓库所有者发邮件，这就是告警），
+# 已开着则追加评论；恢复健康时关闭它。服务出问题时任务仍为绿色，告警只走 issue；只有工作流本身出错才会变红。
+name: monitor
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    # The public repository only: the private copy it is staged from has the same file. / 只在公开仓库运行。
+    if: github.repository == 'BruceLanLan/tapeapi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TITLE: 'Monitor: service problem'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Run monitor
+        id: run
+        run: |
+          set +e
+          node scripts/monitor.mjs > report.md
+          code=$?
+          set -e
+          if [ ! -s report.md ]; then echo "The monitor exited with code $code and printed no report." > report.md; fi
+          printf '\n\nRun: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> report.md
+          cat report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Find open alert issue
+        id: issue
+        run: |
+          n=$(gh issue list --state open --limit 100 --json number,title --jq '[.[] | select(.title == "Monitor: service problem")][0].number // empty')
+          echo "number=$n" >> "$GITHUB_OUTPUT"
+
+      - name: Alert (open or comment)
+        if: steps.run.outputs.code != '0'
+        run: |
+          if [ -n "${{ steps.issue.outputs.number }}" ]; then
+            gh issue comment "${{ steps.issue.outputs.number }}" --body-file report.md
+          else
+            gh issue create --title "$TITLE" --body-file report.md
+          fi
+
+      - name: Resolve (close)
+        if: steps.run.outputs.code == '0' && steps.issue.outputs.number != ''
+        run: |
+          gh issue close "${{ steps.issue.outputs.number }}" --comment "Resolved: all services healthy again. $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

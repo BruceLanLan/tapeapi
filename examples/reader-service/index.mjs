@@ -15,7 +15,7 @@ const manifest = JSON.parse(await readFile(new URL('manifest.json', here), 'utf8
 
 // ---- env ----
 const PORT = Number(process.env.PORT || 8787)
-const RPC_URLS = (process.env.RPC_URLS || 'https://bsc-rpc.publicnode.com,https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io').split(',').map(s => s.trim()).filter(Boolean)
+const RPC_URLS = (process.env.RPC_URLS || 'https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io').split(',').map(s => s.trim()).filter(Boolean)
 const QUORUM = Number(process.env.QUORUM || Math.min(2, RPC_URLS.length))
 const CHAIN_ID = Number(process.env.CHAIN_ID || 56)
 const BEM = process.env.BEM || MAINNET.bem

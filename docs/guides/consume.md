@@ -3,7 +3,47 @@
 This guide shows how an application finds a TapeAPI service, calls it and knows the answer is genuine. It uses
 `@tapeapi/sdk`, which works in Node 20+, browsers, DeWEB sites and Cloudflare Workers.
 
-## 1. Try it locally
+## 1. Try it
+
+### Set up once
+
+The packages are not on npm yet, so you work inside a clone of the repository (Node.js 20 or later):
+
+```bash
+git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm install
+```
+
+Save the scripts below as `.mjs` files **inside the `tapeapi` directory** and run them with `node <file>.mjs`.
+`@tapeapi/sdk` resolves through the repository's workspace, so a script saved anywhere else fails with
+`ERR_MODULE_NOT_FOUND`.
+
+### Call the live public service
+
+A free public service runs at `https://api.tapeapi.fun` under the TapeOut name `11.1013.tape`. With curl:
+
+```bash
+curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{"id":"1","params":{}}'
+```
+
+curl shows you the signed envelope (`result`, `container`, `ts`, `block`, `sig`) but does not verify it. The SDK
+resolves the service from the chain and verifies the answer before it returns:
+
+```js
+import { createTapeAPI } from '@tapeapi/sdk'
+
+const api = createTapeAPI({
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  quorum: 2,
+})
+const svc = await api.resolve('11.1013.tape')
+const { result, verified } = await api.call(svc, 'bnbUsd', {})
+console.log(result, verified)
+```
+
+The [playground](https://tapeapi.fun/playground/) runs the same SDK in a browser with nothing to install, and
+[Public API](public-api.md) lists every method of the public service.
+
+### Run a service locally
 
 Start the minimal example service. It reads BNB Chain through public nodes and signs with a throwaway key:
 
@@ -29,13 +69,18 @@ On mainnet the SDK reads everything it trusts from the chain, through several RP
 
 ```js
 const api = createTapeAPI({
-  rpcUrls: ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
   quorum: 2,
 })
 
+const byName = await api.resolve('11.1013.tape')                   // <#ID>.<processor>.tape
 const byContainer = await api.resolve('0x<container address>')
 const byCircuit = await api.resolve({ circuits: '0x<processor contract>', tokenId: '11' })
 ```
+
+A TapeOut name `<#ID>.<processor>.tape` is read from the chain too: the processor number gives the processor contract
+(`factory.cpuAt`), and that contract with `#ID` gives the container (`DeWebHub.accountOf`). It adds no trust beyond the
+`{ circuits, tokenId }` form; the three forms above reach the same checks.
 
 Resolution ([TAP-20 §3.6](../../spec/TAP-20.md)) does, in order:
 
@@ -98,8 +143,9 @@ freshness checks and a circuit breaker.
 Free methods need nothing. Paid methods take a voucher signed by the consumer ([TAP-22](../../spec/TAP-22.md)):
 
 ```js
+const consumer = '0x<your address>'                             // the wallet account that signs the vouchers
 const payer = api.payer({
-  consumer: '0x<your address>',
+  consumer,
   signTypedData: (typed) => wallet.request({ method: 'eth_signTypedData_v4', params: [consumer, JSON.stringify(typed)] }),
 })
 const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })

@@ -24,11 +24,11 @@ Environment variables:
 
 | var                 | default                                       | meaning                                                   |
 |---------------------|-----------------------------------------------|-----------------------------------------------------------|
-| `SIGNER_KEY`        | random (printed at start)                     | 32-byte hex private key that signs response envelopes     |
-| `RPC_URLS`          | three public BSC dataseed nodes               | comma-separated JSON-RPC urls                             |
+| `SIGNER_KEY`        | a random key for this run (never printed; only its `signer` address is) | 32-byte hex private key that signs response envelopes; required once `DELEGATION_SIG` is set |
+| `RPC_URLS`          | `bsc-dataseed.bnbchain.org`, `bsc-dataseed1.defibit.io`, `bsc-dataseed1.ninicoin.io` | comma-separated JSON-RPC urls (three operators, 2-of-3) |
 | `QUORUM`            | `min(2, RPC_URLS.length)`                     | how many nodes must agree on every `eth_call`             |
-| `PORT` / `HOST`     | `8787` / `0.0.0.0`                            | listen address                                            |
-| `PUBLIC_URL`        | `http://127.0.0.1:$PORT`                      | base url advertised in `manifest.endpoints.live`          |
+| `PORT` / `HOST`     | `8787` / `127.0.0.1`                          | listen address; loopback only by default, set `HOST=0.0.0.0` to accept connections from your network |
+| `PUBLIC_URL`        | `http://127.0.0.1:$PORT`                      | base url advertised in `manifest.endpoints.live`; must be `https://` once `DELEGATION_SIG` is set, or the service refuses to start |
 | `CONTAINER`         | placeholder `0x000…`                          | ERC-6551 container = `DeWebHub.accountOf(circuits, tokenId)` |
 | `CIRCUITS` / `TOKEN_ID` | placeholders                              | the circuit that owns this service                        |
 | `ESCROW`            | placeholder                                   | `TapeAPIEscrow` address (payment.escrow)                  |
@@ -64,7 +64,8 @@ The domain is anchored on the hub, not on a ServiceDirectory: a delegation is ju
 is meaningful before any directory exists (TAP-20 §3.4). Signing against the wrong `verifyingContract`
 produces a signature that will never verify.
 
-1. Start the provider once with a fixed `SIGNER_KEY` and note the printed `signer` address.
+1. Start the provider once with a fixed `SIGNER_KEY` and note the printed `signer` address (the key itself is
+   never printed).
 2. On a machine holding the circuit holder's key run:
 
    ```sh
@@ -79,8 +80,11 @@ produces a signature that will never verify.
 
 3. Restart the provider with `CONTAINER`, `CIRCUITS`, `TOKEN_ID`, `ESCROW`, `PUBLIC_URL`,
    `DELEGATION_SIG`, `DELEGATION_EXPIRES` set. The served manifest now has `"dev": false`.
-4. Publish the served manifest to the container's DeWEB site at `/.well-known/tapeapi.json`
-   and register the label with `api.tx.register({circuits, tokenId, label, manifestPath})`.
+4. Publish the served manifest to the container's DeWEB site: `api.tx.publishManifest({ container, manifest })`
+   returns the transactions for the holder to sign. The registry key is `.well-known/tapeapi.json`, with **no
+   leading slash**. Clients can then resolve the service by container, by `{ circuits, tokenId }` or by its TapeOut
+   name `<#ID>.<processor>.tape`; no registration is needed (the ServiceDirectory, where
+   `api.tx.register(...)` would add a label, is not deployed).
 
 ## Settlement
 

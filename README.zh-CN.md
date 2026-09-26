@@ -14,6 +14,39 @@ TapeAPI 是 BNB Chain 上 [TapeOut](https://tapeout.net) 生态的服务与通�
 > 我们自己的合约（付费调用托管合约、服务目录、ChannelBus）**未经第三方审计**；ChannelBus 已部署（地址见下文）。
 > 接口仍可能变化。下文的 TAP 编号是向 TapeKit 维护者**提议**的编号，尚未正式分配。
 
+## 30 秒试用线上服务
+
+一个免费的公共服务运行在 `https://api.tapeapi.fun`，TapeOut 名称为 `11.1013.tape`。向它询问 BNB 价格：
+
+```bash
+curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{"id":"1","params":{}}'
+```
+
+curl 会显示签名信封（`result`、`container`、`ts`、`block`、`sig`），但不会检查它。SDK 会检查。
+这些包尚未发布到 npm，所以先准备一次仓库（Node.js 20 或更高版本）：
+
+```bash
+git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm install
+```
+
+把下面的代码保存为 `try.mjs`，**放在 `tapeapi` 目录之内**（`@tapeapi/sdk` 通过仓库的 workspace 解析；保存在其它任何位置
+的脚本都会以 `ERR_MODULE_NOT_FOUND` 失败），然后运行 `node try.mjs`：
+
+```js
+import { createTapeAPI } from '@tapeapi/sdk'
+
+const api = createTapeAPI({
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  quorum: 2,
+})
+const svc = await api.resolve('11.1013.tape')             // 名称 -> 容器 -> 链上清单 -> 持有者的委托
+const { result, verified } = await api.call(svc, 'bnbUsd', {})
+console.log(result, verified)                              // 只有签名检查通过后 verified 才为 true
+```
+
+完全不想安装：[调试台](https://tapeapi.fun/playground/)在浏览器里运行同一份 SDK。公共服务的全部方法列在
+[公共 API](docs/guides/zh-CN/public-api.md) 中。
+
 ---
 
 ## 为什么需要 TapeAPI
@@ -85,14 +118,14 @@ const { result, verified } = await api.call(svc, 'blockNumber', {})
 console.log(result.blockNumber, verified)
 ```
 
-在主网上，按容器地址或按电路解析，并使用至少两个必须达成一致的 RPC 节点：
+在主网上，按 TapeOut 名称、容器地址或电路解析，并使用至少两个必须达成一致的 RPC 节点：
 
 ```js
 const api = createTapeAPI({
-  rpcUrls: ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
   quorum: 2,
 })
-const svc = await api.resolve('0x<container>')                     // 或 { circuits: '0x…', tokenId: '11' }
+const svc = await api.resolve('0x<container>')                     // 或 '11.1013.tape'，或 { circuits: '0x…', tokenId: '11' }
 const { result } = await api.call(svc, 'blockNumber', {})
 ```
 

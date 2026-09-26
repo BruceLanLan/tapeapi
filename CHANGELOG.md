@@ -10,6 +10,23 @@ Before 1.0.0, a minor version may change interfaces.
 
 - ChannelBus deployed on BNB Chain at `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707` (code byte-for-byte the tested build); `MAINNET.channelBus` in the SDK.
   A test message was read back through public nodes, and the deployment is recorded for a replay test.
+- **Public service** https://api.tapeapi.fun (`11.1013.tape`): eight free, signed, block-pinned methods: `blockNumber`,
+  `balance`, `tokenInfo`, `tokenBalance`, `nftOwner`, `pairPrice`, `bnbUsd`, `tapeName` (source `examples/public-api`).
+- **Public relay** https://relay.tapeapi.fun (`12.1013.tape`) for TAP-26 channels.
+- **Playground** https://tapeapi.fun/playground/: resolve any service by name, see every check, call it, copy the code.
+- **Status page** https://tapeapi.fun/status/ and a monitor (`npm run monitor`, a scheduled GitHub workflow that opens an
+  issue when a service is down or a delegation has fewer than 14 days left).
+- **Docs site** https://tapeapi.fun/docs/ (English and Chinese), generated from `docs/guides` with `npm run build:docs`,
+  including a Public API guide.
+- SDK: `api.resolve('11.1013.tape')` resolves TapeOut names (`<#ID>.<processor>.tape`) through `factory.cpuAt`.
+- Holder console: publishes a service's own free method list; bilingual; hardened (CSP, anti-phishing notice).
+- CI runs the JavaScript, Python and Foundry suites on every push.
+
+### Changed
+
+- Default RPC nodes are bnbchain, defibit and ninicoin dataseeds (publicnode timed out on every request on
+  2026-09-27), with a 3 s per-node timeout on the Workers.
+- The provider template (`examples/cloudflare-worker/wrangler.toml`) no longer names the project's own Worker or domain.
 
 ## [0.1.0] — 2026-09-26
 

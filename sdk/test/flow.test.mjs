@@ -64,7 +64,7 @@ before(async () => {
 after(async () => { await provider.close() })
 
 test('resolve by label, container and {circuits,tokenId} verifies delegation against ownerOf', async () => {
-  for (const target of ['reader', ADDR.container, { circuits: ADDR.circuits, tokenId: '4246' }]) {
+  for (const target of ['reader', ADDR.container, { circuits: ADDR.circuits, tokenId: '4246' }, '4246.7.tape', ' 4246.7.TAPE ']) {
     const svc = await api.resolve(target)
     assert.equal(svc.container.toLowerCase(), ADDR.container)
     assert.deepEqual(svc.verified, { delegation: true, holder: holder })
@@ -707,4 +707,11 @@ test('the funding path starts with the approval the escrow needs', () => {
   // 绝不无限授权：被授权方可能是服务方选定的托管合约
   assert.throws(() => api.tx.approve(), /needs an amount/)
   assert.throws(() => api.tx.approve({ amount: 2n ** 256n - 1n }), /bounded/)
+})
+
+test('resolve by TapeOut name: <#ID>.<processor>.tape goes through factory.cpuAt, and a missing processor is NOT_FOUND', async () => {
+  const svc = await api.resolve('4246.7.tape')
+  assert.equal(svc.container, ADDR.container)
+  await assert.rejects(api.resolve('4246.8.tape'), (e) => e.code === 'NOT_FOUND' && /processor 8 does not exist/.test(e.message))
+  await assert.rejects(api.resolve('4246.7.tap'), (e) => e.code !== undefined, 'not a name: falls through to the label path')
 })

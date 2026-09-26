@@ -20,7 +20,7 @@
   <button class="ctl" id="theme-btn" type="button">Theme</button>
 </header>
 <div class="layout">
-<nav class="side" id="side" aria-label="Docs"><div class="group"><p class="gtitle">Getting started</p><ul><li><a href="index.html">Introduction</a></li><li><a href="consume.html">Call a service</a></li><li><a href="provide.html">Run a service</a></li></ul></div><div class="group"><p class="gtitle">Features</p><ul><li><a href="channels.html">Private channels</a></li><li><a href="agents.html">AI agents</a></li></ul></div><div class="group"><p class="gtitle">Help</p><ul><li><a href="faq.html" aria-current="page">FAQ and troubleshooting</a></li><li><a href="changelog.html">Changelog</a></li></ul></div></nav>
+<nav class="side" id="side" aria-label="Docs"><div class="group"><p class="gtitle">Getting started</p><ul><li><a href="index.html">Introduction</a></li><li><a href="public-api.html">Public API</a></li><li><a href="consume.html">Call a service</a></li><li><a href="provide.html">Run a service</a></li></ul></div><div class="group"><p class="gtitle">Features</p><ul><li><a href="channels.html">Private channels</a></li><li><a href="agents.html">AI agents</a></li></ul></div><div class="group"><p class="gtitle">Help</p><ul><li><a href="faq.html" aria-current="page">FAQ and troubleshooting</a></li><li><a href="changelog.html">Changelog</a></li></ul></div></nav>
 <main class="doc">
 <article>
 <h1 id="faq-and-troubleshooting">FAQ and troubleshooting</h1>
@@ -30,6 +30,7 @@
 <p><strong>What happens if I sell or transfer the circuit?</strong> The service goes with it: the container, its site and the right to sign delegations. The old holder's delegation stops being accepted, because clients check it against the current holder.</p>
 <p><strong>Which chain?</strong> BNB Smart Chain (chainId 56), where TapeOut lives.</p>
 <h2 id="calling-services"><a class="anchor" href="#calling-services" aria-hidden="true">#</a>Calling services</h2>
+<p><strong><code>ERR_MODULE_NOT_FOUND: Cannot find package '@tapeapi/sdk'</code></strong> — the packages are not on npm yet and resolve through the repository's workspace. Clone the repository, run <code>npm install</code> in it, and save your script inside the <code>tapeapi</code> directory (<a href="consume.html">Call a service</a>).</p>
 <p><strong><code>MANIFEST_INVALID: ... does not match</code></strong> — the file in the container's site differs from its on-chain hash, or there is no manifest. The service is not correctly published.</p>
 <p><strong><code>DELEGATION_INVALID</code></strong> — the delegation expired, or the circuit changed hands since it was signed. The provider has to sign a new one and publish the manifest again.</p>
 <p><strong><code>RPC_UNAVAILABLE: only 1/2 nodes answered</code></strong> — use at least three RPC URLs with <code>quorum: 2</code>, so one node down still leaves a quorum. <code>allowSingleNode: true</code> exists for local development only.</p>
@@ -41,7 +42,7 @@
 <p><strong><code>putFile</code> reverts with <code>NotOwner</code>.</strong> The container is not opened, or the wallet is not the circuit's holder. Open the container on the circuit's page (0.012 BNB).</p>
 <p><strong>My wallet swaps BNB into WBNB.</strong> Gas is paid only in native BNB. Keep a little native BNB in the holder's wallet.</p>
 <h2 id="on-chain-channels"><a class="anchor" href="#on-chain-channels" aria-hidden="true">#</a>On-chain channels</h2>
-<p><strong>The reader fails with <code>no node serves logs</code>.</strong> It started further back than the nodes keep history (publicnode: about 10,000 blocks). Frames in that range cannot be read from those nodes; start from a newer block or add an archive node.</p>
+<p><strong>The reader fails with <code>no node serves logs</code>.</strong> It started further back than the nodes keep history (publicnode: about 10,000 blocks). Frames in that range cannot be read from those nodes; start from a newer block or add an archive node. The BNB Chain dataseed nodes (the example default) do not serve <code>eth_getLogs</code> at all: read ChannelBus with the SDK's <code>BUS_RPC_URLS</code> (48 Club and 1RPC keep at least 500,000 blocks of logs). The relay transport does not depend on this.</p>
 <p><strong>The reader holds for a long time.</strong> A node is failing on the blocks the cursor is at. Holding is deliberate: a frame is never skipped while some node may still have it. After <code>SERVED_DECAY</code> (20) polls without an answer, the node is no longer waited for and you are told.</p>
 <p><strong>Are my messages private on ChannelBus?</strong> The content is end-to-end encrypted. The room, the size and the time of each message are public for ever.</p>
 <h2 id="getting-help"><a class="anchor" href="#getting-help" aria-hidden="true">#</a>Getting help</h2>

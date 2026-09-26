@@ -73,7 +73,8 @@ bob.open(frame, { text: true }).data                 // 'hello'
 | **ChannelBus** | 没有需要信任或维持运行的服务器；每条消息都是一笔交易（约 50,000 gas）。 | `channel.busTransport({ rpc, bus: MAINNET.channelBus, inbound, outbound, sendTx })` |
 | **同时使用多个** | 响应方可以在邀请所列的任一传输上作答，因此要在所有传输上监听。 | `channel.fanIn([t1, t2])` |
 
-运行中继：[`examples/relay-service/`](../../../examples/relay-service/)（Node）或
+一个免费的公共中继运行在 `https://relay.tapeapi.fun`（TapeOut 名称 `12.1013.tape`）；如何在邀请中写明它、让通道经由它
+传输，见[公共 API](public-api.md) 的"公共中继"一节。自己运行中继：[`examples/relay-service/`](../../../examples/relay-service/)（Node）或
 [`examples/cloudflare-worker/`](../../../examples/cloudflare-worker/)（每个房间一个 Durable Object）。用
 `node conformance/relay.mjs --url <relay>` 检查任意中继。
 
@@ -91,7 +92,10 @@ ChannelBus 消息是事件，而公共 BNB Chain 节点只保留部分历史，�
 | `block N holds more logs than <node> returns ...` / `was read only from the receipts of ...` | 对某个节点来说过满的区块，改从其它节点读取，或从它们的区块回执中读取。 | 有人用垃圾帧塞满了一个区块；你的帧仍然送达，但只由较少的节点作证。 |
 | `<node> has not served for N polls, so blocks from X on are passed without it` | 一个停止作答的节点不再被等待，因此死节点无法让通道停摆。 | 替换或移除该节点。 |
 
-默认节点集（publicnode 加两个 BNB Chain dataseed 节点）正是读取器测试所针对的节点集，测试中也包括这些节点的录制回答。
+读 ChannelBus 需要提供 `eth_getLogs` 的节点，而 BNB Chain dataseed 节点拒绝这个方法。请使用 SDK 的 `BUS_RPC_URLS`
+（48 Club 与 1RPC 提供日志、历史至少 500,000 个区块，另加一个 dataseed 提供回执），并单独建一个客户端：
+`createRpc({ urls: BUS_RPC_URLS, quorum: 2, timeoutMs: 15000 })`。用这组节点，读取器读回了 73,700 个区块之前的真实帧
+（2026-09-27）。读取器的测试包含 publicnode 与 dataseed 节点的录制回答。中继传输完全不依赖这一点。
 
 ## 5. 限制
 

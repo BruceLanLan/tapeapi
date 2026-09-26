@@ -4,6 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import * as C from '../../site/console/lib.js'
 import { createTapeAPI, sig, abi, MAINNET, MANIFEST_KEY } from '../src/index.js'
 import { privateKeyToAddress } from '../src/sig.js'
@@ -116,14 +117,17 @@ test('FIXED console-F2: manifestProblems refuses every field the page did not bu
   assert.equal(JSON.parse(C.manifestText({ ...S, name: '读取服务' })).name, '读取服务', 'the service may choose its display name')
 })
 
-test('FIXED console-F1: the page stores the generated key\'s address and step 6 signs only for it', async () => {
-  const { readFile } = await import('node:fs/promises')
-  const html = await readFile(new URL('../../site/console/index.html', import.meta.url), 'utf8')
+// The page's script lives in site/console/console.js (no inline script, so /console/* can run under script-src 'self').
+// 页面脚本在 site/console/console.js（没有内联脚本，/console/* 才能用 script-src 'self'）。
+const pageScript = () => readFileSync(new URL('../../site/console/console.js', import.meta.url), 'utf8')
+
+test('FIXED console-F1: the page stores the generated key\'s address and step 4 signs only for it', async () => {
+  const html = pageScript()
   assert.match(html, /saveSvc\(\{ keyAddress,/)
   assert.match(html, /h\.signer\.toLowerCase\(\) !== s\.keyAddress\.toLowerCase\(\)/)
   assert.match(html, /delegationTypedData\(\{ container: s\.container, signer: s\.keyAddress,/)
   assert.doesNotMatch(html, /signer: h\.signer/)
-  assert.match(html, /C\.manifestText\(/, 'step 7 publishes the page\'s own bytes')
+  assert.match(html, /C\.manifestText\(/, 'step 5 publishes the page\'s own bytes')
 })
 
 test('readCircuit normalises the circuit number ("01" is circuit 1) and refuses non-digits', async () => {
@@ -155,16 +159,15 @@ test('FIXED console-F4: the page recovers the delegation signature itself, as th
 })
 
 test('FIXED console-F4/F5/F3: the page re-checks the wallet, the container and the transaction before each step', async () => {
-  const { readFile } = await import('node:fs/promises')
-  const html = await readFile(new URL('../../site/console/index.html', import.meta.url), 'utf8')
+  const html = pageScript()
   assert.match(html, /eth\?\.on\?\.\('accountsChanged', \(\) => location\.reload\(\)\)/)
   assert.match(html, /eth\?\.on\?\.\('chainChanged', \(\) => location\.reload\(\)\)/)
   assert.equal((html.match(/await ensureSame\(\)/g) || []).length, 4, 'before the deploy, the test message, the signature and the putFile')
   assert.equal((html.match(/chainId: BSC,/g) || []).length, 3, 'every transaction names the chain')
   assert.match(html, /C\.recoverAddress\(C\.delegationDigest\(/)
   assert.ok(html.indexOf("if (cid !== BSC)") < html.indexOf('account = accs[0]'), 'the account is kept only once the chain is right')
-  assert.match(html, /eth_getCode', \[c\.container/, 'step 4 refuses an unopened container')
-  assert.match(html, /30cd7471/, 'step 7 translates NotOwner from the pre-flight estimate')
+  assert.match(html, /eth_getCode', \[c\.container/, 'step 2 refuses an unopened container')
+  assert.match(html, /30cd7471/, 'step 5 translates NotOwner from the pre-flight estimate')
   assert.match(html, /\$\('btn-publish'\)\.disabled = true/, 'one tap, one transaction')
   const pub = html.slice(html.indexOf("$('btn-publish').onclick"), html.indexOf("$('republish').onchange"))
   assert.match(pub, /\} finally \{[\s\S]*enableSvc\(\)[\s\S]*\}\s*\}\s*$/, 'every early return re-enables the button for a retry')
@@ -201,7 +204,6 @@ test('probeTx is byte for byte ChannelBus.send(room, wire) as the SDK encodes it
 test('FIXED console-F2 (amended): a free method list may come from the service; everything else about it is checked', async () => {
   const { MANIFEST_METHODS } = await import('../../examples/public-api/methods.js')
   const { validateManifest } = await import('../src/manifest.js')
-  const { readFileSync } = await import('node:fs')
   const good = JSON.parse(C.manifestText({ ...S, methods: MANIFEST_METHODS }))
   assert.deepEqual(C.manifestProblems(JSON.stringify(good), S), [], 'the public service\'s own list is publishable')
   assert.deepEqual(good.methods, MANIFEST_METHODS)
@@ -228,6 +230,103 @@ test('FIXED console-F2 (amended): a free method list may come from the service; 
     assert.throws(() => C.manifestText({ ...S, methods }), undefined, what)
   }
   assert.ok(C.manifestProblems(JSON.stringify({ ...good, methods: undefined }), S).length > 0, 'missing list')
-  const html = readFileSync(new URL('../../site/console/index.html', import.meta.url), 'utf8')
-  assert.match(html, /sm\.methods\.map\(\(x\) => x\.name\)/, 'step 7 names every method before the wallet asks')
+  assert.match(pageScript(), /sm\.methods\.map\(\(x\) => x\.name\)/, 'step 5 names every method before the wallet asks')
+})
+
+// ---------------------------------------------------------------- the page itself: CSP, anti-phishing, language ----
+const SITE = new URL('../../site/', import.meta.url)
+const consoleHtml = () => readFileSync(new URL('console/index.html', SITE), 'utf8')
+
+test('the console has no inline script, so /console/* can forbid every script that is not a file of the site', () => {
+  const html = consoleHtml()
+  const scripts = [...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0])
+  assert.ok(scripts.length >= 2, 'lang.js and console.js')
+  for (const tag of scripts) {
+    const src = tag.match(/\ssrc="([^"]+)"/)?.[1]
+    assert.ok(src, `inline script: ${tag}`)
+    assert.match(src, /^\.\/[a-z]+\.js$/, `a file next to the page: ${src}`)
+    assert.ok(existsSync(new URL(`console/${src.slice(2)}`, SITE)), `${src} exists`)
+  }
+  assert.doesNotMatch(html, /<script\b(?![^>]*\bsrc=)/i)
+  assert.doesNotMatch(html, /\son[a-z]+\s*=/i, 'no inline event handlers')
+  assert.doesNotMatch(html, /javascript:/i)
+})
+
+test('nothing under site/console/ mentions Claude (the page is for outside developers)', () => {
+  const walk = (u) => readdirSync(u, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(new URL(`${e.name}/`, u)) : [new URL(e.name, u)])
+  const files = walk(new URL('console/', SITE))
+  assert.ok(files.length >= 4)
+  for (const f of files) assert.doesNotMatch(readFileSync(f, 'utf8'), /claude/i, f.pathname)
+})
+
+// A tiny model of Cloudflare Pages _headers: a path line, then indented "Name: value" lines; a request inherits the
+// headers of every rule whose path matches (a splat is any run of characters), and a header set twice is joined.
+// Cloudflare Pages _headers 的小模型：路径行，下面缩进的“名称: 值”行；请求继承所有匹配规则的头，设两次的头会拼接。
+function headersFor(text, path) {
+  const rules = []
+  for (const raw of text.split('\n')) {
+    if (!raw.trim() || raw.trimStart().startsWith('#')) continue
+    if (!/^\s/.test(raw)) { rules.push({ path: raw.trim(), headers: [] }); continue }
+    const m = raw.trim().match(/^([A-Za-z-]+):\s*(.+)$/)
+    assert.ok(m && rules.length, `a header line under a path: ${raw}`)
+    rules.at(-1).headers.push([m[1].toLowerCase(), m[2]])
+  }
+  const re = (p) => new RegExp('^' + p.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$')
+  const out = {}
+  for (const r of rules) if (re(r.path).test(path)) for (const [k, v] of r.headers) (out[k] ||= []).push(v)
+  return out
+}
+
+test('_headers: the console gets exactly one strict CSP; every page forbids framing; the site sends HSTS', () => {
+  const text = readFileSync(new URL('_headers', SITE), 'utf8')
+  for (const line of text.split('\n')) assert.ok(line.length <= 2000, 'Pages limits a line to 2,000 characters')
+  const con = headersFor(text, '/console/')
+  assert.equal(con['content-security-policy']?.length, 1, 'one policy, not two joined by a comma')
+  const csp = con['content-security-policy'][0]
+  for (const d of ["default-src 'self'", "script-src 'self'", "frame-ancestors 'none'", "base-uri 'none'", "form-action 'none'", "connect-src 'self' https:"]) assert.ok(csp.split(/;\s*/).includes(d), d)
+  assert.doesNotMatch(csp, /unsafe-eval|script-src[^;]*unsafe-inline/, 'no script escape hatch')
+  assert.deepEqual(headersFor(text, '/console/lib.js')['content-security-policy'], [csp])
+  for (const path of ['/', '/console/', '/docs/', '/playground/', '/status/', '/style.css']) {
+    const h = headersFor(text, path)
+    assert.deepEqual(h['x-frame-options'], ['DENY'], path)
+    assert.deepEqual(h['x-content-type-options'], ['nosniff'], path)
+    assert.deepEqual(h['referrer-policy'], ['no-referrer'], path)
+    assert.deepEqual(h['strict-transport-security'], ['max-age=31536000'], path)
+  }
+  assert.equal(headersFor(text, '/style.css')['content-security-policy'], undefined, '/* sets no CSP, so no page gets two')
+  // Every page directory in site/ (and the homepage) forbids framing with exactly one policy; only the console restricts scripts.
+  // site/ 下每个页面目录（和首页）都恰好一条禁止嵌入的策略；只有操作台限制脚本。
+  const pages = ['/', ...readdirSync(SITE, { withFileTypes: true }).filter((e) => e.isDirectory() && existsSync(new URL(`${e.name}/index.html`, SITE))).map((e) => `/${e.name}/`), '/status/']
+  for (const path of pages) {
+    const p = headersFor(text, path)['content-security-policy']
+    assert.equal(p?.length, 1, `${path} has exactly one CSP`)
+    assert.ok(p[0].split(/;\s*/).includes("frame-ancestors 'none'"), path)
+    if (path !== '/console/') assert.doesNotMatch(p[0], /script-src/, `${path} may have inline scripts`)
+  }
+})
+
+test('the console warns against look-alike addresses and shows what the wallet will be asked to write', () => {
+  const html = consoleHtml(), js = pageScript()
+  assert.match(html, /id="phish"[\s\S]*https:\/\/tapeapi\.fun\/console\/[\s\S]*https:\/\/tapeapi\.fun\/console\//, 'the banner, in both languages')
+  assert.ok(html.indexOf('id="phish"') < html.indexOf('id="s-wallet"'), 'above step 1')
+  assert.match(js, /location\.origin !== 'https:\/\/tapeapi\.fun'/, 'a copy elsewhere says so')
+  const pub = js.slice(js.indexOf("$('btn-publish').onclick"))
+  const shown = pub.search(/kv\(out, \[\[bi\('容器', 'Container'\), s\.container\], \[bi\('清单 SHA-256', 'Manifest SHA-256'\), sha\]/)
+  assert.ok(shown > 0 && shown < pub.indexOf("eth_sendTransaction"), 'the container and SHA-256 are on screen before the wallet asks')
+  assert.match(js, /https:\/\/bscscan\.com\/tx\/\$\{hash\}/, 'transactions link to BscScan')
+})
+
+test('the console is bilingual, and the ChannelBus deployment is an optional section at the bottom', () => {
+  const html = consoleHtml()
+  const zh = (html.match(/<span lang="zh">/g) || []).length, en = (html.match(/<span lang="en">/g) || []).length
+  assert.ok(zh > 20 && zh === en, `every Chinese text has an English twin (${zh} / ${en})`)
+  const steps = [...html.matchAll(/<h2><span lang="zh">(\d)\. [^<]+<\/span><span lang="en">(\d)\. /g)].map((m) => [m[1], m[2]])
+  assert.deepEqual(steps, [['1', '1'], ['2', '2'], ['3', '3'], ['4', '4'], ['5', '5']])
+  const adv = html.indexOf('<details id="s-advanced">')
+  assert.ok(adv > html.indexOf('id="s-publish"'), 'after the last step')
+  assert.ok(html.indexOf('id="s-bus"') > adv && html.indexOf('id="s-verify"') > adv && html.indexOf('</details>') > html.indexOf('id="s-verify"'))
+  assert.ok(html.includes(MAINNET.channelBus), 'names the public ChannelBus')
+  assert.match(readFileSync(new URL('console/lang.js', SITE), 'utf8'), /'tapeapi\.lang'/, 'the same remembered choice as the homepage')
+  // No step number left over from the old seven-step page. / 不残留旧七步页面的步骤号。
+  assert.doesNotMatch(html + pageScript(), /第 [67] 步|step [67]\b/i)
 })

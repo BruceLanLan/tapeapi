@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>公共 API · TapeAPI 手册</title>
+<meta name="description" content="TapeAPI 在 https://api.tapeapi.fun 运行一个免费的公共服务：对 BNB Smart Chain 和 TapeOut 本身的签名、锚定区块的读取，无需注册，没有密钥。旁边还运行着一个供私密通道使用的免费公共中继。两者都是普通的 TapeAPI 服务；本指南介绍它们提供什么，以及如何调用。 ">
+<link rel="stylesheet" href="../docs.css">
+<link rel="alternate" hreflang="en" href="../en/public-api.html">
+<script src="../docs.js"></script>
+</head>
+<body data-page="public-api" data-other="../en/public-api.html" data-l-copy="复制" data-l-copied="已复制" data-l-none="没有结果" data-l-light="浅色" data-l-dark="深色" data-l-theme="主题">
+<header class="top">
+  <button class="ctl menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">目录</button>
+  <a class="brand" href="/">TAPEAPI</a><a class="section" href="index.html">手册</a>
+  <div class="search"><input id="q" type="search" placeholder="搜索手册" aria-label="搜索手册" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <span class="sp"></span>
+  <a class="ctl" href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a>
+  <button class="ctl" id="lang-btn" type="button" lang="en">English</button>
+  <button class="ctl" id="theme-btn" type="button">主题</button>
+</header>
+<div class="layout">
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="public-api.html" aria-current="page">公共 API</a></li><li><a href="consume.html">调用服务</a></li><li><a href="provide.html">运行服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="公共-api">公共 API</h1>
+<p>TapeAPI 在 <code>https://api.tapeapi.fun</code> 运行一个免费的公共服务：对 BNB Smart Chain 和 TapeOut 本身的签名、锚定区块的读取，无需注册，没有密钥。旁边还运行着一个供私密通道使用的免费公共中继。两者都是普通的 TapeAPI 服务；本指南介绍它们提供什么，以及如何调用。</p>
+<div class="table"><table><thead><tr><th>服务</th><th>身份</th><th>容器</th><th>端点</th></tr></thead><tbody><tr><td>公共 API</td><td><code>11.1013.tape</code></td><td><code>0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8</code></td><td><code>https://api.tapeapi.fun/tapeapi/v1</code></td></tr><tr><td>公共中继</td><td><code>12.1013.tape</code></td><td><code>0x9cD838625251576c199B2DeF7A17e50266843185</code></td><td><code>https://relay.tapeapi.fun/tapeapi/v1</code></td></tr></tbody></table></div>
+<p>两个电路都在处理器 1013 上，合约为 <code>0xe02c26c7432A7121168AA9B610DE24eCf9a1a414</code>。</p>
+<h2 id="它是什么"><a class="anchor" href="#它是什么" aria-hidden="true">#</a>它是什么</h2>
+<ul><li><strong>免费，无需密钥。</strong> 每个方法都是 0 BEM，直接调用即可。</li><li><strong>有签名。</strong> 每个回答（包括错误）都是一个信封，由 <code>11.1013.tape</code> 的持有者在链上授权的密钥签名（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md" rel="noopener">TAP-21</a>）。SDK 核对签名、委托和持有者之后才返回结果。</li><li><strong>锚定区块。</strong> 除 <code>blockNumber</code> 外，每个方法都在同一个区块上读取链（默认是最新的 <code>finalized</code> 区块），并在 <code>blockPinned { blockNumber, blockHash, blockRef }</code> 中说明是哪个区块。服务通过三家 BNB Chain 节点运营方读取，至少两家一致才算数。</li><li><strong>限流。</strong> 每个 IP 地址每分钟 600 次免费调用，按固定的一分钟窗口、在每个服务实例上分别计数。超出后服务回答 HTTP 429 并带 <code>retry-after</code> 头（无签名，错误码 <code>RATE_LIMITED</code>）；SDK 抛出 <code>TapeAPIError('RATE_LIMITED')</code>，等待秒数在 <code>e.data.retryAfterS</code>。</li></ul>
+<p>它是一项公共物品，不是平台。这个服务就是 <a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/public-api" rel="noopener"><code>examples/public-api/</code></a> 里的示例，任何人都可以用自己的电路运行一个同样的服务（<a href="provide.html">运行服务</a>）。同样方法的独立提供者越多，交叉核对才越可行（见下文）。</p>
+<h2 id="用-sdk-调用"><a class="anchor" href="#用-sdk-调用" aria-hidden="true">#</a>用 SDK 调用</h2>
+<div class="code"><pre data-lang="js"><code>import { createTapeAPI } from '@tapeapi/sdk'
+
+const api = createTapeAPI({
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  quorum: 2,
+})
+
+const svc = await api.resolve('11.1013.tape')   // &lt;#ID&gt;.&lt;processor&gt;.tape
+const { result, block, verified } = await api.call(svc, 'bnbUsd', {})
+console.log(result.bnbUsd, result.blockPinned.blockNumber, verified)</code></pre></div>
+<p><code>api.resolve</code> 不信任网站服务器：它由电路推导出容器，从容器的链上站点读取清单并对照链核对，再核对持有者对签名密钥的委托（每一步见<a href="consume.html">调用服务</a>）。按容器地址 <code>api.resolve('0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8')</code>，或按 <code>api.resolve({ circuits: '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', tokenId: '11' })</code> 解析，得到的是同一个服务。</p>
+<h2 id="用-curl-调用"><a class="anchor" href="#用-curl-调用" aria-hidden="true">#</a>用 curl 调用</h2>
+<p>请求是 <code>POST {endpoint}/{method}</code>，JSON 请求体为 <code>{ &quot;id&quot;, &quot;params&quot; }</code>。<code>id</code> 是任意 1 到 128 个字符的字符串，会原样出现在回答里；<code>params</code> 是一个 JSON 对象。</p>
+<div class="code"><pre data-lang="bash"><code>curl -s -X POST https://api.tapeapi.fun/tapeapi/v1/bnbUsd \
+  -H 'content-type: application/json' \
+  -d '{&quot;id&quot;:&quot;doc1&quot;,&quot;params&quot;:{}}'</code></pre></div>
+<p>一个真实的回答（哈希与签名已缩写）：</p>
+<div class="code"><pre data-lang="json"><code>{
+  &quot;id&quot;: &quot;doc1&quot;,
+  &quot;ok&quot;: true,
+  &quot;result&quot;: {
+    &quot;bnbUsd&quot;: &quot;774.349742334346733873&quot;,
+    &quot;pair&quot;: &quot;0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE&quot;,
+    &quot;blockPinned&quot;: { &quot;blockNumber&quot;: 124183697, &quot;blockHash&quot;: &quot;0xb49b…5d25&quot;, &quot;blockRef&quot;: &quot;hash&quot; }
+  },
+  &quot;container&quot;: &quot;0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8&quot;,
+  &quot;ts&quot;: 1790444986,
+  &quot;block&quot;: 124183699,
+  &quot;sig&quot;: &quot;0x9f96…bd1c&quot;
+}</code></pre></div>
+<p>这里出现两个区块号。<code>result.blockPinned.blockNumber</code> 是读取所在的区块（默认是最终确定的区块）；信封的 <code>block</code> 是服务签名时看到的链头。<code>blockRef: &quot;hash&quot;</code> 表示节点正是在那个 <code>blockHash</code> 上求值；若为 <code>&quot;number&quot;</code>，则表示有节点拒绝了按哈希求值，读取只按区块号进行，<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-23.md" rel="noopener">TAP-23</a> 把它视为更弱的证据。</p>
+<p>失败的调用同样有签名：</p>
+<div class="code"><pre data-lang="json"><code>{ &quot;id&quot;: &quot;doc4&quot;, &quot;ok&quot;: false, &quot;error&quot;: { &quot;code&quot;: &quot;BAD_REQUEST&quot;, &quot;message&quot;: &quot;address must be a 0x address of 40 hex digits&quot; },
+  &quot;container&quot;: &quot;0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8&quot;, &quot;ts&quot;: 1790445009, &quot;block&quot;: 124183752, &quot;sig&quot;: &quot;0xe154…1c&quot; }</code></pre></div>
+<p><strong>仅用 curl 什么也没有验证。</strong> 你和服务之间的任何一方都可以改动这些字节。要信任一个回答，请使用 SDK，或按 <a href="consume.html">调用服务</a>末尾的说明自行恢复签名者，并与持有者在链上委托的签名者比较。 <code>https://api.tapeapi.fun/.well-known/tapeapi.json</code> 上的清单副本只是方便阅读；SDK 使用的是链上那一份。</p>
+<h2 id="方法"><a class="anchor" href="#方法" aria-hidden="true">#</a>方法</h2>
+<p>每个方法都免费。凡出现 <code>block</code> 的地方它都是可选的：一个区块号，或 <code>'finalized'</code>（默认）、<code>'safe'</code>、<code>'latest'</code>。回答中的地址是校验和格式；大数是十进制字符串。</p>
+<div class="table"><table><thead><tr><th>方法</th><th>参数</th><th>返回</th><th>参数示例</th></tr></thead><tbody><tr><td><code>blockNumber</code></td><td>无</td><td><code>blockNumber</code>：各节点一致认可的最新区块。不锚定区块，不用于多方比对。</td><td><code>{}</code></td></tr><tr><td><code>balance</code></td><td><code>address</code>、<code>block?</code></td><td><code>address</code>、<code>wei</code>、<code>bnb</code>（原生 BNB）、<code>blockPinned</code></td><td><code>{ &quot;address&quot;: &quot;0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE&quot; }</code></td></tr><tr><td><code>tokenInfo</code></td><td><code>token</code>、<code>block?</code></td><td><code>token</code>、<code>name</code>、<code>symbol</code>（均为 <code>string</code> 或 <code>null</code>）、<code>decimals</code>、<code>totalSupply</code>、<code>blockPinned</code></td><td><code>{ &quot;token&quot;: &quot;0x55d398326f99059fF775485246999027B3197955&quot; }</code></td></tr><tr><td><code>tokenBalance</code></td><td><code>token</code>、<code>address</code>、<code>block?</code></td><td><code>token</code>、<code>address</code>、<code>raw</code>、<code>amount</code>（以代币为单位）、<code>symbol</code>、<code>decimals</code>、<code>blockPinned</code></td><td><code>{ &quot;token&quot;: &quot;0x55d398326f99059fF775485246999027B3197955&quot;, &quot;address&quot;: &quot;0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE&quot; }</code></td></tr><tr><td><code>nftOwner</code></td><td><code>contract</code>、<code>tokenId</code>（十进制字符串）、<code>block?</code></td><td><code>contract</code>、<code>tokenId</code>、<code>owner</code>、<code>blockPinned</code></td><td><code>{ &quot;contract&quot;: &quot;0xe02c26c7432A7121168AA9B610DE24eCf9a1a414&quot;, &quot;tokenId&quot;: &quot;11&quot; }</code></td></tr><tr><td><code>pairPrice</code></td><td><code>pair</code>（PancakeSwap V2 交易对）、<code>block?</code></td><td><code>pair</code>、<code>token0</code> 与 <code>token1</code>（<code>address</code>、<code>symbol</code>、<code>decimals</code>）、<code>reserves</code>（<code>reserve0</code>、<code>reserve1</code>、<code>blockTimestampLast</code>）、<code>price</code>（<code>token0InToken1</code>、<code>token1InToken0</code>）、<code>blockPinned</code></td><td><code>{ &quot;pair&quot;: &quot;0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE&quot; }</code></td></tr><tr><td><code>bnbUsd</code></td><td><code>block?</code></td><td><code>bnbUsd</code>（按 PancakeSwap V2 WBNB/USDT 交易对计算的 BNB 的 USDT 价格）、<code>pair</code>、<code>blockPinned</code></td><td><code>{}</code></td></tr><tr><td><code>tapeName</code></td><td><code>name</code>（<code>'&lt;#ID&gt;.&lt;processor&gt;.tape'</code>），或 <code>processor</code> 加 <code>tokenId</code>；<code>block?</code></td><td><code>name</code>、<code>processor</code>、<code>tokenId</code>、<code>circuits</code>、<code>container</code>、<code>holder</code>、<code>opened</code>、<code>tapeapi</code> 与 <code>channelKeys</code>（已发布文件的 <code>{ path, size, sha256 }</code>，或 <code>null</code>）、<code>blockPinned</code></td><td><code>{ &quot;name&quot;: &quot;11.1013.tape&quot; }</code></td></tr></tbody></table></div>
+<p>参数错误（不是地址、代币不是 BEP-20、电路不存在）会得到一个有签名的 <code>BAD_REQUEST</code>，消息里说明是哪一项。实时的方法列表及其准确类型见清单的 <code>methods</code>（<code>api.resolve</code> 之后的 <code>svc.manifest.methods</code>）。</p>
+<h2 id="价格与交叉核对"><a class="anchor" href="#价格与交叉核对" aria-hidden="true">#</a>价格与交叉核对</h2>
+<p><code>pairPrice</code> 和 <code>bnbUsd</code> 是由资金池在某个区块的储备量算出的<strong>现货价格</strong>。一笔大额交易可以在一个区块内推动它们，所以不要单独用它们做清算，或任何攻击者能从操纵中获利的事情。依赖价格的协议应加上边界检查、新鲜度检查、时间加权均价和熔断机制。</p>
+<p>签名回答只能证明是谁说的，不能证明它是真的。对于重要的数值，请向第二个独立提供者询问同一个区块，只接受逐字节相同的结果。描述以 <code>[quorum]</code> 开头的每个方法（除 <code>blockNumber</code> 外的全部）都接受数字形式的 <code>block</code>，正是为此：</p>
+<div class="code"><pre data-lang="js"><code>const other = await api.resolve('0x&lt;另一家提供者的容器&gt;')
+const first = await api.call(svc, 'bnbUsd', {})
+const block = first.result.blockPinned.blockNumber
+const q = await api.callQuorum([svc, other], 'bnbUsd', { block }, { quorum: 2 })
+console.log(q.result.bnbUsd, 'agreed by', q.agreed)   // 否则抛出 TapeAPIError('QUORUM_FAILED')</code></pre></div>
+<p><code>callQuorum</code> 拒绝共用容器、持有者或端点来源的服务，因为它们只算一个来源，不算两个。目前 <code>api.tapeapi.fun</code> 是这些方法唯一的公共提供者，所以第二个提供者需要由你或其他人运行，可以用 <a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/public-api" rel="noopener"><code>examples/public-api/</code></a>，也可以用你自己的代码。</p>
+<h2 id="公共中继"><a class="anchor" href="#公共中继" aria-hidden="true">#</a>公共中继</h2>
+<p>中继承载 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-26.md" rel="noopener">TAP-26</a> 私密通道：两个容器通过中继上的房间交换端到端加密的帧，中继只存储密文，永远看不到内容或身份（它能看到房间名、大小和时间）。公共中继位于 <code>https://relay.tapeapi.fun</code>，身份 <code>12.1013.tape</code>，容器 <code>0x9cD838625251576c199B2DeF7A17e50266843185</code>，提供 <code>relaySend</code>、<code>relayHandshake</code> 和 <code>relayRecv</code>，每条消息零费用。</p>
+<p>在邀请中列出它，然后用 <code>channel.relayTransport</code> 通过它承载通道：</p>
+<div class="code"><pre data-lang="js"><code>import { channel } from '@tapeapi/sdk'
+
+const relay = await api.resolve('12.1013.tape')   // container 0x9cD838625251576c199B2DeF7A17e50266843185
+
+const { invite, pending } = channel.createInvite({
+  self: { container: A, chainId: 56, staticSecret: aKeys.secretKey },
+  peer: { container: B, chainId: 56, staticPublic: bKeys.publicKey },
+  relays: [{ url: 'https://relay.tapeapi.fun/tapeapi/v1', container: relay.container }],
+})
+
+// （邀请密封后送到 B；B 接受，并把 accept 发到中继）
+const rooms = channel.roomsFor(invite.cid)            // 握手完成前 A 的房间
+const link = channel.relayTransport({ api, svc: relay, inbound: rooms.toInitiator, outbound: rooms.toResponder })
+const [w] = await link.poll()
+const { ready, session } = channel.completeInvite(pending, channel.decodeWire(w).handshake)
+await link.send(channel.encodeWire(ready))
+await link.send(channel.encodeWire(session.seal('hello')))</code></pre></div>
+<p>响应方在自己会话的房间（<code>session.rooms.inbound</code>、<code>session.rooms.outbound</code>）上打开自己的传输；<code>link.start(onWire)</code> 会在后台持续轮询。要在容器的通道密钥中声明这个中继，给 <code>scripts/channel-keys.mjs</code> 传 <code>--relay https://relay.tapeapi.fun/tapeapi/v1@0x9cD838625251576c199B2DeF7A17e50266843185</code>。完整的握手、其它传输以及运行自己的中继，见<a href="channels.html">私密通道</a>。</p>
+<h2 id="限制与状态"><a class="anchor" href="#限制与状态" aria-hidden="true">#</a>限制与状态</h2>
+<ul><li>Pre-alpha。两个服务都免费，尽力而为地运行，没有 SLA，也不保证可用性。方法可能增加；方法列表的变化会作为新的清单发布到链上。</li><li>中继可能丢帧或下线；TAP-26 能发现空缺，但无法补回。如果通道很重要，在邀请中列出不止一种传输。</li><li>对你所依赖的东西，也运行你自己的提供者或中继，并做交叉核对。</li></ul>
+</article>
+<nav class="pn"><a class="prev" href="index.html"><span>上一篇</span>简介</a><a class="next" href="consume.html"><span>下一篇</span>调用服务</a></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/public-api.md" rel="noopener">在 GitHub 上编辑此页</a></p>
+</main>
+<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#它是什么">它是什么</a></li><li class="l2"><a href="#用-sdk-调用">用 SDK 调用</a></li><li class="l2"><a href="#用-curl-调用">用 curl 调用</a></li><li class="l2"><a href="#方法">方法</a></li><li class="l2"><a href="#价格与交叉核对">价格与交叉核对</a></li><li class="l2"><a href="#公共中继">公共中继</a></li><li class="l2"><a href="#限制与状态">限制与状态</a></li></ul></aside>
+</div>
+</body>
+</html>

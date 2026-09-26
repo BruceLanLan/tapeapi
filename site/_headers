@@ -2,8 +2,30 @@
 # no other site may frame it (a framed page can steer taps), and scripts are only run with a JavaScript MIME type.
 # Cloudflare Pages 响应头（本文件不会被提供）。持有人操作台会请钱包签名和发交易：不允许任何其他网站把它嵌进框架
 # （被嵌入的页面可以诱导点击），脚本只按 JavaScript 类型执行。
+#
+# Pages applies EVERY rule whose path matches and joins a header set twice with a comma. So /* sets no
+# Content-Security-Policy: each page sets exactly one of its own below. X-Frame-Options DENY still covers every path.
+# Only /console/* restricts scripts (all of its scripts are files: site/console/*.js); the other pages may have inline
+# scripts, so they only forbid framing. sdk/test/console.test.mjs checks that every page ends with exactly one policy.
+# Pages 会应用所有匹配的规则，同一个头设了两次会用逗号拼起来。所以 /* 不设 CSP，每个页面在下面各设一条。
+# X-Frame-Options DENY 仍覆盖所有路径。只有 /console/* 限制脚本（它的脚本都是文件）；其他页面可能有内联脚本，只禁止嵌入框架。
 /*
   X-Frame-Options: DENY
-  Content-Security-Policy: frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
+  Strict-Transport-Security: max-age=31536000
+
+/
+  Content-Security-Policy: frame-ancestors 'none'
+
+/docs/*
+  Content-Security-Policy: frame-ancestors 'none'
+
+/playground/*
+  Content-Security-Policy: frame-ancestors 'none'
+
+/status/*
+  Content-Security-Policy: frame-ancestors 'none'
+
+/console/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'

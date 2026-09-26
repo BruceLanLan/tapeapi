@@ -20,7 +20,7 @@
   <button class="ctl" id="theme-btn" type="button">主题</button>
 </header>
 <div class="layout">
-<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="consume.html">调用服务</a></li><li><a href="provide.html">运行服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html" aria-current="page">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div></nav>
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="public-api.html">公共 API</a></li><li><a href="consume.html">调用服务</a></li><li><a href="provide.html">运行服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html" aria-current="page">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div></nav>
 <main class="doc">
 <article>
 <h1 id="常见问题与排障">常见问题与排障</h1>
@@ -30,6 +30,7 @@
 <p><strong>如果我出售或转让电路会怎样？</strong> 服务随之转移：容器、其站点以及签署委托的权利。旧持有者的委托不再被接受，因为客户端会对照当前持有者检查委托。</p>
 <p><strong>用哪条链？</strong> BNB Smart Chain（chainId 56），也就是 TapeOut 所在的链。</p>
 <h2 id="调用服务"><a class="anchor" href="#调用服务" aria-hidden="true">#</a>调用服务</h2>
+<p><strong><code>ERR_MODULE_NOT_FOUND: Cannot find package '@tapeapi/sdk'</code></strong>：这些包尚未发布到 npm，要通过仓库的 workspace 解析。克隆仓库，在其中运行 <code>npm install</code>，并把你的脚本保存在 <code>tapeapi</code> 目录之内（<a href="consume.html">调用服务</a>）。</p>
 <p><strong><code>MANIFEST_INVALID: ... does not match</code></strong>：容器站点中的文件与其链上哈希不一致，或者没有清单。该服务没有被正确发布。</p>
 <p><strong><code>DELEGATION_INVALID</code></strong>：委托已过期，或者电路在委托签署之后易主。提供者必须签署一份新的委托，并重新发布清单。</p>
 <p><strong><code>RPC_UNAVAILABLE: only 1/2 nodes answered</code></strong>：至少使用三个 RPC URL 并设置 <code>quorum: 2</code>，这样一个节点宕机时仍能凑够法定人数。<code>allowSingleNode: true</code> 仅用于本地开发。</p>
@@ -41,7 +42,7 @@
 <p><strong><code>putFile</code> 以 <code>NotOwner</code> 回滚。</strong> 容器尚未开通，或者该钱包不是电路的持有者。在电路页面上开通容器（0.012 BNB）。</p>
 <p><strong>我的钱包把 BNB 换成了 WBNB。</strong> gas 只能用原生 BNB 支付。请在持有者的钱包里保留少量原生 BNB。</p>
 <h2 id="链上通道"><a class="anchor" href="#链上通道" aria-hidden="true">#</a>链上通道</h2>
-<p><strong>读取器报错 <code>no node serves logs</code>。</strong> 它的起点早于节点所保留的历史（publicnode：约 10,000 个区块）。这一范围内的帧无法从这些节点读取；请从更新的区块开始，或添加一个归档节点。</p>
+<p><strong>读取器报错 <code>no node serves logs</code>。</strong> 它的起点早于节点所保留的历史（publicnode：约 10,000 个区块）。这一范围内的帧无法从这些节点读取；请从更新的区块开始，或添加一个归档节点。BNB Chain dataseed 节点（示例默认）完全不提供 <code>eth_getLogs</code>，所以读 ChannelBus 至少需要一个提供它的节点：请用 SDK 的 <code>BUS_RPC_URLS</code>（48 Club 与 1RPC 保留至少 500,000 个区块的日志）。中继传输不依赖这一点。</p>
 <p><strong>读取器停住了很长时间。</strong> 某个节点在游标所在的区块上持续出错。停住是有意为之：只要某个节点可能仍保有某一帧，该帧就绝不会被跳过。在 <code>SERVED_DECAY</code>（20）次轮询都没有回答之后，该节点不再被等待，并且你会收到通知。</p>
 <p><strong>我在 ChannelBus 上的消息是私密的吗？</strong> 内容是端到端加密的。每条消息的房间、大小和时间则永久公开。</p>
 <h2 id="获取帮助"><a class="anchor" href="#获取帮助" aria-hidden="true">#</a>获取帮助</h2>

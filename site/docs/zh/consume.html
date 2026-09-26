@@ -20,12 +20,31 @@
   <button class="ctl" id="theme-btn" type="button">主题</button>
 </header>
 <div class="layout">
-<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="consume.html" aria-current="page">调用服务</a></li><li><a href="provide.html">运行服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div></nav>
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="public-api.html">公共 API</a></li><li><a href="consume.html" aria-current="page">调用服务</a></li><li><a href="provide.html">运行服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div></nav>
 <main class="doc">
 <article>
 <h1 id="调用服务">调用服务</h1>
 <p>本指南介绍应用如何找到一个 TapeAPI 服务、调用它，并确认回答是真实的。它使用 <code>@tapeapi/sdk</code>，可运行于 Node 20+、浏览器、DeWEB 站点和 Cloudflare Workers。</p>
-<h2 id="1-在本地试用"><a class="anchor" href="#1-在本地试用" aria-hidden="true">#</a>1. 在本地试用</h2>
+<h2 id="1-试用"><a class="anchor" href="#1-试用" aria-hidden="true">#</a>1. 试用</h2>
+<h3 id="一次性准备"><a class="anchor" href="#一次性准备" aria-hidden="true">#</a>一次性准备</h3>
+<p>这些包尚未发布到 npm，所以要在仓库的克隆里操作（Node.js 20 或更高版本）：</p>
+<div class="code"><pre data-lang="bash"><code>git clone https://github.com/BruceLanLan/tapeapi.git &amp;&amp; cd tapeapi &amp;&amp; npm install</code></pre></div>
+<p>把下面的脚本保存为 <code>.mjs</code> 文件，<strong>放在 <code>tapeapi</code> 目录之内</strong>，然后用 <code>node &lt;文件&gt;.mjs</code> 运行。<code>@tapeapi/sdk</code> 通过仓库的 workspace 解析，保存在其它任何位置的脚本都会以 <code>ERR_MODULE_NOT_FOUND</code> 失败。</p>
+<h3 id="调用线上的公共服务"><a class="anchor" href="#调用线上的公共服务" aria-hidden="true">#</a>调用线上的公共服务</h3>
+<p>一个免费的公共服务运行在 <code>https://api.tapeapi.fun</code>，TapeOut 名称为 <code>11.1013.tape</code>。用 curl：</p>
+<div class="code"><pre data-lang="bash"><code>curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{&quot;id&quot;:&quot;1&quot;,&quot;params&quot;:{}}'</code></pre></div>
+<p>curl 会显示签名信封（<code>result</code>、<code>container</code>、<code>ts</code>、<code>block</code>、<code>sig</code>），但不会验证它。SDK 从链上解析服务，并在返回之前验证回答：</p>
+<div class="code"><pre data-lang="js"><code>import { createTapeAPI } from '@tapeapi/sdk'
+
+const api = createTapeAPI({
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  quorum: 2,
+})
+const svc = await api.resolve('11.1013.tape')
+const { result, verified } = await api.call(svc, 'bnbUsd', {})
+console.log(result, verified)</code></pre></div>
+<p><a href="https://tapeapi.fun/playground/" rel="noopener">调试台</a>在浏览器里运行同一份 SDK，无需安装任何东西；<a href="public-api.html">公共 API</a> 列出了公共服务的全部方法。</p>
+<h3 id="在本地运行服务"><a class="anchor" href="#在本地运行服务" aria-hidden="true">#</a>在本地运行服务</h3>
 <p>启动最小示例服务。它通过公共节点读取 BNB Chain，并用一把临时密钥签名：</p>
 <div class="code"><pre data-lang="bash"><code>node examples/reader-service/index.mjs          # :8787</code></pre></div>
 <div class="code"><pre data-lang="js"><code>import { createTapeAPI } from '@tapeapi/sdk'
@@ -38,12 +57,14 @@ console.log(result.blockNumber, block, verified)</code></pre></div>
 <h2 id="2-在-bnb-chain-上解析真实服务"><a class="anchor" href="#2-在-bnb-chain-上解析真实服务" aria-hidden="true">#</a>2. 在 BNB Chain 上解析真实服务</h2>
 <p>在主网上，SDK 所信任的一切都从链上读取，并经由多个必须达成一致的 RPC 节点：</p>
 <div class="code"><pre data-lang="js"><code>const api = createTapeAPI({
-  rpcUrls: ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
   quorum: 2,
 })
 
+const byName = await api.resolve('11.1013.tape')                   // &lt;#ID&gt;.&lt;processor&gt;.tape
 const byContainer = await api.resolve('0x&lt;container address&gt;')
 const byCircuit = await api.resolve({ circuits: '0x&lt;processor contract&gt;', tokenId: '11' })</code></pre></div>
+<p>TapeOut 名称 <code>&lt;#ID&gt;.&lt;processor&gt;.tape</code> 同样从链上读取：处理器编号给出处理器合约（<code>factory.cpuAt</code>），该合约加上 <code>#ID</code> 给出容器（<code>DeWebHub.accountOf</code>）。它不比 <code>{ circuits, tokenId }</code> 形式多引入任何信任；上面三种形式经过同样的检查。</p>
 <p>解析（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-20.md" rel="noopener">TAP-20 §3.6</a>）依次执行：</p>
 <ol><li>从电路推导出容器（<code>DeWebHub.accountOf</code>），并检查处理器确实是 TapeOut 的处理器（<code>factory.isCPU</code>），使伪造的 NFT 无法冒充服务；</li><li>从容器的站点读取 <code>.well-known/tapeapi.json</code>，并对照链上数据检查其长度和 SHA-256；</li><li>校验清单；</li><li>对照<strong>当前</strong>持有者，检查电路持有者对服务签名密钥的 EIP-712 委托。</li></ol>
 <p>解析出的服务会被缓存；SDK 大约每小时重读一次，并在签名或价格不再匹配时立即重读。<code>api.refresh(svc)</code> 可强制重读。</p>
@@ -69,8 +90,9 @@ console.log(q.result, 'agreed by', q.agreed)                  // 否则抛出 Ta
 <p>只有描述以 <code>[quorum]</code> 开头的方法才能这样比较；<code>[no-quorum]</code> 方法（带随机 id 的报价、<code>latest</code> 读取）按设计就会各不相同。使用单一来源数值的协议仍应施加边界检查、新鲜度检查和熔断机制。</p>
 <h2 id="5-为调用付费"><a class="anchor" href="#5-为调用付费" aria-hidden="true">#</a>5. 为调用付费</h2>
 <p>免费方法无需任何东西。付费方法需要一张由消费者签名的凭证（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-22.md" rel="noopener">TAP-22</a>）：</p>
-<div class="code"><pre data-lang="js"><code>const payer = api.payer({
-  consumer: '0x&lt;your address&gt;',
+<div class="code"><pre data-lang="js"><code>const consumer = '0x&lt;your address&gt;'                             // 签署凭证的钱包账户
+const payer = api.payer({
+  consumer,
   signTypedData: (typed) =&gt; wallet.request({ method: 'eth_signTypedData_v4', params: [consumer, JSON.stringify(typed)] }),
 })
 const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code></pre></div>
@@ -85,10 +107,10 @@ const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code><
                     ‖ uint8(ok) ‖ keccak256(canonicalJSON(result or error)) ‖ uint64BE(ts) )</code></pre></div>
 <p>恢复出签名者（只接受低 s），将其与 <code>manifest.signer</code> 比较，检查持有者的委托指明的正是该签名者，并且 <code>|now - ts| &lt;= 300</code>。规范 JSON 的定义见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md" rel="noopener">TAP-21</a>；测试向量和一个独立的 Python 实现位于 <a href="https://github.com/BruceLanLan/tapeapi/tree/main/spec/vectors" rel="noopener"><code>spec/vectors/</code></a>。</p>
 </article>
-<nav class="pn"><a class="prev" href="index.html"><span>上一篇</span>简介</a><a class="next" href="provide.html"><span>下一篇</span>运行服务</a></nav>
+<nav class="pn"><a class="prev" href="public-api.html"><span>上一篇</span>公共 API</a><a class="next" href="provide.html"><span>下一篇</span>运行服务</a></nav>
 <p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/consume.md" rel="noopener">在 GitHub 上编辑此页</a></p>
 </main>
-<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#1-在本地试用">1. 在本地试用</a></li><li class="l2"><a href="#2-在-bnb-chain-上解析真实服务">2. 在 BNB Chain 上解析真实服务</a></li><li class="l2"><a href="#3-处理错误">3. 处理错误</a></li><li class="l2"><a href="#4-要求多个提供者之间达成一致">4. 要求多个提供者之间达成一致</a></li><li class="l2"><a href="#5-为调用付费">5. 为调用付费</a></li><li class="l2"><a href="#6-在浏览器或-deweb-站点中使用">6. 在浏览器或 DeWEB 站点中使用</a></li><li class="l2"><a href="#不使用-sdk-进行验证">不使用 SDK 进行验证</a></li></ul></aside>
+<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#1-试用">1. 试用</a></li><li class="l3"><a href="#一次性准备">一次性准备</a></li><li class="l3"><a href="#调用线上的公共服务">调用线上的公共服务</a></li><li class="l3"><a href="#在本地运行服务">在本地运行服务</a></li><li class="l2"><a href="#2-在-bnb-chain-上解析真实服务">2. 在 BNB Chain 上解析真实服务</a></li><li class="l2"><a href="#3-处理错误">3. 处理错误</a></li><li class="l2"><a href="#4-要求多个提供者之间达成一致">4. 要求多个提供者之间达成一致</a></li><li class="l2"><a href="#5-为调用付费">5. 为调用付费</a></li><li class="l2"><a href="#6-在浏览器或-deweb-站点中使用">6. 在浏览器或 DeWEB 站点中使用</a></li><li class="l2"><a href="#不使用-sdk-进行验证">不使用 SDK 进行验证</a></li></ul></aside>
 </div>
 </body>
 </html>

@@ -1,6 +1,7 @@
-# A TapeAPI provider on its own Worker and its own hostname.
-# 独立 Worker、独立主机名上的 TapeAPI 提供者。
-name = "tapeapi-provider"
+# A TapeAPI provider on its own Worker and its own hostname: the template a fork deploys with `npm run deploy:provider`.
+# Rename the Worker if you like. The project's own public service (api.tapeapi.fun) deploys from examples/public-api.
+# 独立 Worker、独立主机名上的 TapeAPI 提供者：fork 用 `npm run deploy:provider` 部署的模板。本项目的公共服务从 examples/public-api 部署。
+name = "my-tapeapi-service"
 main = "worker.js"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
@@ -11,9 +12,11 @@ keep_vars = true
 # moving hosts later costs a SiteRegistry.putFile transaction. A hostname you control can be repointed for free.
 # 用子域名而不是现有站点的路径：端点 URL 写在链上清单里，以后搬家要花一笔 putFile 交易。
 # 自己控制的主机名可以免费改指向。
-[[routes]]
-pattern = "api.tapeapi.fun"
-custom_domain = true
+# Add your hostname in the dashboard (Worker -> Settings -> Domains & Routes -> Custom domain) and set PUBLIC_URL to it,
+# or uncomment and edit these lines. / 在后台为 Worker 添加自定义域名并把 PUBLIC_URL 设为它，或取消下面的注释并修改。
+# [[routes]]
+# pattern = "api.example.com"
+# custom_domain = true
 
 # NO [placement] block on purpose: the default is the edge nearest the caller, which is what a signing API wants.
 # Smart Placement would pin this Worker near D1 and add hundreds of milliseconds for callers far from it.
@@ -25,7 +28,8 @@ enabled = true
 
 [vars]
 SERVICE_NAME = "TapeAPI Reader"
-PUBLIC_URL = "https://api.tapeapi.fun"
+# PUBLIC_URL = "https://api.example.com"   your own https hostname; set it here or in the dashboard (setup mode lists it
+#                                         as missing until it is set) / 你自己的 https 主机名；未设置时设置模式会列为缺失
 # 2-of-3 (quorum 2): one node down still leaves a quorum (arch A5). / 三取二：一个节点宕机仍有法定数。
 RPC_URLS = "https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io"
 # CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES and DELEGATION_SIG are set in the Cloudflare dashboard (Settings ->

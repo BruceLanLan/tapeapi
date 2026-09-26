@@ -20,12 +20,31 @@
   <button class="ctl" id="theme-btn" type="button">Theme</button>
 </header>
 <div class="layout">
-<nav class="side" id="side" aria-label="Docs"><div class="group"><p class="gtitle">Getting started</p><ul><li><a href="index.html">Introduction</a></li><li><a href="consume.html" aria-current="page">Call a service</a></li><li><a href="provide.html">Run a service</a></li></ul></div><div class="group"><p class="gtitle">Features</p><ul><li><a href="channels.html">Private channels</a></li><li><a href="agents.html">AI agents</a></li></ul></div><div class="group"><p class="gtitle">Help</p><ul><li><a href="faq.html">FAQ and troubleshooting</a></li><li><a href="changelog.html">Changelog</a></li></ul></div></nav>
+<nav class="side" id="side" aria-label="Docs"><div class="group"><p class="gtitle">Getting started</p><ul><li><a href="index.html">Introduction</a></li><li><a href="public-api.html">Public API</a></li><li><a href="consume.html" aria-current="page">Call a service</a></li><li><a href="provide.html">Run a service</a></li></ul></div><div class="group"><p class="gtitle">Features</p><ul><li><a href="channels.html">Private channels</a></li><li><a href="agents.html">AI agents</a></li></ul></div><div class="group"><p class="gtitle">Help</p><ul><li><a href="faq.html">FAQ and troubleshooting</a></li><li><a href="changelog.html">Changelog</a></li></ul></div></nav>
 <main class="doc">
 <article>
 <h1 id="call-a-service">Call a service</h1>
 <p>This guide shows how an application finds a TapeAPI service, calls it and knows the answer is genuine. It uses <code>@tapeapi/sdk</code>, which works in Node 20+, browsers, DeWEB sites and Cloudflare Workers.</p>
-<h2 id="1-try-it-locally"><a class="anchor" href="#1-try-it-locally" aria-hidden="true">#</a>1. Try it locally</h2>
+<h2 id="1-try-it"><a class="anchor" href="#1-try-it" aria-hidden="true">#</a>1. Try it</h2>
+<h3 id="set-up-once"><a class="anchor" href="#set-up-once" aria-hidden="true">#</a>Set up once</h3>
+<p>The packages are not on npm yet, so you work inside a clone of the repository (Node.js 20 or later):</p>
+<div class="code"><pre data-lang="bash"><code>git clone https://github.com/BruceLanLan/tapeapi.git &amp;&amp; cd tapeapi &amp;&amp; npm install</code></pre></div>
+<p>Save the scripts below as <code>.mjs</code> files <strong>inside the <code>tapeapi</code> directory</strong> and run them with <code>node &lt;file&gt;.mjs</code>. <code>@tapeapi/sdk</code> resolves through the repository's workspace, so a script saved anywhere else fails with <code>ERR_MODULE_NOT_FOUND</code>.</p>
+<h3 id="call-the-live-public-service"><a class="anchor" href="#call-the-live-public-service" aria-hidden="true">#</a>Call the live public service</h3>
+<p>A free public service runs at <code>https://api.tapeapi.fun</code> under the TapeOut name <code>11.1013.tape</code>. With curl:</p>
+<div class="code"><pre data-lang="bash"><code>curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{&quot;id&quot;:&quot;1&quot;,&quot;params&quot;:{}}'</code></pre></div>
+<p>curl shows you the signed envelope (<code>result</code>, <code>container</code>, <code>ts</code>, <code>block</code>, <code>sig</code>) but does not verify it. The SDK resolves the service from the chain and verifies the answer before it returns:</p>
+<div class="code"><pre data-lang="js"><code>import { createTapeAPI } from '@tapeapi/sdk'
+
+const api = createTapeAPI({
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  quorum: 2,
+})
+const svc = await api.resolve('11.1013.tape')
+const { result, verified } = await api.call(svc, 'bnbUsd', {})
+console.log(result, verified)</code></pre></div>
+<p>The <a href="https://tapeapi.fun/playground/" rel="noopener">playground</a> runs the same SDK in a browser with nothing to install, and <a href="public-api.html">Public API</a> lists every method of the public service.</p>
+<h3 id="run-a-service-locally"><a class="anchor" href="#run-a-service-locally" aria-hidden="true">#</a>Run a service locally</h3>
 <p>Start the minimal example service. It reads BNB Chain through public nodes and signs with a throwaway key:</p>
 <div class="code"><pre data-lang="bash"><code>node examples/reader-service/index.mjs          # :8787</code></pre></div>
 <div class="code"><pre data-lang="js"><code>import { createTapeAPI } from '@tapeapi/sdk'
@@ -38,12 +57,14 @@ console.log(result.blockNumber, block, verified)</code></pre></div>
 <h2 id="2-resolve-a-real-service-on-bnb-chain"><a class="anchor" href="#2-resolve-a-real-service-on-bnb-chain" aria-hidden="true">#</a>2. Resolve a real service on BNB Chain</h2>
 <p>On mainnet the SDK reads everything it trusts from the chain, through several RPC nodes that must agree:</p>
 <div class="code"><pre data-lang="js"><code>const api = createTapeAPI({
-  rpcUrls: ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
   quorum: 2,
 })
 
+const byName = await api.resolve('11.1013.tape')                   // &lt;#ID&gt;.&lt;processor&gt;.tape
 const byContainer = await api.resolve('0x&lt;container address&gt;')
 const byCircuit = await api.resolve({ circuits: '0x&lt;processor contract&gt;', tokenId: '11' })</code></pre></div>
+<p>A TapeOut name <code>&lt;#ID&gt;.&lt;processor&gt;.tape</code> is read from the chain too: the processor number gives the processor contract (<code>factory.cpuAt</code>), and that contract with <code>#ID</code> gives the container (<code>DeWebHub.accountOf</code>). It adds no trust beyond the <code>{ circuits, tokenId }</code> form; the three forms above reach the same checks.</p>
 <p>Resolution (<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-20.md" rel="noopener">TAP-20 §3.6</a>) does, in order:</p>
 <ol><li>derives the container from the circuit (<code>DeWebHub.accountOf</code>) and checks the processor is a real TapeOut one (<code>factory.isCPU</code>), so a counterfeit NFT cannot pose as a service;</li><li>reads <code>.well-known/tapeapi.json</code> from the container's site and checks its length and SHA-256 against the chain;</li><li>validates the manifest;</li><li>checks the circuit holder's EIP-712 delegation of the service's signing key, against the <strong>current</strong> holder.</li></ol>
 <p>A resolved service is cached; the SDK re-reads it about once an hour, and at once when a signature or a price stops matching. <code>api.refresh(svc)</code> forces it.</p>
@@ -69,8 +90,9 @@ console.log(q.result, 'agreed by', q.agreed)                  // else TapeAPIErr
 <p>Only methods whose description starts with <code>[quorum]</code> can be compared this way; <code>[no-quorum]</code> methods (quotes with a random id, <code>latest</code> reads) differ by design. A protocol that consumes a single-source value should still apply bounds, freshness checks and a circuit breaker.</p>
 <h2 id="5-pay-for-calls"><a class="anchor" href="#5-pay-for-calls" aria-hidden="true">#</a>5. Pay for calls</h2>
 <p>Free methods need nothing. Paid methods take a voucher signed by the consumer (<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-22.md" rel="noopener">TAP-22</a>):</p>
-<div class="code"><pre data-lang="js"><code>const payer = api.payer({
-  consumer: '0x&lt;your address&gt;',
+<div class="code"><pre data-lang="js"><code>const consumer = '0x&lt;your address&gt;'                             // the wallet account that signs the vouchers
+const payer = api.payer({
+  consumer,
   signTypedData: (typed) =&gt; wallet.request({ method: 'eth_signTypedData_v4', params: [consumer, JSON.stringify(typed)] }),
 })
 const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code></pre></div>
@@ -85,10 +107,10 @@ const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code><
                     ‖ uint8(ok) ‖ keccak256(canonicalJSON(result or error)) ‖ uint64BE(ts) )</code></pre></div>
 <p>Recover the signer (low-s only), compare it with <code>manifest.signer</code>, check that the holder's delegation names that signer, and that <code>|now - ts| &lt;= 300</code>. Canonical JSON is defined in <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md" rel="noopener">TAP-21</a>; test vectors and an independent Python implementation are in <a href="https://github.com/BruceLanLan/tapeapi/tree/main/spec/vectors" rel="noopener"><code>spec/vectors/</code></a>.</p>
 </article>
-<nav class="pn"><a class="prev" href="index.html"><span>Previous</span>Introduction</a><a class="next" href="provide.html"><span>Next</span>Run a service</a></nav>
+<nav class="pn"><a class="prev" href="public-api.html"><span>Previous</span>Public API</a><a class="next" href="provide.html"><span>Next</span>Run a service</a></nav>
 <p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/consume.md" rel="noopener">Edit this page on GitHub</a></p>
 </main>
-<aside class="toc"><p class="gtitle">On this page</p><ul><li class="l2"><a href="#1-try-it-locally">1. Try it locally</a></li><li class="l2"><a href="#2-resolve-a-real-service-on-bnb-chain">2. Resolve a real service on BNB Chain</a></li><li class="l2"><a href="#3-handle-errors">3. Handle errors</a></li><li class="l2"><a href="#4-require-agreement-between-providers">4. Require agreement between providers</a></li><li class="l2"><a href="#5-pay-for-calls">5. Pay for calls</a></li><li class="l2"><a href="#6-use-it-in-a-browser-or-a-deweb-site">6. Use it in a browser or a DeWEB site</a></li><li class="l2"><a href="#verify-without-the-sdk">Verify without the SDK</a></li></ul></aside>
+<aside class="toc"><p class="gtitle">On this page</p><ul><li class="l2"><a href="#1-try-it">1. Try it</a></li><li class="l3"><a href="#set-up-once">Set up once</a></li><li class="l3"><a href="#call-the-live-public-service">Call the live public service</a></li><li class="l3"><a href="#run-a-service-locally">Run a service locally</a></li><li class="l2"><a href="#2-resolve-a-real-service-on-bnb-chain">2. Resolve a real service on BNB Chain</a></li><li class="l2"><a href="#3-handle-errors">3. Handle errors</a></li><li class="l2"><a href="#4-require-agreement-between-providers">4. Require agreement between providers</a></li><li class="l2"><a href="#5-pay-for-calls">5. Pay for calls</a></li><li class="l2"><a href="#6-use-it-in-a-browser-or-a-deweb-site">6. Use it in a browser or a DeWEB site</a></li><li class="l2"><a href="#verify-without-the-sdk">Verify without the SDK</a></li></ul></aside>
 </div>
 </body>
 </html>

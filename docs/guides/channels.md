@@ -69,7 +69,9 @@ and the invite, accept and ready travel over a transport.
 | **ChannelBus** | No server to trust or keep running; every message is a transaction (about 50,000 gas). | `channel.busTransport({ rpc, bus: MAINNET.channelBus, inbound, outbound, sendTx })` |
 | **Several at once** | The responder may answer on any transport the invite names, so listen on all of them. | `channel.fanIn([t1, t2])` |
 
-Run a relay: [`examples/relay-service/`](../../examples/relay-service/) (Node) or
+A free public relay runs at `https://relay.tapeapi.fun` (TapeOut name `12.1013.tape`); how to name it in an invite and
+carry a channel over it is in [Public API](public-api.md), under "The public relay". To run your own relay:
+[`examples/relay-service/`](../../examples/relay-service/) (Node) or
 [`examples/cloudflare-worker/`](../../examples/cloudflare-worker/) (one Durable Object per room). Check any relay with
 `node conformance/relay.mjs --url <relay>`.
 
@@ -88,8 +90,11 @@ excuses the block, and then it tells you.
 | `block N holds more logs than <node> returns ...` / `was read only from the receipts of ...` | A block too full for one node was read from the other nodes, or from their block receipts. | Someone filled a block with junk frames; your frames are still delivered, but rest on fewer nodes. |
 | `<node> has not served for N polls, so blocks from X on are passed without it` | A node that stopped answering is no longer waited for, so a dead node cannot stop the channel. | Replace or remove that node. |
 
-The default node set (publicnode plus two BNB Chain dataseed nodes) is what the reader is tested against, including
-recorded answers from those nodes.
+Reading ChannelBus needs nodes that serve `eth_getLogs`, which the BNB Chain dataseed nodes refuse. Use the SDK's
+`BUS_RPC_URLS` (48 Club and 1RPC, which serve logs with at least 500,000 blocks of history, plus a dataseed for
+receipts) in a client of its own: `createRpc({ urls: BUS_RPC_URLS, quorum: 2, timeoutMs: 15000 })`. With these nodes
+the reader read a real frame 73,700 blocks back (2026-09-27). The reader's tests include recorded answers from
+publicnode and the dataseed nodes. The relay transport does not depend on any of this.
 
 ## 5. Limits
 

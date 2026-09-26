@@ -65,11 +65,11 @@ export function delegationTypedData({ container, signer, expires }) {
 }
 
 // ---------------------------------------------------------------- the service key's address ----
-// The page derives the address of the key it generated, so step 6 signs a delegation only for THAT key, never for
+// The page derives the address of the key it generated, so step 4 signs a delegation only for THAT key, never for
 // whatever address the service happens to report (a mistyped service URL, a second key pasted by mistake). Keccak-256
 // and secp256k1 are written out here because the page loads nothing; sdk/test/console.test.mjs checks both against the
 // SDK (noble). The key is used once, in the holder's own browser, so constant time is not a goal.
-// 页面自己推导它生成的密钥的地址，第 6 步只为**这个**密钥签委托，而不是服务报出的任意地址（服务网址填错、误贴了第二把密钥）。
+// 页面自己推导它生成的密钥的地址，第 4 步只为**这个**密钥签委托，而不是服务报出的任意地址（服务网址填错、误贴了第二把密钥）。
 // 页面不加载任何库，所以 Keccak-256 和 secp256k1 在这里写出；console.test.mjs 对照 SDK（noble）检查。密钥只在持有人自己的浏览器里用一次，不追求常数时间。
 const M64 = (1n << 64n) - 1n
 const ROT = [0, 1, 62, 28, 27, 36, 44, 6, 55, 20, 3, 10, 43, 25, 39, 41, 45, 15, 21, 8, 18, 2, 61, 56, 14].map(BigInt)   // lane x + 5y

@@ -1,0 +1,173 @@
+/* TapeAPI Status. Same colour tokens and dark mode as site/docs/docs.css (and --red from site/style.css), plus a
+   green for "up". System faces, no external resources.
+   与 docs.css 相同的颜色变量与暗色模式（--red 来自 site/style.css），另加表示"在线"的绿色。系统字体，无外部资源。 */
+:root {
+  color-scheme: light;
+  --bg:        #EEF0F3;
+  --panel:     #FFFFFF;
+  --well:      #E4E7EC;
+  --ink:       #0C0F14;
+  --ink-2:     #3D4550;
+  --ink-3:     #78818E;
+  --hair:      #CCD2DA;
+  --hair-2:    #E2E6EB;
+  --amber:     #B4660A;
+  --amber-ink: #8A4E06;
+  --amber-well:#FDF1DE;
+  --red:       #A32D19;
+  --green:     #1D7A46;
+  --code-bg:   #F4F6F8;
+  --shadow:    0 1px 0 rgba(12,15,20,.04), 0 12px 32px -20px rgba(12,15,20,.35);
+  --top:       56px;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg:        #0A0C10;
+    --panel:     #12161D;
+    --well:      #0D1015;
+    --ink:       #EEF1F5;
+    --ink-2:     #A9B2BF;
+    --ink-3:     #6E7887;
+    --hair:      #262D38;
+    --hair-2:    #1A202A;
+    --amber:     #FFB224;
+    --amber-ink: #FFC759;
+    --amber-well:#231803;
+    --red:       #F07A5F;
+    --green:     #4CC88A;
+    --code-bg:   #0D1015;
+    --shadow:    0 0 0 1px rgba(255,255,255,.02), 0 20px 50px -30px #000;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:        #0A0C10;
+  --panel:     #12161D;
+  --well:      #0D1015;
+  --ink:       #EEF1F5;
+  --ink-2:     #A9B2BF;
+  --ink-3:     #6E7887;
+  --hair:      #262D38;
+  --hair-2:    #1A202A;
+  --amber:     #FFB224;
+  --amber-ink: #FFC759;
+  --amber-well:#231803;
+  --red:       #F07A5F;
+  --green:     #4CC88A;
+  --code-bg:   #0D1015;
+  --shadow:    0 0 0 1px rgba(255,255,255,.02), 0 20px 50px -30px #000;
+}
+
+/* Language: both are in the page, one is shown (same rule as site/style.css). / 双语同在页面中，只显示一种。 */
+body [lang] { display: none; }
+:root[data-lang="zh"] body [lang="zh"], :root[data-lang="en"] body [lang="en"] { display: revert; }
+:root:not([data-lang]) body [lang="en"] { display: revert; }
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--sans); font-size: 16px; line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--amber-ink); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--amber) 40%, transparent); text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--amber); }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+code { font-family: var(--mono); }
+
+/* ── top bar (as in docs.css) ────────────────────────────── */
+.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  display: flex; align-items: center; gap: 10px 14px;
+  height: var(--top); padding: 0 20px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px);
+  border-bottom: 1px solid var(--hair);
+}
+.top .brand { font-weight: 800; font-size: 14px; letter-spacing: .26em; color: var(--ink); text-decoration: none; }
+.top .section {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--amber-ink); border-left: 1px solid var(--hair); padding-left: 14px;
+}
+.top .sp { flex: 1 1 auto; }
+.ctl {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; line-height: 1;
+  background: transparent; color: var(--ink-3); border: 1px solid var(--hair); border-radius: 0;
+  padding: 7px 11px; cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.ctl:hover { color: var(--ink); border-color: var(--ink-3); }
+.ctl:disabled { opacity: .5; cursor: default; }
+
+/* ── page ────────────────────────────────────────────────── */
+.wrap { max-width: 1000px; margin: 0 auto; padding: 40px 20px 64px; }
+.eyebrow {
+  margin: 0 0 6px; font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3);
+}
+h1 {
+  margin: 0; font-size: clamp(26px, 5vw, 36px); line-height: 1.2; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: 14px;
+}
+h1::before {
+  content: ""; flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--ink-3);
+}
+h1[data-state="up"]::before { background: var(--green); }
+h1[data-state="warn"]::before { background: var(--amber); }
+h1[data-state="down"]::before { background: var(--red); }
+.meta { margin: 12px 0 28px; color: var(--ink-3); font-size: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.meta time { font-family: var(--mono); color: var(--ink-2); }
+.meta .ctl { margin-left: 4px; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 16px; }
+.card {
+  margin: 0; background: var(--panel); border: 1px solid var(--hair); box-shadow: var(--shadow);
+  padding: 20px 20px 16px; min-width: 0; border-top: 3px solid var(--ink-3);
+}
+.card[data-state="up"] { border-top-color: var(--green); }
+.card[data-state="warn"] { border-top-color: var(--amber); }
+.card[data-state="down"] { border-top-color: var(--red); }
+.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.card h2 { margin: 0; font-size: 18px; line-height: 1.3; }
+.card .label { display: block; margin-top: 2px; font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.badge {
+  flex: none; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; line-height: 1;
+  padding: 6px 9px; border: 1.5px solid currentColor; color: var(--ink-3); white-space: nowrap;
+}
+.badge[data-state="up"] { color: var(--green); }
+.badge[data-state="warn"] { color: var(--amber-ink); background: var(--amber-well); }
+.badge[data-state="down"] { color: var(--red); }
+
+.card dl { margin: 16px 0 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0; }
+.card dt, .card dd { padding: 8px 0; border-top: 1px solid var(--hair-2); font-size: 14px; }
+.card dt { color: var(--ink-3); padding-right: 16px; }
+.card dd { margin: 0; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.card dd.mono { font-family: var(--mono); font-size: 13px; }
+.card dd .sub { color: var(--ink-3); }
+.card dd.warn { color: var(--amber-ink); font-weight: 600; }
+.card dd.bad { color: var(--red); font-weight: 600; }
+.card .err { margin: 12px 0 0; padding: 10px 12px; background: var(--well); color: var(--ink-2); font-size: 13px; overflow-wrap: anywhere; }
+
+.notes { margin-top: 44px; max-width: 72ch; color: var(--ink-2); font-size: 15px; }
+.notes h2 { font-size: 16px; color: var(--ink); margin: 0 0 8px; }
+.notes p { margin: 0 0 12px; }
+
+.foot {
+  margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--hair);
+  display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 14px;
+}
+
+/* ── narrow screens ──────────────────────────────────────── */
+@media (max-width: 640px) {
+  .top { padding: 0 16px; gap: 8px; }
+  .top .section, .top .link { display: none; }
+  .wrap { padding: 28px 16px 48px; }
+  .card { padding: 16px 16px 12px; }
+}
+@media (max-width: 380px) {
+  .card dl { grid-template-columns: 1fr; }
+  .card dt { padding-bottom: 0; }
+  .card dd { border-top: 0; padding-top: 2px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

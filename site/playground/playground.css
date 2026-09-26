@@ -1,0 +1,214 @@
+/* TapeAPI Playground. Hand-written. Same tokens as the docs (site/docs/docs.css) and system faces.
+   No external resources (DeWEB SPEC 8): no CDN, no web fonts, no remote images.
+   调试台样式，手写。沿用文档站的颜色变量与系统字体。无外部资源。 */
+:root {
+  color-scheme: light;
+  --bg:        #EEF0F3;
+  --panel:     #FFFFFF;
+  --well:      #E4E7EC;
+  --ink:       #0C0F14;
+  --ink-2:     #3D4550;
+  --ink-3:     #78818E;
+  --hair:      #CCD2DA;
+  --hair-2:    #E2E6EB;
+  --amber:     #B4660A;
+  --amber-ink: #8A4E06;
+  --amber-well:#FDF1DE;
+  --code-bg:   #F4F6F8;
+  --ok:        #1A7F37;
+  --bad:       #B42318;
+  --bad-well:  #FDECEA;
+  --shadow:    0 1px 0 rgba(12,15,20,.04), 0 12px 32px -20px rgba(12,15,20,.35);
+  --top:       56px;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg:        #0A0C10;
+    --panel:     #12161D;
+    --well:      #0D1015;
+    --ink:       #EEF1F5;
+    --ink-2:     #A9B2BF;
+    --ink-3:     #6E7887;
+    --hair:      #262D38;
+    --hair-2:    #1A202A;
+    --amber:     #FFB224;
+    --amber-ink: #FFC759;
+    --amber-well:#231803;
+    --code-bg:   #0D1015;
+    --ok:        #4ADE80;
+    --bad:       #F87171;
+    --bad-well:  #2A1111;
+    --shadow:    0 0 0 1px rgba(255,255,255,.02), 0 20px 50px -30px #000;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:        #0A0C10;
+  --panel:     #12161D;
+  --well:      #0D1015;
+  --ink:       #EEF1F5;
+  --ink-2:     #A9B2BF;
+  --ink-3:     #6E7887;
+  --hair:      #262D38;
+  --hair-2:    #1A202A;
+  --amber:     #FFB224;
+  --amber-ink: #FFC759;
+  --amber-well:#231803;
+  --code-bg:   #0D1015;
+  --ok:        #4ADE80;
+  --bad:       #F87171;
+  --bad-well:  #2A1111;
+  --shadow:    0 0 0 1px rgba(255,255,255,.02), 0 20px 50px -30px #000;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--sans); font-size: 16px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--amber-ink); text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+code, pre, kbd, textarea, .mono { font-family: var(--mono); }
+[hidden] { display: none !important; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ── top bar (as in the docs) ────────────────────────────── */
+.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 10px 14px;
+  min-height: var(--top); padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px);
+  border-bottom: 1px solid var(--hair);
+}
+.top .brand { font-weight: 800; font-size: 14px; letter-spacing: .26em; color: var(--ink); text-decoration: none; }
+.top .section {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--amber-ink); text-decoration: none; border-left: 1px solid var(--hair); padding-left: 14px;
+}
+.top .sp { flex: 1 1 auto; }
+.ctl {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; line-height: 1;
+  background: transparent; color: var(--ink-3); border: 1px solid var(--hair); border-radius: 0;
+  padding: 7px 11px; cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.ctl:hover { color: var(--ink); border-color: var(--ink-3); }
+
+/* ── layout ──────────────────────────────────────────────── */
+.wrap { max-width: 980px; margin: 0 auto; padding: 28px 16px 56px; display: grid; gap: 18px; min-width: 0; }
+.intro h1 { font-size: clamp(28px, 4.4vw, 38px); line-height: 1.15; letter-spacing: -.02em; margin: 0 0 8px; }
+.lede { margin: 0; color: var(--ink-2); max-width: 720px; }
+.panel {
+  background: var(--panel); border: 1px solid var(--hair-2); box-shadow: var(--shadow);
+  padding: 18px 20px 20px; min-width: 0;
+}
+.panel h2 { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: 19px; line-height: 1.3; margin: 0 0 14px; }
+.panel h2 code { font-size: 15px; color: var(--amber-ink); overflow-wrap: anywhere; }
+.num {
+  font-family: var(--mono); font-size: 11px; color: var(--amber-ink); border: 1px solid var(--amber);
+  padding: 2px 7px; align-self: center;
+}
+.muted, .hint { color: var(--ink-3); font-size: 14px; }
+.hint { margin: 10px 0 0; }
+p { overflow-wrap: anywhere; }
+:not(pre) > code { font-size: .88em; background: var(--well); padding: .1em .35em; border-radius: 3px; overflow-wrap: anywhere; }
+.lbl { display: block; font-size: 13px; color: var(--ink-2); margin: 14px 0 6px; }
+
+/* ── controls ────────────────────────────────────────────── */
+input, textarea, select {
+  font: inherit; font-size: 15px; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--hair); border-radius: 0; padding: 9px 11px; width: 100%; min-width: 0;
+}
+textarea { font-family: var(--mono); font-size: 13px; line-height: 1.5; resize: vertical; }
+input.mono { font-family: var(--mono); font-size: 14px; }
+input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--bad); }
+.btn {
+  font: inherit; font-weight: 650; font-size: 15px; min-height: 44px; padding: 0 20px; cursor: pointer;
+  background: var(--ink); color: var(--bg); border: 1px solid var(--ink); border-radius: 0; white-space: nowrap;
+}
+.btn:hover { background: var(--amber-ink); border-color: var(--amber-ink); }
+.btn:disabled { opacity: .4; cursor: not-allowed; background: var(--ink); border-color: var(--ink); }
+.resolve { display: flex; gap: 8px; }
+.resolve input { font-family: var(--mono); font-size: 16px; min-height: 44px; }
+.status { margin: 12px 0 0; font-size: 14px; color: var(--ink-2); min-height: 1.4em; }
+.status.bad { color: var(--bad); }
+
+/* ── checks ──────────────────────────────────────────────── */
+.checks { list-style: none; margin: 14px 0 0; padding: 0; border-top: 1px solid var(--hair-2); }
+.checks li { display: grid; grid-template-columns: 22px minmax(120px, 190px) minmax(0, 1fr); gap: 2px 10px; padding: 9px 0; border-bottom: 1px solid var(--hair-2); font-size: 14px; }
+.checks .mk { font-weight: 700; color: var(--ok); }
+.checks .mk.info { color: var(--ink-3); }
+.checks .k { color: var(--ink-2); }
+.checks .v { min-width: 0; overflow-wrap: anywhere; }
+.checks .v code { background: none; padding: 0; font-size: 13px; }
+.checks .how { display: block; color: var(--ink-3); font-size: 12.5px; margin-top: 2px; }
+.raw { margin-top: 14px; }
+.raw summary { cursor: pointer; font-size: 14px; color: var(--ink-2); }
+.raw .code { margin-top: 10px; }
+
+/* ── methods ─────────────────────────────────────────────── */
+.methods { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.method {
+  display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
+  background: var(--bg); border: 1px solid var(--hair-2); border-left: 3px solid var(--hair); padding: 10px 12px;
+}
+.method:hover { border-color: var(--ink-3); }
+.method[aria-pressed="true"] { border-color: var(--amber); border-left-color: var(--amber); background: var(--amber-well); }
+.method .mn { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.method .mn code { background: none; padding: 0; font-size: 14px; font-weight: 650; }
+.method .md { display: block; font-size: 13px; color: var(--ink-2); margin-top: 4px; line-height: 1.45; }
+.price { font-family: var(--mono); font-size: 11px; white-space: nowrap; color: var(--ok); }
+.price.paid { color: var(--amber-ink); }
+
+/* ── call form ───────────────────────────────────────────── */
+.callgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 20px; align-items: start; }
+.callgrid .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 16px; }
+.field .lbl code { background: none; padding: 0; font-size: 12px; color: var(--ink-3); }
+.field .opt { color: var(--ink-3); font-size: 12px; }
+.nofields { color: var(--ink-3); font-size: 14px; margin: 14px 0 0; }
+#call-desc { margin: -6px 0 0; }
+
+/* ── outcome ─────────────────────────────────────────────── */
+.outcome { margin-top: 18px; border-top: 1px solid var(--hair-2); padding-top: 14px; }
+.verdict { font-weight: 700; font-size: 15px; margin: 0 0 10px; }
+.verdict.ok { color: var(--ok); }
+.verdict.bad { color: var(--bad); }
+.errbox { background: var(--bad-well); border-left: 3px solid var(--bad); padding: 10px 14px; margin: 0 0 10px; font-size: 14px; overflow-wrap: anywhere; }
+.errbox code { background: none; padding: 0; font-weight: 700; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; font-size: 14px; margin: 0 0 6px; }
+.kv dt { color: var(--ink-3); }
+.kv dd { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+.kv dd code { background: none; padding: 0; font-size: 13px; }
+
+/* ── code blocks ─────────────────────────────────────────── */
+.code { position: relative; margin: 0 0 6px; min-width: 0; }
+.code pre {
+  margin: 0; padding: 14px 16px; overflow-x: auto; max-height: 420px;
+  background: var(--code-bg); border: 1px solid var(--hair-2);
+  font-size: 12.5px; line-height: 1.55; color: var(--ink); tab-size: 2; white-space: pre;
+}
+.code .copy { position: absolute; top: 8px; right: 8px; background: var(--panel); }
+.foot { color: var(--ink-3); font-size: 13px; }
+.foot p { margin: 0; }
+
+/* ── phone ───────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .top .section { display: none; }
+  .wrap { padding-top: 20px; gap: 14px; }
+  .panel { padding: 14px 14px 16px; }
+  .callgrid { grid-template-columns: minmax(0, 1fr); }
+  .checks li { grid-template-columns: 20px minmax(0, 1fr); }
+  .checks .v { grid-column: 2; }
+  .kv { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .kv dd { margin-bottom: 6px; }
+  .code pre { font-size: 12px; padding: 12px; }
+}
+@media (max-width: 420px) {
+  .resolve { flex-direction: column; }
+  .methods { grid-template-columns: minmax(0, 1fr); }
+}

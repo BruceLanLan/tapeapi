@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TapeAPI Status</title>
+<meta name="description" content="Live status of the public TapeAPI service and relay: health, latency, signer and delegation expiry.">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="status.css">
+<!-- In <head> so the theme and language apply before the first paint. / 放在 head 里，主题与语言在首次绘制前生效。 -->
+<script src="status.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../">TAPEAPI</a>
+  <span class="section"><span lang="zh">状态</span><span lang="en">Status</span></span>
+  <span class="sp"></span>
+  <a class="ctl link" href="../docs/"><span lang="zh">文档</span><span lang="en">Docs</span></a>
+  <a class="ctl link" href="https://github.com/BruceLanLan/tapeapi">GitHub</a>
+  <button class="ctl" id="lang-btn" type="button">中文</button>
+  <button class="ctl" id="theme-btn" type="button">Theme</button>
+</header>
+
+<main class="wrap">
+  <p class="eyebrow"><span lang="zh">服务状态</span><span lang="en">Service status</span></p>
+  <h1 id="summary" data-state="checking">
+    <span lang="zh">正在检查…</span><span lang="en">Checking…</span>
+  </h1>
+  <p class="meta">
+    <span lang="zh">最近检查</span><span lang="en">Last checked</span>
+    <time id="checked">—</time>
+    <button class="ctl" id="refresh" type="button"><span lang="zh">刷新</span><span lang="en">Refresh</span></button>
+  </p>
+
+  <section class="cards" id="cards" aria-live="polite">
+    <noscript>
+      <p class="card"><span lang="zh">此页面需要 JavaScript 才能从浏览器检查服务。也可以直接打开</span><span lang="en">This page needs JavaScript to check the services from your browser. You can also open</span>
+        <a href="https://api.tapeapi.fun/tapeapi/v1/health">api.tapeapi.fun/tapeapi/v1/health</a> ·
+        <a href="https://relay.tapeapi.fun/tapeapi/v1/health">relay.tapeapi.fun/tapeapi/v1/health</a></p>
+    </noscript>
+  </section>
+
+  <section class="notes">
+    <h2><span lang="zh">这里检查什么</span><span lang="en">What this page checks</span></h2>
+    <p>
+      <span lang="zh">你的浏览器直接请求两个服务的健康检查接口，显示是否在线、往返延迟、服务用来签名回答的地址（signer），以及持有人委托的到期时间。委托一旦过期，客户端会拒绝该服务的每一个回答，因此剩余不足 14 天时这里会标黄。</span>
+      <span lang="en">Your browser asks each service's health endpoint directly and shows whether it answers, the round-trip time, the address it signs answers with (signer), and when the holder's delegation expires. Once a delegation lapses, clients reject every answer from that service, so fewer than 14 days left is flagged here.</span>
+    </p>
+    <p>
+      <span lang="zh">更深的检查每 30 分钟在仓库的监控任务里运行：像客户端一样从 BNB Chain 解析服务（circuit 11 与 12，处理器 1013），核对链上清单里的 signer 与服务实际使用的一致，并做一次经过验签的真实调用。</span>
+      <span lang="en">A deeper check runs every 30 minutes in the repository's monitor: it resolves each service from BNB Chain exactly as a client does (circuits 11 and 12 of processor 1013), checks that the signer in the on-chain manifest is the one the service uses, and makes one real call whose signed answer is verified.</span>
+    </p>
+  </section>
+
+  <footer class="foot">
+    <a href="../"><span lang="zh">首页</span><span lang="en">Home</span></a>
+    <a href="../docs/"><span lang="zh">文档</span><span lang="en">Docs</span></a>
+    <a href="https://github.com/BruceLanLan/tapeapi">GitHub</a>
+  </footer>
+</main>
+</body>
+</html>

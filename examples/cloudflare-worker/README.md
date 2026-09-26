@@ -20,12 +20,27 @@ a path on somebody else's site cannot.
 
 ## Steps / 步骤
 
-**From a phone, no computer:** the holder console at `https://tapeapi.fun/console/` (source `site/console/`) does steps
-2, 3 and 5 below from a wallet's in-app browser, and Cloudflare Workers Builds deploys this Worker from the repository
-(build `npm ci`, deploy `npm run deploy:provider`, which pins the wrangler version in package.json). Until the delegation is set
-the Worker is in setup mode: it answers only `/tapeapi/v1/health`, naming the signer address derived from `SIGNER_KEY`.
-**只用手机：** 持有人操作台（`site/console/`）在钱包内置浏览器里完成下面第 2、3、5 步；Cloudflare Workers Builds 从仓库部署
-本 Worker。委托设好之前 Worker 处于设置模式，只回答健康检查，其中给出由 `SIGNER_KEY` 推导的签名地址。
+**This is the template for your own service.** Deploy it from your fork under your own Worker name and your own
+hostname. The project's public service (`api.tapeapi.fun`) is a different Worker, deployed from `examples/public-api/`
+with `npm run deploy:public`; that command is not for forks.
+**这是给你自己的服务用的模板。** 在你的 fork 里用你自己的 Worker 名称和主机名部署。本项目的公共服务（`api.tapeapi.fun`）
+是另一个 Worker，从 `examples/public-api/` 以 `npm run deploy:public` 部署；这个命令不是给 fork 用的。
+
+**From a phone, no computer:** Cloudflare Workers Builds deploys this Worker from your fork (build `npm ci`, deploy
+`npm run deploy:provider`, which pins the wrangler version in package.json). The Worker's name in the dashboard must
+match `name` in `wrangler.toml` (`my-tapeapi-service`; change both if you want another). `wrangler.toml` sets no route:
+add your hostname in the dashboard (Worker → Settings → Domains & Routes → Add → Custom domain) and set the variable
+`PUBLIC_URL` to `https://<your host>`. Then open the holder console at `https://tapeapi.fun/console/` (source
+`site/console/`) in a wallet's in-app browser, replace the default service URL `https://api.tapeapi.fun` with
+`https://<your host>`, and it does steps 2, 3 and 5 below. Until the delegation and `PUBLIC_URL` are set the Worker is
+in setup mode: it answers only `/tapeapi/v1/health`, naming the signer address derived from `SIGNER_KEY` and the
+variables still missing.
+**只用手机：** Cloudflare Workers Builds 从你的 fork 部署本 Worker（构建 `npm ci`，部署 `npm run deploy:provider`）。后台里
+Worker 的名称必须与 `wrangler.toml` 的 `name` 一致（`my-tapeapi-service`；想换名字就两处一起改）。`wrangler.toml` 不设路由：
+在后台为 Worker 添加你的主机名（Worker → Settings → Domains & Routes → Add → Custom domain），并把变量 `PUBLIC_URL` 设为
+`https://<你的主机名>`。然后在钱包内置浏览器里打开持有人操作台（`site/console/`），把默认服务网址 `https://api.tapeapi.fun`
+换成 `https://<你的主机名>`，它会完成下面第 2、3、5 步。委托和 `PUBLIC_URL` 设好之前 Worker 处于设置模式，只回答健康检查，
+其中给出由 `SIGNER_KEY` 推导的签名地址和仍缺的变量。
 
 1. Mint a circuit and open its container (about 0.015 BNB in total; see `docs/CHEAPEST-CIRCUIT.md`). A container that
    is not opened has no code, and SiteRegistry refuses its files even from the holder.
@@ -36,23 +51,26 @@ the Worker is in setup mode: it answers only `/tapeapi/v1/health`, naming the si
    HOLDER_KEY=0x... node examples/reader-service/sign-delegation.mjs \
      --container 0x<container> --signer 0x<signer> --expires $(( $(date +%s) + 30*86400 ))
    ```
-3. Set the variables. `SIGNER_KEY` is the only secret; `CIRCUITS`, `TOKEN_ID`, `CONTAINER`, `DELEGATION_EXPIRES` and
-   `DELEGATION_SIG` are public (they end up in the manifest) and can be plain dashboard variables, which `keep_vars`
-   keeps across deploys. `SIGNER_ADDRESS` is optional: if set, it must match the key. Text pasted with a trailing space
+3. Set the variables. `SIGNER_KEY` is the only secret; `CIRCUITS`, `TOKEN_ID`, `CONTAINER`, `DELEGATION_EXPIRES`,
+   `DELEGATION_SIG` and `PUBLIC_URL` are public (they end up in the manifest) and can be plain dashboard variables,
+   which `keep_vars` keeps across deploys. `SIGNER_ADDRESS` is optional: if set, it must match the key. Text pasted with a trailing space
    or newline is trimmed.
-   设置变量。只有 `SIGNER_KEY` 是机密；其余五个是公开的（最终写进清单），设为后台普通变量即可，`keep_vars` 让它们在部署之间保留。
+   设置变量。只有 `SIGNER_KEY` 是机密；其余六个（含 `PUBLIC_URL`）是公开的（最终写进清单），设为后台普通变量即可，`keep_vars` 让它们在部署之间保留。
    `SIGNER_ADDRESS` 可选，设了就必须与密钥一致。粘贴时带的首尾空白会被去掉。
    ```
    npx --yes wrangler@4.141.0 secret put SIGNER_KEY -c examples/cloudflare-worker/wrangler.toml
    npx --yes wrangler@4.141.0 deploy -c examples/cloudflare-worker/wrangler.toml \
      --var CIRCUITS:0x<circuits> --var TOKEN_ID:<id> --var CONTAINER:0x<container> \
-     --var DELEGATION_EXPIRES:<unix seconds> --var DELEGATION_SIG:0x<65-byte signature>
+     --var DELEGATION_EXPIRES:<unix seconds> --var DELEGATION_SIG:0x<65-byte signature> \
+     --var PUBLIC_URL:https://<your host>
    ```
-4. Point the custom domain at the Worker and check it answers:
-   把自定义域名指向这个 Worker，然后确认它有回应：
+4. Add your custom domain to the Worker (dashboard: Worker → Settings → Domains & Routes → Add → Custom domain; this
+   `wrangler.toml` deliberately has no route) and check it answers:
+   为 Worker 添加你的自定义域名（后台：Worker → Settings → Domains & Routes → Add → Custom domain；这份 `wrangler.toml`
+   刻意不设路由），然后确认它有回应：
    ```
-   curl https://api.tapeapi.fun/tapeapi/v1/health
-   curl -X POST https://api.tapeapi.fun/tapeapi/v1/blockNumber \
+   curl https://<your host>/tapeapi/v1/health
+   curl -X POST https://<your host>/tapeapi/v1/blockNumber \
      -H 'content-type: application/json' -d '{"id":"1","params":{}}'
    ```
 5. Publish the manifest into the container's site. `api.tx.publishManifest({ container, manifest })` returns the
