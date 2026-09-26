@@ -130,9 +130,10 @@ test('reference relay, priced relaySend: handshake still free, paid checks skipp
 })
 
 test('reference relay behind a rate limit: the suite waits out each 429, checks it, and still passes', async () => {
-  // The concurrent burst (checkRateLimit) makes the 429 certain; relying on the suite's own pace flaked under load.
-  // 用并发突发（checkRateLimit）确保出现 429；依赖套件自身的速度在负载高时会偶发失败。
-  const { results } = await runRelaySuite({ slackMs: SLACK, url: await serveNative(mkRelay({ provider: { rateLimit: { free: 150, windowMs: 1000 } } })), checkRateLimit: 150 })
+  // The concurrent burst (checkRateLimit) makes the 429 certain; relying on the suite's own pace flaked under load. The
+  // window is 4 s, not 1 s: on a slow CI runner the 155-call burst spanned a 1 s window boundary and never saw a 429.
+  // 用并发突发（checkRateLimit）确保出现 429。窗口用 4 秒而非 1 秒：CI 机器较慢时，155 次突发会跨过 1 秒窗口边界，从而看不到 429。
+  const { results } = await runRelaySuite({ slackMs: SLACK, url: await serveNative(mkRelay({ provider: { rateLimit: { free: 150, windowMs: 4000 } } })), checkRateLimit: 150 })
   assert.deepEqual(mustFails(results), [], show(results))
   for (const id of ['tap21.ratelimit.unsigned', 'tap21.ratelimit.retry-after', 'tap21.ratelimit.code', 'tap21.ratelimit.retryAfterS']) assert.ok(passed(results, id), `${id}:\n${show(results)}`)
   assert.ok(passed(results, 'tap26.relay.kept.survives-flood'))
