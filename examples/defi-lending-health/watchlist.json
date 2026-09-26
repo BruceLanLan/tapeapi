@@ -1,0 +1,8 @@
+{
+  "_comment_zh": "atRisk 在调用方不传 accounts 时扫描的地址。纯 eth_call 枚举不了借款人（BNB Chain 官方公共节点禁用 eth_getLogs），所以这份名单只能来自外部。下面两个地址是 2026-09-20 从 BNB Chain 主网 vUSDT / vBNB / vBTC / vETH / vUSDC 的 Borrow 与 RepayBorrow 事件日志中取得的真实借款人（通过 https://bsc-rpc.publicnode.com，该端点未禁用 eth_getLogs），用作可直接 curl 的演示样本。生产环境请替换成你自己的索引器输出。",
+  "_comment_en": "The addresses atRisk scans when the caller supplies none. Plain eth_call cannot enumerate borrowers (the official BNB Chain public endpoints disable eth_getLogs), so this list can only come from outside. The two addresses below are real Venus Core Pool borrowers harvested on 2026-09-20 from Borrow / RepayBorrow logs on vUSDT / vBNB / vBTC / vETH / vUSDC via https://bsc-rpc.publicnode.com (an endpoint that does not disable eth_getLogs), so that atRisk is curl-able out of the box. Replace this with your own indexer's output in production.",
+  "accounts": [
+    "0xdd12870c87e9988a0badb1748c5649da866acc33",
+    "0xeba4b3c462b9c16f7ccaf4be6f4d3c17c377411e"
+  ]
+}

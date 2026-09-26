@@ -1,0 +1,64 @@
+{
+  "recordedAt": "2026-09-25",
+  "chainId": 56,
+  "source": "Read-only eth_getLogs against public BSC nodes (curl -i), head 123800624. Status, content-type and body exactly as received. / 对公共 BSC 节点的只读 eth_getLogs，状态码、内容类型与响应体原样记录。",
+  "note": "publicnode refuses history older than its window with HTTP 403 and a JSON-RPC error in the body; rpc.js used to throw 'http 403' without reading it (review R4-1). / publicnode 以 HTTP 403 拒绝窗口之外的历史，错误在响应体里。",
+  "answers": [
+    {
+      "node": "bsc-rpc.publicnode.com", "case": "20000, 50000 and 200000 blocks back (5 samples, datacenter tyo1)",
+      "status": 403, "contentType": "application/json",
+      "body": { "jsonrpc": "2.0", "error": { "code": -32602, "message": "Archive requests require a personal token. Get one at: https://www.allnodes.com/publicnode" }, "id": 7 }
+    },
+    {
+      "node": "bsc-rpc.publicnode.com", "case": "8000, 3000 and 100 blocks back",
+      "status": 200, "contentType": "application/json",
+      "body": { "jsonrpc": "2.0", "id": 7, "result": [] }
+    },
+    {
+      "node": "bsc-rpc.publicnode.com", "case": "a block number far beyond the head",
+      "status": 200, "contentType": "application/json",
+      "body": { "jsonrpc": "2.0", "error": { "code": -32701, "message": "History has been pruned for this block. To remove restrictions, order a dedicated full node here: https://www.allnodes.com/bnb/host" }, "id": 7 }
+    },
+    {
+      "node": "bsc-dataseed.bnbchain.org", "case": "any range, including one block",
+      "status": 200, "contentType": "application/json; charset=utf-8",
+      "body": { "jsonrpc": "2.0", "id": 7, "error": { "code": -32005, "message": "limit exceeded" } }
+    },
+    {
+      "node": "bsc-dataseed1.defibit.io", "case": "any range, including one block",
+      "status": 200, "contentType": "application/json; charset=utf-8",
+      "body": { "jsonrpc": "2.0", "id": 7, "error": { "code": -32005, "message": "limit exceeded" } }
+    },
+    {
+      "node": "bsc-rpc.publicnode.com", "case": "result cap: USDT Transfer logs over 1000, 3000 and 5000 blocks ending head-5 (head 123954431, round-7 review). A cap on results, not blocks: 100 blocks answered 200 with 11924 logs in 7.58 MB",
+      "status": 200, "contentType": "application/json",
+      "body": { "jsonrpc": "2.0", "id": 7, "error": { "code": -32602, "message": "query exceeds max results 20000, retry with the range 123953427-123953621" } }
+    },
+    {
+      "node": "bsc-rpc.publicnode.com", "case": "eth_getLogs of a single block 100 past the head (head 124007009, 2026-09-26): a lagging backend, not a range limit",
+      "status": 200, "contentType": "application/json",
+      "body": { "jsonrpc": "2.0", "id": 7, "error": { "code": -32602, "message": "block range extends beyond current head block: requested 124007109, head 124007020" } }
+    },
+    {
+      "node": "bsc-rpc.publicnode.com", "method": "eth_getBlockReceipts", "case": "receipts 20000 blocks back: the same history refusal as its logs",
+      "status": 403, "contentType": "application/json",
+      "body": { "jsonrpc": "2.0", "error": { "code": -32602, "message": "Archive requests require a personal token. Get one at: https://www.allnodes.com/publicnode" }, "id": 7 }
+    },
+    {
+      "node": "bsc-rpc.publicnode.com", "method": "eth_getBlockReceipts", "case": "receipts of a block 100 past the head",
+      "status": 200, "contentType": "application/json",
+      "body": { "jsonrpc": "2.0", "id": 7, "result": null }
+    },
+    {
+      "node": "bsc-dataseed.bnbchain.org", "method": "eth_getBlockReceipts", "case": "receipts of a block 100 past the head (bsc-dataseed1.defibit.io answers the same); 20000 blocks back both SERVE receipts although they refuse every eth_getLogs",
+      "status": 200, "contentType": "application/json; charset=utf-8",
+      "body": { "jsonrpc": "2.0", "id": 7, "error": { "code": -32000, "message": "header not found" } }
+
+    },
+    {
+      "node": "bsc-rpc.publicnode.com", "method": "eth_getBlockReceipts", "case": "receipts 20 blocks back (2026-09-25): SERVED -- 92 receipts, 756 logs, 604 KiB (bsc-dataseed: 92 receipts, 470 logs, 430 KiB; bsc-dataseed1.defibit.io: 132 receipts, 446 logs, 437 KiB). The body is not stored; publicnode never answered receipts with -32601",
+      "status": 200, "contentType": "application/json",
+      "body": { "jsonrpc": "2.0", "id": 7, "result": "(92 receipts; not stored)" }
+    }
+  ]
+}

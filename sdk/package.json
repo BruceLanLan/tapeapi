@@ -1,0 +1,32 @@
+{
+  "name": "@tapeapi/sdk",
+  "version": "0.1.0",
+  "description": "TapeAPI JavaScript SDK (TapeOut protocol on BNB Smart Chain)",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./rpc": "./src/rpc.js",
+    "./abi": "./src/abi.js",
+    "./canon": "./src/canon.js",
+    "./sig": "./src/sig.js",
+    "./channel": "./src/channel.js",
+    "./manifest": "./src/manifest.js",
+    "./webmcp": "./src/webmcp.js"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^1.3.0",
+    "@noble/curves": "^1",
+    "@noble/hashes": "^1"
+  },
+  "license": "MIT"
+}

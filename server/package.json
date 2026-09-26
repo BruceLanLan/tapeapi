@@ -1,0 +1,17 @@
+{
+  "name": "@tapeapi/server",
+  "version": "0.1.0",
+  "description": "TapeAPI provider runtime (Node http handler)",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": { ".": "./src/index.js" },
+  "files": ["src"],
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test test" },
+  "dependencies": {
+    "@tapeapi/sdk": "file:../sdk",
+    "@noble/curves": "^1",
+    "@noble/hashes": "^1"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,46 @@
+{
+  "upstream": {
+    "timeoutMs": 8000,
+    "headers": { "accept": "application/json", "x-api-key": "${UPSTREAM_API_KEY}" }
+  },
+  "methods": {
+    "fxRate": {
+      "priceBEM": "0",
+      "url": "https://api.frankfurter.app/latest",
+      "method": "GET",
+      "params": { "from": "string", "to": "string" },
+      "defaults": { "from": "USD", "to": "EUR" },
+      "query": { "from": "from", "to": "to" },
+      "pick": { "base": "base", "date": "date", "rates": "rates" },
+      "returns": { "base": "string", "date": "string", "rates": "object" }
+    },
+    "fxConvert": {
+      "priceBEM": "0.0001",
+      "url": "https://api.frankfurter.app/latest",
+      "method": "GET",
+      "params": { "amount": "number", "from": "string", "to": "string" },
+      "required": ["amount"],
+      "defaults": { "from": "USD", "to": "EUR" },
+      "query": { "amount": "amount", "from": "from", "to": "to" },
+      "pick": { "amount": "amount", "base": "base", "date": "date", "rates": "rates" },
+      "returns": { "amount": "number", "base": "string", "date": "string", "rates": "object" }
+    },
+    "utcTime": {
+      "priceBEM": "0",
+      "url": "https://worldtimeapi.org/api/timezone/Etc/UTC",
+      "method": "GET",
+      "params": {},
+      "pick": { "datetime": "datetime", "unixtime": "unixtime", "utcOffset": "utc_offset" },
+      "returns": { "datetime": "string", "unixtime": "number", "utcOffset": "string" }
+    },
+    "zoneTime": {
+      "priceBEM": "0",
+      "url": "https://worldtimeapi.org/api/timezone/{area}/{location}",
+      "method": "GET",
+      "params": { "area": "string", "location": "string" },
+      "required": ["area", "location"],
+      "pick": { "timezone": "timezone", "datetime": "datetime", "unixtime": "unixtime" },
+      "returns": { "timezone": "string", "datetime": "string", "unixtime": "number" }
+    }
+  }
+}

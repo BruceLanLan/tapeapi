@@ -1,0 +1,18 @@
+{
+  "tapeapi": "0.1",
+  "name": "Game Leaderboard + Save Slots",
+  "circuits": "0x0000000000000000000000000000000000000000",
+  "tokenId": "0",
+  "container": "0x0000000000000000000000000000000000000000",
+  "signer": "0x0000000000000000000000000000000000000000",
+  "delegation": null,
+  "endpoints": { "live": ["http://127.0.0.1:8790/tapeapi/v1"], "async": false },
+  "methods": [
+    { "name": "submitScore", "priceBEM": "0", "params": { "player": "address", "score": "number", "nonce": "number", "sig": "bytes65" }, "returns": { "player": "address", "best": "number", "rank": "number", "accepted": "boolean" } },
+    { "name": "top", "priceBEM": "0", "params": { "n": "number?" }, "returns": { "top": "array", "count": "number" } },
+    { "name": "saveState", "priceBEM": "0.0001", "params": { "player": "address", "state": "object", "nonce": "number", "sig": "bytes65" }, "returns": { "player": "address", "bytes": "number", "updatedAt": "number" } },
+    { "name": "loadState", "priceBEM": "0", "params": { "player": "address" }, "returns": { "player": "address", "state": "object|null", "nonce": "number|null", "updatedAt": "number|null" } }
+  ],
+  "payment": { "escrow": "0x0000000000000000000000000000000000000000", "unit": "BEM", "decimals": 8 },
+  "dev": true
+}

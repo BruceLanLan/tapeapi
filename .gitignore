@@ -1,0 +1,15 @@
+node_modules/
+contracts/out/
+.DS_Store
+*.log
+.env
+
+examples/gaming-leaderboard/*.data.json
+examples/gaming-leaderboard/*.data.json.tmp
+contracts/lib/
+contracts/out-forge/
+contracts/cache/
+
+contracts/out-deploy/
+contracts/broadcast/
+contracts/verify/

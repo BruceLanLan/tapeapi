@@ -1,0 +1,85 @@
+{
+  "tapeapi": "0.1",
+  "name": "Attested Read (Ethereum + Base)",
+  "circuits": "0x0000000000000000000000000000000000000000",
+  "tokenId": "0",
+  "container": "0x0000000000000000000000000000000000000000",
+  "signer": "0x0000000000000000000000000000000000000000",
+  "delegation": null,
+  "endpoints": {
+    "live": [
+      "http://127.0.0.1:8791/tapeapi/v1"
+    ],
+    "async": false
+  },
+  "methods": [
+    {
+      "name": "read",
+      "priceBEM": "0.0001",
+      "params": {
+        "chainId": "number",
+        "call": "object",
+        "block": "string|number"
+      },
+      "returns": {
+        "chainId": "number",
+        "blockNumber": "number",
+        "blockHash": "bytes32",
+        "result": "bytes"
+      },
+      "description": "[quorum] TAP-23 Attested Read: eth_call on a listed chain, evaluated at the attested blockHash",
+      "attestedRead": {
+        "kind": "eth_call",
+        "chains": [
+          1,
+          8453
+        ]
+      }
+    },
+    {
+      "name": "balance",
+      "priceBEM": "0",
+      "params": {
+        "chainId": "number",
+        "address": "address",
+        "block": "number|tag?"
+      },
+      "returns": {
+        "chainId": "number",
+        "address": "address",
+        "wei": "string",
+        "ether": "string",
+        "blockNumber": "number",
+        "blockHash": "bytes32",
+        "blockRef": "'hash'|'number'"
+      },
+      "description": "[quorum] convenience read, block-pinned; not a TAP-23 attested read (adds address/wei/ether)"
+    },
+    {
+      "name": "nftOwner",
+      "priceBEM": "0",
+      "params": {
+        "chainId": "number",
+        "contract": "address",
+        "tokenId": "string",
+        "block": "number|tag?"
+      },
+      "returns": {
+        "chainId": "number",
+        "contract": "address",
+        "tokenId": "string",
+        "owner": "address",
+        "blockNumber": "number",
+        "blockHash": "bytes32",
+        "blockRef": "'hash'|'number'"
+      },
+      "description": "[quorum] convenience read, block-pinned; not a TAP-23 attested read (adds contract/tokenId/owner)"
+    }
+  ],
+  "payment": {
+    "escrow": "0x0000000000000000000000000000000000000000",
+    "unit": "BEM",
+    "decimals": 8
+  },
+  "dev": true
+}

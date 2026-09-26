@@ -1,0 +1,26 @@
+{
+  "tapeapi": "0.1",
+  "name": "PancakeSwap V3 TWAP Oracle",
+  "circuits": "0x0000000000000000000000000000000000000000",
+  "tokenId": "0",
+  "container": "0x0000000000000000000000000000000000000000",
+  "signer": "0x0000000000000000000000000000000000000000",
+  "delegation": null,
+  "endpoints": { "live": ["http://127.0.0.1:8793/tapeapi/v1"], "async": false },
+  "methods": [
+    { "name": "twap", "priceBEM": "0.0002",
+      "description": "[quorum] PancakeSwap V3 arithmetic-mean-tick TWAP + spot + deviation flag, pinned",
+      "params": { "pool": "address? (default 0x172fcD41E0913e95784454622d1c3724f546f849)", "window": "number? seconds, default 1800, 60..86400", "base": "address? (default token1)", "quote": "address? (default token0)", "deviationBps": "number? default 100", "block": "number|'finalized'|'safe'|'latest'? (default finalized)" },
+      "returns": { "pool": "address", "fee": "number", "token0": "object", "token1": "object", "window": "number", "meanTick": "string (authoritative)", "spotTick": "string", "tickCumulatives": "string[]", "observationCardinality": "number", "maxWindow": "number (seconds of observation history available at this block)", "liquidity": "string", "base": "address", "quote": "address", "twapPrice": "string (18 fixed decimals, truncated toward zero)", "spotPrice": "string (18 fixed decimals)", "deviationBpsActual": "string", "deviationBpsLimit": "number", "deviates": "boolean", "blockPinned": "object" } },
+    { "name": "bnbUsdTwap", "priceBEM": "0",
+      "description": "[quorum] BNB in USDT via the default pool, 1800s window",
+      "params": { "window": "number? seconds, default 1800, 60..86400", "block": "number|tag?" },
+      "returns": { "bnbUsd": "string (18 fixed decimals)", "bnbUsdSpot": "string (18 fixed decimals)", "meanTick": "string", "deviates": "boolean", "window": "number", "blockPinned": "object" } },
+    { "name": "poolFor", "priceBEM": "0",
+      "description": "[quorum] PancakeV3Factory.getPool(tokenA,tokenB,fee) + slot0 summary",
+      "params": { "tokenA": "address", "tokenB": "address", "fee": "number (100|500|2500|10000)", "block": "number|tag?" },
+      "returns": { "pool": "address|null", "fee": "number", "tickSpacing": "number", "observationCardinality": "number", "maxWindow": "number", "liquidity": "string", "blockPinned": "object" } }
+  ],
+  "payment": { "escrow": "0x0000000000000000000000000000000000000000", "unit": "BEM", "decimals": 8 },
+  "dev": true
+}

@@ -1,0 +1,33 @@
+{
+  "tapeapi": "0.1",
+  "name": "DeFi Portfolio Read (TAP-23 multi-chain)",
+  "circuits": "0x0000000000000000000000000000000000000000",
+  "tokenId": "0",
+  "container": "0x0000000000000000000000000000000000000000",
+  "signer": "0x0000000000000000000000000000000000000000",
+  "delegation": null,
+  "endpoints": { "live": ["http://127.0.0.1:8795/tapeapi/v1"], "async": false },
+  "methods": [
+    { "name": "balances", "priceBEM": "0.0002",
+      "description": "[quorum] native + ERC-20 balances for one address on one chain, pinned",
+      "params": { "chainId": "number", "address": "address", "tokens": "address[] (<=30)", "block": "number|'latest'|'safe'|'finalized'? (default finalized)" },
+      "returns": { "chainId": "number", "blockNumber": "number", "blockHash": "bytes32", "blockRef": "'hash'|'number'", "address": "address", "native": "object", "tokens": "object[]" },
+      "attestedRead": { "kind": "eth_call", "chains": [56, 1, 8453] } },
+    { "name": "portfolio", "priceBEM": "0.001",
+      "description": "[no-quorum at top level; each chains[] entry is [quorum]] balances across several chains; each chain pinned independently",
+      "params": { "address": "address", "chains": "object[] ({chainId, tokens[], block?}, <=5)" },
+      "returns": { "address": "address", "chains": "object[]" } },
+    { "name": "lpV2", "priceBEM": "0.0002",
+      "description": "[quorum] UniswapV2/PancakeV2 LP position: share of reserves, pinned",
+      "params": { "chainId": "number", "address": "address", "pair": "address?", "block": "number|'latest'|'safe'|'finalized'? (default finalized)" },
+      "returns": { "chainId": "number", "blockNumber": "number", "blockHash": "bytes32", "blockRef": "'hash'|'number'", "pair": "address", "token0": "object", "token1": "object", "lpBalance": "string", "totalSupply": "string", "share": "string (18 fixed decimals)", "amount0": "string", "amount1": "string" },
+      "attestedRead": { "kind": "eth_call", "chains": [56, 1, 8453] } },
+    { "name": "lpV3", "priceBEM": "0.0004",
+      "description": "[quorum] PancakeSwap V3 NFT positions held by an address, pinned",
+      "params": { "chainId": "number (56 only)", "address": "address", "limit": "number? <=20 (default 20)", "block": "number|'latest'|'safe'|'finalized'? (default finalized)" },
+      "returns": { "chainId": "number", "blockNumber": "number", "blockHash": "bytes32", "blockRef": "'hash'|'number'", "manager": "address", "count": "string", "positions": "object[]" },
+      "attestedRead": { "kind": "eth_call", "chains": [56] } }
+  ],
+  "payment": { "escrow": "0x0000000000000000000000000000000000000000", "unit": "BEM", "decimals": 8 },
+  "dev": true
+}

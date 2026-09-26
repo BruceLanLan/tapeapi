@@ -1,0 +1,9 @@
+# Cloudflare Pages response headers (this file is not served). The holder console asks a wallet to sign and send:
+# no other site may frame it (a framed page can steer taps), and scripts are only run with a JavaScript MIME type.
+# Cloudflare Pages 响应头（本文件不会被提供）。持有人操作台会请钱包签名和发交易：不允许任何其他网站把它嵌进框架
+# （被嵌入的页面可以诱导点击），脚本只按 JavaScript 类型执行。
+/*
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer

@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TapeAPI 操作台</title>
+<style>
+  :root { --bg: #f4f5f1; --card: #ffffff; --fg: #1b211d; --muted: #5a645c; --line: #d6ddd4; --accent: #2e6b4b; --ok: #2e6b4b; --bad: #a3342a; --warn: #8a5a00; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #121614; --card: #1a201c; --fg: #e3e9e2; --muted: #98a399; --line: #2c3530; --accent: #86c7a0; --ok: #86c7a0; --bad: #ec8a7f; --warn: #e2b562; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, -apple-system, "PingFang SC", "Noto Sans SC", sans-serif; padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); }
+  main { max-width: 560px; margin: 0 auto; display: grid; gap: 14px; }
+  h1 { font-size: 22px; margin: 4px 0 0; text-wrap: balance; }
+  h2 { font-size: 17px; margin: 0 0 6px; }
+  p { margin: 0; }
+  p, dd, .status, h1, h2 { overflow-wrap: anywhere; min-width: 0; }
+  a { color: var(--accent); }
+  main, section { min-width: 0; }
+  .muted { color: var(--muted); font-size: 14px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 10px; }
+  button { font: inherit; font-weight: 600; min-height: 46px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: var(--card); padding: 0 14px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  input { font: inherit; width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; background: transparent; color: var(--fg); }
+  code, .mono { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+  pre.mono { white-space: pre-wrap; max-height: 16rem; overflow: auto; padding: 8px; border: 1px solid var(--line); border-radius: 6px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row > * { flex: 1 1 140px; }
+  .status { font-weight: 600; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 14px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+  label.check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
+  label.check input { width: auto; min-height: 0; margin-top: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>TapeAPI 操作台 <span class="muted">/ Holder console</span></h1>
+  <p class="muted">在手机钱包的内置浏览器里打开本页。本页只会请求你的钱包确认交易，从不索要私钥或助记词。
+    Open this page in your wallet's in-app browser. It only asks your wallet to confirm transactions; it never asks for a key or a seed phrase.</p>
+
+  <section id="s-wallet">
+    <h2>1. 连接钱包 <span class="muted">/ Connect</span></h2>
+    <p id="wallet-status" class="status">未连接 / Not connected</p>
+    <button id="btn-connect" type="button">连接钱包 / Connect wallet</button>
+  </section>
+
+  <section id="s-bus">
+    <h2>2. 部署 ChannelBus <span class="muted">/ Deploy ChannelBus</span></h2>
+    <p class="muted">TAP-26 §3.7 的链上传输合约：没有管理员、没有状态、不能升级，只会发事件。部署一次，任何人都可以用。
+      The on-chain transport of TAP-26 §3.7: no owner, no state, no upgrade path; it only emits events.</p>
+    <dl id="bus-facts"><dt>源码</dt><dd><a id="bus-src" href="#">GitHub</a></dd></dl>
+    <p id="bus-prev" class="warn" hidden></p>
+    <label class="check" id="again-wrap" hidden><input type="checkbox" id="again"> 我知道已部署过，仍要再部署一个 / I know it was deployed; deploy another</label>
+    <div class="row">
+      <button id="btn-estimate" type="button" disabled>估算费用 / Estimate</button>
+      <button id="btn-deploy" type="button" disabled>部署 / Deploy</button>
+    </div>
+    <p id="bus-status" class="status"></p>
+  </section>
+
+  <section id="s-verify">
+    <h2>3. 核对 <span class="muted">/ Verify</span></h2>
+    <p class="muted">核对某个地址上的代码是否与测试过的构建逐字节一致，以及两个常量。部署后会自动核对；也可以输入地址手动核对。
+      Checks that the code at an address equals the tested build byte for byte, and the two constants.</p>
+    <input id="verify-addr" inputmode="text" autocomplete="off" spellcheck="false" placeholder="0x…" aria-label="ChannelBus address">
+    <button id="btn-verify" type="button" class="ghost" disabled>核对这个地址 / Verify this address</button>
+    <div id="verify-out"></div>
+  </section>
+
+
+  <section id="s-circuit">
+    <h2>4. 你的电路 <span class="muted">/ Your circuit</span></h2>
+    <p class="muted">填处理器编号和电路编号（名字 <code>&lt;电路&gt;.&lt;处理器&gt;.tape</code> 里的两个数字）。页面从链上读出容器地址，并确认你连接的钱包就是当前持有人。</p>
+    <div class="row">
+      <input id="c-proc" inputmode="numeric" placeholder="处理器编号 / processor" aria-label="processor number">
+      <input id="c-id" inputmode="numeric" placeholder="电路编号 / #ID" aria-label="circuit number">
+    </div>
+    <button id="btn-circuit" type="button" disabled>读取 / Read</button>
+    <div id="circuit-out"></div>
+  </section>
+
+  <section id="s-key">
+    <h2>5. 服务密钥与变量 <span class="muted">/ Service key and variables</span></h2>
+    <p class="muted">服务用这把密钥给每个回答签名。它在你的手机上生成，本页不会把它发到任何地方，也不会保存；关掉页面就没了。复制后粘到 Cloudflare：
+      Workers &amp; Pages → <b>tapeapi-provider</b> → Settings → Variables and Secrets → Add，类型选 <b>Secret</b>，名字 <code>SIGNER_KEY</code>。</p>
+    <button id="btn-key" type="button">生成服务密钥 / Generate</button>
+    <div id="key-out"></div>
+    <div id="vars-out"></div>
+  </section>
+
+  <section id="s-deleg">
+    <h2>6. 签委托 <span class="muted">/ Sign the delegation</span></h2>
+    <p class="muted">设好 SIGNER_KEY 和上面三个变量、服务重新部署后，本页从服务读出它的签名地址，你用钱包签一个委托（EIP-712，只授权这把服务密钥代表你的容器回答，不涉及任何资金，90 天后到期）。</p>
+    <input id="svc-url" value="https://api.tapeapi.fun" aria-label="service URL" spellcheck="false">
+    <button id="btn-deleg" type="button" disabled>读取签名地址并签名 / Sign</button>
+    <div id="deleg-out"></div>
+  </section>
+
+  <section id="s-publish">
+    <h2>7. 把清单写上链 <span class="muted">/ Publish the manifest</span></h2>
+    <p class="muted">把第 6 步的两个值设为变量、服务重新部署后，本页读取服务提供的清单，逐项核对它与你签的一致，再发一笔 SiteRegistry.putFile 交易把它写进容器站点。</p>
+    <p id="publish-prev" class="warn" hidden></p>
+    <label class="check" id="republish-wrap" hidden><input type="checkbox" id="republish"> 已发布过，仍要再发布（续期委托后需要）/ Publish again</label>
+    <button id="btn-publish" type="button" disabled>核对并写上链 / Check and publish</button>
+    <div id="publish-out"></div>
+  </section>
+  <p class="muted">页面源码：<a href="https://github.com/BruceLanLan/tapeapi/tree/main/site/console">site/console</a>。部署的字节来自 <code>channelbus.json</code>，
+    合约测试 <code>ConsoleBytecode.t.sol</code> 保证它与测试过的合约完全一致。</p>
+</main>
+<script type="module">
+const $ = (id) => document.getElementById(id)
+const BSC = '0x38'
+const store = { get: (k) => { try { return JSON.parse(localStorage.getItem(k)) } catch { return null } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch { /* private mode */ } } }
+const say = (el, text, cls = '') => { el.className = `status ${cls}`; el.textContent = text }
+const eth = window.ethereum
+let cfg = null, account = null
+
+async function rpc(method, params = []) { return eth.request({ method, params }) }
+// A wallet that switches account or chain mid-way would sign or send as someone else (security review F4): start over.
+// 钱包中途切换账户或链，会以别人的身份签名或发送（安全审查 F4）：重新开始。
+eth?.on?.('accountsChanged', () => location.reload())
+eth?.on?.('chainChanged', () => location.reload())
+async function ensureSame() {
+  const [a] = await rpc('eth_accounts')
+  if (!a || a.toLowerCase() !== account.toLowerCase()) throw new Error(`钱包当前账户（${a || '无'}）不是连接时的 ${account}，请刷新页面重新连接`)
+  if ((await rpc('eth_chainId')) !== BSC) throw new Error('钱包已不在 BNB Chain')
+}
+const hexToBig = (h) => BigInt(h)
+const fmtBNB = (wei) => { const s = (Number(wei) / 1e18).toFixed(8).replace(/0+$/, '').replace(/\.$/, ''); return `${s} BNB` }
+const isAddr = (a) => /^0x[0-9a-fA-F]{40}$/.test(a)
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+async function load() {
+  try {
+    cfg = await (await fetch('./channelbus.json', { cache: 'no-store' })).json()
+    $('bus-src').href = cfg.source
+    const runtimeSha = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', hexBytes(cfg.runtime)))).map((b) => b.toString(16).padStart(2, '0')).join('')
+    $('bus-facts').insertAdjacentHTML('beforeend', `<dt>编译器</dt><dd class="mono">solc ${cfg.compiler.split('+')[0]} · ${cfg.evmVersion} · runs ${cfg.optimizerRuns}</dd><dt>代码大小</dt><dd>${(cfg.runtime.length - 2) / 2} 字节</dd><dt>代码 SHA-256</dt><dd class="mono">${runtimeSha}</dd>`)
+  } catch (e) { say($('bus-status'), `读不到 channelbus.json：${e.message}`, 'bad') }
+  const prev = store.get('channelbus.deployed')
+  if (prev?.address) { $('bus-prev').hidden = false; $('bus-prev').textContent = `这台设备上已部署过：${prev.address}（${new Date(prev.at).toLocaleString()}）。通常不需要再部署。`; $('again-wrap').hidden = false; $('verify-addr').value = prev.address }
+  if (!eth) { say($('wallet-status'), '没有检测到钱包。请在 MetaMask、OKX、Trust 等钱包的内置浏览器里打开本页。', 'bad'); $('btn-connect').disabled = true }
+}
+function hexBytes(h) { const s = h.replace(/^0x/, ''); const out = new Uint8Array(s.length / 2); for (let i = 0; i < out.length; i++) out[i] = parseInt(s.substr(i * 2, 2), 16); return out }
+
+$('btn-connect').onclick = async () => {
+  try {
+    const accs = await rpc('eth_requestAccounts')
+    let cid = await rpc('eth_chainId')
+    if (cid !== BSC) {
+      try { await rpc('wallet_switchEthereumChain', [{ chainId: BSC }]); cid = await rpc('eth_chainId') } catch { /* the user refused */ }
+    }
+    if (cid !== BSC) { say($('wallet-status'), `钱包当前不在 BNB Chain（chainId ${parseInt(cid, 16)}），请切换到 BNB Smart Chain 再连接。`, 'bad'); return }
+    account = accs[0]   // only once the chain is right, so steps 4-7 stay off on another chain / 链正确之后才记下账户
+    const bal = await rpc('eth_getBalance', [account, 'latest'])
+    say($('wallet-status'), `已连接 ${account}（BNB Chain，余额 ${fmtBNB(hexToBig(bal))}）`, 'ok')
+    $('btn-estimate').disabled = !cfg; $('btn-verify').disabled = false
+    await checkPending()
+    refreshDeployButton()
+  } catch (e) { say($('wallet-status'), `连接失败：${e.message}`, 'bad') }
+}
+// A deployment sent earlier whose receipt the page never saw (timeout, reload): promote it or say it is still waiting.
+// 之前发出、页面没等到回执的部署（超时、刷新）：已上链就记下，否则提示仍在等待。
+async function checkPending() {
+  const p = store.get('channelbus.pending')
+  if (!p?.hash || store.get('channelbus.deployed')?.address) return
+  const rc = await rpc('eth_getTransactionReceipt', [p.hash]).catch(() => null)
+  if (rc?.status === '0x1' && rc.contractAddress) {
+    store.set('channelbus.deployed', { address: rc.contractAddress, hash: p.hash, at: p.at }); store.set('channelbus.pending', null)
+    $('bus-prev').hidden = false; $('bus-prev').textContent = `之前发出的部署已上链：${rc.contractAddress}。不需要再部署。`; $('again-wrap').hidden = false; $('verify-addr').value = rc.contractAddress
+  } else if (rc) store.set('channelbus.pending', null)
+  else { $('bus-prev').hidden = false; $('bus-prev').textContent = `有一笔部署交易还在等待上链：${p.hash}。先在 BscScan 查看，不要重复部署。`; $('again-wrap').hidden = false; store.set('channelbus.deployed', null) }
+}
+function refreshDeployButton() {
+  const prev = store.get('channelbus.deployed')
+  const waiting = store.get('channelbus.pending')?.hash && !prev?.address
+  $('btn-deploy').disabled = !account || !cfg || ((prev?.address || waiting) && !$('again').checked)
+}
+$('again').onchange = refreshDeployButton
+
+$('btn-estimate').onclick = async () => {
+  try {
+    const [gas, price] = await Promise.all([rpc('eth_estimateGas', [{ from: account, data: cfg.creation }]), rpc('eth_gasPrice')])
+    say($('bus-status'), `预计约 ${hexToBig(gas).toLocaleString()} gas，按当前 gas 价格约 ${fmtBNB(hexToBig(gas) * hexToBig(price))}（钱包里显示的为准）`)
+  } catch (e) { say($('bus-status'), `估算失败：${e.message}`, 'bad') }
+}
+
+$('btn-deploy').onclick = async () => {
+  $('btn-deploy').disabled = true
+  try {
+    await ensureSame()
+    const gas = hexToBig(await rpc('eth_estimateGas', [{ from: account, data: cfg.creation }]))
+    say($('bus-status'), '请在钱包里确认部署交易…')
+    // No `to`: a contract creation with exactly the tested bytes / 没有 `to`：以测试过的字节创建合约
+    const hash = await rpc('eth_sendTransaction', [{ from: account, chainId: BSC, data: cfg.creation, gas: '0x' + ((gas * 12n) / 10n).toString(16) }])
+    store.set('channelbus.pending', { hash, at: Date.now() })
+    say($('bus-status'), `已发出 ${hash}，等待上链…`)
+    let rc = null
+    for (let i = 0; i < 120 && !rc; i++) { await sleep(3000); rc = await rpc('eth_getTransactionReceipt', [hash]) }
+    if (!rc) throw new Error(`6 分钟内没有上链，稍后用交易哈希 ${hash} 在 BscScan 查看`)
+    if (rc.status !== '0x1') throw new Error(`交易失败（status ${rc.status}）`)
+    const address = rc.contractAddress
+    store.set('channelbus.deployed', { address, hash, at: Date.now() }); store.set('channelbus.pending', null)
+    say($('bus-status'), `已部署：${address}`, 'ok')
+    $('verify-addr').value = address
+    await verify(address)
+  } catch (e) { say($('bus-status'), `部署没有完成：${e.message}`, 'bad') }
+  refreshDeployButton()
+}
+
+$('btn-verify').onclick = () => verify($('verify-addr').value.trim())
+
+async function verify(address) {
+  const out = $('verify-out')
+  out.innerHTML = ''
+  const line = (ok, text) => { const p = document.createElement('p'); p.className = `status ${ok ? 'ok' : 'bad'}`; p.textContent = `${ok ? '✓' : '✗'} ${text}`; out.append(p); return ok }
+  if (!isAddr(address)) return line(false, '不是有效地址')
+  try {
+    if ((await rpc('eth_chainId')) !== BSC) return line(false, '钱包不在 BNB Chain')
+    const code = String(await rpc('eth_getCode', [address, 'latest'])).toLowerCase()
+    let all = line(code === cfg.runtime.toLowerCase(), code === '0x' ? '这个地址上没有代码' : code === cfg.runtime.toLowerCase() ? '链上代码与测试过的构建逐字节一致' : '链上代码与测试过的构建不一致')
+    if (!all) return false   // not our contract: its constants mean nothing / 不是我们的合约：常量没有意义
+    for (const c of cfg.checks) {
+      const v = hexToBig(await rpc('eth_call', [{ to: address, data: c.call }, 'latest']))
+      all = line(v === BigInt(c.expect), `${c.name} = ${v}（应为 ${c.expect}）`) && all
+    }
+    if (all) {
+      const p = document.createElement('p')
+      p.innerHTML = `把这个地址发给 Claude：<br><code>${address}</code><br><a href="https://bscscan.com/address/${address}" target="_blank" rel="noopener">在 BscScan 上查看</a>`
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'ghost'; b.textContent = '复制地址 / Copy address'
+      b.onclick = async () => { try { await navigator.clipboard.writeText(address); b.textContent = '已复制 / Copied' } catch { b.textContent = '复制失败，请长按上面的地址' } }
+      out.append(p, b)
+      // A first real frame: it proves a message goes on chain and comes back through real nodes, before anyone relies on it.
+      // 第一条真实的消息：在有人依赖它之前，证明消息能上链、并能通过真实节点读回来。
+      const t = document.createElement('button'); t.type = 'button'; t.className = 'ghost'; t.textContent = '发一条测试消息（约 5 万 gas）/ Send a test message'
+      const note3 = document.createElement('p'); note3.className = 'status'
+      t.onclick = async () => {
+        t.disabled = true
+        try {
+          await ensureSame()
+          const tx = C.probeTx({ bus: address, text: `tapeapi probe ${new Date().toISOString()}` })
+          note3.textContent = '请在钱包里确认…'
+          const hash = await rpc('eth_sendTransaction', [{ from: account, chainId: BSC, to: tx.to, data: tx.data, value: tx.value }])
+          note3.textContent = `已发出 ${hash}，等待上链…`
+          let rc = null
+          for (let i = 0; i < 120 && !rc; i++) { await sleep(3000); rc = await rpc('eth_getTransactionReceipt', [hash]) }
+          if (!rc || rc.status !== '0x1') throw new Error(rc ? `交易失败（status ${rc.status}）` : `6 分钟内没有上链，稍后用 ${hash} 在 BscScan 查看`)
+          const block = parseInt(rc.blockNumber, 16)
+          note3.className = 'status ok'; note3.textContent = `✓ 测试消息已上链（区块 ${block}）。把这句发给 Claude："测试消息 ${address} ${block}"`
+          out.append(copyBtn('复制', `测试消息 ${address} ${block}`))
+        } catch (e) { note3.className = 'status bad'; note3.textContent = `没有完成：${e.message}`; t.disabled = false }
+      }
+      out.append(t, note3)
+    }
+  } catch (e) { line(false, `核对失败：${e.message}`) }
+}
+
+load()
+
+// ---------------------------------------------------------------- 4-7: the first service (api.tapeapi.fun) ----
+import * as C from './lib.js'
+const svcState = () => store.get('svc') || {}
+const saveSvc = (patch) => store.set('svc', { ...svcState(), ...patch })
+const call = async (to, data) => rpc('eth_call', [{ to, data }, 'latest'])
+const copyBtn = (label, value) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ghost'; b.textContent = label; b.onclick = async () => { try { await navigator.clipboard.writeText(value); b.textContent = '已复制 / Copied' } catch { b.textContent = '复制失败，请长按上面的文字' } }; return b }
+const kv = (host, rows) => { const dl = document.createElement('dl'); for (const [k, v] of rows) { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.className = 'mono'; dd.textContent = v; dl.append(dt, dd) } host.append(dl) }
+const note = (host, ok, text) => { const p = document.createElement('p'); p.className = `status ${ok === true ? 'ok' : ok === false ? 'bad' : ''}`; p.textContent = text; host.append(p); return p }
+function showVars() {
+  const s = svcState(), out = $('vars-out'); out.innerHTML = ''
+  if (!s.container) return
+  note(out, null, '在同一个页面再添加这几个变量（类型 Text）：')
+  for (const [k, v] of [['CIRCUITS', s.circuits], ['TOKEN_ID', s.tokenId], ['CONTAINER', s.container], ...(s.sig ? [['DELEGATION_EXPIRES', String(s.expires)], ['DELEGATION_SIG', s.sig]] : [])]) {
+    kv(out, [[k, v]]); out.append(copyBtn(`复制 ${k}`, v))
+  }
+}
+const enableSvc = () => {
+  const s = svcState(), again = s.published || s.publishPending
+  $('btn-circuit').disabled = !account; $('btn-deleg').disabled = !account || !s.container
+  $('btn-publish').disabled = !account || !s.sig || (again && !$('republish').checked)
+  if (again) { $('republish-wrap').hidden = false; $('publish-prev').hidden = false; $('publish-prev').textContent = s.published ? `这台设备上已发布过（${s.published}）。只有续期委托后才需要再发布。` : `有一笔发布交易还在等待：${s.publishPending}。先在 BscScan 查看，不要重复发送。` }
+}
+new MutationObserver(enableSvc).observe($('wallet-status'), { childList: true, characterData: true, subtree: true })
+
+$('btn-circuit').onclick = async () => {
+  const out = $('circuit-out'); out.innerHTML = ''
+  try {
+    const c = await C.readCircuit(call, { processor: $('c-proc').value.trim(), tokenId: $('c-id').value.trim() })
+    kv(out, [['电路合约', c.circuits], ['电路编号', c.tokenId], ['容器', c.container], ['当前持有人', c.holder]])
+    if (c.holder.toLowerCase() !== account.toLowerCase()) { note(out, false, `你连接的钱包（${account}）不是这个电路的持有人。请用持有它的钱包打开本页。`); return }
+    note(out, true, '✓ 你就是这个电路的持有人')
+    // An unopened container has no code, and SiteRegistry refuses its files (NotOwner) even from the holder.
+    // 没开通的容器没有代码，SiteRegistry 连持有人也会拒绝（NotOwner）。
+    if ((await rpc('eth_getCode', [c.container, 'latest'])) === '0x') { note(out, false, '这个电路的容器还没开通（清单 A4：电路页面 →「容器」→ 开通）。开通后再读取一次。'); return }
+    note(out, true, '✓ 容器已开通')
+    saveSvc({ circuits: c.circuits, tokenId: c.tokenId, container: c.container, holder: c.holder, sig: undefined, expires: undefined })
+    showVars(); enableSvc()
+  } catch (e) { note(out, false, `读取失败：${e.message}`) }
+}
+
+$('btn-key').onclick = () => {
+  const out = $('key-out'); out.innerHTML = ''
+  const k = C.newSignerKey(), keyAddress = C.addressOfKey(k)
+  // Only the address is kept (it is public); step 6 signs for this address and no other. / 只保存地址（公开的）；第 6 步只为它签。
+  saveSvc({ keyAddress, sig: undefined, expires: undefined })
+  note(out, null, '这是服务密钥（只显示这一次）。它不是你的钱包，泄露了只会让别人能以你的服务名义回答，直到委托到期；但请像密码一样对待它。')
+  note(out, false, '只粘贴到 Cloudflare。不要发给任何人（包括 Claude），不要截图。')
+  const box = document.createElement('div'); kv(box, [['SIGNER_KEY', k]]); box.append(copyBtn('复制 SIGNER_KEY', k)); out.append(box)
+  kv(out, [['它的地址（服务会报出这个地址）', keyAddress]])
+  // Once pasted, take the key off the page and out of the clipboard (review F3). / 粘贴好后，把密钥从页面和剪贴板清掉（审查 F3）。
+  const done = document.createElement('button'); done.type = 'button'; done.className = 'ghost'; done.textContent = '已粘贴到 Cloudflare：清除页面上的密钥和剪贴板'
+  done.onclick = async () => { box.remove(); done.remove(); try { await navigator.clipboard.writeText('') } catch { /* nothing to do / 无需处理 */ } note(out, true, '✓ 密钥已从页面清除。上面的地址会在第 6 步用来核对。') }
+  out.append(done)
+  showVars(); enableSvc()
+}
+
+$('btn-deleg').onclick = async () => {
+  const out = $('deleg-out'); out.innerHTML = ''
+  try {
+    const s = svcState(), base = $('svc-url').value.trim().replace(/\/+$/, '')
+    if (!C.isServiceBase(base)) { note(out, false, `服务网址必须是 https://主机名，不带路径（现在是 ${base}）。`); return }
+    if (!s.keyAddress) { note(out, false, '本页没有记录你生成的服务密钥。请回到第 5 步重新生成，并把新的 SIGNER_KEY 设到 Cloudflare。'); return }
+    const h = await (await fetch(`${base}/tapeapi/v1/health`, { cache: 'no-store' })).json()
+    if (!h.signer || !/^0x[0-9a-fA-F]{40}$/.test(h.signer)) { note(out, false, `服务还没有签名地址（缺：${(Array.isArray(h.missing) ? h.missing : []).filter((m) => /^[A-Z_]{1,32}( \(secret\))?$/.test(m)).join('、') || '未知'}）。先在 Cloudflare 设好 SIGNER_KEY 并等它重新部署。`); return }
+    // Sign only for the key generated on this page (security review F1). / 只为本页生成的密钥签（安全审查 F1）。
+    if (h.signer.toLowerCase() !== s.keyAddress.toLowerCase()) { note(out, false, `服务报出的签名地址 ${h.signer} 不是你在第 5 步生成的密钥（${s.keyAddress}）。检查服务网址；或把第 5 步最后生成的那把 SIGNER_KEY 重新粘贴到 Cloudflare，等一分钟再试。`); return }
+    const expires = Math.floor(Date.now() / 1000) + 90 * 86400
+    const typed = C.delegationTypedData({ container: s.container, signer: s.keyAddress, expires })
+    kv(out, [['授权的签名地址（第 5 步生成的密钥）', s.keyAddress], ['代表的容器', s.container], ['服务网址', `${base}/tapeapi/v1`], ['到期', new Date(expires * 1000).toLocaleString()]])
+    note(out, null, '请在钱包里确认签名（EIP-712 "Delegation"，不涉及资金）…')
+    await ensureSame()
+    const sig = await rpc('eth_signTypedData_v4', [account, JSON.stringify(typed)])
+    // The signature must be a plain 65-byte one from the holder read in step 4 (review F4): some wallets sign with
+    // whichever account is active, and smart accounts return other formats that clients cannot verify.
+    // 签名必须是第 4 步读到的持有人做出的普通 65 字节签名（审查 F4）：有些钱包用当前活动账户签，智能账户返回的格式客户端无法验证。
+    const by = C.recoverAddress(C.delegationDigest({ container: s.container, signer: s.keyAddress, expires }), sig)
+    if (!by) throw new Error('钱包返回的不是客户端能验证的普通签名（65 字节、低 s；智能账户钱包不行），请换用普通钱包账户')
+    if (by.toLowerCase() !== String(s.holder || '').toLowerCase()) throw new Error(`签名来自 ${by}，不是电路持有人 ${s.holder}。请切回持有人账户，刷新后从第 4 步重来`)
+    saveSvc({ signer: s.keyAddress, expires, sig, endpoint: `${base}/tapeapi/v1` })
+    note(out, true, '✓ 已签名。把下面两个值也设为变量（第 5 步那一页），等服务重新部署。')
+    showVars(); enableSvc()
+  } catch (e) { note(out, false, `没有完成：${e.message}`) }
+}
+
+$('btn-publish').onclick = async () => {
+  const out = $('publish-out'); out.innerHTML = ''
+  $('btn-publish').disabled = true   // one tap, one transaction (review F5) / 一次点击一笔交易
+  let sent = false
+  try {
+    const s = svcState(), base = s.endpoint.replace(/\/tapeapi\/v1$/, '')
+    const served = await (await fetch(`${base}/.well-known/tapeapi.json`, { cache: 'no-store' })).text()
+    const problems = C.manifestProblems(served, s)
+    if (problems.length) { note(out, false, `服务提供的清单与你签的不一致，暂不上链：${problems.join('；')}。通常是变量还没生效，等一两分钟再试。`); return }
+    // Publish the page's own bytes, built from what you read and signed; the service only has to agree (review F2).
+    // 发布页面自己构造的字节（来自你读到和签过的内容）；服务只需与之一致（审查 F2）。
+    const text = C.manifestText({ ...s, name: JSON.parse(served).name })
+    note(out, true, `✓ 清单核对通过（${new TextEncoder().encode(text).length} 字节）。将写上链的内容：`)
+    const pre = document.createElement('pre'); pre.className = 'mono'; pre.textContent = JSON.stringify(JSON.parse(text), null, 2); out.append(pre)
+    const sha = '0x' + Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))).map((b) => b.toString(16).padStart(2, '0')).join('')
+    const tx = C.putFileTx({ container: s.container, text, sha256Hex: sha })
+    await ensureSame()
+    try { await rpc('eth_estimateGas', [{ from: account, to: tx.to, data: tx.data }]) } catch (e) {
+      const why = /30cd7471/.test(JSON.stringify(e?.data ?? '') + (e?.message ?? '')) ? '这个钱包不能写这个容器的站点（NotOwner）：容器没开通，或你不是持有人' : e.message
+      throw new Error(`预检没有通过，没有发送交易：${why}`)
+    }
+    note(out, null, '请在钱包里确认写入交易（SiteRegistry.putFile）…')
+    const hash = await rpc('eth_sendTransaction', [{ from: account, chainId: BSC, to: tx.to, data: tx.data, value: tx.value }])
+    sent = true; saveSvc({ publishPending: hash })
+    note(out, null, `已发出 ${hash}，等待上链…`)
+    let rc = null
+    for (let i = 0; i < 120 && !rc; i++) { await sleep(3000); rc = await rpc('eth_getTransactionReceipt', [hash]) }
+    if (!rc) throw new Error(`6 分钟内没有上链，稍后用 ${hash} 在 BscScan 查看`)
+    if (rc.status !== '0x1') throw new Error(`交易失败（status ${rc.status}）`)
+    saveSvc({ published: hash, sha, publishPending: undefined })
+    note(out, true, `✓ 清单已写上链。把这句发给 Claude："清单已上链 ${s.container}"`)
+    out.append(copyBtn('复制', `清单已上链 ${s.container} ${hash}`))
+  } catch (e) { note(out, false, `没有完成：${e.message}`) } finally {
+    // After a send, publishing again needs the explicit box (renewing the delegation is the reason to); a check that
+    // failed before sending leaves the button on for a retry. / 发出后再发布需要勾选；发送前失败则按钮保持可用以便重试。
+    if (sent) { $('republish-wrap').hidden = false; $('republish').checked = false }
+    enableSvc()
+  }
+}
+$('republish').onchange = enableSvc
+showVars(); enableSvc()
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "tapeapi": "0.1",
+  "name": "DeFi Price Oracle (PancakeSwap V2)",
+  "circuits": "0x0000000000000000000000000000000000000000",
+  "tokenId": "0",
+  "container": "0x0000000000000000000000000000000000000000",
+  "signer": "0x0000000000000000000000000000000000000000",
+  "delegation": null,
+  "endpoints": { "live": ["http://127.0.0.1:8789/tapeapi/v1"], "async": false },
+  "methods": [
+    { "name": "bnbUsd", "priceBEM": "0", "params": { "block": "number|'finalized'|'latest'? (default finalized)" }, "returns": { "bnbUsd": "string", "pair": "address", "blockPinned": "object" } },
+    { "name": "pairPrice", "priceBEM": "0.0001", "params": { "pair": "address?", "block": "number|'finalized'|'latest'? (default finalized)" }, "returns": { "pair": "address", "token0": "object", "token1": "object", "reserves": "object", "price": "object", "blockPinned": "object" } }
+  ],
+  "payment": { "escrow": "0x0000000000000000000000000000000000000000", "unit": "BEM", "decimals": 8 },
+  "dev": true
+}

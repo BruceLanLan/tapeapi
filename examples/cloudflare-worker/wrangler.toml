@@ -1,0 +1,47 @@
+# A TapeAPI provider on its own Worker and its own hostname.
+# 独立 Worker、独立主机名上的 TapeAPI 提供者。
+name = "tapeapi-provider"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+# Variables set in the dashboard survive a git-push redeploy / 后台设置的变量在 git 推送重新部署后保留
+keep_vars = true
+
+# A subdomain, never a path on an existing site: the endpoint URL is written into the on-chain manifest, so
+# moving hosts later costs a SiteRegistry.putFile transaction. A hostname you control can be repointed for free.
+# 用子域名而不是现有站点的路径：端点 URL 写在链上清单里，以后搬家要花一笔 putFile 交易。
+# 自己控制的主机名可以免费改指向。
+[[routes]]
+pattern = "api.tapeapi.fun"
+custom_domain = true
+
+# NO [placement] block on purpose: the default is the edge nearest the caller, which is what a signing API wants.
+# Smart Placement would pin this Worker near D1 and add hundreds of milliseconds for callers far from it.
+# 刻意不写 [placement]：默认就是离调用方最近的边缘，这正是签名 API 想要的。
+# Smart Placement 会把这个 Worker 固定在 D1 附近，对远处的调用方多出几百毫秒。
+
+[observability]
+enabled = true
+
+[vars]
+SERVICE_NAME = "TapeAPI Reader"
+PUBLIC_URL = "https://api.tapeapi.fun"
+# 2-of-3 (quorum 2): one node down still leaves a quorum (arch A5). / 三取二：一个节点宕机仍有法定数。
+RPC_URLS = "https://bsc-rpc.publicnode.com,https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io"
+# CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES and DELEGATION_SIG are set in the Cloudflare dashboard (Settings ->
+# Variables and Secrets), as the holder console at tapeapi.fun/console shows them; SIGNER_KEY is a secret set the same
+# way. Until all are set the Worker answers only its health, in setup mode. keep_vars keeps dashboard values when a
+# git push redeploys. / 这几个变量在 Cloudflare 后台设置（操作台会给出值），SIGNER_KEY 作为密钥同样在后台设置；设齐之前
+# Worker 只以设置模式回答健康检查。keep_vars 让后台设置的值在 git 推送触发重新部署时保留。
+
+# Only needed once a method is priced. A free service needs no D1 at all.
+# 只有当某个方法开始收费时才需要。全免费的服务完全不需要 D1。
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "tapeapi-meter"
+# database_id = "..."
+
+# The one secret, set in the dashboard (type Secret) or with `npx wrangler secret put SIGNER_KEY`, never in this file:
+#   SIGNER_KEY      the hot signing key named by the delegation / 委托指定的热签名密钥
+# CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES and DELEGATION_SIG are public: dashboard variables of type Text.
+# 其余五个值是公开的：在后台设为 Text 类型的变量。

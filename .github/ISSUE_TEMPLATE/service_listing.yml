@@ -1,0 +1,64 @@
+name: Service listing / 服务登记
+description: Ask for a TapeAPI service to be listed in the directory site. 申请把一个 TapeAPI 服务列进目录站。
+title: "[service] "
+labels: ["service-listing"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Listing is a **convenience only**. It confers no authority: clients always derive the container on-chain and verify signatures themselves (TAP-20 §3.6). We do not vet, endorse or take responsibility for any listed service.
+        登记**只是查找便利**，不承载任何权威：客户端始终自行链上推导容器并验签（TAP-20 §3.6）。我们不审核、不背书、不对任何被列出的服务负责。
+  - type: input
+    id: name
+    attributes:
+      label: Service name / 服务名称
+    validations:
+      required: true
+  - type: input
+    id: circuit
+    attributes:
+      label: Circuits contract and tokenId / 电路合约与 tokenId
+      description: "e.g. 0xabc… / 4246. Must be a factory-deployed circuits contract. 必须是工厂部署的电路合约。"
+    validations:
+      required: true
+  - type: input
+    id: container
+    attributes:
+      label: Container address / 容器地址
+      description: Must equal DeWebHub.accountOf(circuits, tokenId). 必须等于 DeWebHub.accountOf(circuits, tokenId)。
+    validations:
+      required: true
+  - type: input
+    id: manifest
+    attributes:
+      label: Manifest location / 清单位置
+      description: "Normally /.well-known/tapeapi.json in the container's DeWEB site. 通常是容器 DeWEB 站点的 /.well-known/tapeapi.json。"
+    validations:
+      required: true
+  - type: textarea
+    id: methods
+    attributes:
+      label: Methods and prices / 方法与价格
+      description: "Name, priceBEM, and [quorum] or [no-quorum] for each. 每个方法的名称、priceBEM，以及 [quorum] / [no-quorum]。"
+    validations:
+      required: true
+  - type: input
+    id: label
+    attributes:
+      label: Requested label / 申请的别名
+      description: "Optional. Requires an active container (DomainBinding.isContainerLive). 可选，需容器已激活。"
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmations / 确认
+      options:
+        - label: "I hold the circuit (circuits.ownerOf(tokenId) is my address). 我持有该电路。"
+          required: true
+        - label: "The manifest carries a valid delegation signed by the holder (EIP-712 domain anchored on the DeWebHub). 清单带有持有人签发的有效委托（EIP-712 域锚定在 DeWebHub）。"
+          required: true
+        - label: "The manifest's container equals DeWebHub.accountOf(circuits, tokenId). 清单中的容器等于 DeWebHub.accountOf(circuits, tokenId)。"
+          required: true
+        - label: "Responses verify against TAP-21 (`TAPI-1/resp/v2` digest, EIP-191, low-s). 响应可按 TAP-21 验签。"
+          required: true
+        - label: "I understand listing confers no endorsement and can be removed. 我理解登记不代表背书，且可能被移除。"
+          required: true

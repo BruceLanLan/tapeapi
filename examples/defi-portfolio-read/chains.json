@@ -1,0 +1,5 @@
+{
+  "56":   { "name": "bsc",      "symbol": "BNB", "lag": 3, "quorum": 2, "rpcUrls": ["https://bsc-dataseed.bnbchain.org", "https://bsc-dataseed1.defibit.io", "https://bsc-dataseed1.ninicoin.io"] },
+  "1":    { "name": "ethereum", "symbol": "ETH", "lag": 1, "quorum": 2, "rpcUrls": ["https://ethereum-rpc.publicnode.com", "https://eth.llamarpc.com", "https://eth.drpc.org"] },
+  "8453": { "name": "base",     "symbol": "ETH", "lag": 2, "quorum": 2, "rpcUrls": ["https://mainnet.base.org", "https://base-rpc.publicnode.com"] }
+}

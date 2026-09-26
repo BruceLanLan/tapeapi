@@ -1,0 +1,18 @@
+{
+  "imports": {
+    "@noble/hashes/sha256": "/node_modules/@noble/hashes/esm/sha256.js",
+    "@noble/curves/ed25519": "/node_modules/@noble/curves/esm/ed25519.js",
+    "@noble/ciphers/chacha": "/node_modules/@noble/ciphers/esm/chacha.js",
+    "@noble/hashes/hkdf": "/node_modules/@noble/hashes/esm/hkdf.js",
+    "@noble/hashes/hmac": "/node_modules/@noble/hashes/esm/hmac.js",
+    "@noble/hashes/utils": "/node_modules/@noble/hashes/esm/utils.js",
+    "@noble/hashes/crypto": "/node_modules/@noble/hashes/esm/crypto.js",
+    "@noble/hashes/sha2.js": "/node_modules/@noble/hashes/esm/sha2.js",
+    "@noble/hashes/utils.js": "/node_modules/@noble/hashes/esm/utils.js",
+    "@noble/curves/ed25519.js": "/node_modules/@noble/curves/esm/ed25519.js",
+    "@noble/curves/secp256k1": "/node_modules/@noble/curves/esm/secp256k1.js",
+    "@noble/hashes/sha3": "/node_modules/@noble/hashes/esm/sha3.js",
+    "@noble/curves/secp256k1.js": "/node_modules/@noble/curves/esm/secp256k1.js",
+    "@noble/hashes/hmac.js": "/node_modules/@noble/hashes/esm/hmac.js"
+  }
+}

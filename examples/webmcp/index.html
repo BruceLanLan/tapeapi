@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TapeAPI WebMCP demo</title>
+<!-- The unbundled SDK, resolved the same way as scripts/browser-smoke (regenerate with make-importmap.mjs). -->
+<script type="importmap">
+{
+  "imports": {
+    "@noble/hashes/sha256": "/node_modules/@noble/hashes/esm/sha256.js",
+    "@noble/curves/ed25519": "/node_modules/@noble/curves/esm/ed25519.js",
+    "@noble/ciphers/chacha": "/node_modules/@noble/ciphers/esm/chacha.js",
+    "@noble/hashes/hkdf": "/node_modules/@noble/hashes/esm/hkdf.js",
+    "@noble/hashes/hmac": "/node_modules/@noble/hashes/esm/hmac.js",
+    "@noble/hashes/utils": "/node_modules/@noble/hashes/esm/utils.js",
+    "@noble/hashes/crypto": "/node_modules/@noble/hashes/esm/crypto.js",
+    "@noble/hashes/sha2.js": "/node_modules/@noble/hashes/esm/sha2.js",
+    "@noble/hashes/utils.js": "/node_modules/@noble/hashes/esm/utils.js",
+    "@noble/curves/ed25519.js": "/node_modules/@noble/curves/esm/ed25519.js",
+    "@noble/curves/secp256k1": "/node_modules/@noble/curves/esm/secp256k1.js",
+    "@noble/hashes/sha3": "/node_modules/@noble/hashes/esm/sha3.js",
+    "@noble/curves/secp256k1.js": "/node_modules/@noble/curves/esm/secp256k1.js",
+    "@noble/hashes/hmac.js": "/node_modules/@noble/hashes/esm/hmac.js"
+  }
+}
+</script>
+<style>
+  :root { --bg: #f6f7f4; --fg: #1d2320; --muted: #5d665f; --line: #d5dbd3; --accent: #2f6f4e; --bad: #a2352b; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #141816; --fg: #e4e9e3; --muted: #97a198; --line: #2c3530; --accent: #7fc39c; --bad: #e8877c; } }
+  body { background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; margin: 0; padding: 24px 16px; }
+  main { max-width: 760px; margin: 0 auto; display: grid; gap: 16px; }
+  h1 { font-size: 22px; margin: 0; }
+  p { margin: 0; color: var(--muted); }
+  label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+  input, select, button, textarea { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+  button { cursor: pointer; border-color: var(--accent); color: var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+  .row > label { flex: 1 1 260px; }
+  pre { background: color-mix(in srgb, var(--line) 35%, transparent); border-radius: 6px; padding: 10px; overflow-x: auto; margin: 0; font-size: 12.5px; }
+  .status { font-weight: 600; }
+  .status.bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>TapeAPI → WebMCP</h1>
+  <p>Resolves a TapeAPI service, verifies its identity, and registers one agent tool per method on
+     <code>document.modelContext</code>. Every tool call returns a TAP-21 envelope verified against the service's
+     delegated signer. 解析一个 TapeAPI 服务、核验身份，并把每个方法注册为 <code>document.modelContext</code> 上的代理工具；
+     每次调用的回答都按服务的授权签名者验签。</p>
+  <div class="row">
+    <label>Local dev service / 本地开发服务<input id="host" value="http://127.0.0.1:8787"></label>
+    <button id="expose">Expose tools / 注册工具</button>
+  </div>
+  <div id="status" class="status">Not started.</div>
+  <pre id="tools">(no tools yet)</pre>
+  <div class="row">
+    <label>Tool / 工具<select id="tool"></select></label>
+    <label>Input JSON / 输入<input id="input" value="{}"></label>
+    <button id="try">Call as the agent would / 像代理一样调用</button>
+  </div>
+  <pre id="out">(no call yet)</pre>
+</main>
+<script type="module">
+import { createTapeAPI } from '/sdk/src/index.js'
+import { exposeTapeAPI } from '/sdk/src/webmcp.js'
+
+const $ = (id) => document.getElementById(id)
+const native = globalThis.document?.modelContext || globalThis.navigator?.modelContext || null
+// Without native WebMCP the page keeps a local stand-in, so the human can still see and try the tools. An agent in
+// the browser can only discover them through the native API. / 没有原生 WebMCP 时用本地替身：人仍可查看与试用，但浏览器里的代理只能通过原生接口发现工具。
+const local = new Map()
+const stand = {
+  registerTool(tool) { local.set(tool.name, tool) },
+  unregisterTool(name) { local.delete(name) },
+  getTools: async () => [...local.values()],
+}
+const mc = native || stand
+let handle = null
+
+$('expose').onclick = async () => {
+  try {
+    handle?.dispose()
+    $('status').className = 'status'; $('status').textContent = 'Resolving…'
+    const api = createTapeAPI({ allowHttp: true, dev: true })
+    handle = await exposeTapeAPI(api, { dev: $('host').value.trim() }, { modelContext: mc, prefix: 'reader_' })
+    const names = handle.tools.map((t) => t.name)
+    $('status').textContent = `${names.length} tools registered ${native ? 'on the native modelContext' : 'on a LOCAL stand-in (this browser has no WebMCP; agents cannot see them)'}` +
+      (handle.skipped.length ? `; skipped: ${handle.skipped.map((s) => `${s.method} (${s.code})`).join(', ')}` : '')
+    $('tools').textContent = JSON.stringify(handle.tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), null, 2)
+    $('tool').innerHTML = names.map((n) => `<option>${n}</option>`).join('')
+  } catch (e) { $('status').className = 'status bad'; $('status').textContent = `${e.code || 'ERROR'}: ${e.message}` }
+}
+$('try').onclick = async () => {
+  const t = handle?.tools.find((x) => x.name === $('tool').value)
+  if (!t) return
+  try { $('out').textContent = JSON.stringify(await t.execute($('input').value), null, 2) }
+  catch (e) { $('out').textContent = `${e.code || 'ERROR'}: ${e.message}` }
+}
+</script>
+</body>
+</html>

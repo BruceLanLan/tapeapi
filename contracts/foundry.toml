@@ -1,0 +1,54 @@
+[profile.default]
+src = "src"
+test = "test"
+out = "out-forge"
+libs = ["lib"]
+solc_version = "0.8.28"
+optimizer = true
+optimizer_runs = 200
+evm_version = "paris"
+remappings = ["forge-std/=lib/forge-std/src/"]
+# Read-only access for ConsoleBytecode.t.sol, which checks the phone console deploys the tested bytes. Changes no
+# compile setting. / 仅供 ConsoleBytecode.t.sol 只读，核对手机操作页部署的就是测试过的字节；不改变任何编译设置。
+fs_permissions = [{ access = "read", path = "../site/console" }]
+
+# Test-campaign strength (security process review, P0-2). Compile settings above are
+# untouched: this only changes how hard `forge test` pushes, never the bytecode that gets deployed.
+# 测试强度配置：只改变 `forge test` 的强度，不改变任何编译设置 / 部署字节码。
+[profile.default.fuzz]
+runs = 256                  # local: a full `forge test` in a few minutes; ci below is the pre-deploy strength / 本地几分钟跑完
+seed = "0x4444"            # fixed so a red run is reproducible; rotate deliberately, not by accident / 固定种子便于复现
+
+[profile.default.invariant]
+runs = 256
+depth = 128
+fail_on_revert = true      # every handler call must succeed; expected reverts are asserted with vm.expectRevert
+                           # inside the handler, so an unexpected revert is a failing oracle, not burnt depth
+                           # 处理器调用必须成功；预期的回滚在处理器内用 vm.expectRevert 断言
+
+# Nightly / pre-deploy: FOUNDRY_PROFILE=ci forge test  (~2M invariant calls) / 夜间或部署前强度
+[profile.ci.fuzz]
+runs = 10000
+
+[profile.ci.invariant]
+runs = 4096
+depth = 500
+fail_on_revert = true
+
+# Deploy-only profile. It exists for ONE reason: `forge script` simulates the run in a local EVM,
+# and the BNB Chain contracts the pre-flight probes call (the circuits factory is an ERC-1967 proxy)
+# use PUSH0, which a `paris` EVM refuses to execute (EvmError: NotActivated).
+#
+# It never changes what gets deployed. `out` is a separate directory so this profile's artifacts can
+# never overwrite the audited `out-forge` ones, and script/Deploy.s.sol loads the creation bytecode
+# from `out-forge/` -- i.e. from the default-profile, paris, solc 0.8.28 build that `forge test`
+# exercised -- and asserts that artifact's evmVersion/compiler before deploying it.
+#
+# 部署专用 profile。存在的唯一原因：`forge script` 会在本地 EVM 里模拟执行，而预检探针要调用的
+# BNB 链合约（电路工厂是 ERC-1967 代理）使用 PUSH0，`paris` EVM 拒绝执行。
+# 它不会改变部署内容：`out` 独立，脚本从 `out-forge/`（默认 profile 的 paris / solc 0.8.28 构建，
+# 即 `forge test` 验证过的那一份）读取创建字节码，并在部署前断言其 evmVersion 与编译器版本。
+[profile.deploy]
+out = "out-deploy"
+evm_version = "shanghai"
+fs_permissions = [{ access = "read", path = "./out-forge" }]

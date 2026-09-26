@@ -1,0 +1,79 @@
+name: Spec proposal (TAP) / 规范提案
+description: Propose a new TAP or a change to an existing one. Required before any PR touching spec/. 新增 TAP 或修改现有 TAP；改 spec/ 的 PR 必须先有本 issue。
+title: "[TAP] "
+labels: ["spec"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A specification change **needs this issue first** — a PR editing `spec/` without a linked issue will be closed. See [CONTRIBUTING.md](https://github.com/BruceLanLan/tapeapi/blob/main/CONTRIBUTING.md) §1.
+        规范改动**必须先开本 issue**——没有关联 issue 而直接改 `spec/` 的 PR 会被关闭。见 [CONTRIBUTING.md](https://github.com/BruceLanLan/tapeapi/blob/main/CONTRIBUTING.md) §1。
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind / 类型
+      options:
+        - "New TAP / 新 TAP"
+        - "Change to an existing TAP / 修改现有 TAP"
+        - "Clarification only, no normative change / 仅澄清，不改规范性内容"
+    validations:
+      required: true
+  - type: input
+    id: tap
+    attributes:
+      label: Affected TAP(s) / 涉及的 TAP
+      description: "e.g. TAP-22, or 'new' / 例：TAP-22，或填 new"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / 要解决的问题
+      description: What is wrong or missing today, and who is affected. 今天哪里不对或缺什么，谁受影响。
+    validations:
+      required: true
+  - type: textarea
+    id: donothing
+    attributes:
+      label: What breaks if we do nothing / 不改会怎样
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change / 提议的改动
+      description: Sketch the normative text. Name the sections you would touch in BOTH language halves. 请给出规范性文字草稿，并指明你会改动**两个语言半部**的哪些章节。
+    validations:
+      required: true
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Compatibility / 兼容性
+      description: A change to a digest preimage, typehash, error-code meaning or any MUST is breaking. 改摘要前像、typehash、错误码含义或任何 MUST 都是破坏性的。
+      options:
+        - "Backwards compatible (e.g. a new optional field) / 向后兼容"
+        - "Breaking — needs a superseding TAP if the current one is Final / 破坏性"
+        - "Not sure / 不确定"
+    validations:
+      required: true
+  - type: checkboxes
+    id: scrutiny
+    attributes:
+      label: Does this touch verification, isolation or agreement? / 是否触及验证、隔离或一致？
+      description: See CONTRIBUTING.md §5. These need an extra-scrutiny review and an audit before release. 见 CONTRIBUTING.md §5，需额外审查并在发布前审计。
+      options:
+        - label: "Verification — envelope digest, signatures, canonical JSON, delegation, voucher recovery / 验证"
+        - label: "Isolation — resolution, container derivation, dev / allowSingleNode / allowHttp, quorum / 隔离"
+        - label: "Agreement — escrow accounting, allowances, sessions, settle / 一致"
+        - label: "None of the above / 以上都不涉及"
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Acknowledgements / 确认
+      options:
+        - label: "I understand spec text is CC0-1.0 and I am placing my contribution in the public domain. 我理解规范文本为 CC0-1.0，我将贡献置于公有领域。"
+          required: true
+        - label: "I understand English is authoritative and both language halves must be updated together with matching section numbers. 我理解英文为准，且两个语言半部必须同时更新、章节编号对应。"
+          required: true
+        - label: "I have not pasted text from a copyrighted specification or another project. 我没有粘贴受版权保护的规范或其它项目的文字。"
+          required: true

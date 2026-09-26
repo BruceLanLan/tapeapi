@@ -1,0 +1,4 @@
+{
+  "1":    { "name": "ethereum", "lag": 1, "quorum": 2, "rpcUrls": ["https://ethereum-rpc.publicnode.com", "https://eth.llamarpc.com", "https://eth.drpc.org"] },
+  "8453": { "name": "base",     "lag": 2, "quorum": 2, "rpcUrls": ["https://mainnet.base.org", "https://base-rpc.publicnode.com"] }
+}

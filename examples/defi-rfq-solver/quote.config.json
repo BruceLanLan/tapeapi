@@ -1,0 +1,24 @@
+{
+  "_comment": "骨架定价表：固定汇率 + 固定价差，没有任何库存或风控。/ Skeleton price table: a fixed rate and a fixed spread, with no inventory and no risk management whatsoever.",
+  "solverSpreadBps": 30,
+  "routes": [
+    {
+      "fromChain": 56,
+      "toChain": 8453,
+      "pairs": [
+        {
+          "fromToken": "0x55d398326f99059fF775485246999027B3197955",
+          "toToken": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "_comment_fromToken": "BSC USDT, 18 decimals (实测 symbol()=USDT, decimals()=18)",
+          "_comment_toToken": "Base USDC 0x8335…2913（实测 https://mainnet.base.org: symbol()=USDC, decimals()=6）——注意 BSC 上的 USDT/USDC 都是 18 位，Base 上的 USDC 是 6 位，跨链换算必须按各链实际值",
+          "rateNumerator": "1",
+          "rateDenominator": "1",
+          "fromDecimals": 18,
+          "toDecimals": 6,
+          "maxAmountIn": "100000000000000000000000"
+        }
+      ]
+    }
+  ],
+  "escrow": { "56": "0x0000000000000000000000000000000000000000" }
+}

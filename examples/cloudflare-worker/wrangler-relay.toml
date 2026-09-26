@@ -1,0 +1,49 @@
+# relay.tape on its own Worker: npm run deploy:relay (from the repository root; the wrangler version is pinned in package.json)
+# 独立 Worker 上的 relay.tape。
+name = "tapeapi-relay"
+main = "relay-worker.js"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[routes]]
+pattern = "relay.tapeapi.fun"
+custom_domain = true
+
+# One Durable Object per room: the only way every isolate sees the same room.
+# 每个房间一个 Durable Object：这是让所有隔离实例看到同一个房间的唯一办法。
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RelayRoom"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["RelayRoom"]
+
+# The meter of a PRICED relay (RELAY_PRICE_BEM != "0"), and required for one: relay-worker.js refuses to start a
+# priced relay without it, because a meter in isolate memory serves each voucher once per isolate (arch A1).
+# A free relay needs no D1. Create it, apply the schema in d1-store.js, then uncomment and put in its id:
+#   npx wrangler d1 create tapeapi-relay-meter
+# 收费中继（RELAY_PRICE_BEM 不为 "0"）的计量库，且是必需的：没有它 relay-worker.js 拒绝启动收费中继，因为放在隔离实例内存里的
+# 计量会让每张凭证在每个实例各服务一次（arch A1）。免费中继不需要 D1。先创建、按 d1-store.js 建表，再取消注释并填入 id。
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "tapeapi-relay-meter"
+# database_id = "REPLACE-WITH-THE-ID-FROM-wrangler-d1-create"
+
+[observability]
+enabled = true
+
+[vars]
+SERVICE_NAME = "relay.tape"
+PUBLIC_URL = "https://relay.tapeapi.fun"
+RELAY_PRICE_BEM = "0"
+# New rooms one client IP may create per minute, per isolate (arch A2). / 每个客户端 IP 每分钟（每个隔离实例）可新建的房间数。
+RATE_NEW_ROOMS = "60"
+# RELAY_SWEEP_MS / RELAY_ROOM_TTL_MS shorten the room alarm and lifetime for smoke-local.mjs only; never set them here.
+# RELAY_SWEEP_MS / RELAY_ROOM_TTL_MS 只供 smoke-local.mjs 缩短房间 alarm 与寿命；不要在这里设置。
+CIRCUITS = "0x"
+TOKEN_ID = "0"
+CONTAINER = "0x"
+SIGNER_ADDRESS = "0x"
+DELEGATION_EXPIRES = "0"
+# Secrets: npx wrangler secret put SIGNER_KEY -c wrangler-relay.toml ; likewise DELEGATION_SIG

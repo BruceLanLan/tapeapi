@@ -1,0 +1,43 @@
+{
+  "tapeapi": "0.1",
+  "name": "DeFi RFQ Solver (TAP-24 skeleton)",
+  "circuits": "0x0000000000000000000000000000000000000000",
+  "tokenId": "0",
+  "container": "0x0000000000000000000000000000000000000000",
+  "signer": "0x0000000000000000000000000000000000000000",
+  "delegation": null,
+  "endpoints": { "live": ["http://127.0.0.1:8794/tapeapi/v1"], "async": false },
+  "methods": [
+    {
+      "name": "quote",
+      "priceBEM": "0",
+      "description": "[no-quorum] EIP-712 signed Quote; skeleton pricing, no real inventory",
+      "params": { "fromChain": "number", "fromToken": "address", "amountIn": "string", "toChain": "number", "toToken": "address", "recipient": "address", "ttl": "number? 30..120, default 60" },
+      "returns": { "quote": "object", "sig": "bytes65", "escrow": "address", "typehash": "bytes32", "digest": "bytes32", "domain": "object" },
+      "intentRfq": { "routes": [{ "fromChain": 56, "toChain": 8453 }] }
+    },
+    {
+      "name": "routes",
+      "priceBEM": "0",
+      "description": "[no-quorum] the (fromChain,toChain,token) pairs this solver serves and its quoting parameters; pins no block and returns its own `solver`, so it can never group byte-for-byte",
+      "params": {},
+      "returns": { "routes": "object[]", "solver": "address", "spreadBps": "number", "spreadPercent": "string", "maxAmountIn": "object" }
+    },
+    {
+      "name": "status",
+      "priceBEM": "0",
+      "description": "[no-quorum] local fill state of a quoteId (in-memory, NOT an on-chain fact)",
+      "params": { "quoteId": "bytes32" },
+      "returns": { "quoteId": "bytes32", "state": "'unknown'|'quoted'|'expired'", "expires": "number", "quote": "object|null", "onChain": "null", "note": "string" }
+    },
+    {
+      "name": "inventory",
+      "priceBEM": "0",
+      "description": "[quorum] on-chain balances of the solver address on fromChain, pinned; groups only across mirrors of one solver sharing a SOLVER_KEY, never across independent solvers",
+      "params": { "chainId": "number", "tokens": "address[]", "block": "number|'finalized'|'latest'? (default finalized)" },
+      "returns": { "solver": "address", "chainId": "number", "balances": "object[]", "blockPinned": "object" }
+    }
+  ],
+  "payment": { "escrow": "0x0000000000000000000000000000000000000000", "unit": "BEM", "decimals": 8 },
+  "dev": true
+}

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TapeAPI Demo</title>
+<!-- DeWEB 规则：只用相对路径 / DeWEB rule: relative paths only. Serve the tapeapi/ dir over http (ES modules need it). -->
+<script type="importmap">
+{
+  "imports": {
+    "@noble/curves/secp256k1": "../../node_modules/@noble/curves/esm/secp256k1.js",
+    "@noble/curves/": "../../node_modules/@noble/curves/esm/",
+    "@noble/hashes/sha3": "../../node_modules/@noble/hashes/esm/sha3.js",
+    "@noble/hashes/sha2": "../../node_modules/@noble/hashes/esm/sha2.js",
+    "@noble/hashes/sha256": "../../node_modules/@noble/hashes/esm/sha256.js",
+    "@noble/hashes/hmac": "../../node_modules/@noble/hashes/esm/hmac.js",
+    "@noble/hashes/utils": "../../node_modules/@noble/hashes/esm/utils.js",
+    "@noble/hashes/crypto": "../../node_modules/@noble/hashes/esm/crypto.js",
+    "@noble/hashes/_assert": "../../node_modules/@noble/hashes/esm/_assert.js",
+    "@noble/hashes/_md": "../../node_modules/@noble/hashes/esm/_md.js",
+    "@noble/hashes/_u64": "../../node_modules/@noble/hashes/esm/_u64.js",
+    "@noble/hashes/": "../../node_modules/@noble/hashes/esm/"
+  }
+}
+</script>
+<style>
+  :root { --fg: #1a1a1a; --bg: #fff; --muted: #666; --line: #ddd; --ok: #1a7f37; --bad: #b42318; --code: #f4f4f4; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #e6e6e6; --bg: #121212; --muted: #999; --line: #333; --ok: #4ade80; --bad: #f87171; --code: #1e1e1e; } }
+  body { font: 15px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0; padding: 24px 16px; max-width: 860px; margin-inline: auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; } p.sub { color: var(--muted); margin: 0 0 20px; }
+  fieldset { border: 1px solid var(--line); border-radius: 6px; padding: 12px 16px; margin: 0 0 16px; }
+  legend { padding: 0 6px; color: var(--muted); font-size: 13px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); }
+  button { font: inherit; padding: 6px 14px; border: 1px solid var(--line); border-radius: 4px; background: var(--code); color: var(--fg); cursor: pointer; margin: 8px 8px 0 0; }
+  button:disabled { opacity: .5; cursor: default; }
+  pre { background: var(--code); padding: 10px; border-radius: 4px; overflow: auto; font-size: 12.5px; margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; }
+  .kv { display: grid; grid-template-columns: 110px 1fr; gap: 2px 12px; font-size: 13.5px; margin-top: 8px; }
+  .kv b { color: var(--muted); font-weight: 500; }
+  .ok { color: var(--ok); font-weight: 600; } .bad { color: var(--bad); font-weight: 600; }
+  code { font-size: 12.5px; }
+</style>
+</head>
+<body>
+<h1>TapeAPI demo (dev mode)</h1>
+<p class="sub">Resolve a provider manifest, call the free <code>blockNumber</code> method and verify the signed envelope in the browser.</p>
+
+<fieldset>
+  <legend>1. Provider</legend>
+  <label for="url">Provider base URL (serves <code>/.well-known/tapeapi.json</code>)</label>
+  <input id="url" value="http://127.0.0.1:8787" spellcheck="false">
+  <button id="resolve">Resolve manifest</button>
+  <div id="svc" class="kv" hidden></div>
+  <pre id="manifest" hidden></pre>
+</fieldset>
+
+<fieldset>
+  <legend>2. Call</legend>
+  <button id="call" disabled>Call blockNumber</button>
+  <div id="verdict" class="kv" hidden></div>
+  <pre id="envelope" hidden></pre>
+</fieldset>
+
+<fieldset>
+  <legend>Log</legend>
+  <pre id="log">ready</pre>
+</fieldset>
+
+<script type="module">
+import { createTapeAPI, TapeAPIError, sig } from '../../sdk/src/index.js'
+
+const $ = (id) => document.getElementById(id)
+const log = (m) => { $('log').textContent += '\n' + m }
+const show = (el, on = true) => { el.hidden = !on }
+const kv = (el, rows) => { el.innerHTML = rows.map(([k, v, cls]) => `<b>${k}</b><span class="${cls || ''}">${v}</span>`).join(''); show(el) }
+let api, svc
+
+$('resolve').onclick = async () => {
+  try {
+    const base = $('url').value.trim().replace(/\/+$/, '')
+    api = createTapeAPI({ dev: true, chainId: 56 })
+    log(`resolving ${base}/.well-known/tapeapi.json …`)
+    svc = await api.resolve({ dev: base })
+    const m = svc.manifest
+    kv($('svc'), [
+      ['name', m.name], ['container', svc.container], ['signer', m.signer],
+      ['delegation', svc.verified.delegation ? `signature ok (holder ${svc.verified.holder}; chain check skipped in dev)` : 'none (dev manifest)', svc.verified.delegation ? 'ok' : ''],
+      ['methods', m.methods.map(x => `${x.name} (${x.priceBEM} BEM)`).join(', ')],
+    ])
+    $('manifest').textContent = JSON.stringify(m, null, 2); show($('manifest'))
+    $('call').disabled = false
+    log('manifest ok')
+  } catch (e) { log(`resolve failed: ${e.code || ''} ${e.message}`); $('call').disabled = true }
+}
+
+$('call').onclick = async () => {
+  try {
+    $('call').disabled = true
+    const id = crypto.randomUUID()
+    log(`POST ${svc.manifest.endpoints.live[0]}/blockNumber id=${id}`)
+    const r = await api.call(svc, 'blockNumber', {}, { id })
+    // 本地再算一次摘要并恢复签名者 / Recompute the digest and recover the signer locally for display.
+    // TAP-21 v2：用自己发出的 method/params 与 ok 重算摘要 / v2: recompute with our own method/params and the ok flag
+    const recovered = sig.recoverResponseSigner({ container: svc.container, id: r.id, method: 'blockNumber', params: {}, ok: true, body: r.result, ts: r.ts }, r.sig)
+    const match = recovered.toLowerCase() === svc.manifest.signer.toLowerCase()
+    kv($('verdict'), [
+      ['result', JSON.stringify(r.result)], ['block', String(r.block)], ['ts', new Date(r.ts * 1000).toISOString()],
+      ['recovered', recovered], ['verified', match ? 'signature matches manifest.signer' : 'MISMATCH', match ? 'ok' : 'bad'],
+    ])
+    $('envelope').textContent = JSON.stringify({ id: r.id, ok: true, result: r.result, container: svc.container, ts: r.ts, block: r.block, sig: r.sig }, null, 2); show($('envelope'))
+    log(`verified=${r.verified}`)
+  } catch (e) {
+    const signed = e instanceof TapeAPIError && e.signed ? ' (signed error envelope)' : ''
+    kv($('verdict'), [['error', `${e.code || 'ERROR'}: ${e.message}${signed}`, 'bad']])
+    log(`call failed: ${e.code || ''} ${e.message}`)
+  } finally { $('call').disabled = false }
+}
+</script>
+</body>
+</html>

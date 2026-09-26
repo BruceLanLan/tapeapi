@@ -1,0 +1,17 @@
+{
+  "tapeapi": "0.1",
+  "name": "TapeOut Reader",
+  "circuits": "0x0000000000000000000000000000000000000000",
+  "tokenId": "0",
+  "container": "0x0000000000000000000000000000000000000000",
+  "signer": "0x0000000000000000000000000000000000000000",
+  "delegation": null,
+  "endpoints": { "live": ["http://127.0.0.1:8787/tapeapi/v1"], "async": false },
+  "methods": [
+    { "name": "blockNumber", "priceBEM": "0", "params": {}, "returns": { "blockNumber": "number" } },
+    { "name": "circuitHolder", "priceBEM": "0.0001", "params": { "circuits": "address", "tokenId": "string" }, "returns": { "holder": "address" } },
+    { "name": "bemBalance", "priceBEM": "0", "params": { "address": "address" }, "returns": { "balance": "string", "raw": "string" } }
+  ],
+  "payment": { "escrow": "0x0000000000000000000000000000000000000000", "unit": "BEM", "decimals": 8 },
+  "dev": true
+}

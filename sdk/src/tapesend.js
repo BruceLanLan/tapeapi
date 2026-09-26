@@ -1,0 +1,173 @@
+// TapeSend (TAP-10) payloads: seal, open, and the on-chain send call, byte-compatible with the reference module
+// @tapekit/send (TapeOutProtocol/TapeKit, MIT; checked against its test/vectors.json at f1831a4).
+// A Tape Channel invite (TAP-26 §3.2) travels as a sealed TapeSend message. Sealing needs only the recipient's
+// public key, so any app can send an invite; opening one needs the recipient's TapeSend secret.
+// TapeSend（TAP-10）载荷：封装、打开与链上发送调用，与参考模块 @tapekit/send 字节兼容（以其测试向量校验）。
+// Tape Channel 的邀请作为密封的 TapeSend 消息传递。封装只需要收件人的公钥，因此任何应用都能发邀请；打开需要收件人的 TapeSend 私钥。
+import { x25519 } from '@noble/curves/ed25519'
+import { xchacha20poly1305 } from '@noble/ciphers/chacha'
+import { hkdf } from '@noble/hashes/hkdf'
+import { sha256 } from '@noble/hashes/sha256'
+import { keccak_256 } from '@noble/hashes/sha3'
+import { randomBytes } from '@noble/hashes/utils'
+import { TapeAPIError } from './errors.js'
+import { selector, encodeParams, bytesToHex, hexToBytes, toHex, isAddress } from './abi.js'
+
+export const MAGIC = Uint8Array.of(0x54, 0x53)          // "TS"
+export const FORMAT_VERSION = 0x02
+export const KIND_PUBLIC = 0x00
+export const KIND_SEALED = 0x01
+export const MAX_PAYLOAD = 16_000                        // the whole payload after sealing / 封装后的整个载荷
+export const MAX_SLOTS = 16
+const PREAMBLE = 93, SLOT = 56, TAG = 16
+const P_FIELD = (2n ** 255n) - 19n
+const ZERO_REF = new Uint8Array(32)
+const te = new TextEncoder()
+// DeWebHub.send(address circuits, uint256 tokenId, bytes32 to, bytes32 ref, bytes payload) = 0xa181b579
+export const SEND_SELECTOR = selector('send(address,uint256,bytes32,bytes32,bytes)')
+const ascii = (s) => te.encode(s)
+
+// Errors carry the reference module's outcome in `reason`: bad-input, bad-key, too-large, unsupported, damaged,
+// not-for-key. / 错误在 `reason` 里给出与参考模块一致的结论。
+const fail = (reason, msg) => { throw new TapeAPIError('TAPESEND_INVALID', msg, { reason }) }
+const concat = (...xs) => { const out = new Uint8Array(xs.reduce((n, x) => n + x.length, 0)); let o = 0; for (const x of xs) { out.set(x, o); o += x.length } return out }
+const equal = (a, b) => a.length === b.length && a.every((x, i) => x === b[i])
+const bytes32 = (v, name) => { const b = typeof v === 'string' ? hexToBytes(v) : v; if (!(b instanceof Uint8Array) || b.length !== 32) fail('bad-input', `${name} must be 32 bytes`); return b }
+const addr20 = (a, name) => { if (!isAddress(a)) fail('bad-input', `${name} must be an address`); return hexToBytes(a) }
+
+/** uint32(0) ‖ uint64(chainId) ‖ container; a 32-byte hex endpoint passes through / 端点号；32 字节端点原样使用 */
+export function endpoint(target, chainId = 56) {
+  if (typeof target === 'string' && /^0x[0-9a-fA-F]{64}$/.test(target)) {
+    const b = hexToBytes(target)
+    if (b[0] | b[1] | b[2] | b[3]) fail('bad-input', 'endpoint reserved bits must be zero')
+    if (b.slice(4, 12).every((x) => x === 0) || b.slice(12).every((x) => x === 0)) fail('bad-input', 'endpoint chain id and container must be non-zero')
+    return b
+  }
+  const id = BigInt(chainId)
+  if (!(id >= 1n && id < 1n << 64n)) fail('bad-input', 'chainId must fit in 64 bits')
+  const out = new Uint8Array(32)
+  for (let i = 0; i < 8; i++) out[4 + i] = Number((id >> BigInt(8 * (7 - i))) & 0xffn)
+  out.set(addr20(target, 'container'), 12)
+  return out
+}
+
+/** First 8 bytes of SHA-256(publicKey) / 公钥指纹 */
+export const fingerprint = (publicKey) => sha256(publicKey).slice(0, 8)
+
+function sharedSecret(secretKey, publicKey) {
+  let ss
+  try { ss = x25519.getSharedSecret(secretKey, publicKey) } catch { fail('bad-key', 'X25519 key agreement failed (invalid or low-order key)') }
+  if (ss.every((b) => b === 0)) fail('bad-key', 'all-zero X25519 shared secret')
+  return ss
+}
+
+/** TAP-10 §4.4: canonical, top bit clear, not low order / 规范编码、最高位为 0、非低阶点 */
+export function assertValidPublicKey(publicKey) {
+  if (!(publicKey instanceof Uint8Array) || publicKey.length !== 32) fail('bad-key', 'public key must be 32 bytes')
+  if (publicKey[31] & 0x80) fail('bad-key', 'public key top bit set')
+  let u = 0n
+  for (let i = 31; i >= 0; i--) u = (u << 8n) | BigInt(publicKey[i])
+  if (u >= P_FIELD) fail('bad-key', 'public key not canonical')
+  sharedSecret(Uint8Array.of(...new Uint8Array(31).fill(0x11), 0x41), publicKey)
+}
+
+// T = "TAP-10/X/v2" ‖ to ‖ from ‖ ref ‖ hub
+function context({ to, from, hub, ref, chainId = 56 }) {
+  const r = ref === undefined || ref === null ? ZERO_REF : bytes32(ref, 'ref')
+  return concat(ascii('TAP-10/X/v2'), endpoint(to, chainId), endpoint(from, chainId), r, addr20(hub, 'hub'))
+}
+const commitment = (K) => sha256(concat(ascii('TAP-10/commit/v2'), K))
+const kek = (ss, E, R, T) => hkdf(sha256, ss, ascii('TAP-10/wrap/v2'), concat(E, R, T), 32)
+
+/** §5.2 public (unencrypted) payload / 公开载荷 */
+export function encodePublic(content) {
+  const payload = concat(MAGIC, Uint8Array.of(FORMAT_VERSION, KIND_PUBLIC), content)
+  if (payload.length > MAX_PAYLOAD) fail('too-large', `payload ${payload.length} > ${MAX_PAYLOAD}`)
+  return payload
+}
+
+/**
+ * §5.3 seal `content` to 1..16 recipient keys. `to`/`from` are containers (or 32-byte endpoints), `hub` the DeWebHub
+ * the message is sent through, `ref` the message replied to (32 bytes) or nothing. `random` is for test vectors only.
+ * The official client seals to the recipient AND the sender's own key, so the sender can read its outbox; pass both.
+ * 把 content 封装给 1..16 把收件人公钥。官方客户端同时封装给收件人与发件人自己的密钥，以便发件人查看发件箱。
+ */
+export function seal({ content, recipients, to, from, hub, ref, chainId = 56, random = randomBytes }) {
+  if (!(content instanceof Uint8Array)) fail('bad-input', 'content must be bytes')
+  if (!Array.isArray(recipients) || recipients.length < 1 || recipients.length > MAX_SLOTS) fail('bad-input', `1..${MAX_SLOTS} recipient keys required`)
+  recipients.forEach((R, i) => {
+    assertValidPublicKey(R)
+    for (let j = 0; j < i; j++) if (equal(R, recipients[j])) fail('bad-input', 'duplicate recipient key')
+  })
+  const T = context({ to, from, hub, ref, chainId })
+  const e = random(32)
+  const E = x25519.getPublicKey(e)
+  const N = random(24)
+  const K = random(32)
+  const P = concat(MAGIC, Uint8Array.of(FORMAT_VERSION, KIND_SEALED), E, N, commitment(K), Uint8Array.of(recipients.length))
+  const S = concat(...recipients.map((R) => {
+    const kk = kek(sharedSecret(e, R), E, R, T)
+    if (equal(kk, K)) fail('bad-input', 'content key collides with a key-encryption key')
+    return concat(fingerprint(R), xchacha20poly1305(kk, N, concat(P, T)).encrypt(K))
+  }))
+  const C = xchacha20poly1305(K, N, concat(P, S, T)).encrypt(content)
+  e.fill(0); K.fill(0)
+  const payload = concat(P, S, C)
+  if (payload.length > MAX_PAYLOAD) fail('too-large', `payload ${payload.length} > ${MAX_PAYLOAD}`)
+  return payload
+}
+
+function parse(payload) {
+  if (!(payload instanceof Uint8Array) || payload.length < 4) fail('unsupported', 'payload too short')
+  if (payload.length > MAX_PAYLOAD) fail('unsupported', 'payload too large')
+  if (payload[0] !== MAGIC[0] || payload[1] !== MAGIC[1] || payload[2] !== FORMAT_VERSION) fail('unsupported', 'unknown magic or version')
+  if (payload[3] === KIND_PUBLIC) return { kind: 'public', content: payload.slice(4) }
+  if (payload[3] !== KIND_SEALED) fail('unsupported', 'unknown kind')
+  if (payload.length < PREAMBLE) fail('damaged', 'sealed payload too short')
+  const n = payload[92]
+  if (n < 1 || n > MAX_SLOTS || payload.length < PREAMBLE + SLOT * n + TAG) fail('damaged', 'bad slot count or length')
+  const slots = []
+  for (let i = 0; i < n; i++) { const at = PREAMBLE + SLOT * i; slots.push({ fp: payload.slice(at, at + 8), wrapped: payload.slice(at + 8, at + SLOT) }) }
+  return { kind: 'sealed', E: payload.slice(4, 36), N: payload.slice(36, 60), commit: payload.slice(60, 92), slots, P: payload.slice(0, PREAMBLE), S: payload.slice(PREAMBLE, PREAMBLE + SLOT * n), C: payload.slice(PREAMBLE + SLOT * n) }
+}
+
+/** §5.3 open with the recipient's secret key; the same outcomes as the reference module / 用收件人私钥打开 */
+export function open({ payload, secretKey, to, from, hub, ref, chainId = 56 }) {
+  const p = parse(payload)
+  if (p.kind === 'public') return { kind: 'public', content: p.content }
+  try { assertValidPublicKey(p.E) } catch { fail('damaged', 'ephemeral key is invalid') }
+  if (!secretKey) fail('not-for-key', 'a secret key is required to open a sealed message')
+  const T = context({ to, from, hub, ref, chainId })
+  const R = x25519.getPublicKey(secretKey)
+  const fp = fingerprint(R)
+  let K = null, ss = null, matched = false
+  for (const s of p.slots) {
+    if (!equal(s.fp, fp)) continue
+    matched = true
+    ss ??= sharedSecret(secretKey, p.E)
+    let c
+    try { c = xchacha20poly1305(kek(ss, p.E, R, T), p.N, concat(p.P, T)).decrypt(s.wrapped) } catch { continue }
+    if (!equal(commitment(c), p.commit)) continue
+    K = c
+    break
+  }
+  if (!K) fail(matched ? 'damaged' : 'not-for-key', matched ? 'a key slot for this key did not open' : 'no key slot opens with this key')
+  try { return { kind: 'sealed', content: xchacha20poly1305(K, p.N, concat(p.P, p.S, T)).decrypt(p.C) } } catch { fail('damaged', 'content failed authentication') }
+}
+
+/** keccak256("TAP-10/msg/v2" ‖ uint256 chainId ‖ hub ‖ to ‖ uint256 inboxIndex) / 消息 ID（回复时作为 ref） */
+export function messageId({ chainId = 56, hub, to, inboxIndex }) {
+  const u256 = (v) => { const b = new Uint8Array(32); let x = BigInt(v); for (let i = 31; i >= 0; i--) { b[i] = Number(x & 0xffn); x >>= 8n } return b }
+  return toHex(keccak_256(concat(ascii('TAP-10/msg/v2'), u256(chainId), addr20(hub, 'hub'), endpoint(to, chainId), u256(inboxIndex))))
+}
+
+/**
+ * The DeWebHub `send(circuits, tokenId, to, ref, payload)` transaction. Only the circuit's holder can send: the hub
+ * derives the sender container itself, so `from` cannot be forged. Non-payable; no protocol fee.
+ * DeWebHub 的 send 交易。只有电路持有人能发送：中枢自己推导发件容器，`from` 无法伪造。不可附带 BNB，无协议费。
+ */
+export function sendTx({ hub, circuits, tokenId, to, ref, payload, chainId = 56 }) {
+  if (!(payload instanceof Uint8Array) || payload.length === 0 || payload.length > MAX_PAYLOAD) fail('bad-input', `payload must be 1..${MAX_PAYLOAD} bytes`)
+  const args = [circuits, BigInt(tokenId), toHex(endpoint(to, chainId)), ref ? toHex(bytes32(ref, 'ref')) : toHex(ZERO_REF), payload]
+  return { to: hub, data: SEND_SELECTOR + bytesToHex(encodeParams(['address', 'uint256', 'bytes32', 'bytes32', 'bytes'], args)), value: '0x0' }
+}

@@ -1,0 +1,70 @@
+name: Bug report / 缺陷报告
+description: Something in the SDK, provider runtime, contracts, examples or site is wrong. 代码层面的问题。
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Security issues do not go here.** Use private vulnerability reporting — see [SECURITY.md](https://github.com/BruceLanLan/tapeapi/blob/main/SECURITY.md).
+        **安全问题不要发在这里**，请走私密报告，见 [SECURITY.md](https://github.com/BruceLanLan/tapeapi/blob/main/SECURITY.md)。
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component / 组件
+      options:
+        - "sdk (@tapeapi/sdk)"
+        - "server (@tapeapi/server)"
+        - "contracts"
+        - "examples"
+        - "site"
+        - "scripts"
+        - "docs / README"
+        - "not sure / 不确定"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened / 实际发生了什么
+      description: Include the exact error or output. 请附上确切的报错或输出。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected / 你期待的行为
+      description: If a TAP or DESIGN.md says otherwise, cite the section. 若某个 TAP 或 DESIGN.md 另有规定，请引用章节号。
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction / 最小复现
+      description: Commands, a failing test, or a short script. A failing test is ideal. 命令、失败的测试或短脚本；失败的测试最佳。
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit SHA / 提交号
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment / 环境
+      description: "Node version, OS, forge version if relevant. 例：Node 20.11 / macOS 14 / forge 0.2.0"
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting / 提交前
+      options:
+        - label: "This is not a security vulnerability. 这不是安全漏洞。"
+          required: true
+        - label: "I ran `npm test` and `cd contracts && forge test` on a clean checkout. 我在干净检出上跑过这两条命令。"
+        - label: "No private keys, .env contents or keyed RPC URLs in this report. 报告中没有私钥、.env 内容或带 API Key 的 RPC URL。"
+          required: true
