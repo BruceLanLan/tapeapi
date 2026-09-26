@@ -358,8 +358,9 @@ $('btn-publish').onclick = async () => {
     if (problems.length) { note(out, false, `服务提供的清单与你签的不一致，暂不上链：${problems.join('；')}。通常是变量还没生效，等一两分钟再试。`); return }
     // Publish the page's own bytes, built from what you read and signed; the service only has to agree (review F2).
     // 发布页面自己构造的字节（来自你读到和签过的内容）；服务只需与之一致（审查 F2）。
-    const text = C.manifestText({ ...s, name: JSON.parse(served).name })
-    note(out, true, `✓ 清单核对通过（${new TextEncoder().encode(text).length} 字节）。将写上链的内容：`)
+    const sm = JSON.parse(served)
+    const text = C.manifestText({ ...s, name: sm.name, methods: sm.methods })
+    note(out, true, `✓ 清单核对通过（${new TextEncoder().encode(text).length} 字节）。服务名「${sm.name}」，${sm.methods.length} 个免费方法：${sm.methods.map((x) => x.name).join('、')}。将写上链的完整内容：`)
     const pre = document.createElement('pre'); pre.className = 'mono'; pre.textContent = JSON.stringify(JSON.parse(text), null, 2); out.append(pre)
     const sha = '0x' + Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))).map((b) => b.toString(16).padStart(2, '0')).join('')
     const tx = C.putFileTx({ container: s.container, text, sha256Hex: sha })

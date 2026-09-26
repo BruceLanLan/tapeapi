@@ -170,19 +170,54 @@ export const isServiceBase = (u) => /^https:\/\/[^/?#@\s]+$/.test(u) || /^http:\
 const METHODS = [{ name: 'blockNumber', priceBEM: '0', params: {}, returns: { blockNumber: 'number' } }]
 const NAME_OK = (n) => typeof n === 'string' && n.length >= 1 && n.length <= 64 && !/[\u0000-\u001f\u007f]/.test(n)
 
+// The method list is the one part a service may choose (examples/public-api has many), under rules stricter than TAP-20:
+// every method free (this page never writes a payment section, so a price could never be settled), only the TAP-20
+// method fields, plain-string notations, bounded sizes. The holder sees every method name before signing.
+// 方法列表是服务唯一可以自选的部分（如 examples/public-api），规则比 TAP-20 更严：每个方法都免费（本页从不写 payment，
+// 价格根本无法结算）、只有 TAP-20 的方法字段、记法是普通字符串、大小有界。持有人签名前能看到每个方法名。
+const METHOD_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
+const METHOD_KEYS = new Set(['name', 'priceBEM', 'params', 'returns', 'description'])
+const FORBIDDEN = new Set(['__proto__', 'constructor', 'prototype'])
+const CONTROL = /[\u0000-\u001f\u007f]/
+const isPlain = (o) => !!o && typeof o === 'object' && !Array.isArray(o) && Object.getPrototypeOf(o) === Object.prototype
+/** Why a served method list cannot be published ([] when it can). / 服务给的方法列表为何不能发布（可以则为空）。 */
+export function methodsProblems(methods) {
+  if (!Array.isArray(methods) || methods.length < 1 || methods.length > 64) return ['methods must be a list of 1 to 64 methods']
+  const out = [], seen = new Set()
+  for (const x of methods) {
+    const n = isPlain(x) && typeof x.name === 'string' ? x.name : null
+    const who = n && METHOD_NAME.test(n) ? n : clip(n ?? x)
+    if (!isPlain(x)) { out.push(`method ${who} is not an object`); continue }
+    if (!n || !METHOD_NAME.test(n) || FORBIDDEN.has(n)) out.push(`method name ${who} is not allowed`)
+    else if (seen.has(n)) out.push(`method ${who} appears twice`)
+    seen.add(n)
+    for (const k of Object.keys(x)) if (!METHOD_KEYS.has(k)) out.push(`method ${who} has an unexpected field ${clip(k)}`)
+    if (x.priceBEM !== '0') out.push(`method ${who} is priced (${clip(x.priceBEM)}); this page publishes free services only`)
+    for (const k of ['params', 'returns']) {
+      const o = x[k]
+      if (!isPlain(o) || Object.keys(o).length > 32) { out.push(`method ${who}: ${k} must be an object of at most 32 fields`); continue }
+      for (const [pk, pv] of Object.entries(o)) if (!METHOD_NAME.test(pk) || FORBIDDEN.has(pk) || typeof pv !== 'string' || pv.length > 200 || CONTROL.test(pv)) { out.push(`method ${who}: ${k}.${clip(pk)} is not a plain field`); break }
+    }
+    if (x.description !== undefined && (typeof x.description !== 'string' || [...x.description].length > 256 || CONTROL.test(x.description))) out.push(`method ${who}: description must be at most 256 printable characters`)
+  }
+  return out
+}
+
 /** The manifest the page publishes, built from what the holder read and signed, never taken from the service: the same
  *  fields in the same order as examples/cloudflare-worker/worker.js build() (a test keeps the two equal). Only the display
- *  name may come from the service, and the holder sees it before signing the transaction.
+ *  name and the free method list (methodsProblems) may come from the service, and the holder sees both before signing.
  *  页面发布的清单：由持有人读到和签过的内容构造，不取自服务；字段和顺序与 worker.js build() 相同（有测试保证一致）。
- *  只有显示名称可以来自服务，并且持有人在签交易之前能看到它。 */
-export function expectedManifest({ circuits, tokenId, container, signer, expires, sig, endpoint, name = 'TapeAPI Reader' }) {
+ *  只有显示名称和免费方法列表（methodsProblems）可以来自服务，持有人签名前能看到两者。 */
+export function expectedManifest({ circuits, tokenId, container, signer, expires, sig, endpoint, name = 'TapeAPI Reader', methods = METHODS }) {
   if (!NAME_OK(name)) throw new Error('name must be 1 to 64 printable characters')
+  const bad = methodsProblems(methods)
+  if (bad.length) throw new Error(bad.join('; '))
   if (!isServiceBase(String(endpoint).replace(/\/tapeapi\/v1$/, '')) || !String(endpoint).endsWith('/tapeapi/v1')) throw new Error(`endpoint must be https://<host>/tapeapi/v1, not ${endpoint}`)
   return {
     tapeapi: '0.1', name, circuits, tokenId: String(tokenId), container, signer,
     delegation: { expires: Number(expires), sig },
     endpoints: { live: [endpoint], async: false },
-    methods: METHODS,
+    methods,
   }
 }
 
@@ -202,8 +237,10 @@ export function manifestProblems(text, s) {
   let m
   try { m = JSON.parse(text) } catch { return ['not JSON'] }
   if (!m || typeof m !== 'object' || Array.isArray(m)) return ['not a JSON object']
+  const bad = methodsProblems(m.methods)
+  if (bad.length) return bad
   let want
-  try { want = expectedManifest({ ...s, name: NAME_OK(m.name) ? m.name : undefined }) } catch (e) { return [e.message] }
+  try { want = expectedManifest({ ...s, name: NAME_OK(m.name) ? m.name : undefined, methods: m.methods }) } catch (e) { return [e.message] }
   const out = []
   if (!NAME_OK(m.name)) out.push('name must be 1 to 64 printable characters')
   for (const k of new Set([...Object.keys(want), ...Object.keys(m)])) {

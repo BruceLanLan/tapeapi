@@ -1,0 +1,22 @@
+# The public TapeAPI service, api.tapeapi.fun. Deployed by Cloudflare Workers Builds with `npm run deploy:public`.
+# The Worker keeps the name of the first deployment so its secret and variables stay; keep_vars keeps the ones set in
+# the dashboard (CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES, DELEGATION_SIG) across deploys.
+# 公共 TapeAPI 服务 api.tapeapi.fun，由 Cloudflare Workers Builds 以 `npm run deploy:public` 部署。
+# Worker 沿用首次部署的名字，密钥和变量因此保留；keep_vars 让后台设置的变量在部署之间保留。
+name = "tapeapi-provider"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+keep_vars = true
+
+[[routes]]
+pattern = "api.tapeapi.fun"
+custom_domain = true
+
+[observability]
+enabled = true
+
+[vars]
+SERVICE_NAME = "TapeAPI Public"
+PUBLIC_URL = "https://api.tapeapi.fun"
+RPC_URLS = "https://bsc-rpc.publicnode.com,https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io"

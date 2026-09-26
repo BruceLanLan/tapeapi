@@ -96,7 +96,7 @@ test('FIXED console-F2: manifestProblems refuses every field the page did not bu
   const mutations = {
     'second endpoint': { ...good, endpoints: { live: [S.endpoint, 'https://evil.example/tapeapi/v1'], async: false } },
     'priced method': { ...good, methods: [{ ...good.methods[0], priceBEM: '1000' }] },
-    'extra method': { ...good, methods: [...good.methods, { name: 'x', priceBEM: '0', params: {}, returns: {} }] },
+    'extra priced method': { ...good, methods: [...good.methods, { name: 'x', priceBEM: '0.1', params: {}, returns: {} }] },
     payment: { ...good, payment: { escrow: '0x' + 'ee'.repeat(20), unit: 'BEM', decimals: 8 } },
     dev: { ...good, dev: true },
     junk: { ...good, junk: 'x'.repeat(20_000) },
@@ -192,4 +192,42 @@ test('probeTx is byte for byte ChannelBus.send(room, wire) as the SDK encodes it
     assert.equal(tx.to, bus)
   }
   assert.equal(C.PROBE_ROOM, Buffer.from('tapeapi deploy probe').toString('hex').padEnd(64, '0'))
+})
+
+// The one amendment to F2 (2026-09-26, for the public service): a service may choose its method list, but only free
+// methods with the TAP-20 fields and plain notations; the page publishes that list, shows every name, and nothing else
+// in the manifest can come from the service. / F2 的唯一修订：服务可以自选方法列表，但只能是免费的、只含 TAP-20 字段的方法；
+// 页面发布这个列表并列出每个方法名，清单的其他部分仍不能来自服务。
+test('FIXED console-F2 (amended): a free method list may come from the service; everything else about it is checked', async () => {
+  const { MANIFEST_METHODS } = await import('../../examples/public-api/methods.js')
+  const { validateManifest } = await import('../src/manifest.js')
+  const { readFileSync } = await import('node:fs')
+  const good = JSON.parse(C.manifestText({ ...S, methods: MANIFEST_METHODS }))
+  assert.deepEqual(C.manifestProblems(JSON.stringify(good), S), [], 'the public service\'s own list is publishable')
+  assert.deepEqual(good.methods, MANIFEST_METHODS)
+  assert.doesNotThrow(() => validateManifest(good, { requireDelegation: true }), 'and it is a valid TAP-20 manifest')
+  const one = { name: 'x', priceBEM: '0', params: {}, returns: {} }
+  const refused = {
+    priced: [{ ...one, priceBEM: '0.00000001' }],
+    'price as a number': [{ ...one, priceBEM: 0 }],
+    'unexpected field': [{ ...one, payment: { escrow: '0x' + 'ee'.repeat(20) } }],
+    'prototype name': [{ ...one, name: '__proto__' }],
+    'bad name': [{ ...one, name: 'a-b' }],
+    duplicate: [one, one],
+    'no methods': [],
+    'too many': Array.from({ length: 65 }, (_, i) => ({ ...one, name: `m${i}` })),
+    'object notation': [{ ...one, params: { a: { type: 'x' } } }],
+    'params array': [{ ...one, params: [] }],
+    'long notation': [{ ...one, returns: { a: 'x'.repeat(201) } }],
+    'control chars': [{ ...one, description: 'ok\u0007' }],
+    'long description': [{ ...one, description: 'd'.repeat(257) }],
+    'not an object': ['blockNumber'],
+  }
+  for (const [what, methods] of Object.entries(refused)) {
+    assert.ok(C.manifestProblems(JSON.stringify({ ...good, methods }), S).length > 0, what)
+    assert.throws(() => C.manifestText({ ...S, methods }), undefined, what)
+  }
+  assert.ok(C.manifestProblems(JSON.stringify({ ...good, methods: undefined }), S).length > 0, 'missing list')
+  const html = readFileSync(new URL('../../site/console/index.html', import.meta.url), 'utf8')
+  assert.match(html, /sm\.methods\.map\(\(x\) => x\.name\)/, 'step 7 names every method before the wallet asks')
 })

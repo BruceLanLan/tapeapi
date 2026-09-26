@@ -11,6 +11,7 @@
     "compile": "node scripts/compile.mjs",
     "build:docs": "node scripts/build-docs.mjs",
     "deploy:provider": "npx --yes wrangler@4.141.0 deploy -c examples/cloudflare-worker/wrangler.toml",
+    "deploy:public": "npx --yes wrangler@4.141.0 deploy -c examples/public-api/wrangler.toml",
     "deploy:relay": "npx --yes wrangler@4.141.0 deploy -c examples/cloudflare-worker/wrangler-relay.toml"
   },
   "devDependencies": {
