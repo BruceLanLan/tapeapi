@@ -45,11 +45,13 @@ export const blockPinnedOf = (pinned, blockRef) => ({ blockNumber: pinned.blockN
  * A chain reader. `quorum` below always means `rpc.quorum`, i.e. the value `createRpc` actually settled on
  * after `allowSingleNode`, so a one-node dev setup behaves the same on every chain.
  */
-export function createChainReader({ name = 'chain', urls = [], quorum = 2, lag = 1, allowSingleNode = false, rpc, singles } = {}) {
-  const multi = rpc || createRpc({ urls, quorum, allowSingleNode })
+export function createChainReader({ name = 'chain', urls = [], quorum = 2, lag = 1, allowSingleNode = false, rpc, singles, timeoutMs } = {}) {
+  // timeoutMs bounds each node's answer: every read waits for all nodes (never a majority), so a hung node costs the
+  // whole timeout on every round. / 每个节点的应答时限：每次读取都要等所有节点，挂住的节点每一轮都要耗满时限。
+  const multi = rpc || createRpc({ urls, quorum, allowSingleNode, timeoutMs })
   // 每个节点再单独建一个 quorum 1 的 client：钉块要知道**每个节点各自**报了什么，不能只要一个共识答案。
   // One quorum-1 client per node: pinning needs each node's own answer, not a single agreed one.
-  const nodes = singles || urls.map((u) => createRpc({ urls: [u], quorum: 1 }))
+  const nodes = singles || urls.map((u) => createRpc({ urls: [u], quorum: 1, timeoutMs }))
   const need = multi.quorum
   const lagBlocks = Number(lag)
 

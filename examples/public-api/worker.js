@@ -13,7 +13,8 @@ import { createChainReader } from '../_lib/chain.mjs'
 import { MANIFEST_METHODS, publicMethods } from './methods.js'
 
 const REQUIRED = ['CIRCUITS', 'TOKEN_ID', 'CONTAINER', 'DELEGATION_EXPIRES', 'DELEGATION_SIG', 'PUBLIC_URL']
-const DEFAULT_RPC_URLS = 'https://bsc-rpc.publicnode.com,https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io'
+// Three operators. publicnode left the list on 2026-09-27 after timing out on every request. / 三家运营方；publicnode 因持续超时移出。
+const DEFAULT_RPC_URLS = 'https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io'
 const configured = (env) => REQUIRED.every((k) => env[k]) && !!env.SIGNER_KEY
 
 export function manifestOf(env) {
@@ -34,12 +35,15 @@ export function build(env) {
   const rpcUrls = (env.RPC_URLS || DEFAULT_RPC_URLS).split(',').map((u) => u.trim()).filter(Boolean)
   // 2-of-3 and a one-block lag behind the lowest head: one node down or behind still leaves a quorum.
   // 三取二，比最低链头落后一个块：一个节点宕机或落后时仍有法定数。
-  const chain = createChainReader({ name: 'bsc', urls: rpcUrls, quorum: 2, lag: 1 })
+  // 3 s per node: healthy nodes answer in well under a second, and a hung one must not hold every call for 8 s a round
+  // (a call makes up to four rounds). / 每节点 3 秒：正常节点远低于 1 秒；挂住的节点不能让每轮都等 8 秒（一次调用最多四轮）。
+  const timeoutMs = Number(env.RPC_TIMEOUT_MS || 3000)
+  const chain = createChainReader({ name: 'bsc', urls: rpcUrls, quorum: 2, lag: 1, timeoutMs })
   return createProvider({
     manifest: manifestOf(env),
     signerKey: env.SIGNER_KEY,
     allowHttp: /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(env.PUBLIC_URL),
-    rpcUrls, quorum: 2, chainId: 56,
+    rpcUrls, quorum: 2, chainId: 56, timeoutMs,
     // The edge sets cf-connecting-ip and a client cannot forge it. / 该头由边缘设置，客户端无法伪造。
     rateLimit: { windowMs: 60_000, free: Number(env.RATE_FREE || 600), paid: Number(env.RATE_PAID || 6000) },
     methods: publicMethods(chain),

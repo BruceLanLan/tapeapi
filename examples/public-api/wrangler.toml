@@ -19,4 +19,5 @@ enabled = true
 [vars]
 SERVICE_NAME = "TapeAPI Public"
 PUBLIC_URL = "https://api.tapeapi.fun"
-RPC_URLS = "https://bsc-rpc.publicnode.com,https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io"
+RPC_URLS = "https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io"
+RPC_TIMEOUT_MS = "3000"
