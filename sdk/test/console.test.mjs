@@ -131,6 +131,9 @@ test('readCircuit normalises the circuit number ("01" is circuit 1) and refuses 
   const answers = async (to, data) => data.startsWith(C.SEL.isCPU) ? '0x' + '1'.padStart(64, '0') : w(data.startsWith(C.SEL.cpuAt) ? circuits : container)
   assert.equal((await C.readCircuit(answers, { processor: '7', tokenId: ' 01 ' })).tokenId, '1')
   await assert.rejects(C.readCircuit(answers, { processor: '1e3', tokenId: '1' }), /whole number/)
+  // The processor's contract address pasted in the number box is named as such (Bruce did this on launch day).
+  // 把处理器合约地址填进编号框时，直接说明要填的是数字（上线当天真实发生过）。
+  await assert.rejects(C.readCircuit(answers, { processor: '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', tokenId: '11' }), /not a contract address/)
   await assert.rejects(C.readCircuit(answers, { processor: '7', tokenId: '0x1' }), /1 or more/)
 })
 

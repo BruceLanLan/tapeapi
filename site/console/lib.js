@@ -25,7 +25,8 @@ const dyn = (bytes) => word(bytes.length) + pad32(hex(bytes))
  *  读一个 TapeOut 电路：处理器合约、容器、当前持有人。 */
 export async function readCircuit(call, { processor, tokenId }) {
   processor = String(processor).trim(); tokenId = String(tokenId).trim()
-  if (!/^\d{1,15}$/.test(processor)) throw new Error('processor number must be a whole number')
+  if (/^0x[0-9a-fA-F]{40}$/.test(processor)) throw new Error('这里填处理器编号（一个数字，例如 11.1013.tape 里的 1013），不是合约地址 / enter the processor number, not a contract address')
+  if (!/^\d{1,15}$/.test(processor)) throw new Error('处理器编号必须是整数 / processor number must be a whole number')
   if (!/^\d{1,15}$/.test(tokenId) || BigInt(tokenId) < 1n) throw new Error('circuit number (#ID) must be 1 or more')
   tokenId = String(BigInt(tokenId))   // "01" -> "1": the manifest's tokenId has no leading zeros (TAP-20) / 去掉前导零
   const circuits = addrOf(await call(FACTORY, SEL.cpuAt + word(processor)))

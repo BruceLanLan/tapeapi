@@ -74,10 +74,10 @@
 
   <section id="s-circuit">
     <h2>4. 你的电路 <span class="muted">/ Your circuit</span></h2>
-    <p class="muted">填处理器编号和电路编号（名字 <code>&lt;电路&gt;.&lt;处理器&gt;.tape</code> 里的两个数字）。页面从链上读出容器地址，并确认你连接的钱包就是当前持有人。</p>
+    <p class="muted">两个框都填<b>数字</b>，不是地址。电路名字 <code>&lt;电路&gt;.&lt;处理器&gt;.tape</code>：例如 <code>11.1013.tape</code>，<b>左边填处理器 1013，右边填电路 11</b>（顺序和名字里相反）。页面从链上读出容器地址，并确认你连接的钱包就是当前持有人。</p>
     <div class="row">
-      <input id="c-proc" inputmode="numeric" placeholder="处理器编号 / processor" aria-label="processor number">
-      <input id="c-id" inputmode="numeric" placeholder="电路编号 / #ID" aria-label="circuit number">
+      <input id="c-proc" inputmode="numeric" placeholder="处理器编号，如 1013" aria-label="processor number">
+      <input id="c-id" inputmode="numeric" placeholder="电路编号，如 11" aria-label="circuit number">
     </div>
     <button id="btn-circuit" type="button" disabled>读取 / Read</button>
     <div id="circuit-out"></div>
@@ -340,7 +340,9 @@ $('btn-deleg').onclick = async () => {
     if (!by) throw new Error('钱包返回的不是客户端能验证的普通签名（65 字节、低 s；智能账户钱包不行），请换用普通钱包账户')
     if (by.toLowerCase() !== String(s.holder || '').toLowerCase()) throw new Error(`签名来自 ${by}，不是电路持有人 ${s.holder}。请切回持有人账户，刷新后从第 4 步重来`)
     saveSvc({ signer: s.keyAddress, expires, sig, endpoint: `${base}/tapeapi/v1` })
-    note(out, true, '✓ 已签名。把下面两个值也设为变量（第 5 步那一页），等服务重新部署。')
+    note(out, true, '✓ 已签名。把下面两个值加到 Cloudflare 的变量里（类型选“文本”，“密钥”方框不打勾），保存部署后做第 7 步。')
+    kv(out, [['DELEGATION_EXPIRES', String(expires)]]); out.append(copyBtn('复制 DELEGATION_EXPIRES', String(expires)))
+    kv(out, [['DELEGATION_SIG', sig]]); out.append(copyBtn('复制 DELEGATION_SIG', sig))
     showVars(); enableSvc()
   } catch (e) { note(out, false, `没有完成：${e.message}`) }
 }
