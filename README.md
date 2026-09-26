@@ -10,7 +10,7 @@ ecosystem, DeWEB is websites, TapeSend is messaging, and **TapeAPI is services**
 
 > **Status: pre-alpha (v0.1.0).** The free tier needs no contract of ours and runs on TapeOut's deployed contracts.
 > Our own contracts (the paid-call escrow, the service directory, ChannelBus) are **not audited by a third party**;
-> ChannelBus is being deployed now and its address will be published here. Interfaces may still change. The TAP
+> ChannelBus is deployed (address below). Interfaces may still change. The TAP
 > numbers below are **proposed** to the TapeKit maintainers and not yet assigned.
 
 ---
@@ -175,7 +175,7 @@ the container's site. The [holder console](https://tapeapi.fun/console/) does al
 | SiteRegistry | `0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6` | TapeOut (deployed) |
 | Processor factory | `0x68224F668083c29e9800Be2a646d42d18cedF7e2` | TapeOut (deployed) |
 | BEM token | `0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a` | TapeOut (deployed) |
-| ChannelBus | *being deployed; announced here* | TapeAPI (no owner, no state, no upgrade path) |
+| ChannelBus | [`0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`](https://bscscan.com/address/0x486110c35d9b90a9d6D85c8063A065f9e7b6b707) | TapeAPI (no owner, no state, no upgrade path) |
 | TapeAPIEscrow, ServiceDirectory | *not deployed* | TapeAPI |
 
 ## Quality

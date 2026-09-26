@@ -6,7 +6,10 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
-- ChannelBus mainnet address, once deployed.
+### Added
+
+- ChannelBus deployed on BNB Chain at `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707` (code byte-for-byte the tested build); `MAINNET.channelBus` in the SDK.
+  A test message was read back through public nodes, and the deployment is recorded for a replay test.
 
 ## [0.1.0] — 2026-09-26
 

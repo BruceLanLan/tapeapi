@@ -143,7 +143,7 @@ Whether a DeWEB page may open a WebRTC connection at all is a shell decision out
 
 ### 3.7 On-chain transport (OPTIONAL)
 
-The chain itself can carry a channel, with no relay and no operator. A **ChannelBus** is a contract with this interface (reference: `contracts/src/ChannelBus.sol`):
+The chain itself can carry a channel, with no relay and no operator. A **ChannelBus** is a contract with this interface (reference: `contracts/src/ChannelBus.sol`; deployed on BNB Chain at `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`, whose code is byte-for-byte the reference build; any contract with this interface serves equally):
 
 ```solidity
 function send(bytes32 room, bytes wire);            // one wire message
@@ -292,7 +292,7 @@ DeWEB 页面究竟能否建立 WebRTC 连接，是本 TAP 之外由外壳决定�
 
 ### 3.7 链上传输（OPTIONAL）
 
-链本身就可以承载通道，不需要中继、也没有运营者。**ChannelBus** 是具有如下接口的合约（接口见英文部分，参考实现 `contracts/src/ChannelBus.sol`）：`send(bytes32 room, bytes wire)` 发送一条消息；`sendMany(bytes32 room, bytes packed)` 一笔交易发送 1 到 16 条，`packed` 为重复的 `uint16 大端长度 ‖ 消息`；每条消息发出一个事件 `Wire(bytes32 indexed room, bytes wire)`，顺序与发送顺序一致。
+链本身就可以承载通道，不需要中继、也没有运营者。**ChannelBus** 是具有如下接口的合约（接口见英文部分，参考实现 `contracts/src/ChannelBus.sol`；BNB Chain 上已部署于 `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`，其代码与参考构建逐字节一致；任何具有此接口的合约同样可用）：`send(bytes32 room, bytes wire)` 发送一条消息；`sendMany(bytes32 room, bytes packed)` 一笔交易发送 1 到 16 条，`packed` 为重复的 `uint16 大端长度 ‖ 消息`；每条消息发出一个事件 `Wire(bytes32 indexed room, bytes wire)`，顺序与发送顺序一致。
 
 - `room` 为 §3.5 的房间号（32 字节），`wire` 为 §3.5 的原始线路消息（不做 base64），长度 1 到 16,448 字节，其它一律被合约拒绝。`sendMany` 让一方在一笔交易里向同一房间发送多条消息（例如 `ready` 与第一帧），每笔交易的基础费用只付一次。事件不含发送者：帧自带认证（§3.4）。
 - 接收方查询自己入站房间的 `Wire` 日志，按 `(blockNumber, logIndex)` 顺序处理。读取 MUST 使用显式的数字区块区间，绝不用标签；区间终点是按 TAP-20 §3.2 读取的链头（至少 `quorum` 个答案中最低的链头），可再往回退 `confirmations` 个区块。没有保存读取位置的读取方从链头之前 600 个区块开始（参考实现：`lookback`，约合 BSC 的 5 分钟），使对端在本方启动期间发出的帧不被跳过。

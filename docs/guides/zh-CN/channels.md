@@ -70,7 +70,7 @@ bob.open(frame, { text: true }).data                 // 'hello'
 | 传输 | 适用场景 | API |
 |---|---|---|
 | **中继**（默认） | 低延迟，无 gas。中继是一个普通的 TapeAPI 服务，按房间存储密文。 | `channel.relayTransport({ api, svc, inbound, outbound })` |
-| **ChannelBus** | 没有需要信任或维持运行的服务器；每条消息都是一笔交易（约 50,000 gas）。 | `channel.busTransport({ rpc, bus, inbound, outbound, sendTx })` |
+| **ChannelBus** | 没有需要信任或维持运行的服务器；每条消息都是一笔交易（约 50,000 gas）。 | `channel.busTransport({ rpc, bus: MAINNET.channelBus, inbound, outbound, sendTx })` |
 | **同时使用多个** | 响应方可以在邀请所列的任一传输上作答，因此要在所有传输上监听。 | `channel.fanIn([t1, t2])` |
 
 运行中继：[`examples/relay-service/`](../../../examples/relay-service/)（Node）或

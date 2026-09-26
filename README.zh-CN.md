@@ -11,7 +11,7 @@ TapeAPI 是 BNB Chain 上 [TapeOut](https://tapeout.net) 生态的服务与通�
 [English](README.md) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [网站](https://tapeapi.fun) · [更新日志](CHANGELOG.md)
 
 > **状态：pre-alpha（v0.1.0）。** 免费层不需要我们的任何合约，运行在 TapeOut 已部署的合约之上。
-> 我们自己的合约（付费调用托管合约、服务目录、ChannelBus）**未经第三方审计**；ChannelBus 正在部署，其地址将在此公布。
+> 我们自己的合约（付费调用托管合约、服务目录、ChannelBus）**未经第三方审计**；ChannelBus 已部署（地址见下文）。
 > 接口仍可能变化。下文的 TAP 编号是向 TapeKit 维护者**提议**的编号，尚未正式分配。
 
 ---
@@ -173,7 +173,7 @@ await provider.listen(8787)                  // Node；在 Cloudflare Workers �
 | SiteRegistry | `0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6` | TapeOut（已部署） |
 | 处理器工厂 | `0x68224F668083c29e9800Be2a646d42d18cedF7e2` | TapeOut（已部署） |
 | BEM 代币 | `0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a` | TapeOut（已部署） |
-| ChannelBus | *正在部署；将在此公布* | TapeAPI（无所有者、无状态、不可升级） |
+| ChannelBus | [`0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`](https://bscscan.com/address/0x486110c35d9b90a9d6D85c8063A065f9e7b6b707) | TapeAPI（无所有者、无状态、不可升级） |
 | TapeAPIEscrow、ServiceDirectory | *未部署* | TapeAPI |
 
 ## 质量

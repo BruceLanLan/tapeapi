@@ -66,7 +66,7 @@ and the invite, accept and ready travel over a transport.
 | Transport | When | API |
 |---|---|---|
 | **Relay** (default) | Low latency, no gas. A relay is an ordinary TapeAPI service that stores ciphertext per room. | `channel.relayTransport({ api, svc, inbound, outbound })` |
-| **ChannelBus** | No server to trust or keep running; every message is a transaction (about 50,000 gas). | `channel.busTransport({ rpc, bus, inbound, outbound, sendTx })` |
+| **ChannelBus** | No server to trust or keep running; every message is a transaction (about 50,000 gas). | `channel.busTransport({ rpc, bus: MAINNET.channelBus, inbound, outbound, sendTx })` |
 | **Several at once** | The responder may answer on any transport the invite names, so listen on all of them. | `channel.fanIn([t1, t2])` |
 
 Run a relay: [`examples/relay-service/`](../../examples/relay-service/) (Node) or

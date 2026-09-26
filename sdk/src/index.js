@@ -33,6 +33,7 @@ export const MAINNET = {
   siteRegistry: '0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6',
   factory: '0x68224F668083c29e9800Be2a646d42d18cedF7e2',   // TapeOut processor factory: isCPU(circuits) / 处理器工厂
   bem: '0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a',
+  channelBus: '0x486110c35d9b90a9d6D85c8063A065f9e7b6b707',   // TAP-26 §3.7, deployed 2026-09-26, code checked against the tested build / 已部署，代码与测试构建逐字节一致
 }
 export const MANIFEST_PATH = '/.well-known/tapeapi.json'   // fixed by TAP-20 §3.2; never taken from a directory record
 // SiteRegistry keys carry NO leading slash (TapeKit SPEC §6 step 3 strips it; mainnet 4246.0.tape stores `index.html`,
