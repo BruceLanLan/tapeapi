@@ -3,6 +3,7 @@
 | Title | TapeAPI: Metered Payment Voucher and Escrow |
 | Author | Bruce (@BruceLanLan) |
 | Status | Draft |
+| Implementation | Not deployed (2026-09-27). `contracts/src/TapeAPIEscrow.sol` (v2) is implemented and tested, and the SDK and server implement the voucher, but no escrow is deployed on BNB Chain and it needs an independent audit before it holds real funds. The live services (`11.1013.tape`, `12.1013.tape`) are free and name no escrow. |
 | Type | Standards |
 | Created | 2026-09-20 |
 | Revision | v2 (2026-09-21): per-(consumer, provider) channels. Supersedes the v1 shared-pool + commitment-accounting escrow; the v1 contract and its tests are archived under `contracts/archive/`. The voucher (§3.1) is unchanged. |
@@ -12,6 +13,8 @@
 # TAP-22: TapeAPI: Metered Payment Voucher and Escrow
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
+
+> **Placeholder number.** TAP-22 is a placeholder number proposed in [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8). TapeKit has no numbered-proposal process yet (changes to TapeOut itself follow TapeKit `SPEC.md` §15), so the maintainers may assign another number or move this document to another process; see [TAP-1](TAP-1.md).
 
 RFC 2119 keywords apply.
 
@@ -124,7 +127,7 @@ Adds nothing to `SPEC.md`; no change to name grammar or §15.1 invariants. TAP-2
 
 ## 7. Reference Implementation
 
-`contracts/src/TapeAPIEscrow.sol` (v1 archived as `contracts/archive/TapeAPIEscrow.v1.sol`); regression suite `contracts/test/Attacks.t.sol` (every audited v1 attack replayed against v2) and `contracts/test/EscrowInvariant.t.sol` (solvency, monotone `claimed`, no over-payment, in-range vouchers payable in full inside the cooldown). SDK `api.payer` (accepts `sessionExpiry` only to refuse issuing once the session has lapsed; `voucher.expires` is bounded by `ttl` alone), `api.tx.fund / requestWithdraw / cancelWithdraw / withdraw / authorizeSession(provider, key, expires) / settle / setContribution`, `api.chain.escrow.channelOf / claimedOf / sessionExpiry / pendingWithdraw`, and `svc.contribution` from `api.resolve`; server voucher verification reads `channelOf`, `claimedOf` and `pendingWithdraw(consumer, provider)` per §3.2, `pendingSettlements` / `settleTx`, and `contribution` in `/tapeapi/v1/health`.
+`contracts/src/TapeAPIEscrow.sol` (v1 archived as `contracts/archive/TapeAPIEscrow.v1.sol`); regression suite `contracts/test/Attacks.t.sol` (every audited v1 attack replayed against v2) and `contracts/test/EscrowInvariant.t.sol` (solvency, monotone `claimed`, no over-payment, in-range vouchers payable in full inside the cooldown). SDK `api.payer` (accepts `sessionExpiry` only to refuse issuing once the session has lapsed; `voucher.expires` is bounded by `ttl` alone), `api.tx.fund / requestWithdraw / cancelWithdraw / withdraw / authorizeSession(provider, key, expires) / settle / setContribution`, `api.chain.escrow.channelOf / claimedOf / sessionExpiry / pendingWithdraw`, and `svc.contribution` from `api.resolve`; server voucher verification reads `channelOf`, `claimedOf` and `pendingWithdraw(consumer, provider)` per §3.2, `pendingSettlements` / `settleTx`, and `provider.contribution()` (not exposed in `/tapeapi/v1/health`). Not deployed: see the header.
 
 ## 8. Security Considerations
 
@@ -148,6 +151,10 @@ Copyright and related rights waived via CC0-1.0.
 # TAP-22：TapeAPI：计量支付凭证与托管（中文译文）
 
 > 英文为权威文本，本译文与英文章节一一对应。
+
+> **占位编号。** TAP-22 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
+
+> **实现状态（2026-09-27）：** 未部署。`contracts/src/TapeAPIEscrow.sol`（v2）已实现并有测试，SDK 与服务端实现了凭证，但 BNB Chain 上没有部署任何托管合约，在它持有真实资金之前需要一次独立审计。运行中的服务（`11.1013.tape`、`12.1013.tape`）免费，不指定托管合约。
 
 RFC 2119 关键词适用。
 
@@ -216,7 +223,7 @@ errors: ZeroAddress, ZeroAmount, BadProvider, InsufficientBalance, NoPendingWith
         NotOwner, NotPendingOwner
 ```
 
-`fund` 在 `amount == 0` 时 MUST 以 `ZeroAmount()` 回滚，在 `provider` 为零地址或托管自身时 MUST 以 `BadProvider()` 回滚；MUST 先记入 `channelOf(msg.sender, provider)` 再划转代币，并发出 `Funded`。充给一个永不结算的提供者的通道，只能由消费者经 `requestWithdraw` / `withdraw` 取回。
+`fund` 在 `amount == 0` 时 MUST 以 `ZeroAmount()` 回滚，在 `provider` 为零地址或托管自身时以 `BadProvider()` 回滚；MUST 先记入 `channelOf(msg.sender, provider)` 再划转代币，并发出 `Funded`。充给一个永不结算的提供者的通道，只能由消费者经 `requestWithdraw` / `withdraw` 取回。
 
 `settle` MUST：任何人可调用；要求 `block.timestamp ≤ expires`（`Expired()`）；当 `provider` 为零地址或托管自身时以 `BadProvider()` 回滚；恢复签名者，仅当其为 `consumer` 或满足 `sessionExpiry(consumer, provider, signer) ≥ block.timestamp` 时接受（否则 `BadSignature()`）；要求 `cumulative > claimed[consumer][provider]`（`NothingToSettle()`）；计算 `delta = cumulative − claimed[consumer][provider]` 与 `paid = min(delta, channel[consumer][provider])`，并要求 `paid > 0`（`InsufficientBalance()`）；计算 `contribution = paid × contributionBps[provider] / 10000`；`claimed += paid`、`channel −= paid`；将 `paid − contribution` 转给 `provider`，且仅当 `contribution > 0` 时将 `contribution` 转给 `treasury`；发出 `Settled(consumer, provider, paid, contribution)`。`paid < delta` 即**部分结算**，是受支持的流程（§3.3.1）：`claimed` 按实付推进，同一张凭证在通道再次充值后 MAY 于 `expires` 前就剩余部分再次结算。
 
@@ -260,7 +267,7 @@ errors: ZeroAddress, ZeroAmount, BadProvider, InsufficientBalance, NoPendingWith
 
 ## 7. 参考实现
 
-`contracts/src/TapeAPIEscrow.sol`（v1 归档于 `contracts/archive/TapeAPIEscrow.v1.sol`）；回归套件 `contracts/test/Attacks.t.sol`（v1 审计中的每个攻击对 v2 重放）与 `contracts/test/EscrowInvariant.t.sol`（偿付恒等式、`claimed` 单调、不超付、通道内凭证在冷静期内足额兑付）。SDK `api.payer`（接受 `sessionExpiry` 仅用于在会话已失效时拒绝签发；`voucher.expires` 只受 `ttl` 约束）、`api.tx.fund / requestWithdraw / withdraw / authorizeSession(provider, key, expires) / settle / setContribution`、`api.chain.escrow.channelOf / claimedOf / sessionExpiry / pendingWithdraw`，以及 `api.resolve` 返回的 `svc.contribution`；服务端凭证校验按 §3.2 读取 `channelOf`、`claimedOf` 与 `pendingWithdraw(consumer, provider)`，`pendingSettlements` / `settleTx` 与 `/tapeapi/v1/health` 中的 `contribution`。
+`contracts/src/TapeAPIEscrow.sol`（v1 归档于 `contracts/archive/TapeAPIEscrow.v1.sol`）；回归套件 `contracts/test/Attacks.t.sol`（v1 审计中的每个攻击对 v2 重放）与 `contracts/test/EscrowInvariant.t.sol`（偿付恒等式、`claimed` 单调、不超付、通道内凭证在冷静期内足额兑付）。SDK `api.payer`（接受 `sessionExpiry` 仅用于在会话已失效时拒绝签发；`voucher.expires` 只受 `ttl` 约束）、`api.tx.fund / requestWithdraw / cancelWithdraw / withdraw / authorizeSession(provider, key, expires) / settle / setContribution`、`api.chain.escrow.channelOf / claimedOf / sessionExpiry / pendingWithdraw`，以及 `api.resolve` 返回的 `svc.contribution`；服务端凭证校验按 §3.2 读取 `channelOf`、`claimedOf` 与 `pendingWithdraw(consumer, provider)`，`pendingSettlements` / `settleTx` 与 `provider.contribution()`（不在 `/tapeapi/v1/health` 中公开）。尚未部署：见本译文开头的实现状态。
 
 ## 8. 安全考量
 

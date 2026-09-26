@@ -230,6 +230,43 @@ footer h4 { margin: 0 0 7px; font-family: "IBM Plex Mono", monospace; font-size:
 footer p { margin: 0; line-height: 1.55; }
 a { color: var(--amber-ink); text-underline-offset: 3px; }
 
+/* ── live now ────────────────────────────────────────────── */
+.pins { display: grid; gap: 1px; background: var(--hair-2); border: 1px solid var(--hair-2); box-shadow: var(--shadow); }
+.pin { background: var(--panel); display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 18px; align-items: baseline; padding: 16px 20px 17px; }
+.pin .pno { font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 500; letter-spacing: .12em; color: var(--amber); }
+.pin h3 { margin: 0; font-size: 16.5px; font-weight: 600; letter-spacing: -.01em; line-height: 1.35; }
+.pin h3 a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--amber); }
+.pin h3 a:hover { color: var(--amber-ink); }
+.pin .where { margin-top: 3px; font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--ink-3); overflow-wrap: anywhere; }
+.pin .where a { color: var(--amber-ink); }
+.pin p { margin: 6px 0 0; font-size: 14px; line-height: 1.55; color: var(--ink-2); }
+.pin p.meth { margin-top: 4px; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
+.pin p.meth span { white-space: nowrap; }
+.pin .more { margin-top: 10px; }
+.pin .st { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--amber-ink); white-space: nowrap; }
+.pin .st::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); margin-right: 7px; vertical-align: 1px; }
+@media (max-width: 520px) {
+  .pin { grid-template-columns: 38px minmax(0, 1fr); gap: 6px 12px; padding: 14px 16px 15px; }
+  .pin .st { grid-column: 2; }
+}
+
+.try { margin-top: 38px; }
+.subh { display: flex; align-items: baseline; gap: 14px; margin-bottom: 4px; }
+.subh .idx { font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 500; color: var(--amber); letter-spacing: .04em; }
+.subh h3 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+.step { margin: 18px 0 10px; font-size: 14.5px; line-height: 1.6; color: var(--ink-2); max-width: 78ch; }
+.step .no { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--amber-ink); margin-right: 10px; }
+.step b { color: var(--ink); font-weight: 600; }
+.try pre { font-size: 13px; line-height: 1.7; -webkit-overflow-scrolling: touch; }
+/* The embedded mono is subset to this page's Latin characters and has no double quote; a block that needs one uses
+   the system mono throughout rather than switching face mid-line.
+   内嵌等宽字体按本页拉丁字符子集化，没有双引号；需要双引号的代码块整块改用系统等宽字体，避免行内换字体。 */
+pre.sys { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+
+/* ── notes under a list ──────────────────────────────────── */
+.specs + .note { margin-top: 16px; }
+.app .no.nope { color: var(--red); }
+
 /* ── language switch ─────────────────────────────────────── */
 body [lang] { display: none; }
 :root[data-lang="zh"] body [lang="zh"], :root[data-lang="en"] body [lang="en"] { display: revert; }

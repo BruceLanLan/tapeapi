@@ -330,3 +330,155 @@ test('the console is bilingual, and the ChannelBus deployment is an optional sec
   // No step number left over from the old seven-step page. / 不残留旧七步页面的步骤号。
   assert.doesNotMatch(html + pageScript(), /第 [67] 步|step [67]\b/i)
 })
+
+// ---------------------------------------------------------------- renewal: the key already on chain ----
+// Renewing a delegation signs for the SAME service key, which the page may not have generated (the owner set up another
+// service since, or the browser was cleared). The page reads the manifest already in the container, as a client does,
+// and signs only for a signer whose on-chain delegation recovers to the current holder. / 续期为**同一把**服务密钥签名，
+// 这把密钥可能不是本页生成的。页面像客户端一样读容器里已有的清单，只为链上委托恢复出当前持有人的签名地址签名。
+const HOLDER_KEY = '0x' + '11'.repeat(32), holder = privateKeyToAddress(HOLDER_KEY)
+const circuit = { circuits, tokenId: '1', container: container.toLowerCase(), holder: holder.toLowerCase() }   // as readCircuit returns it / 与 readCircuit 返回的一致
+const RELAY = 'https://relay.tapeapi.fun'
+const onChainText = ({ key = HOLDER_KEY, signer: sg = signer, exp = expires, endpoint = `${RELAY}/tapeapi/v1`, ...rest } = {}) =>
+  C.manifestText({ ...S, signer: sg, expires: exp, sig: sig.signDigest(sig.delegationDigest(56, MAINNET.hub, { container, signer: sg, expires: exp }), key), endpoint, ...rest })
+const sha256 = async (b) => createHash('sha256').update(b).digest('hex')
+// eth_call through the SDK's fake chain, as the wallet's node would answer it. / 经 SDK 的假链做 eth_call，如同钱包的节点。
+const { createFakeChain } = await import('./helpers/fake-chain.mjs')
+const chainCall = (chain, seen = []) => async (to, data) => {
+  seen.push({ to, data })
+  const r = await (await chain.fetch('http://rpc', { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to, data }, 'latest'] }) })).json()
+  if (r.error) throw Object.assign(new Error(r.error.message), { code: r.error.code })
+  return r.result
+}
+
+test('readManifestFile reads the manifest on chain as the SDK does: fileInfo, read, exact length and SHA-256', async () => {
+  for (const name of ['fileInfo', 'read']) assert.equal(C.SEL[name], abi.selector(name), name)
+  const chain = createFakeChain(), seen = [], text = onChainText()
+  assert.equal(await C.readManifestFile(chainCall(chain, seen), container, sha256), null, 'no manifest: fileInfo.size = 0')
+  chain.writeFile(container, MANIFEST_KEY, text)
+  assert.equal(await C.readManifestFile(chainCall(chain, seen), container, sha256), text)
+  assert.deepEqual(seen.slice(-2).map((x) => x.to), [C.SITE_REGISTRY, C.SITE_REGISTRY])
+  assert.equal(seen.at(-2).data, abi.encodeCall('fileInfo', [container, MANIFEST_KEY]).toLowerCase())
+  assert.equal(seen.at(-1).data, abi.encodeCall('read', [container, MANIFEST_KEY]).toLowerCase())
+  // A manifest written in several chunks (appendChunk) is still readable: renewal republishes the page's own bytes.
+  // 分块写入的较大清单照样能读：续期发布的是页面自己的字节。
+  const big = JSON.stringify({ ...JSON.parse(text), pad: 'x'.repeat(30_000) })
+  chain.writeFile(container, MANIFEST_KEY, big)
+  assert.equal(await C.readManifestFile(chainCall(chain), container, sha256), big)
+  // A bad file on chain is UNVERIFIABLE (the page then allows only a fresh setup, which replaces it); a failing call is
+  // not, and stays an error to retry. / 链上坏文件标为 UNVERIFIABLE（页面此时只允许新密钥设置，由它替换）；调用失败不标记，照常重试。
+  const refused = {
+    'bytes that do not hash to the index': () => { chain.writeFile(container, MANIFEST_KEY, text); chain.setFileBytes(container, MANIFEST_KEY, text.replace('"1"', '"2"')) },
+    'a truncated read': () => { chain.writeFile(container, MANIFEST_KEY, text); chain.setFileBytes(container, MANIFEST_KEY, text.slice(0, -1)) },
+    'no SHA-256 on chain': () => { chain.writeFile(container, MANIFEST_KEY, text); chain.setFileInfo(container, MANIFEST_KEY, { sha256Hash: '0x' + '00'.repeat(32) }) },
+    'over 64 KiB': () => { chain.writeFile(container, MANIFEST_KEY, 'x'.repeat(64 * 1024 + 1)) },
+    'not UTF-8': () => { chain.writeFile(container, MANIFEST_KEY, Uint8Array.of(0xff, 0xfe, 0x7b)) },
+  }
+  for (const [what, arrange] of Object.entries(refused)) { arrange(); await assert.rejects(C.readManifestFile(chainCall(chain), container, sha256), { code: 'UNVERIFIABLE' }, what) }
+  await assert.rejects(C.readManifestFile(async () => '0x1234', container, sha256), { code: 'UNVERIFIABLE', message: /ABI/ }, 'a garbled answer')
+  chain.writeFile(container, MANIFEST_KEY, text); chain.setFileBytes(container, MANIFEST_KEY, null)
+  await assert.rejects(C.readManifestFile(chainCall(chain), container, sha256), (e) => e.code !== 'UNVERIFIABLE', 'read() failing is a call error')
+  await assert.rejects(C.readManifestFile(async () => { throw new Error('node down') }, container, sha256), (e) => e.code === undefined && /node down/.test(e.message))
+})
+
+test('onChainAuthorisation: the signer of a delegation that recovers to the CURRENT holder, for this circuit only', () => {
+  const a = C.onChainAuthorisation(onChainText(), circuit)
+  assert.deepEqual(a, { ok: true, signer, endpoints: [`${RELAY}/tapeapi/v1`], expires })
+  assert.deepEqual(C.onChainAuthorisation(onChainText({ exp: 1000 }), circuit).ok, true, 'an expired delegation is still the holder\'s: renewing it is the point')
+  assert.deepEqual(C.onChainAuthorisation(null, circuit), { ok: false, code: 'NO_MANIFEST' })
+  const other = privateKeyToAddress('0x' + '33'.repeat(32))
+  assert.deepEqual(C.onChainAuthorisation(onChainText({ key: '0x' + '33'.repeat(32) }), circuit), { ok: false, code: 'NOT_HOLDER', detail: other }, 'a previous holder\'s delegation')
+  assert.equal(C.onChainAuthorisation(onChainText(), { ...circuit, holder: other }).code, 'NOT_HOLDER', 'the circuit changed hands')
+  assert.equal(C.onChainAuthorisation(onChainText(), { ...circuit, tokenId: '2' }).code, 'WRONG_CIRCUIT')
+  assert.equal(C.onChainAuthorisation(onChainText(), { ...circuit, container: '0x' + '61'.repeat(20) }).code, 'WRONG_CIRCUIT')
+  const good = JSON.parse(onChainText())
+  // The same holder's signature over another signer or another expiry does not carry over. / 同一持有人对别的签名地址或别的到期的签名不能挪用。
+  assert.equal(C.onChainAuthorisation(JSON.stringify({ ...good, signer: '0x' + '99'.repeat(20) }), circuit).code, 'NOT_HOLDER')
+  assert.equal(C.onChainAuthorisation(JSON.stringify({ ...good, delegation: { ...good.delegation, expires: expires + 1 } }), circuit).code, 'NOT_HOLDER')
+  const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n, g = good.delegation.sig
+  const high = g.slice(0, 66) + (N - BigInt('0x' + g.slice(66, 130))).toString(16).padStart(64, '0') + (parseInt(g.slice(130), 16) === 27 ? '1c' : '1b')
+  assert.equal(C.onChainAuthorisation(JSON.stringify({ ...good, delegation: { ...good.delegation, sig: high } }), circuit).code, 'BAD_SIGNATURE', 'high s, as every client refuses it')
+  for (const [what, m] of Object.entries({
+    'not JSON': 'nope', array: '[]', 'major 1': JSON.stringify({ ...good, tapeapi: '1.0' }), 'no delegation': JSON.stringify({ ...good, delegation: undefined }),
+    'fractional expiry': JSON.stringify({ ...good, delegation: { ...good.delegation, expires: 1.5 } }), 'short sig': JSON.stringify({ ...good, delegation: { ...good.delegation, sig: '0x00' } }),
+    'no endpoints': JSON.stringify({ ...good, endpoints: { live: [], async: false } }), 'tokenId 01': JSON.stringify({ ...good, tokenId: '01' }), 'signer not an address': JSON.stringify({ ...good, signer: 'me' }),
+  })) assert.equal(C.onChainAuthorisation(m, circuit).code, 'INVALID', what)
+})
+
+test('decideSigner: renewal signs only for the holder-authorised key on chain, and never weakens the fresh-key path', () => {
+  const fresh = C.addressOfKey(C.newSignerKey())
+  const ask = (o) => C.decideSigner({ text: onChainText(), circuit, base: RELAY, health: { ok: true, signer }, keyAddress: fresh, renew: true, moved: false, ...o })
+  // Happy renewal: the relay's key is on chain, the page's stored key is another service's. / 正常续期：页面记着的是别的服务的密钥。
+  const ok = ask()
+  assert.equal(ok.ok, true); assert.equal(ok.mode, 'renew'); assert.equal(ok.signer, signer)
+  assert.equal(ask({ keyAddress: undefined }).signer, signer, 'a cleared browser can renew')
+  assert.equal(ask({ health: { signer: signer.toLowerCase() }, base: 'https://Relay.tapeapi.fun' }).ok, true, 'address and host case do not matter')
+  assert.equal(ask({ text: onChainText({ exp: 1000 }) }).ok, true, 'an expired delegation can be renewed')
+  // The on-chain delegation is not from the current holder: no renewal, fresh setup still works at any URL.
+  // 链上委托不是当前持有人签的：不能续期；新密钥设置照常，网址不受限制。
+  const prev = onChainText({ key: '0x' + '33'.repeat(32) })
+  assert.equal(ask({ text: prev }).code, 'NOT_HOLDER')
+  assert.equal(ask({ text: prev, renew: false, base: 'https://new.example', health: { signer: fresh } }).mode, 'fresh')
+  // The service reports another signer: refused, and that address is never the one returned. / 服务报出别的地址：拒绝。
+  const evil = privateKeyToAddress('0x' + '44'.repeat(32))
+  assert.deepEqual([ask({ health: { signer: evil } }).code, ask({ health: { signer: evil } }).signer], ['SIGNER_MISMATCH', signer])
+  assert.equal(ask({ health: { signer: fresh } }).code, 'SIGNER_MISMATCH', 'renewal does not sign for the page\'s own key either')
+  // Endpoint mismatch: refused on both paths unless "moved"; with "moved" only the fresh key. / 网址不一致：两条路都拒绝，除非勾“已搬家”，此时只能用新密钥。
+  const moved = { base: 'https://api.tapeapi.fun' }
+  assert.deepEqual(ask(moved).code, 'ENDPOINT_MISMATCH'); assert.deepEqual(ask(moved).endpoints, [`${RELAY}/tapeapi/v1`])
+  assert.equal(ask({ ...moved, renew: false, health: { signer: fresh } }).code, 'ENDPOINT_MISMATCH', 'the fresh path too')
+  assert.equal(ask({ ...moved, moved: true }).code, 'MOVED')
+  assert.equal(ask({ moved: true }).code, 'MOVED', 'ticking "moved" turns renewal off even at the same URL')
+  assert.deepEqual(ask({ ...moved, moved: true, renew: false, health: { signer: fresh } }), { ok: true, mode: 'fresh', signer: fresh, onChain: C.onChainAuthorisation(onChainText(), circuit) })
+  assert.equal(ask({ base: 'https://relay.tapeapi.fun.evil.example' }).code, 'ENDPOINT_MISMATCH', 'a look-alike host')
+  // No manifest on chain: fresh setup only. / 链上没有清单：只能新密钥设置。
+  assert.equal(ask({ text: null }).code, 'NO_MANIFEST')
+  assert.equal(ask({ text: null, renew: false, base: 'https://api.tapeapi.fun', health: { signer: fresh } }).mode, 'fresh')
+  // The fresh path is exactly review F1: only the generated key, only when the service reports it.
+  // 新密钥路径就是审查 F1：只为生成的密钥签，且服务报出的正是它。
+  assert.equal(ask({ renew: false, health: { signer } }).code, 'KEY_MISMATCH', 'the on-chain key is not signed on the fresh path')
+  assert.equal(ask({ renew: false, keyAddress: undefined, health: { signer } }).code, 'NO_KEY')
+  for (const health of [null, {}, [], { signer: 'x' }, { signer: fresh.slice(0, 41) }]) assert.equal(ask({ health }).code, 'NO_SIGNER')
+  for (const base of ['http://relay.tapeapi.fun', 'https://relay.tapeapi.fun/x', 'https://a@relay.tapeapi.fun']) assert.equal(ask({ base }).code, 'BAD_URL', base)
+  // Whatever the answers, an authorised signer is the on-chain one (renew) or the generated one (fresh), nothing else.
+  // 不论怎样回答，能被授权的只有链上那个（续期）或生成的那个（新密钥）。
+  for (const renew of [true, false]) for (const hs of [signer, fresh, evil]) for (const text of [onChainText(), prev, null]) {
+    const d = ask({ renew, health: { signer: hs }, text })
+    if (d.ok) assert.equal(d.signer, renew ? signer : fresh, `${renew} ${hs}`)
+  }
+})
+
+test('renewal end to end on the fake chain: what the page publishes after renewing is a manifest a client accepts', async () => {
+  const chain = createFakeChain()
+  chain.writeFile(container, MANIFEST_KEY, onChainText({ exp: Math.floor(Date.now() / 1000) + 3600 }))
+  const text = await C.readManifestFile(chainCall(chain), container, sha256)
+  const d = C.decideSigner({ text, circuit, base: RELAY, health: { signer }, keyAddress: C.addressOfKey(C.newSignerKey()), renew: true })
+  assert.equal(d.signer, signer)
+  const exp = Math.floor(Date.now() / 1000) + 90 * 86400
+  assert.deepEqual(C.delegationTypedData({ container: circuit.container, signer: d.signer, expires: exp }), sig.delegationTypedData(56, MAINNET.hub, { container: circuit.container, signer, expires: exp }))
+  const renewed = sig.signDigest(C.delegationDigest({ container: circuit.container, signer: d.signer, expires: exp }), HOLDER_KEY)
+  assert.equal(C.recoverAddress(C.delegationDigest({ container: circuit.container, signer: d.signer, expires: exp }), renewed), holder)
+  const out = C.manifestText({ ...S, container: circuit.container, signer: d.signer, expires: exp, sig: renewed, endpoint: `${RELAY}/tapeapi/v1` })
+  const { validateManifest } = await import('../src/manifest.js')
+  assert.doesNotThrow(() => validateManifest(JSON.parse(out), { requireDelegation: true }))
+  assert.equal(C.onChainAuthorisation(out, circuit).ok, true, 'and it can be renewed again next time')
+})
+
+test('the page: step 4 re-reads the chain, renewal signs only lib\'s decision, and the choice is explained in both languages', () => {
+  const js = pageScript(), html = consoleHtml()
+  const sign = js.slice(js.indexOf('async function signDelegation(renew)'), js.indexOf("$('btn-publish').onclick"))
+  assert.match(sign, /try \{ text = await readOnChain\(s\) \} catch \(e\) \{\s*if \(renew \|\| e\.code !== 'UNVERIFIABLE'\) throw e/, 'only the fresh path goes on past an unverifiable file on chain, as if there were none')
+  assert.match(sign, /C\.decideSigner\(\{ text, circuit: s, base, health: h, keyAddress: s\.keyAddress, renew, moved: \$\('moved'\)\.checked \}\)/)
+  assert.ok(sign.indexOf('await readOnChain(s)') < sign.indexOf("h.signer.toLowerCase() !== s.keyAddress.toLowerCase()"), 'the chain is read before the F1 refusal, so it can point to renewal')
+  assert.ok(sign.indexOf('C.decideSigner(') < sign.indexOf('await ensureSame()'), 'decided before the wallet is asked')
+  assert.match(sign, /if \(!d\.ok\) \{[\s\S]*?return\s*\}/, 'a refusal stops before signing')
+  assert.match(sign, /renew \? C\.delegationTypedData\(\{ container: s\.container, signer: d\.signer, expires \}\) : C\.delegationTypedData\(\{ container: s\.container, signer: s\.keyAddress, expires \}\)/)
+  assert.match(sign, /C\.recoverAddress\(C\.delegationDigest\(\{ container: s\.container, signer: d\.signer, expires \}\), sig\)/)
+  assert.doesNotMatch(js, /signer: (h|health)\.signer/, 'the health answer never becomes the signer')
+  assert.match(js, /readManifestFile\(call, s\.container, sha256Hex\)/, 'the manifest is read from the chain, not the service')
+  assert.match(js, /\$\('btn-renew'\)\.disabled = [^\n]*\$\('moved'\)\.checked/, '"moved" turns the renew button off')
+  for (const id of ['renew-box', 'moved', 'btn-renew']) assert.match(html, new RegExp(`id="${id}"`), id)
+  const box = html.slice(html.indexOf('id="renew-box"'), html.indexOf('id="deleg-out"'))
+  assert.ok(box.includes('<span lang="zh">') && (box.match(/<span lang="zh">/g) || []).length === (box.match(/<span lang="en">/g) || []).length)
+  assert.match(box, /恢复出你（当前持有人）/); assert.match(box, /recovers to you, the current holder/)
+})

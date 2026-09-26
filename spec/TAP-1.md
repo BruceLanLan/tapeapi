@@ -3,6 +3,7 @@
 | Title | TAP Purpose and Guidelines |
 | Author | Bruce (@BruceLanLan) |
 | Status | Draft |
+| Implementation | Not adopted (2026-09-27). A suggested process, offered to the TapeKit maintainers in TapeKit issue #8; TapeKit has no numbered-proposal process yet. |
 | Type | Informational (Process) |
 | Created | 2026-09-20 |
 | Requires | — |
@@ -12,22 +13,24 @@
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
 
+> **A suggested process, with a placeholder number.** This document is a suggested process for numbered TapeOut proposals, offered to the TapeKit maintainers in [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8). TapeKit has no numbered-proposal process yet: its `SPEC.md` (`tape://` v0.2) states its own change rules in §15, and TAP-10 (TapeSend) is the maintainers' own number, currently being rewritten by them. The numbers TAP-1 and TAP-20 to TAP-27 are placeholders the maintainers may reassign. If the maintainers adopt another process, these documents move to it.
+
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
 ## 1. Abstract
 
-A TapeOut Proposal (TAP) is a design document that proposes a change to, or a standard built on, the TapeOut protocol. This document defines what a TAP is, the types of TAPs, their lifecycle, numbering, required contents, the criteria for reaching Final, and the roles of editors and maintainers. It is deliberately short; when this document is silent, editors SHOULD follow the spirit of EIP-1.
+A TapeOut Proposal (TAP) is a design document that proposes a change to, or a standard built on, the TapeOut protocol. This document defines what a TAP is, the types of TAPs, their lifecycle, numbering, required contents, the criteria for reaching Final, and the roles of editors and maintainers. It is deliberately short; when this document is silent, editors SHOULD follow the spirit of EIP-1. It is offered to the TapeKit maintainers as a suggestion, not as a process they have adopted.
 
 ## 2. Motivation
 
-TapeOut is specified by `SPEC.md` in the TapeKit repository. `SPEC.md` §15 states how the specification may change, and §15.1 lists promises that never change. A messaging layer (TapeSend, referred to as TAP-10) already exists as an internal Chinese RFC, but there is no process by which a third party can propose an interface, a contract, or a specification change and know how it will be evaluated.
+TapeOut is specified by `SPEC.md` in the TapeKit repository. `SPEC.md` §15 states how the specification may change, and §15.1 lists promises that never change. A messaging layer, TapeSend, carries the maintainers' own number TAP-10 and is being rewritten by them, but there is no process by which a third party can propose an interface, a contract, or a specification change and know how it will be evaluated.
 
 The goal of TAP-1 is to give ecosystem contributors a defined entrance. The process MUST make it easy to build on the protocol without touching the §15.1 promises, and MUST make any attempt to touch them explicit and visible.
 
 ## 3. TAP Types
 
 - **Core**: changes to `SPEC.md` or to the reference shells (the preview and gateway implementations maintained in TapeKit). A Core TAP that would alter a §15.1 invariant MUST say so in its Abstract and is expected to be rejected.
-- **Standards**: interfaces, contracts, manifests, message formats, or client behaviours that build on the protocol without changing it. TAP-10 (TapeSend) and TAP-20 (TapeAPI) are Standards TAPs. A Standards TAP MUST NOT require a change to `SPEC.md`; if it does, it MUST be split and the `SPEC.md` part filed as Core.
+- **Standards**: interfaces, contracts, manifests, message formats, or client behaviours that build on the protocol without changing it. TAP-20 (TapeAPI) is a Standards TAP, and in this scheme so would be TAP-10 (TapeSend). A Standards TAP MUST NOT require a change to `SPEC.md`; if it does, it MUST be split and the `SPEC.md` part filed as Core.
 - **Informational**: guidelines, process documents, and design notes that do not propose a new feature. Informational TAPs are not binding. This document is Informational.
 
 ## 4. Workflow and Statuses
@@ -46,15 +49,15 @@ Status transitions are recorded by editors in the front matter.
 ## 5. Numbering
 
 - `TAP-1` is reserved for this document.
-- `10–19`: messaging. `TAP-10` is TapeSend, as already used in the ecosystem.
-- `20–29`: services. `TAP-20` is TapeAPI; `TAP-21` and `TAP-22` are its companion documents.
+- `10–19`: messaging. `TAP-10` is TapeSend, the maintainers' own number.
+- `20–29`: services. `TAP-20` is TapeAPI; `TAP-21` to `TAP-27` are its companion documents.
 - Other ranges are unallocated; maintainers MAY allocate a range when a family of proposals appears.
 - Maintainers assign numbers. Authors MUST NOT self-assign. A number, once assigned, is never reused.
-- The numbers TAP-1 and TAP-20 to TAP-27 used by this repository are **proposed** to the maintainers of `TapeOutProtocol/TapeKit`; none has been assigned yet, and each will be renumbered if the maintainers so decide.
+- The numbers TAP-1 and TAP-20 to TAP-27 used by this repository are **proposed** to the maintainers of `TapeOutProtocol/TapeKit` in [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8); none has been assigned yet, and each will be renumbered if the maintainers so decide.
 
 ## 6. What Belongs in a TAP
 
-A TAP is a single Markdown file `spec/TAP-N.md`, English first, followed by a Chinese translation aligned section by section with identical numbering. The English text is authoritative. Front matter is a table with: TAP, Title, Author, Status, Type, Created, Requires, License (and `Last-Call-Deadline` when applicable).
+A TAP is a single Markdown file `spec/TAP-N.md`, English first, followed by a Chinese translation aligned section by section with identical numbering. The English text is authoritative. Front matter is a table with: TAP, Title, Author, Status, Type, Created, Requires, License (and `Last-Call-Deadline` when applicable). Two further rows are optional: `Revision`, which summarises a revision that replaced earlier normative text, and `Implementation`, which states, with a date, what is implemented and deployed (addresses and URLs) and what is not.
 
 Required sections, in order:
 
@@ -102,22 +105,26 @@ Copyright and related rights waived via CC0-1.0. Code samples in TAPs are MIT un
 
 > 英文为权威文本，本译文与英文章节一一对应。
 
+> **建议的流程，占位的编号。** 本文档是为 TapeOut 编号提案建议的一套流程，已在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提交给 TapeKit 维护者参考。TapeKit 目前还没有编号提案流程：其 `SPEC.md`（`tape://` v0.2）在 §15 规定了自身的修改规则，TAP-10（TapeSend）是维护者自己的编号，目前正由他们重写。TAP-1 与 TAP-20 至 TAP-27 这些编号都是占位编号，维护者可以重新分配。若维护者采用其它流程，这些文档随之迁移过去。
+
+> **实现状态（2026-09-27）：** 未被采纳。这是一套建议的流程，已在 TapeKit issue #8 中提交给 TapeKit 维护者；TapeKit 目前还没有编号提案流程。
+
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 
 ## 1. 摘要
 
-TapeOut 提案（TAP）是一份设计文档，用于提出对 TapeOut 协议的修改，或基于该协议的标准。本文档定义 TAP 是什么、TAP 的类型、生命周期、编号规则、必需内容、进入 Final 的条件，以及编辑与维护者的角色。本文档刻意简短；本文档未涉及之处，编辑 SHOULD 遵循 EIP-1 的精神。
+TapeOut 提案（TAP）是一份设计文档，用于提出对 TapeOut 协议的修改，或基于该协议的标准。本文档定义 TAP 是什么、TAP 的类型、生命周期、编号规则、必需内容、进入 Final 的条件，以及编辑与维护者的角色。本文档刻意简短；本文档未涉及之处，编辑 SHOULD 遵循 EIP-1 的精神。本文档作为建议提交给 TapeKit 维护者，并非他们已采纳的流程。
 
 ## 2. 动机
 
-TapeOut 由 TapeKit 仓库中的 `SPEC.md` 规定。`SPEC.md` §15 说明了规范如何修改，§15.1 列出了永不改变的承诺。消息层（TapeSend，即 TAP-10）已以内部中文 RFC 的形式存在，但目前没有任何流程可以让第三方提出接口、合约或规范修改，并预知其将如何被评估。
+TapeOut 由 TapeKit 仓库中的 `SPEC.md` 规定。`SPEC.md` §15 说明了规范如何修改，§15.1 列出了永不改变的承诺。消息层 TapeSend 使用维护者自己的编号 TAP-10，目前正由他们重写，但目前没有任何流程可以让第三方提出接口、合约或规范修改，并预知其将如何被评估。
 
 TAP-1 的目标是为生态贡献者提供一个明确的入口。该流程 MUST 使"在不触碰 §15.1 承诺的前提下构建于协议之上"变得容易，并 MUST 使任何触碰这些承诺的尝试显式且可见。
 
 ## 3. TAP 类型
 
 - **Core（核心）**：对 `SPEC.md` 或参考外壳（TapeKit 维护的 preview 与 gateway 实现）的修改。会改变 §15.1 不变量的 Core TAP MUST 在摘要中声明，且预期会被拒绝。
-- **Standards（标准）**：在不修改协议的前提下构建于其上的接口、合约、清单、消息格式或客户端行为。TAP-10（TapeSend）与 TAP-20（TapeAPI）属于 Standards TAP。Standards TAP MUST NOT 要求修改 `SPEC.md`；若确有需要，MUST 拆分，并将 `SPEC.md` 部分作为 Core 提交。
+- **Standards（标准）**：在不修改协议的前提下构建于其上的接口、合约、清单、消息格式或客户端行为。TAP-20（TapeAPI）属于 Standards TAP，按本方案 TAP-10（TapeSend）亦然。Standards TAP MUST NOT 要求修改 `SPEC.md`；若确有需要，MUST 拆分，并将 `SPEC.md` 部分作为 Core 提交。
 - **Informational（信息）**：指南、流程文档与设计说明，不提出新功能。Informational TAP 不具约束力。本文档属于 Informational。
 
 ## 4. 工作流与状态
@@ -136,15 +143,15 @@ TAP-1 的目标是为生态贡献者提供一个明确的入口。该流程 MUST
 ## 5. 编号
 
 - `TAP-1` 保留给本文档。
-- `10–19`：消息。`TAP-10` 为 TapeSend，沿用生态中已有的用法。
-- `20–29`：服务。`TAP-20` 为 TapeAPI；`TAP-21`、`TAP-22` 为其配套文档。
+- `10–19`：消息。`TAP-10` 为 TapeSend，是维护者自己的编号。
+- `20–29`：服务。`TAP-20` 为 TapeAPI；`TAP-21` 至 `TAP-27` 为其配套文档。
 - 其他区间未分配；当出现一族提案时，维护者 MAY 分配新区间。
 - 编号由维护者分配。作者 MUST NOT 自行编号。编号一经分配永不复用。
-- 本仓库使用的编号 TAP-1、TAP-20 至 TAP-27 是向 `TapeOutProtocol/TapeKit` 维护者**提议**的编号，尚未分配；维护者若另作决定，将相应改号。
+- 本仓库使用的编号 TAP-1、TAP-20 至 TAP-27 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中向 `TapeOutProtocol/TapeKit` 维护者**提议**的编号，尚未分配；维护者若另作决定，将相应改号。
 
 ## 6. TAP 应包含的内容
 
-一个 TAP 是单个 Markdown 文件 `spec/TAP-N.md`，英文在前，其后为章节编号完全一致、逐节对应的中文译文。英文为权威文本。头部为表格，包含：TAP、Title、Author、Status、Type、Created、Requires、License（适用时还有 `Last-Call-Deadline`）。
+一个 TAP 是单个 Markdown 文件 `spec/TAP-N.md`，英文在前，其后为章节编号完全一致、逐节对应的中文译文。英文为权威文本。头部为表格，包含：TAP、Title、Author、Status、Type、Created、Requires、License（适用时还有 `Last-Call-Deadline`）。另有两行可选：`Revision`，概述一次替换了先前规范性文本的修订；`Implementation`，注明日期并说明哪些已实现、已部署（地址与 URL），哪些没有。
 
 必需章节，按顺序：
 

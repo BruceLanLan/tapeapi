@@ -1,0 +1,61 @@
+/* "My services" dashboard. Hand-written. Loaded after ../playground/playground.css and uses its tokens (the docs'
+   colours, dark mode, system faces); only what the playground does not have is here. No external resources.
+   “我的服务”面板样式，手写。在调试台样式之后加载，沿用其颜色变量与深色模式；这里只补调试台没有的部分。无外部资源。 */
+
+.panel h2 .sp { flex: 1 1 auto; }
+.panel h2 .ctl { align-self: center; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.row .status { margin: 0; flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
+.status.ok { color: var(--ok); }
+.status.warn { color: var(--amber-ink); }
+
+/* empty state */
+.empty { margin-top: 16px; padding: 16px; border: 1px dashed var(--hair); background: var(--bg); }
+.empty p { margin: 0 0 12px; color: var(--ink-2); font-size: 15px; }
+
+/* service cards */
+.cards { display: grid; gap: 14px; margin-top: 14px; }
+.cards:empty { display: none; }
+.card {
+  background: var(--bg); border: 1px solid var(--hair-2); border-left: 3px solid var(--hair);
+  padding: 14px 16px 12px; min-width: 0;
+}
+.card[data-state="ok"] { border-left-color: var(--ok); }
+.card[data-state="warn"] { border-left-color: var(--amber); }
+.card[data-state="bad"] { border-left-color: var(--bad); }
+.card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 8px; }
+.card-head h3 { margin: 0; font-family: var(--mono); font-size: 17px; font-weight: 700; overflow-wrap: anywhere; min-width: 0; }
+.card-head .sp { flex: 1 1 auto; }
+.badge {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap;
+  padding: 3px 8px; border: 1px solid var(--hair); color: var(--ink-3);
+}
+.badge[data-state="ok"] { color: var(--ok); border-color: currentColor; }
+.badge[data-state="warn"] { color: var(--amber-ink); border-color: var(--amber); background: var(--amber-well); }
+.badge[data-state="bad"] { color: var(--bad); border-color: currentColor; background: var(--bad-well); }
+.you { font-size: 12px; font-weight: 650; color: var(--ok); white-space: nowrap; }
+.card .kv { margin: 0 0 10px; }
+.card .kv dd.warn { color: var(--amber-ink); font-weight: 600; }
+.card .kv dd.bad { color: var(--bad); font-weight: 600; }
+.card .kv dd.ok { color: var(--ok); }
+.card .errbox { margin: 0 0 10px; }
+.card .loading { color: var(--ink-3); font-size: 14px; margin: 0 0 10px; }
+.card-actions { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--hair-2); padding-top: 10px; }
+.card-actions .ctl { background: var(--panel); }
+.card-actions .ctl.danger:hover { color: var(--bad); border-color: var(--bad); }
+
+/* discover */
+#discover-form { margin-top: 12px; }
+#discover-out:not(:empty) { margin-top: 12px; }
+#discover-out .kv { margin: 0 0 10px; }
+.verdict.warn { color: var(--amber-ink); }
+
+@media (max-width: 720px) {
+  .card { padding: 12px 12px 10px; }
+  .card-actions .ctl { flex: 1 1 auto; text-align: center; padding: 10px 11px; }
+}
+@media (max-width: 420px) {
+  .row .btn { width: 100%; }
+  .resolve .btn { width: 100%; }
+}
+.errbox.warnbox { background: var(--amber-well); border-left-color: var(--amber); color: var(--ink); }

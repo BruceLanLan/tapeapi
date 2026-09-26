@@ -201,9 +201,34 @@ function showVars() {
     kv(out, [[k, v]]); out.append(copyBtn(t(`复制 ${k}`, `Copy ${k}`), v))
   }
 }
+// ---------------------------------------------------------------- renewal: the manifest already on chain ----
+// What the manifest in the container authorises (lib onChainAuthorisation), for the circuit read in step 2; kept in
+// memory only: step 4 reads the chain again before it signs. / 容器里的清单授权了什么（第 2 步读到的电路）；只放在内存里：第 4 步签名前会重新读链。
+let onChain = null
+const sha256Hex = async (b) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', b))).map((x) => x.toString(16).padStart(2, '0')).join('')
+const readOnChain = (s) => C.readManifestFile(call, s.container, sha256Hex)
+const fmtDate = (sec) => new Date(sec * 1000).toLocaleString()
+// Why the manifest on chain cannot be renewed (codes from lib.js). / 链上清单为何不能续期（lib.js 的代码）。
+const whyNot = (a) => ({
+  NO_MANIFEST: bi('这个容器还没有清单', 'this container has no manifest yet'),
+  INVALID: bi(`链上清单不完整（${a.detail}）`, `the manifest on chain is incomplete (${a.detail})`),
+  WRONG_CIRCUIT: bi(`链上清单写的是另一个电路（${a.detail}）`, `the manifest on chain names another circuit (${a.detail})`),
+  BAD_SIGNATURE: bi('链上清单的委托签名不是客户端能验证的普通签名', 'the delegation on chain is not a plain signature that clients can verify'),
+  NOT_HOLDER: bi(`链上清单的委托是 ${a.detail} 签的，不是当前持有人（电路可能换过主人）`, `the delegation on chain was signed by ${a.detail}, not by the current holder (the circuit may have changed hands)`),
+}[a.code] || bi(`代码 ${a.code}`, `code ${a.code}`))
+function showOnChain(out, a) {
+  if (!a.ok) { note(out, null, [whyNot(a), bi('。不能续期：请用第 3 步生成的新密钥设置服务。', '. Nothing to renew: set the service up with a new key from step 3.')]); return }
+  const expired = a.expires <= Date.now() / 1000
+  kv(out, [[bi('链上已授权的签名地址', 'Signing address authorised on chain'), a.signer], [bi('链上服务网址', 'Service URL on chain'), a.endpoints.join(' ')], [bi('委托到期', 'Delegation expires'), fmtDate(a.expires)]])
+  if (expired) note(out, false, bi('链上这份委托已经过期：客户端现在不接受这个服务的回答，续期后恢复。', 'This delegation on chain has expired: clients refuse this service\'s answers until it is renewed.'))
+  note(out, true, bi('✓ 链上清单的委托是你（当前持有人）签的，授权的就是上面这个签名地址。续期不必换密钥：在第 4 步点「续期」。', '✓ The delegation on chain was signed by you, the current holder, and authorises the signing address above. Renewing needs no new key: use "Renew" in step 4.'))
+}
+
 const enableSvc = () => {
   const s = svcState(), again = s.published || s.publishPending
   $('btn-circuit').disabled = !account; $('btn-deleg').disabled = !account || !s.container
+  $('renew-box').hidden = !onChain?.ok
+  $('btn-renew').disabled = !account || !s.container || !onChain?.ok || $('moved').checked
   $('btn-publish').disabled = !account || !s.sig || (again && !$('republish').checked)
   if (again) {
     $('republish-wrap').hidden = false; $('publish-prev').hidden = false
@@ -216,6 +241,7 @@ new MutationObserver(enableSvc).observe($('wallet-status'), { childList: true, c
 
 $('btn-circuit').onclick = async () => {
   const out = $('circuit-out'); out.replaceChildren()
+  onChain = null; $('moved').checked = false; enableSvc()
   try {
     const c = await C.readCircuit(call, { processor: $('c-proc').value.trim(), tokenId: $('c-id').value.trim() })
     kv(out, [[bi('电路合约', 'Circuit contract'), c.circuits], [bi('电路编号', 'Circuit number'), c.tokenId], [bi('容器', 'Container'), c.container], [bi('当前持有人', 'Current holder'), c.holder]])
@@ -229,6 +255,11 @@ $('btn-circuit').onclick = async () => {
     // 在这里读到的电路是一次新的发布：上一个的“已发布过”标记不沿用。
     saveSvc({ circuits: c.circuits, tokenId: c.tokenId, container: c.container, holder: c.holder, sig: undefined, expires: undefined, published: undefined, publishPending: undefined })
     showVars(); enableSvc()
+    // A manifest already on chain whose delegation you signed can be renewed for the same key (step 4).
+    // 链上已有、委托由你签的清单，可以为同一把密钥续期（第 4 步）。
+    try { onChain = C.onChainAuthorisation(await readOnChain(c), c); showOnChain(out, onChain) }
+    catch (e) { note(out, false, bi(`读不出可核对的链上清单（${e.message}），不能续期；可以用第 3 步的新密钥设置（第 5 步会替换它）。`, `Could not read a verifiable manifest on chain (${e.message}), so there is nothing to renew; you can set up with a new key from step 3 (step 5 replaces it).`)) }
+    enableSvc()
   } catch (e) { note(out, false, bi(`读取失败：${e.message}`, `Read failed: ${e.message}`)) }
 }
 
@@ -248,33 +279,69 @@ $('btn-key').onclick = () => {
   showVars(); enableSvc()
 }
 
-$('btn-deleg').onclick = async () => {
+// Step 4, either path: "fresh" signs for the key generated in step 3; "renew" signs for the key the manifest on chain
+// already names, which the current holder authorised (lib decideSigner). Both need the service to report exactly that
+// address, and both go through the same wallet checks below. / 第 4 步两条路：新密钥只为第 3 步生成的密钥签；续期只为链上
+// 清单里、当前持有人授权过的那把密钥签（lib decideSigner）。两者都要求服务报出的正是这个地址，并经过下面同样的钱包检查。
+$('btn-deleg').onclick = () => signDelegation(false)
+$('btn-renew').onclick = () => signDelegation(true)
+$('moved').onchange = enableSvc
+async function signDelegation(renew) {
   const out = $('deleg-out'); out.replaceChildren()
   try {
     const s = svcState(), base = $('svc-url').value.trim().replace(/\/+$/, '')
     if (!C.isServiceBase(base)) { note(out, false, bi(`服务网址必须是 https://主机名，不带路径（现在是 ${base}）。`, `The service URL must be https://hostname with no path (it is ${base}).`)); return }
-    if (!s.keyAddress) { note(out, false, bi('本页没有记录你生成的服务密钥。请回到第 3 步重新生成，并把新的 SIGNER_KEY 设到 Cloudflare。', 'This page has no record of a generated service key. Go back to step 3, generate one, and set the new SIGNER_KEY in Cloudflare.')); return }
+    if (!renew && !s.keyAddress) { note(out, false, bi('本页没有记录你生成的服务密钥。请回到第 3 步重新生成，并把新的 SIGNER_KEY 设到 Cloudflare。', 'This page has no record of a generated service key. Go back to step 3, generate one, and set the new SIGNER_KEY in Cloudflare.')); return }
     const h = await (await fetch(`${base}/tapeapi/v1/health`, { cache: 'no-store' })).json()
     if (!h.signer || !/^0x[0-9a-fA-F]{40}$/.test(h.signer)) {
       const missing = (Array.isArray(h.missing) ? h.missing : []).filter((m) => /^[A-Z_]{1,32}( \(secret\))?$/.test(m))
       note(out, false, bi(`服务还没有签名地址（缺：${missing.join('、') || '未知'}）。先在 Cloudflare 设好 SIGNER_KEY 并等它重新部署。`, `The service has no signing address yet (missing: ${missing.join(', ') || 'unknown'}). Set SIGNER_KEY in Cloudflare first and wait for it to redeploy.`)); return
     }
+    // The manifest on chain, read again now (never through the service), decides renewal and whether the URL may
+    // differ from the one on chain. One that cannot be verified gives nothing to renew and no URL to keep, but must not
+    // block a fresh setup, which is how it gets replaced. / 现在重新读链上清单（从不经过服务），决定能否续期、网址能否与链上
+    // 不同。无法核对的清单没有可续期的东西、也没有要保持的网址，但不能挡住新密钥设置——坏清单正是靠它替换。
+    let text
+    try { text = await readOnChain(s) } catch (e) {
+      if (renew || e.code !== 'UNVERIFIABLE') throw e
+      note(out, null, bi(`链上已有的清单无法核对（${e.message}），不能续期；按第 3 步的新密钥继续。`, `The manifest on chain cannot be verified (${e.message}), so there is nothing to renew; continuing with the new key from step 3.`))
+      text = null
+    }
+    onChain = C.onChainAuthorisation(text, s); enableSvc()
     // Sign only for the key generated on this page (security review F1). / 只为本页生成的密钥签（安全审查 F1）。
-    if (h.signer.toLowerCase() !== s.keyAddress.toLowerCase()) { note(out, false, bi(`服务报出的签名地址 ${h.signer} 不是你在第 3 步生成的密钥（${s.keyAddress}）。检查服务网址；或把第 3 步最后生成的那把 SIGNER_KEY 重新粘贴到 Cloudflare，等一分钟再试。`, `The service reports signing address ${h.signer}, which is not the key you generated in step 3 (${s.keyAddress}). Check the service URL, or paste the SIGNER_KEY generated last in step 3 into Cloudflare again and retry in a minute.`)); return }
+    if (!renew && h.signer.toLowerCase() !== s.keyAddress.toLowerCase()) {
+      note(out, false, bi(`服务报出的签名地址 ${h.signer} 不是你在第 3 步生成的密钥（${s.keyAddress}）。检查服务网址；或把第 3 步最后生成的那把 SIGNER_KEY 重新粘贴到 Cloudflare，等一分钟再试。`, `The service reports signing address ${h.signer}, which is not the key you generated in step 3 (${s.keyAddress}). Check the service URL, or paste the SIGNER_KEY generated last in step 3 into Cloudflare again and retry in a minute.`))
+      if (onChain.ok && h.signer.toLowerCase() === onChain.signer.toLowerCase()) note(out, null, bi('服务报出的正是链上已授权的签名地址：如果只是续期，请点下面的「续期」。', 'The service reports the signing address already authorised on chain: if you are renewing, use "Renew" below.'))
+      return
+    }
+    const d = C.decideSigner({ text, circuit: s, base, health: h, keyAddress: s.keyAddress, renew, moved: $('moved').checked })
+    if (!d.ok) {
+      const why = {
+        ENDPOINT_MISMATCH: () => bi(`链上清单的服务网址是 ${d.endpoints?.join(' ')}，不是你填的 ${base}/tapeapi/v1。续期请填链上的网址；如果服务确实搬到了新网址，勾选「服务已搬到新网址」，并用第 3 步生成的新密钥设置。`, `The service URL on chain is ${d.endpoints?.join(' ')}, not ${base}/tapeapi/v1 as typed. To renew, enter the URL on chain; if the service really moved, tick "The service moved" and set it up with a new key from step 3.`),
+        MOVED: () => bi('你勾选了「服务已搬到新网址」：不能续期，只能用第 3 步生成的新密钥。', 'You ticked "The service moved": renewal is off, only a new key from step 3 can be authorised.'),
+        SIGNER_MISMATCH: () => bi(`服务报出的签名地址 ${d.reported} 不是链上已授权的 ${d.signer}。续期只为链上那把密钥签：检查服务网址，或确认 Cloudflare 里的 SIGNER_KEY 没有换过。`, `The service reports signing address ${d.reported}, not ${d.signer}, which is authorised on chain. Renewal signs only for that key: check the service URL, or make sure SIGNER_KEY in Cloudflare was not changed.`),
+        KEY_MISMATCH: () => bi(`服务报出的签名地址 ${d.reported} 不是你在第 3 步生成的密钥（${d.signer}）。`, `The service reports signing address ${d.reported}, not the key you generated in step 3 (${d.signer}).`),
+      }[d.code]
+      note(out, false, why ? why() : [whyNot(d), bi('。不能续期。', '. There is nothing to renew.')])
+      return
+    }
     const expires = Math.floor(Date.now() / 1000) + 90 * 86400
-    const typed = C.delegationTypedData({ container: s.container, signer: s.keyAddress, expires })
-    kv(out, [[bi('授权的签名地址（第 3 步生成的密钥）', 'Signing address authorised (the key from step 3)'), s.keyAddress], [bi('代表的容器', 'For the container'), s.container], [bi('服务网址', 'Service URL'), `${base}/tapeapi/v1`], [bi('到期', 'Expires'), new Date(expires * 1000).toLocaleString()]])
+    const typed = renew ? C.delegationTypedData({ container: s.container, signer: d.signer, expires }) : C.delegationTypedData({ container: s.container, signer: s.keyAddress, expires })
+    kv(out, [[renew ? bi('授权的签名地址（链上清单里你已授权的密钥）', 'Signing address authorised (the key you already authorised on chain)') : bi('授权的签名地址（第 3 步生成的密钥）', 'Signing address authorised (the key from step 3)'), d.signer], [bi('代表的容器', 'For the container'), s.container], [bi('服务网址', 'Service URL'), `${base}/tapeapi/v1`], [bi('到期', 'Expires'), new Date(expires * 1000).toLocaleString()]])
+    if (renew) note(out, null, bi(`续期：链上委托（到期 ${fmtDate(d.onChain.expires)}）是你签给这个地址的，服务也报出同一个地址。新委托只把它的期限延长到上面的日期，不授权任何新密钥。`, `Renewal: the delegation on chain (expires ${fmtDate(d.onChain.expires)}) is yours, for this address, and the service reports the same address. The new delegation only extends it to the date above; it authorises no new key.`))
     note(out, null, bi('请在钱包里确认签名（EIP-712 "Delegation"，不涉及资金）…', 'Confirm the signature in your wallet (EIP-712 "Delegation", no funds involved)…'))
     await ensureSame()
     const sig = await rpc('eth_signTypedData_v4', [account, JSON.stringify(typed)])
     // The signature must be a plain 65-byte one from the holder read in step 2 (review F4): some wallets sign with
     // whichever account is active, and smart accounts return other formats that clients cannot verify.
     // 签名必须是第 2 步读到的持有人做出的普通 65 字节签名（审查 F4）：有些钱包用当前活动账户签，智能账户返回的格式客户端无法验证。
-    const by = C.recoverAddress(C.delegationDigest({ container: s.container, signer: s.keyAddress, expires }), sig)
+    const by = C.recoverAddress(C.delegationDigest({ container: s.container, signer: d.signer, expires }), sig)
     if (!by) throw new Error(t('钱包返回的不是客户端能验证的普通签名（65 字节、低 s；智能账户钱包不行），请换用普通钱包账户', 'the wallet did not return a plain signature that clients can verify (65 bytes, low s; smart-account wallets cannot); use an ordinary wallet account'))
     if (by.toLowerCase() !== String(s.holder || '').toLowerCase()) throw new Error(t(`签名来自 ${by}，不是电路持有人 ${s.holder}。请切回持有人账户，刷新后从第 2 步重来`, `the signature is from ${by}, not the circuit's holder ${s.holder}. Switch back to the holder's account, reload, and start again from step 2`))
-    saveSvc({ signer: s.keyAddress, expires, sig, endpoint: `${base}/tapeapi/v1` })
-    note(out, true, bi('✓ 已签名。把下面两个值加到 Cloudflare 的变量里（类型选“文本”，“密钥”方框不打勾），保存部署后做第 5 步。', '✓ Signed. Add the two values below to the Cloudflare variables (type Text, Encrypt / Secret not ticked); once saved and redeployed, go to step 5.'))
+    saveSvc({ signer: d.signer, expires, sig, endpoint: `${base}/tapeapi/v1` })
+    note(out, true, renew
+      ? bi('✓ 已签名（续期）。SIGNER_KEY 不用改：在 Cloudflare 里只把 DELEGATION_EXPIRES 和 DELEGATION_SIG 换成下面两个值（类型选“文本”，“密钥”方框不打勾），保存部署后做第 5 步。', '✓ Signed (renewal). Leave SIGNER_KEY as it is: in Cloudflare, only replace DELEGATION_EXPIRES and DELEGATION_SIG with the two values below (type Text, Encrypt / Secret not ticked); once saved and redeployed, go to step 5.')
+      : bi('✓ 已签名。把下面两个值加到 Cloudflare 的变量里（类型选“文本”，“密钥”方框不打勾），保存部署后做第 5 步。', '✓ Signed. Add the two values below to the Cloudflare variables (type Text, Encrypt / Secret not ticked); once saved and redeployed, go to step 5.'))
     kv(out, [['DELEGATION_EXPIRES', String(expires)]]); out.append(copyBtn(t('复制 DELEGATION_EXPIRES', 'Copy DELEGATION_EXPIRES'), String(expires)))
     kv(out, [['DELEGATION_SIG', sig]]); out.append(copyBtn(t('复制 DELEGATION_SIG', 'Copy DELEGATION_SIG'), sig))
     showVars(); enableSvc()

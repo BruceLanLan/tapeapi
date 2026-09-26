@@ -21,6 +21,10 @@ Before 1.0.0, a minor version may change interfaces.
 - SDK: `api.resolve('11.1013.tape')` resolves TapeOut names (`<#ID>.<processor>.tape`) through `factory.cpuAt`.
 - Holder console: publishes a service's own free method list; bilingual; hardened (CSP, anti-phishing notice).
 - CI runs the JavaScript, Python and Foundry suites on every push.
+- **My services** https://tapeapi.fun/dashboard/: a read-only dashboard (add service names; health, delegation expiry,
+  links to try or renew; never signs or sends).
+- Homepage: live services, a 30-second quick start and a roadmap; `docs/ROADMAP.md`, `CODE_OF_CONDUCT.md`, a rewritten
+  `CONTRIBUTING.md` and current issue templates; GitHub private vulnerability reporting enabled.
 
 ### Changed
 

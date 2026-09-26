@@ -1,5 +1,19 @@
+# Issues stay open for questions too (Discussions is not enabled); these links point people at the answers first.
+# 问题也可以开 issue（未启用 Discussions）；以下链接先把人引到现成的答案。
 blank_issues_enabled: true
 contact_links:
   - name: Report a security vulnerability / 报告安全漏洞
     url: https://github.com/BruceLanLan/tapeapi/security/advisories/new
     about: "Never report a vulnerability in a public issue. Use private vulnerability reporting — see SECURITY.md. 漏洞绝不要发公开 issue，请走私密报告，见 SECURITY.md。"
+  - name: Question — read the docs first / 提问前先看手册
+    url: https://tapeapi.fun/docs/
+    about: "Guides for calling a service, running one, channels and AI agents (English and Chinese). If they do not answer it, open a blank issue. 调用服务、运行服务、私密通道与 AI 代理的指南（中英）。没有答案再开空白 issue。"
+  - name: FAQ and troubleshooting / 常见问题与排错
+    url: https://tapeapi.fun/docs/en/faq
+    about: "Common errors (ERR_MODULE_NOT_FOUND, MANIFEST_INVALID, DELEGATION_INVALID, RPC_UNAVAILABLE) and their fixes. 中文版：https://tapeapi.fun/docs/zh/faq"
+  - name: Try a service in the playground / 在调试台试调用
+    url: https://tapeapi.fun/playground/
+    about: "Resolve any service by name, see every check, call it and copy the code — often faster than asking. 按名称解析任意服务、查看每一项校验、调用并复制代码。"
+  - name: Service status / 服务状态
+    url: https://tapeapi.fun/status/
+    about: "Is the public service or relay down? Check here first; the monitor opens an issue automatically. 公共服务或中继挂了？先看这里，监控会自动开 issue。"

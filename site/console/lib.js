@@ -10,7 +10,8 @@ export const HUB = '0xe61A9C7213a6Aa616C246a2B569e555B417b25ee'            // De
 export const SITE_REGISTRY = '0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6'
 export const MANIFEST_KEY = '.well-known/tapeapi.json'                       // no leading slash (TapeKit SPEC §6) / 不带前导斜杠
 export const MANIFEST_LIMIT = 24_000                                         // one putFile / 一笔 putFile
-export const SEL = { cpuAt: '0x4bc7cbbd', isCPU: '0x5f5a364f', accountOf: '0x0c1905e5', ownerOf: '0x6352211e', putFile: '0xfab2ed82' }
+export const READ_LIMIT = 64 * 1024                                         // TAP-20: a manifest read is at most 64 KiB / 读取上限
+export const SEL = { cpuAt: '0x4bc7cbbd', isCPU: '0x5f5a364f', accountOf: '0x0c1905e5', ownerOf: '0x6352211e', putFile: '0xfab2ed82', fileInfo: '0x6c609107', read: '0xccaa7afb' }
 const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n   // secp256k1 order / 阶
 
 const isAddr = (a) => typeof a === 'string' && /^0x[0-9a-fA-F]{40}$/.test(a)
@@ -253,6 +254,105 @@ export function manifestProblems(text, s) {
 
 /** The exact text the page publishes. / 页面发布的确切文本。 */
 export const manifestText = (s) => JSON.stringify(expectedManifest(s))
+
+// ---------------------------------------------------------------- renewal: the key already on chain ----
+// A delegation lasts 90 days. To renew it the holder signs a new one for the SAME service key, which the page may not
+// have generated (another service was set up since, or the browser was cleared). The manifest already in the container
+// names that key, and its delegation, recovered here, proves the current holder authorised it: re-signing for it grants
+// nothing new. The chain is read as every client reads it (fileInfo, then read; exact length and SHA-256, as the SDK's
+// readVerifiedFile), never through the service. / 委托有效 90 天。续期就是持有人为**同一把**服务密钥再签一次，而这把
+// 密钥可能不是本页生成的（之后又设置过别的服务，或浏览器被清空）。容器里已有的清单写着这把密钥，这里恢复出的委托签名证明
+// 当前持有人授权过它：为它重签不会授予任何新东西。读链方式与每个客户端相同（先 fileInfo 再 read，长度和 SHA-256 严格一致，
+// 同 SDK 的 readVerifiedFile），从不经过服务。
+const ZERO32 = '0'.repeat(64)
+// A file on chain that cannot be verified is UNVERIFIABLE: nothing to renew, but it must not block a fresh setup, which
+// is how a holder replaces it. A failing call (the node) is not tagged and stays an error to retry.
+// 无法核对的链上文件标为 UNVERIFIABLE：不能续期，但不能挡住新密钥设置（持有人正是靠它替换坏文件）。调用失败（节点问题）不标记，照常报错重试。
+const unverifiable = (m) => Object.assign(new Error(m), { code: 'UNVERIFIABLE' })
+const abiWords = (ret) => { const h = String(ret ?? '').replace(/^0x/, ''); if (!/^(?:[0-9a-fA-F]{64})*$/.test(h)) throw unverifiable('not an ABI answer'); return h }
+const wordAt = (h, i) => { if (h.length < (i + 1) * 64) throw unverifiable('short ABI answer'); return h.slice(i * 64, (i + 1) * 64) }
+const small = (w) => { const n = BigInt('0x' + w); if (n > BigInt(Number.MAX_SAFE_INTEGER)) throw unverifiable('ABI number too large'); return Number(n) }
+
+/** The manifest on chain for `container`, as text, verified against the SiteRegistry's own length and SHA-256;
+ *  null when there is none (fileInfo.size = 0). A file that fails the checks throws with code UNVERIFIABLE; a failing
+ *  call throws as it is. `sha256(bytes)` returns hex.
+ *  容器链上的清单文本，按 SiteRegistry 自己记录的长度和 SHA-256 核对；没有清单时为 null；核对不过抛 UNVERIFIABLE，调用失败原样抛出。 */
+export async function readManifestFile(call, container, sha256, { limit = READ_LIMIT } = {}) {
+  const args = addrWord(container) + word(64) + dyn(utf8(MANIFEST_KEY))
+  const info = abiWords(await call(SITE_REGISTRY, SEL.fileInfo + args))
+  const size = small(wordAt(info, 0)), declared = wordAt(info, 2).toLowerCase()
+  if (size === 0) return null
+  if (size > limit) throw unverifiable(`the on-chain manifest declares ${size} bytes; the limit is ${limit}`)
+  if (declared === ZERO32) throw unverifiable('the on-chain manifest has no SHA-256 (fileInfo.sha256Hash is zero): it cannot be verified')
+  const r = abiWords(await call(SITE_REGISTRY, SEL.read + args))
+  const off = small(wordAt(r, 0))
+  if (off % 32) throw unverifiable('not an ABI answer')
+  const len = small(wordAt(r, off / 32)), body = r.slice(off * 2 + 64, off * 2 + 64 + len * 2)
+  if (body.length !== len * 2) throw unverifiable('short ABI answer')
+  if (len !== size) throw unverifiable(`read ${len} bytes, fileInfo.size declares ${size}`)
+  const raw = bytes(body), digest = String(await sha256(raw)).replace(/^0x/, '').toLowerCase()
+  if (digest !== declared) throw unverifiable(`the SHA-256 of the bytes read is ${digest}, fileInfo declares ${declared}`)
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(raw) } catch { throw unverifiable('the on-chain manifest is not UTF-8') }
+}
+
+const eqAddr = (a, b) => isAddr(a) && isAddr(b) && a.toLowerCase() === b.toLowerCase()
+
+/** What the manifest on chain authorises, checked against the circuit read in step 2 and its CURRENT holder:
+ *  { ok: true, signer, endpoints, expires }, or { ok: false, code, detail? } with code NO_MANIFEST, INVALID,
+ *  WRONG_CIRCUIT, BAD_SIGNATURE or NOT_HOLDER. An expired delegation still counts: renewing it is the point.
+ *  链上清单授权了什么，对照第 2 步读到的电路及其**当前**持有人。已过期的委托照样算：续期正是为此。 */
+export function onChainAuthorisation(text, { circuits, tokenId, container, holder }) {
+  if (text == null) return { ok: false, code: 'NO_MANIFEST' }
+  const bad = (detail) => ({ ok: false, code: 'INVALID', detail })
+  let m
+  try { m = JSON.parse(text) } catch { return bad('not JSON') }
+  if (!isPlain(m)) return bad('not a JSON object')
+  if (typeof m.tapeapi !== 'string' || !/^0\.[1-9]\d*$/.test(m.tapeapi)) return bad(`tapeapi is ${clip(m.tapeapi)}`)
+  for (const k of ['circuits', 'container', 'signer']) if (!isAddr(m[k])) return bad(`${k} is ${clip(m[k])}, not an address`)
+  if (typeof m.tokenId !== 'string' || !/^(0|[1-9]\d{0,77})$/.test(m.tokenId)) return bad(`tokenId is ${clip(m.tokenId)}`)
+  // The signature covers (container, signer, expires) only, so the circuit is compared here. / 签名只覆盖容器、签名地址和到期，电路在这里比较。
+  if (!eqAddr(m.container, container) || !eqAddr(m.circuits, circuits) || m.tokenId !== String(tokenId)) return { ok: false, code: 'WRONG_CIRCUIT', detail: `circuit ${m.tokenId} of ${m.circuits}, container ${m.container}` }
+  const d = m.delegation
+  if (!isPlain(d) || !Number.isSafeInteger(d.expires) || d.expires <= 0 || typeof d.sig !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(d.sig)) return bad('delegation must be { expires, sig }')
+  const live = isPlain(m.endpoints) ? m.endpoints.live : null
+  if (!Array.isArray(live) || live.length < 1 || live.length > 8 || !live.every((e) => typeof e === 'string' && e.length <= 200 && !CONTROL.test(e))) return bad('endpoints.live must list 1 to 8 URLs')
+  const by = recoverAddress(delegationDigest({ container: m.container, signer: m.signer, expires: d.expires }), d.sig)
+  if (!by) return { ok: false, code: 'BAD_SIGNATURE' }
+  if (!eqAddr(by, holder)) return { ok: false, code: 'NOT_HOLDER', detail: by }
+  return { ok: true, signer: checksum(m.signer), endpoints: live.slice(), expires: d.expires }
+}
+
+/** Does an on-chain endpoint name this service base? The path is fixed, so the whole string compares case-insensitively.
+ *  链上端点是否就是这个服务基础网址。 */
+export const sameEndpoint = (endpoint, base) => String(endpoint).replace(/\/+$/, '').toLowerCase() === `${base}/tapeapi/v1`.toLowerCase()
+
+/** Which signing address step 4 may authorise, or why none. `text` is the verified on-chain manifest (null: none),
+ *  `circuit` the step-2 read with its holder, `base` the typed service URL, `health` the service's health answer,
+ *  `keyAddress` the key generated in step 3, `renew` the holder's choice, `moved` the "the service moved" box.
+ *  - fresh: only the key generated on this page, and only if the service reports exactly it (review F1);
+ *  - renew: only the signer of an on-chain delegation that recovers to the current holder, and only if the service
+ *    reports exactly it; never after "moved";
+ *  - either way, when such a delegation exists, the typed URL must be its endpoint unless "moved" is ticked.
+ *  Returns { ok: true, mode, signer, onChain } or { ok: false, code, … }.
+ *  第 4 步可以为哪个签名地址签委托，或为什么不行。新密钥：只签本页生成的、且服务报出的正是它；续期：只签链上委托里、恢复出
+ *  当前持有人的那个签名地址，且服务报出的正是它，勾了“服务已搬家”就不行；两种情况下，只要链上有这样的委托，填的网址必须是
+ *  它的端点，除非勾了“服务已搬家”。 */
+export function decideSigner({ text, circuit, base, health, keyAddress, renew = false, moved = false }) {
+  if (!isServiceBase(base)) return { ok: false, code: 'BAD_URL' }
+  const reported = isPlain(health) ? health.signer : null
+  if (!isAddr(reported)) return { ok: false, code: 'NO_SIGNER' }
+  const onChain = onChainAuthorisation(text, circuit)
+  if (onChain.ok && !moved && !onChain.endpoints.some((e) => sameEndpoint(e, base))) return { ok: false, code: 'ENDPOINT_MISMATCH', endpoints: onChain.endpoints, onChain }
+  if (renew) {
+    if (moved) return { ok: false, code: 'MOVED', onChain }
+    if (!onChain.ok) return { ...onChain, onChain }
+    if (!eqAddr(reported, onChain.signer)) return { ok: false, code: 'SIGNER_MISMATCH', reported: checksum(reported), signer: onChain.signer, onChain }
+    return { ok: true, mode: 'renew', signer: onChain.signer, onChain }
+  }
+  if (!isAddr(keyAddress)) return { ok: false, code: 'NO_KEY', onChain }
+  if (!eqAddr(reported, keyAddress)) return { ok: false, code: 'KEY_MISMATCH', reported: checksum(reported), signer: checksum(keyAddress), onChain }
+  return { ok: true, mode: 'fresh', signer: checksum(keyAddress), onChain }
+}
 
 // ---------------------------------------------------------------- a first frame on mainnet ----
 /** The probe room: "tapeapi deploy probe" in ASCII, as DEPLOY-CHANNELBUS.md uses. / 测试房间：与部署手册相同的 ASCII 房间号。 */

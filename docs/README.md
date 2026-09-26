@@ -40,6 +40,7 @@
 | [`BUSINESS.md`](../BUSINESS.md) | 收入模型与我们在协议里的位置。How TapeAPI makes money. |
 | [`docs/CROSSCHAIN.md`](CROSSCHAIN.md) | 跨链、流动性、可验证计算；TAP-23/24/25 的动机。Cross-chain rationale. |
 | [`docs/CHEAPEST-CIRCUIT.md`](CHEAPEST-CIRCUIT.md) | 最便宜拿到"电路 + 已激活容器"的实测路径。Getting a circuit cheaply. |
+| [`docs/ROADMAP.md`](ROADMAP.md) | 路线图：现在、接下来、更远，以及不会做的事。Roadmap: now, next, later, and what we will not do. |
 | [`docs/OPERATING.md`](OPERATING.md) | 运营者手册：密钥、监控、计量、RPC、限流、中继容量。Running a service or relay. |
 | [`docs/REVIEW-v0.2.md`](REVIEW-v0.2.md) | v0.1 → v0.2 复盘：哪里错了、为什么改。Why the design is what it is. |
 

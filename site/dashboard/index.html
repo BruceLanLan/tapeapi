@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>TapeAPI 我的服务 · My services</title>
+<meta name="description" content="A read-only view of the TapeAPI services you run: holder, endpoint, delegation expiry and live health. 只读查看你运行的 TapeAPI 服务：持有人、端点、委托到期与在线状态。">
+<link rel="icon" href="data:,">
+<!-- Hand-written page. No external resources: the SDK and its @noble dependencies are the playground's vendored copy
+     (../playground/vendor/); the import map below is the playground's with ./vendor/ read as ../playground/vendor/
+     (scripts/dashboard.test.mjs keeps the two in step). Read-only: the wallet is asked for its address, nothing else.
+     手写页面，无外部资源：SDK 与 @noble 依赖用调试台 vendor/ 里的同一份；下面的 import map 与调试台一致，只把 ./vendor/
+     换成 ../playground/vendor/（由测试保持同步）。只读：只向钱包要地址，别的什么都不要。 -->
+<script>
+  // Theme and language before the first paint; storage may throw in a private window. / 首次绘制前应用主题与语言。
+  (function (r) {
+    var get = function (k) { try { return localStorage.getItem(k) } catch (e) { return null } }
+    var t = get('tapeapi.theme'); if (t === 'dark' || t === 'light') r.setAttribute('data-theme', t)
+    var l = get('tapeapi.lang'); if (l !== 'zh' && l !== 'en') l = /^zh\b/i.test(navigator.language || '') ? 'zh' : 'en'
+    r.setAttribute('data-lang', l); r.setAttribute('lang', l === 'zh' ? 'zh-CN' : 'en')
+  })(document.documentElement)
+</script>
+<link rel="stylesheet" href="../playground/playground.css">
+<link rel="stylesheet" href="dashboard.css">
+<script type="importmap">
+{
+  "imports": {
+    "@noble/ciphers/chacha": "../playground/vendor/noble-ciphers/chacha.js",
+    "@noble/curves/ed25519": "../playground/vendor/noble-curves/ed25519.js",
+    "@noble/curves/secp256k1": "../playground/vendor/noble-curves/secp256k1.js",
+    "@noble/hashes/crypto": "../playground/vendor/noble-hashes/crypto.js",
+    "@noble/hashes/hkdf": "../playground/vendor/noble-hashes/hkdf.js",
+    "@noble/hashes/hmac": "../playground/vendor/noble-hashes/hmac.js",
+    "@noble/hashes/hmac.js": "../playground/vendor/noble-hashes/hmac.js",
+    "@noble/hashes/sha2.js": "../playground/vendor/noble-hashes/sha2.js",
+    "@noble/hashes/sha256": "../playground/vendor/noble-hashes/sha256.js",
+    "@noble/hashes/sha3": "../playground/vendor/noble-hashes/sha3.js",
+    "@noble/hashes/utils": "../playground/vendor/noble-hashes/utils.js",
+    "@noble/hashes/utils.js": "../playground/vendor/noble-hashes/utils.js"
+  }
+}
+</script>
+<script type="module" src="dashboard.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../">TAPEAPI</a><a class="section" href="./" data-i18n="section">我的服务</a>
+  <span class="sp"></span>
+  <a class="ctl" id="docs-link" href="../docs/zh/provide.html" data-i18n="docs">手册</a>
+  <button class="ctl" id="lang-btn" type="button">English</button>
+  <button class="ctl" id="theme-btn" type="button" data-i18n="theme">主题</button>
+</header>
+
+<main class="wrap">
+  <div class="intro">
+    <h1 data-i18n="title">我的服务</h1>
+    <p class="lede" data-i18n="lede">把你运行的 TapeAPI 服务放在一处查看：谁持有它、端点是否在线、委托还有几天到期。每一项都由 @tapeapi/sdk 在本页读链核对；本页只读，不会请钱包签名或发送任何东西。</p>
+  </div>
+
+  <section class="panel" id="s-wallet" aria-labelledby="h-wallet">
+    <h2 id="h-wallet"><span class="num">1</span><span data-i18n="h.wallet">钱包（可选）</span></h2>
+    <div class="row">
+      <button class="btn" id="connect-btn" type="button" data-i18n="connect">连接钱包</button>
+      <p class="status" id="wallet-status" role="status" aria-live="polite"></p>
+    </div>
+    <p class="hint" data-i18n="wallet.hint">只调用 <code>eth_requestAccounts</code> 取得你的地址，用来标出“你持有这个服务”。不签名、不发交易、不切换网络。不连接钱包也可以直接添加服务。</p>
+  </section>
+
+  <section class="panel" id="s-services" aria-labelledby="h-services">
+    <h2 id="h-services"><span class="num">2</span><span data-i18n="h.services">服务</span>
+      <span class="sp"></span><button class="ctl" id="refresh-btn" type="button" data-i18n="refresh" hidden>刷新全部</button></h2>
+    <form id="add-form" class="resolve" autocomplete="off">
+      <label for="add-input" class="sr" data-i18n="add.label">TapeOut 名称或容器地址</label>
+      <input id="add-input" name="q" placeholder="11.1013.tape" spellcheck="false" autocapitalize="off" inputmode="text" maxlength="100">
+      <button class="btn" id="add-btn" type="submit" data-i18n="add">添加</button>
+    </form>
+    <p class="hint" data-i18n="add.hint">填 TapeOut 名称 <code>11.1013.tape</code>（#ID.处理器编号.tape）或容器地址 <code>0x…</code>。列表只存在这台设备的浏览器里。</p>
+    <p class="status" id="add-status" role="status" aria-live="polite"></p>
+    <div class="empty" id="empty" hidden>
+      <p data-i18n="empty">还没有服务。先添加两个公共示例看看效果：公共 API（11.1013.tape）与公共中继（12.1013.tape）。</p>
+      <button class="btn" id="examples-btn" type="button" data-i18n="examples">添加公共示例</button>
+    </div>
+    <div class="cards" id="cards" aria-live="polite"></div>
+  </section>
+
+  <section class="panel" id="s-discover" aria-labelledby="h-discover">
+    <h2 id="h-discover"><span class="num">3</span><span data-i18n="h.discover">找到你持有的名称</span></h2>
+    <p class="muted" data-i18n="discover.why">本页还不能自动列出你持有的电路：链上没有“某地址持有哪些电路”的公共索引，逐个处理器、逐个编号去问节点既慢又会被限流。所以请粘贴一个你持有的 TapeOut 名称，本页核对它的持有人，再决定是否加入列表。</p>
+    <form id="discover-form" class="resolve" autocomplete="off">
+      <label for="discover-input" class="sr" data-i18n="discover.label">你持有的 TapeOut 名称</label>
+      <input id="discover-input" placeholder="11.1013.tape" spellcheck="false" autocapitalize="off" inputmode="text" maxlength="100">
+      <button class="btn" id="discover-btn" type="submit" data-i18n="check">核对</button>
+    </form>
+    <div id="discover-out" aria-live="polite"></div>
+  </section>
+
+  <footer class="foot">
+    <p data-i18n="foot">只读：本页不请钱包签名或发送任何东西，也不需要任何密钥。链上读取经 3 个公共 BSC 节点、至少 2 个一致（quorum 2）；健康检查直接从你的浏览器请求服务端点。</p>
+  </footer>
+</main>
+</body>
+</html>

@@ -1,64 +1,56 @@
-name: Service listing / 服务登记
-description: Ask for a TapeAPI service to be listed in the directory site. 申请把一个 TapeAPI 服务列进目录站。
+name: Share a service / 分享你的服务
+description: Tell us about a TapeAPI service you run, so others can find it. 介绍你运行的 TapeAPI 服务，方便别人找到它。
 title: "[service] "
 labels: ["service-listing"]
 body:
   - type: markdown
     attributes:
       value: |
-        Listing is a **convenience only**. It confers no authority: clients always derive the container on-chain and verify signatures themselves (TAP-20 §3.6). We do not vet, endorse or take responsibility for any listed service.
-        登记**只是查找便利**，不承载任何权威：客户端始终自行链上推导容器并验签（TAP-20 §3.6）。我们不审核、不背书、不对任何被列出的服务负责。
+        A service needs **no permission from us and no listing** to work: anyone can resolve it by its TapeOut name (`<#ID>.<processor>.tape`, e.g. `11.1013.tape`) and the SDK checks everything on-chain. This issue only helps people find it; we may link shared services from the docs, and a service directory is on the [roadmap](https://github.com/BruceLanLan/tapeapi/blob/main/docs/ROADMAP.md).
+        Sharing confers **no authority and no endorsement**: clients always derive the container on-chain and verify signatures themselves (TAP-20 §3.6). We do not vet or take responsibility for any shared service, and a link can be removed.
+
+        服务的运行**不需要我们的许可，也不需要登记**：任何人都能用它的 TapeOut 名称（`<#ID>.<processor>.tape`，例如 `11.1013.tape`）解析它，SDK 会在链上核对一切。本 issue 只是方便别人找到它；我们可能在手册里链接分享的服务，服务目录在[路线图](https://github.com/BruceLanLan/tapeapi/blob/main/docs/ROADMAP.md)上。
+        分享**不代表任何权威或背书**：客户端始终自行链上推导容器并验签（TAP-20 §3.6）。我们不审核、不对任何服务负责，链接也可能被移除。
   - type: input
-    id: name
+    id: tapename
     attributes:
-      label: Service name / 服务名称
+      label: TapeOut name / TapeOut 名称
+      description: "e.g. 11.1013.tape — the name the playground and `api.resolve()` accept. 例如 11.1013.tape，即调试台与 `api.resolve()` 接受的名称。"
     validations:
       required: true
-  - type: input
-    id: circuit
+  - type: textarea
+    id: what
     attributes:
-      label: Circuits contract and tokenId / 电路合约与 tokenId
-      description: "e.g. 0xabc… / 4246. Must be a factory-deployed circuits contract. 必须是工厂部署的电路合约。"
-    validations:
-      required: true
-  - type: input
-    id: container
-    attributes:
-      label: Container address / 容器地址
-      description: Must equal DeWebHub.accountOf(circuits, tokenId). 必须等于 DeWebHub.accountOf(circuits, tokenId)。
-    validations:
-      required: true
-  - type: input
-    id: manifest
-    attributes:
-      label: Manifest location / 清单位置
-      description: "Normally /.well-known/tapeapi.json in the container's DeWEB site. 通常是容器 DeWEB 站点的 /.well-known/tapeapi.json。"
+      label: What it does / 它做什么
+      description: One or two sentences for a developer deciding whether to call it. 一两句话，给正在决定要不要调用它的开发者看。
     validations:
       required: true
   - type: textarea
     id: methods
     attributes:
-      label: Methods and prices / 方法与价格
-      description: "Name, priceBEM, and [quorum] or [no-quorum] for each. 每个方法的名称、priceBEM，以及 [quorum] / [no-quorum]。"
+      label: Methods / 方法
+      description: "Name, free or priced, and [quorum] or [no-quorum] for each. 每个方法的名称、免费或价格，以及 [quorum] / [no-quorum]。"
+    validations:
+      required: true
+  - type: textarea
+    id: playground
+    attributes:
+      label: Playground check / 调试台核对结果
+      description: "Open https://tapeapi.fun/playground/, enter the name, call one method, and paste what the checks say (or a screenshot). 打开调试台，输入名称，调用一个方法，贴上核对结果（或截图）。"
     validations:
       required: true
   - type: input
-    id: label
+    id: source
     attributes:
-      label: Requested label / 申请的别名
-      description: "Optional. Requires an active container (DomainBinding.isContainerLive). 可选，需容器已激活。"
+      label: Source code or website (optional) / 源码或网站（可选）
   - type: checkboxes
     id: checks
     attributes:
       label: Confirmations / 确认
       options:
-        - label: "I hold the circuit (circuits.ownerOf(tokenId) is my address). 我持有该电路。"
+        - label: "I hold the circuit, or I run the service for its holder with their consent. 我持有该电路，或经持有人同意代为运行。"
           required: true
-        - label: "The manifest carries a valid delegation signed by the holder (EIP-712 domain anchored on the DeWebHub). 清单带有持有人签发的有效委托（EIP-712 域锚定在 DeWebHub）。"
+        - label: "The playground resolves the name and verifies a signed answer from it. 调试台能解析该名称并验证其签名响应。"
           required: true
-        - label: "The manifest's container equals DeWebHub.accountOf(circuits, tokenId). 清单中的容器等于 DeWebHub.accountOf(circuits, tokenId)。"
-          required: true
-        - label: "Responses verify against TAP-21 (`TAPI-1/resp/v2` digest, EIP-191, low-s). 响应可按 TAP-21 验签。"
-          required: true
-        - label: "I understand listing confers no endorsement and can be removed. 我理解登记不代表背书，且可能被移除。"
+        - label: "I understand sharing confers no endorsement and a link can be removed. 我理解分享不代表背书，链接可能被移除。"
           required: true

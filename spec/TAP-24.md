@@ -3,6 +3,7 @@
 | Title | TapeAPI: Intent RFQ for Cross-Chain Exchange |
 | Author | Bruce (@BruceLanLan) |
 | Status | Draft |
+| Implementation | Frozen (see the status note), not a build target (2026-09-27): no `IntentEscrow` exists or is deployed. `examples/defi-rfq-solver` builds and signs quotes (§3.2) only and moves no funds. |
 | Type | Standards |
 | Created | 2026-09-20 |
 | Requires | TAP-20, TAP-21, TAP-23 |
@@ -11,6 +12,8 @@
 # TAP-24: TapeAPI: Intent RFQ for Cross-Chain Exchange
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
+
+> **Placeholder number.** TAP-24 is a placeholder number proposed in [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8). TapeKit has no numbered-proposal process yet (changes to TapeOut itself follow TapeKit `SPEC.md` §15), so the maintainers may assign another number or move this document to another process; see [TAP-1](TAP-1.md).
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
@@ -110,7 +113,7 @@ Does not: hold **pooled liquidity** (funds are locked per intent and belong to o
 
 ## 5. Backwards Compatibility
 
-Adds a method-descriptor field and a contract interface. Adds nothing to `SPEC.md`, does not alter the name grammar `<#ID>.<processor number>.tape`, and does not alter any §15.1 invariant. TAP-22 vouchers are unchanged; `quote` and `read` calls are ordinary TAP-21 calls.
+Adds a method-descriptor field and a contract interface. Adds nothing to `SPEC.md`, does not alter the name grammar `<#ID>.<processor>.tape`, and does not alter any §15.1 invariant. TAP-22 vouchers are unchanged; `quote` and `read` calls are ordinary TAP-21 calls.
 
 ## 6. Test Vectors
 
@@ -123,8 +126,9 @@ Adds a method-descriptor field and a contract interface. Adds nothing to `SPEC.m
 
 ## 7. Reference Implementation
 
-- `IntentEscrow` and a Solver reference implementation are v0.4 deliverables (`docs/CROSSCHAIN.md` §5) and do not exist at the time of writing.
-- Quote construction and verification will live in `sdk/` alongside the TAP-22 voucher code.
+- `IntentEscrow` and a full Solver reference implementation are v0.4 deliverables (`docs/CROSSCHAIN.md` §5) and do not exist (2026-09-27).
+- `examples/defi-rfq-solver` is an example Solver that builds and signs quotes only: `quote.mjs` holds the type string, `QUOTE_TYPEHASH` and the domain, checked against §6 at start-up. It locks and releases nothing.
+- The SDK has no quote code yet; quote construction and verification will live in `sdk/` alongside the TAP-22 voucher code.
 
 ## 8. Security Considerations
 
@@ -144,6 +148,10 @@ Copyright and related rights waived via CC0-1.0.
 # TAP-24：TapeAPI：跨链兑换的意图询价（中文译文）
 
 > 英文为权威文本，本译文与英文章节一一对应。
+
+> **占位编号。** TAP-24 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
+
+> **实现状态（2026-09-27）：** 冻结（见状态说明），不是构建目标：`IntentEscrow` 不存在，也未部署。`examples/defi-rfq-solver` 只构造并签署报价（§3.2），不移动任何资金。
 
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 
@@ -241,7 +249,7 @@ refund(bytes32 quoteId)
 
 ## 5. 向后兼容
 
-增加一个方法描述符字段与一个合约接口。不向 `SPEC.md` 添加任何内容，不改变名称语法 `<#ID>.<processor number>.tape`，不改变任何 §15.1 不变量。TAP-22 凭证不变；`quote` 与 `read` 调用是普通的 TAP-21 调用。
+增加一个方法描述符字段与一个合约接口。不向 `SPEC.md` 添加任何内容，不改变名称语法 `<#ID>.<processor>.tape`，不改变任何 §15.1 不变量。TAP-22 凭证不变；`quote` 与 `read` 调用是普通的 TAP-21 调用。
 
 ## 6. 测试向量
 
@@ -253,8 +261,9 @@ refund(bytes32 quoteId)
 | IntentEscrow 地址（CREATE2） | TODO（未部署） |
 ## 7. 参考实现
 
-- `IntentEscrow` 与 Solver 参考实现为 v0.4 交付项（`docs/CROSSCHAIN.md` §5），撰写本文时尚不存在。
-- 报价的构造与验证将与 TAP-22 凭证代码一起置于 `sdk/`。
+- `IntentEscrow` 与完整的 Solver 参考实现为 v0.4 交付项（`docs/CROSSCHAIN.md` §5），目前尚不存在（2026-09-27）。
+- `examples/defi-rfq-solver` 是一个只构造并签署报价的 Solver 示例：`quote.mjs` 含类型字符串、`QUOTE_TYPEHASH` 与域，启动时对照 §6 自检。它不锁定也不释放任何资产。
+- SDK 目前没有报价代码；报价的构造与验证将与 TAP-22 凭证代码一起置于 `sdk/`。
 
 ## 8. 安全考量
 

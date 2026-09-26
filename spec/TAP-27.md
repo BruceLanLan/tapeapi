@@ -3,6 +3,7 @@
 | Title | Tape Group: Private Group Channels Between Containers |
 | Author | Bruce (@BruceLanLan) |
 | Status | Draft |
+| Implementation | Implemented (2026-09-27): `sdk/src/group.js` runs groups over any TAP-26 transport, including the deployed ChannelBus (`0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`) and the public relay `relay.tapeapi.fun`. There is no group service to host: the owner is a client. No third-party audit. |
 | Type | Standards |
 | Created | 2026-09-23 |
 | Requires | TAP-20, TAP-21, TAP-26 |
@@ -11,6 +12,8 @@
 # TAP-27: Tape Group: Private Group Channels Between Containers
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
+
+> **Placeholder number.** TAP-27 is a placeholder number proposed in [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8). TapeKit has no numbered-proposal process yet (changes to TapeOut itself follow TapeKit `SPEC.md` §15), so the maintainers may assign another number or move this document to another process; see [TAP-1](TAP-1.md).
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
@@ -60,7 +63,7 @@ wire   = header ‖ slots ‖ uint32be(|roster|) ‖ roster ‖ sig(64)
 A member processes epoch messages one at a time, and the epoch it holds never moves backwards. It accepts an epoch message only if all of the following hold, in this order:
 
 1. **Owner.** The header's `gid` is the group's, and the owner's Ed25519 signature verifies strictly (RFC 8032: small-order public keys are refused, no ZIP-215 leniency). The owner is fixed for the life of the group; its key comes from its own channel record, looked up by the owner the invite names (§3.5).
-2. **Duplicates and equivocation.** If the member already accepted a message for epoch `n`, the same message is a duplicate and is ignored without error. A different owner-signed message for the same `n` is proof that the owner equivocated: the member MUST refuse it and MUST report it (reference: `GROUP_EQUIVOCATION`, with the SHA-256 of both messages minus their signatures). The reference remembers the messages of the last 64 epochs it accepted, in memory; an `n` it no longer remembers fails step 3.
+2. **Duplicates and equivocation.** If the member already accepted a message for epoch `n`, the same message is a duplicate and is ignored without error. A different owner-signed message for the same `n` is proof that the owner equivocated: the member MUST refuse it and MUST report it (reference: `GROUP_EQUIVOCATION`, with the SHA-256 of both messages minus their signatures). The reference remembers, in memory, the messages of epochs up to 64 below the newest it accepted; an `n` it no longer remembers fails step 3.
 3. **Newer.** `n` is greater than the epoch the member holds, and not below the minimum epoch the member persisted (§3.7).
 4. **Key.** The member derives its `kek` once (one X25519 with `E`) and tries every slot. Exactly one slot MUST open, and `SHA-256("TAP-27/commit/v1" ‖ K)` MUST equal `commit`. The commitment, covered by the owner's signature, is what stops an owner from giving different members different keys.
 5. **Roster.** The roster decrypts and parses as strict JSON (TAP-21 §3.3) with `v` 1 and `kind` `"tape.group/roster"`; its `gid` and `epoch` equal the header's; `issued` is an integer at most 3600 s ahead of the member's clock and not older than 30 days; `owner` is the owner; there are exactly `count` members, each in the form above, and no container, `x25519` or `ed25519` appears twice; `members[0]` is the owner with the owner's Ed25519 key; the member at the position of the slot that opened is this member with its own keys; `prev` equals the hash of the roster the member holds for `n − 1`, when it holds `n − 1`; `relays` and `bus` are valid.
@@ -89,7 +92,7 @@ The owner invites a container by posting a sealed invite (TAP-26 §3.2, wire typ
   "relays": [ … ], "bus": "0x…" }
 ```
 
-and then posts an epoch message that includes the new member. The invite is not trusted for anything but where to look: the member looks up the owner's channel record itself and accepts only epoch messages the owner signed, so a forged invite cannot make anyone join. Once it has accepted an epoch, a member uses the roster's `relays` and `bus`, which the owner signed, not the invite's. The owner SHOULD repost the current epoch message when it invites someone and at least as often as its transports forget data (RECOMMENDED: every 30 minutes on a ChannelBus read through public nodes, which serve logs for between about 5,000 and 10,000 blocks, roughly 40 to 75 minutes on BSC; every 10 minutes on a relay whose rooms live 15 minutes), so that a member returning from a long absence can catch up; a new epoch message is the only checkpoint this TAP has. On a ChannelBus each repost is one transaction of up to 16,448 bytes of calldata (about 420,000 gas).
+and then posts an epoch message that includes the new member. The invite is not trusted for anything but where to look: the member looks up the owner's channel record itself and accepts only epoch messages the owner signed, so a forged invite cannot make anyone join. Once it has accepted an epoch, a member uses the roster's `relays` and `bus`, which the owner signed, not the invite's. The owner SHOULD repost the current epoch message when it invites someone and at least as often as its transports forget data (RECOMMENDED: every 30 minutes on a ChannelBus read through public nodes, which serve logs for between about 5,000 and 10,000 blocks, roughly 40 to 75 minutes on BSC; every 10 minutes on a relay whose rooms live 15 minutes), so that a member returning from a long absence can catch up; a new epoch message is the only checkpoint this TAP has. (The 30-minute figure assumes the shortest windows measured in TAP-26 §3.7; nodes that keep far more history, such as those measured there on 2026-09-27, tolerate longer intervals.) On a ChannelBus each repost is one transaction of up to 16,448 bytes of calldata (about 420,000 gas).
 
 ### 3.6 Membership changes
 
@@ -146,6 +149,10 @@ Copyright and related rights waived via [CC0](https://creativecommons.org/public
 
 > 以英文版为准。章节编号一一对应。
 
+> **占位编号。** TAP-27 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
+
+> **实现状态（2026-09-27）：** 已实现：`sdk/src/group.js` 可经任一 TAP-26 传输运行群聊，包括已部署的 ChannelBus（`0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`）与公共中继 `relay.tapeapi.fun`。群聊无需托管服务：群主本身是客户端。未经第三方审计。
+
 ## 1. 摘要
 
 Tape Group 是至多 32 个 TapeOut 容器之间的加密会话。其中一个容器是**群主**，负责维护成员名单；每次成员变动都开启一个新的**纪元**，生成新的群密钥，分别密封给每个成员的通道密钥（TAP-26 §3.1）。消息用由纪元密钥派生的发送者专属密钥加密，并用发送者的 Ed25519 通道密钥签名，因此成员之间能互相读取、却无法互相冒充。成员名单本身也加密传输，承载群密钥的格子也不指向任何人：中继或链上观察者，哪怕读遍链上所有通道记录，也只能得知群号、成员人数以及消息的大小和时间，而不知道成员是谁。传输沿用 TAP-26：任何中继（TAP-26 §3.5）或 ChannelBus（TAP-26 §3.7）。
@@ -173,7 +180,7 @@ TAP-26 是两方通道，其三重 DH 握手无法推广到 N 方。需要把多
 成员逐条处理纪元消息，其持有的纪元绝不后退。只有在以下各项按顺序全部成立时才接受纪元消息：
 
 1. **群主。** 消息头中的 `gid` 是本群的，且群主的 Ed25519 签名严格验证通过（RFC 8032：拒绝小阶公钥，不采用 ZIP-215 的宽松规则）。群主在群的整个生命周期内固定；其公钥取自它自己的通道记录，按邀请所指明的群主查询（§3.5）。
-2. **重复与两面行为。** 若成员已接受过纪元 `n` 的消息，则同一条消息是重复，直接忽略、不报错。群主签名的、同一 `n` 的另一条不同消息，是群主两面行为的证据：成员 MUST 拒绝它并 MUST 报告（参考实现：`GROUP_EQUIVOCATION`，附两条消息去掉签名后的 SHA-256）。参考实现在内存中记住最近接受的 64 个纪元的消息；已不记得的 `n` 在第 3 步被拒。
+2. **重复与两面行为。** 若成员已接受过纪元 `n` 的消息，则同一条消息是重复，直接忽略、不报错。群主签名的、同一 `n` 的另一条不同消息，是群主两面行为的证据：成员 MUST 拒绝它并 MUST 报告（参考实现：`GROUP_EQUIVOCATION`，附两条消息去掉签名后的 SHA-256）。参考实现在内存中记住其接受的最新纪元及其下 64 个以内纪元的消息；已不记得的 `n` 在第 3 步被拒。
 3. **更新。** `n` 大于成员当前持有的纪元，且不低于成员持久化的最低纪元（§3.7）。
 4. **密钥。** 成员只派生一次自己的 `kek`（与 `E` 做一次 X25519），逐格尝试。MUST 恰有一格能打开，且 `SHA-256("TAP-27/commit/v1" ‖ K)` MUST 等于 `commit`。该承诺受群主签名覆盖，正是它阻止群主给不同成员发不同的密钥。
 5. **名单。** 名单能解密，能按严格 JSON（TAP-21 §3.3）解析，`v` 为 1、`kind` 为 `"tape.group/roster"`；其 `gid` 与 `epoch` 与消息头一致；`issued` 为整数，至多超前成员时钟 3600 秒，且不早于 30 天前；`owner` 是群主；成员数恰为 `count`，每个成员都是上述形式，且没有任何容器、`x25519` 或 `ed25519` 出现两次；`members[0]` 是带着群主 Ed25519 公钥的群主；被打开那一格所在位置上的成员就是本成员，且带着自己的密钥；成员持有 `n − 1` 纪元名单时，`prev` 等于该名单的哈希；`relays` 与 `bus` 合法。
@@ -187,7 +194,7 @@ TAP-26 是两方通道，其三重 DH 握手无法推广到 N 方。需要把多
 
 ### 3.5 入群
 
-群主向被邀请容器的收件房间投递一份密封邀请（TAP-26 §3.2，线路类型 `0x03`，内容格式见英文部分），然后发出一条包含新成员的纪元消息。邀请只被用来得知"去哪里看"：成员自行查询群主的通道记录，并只接受群主签名的纪元消息，因此伪造的邀请不能让任何人入群。接受某个纪元之后，成员改用名单里（群主签过的）`relays` 与 `bus`，而不是邀请里的。群主 SHOULD 在邀请新成员时、并至少以传输层遗忘数据的频率重发当前纪元消息（RECOMMENDED：经公共节点读取的 ChannelBus 上每 30 分钟一次，公共节点视后端约保留 5,000 到 10,000 个区块的日志，在 BSC 上约 40 到 75 分钟；房间寿命 15 分钟的中继上每 10 分钟一次），使长时间离开后返回的成员能够追上；新的纪元消息是本 TAP 唯一的检查点。在 ChannelBus 上每次重发是一笔至多 16,448 字节调用数据的交易（约 420,000 gas）。
+群主向被邀请容器的收件房间投递一份密封邀请（TAP-26 §3.2，线路类型 `0x03`，内容格式见英文部分），然后发出一条包含新成员的纪元消息。邀请只被用来得知"去哪里看"：成员自行查询群主的通道记录，并只接受群主签名的纪元消息，因此伪造的邀请不能让任何人入群。接受某个纪元之后，成员改用名单里（群主签过的）`relays` 与 `bus`，而不是邀请里的。群主 SHOULD 在邀请新成员时、并至少以传输层遗忘数据的频率重发当前纪元消息（RECOMMENDED：经公共节点读取的 ChannelBus 上每 30 分钟一次，公共节点视后端约保留 5,000 到 10,000 个区块的日志，在 BSC 上约 40 到 75 分钟；房间寿命 15 分钟的中继上每 10 分钟一次），使长时间离开后返回的成员能够追上；新的纪元消息是本 TAP 唯一的检查点。（30 分钟这一数字按 TAP-26 §3.7 中实测的最短窗口计算；保留历史长得多的节点，例如该节 2026-09-27 实测的那些，可以容忍更长的间隔。）在 ChannelBus 上每次重发是一笔至多 16,448 字节调用数据的交易（约 420,000 gas）。
 
 ### 3.6 成员变动
 

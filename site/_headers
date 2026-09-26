@@ -27,5 +27,8 @@
 /status/*
   Content-Security-Policy: frame-ancestors 'none'
 
+/dashboard/*
+  Content-Security-Policy: frame-ancestors 'none'
+
 /console/*
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'

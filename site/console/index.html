@@ -34,6 +34,7 @@
   input { font: inherit; width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; background: transparent; color: var(--fg); }
   code, .mono { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
   pre.mono { white-space: pre-wrap; max-height: 16rem; overflow: auto; padding: 8px; border: 1px solid var(--line); border-radius: 6px; }
+  .stack { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; }
   .row > * { flex: 1 1 140px; }
   .status { font-weight: 600; }
@@ -116,6 +117,15 @@
     <input id="svc-url" value="https://api.tapeapi.fun" spellcheck="false" autocomplete="off" aria-label="service URL" placeholder="https://api.tapeapi.fun or https://relay.tapeapi.fun"
       data-zh-aria-label="服务网址" data-en-aria-label="service URL" data-zh-placeholder="https://api.tapeapi.fun 或 https://relay.tapeapi.fun" data-en-placeholder="https://api.tapeapi.fun or https://relay.tapeapi.fun">
     <button id="btn-deleg" type="button" disabled><span lang="zh">读取签名地址并签名</span><span lang="en">Read the signing address and sign</span></button>
+    <div id="renew-box" class="stack" hidden>
+      <p class="muted">
+        <span lang="zh"><b>续期</b>（委托快到期或已到期，服务和密钥都不变）：不用第 3 步。本页为第 2 步在链上清单里读到的签名地址重签委托。这样是安全的：链上那份委托是你自己签给这个地址的，本页先核对它确实恢复出你（当前持有人）、服务报出的也正是这个地址，才请你签名；新委托只延长期限，不授权任何新密钥。服务网址必须与链上的一致。如果你怀疑服务密钥泄露了，不要续期，改用第 3 步生成新密钥。</span>
+        <span lang="en"><b>Renewal</b> (the delegation is about to expire or has expired; same service, same key): skip step 3. This page re-signs the delegation for the signing address read from the manifest on chain in step 2. This is safe: the delegation on chain is one you signed for that address, and the page checks that it recovers to you, the current holder, and that the service reports exactly that address, before asking you to sign; the new delegation only extends the term and authorises no new key. The service URL must be the one on chain. If you think the service key has leaked, do not renew: generate a new key in step 3.</span>
+      </p>
+      <label class="check" id="moved-wrap"><input type="checkbox" id="moved">
+        <span><span lang="zh">服务已搬到新网址（此时不能续期，只能用第 3 步的新密钥）</span><span lang="en">The service moved to a new URL (renewal is then off; only a new key from step 3)</span></span></label>
+      <button id="btn-renew" type="button" class="ghost" disabled><span lang="zh">续期：为链上已授权的签名地址重签</span><span lang="en">Renew: re-sign for the signing address authorised on chain</span></button>
+    </div>
     <div id="deleg-out"></div>
   </section>
 

@@ -3,6 +3,7 @@
 | Title | TapeAPI: Circuit-Verified Methods |
 | Author | Bruce (@BruceLanLan) |
 | Status | Draft |
+| Implementation | Not implemented (2026-09-27): no `verifier` support, bit encoding, local re-evaluation or dispute contract exists. The SDK passes the `verifier` field through unchanged, as §5 expects of clients unaware of it. |
 | Type | Standards |
 | Created | 2026-09-20 |
 | Requires | TAP-20, TAP-21 |
@@ -11,6 +12,8 @@
 # TAP-25: TapeAPI: Circuit-Verified Methods
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
+
+> **Placeholder number.** TAP-25 is a placeholder number proposed in [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8). TapeKit has no numbered-proposal process yet (changes to TapeOut itself follow TapeKit `SPEC.md` §15), so the maintainers may assign another number or move this document to another process; see [TAP-1](TAP-1.md).
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
@@ -89,7 +92,7 @@ Suitable: game round settlement rules; lottery draws and randomness combination;
 
 ## 5. Backwards Compatibility
 
-Adds one OPTIONAL method-descriptor field. Adds nothing to `SPEC.md`, does not alter the name grammar `<#ID>.<processor number>.tape`, and does not alter any §15.1 invariant. Clients unaware of `verifier` ignore it.
+Adds one OPTIONAL method-descriptor field. Adds nothing to `SPEC.md`, does not alter the name grammar `<#ID>.<processor>.tape`, and does not alter any §15.1 invariant. Clients unaware of `verifier` ignore it.
 
 ## 6. Test Vectors
 
@@ -121,6 +124,10 @@ Copyright and related rights waived via CC0-1.0.
 # TAP-25：TapeAPI：电路验证方法（中文译文）
 
 > 英文为权威文本，本译文与英文章节一一对应。
+
+> **占位编号。** TAP-25 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
+
+> **实现状态（2026-09-27）：** 未实现：`verifier` 支持、比特编码、本地重算与争议合约均不存在。SDK 原样透传 `verifier` 字段，符合 §5 对忽略它的客户端的要求。
 
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 
@@ -198,7 +205,7 @@ dispute(Envelope e, bytes inputBits, bytes claimedOutputBits) payable
 
 ## 5. 向后兼容
 
-增加一个 OPTIONAL 方法描述符字段。不向 `SPEC.md` 添加任何内容，不改变名称语法 `<#ID>.<processor number>.tape`，不改变任何 §15.1 不变量。不认识 `verifier` 的客户端将其忽略。
+增加一个 OPTIONAL 方法描述符字段。不向 `SPEC.md` 添加任何内容，不改变名称语法 `<#ID>.<processor>.tape`，不改变任何 §15.1 不变量。不认识 `verifier` 的客户端将其忽略。
 
 ## 6. 测试向量
 

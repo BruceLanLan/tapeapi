@@ -3,6 +3,7 @@
 | Title | TapeAPI: Attested Read |
 | Author | Bruce (@BruceLanLan) |
 | Status | Draft |
+| Implementation | Implemented, not hosted (2026-09-27): the SDK's `callQuorum` applies §3.4 (including `ATTEST_DISAGREE`), and `examples/chain-attested-read` is a provider, but no live service offers an `attestedRead` method. No third-party audit. Staking and slashing remain out of scope. |
 | Type | Standards |
 | Created | 2026-09-20 |
 | Requires | TAP-20, TAP-21 |
@@ -11,6 +12,8 @@
 # TAP-23: TapeAPI: Attested Read
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
+
+> **Placeholder number.** TAP-23 is a placeholder number proposed in [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8). TapeKit has no numbered-proposal process yet (changes to TapeOut itself follow TapeKit `SPEC.md` §15), so the maintainers may assign another number or move this document to another process; see [TAP-1](TAP-1.md).
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
@@ -110,7 +113,7 @@ This version relies on multi-provider agreement only. A future TAP MAY extend th
 
 ## 5. Backwards Compatibility
 
-This TAP adds a method-descriptor field and a response profile. It adds nothing to `SPEC.md`, does not alter the name grammar `<#ID>.<processor number>.tape`, and does not alter any §15.1 invariant. TAP-20 clients that do not know `attestedRead` ignore it as an unknown field.
+This TAP adds a method-descriptor field and a response profile. It adds nothing to `SPEC.md`, does not alter the name grammar `<#ID>.<processor>.tape`, and does not alter any §15.1 invariant. TAP-20 clients that do not know `attestedRead` ignore it as an unknown field.
 
 ## 6. Test Vectors
 
@@ -123,9 +126,9 @@ This TAP adds a method-descriptor field and a response profile. It adds nothing 
 
 ## 7. Reference Implementation
 
-- SDK: `quorum` multi-provider call mode in `sdk/` (v0.2 deliverable; see `docs/CROSSCHAIN.md` §5).
+- SDK: `api.callQuorum(services, method, params, { quorum, compare, onDissent, allowSingleProvider })` in `sdk/src/index.js`, which applies §3.4 (and `ATTEST_DISAGREE`) whenever a selected method carries `attestedRead` (plan: `docs/CROSSCHAIN.md` §5).
 - Example: `examples/chain-attested-read`, a provider reading Ethereum and Base (default `finalized`, EIP-1898 evaluation by `blockHash`, `blockRef` reported).
-- Neither is deployed nor audited at the time of writing.
+- No live service offers an `attestedRead` method yet, and neither has a third-party audit (2026-09-27). The public service `api.tapeapi.fun` pins each of its BSC answers to a block (`blockPinned`) so that `callQuorum` can compare providers, but its methods are not TAP-23 methods.
 
 ## 8. Security Considerations
 - **Trust tier, stated plainly.** An attested read is a *Tier 1* guarantee: "the providers the client itself
@@ -163,6 +166,10 @@ Copyright and related rights waived via CC0-1.0.
 # TAP-23：TapeAPI：见证读取（中文译文）
 
 > 英文为权威文本，本译文与英文章节一一对应。
+
+> **占位编号。** TAP-23 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
+
+> **实现状态（2026-09-27）：** 已实现，未托管：SDK 的 `callQuorum` 执行 §3.4（包括 `ATTEST_DISAGREE`），`examples/chain-attested-read` 是一个提供者示例，但没有任何运行中的服务提供 `attestedRead` 方法。未经第三方审计。质押与罚没仍不在范围内。
 
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 
@@ -262,7 +269,7 @@ TAP-21 信封的 `result` 对象 MUST 恰好包含以下字段，全部被 TAP-2
 
 ## 5. 向后兼容
 
-本 TAP 增加一个方法描述符字段与一个响应轮廓。不向 `SPEC.md` 添加任何内容，不改变名称语法 `<#ID>.<processor number>.tape`，不改变任何 §15.1 不变量。不认识 `attestedRead` 的 TAP-20 客户端将其作为未知字段忽略。
+本 TAP 增加一个方法描述符字段与一个响应轮廓。不向 `SPEC.md` 添加任何内容，不改变名称语法 `<#ID>.<processor>.tape`，不改变任何 §15.1 不变量。不认识 `attestedRead` 的 TAP-20 客户端将其作为未知字段忽略。
 
 ## 6. 测试向量
 
@@ -275,9 +282,9 @@ TAP-21 信封的 `result` 对象 MUST 恰好包含以下字段，全部被 TAP-2
 
 ## 7. 参考实现
 
-- SDK：`sdk/` 中的 `quorum` 多提供者调用模式（v0.2 交付项；见 `docs/CROSSCHAIN.md` §5）。
+- SDK：`sdk/src/index.js` 中的 `api.callQuorum(services, method, params, { quorum, compare, onDissent, allowSingleProvider })`，所选方法带 `attestedRead` 时执行 §3.4（及 `ATTEST_DISAGREE`）（计划见 `docs/CROSSCHAIN.md` §5）。
 - 示例：`examples/chain-attested-read`，读取 Ethereum 与 Base 的提供者（默认 `finalized`，按 EIP-1898 在 `blockHash` 上求值，报告 `blockRef`）。
-- 撰写本文时二者均未部署、未审计。
+- 目前没有任何运行中的服务提供 `attestedRead` 方法，二者均未经第三方审计（2026-09-27）。公共服务 `api.tapeapi.fun` 把每个 BSC 回答钉在一个区块上（`blockPinned`），以便 `callQuorum` 比较不同提供者，但它的方法不是 TAP-23 方法。
 
 ## 8. 安全考量
 - **信任等级，直说。** 证明式读取是**一级**保证："调用方自己挑选的那几个提供者说了同样的话。"
