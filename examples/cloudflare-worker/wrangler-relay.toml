@@ -4,6 +4,9 @@ name = "tapeapi-relay"
 main = "relay-worker.js"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
+# Variables set in the dashboard (CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES, DELEGATION_SIG) survive deploys.
+# 后台设置的变量在部署之间保留。
+keep_vars = true
 
 [[routes]]
 pattern = "relay.tapeapi.fun"
@@ -17,7 +20,7 @@ class_name = "RelayRoom"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["RelayRoom"]
+new_sqlite_classes = ["RelayRoom"]
 
 # The meter of a PRICED relay (RELAY_PRICE_BEM != "0"), and required for one: relay-worker.js refuses to start a
 # priced relay without it, because a meter in isolate memory serves each voucher once per isolate (arch A1).
@@ -41,9 +44,8 @@ RELAY_PRICE_BEM = "0"
 RATE_NEW_ROOMS = "60"
 # RELAY_SWEEP_MS / RELAY_ROOM_TTL_MS shorten the room alarm and lifetime for smoke-local.mjs only; never set them here.
 # RELAY_SWEEP_MS / RELAY_ROOM_TTL_MS 只供 smoke-local.mjs 缩短房间 alarm 与寿命；不要在这里设置。
-CIRCUITS = "0x"
-TOKEN_ID = "0"
-CONTAINER = "0x"
-SIGNER_ADDRESS = "0x"
-DELEGATION_EXPIRES = "0"
-# Secrets: npx wrangler secret put SIGNER_KEY -c wrangler-relay.toml ; likewise DELEGATION_SIG
+# The identity is NOT set here: a value in this file would overwrite the dashboard's on every deploy. Set CIRCUITS,
+# TOKEN_ID, CONTAINER, DELEGATION_EXPIRES and DELEGATION_SIG in the dashboard (the holder console shows them), and the
+# secret SIGNER_KEY; until then the relay answers only its health, in setup mode.
+# 身份不写在这里：写在本文件里的值每次部署都会覆盖后台的值。CIRCUITS 等变量在后台设置（持有人控制台会显示），
+# 密钥 SIGNER_KEY 设为 Secret；在此之前中继处于设置模式，只回答健康检查。

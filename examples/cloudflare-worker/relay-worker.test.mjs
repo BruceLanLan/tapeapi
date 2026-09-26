@@ -96,3 +96,20 @@ test('a full TAP-26 channel runs through the Worker relay, with each side on a d
     assert.equal(alice.open(fb.frame, { text: true }).data, `b${i}`)
   }
 })
+
+// The public relay is set up from a phone like the provider: deployed first with only SIGNER_KEY, it answers its health
+// naming the signer, so the holder console can build the delegation; the manifest then names the derived signer.
+// 公共中继和服务一样从手机设置：先只带 SIGNER_KEY 部署，健康检查写明签名地址供控制台构造委托；之后清单里的签名地址由密钥推导。
+test('relay setup mode: health names the signer derived from SIGNER_KEY until the holder has signed; the manifest uses it', async () => {
+  const { default: fresh } = await import('./relay-worker.js?setup')
+  const h = await fresh.fetch(new Request('https://relay.tapeapi.fun/tapeapi/v1/health'), { ROOMS, SIGNER_KEY: ` ${SIGNER_KEY}\n`, PUBLIC_URL: 'https://relay.tapeapi.fun' })
+  const body = await h.json()
+  assert.deepEqual([h.status, body.ok, body.setup, body.signer], [200, false, true, signer])
+  assert.deepEqual(body.missing, ['CIRCUITS', 'TOKEN_ID', 'CONTAINER', 'DELEGATION_EXPIRES', 'DELEGATION_SIG'])
+  const send = await fresh.fetch(new Request('https://relay.tapeapi.fun/tapeapi/v1/relaySend', { method: 'POST', body: '{}' }), { ROOMS, SIGNER_KEY })
+  assert.equal(send.status, 503, 'nothing is relayed before the holder has authorised the key')
+  const { SIGNER_ADDRESS, ...noAddress } = env
+  const m = await (await buildRelay(noAddress).handleRequest(new Request('https://relay.example/.well-known/tapeapi.json'))).json()
+  assert.equal(m.signer, signer, 'SIGNER_ADDRESS is no longer needed')
+  assert.throws(() => buildRelay({ ...env, SIGNER_ADDRESS: '0x' + '99'.repeat(20) }), /does not match SIGNER_KEY/)
+})

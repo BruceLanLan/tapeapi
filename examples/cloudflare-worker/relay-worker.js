@@ -3,6 +3,8 @@
 // Cloudflare Workers 上的 relay.tape：TapeAPI 那一面（身份、签名回答、计费、限流）跑在 Worker 里；
 // 每个房间是一个 Durable Object，所有隔离实例看到的是同一个房间。
 import { createProvider } from '@tapeapi/server'
+import { sig } from '@tapeapi/sdk'
+import { setupAnswer } from './worker.js'
 import { relayManifestMethods, sourceOf } from '../relay-service/relay-core.mjs'
 import { d1Store } from './d1-store.js'
 export { RelayRoom } from './relay-room.js'
@@ -59,6 +61,10 @@ export function buildRelay(env) {
   // 收费中继在 D1 里计量（arch A1）。放在隔离实例内存里，每个实例各有一份计量，一张凭证每个实例各服务一次，
   // 实例被回收时还没结算的也随之遗忘。
   if (price !== '0' && !env.DB) throw new Error('a priced relay needs the D1 binding DB for its meter (see wrangler-relay.toml and d1-store.js)')
+  // The signer is derived from the key, as on the provider Worker, so the holder console can read it in setup mode;
+  // SIGNER_ADDRESS, if set, must agree. / 签名地址由密钥推导（同服务 Worker），设置模式下控制台可读；若设了 SIGNER_ADDRESS 须一致。
+  const signer = sig.privateKeyToAddress(env.SIGNER_KEY)
+  if (env.SIGNER_ADDRESS && env.SIGNER_ADDRESS.toLowerCase() !== signer.toLowerCase()) throw new Error(`SIGNER_ADDRESS ${env.SIGNER_ADDRESS} does not match SIGNER_KEY (${signer})`)
   const newRooms = roomBudget(Number(env.RATE_NEW_ROOMS ?? 60))
   const post = async (room, path, body, ctx) => {
     const ip = ctx?.clientIp || 'unknown'
@@ -69,7 +75,7 @@ export function buildRelay(env) {
   }
   const manifest = {
     tapeapi: '0.1', name: env.SERVICE_NAME || 'relay.tape',
-    circuits: env.CIRCUITS, tokenId: String(env.TOKEN_ID), container: env.CONTAINER, signer: env.SIGNER_ADDRESS,
+    circuits: env.CIRCUITS, tokenId: String(env.TOKEN_ID), container: env.CONTAINER, signer,
     delegation: { expires: Number(env.DELEGATION_EXPIRES), sig: env.DELEGATION_SIG },
     endpoints: { live: [`${env.PUBLIC_URL.replace(/\/+$/, '')}/tapeapi/v1`], async: false },
     methods: relayManifestMethods({ priceBEM: price }),
@@ -89,9 +95,16 @@ export function buildRelay(env) {
   })
 }
 
+const REQUIRED = ['CIRCUITS', 'TOKEN_ID', 'CONTAINER', 'DELEGATION_EXPIRES', 'DELEGATION_SIG', 'PUBLIC_URL']
+
 export default {
   async fetch(request, env) {
-    if (!provider) provider = buildRelay(env)
+    // Same setup mode as the provider Worker: until the holder has signed, only health answers, naming the signer the
+    // console needs; a wrong variable is explained there. Pasted values are trimmed (bindings are objects).
+    // 与服务 Worker 相同的设置模式：持有人签名前只回答健康检查（写明控制台需要的签名地址），变量错误也在那里说明。粘贴的值会被修剪。
+    env = Object.fromEntries(Object.entries(env || {}).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]))
+    if (!env.SIGNER_KEY || !REQUIRED.every((k) => env[k])) return setupAnswer(env, request)
+    if (!provider) { try { provider = buildRelay(env) } catch (e) { return setupAnswer(env, request, e.message) } }
     return provider.handleRequest(request, { clientIp: request.headers.get('cf-connecting-ip') })
   },
 }
