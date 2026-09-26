@@ -297,7 +297,9 @@ $('btn-circuit').onclick = async () => {
     // 没开通的容器没有代码，SiteRegistry 连持有人也会拒绝（NotOwner）。
     if ((await rpc('eth_getCode', [c.container, 'latest'])) === '0x') { note(out, false, '这个电路的容器还没开通（清单 A4：电路页面 →「容器」→ 开通）。开通后再读取一次。'); return }
     note(out, true, '✓ 容器已开通')
-    saveSvc({ circuits: c.circuits, tokenId: c.tokenId, container: c.container, holder: c.holder, sig: undefined, expires: undefined })
+    // A circuit read here starts a new publication: the previous one's "already published" guard does not carry over.
+    // 在这里读到的电路是一次新的发布：上一个的“已发布过”标记不沿用。
+    saveSvc({ circuits: c.circuits, tokenId: c.tokenId, container: c.container, holder: c.holder, sig: undefined, expires: undefined, published: undefined, publishPending: undefined })
     showVars(); enableSvc()
   } catch (e) { note(out, false, `读取失败：${e.message}`) }
 }

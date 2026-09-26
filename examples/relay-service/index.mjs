@@ -37,7 +37,7 @@ const core = createRelayCore()
 const provider = createProvider({
   manifest, signerKey: SIGNER_KEY,
   // 2-of-3: one node down still leaves a quorum (arch A5) / 三取二：一个节点宕机仍有法定数
-  rpcUrls: (process.env.RPC_URLS || 'https://bsc-rpc.publicnode.com,https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io').split(','),
+  rpcUrls: (process.env.RPC_URLS || 'https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io').split(','),
   quorum: 2, allowSingleNode: !PROD, log: (...a) => console.error('[relay]', ...a),
   store: process.env.METER_FILE ? fileStore(process.env.METER_FILE) : undefined,
   methods: relayMethods(core),

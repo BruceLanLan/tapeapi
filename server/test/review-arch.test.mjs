@@ -113,14 +113,16 @@ test('FIXED A5: createRpc warns once when quorum equals the node count (no spare
   assert.equal(warned.length, 1, 'none of those warn')
 })
 
-test('FIXED A5: every example default is a 2-of-3 set with bsc-rpc.publicnode.com and the bsc-dataseed hosts', () => {
-  const DEFAULT = ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io']
+// Amended 2026-09-27: publicnode timed out on every request, so the set is three dataseed operators; the rule is still
+// one 2-of-3 set everywhere. / 修订：publicnode 持续超时，改为三家 dataseed；规则仍是所有示例同一套三取二。
+test('FIXED A5: every example default is the same 2-of-3 set of three operators', () => {
+  const DEFAULT = ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io']
   const e = exampleEnv('x', { port: 1, env: { SIGNER_KEY } })
   assert.deepEqual(e.RPC_URLS, DEFAULT); assert.equal(e.QUORUM, 2)
   for (const f of ['../../examples/relay-service/index.mjs', '../../examples/cloudflare-worker/relay-worker.js', '../../examples/cloudflare-worker/worker.js', '../../examples/cloudflare-worker/wrangler.toml']) {
     const src = readFileSync(new URL(f, import.meta.url), 'utf8')
     assert.ok(src.includes(DEFAULT.join(',')), `${f} defaults to the 2-of-3 set`)
-    assert.ok(!/ninicoin/.test(src), `${f} adds no other URL`)
+    assert.ok(!/publicnode\.com/.test(src), `${f} adds no other URL`)
   }
 })
 

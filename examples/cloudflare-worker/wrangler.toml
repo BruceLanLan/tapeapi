@@ -27,7 +27,7 @@ enabled = true
 SERVICE_NAME = "TapeAPI Reader"
 PUBLIC_URL = "https://api.tapeapi.fun"
 # 2-of-3 (quorum 2): one node down still leaves a quorum (arch A5). / 三取二：一个节点宕机仍有法定数。
-RPC_URLS = "https://bsc-rpc.publicnode.com,https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io"
+RPC_URLS = "https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io"
 # CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES and DELEGATION_SIG are set in the Cloudflare dashboard (Settings ->
 # Variables and Secrets), as the holder console at tapeapi.fun/console shows them; SIGNER_KEY is a secret set the same
 # way. Until all are set the Worker answers only its health, in setup mode. keep_vars keeps dashboard values when a

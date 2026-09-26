@@ -63,7 +63,9 @@ function build(env) {
     allowHttp: /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(env.PUBLIC_URL),
     // 2-of-3: one node down, rate limiting or refusing a method still leaves a quorum (arch A5).
     // 三取二：一个节点宕机、限流或拒绝某方法时仍有法定数。
-    rpcUrls: (env.RPC_URLS || 'https://bsc-rpc.publicnode.com,https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io').split(','),
+    rpcUrls: (env.RPC_URLS || 'https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io').split(','),
+    // 3 s per node: a hung node must not hold every call for the 8 s default. / 每节点 3 秒。
+    timeoutMs: Number(env.RPC_TIMEOUT_MS || 3000),
     quorum: 2,
     chainId: 56,
     // One D1 row per (consumer, provider) with a conditional UPDATE: the atomic compare-and-set that a

@@ -12,7 +12,8 @@ export { RelayRoom } from './relay-room.js'
 const ROOM_RE = /^[0-9a-f]{64}$/
 // 2-of-3: one node down, rate limiting or refusing a method still leaves a quorum (arch A5).
 // 三取二：一个节点宕机、限流或拒绝某方法时仍有法定数。
-const DEFAULT_RPC_URLS = 'https://bsc-rpc.publicnode.com,https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io'
+// publicnode left the default list on 2026-09-27 (it timed out on every request). / publicnode 因持续超时移出默认列表。
+const DEFAULT_RPC_URLS = 'https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io'
 let provider = null
 
 // New rooms per client IP per minute (arch A2). Every new room name is a new Durable Object, so without this one
@@ -84,7 +85,8 @@ export function buildRelay(env) {
   return createProvider({
     manifest, signerKey: env.SIGNER_KEY,
     rpcUrls: (env.RPC_URLS || DEFAULT_RPC_URLS).split(','),
-    quorum: 2, chainId: 56,
+    // 3 s per node: a hung node must not hold every call for the 8 s default. / 每节点 3 秒：挂住的节点不能让每次调用都等 8 秒。
+    quorum: 2, chainId: 56, timeoutMs: Number(env.RPC_TIMEOUT_MS || 3000),
     store: env.DB ? d1Store(env.DB) : undefined,
     rateLimit: { windowMs: 60_000, free: Number(env.RATE_FREE || 600), paid: Number(env.RATE_PAID || 6000) },
     methods: {

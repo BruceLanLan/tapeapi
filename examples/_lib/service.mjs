@@ -13,9 +13,10 @@ import { createSender, createSettler } from './sendtx.mjs'
 
 const list = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean)
 // 2-of-3 (QUORUM defaults to 2): one node down, rate limiting or refusing a method still leaves a quorum (arch A5).
-// publicnode also serves eth_getLogs, which the bsc-dataseed nodes refuse.
-// 三取二（QUORUM 默认 2）：一个节点宕机、限流或拒绝某方法时仍有法定数。publicnode 还支持 eth_getLogs，bsc-dataseed 节点拒绝它。
-const DEFAULT_RPC_URLS = 'https://bsc-rpc.publicnode.com,https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io'
+// Three operators; no example needs eth_getLogs (which the dataseed nodes refuse). publicnode left the set on
+// 2026-09-27 after timing out on every request.
+// 三取二（QUORUM 默认 2）：一个节点宕机、限流或拒绝某方法时仍有法定数。三家运营方；没有示例需要 eth_getLogs。publicnode 因持续超时于 2026-09-27 移出。
+const DEFAULT_RPC_URLS = 'https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io'
 
 /**
  * 读取所有示例共用的环境变量，并决定用哪把 signer 私钥。
