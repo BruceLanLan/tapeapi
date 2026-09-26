@@ -86,7 +86,8 @@
   <section id="s-key">
     <h2>5. 服务密钥与变量 <span class="muted">/ Service key and variables</span></h2>
     <p class="muted">服务用这把密钥给每个回答签名。它在你的手机上生成，本页不会把它发到任何地方，也不会保存；关掉页面就没了。复制后粘到 Cloudflare：
-      Workers &amp; Pages → <b>tapeapi-provider</b> → Settings → Variables and Secrets → Add，类型选 <b>Secret</b>，名字 <code>SIGNER_KEY</code>。</p>
+      Workers 和 Pages → <b>这个服务的 Worker</b>（例如公共服务 <code>tapeapi-provider</code>、中继 <code>tapeapi-relay</code>）→ 设置 →
+      “+ 添加变量”，名称 <code>SIGNER_KEY</code>，“密钥”方框<b>打勾</b>。先刷新 Cloudflare 页面再改，旧页面保存时会覆盖别的变量。</p>
     <button id="btn-key" type="button">生成服务密钥 / Generate</button>
     <div id="key-out"></div>
     <div id="vars-out"></div>
@@ -95,7 +96,7 @@
   <section id="s-deleg">
     <h2>6. 签委托 <span class="muted">/ Sign the delegation</span></h2>
     <p class="muted">设好 SIGNER_KEY 和上面三个变量、服务重新部署后，本页从服务读出它的签名地址，你用钱包签一个委托（EIP-712，只授权这把服务密钥代表你的容器回答，不涉及任何资金，90 天后到期）。</p>
-    <input id="svc-url" value="https://api.tapeapi.fun" aria-label="service URL" spellcheck="false">
+    <input id="svc-url" value="https://api.tapeapi.fun" aria-label="service URL" spellcheck="false" placeholder="https://api.tapeapi.fun 或 https://relay.tapeapi.fun">
     <button id="btn-deleg" type="button" disabled>读取签名地址并签名 / Sign</button>
     <div id="deleg-out"></div>
   </section>
