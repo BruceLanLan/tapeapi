@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AI agents · TapeAPI Docs</title>
+<meta name="description" content="exposeTapeAPI turns any TapeAPI service into tools an AI agent in the browser can call, through WebMCP's document.modelContext . The agent never receives what a">
+<link rel="stylesheet" href="../docs.css">
+<link rel="alternate" hreflang="zh-CN" href="../zh/agents.html">
+<script src="../docs.js"></script>
+</head>
+<body data-page="agents" data-other="../zh/agents.html" data-l-copy="Copy" data-l-copied="Copied" data-l-none="No results" data-l-light="Light" data-l-dark="Dark" data-l-theme="Theme">
+<header class="top">
+  <button class="ctl menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+  <a class="brand" href="/">TAPEAPI</a><a class="section" href="index.html">Docs</a>
+  <div class="search"><input id="q" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <span class="sp"></span>
+  <a class="ctl" href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a>
+  <button class="ctl" id="lang-btn" type="button" lang="zh-CN">中文</button>
+  <button class="ctl" id="theme-btn" type="button">Theme</button>
+</header>
+<div class="layout">
+<nav class="side" id="side" aria-label="Docs"><div class="group"><p class="gtitle">Getting started</p><ul><li><a href="index.html">Introduction</a></li><li><a href="consume.html">Call a service</a></li><li><a href="provide.html">Run a service</a></li></ul></div><div class="group"><p class="gtitle">Features</p><ul><li><a href="channels.html">Private channels</a></li><li><a href="agents.html" aria-current="page">AI agents</a></li></ul></div><div class="group"><p class="gtitle">Help</p><ul><li><a href="faq.html">FAQ and troubleshooting</a></li><li><a href="changelog.html">Changelog</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="ai-agents">AI agents</h1>
+<p><code>exposeTapeAPI</code> turns any TapeAPI service into tools an AI agent in the browser can call, through WebMCP's <code>document.modelContext</code>. The agent never receives what a page merely claims: every call goes through the SDK, so each answer is an envelope verified against the key the circuit's holder authorised on chain. A tampered or unsigned answer reaches the agent as an error.</p>
+<div class="code"><pre data-lang="js"><code>import { createTapeAPI } from '@tapeapi/sdk'
+import { exposeTapeAPI } from '@tapeapi/sdk/webmcp'
+
+const api = createTapeAPI({
+  rpcUrls: ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io'],
+  quorum: 2,
+})
+const handle = await exposeTapeAPI(api, '0x&lt;container&gt;')     // free methods only, by default
+// handle.tools, handle.skipped, handle.refresh(), handle.dispose()</code></pre></div>
+<h2 id="money"><a class="anchor" href="#money" aria-hidden="true">#</a>Money</h2>
+<p>Paid methods are not exposed unless the page passes a budget:</p>
+<div class="code"><pre data-lang="js"><code>await exposeTapeAPI(api, '0x&lt;container&gt;', {
+  paid: { payer, maxPriceBEM: '0.001', budgetBEM: '0.05', confirm: async ({ method, priceBEM }) =&gt; window.confirm(`Pay ${priceBEM} BEM for ${method}?`) },
+})</code></pre></div>
+<ul><li><code>maxPriceBEM</code> caps each call, <code>budgetBEM</code> caps the total, and <code>confirm</code> can ask the human before each paid call.</li><li>A price rise is never paid: the call fails with <code>PRICE_CHANGED</code> and the tool is withdrawn until the human calls <code>api.acceptPrice(svc, method)</code> and <code>handle.refresh()</code>.</li></ul>
+<h2 id="desktop-agents"><a class="anchor" href="#desktop-agents" aria-hidden="true">#</a>Desktop agents</h2>
+<p><code>manifestToTools(manifest, opts)</code> is the pure part, with no DOM: a Node MCP server can use it to offer the same tools to a desktop agent.</p>
+<h2 id="try-it"><a class="anchor" href="#try-it" aria-hidden="true">#</a>Try it</h2>
+<div class="code"><pre data-lang="bash"><code>node examples/reader-service/index.mjs</code></pre></div>
+<p>Then serve the repository and open <a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/webmcp" rel="noopener"><code>examples/webmcp/</code></a> in a browser; its README explains the demo.</p>
+</article>
+<nav class="pn"><a class="prev" href="channels.html"><span>Previous</span>Private channels</a><a class="next" href="faq.html"><span>Next</span>FAQ and troubleshooting</a></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/agents.md" rel="noopener">Edit this page on GitHub</a></p>
+</main>
+<aside class="toc"><p class="gtitle">On this page</p><ul><li class="l2"><a href="#money">Money</a></li><li class="l2"><a href="#desktop-agents">Desktop agents</a></li><li class="l2"><a href="#try-it">Try it</a></li></ul></aside>
+</div>
+</body>
+</html>

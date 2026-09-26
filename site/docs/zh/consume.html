@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>调用服务 · TapeAPI 手册</title>
+<meta name="description" content="本指南介绍应用如何找到一个 TapeAPI 服务、调用它，并确认回答是真实的。它使用 @tapeapi/sdk ，可运行于 Node 20+、浏览器、DeWEB 站点和 Cloudflare Workers。">
+<link rel="stylesheet" href="../docs.css">
+<link rel="alternate" hreflang="en" href="../en/consume.html">
+<script src="../docs.js"></script>
+</head>
+<body data-page="consume" data-other="../en/consume.html" data-l-copy="复制" data-l-copied="已复制" data-l-none="没有结果" data-l-light="浅色" data-l-dark="深色" data-l-theme="主题">
+<header class="top">
+  <button class="ctl menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">目录</button>
+  <a class="brand" href="/">TAPEAPI</a><a class="section" href="index.html">手册</a>
+  <div class="search"><input id="q" type="search" placeholder="搜索手册" aria-label="搜索手册" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <span class="sp"></span>
+  <a class="ctl" href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a>
+  <button class="ctl" id="lang-btn" type="button" lang="en">English</button>
+  <button class="ctl" id="theme-btn" type="button">主题</button>
+</header>
+<div class="layout">
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="consume.html" aria-current="page">调用服务</a></li><li><a href="provide.html">运行服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="调用服务">调用服务</h1>
+<p>本指南介绍应用如何找到一个 TapeAPI 服务、调用它，并确认回答是真实的。它使用 <code>@tapeapi/sdk</code>，可运行于 Node 20+、浏览器、DeWEB 站点和 Cloudflare Workers。</p>
+<h2 id="1-在本地试用"><a class="anchor" href="#1-在本地试用" aria-hidden="true">#</a>1. 在本地试用</h2>
+<p>启动最小示例服务。它通过公共节点读取 BNB Chain，并用一把临时密钥签名：</p>
+<div class="code"><pre data-lang="bash"><code>node examples/reader-service/index.mjs          # :8787</code></pre></div>
+<div class="code"><pre data-lang="js"><code>import { createTapeAPI } from '@tapeapi/sdk'
+
+const api = createTapeAPI({ dev: true })          // dev：接受没有链上清单的本地 http:// 服务
+const svc = await api.resolve({ dev: 'http://127.0.0.1:8787' })
+const { result, block, verified } = await api.call(svc, 'blockNumber', {})
+console.log(result.blockNumber, block, verified)</code></pre></div>
+<p><code>api.call</code> 只有在签名信封检查通过后才返回。如果回答在传输中被篡改、由另一把密钥签名，或已是五分钟以前的回答，你得到的是 <code>TapeAPIError</code>，永远不会是结果。</p>
+<h2 id="2-在-bnb-chain-上解析真实服务"><a class="anchor" href="#2-在-bnb-chain-上解析真实服务" aria-hidden="true">#</a>2. 在 BNB Chain 上解析真实服务</h2>
+<p>在主网上，SDK 所信任的一切都从链上读取，并经由多个必须达成一致的 RPC 节点：</p>
+<div class="code"><pre data-lang="js"><code>const api = createTapeAPI({
+  rpcUrls: ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io'],
+  quorum: 2,
+})
+
+const byContainer = await api.resolve('0x&lt;container address&gt;')
+const byCircuit = await api.resolve({ circuits: '0x&lt;processor contract&gt;', tokenId: '11' })</code></pre></div>
+<p>解析（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-20.md" rel="noopener">TAP-20 §3.6</a>）依次执行：</p>
+<ol><li>从电路推导出容器（<code>DeWebHub.accountOf</code>），并检查处理器确实是 TapeOut 的处理器（<code>factory.isCPU</code>），使伪造的 NFT 无法冒充服务；</li><li>从容器的站点读取 <code>.well-known/tapeapi.json</code>，并对照链上数据检查其长度和 SHA-256；</li><li>校验清单；</li><li>对照<strong>当前</strong>持有者，检查电路持有者对服务签名密钥的 EIP-712 委托。</li></ol>
+<p>解析出的服务会被缓存；SDK 大约每小时重读一次，并在签名或价格不再匹配时立即重读。<code>api.refresh(svc)</code> 可强制重读。</p>
+<h2 id="3-处理错误"><a class="anchor" href="#3-处理错误" aria-hidden="true">#</a>3. 处理错误</h2>
+<p>每一种失败都是带有稳定 <code>code</code> 的 <code>TapeAPIError</code>：</p>
+<div class="code"><pre data-lang="js"><code>import { TapeAPIError } from '@tapeapi/sdk'
+
+try {
+  await api.call(svc, 'quote', { symbol: 'BNB' })
+} catch (e) {
+  if (!(e instanceof TapeAPIError)) throw e
+  console.error(e.code, e.message, e.signed ? '(signed by the service)' : '')
+}</code></pre></div>
+<div class="table"><table><thead><tr><th>错误码</th><th>含义</th><th>应对</th></tr></thead><tbody><tr><td><code>RPC_UNAVAILABLE</code></td><td>作答的 RPC 节点少于法定人数。</td><td>重试；增加节点。</td></tr><tr><td><code>RPC_DISAGREE</code></td><td>节点返回了不同的字节。</td><td>重试；若持续出现，说明某个节点落后或在说谎。</td></tr><tr><td><code>MANIFEST_INVALID</code></td><td>没有清单、清单有误，或其字节与链上不符。</td><td>该服务没有（正确地）发布。</td></tr><tr><td><code>DELEGATION_INVALID</code></td><td>签名密钥未获当前持有者授权，或委托已过期。</td><td>提供者必须续期。</td></tr><tr><td><code>BAD_SIGNATURE</code></td><td>回答不是由被委托的密钥签名的。</td><td>不要使用它。SDK 会重读一次清单，以防密钥已轮换。</td></tr><tr><td><code>METHOD_NOT_FOUND</code></td><td>清单中没有该方法。</td><td>检查 <code>svc.manifest.methods</code>。</td></tr><tr><td><code>PRICE_CHANGED</code></td><td>价格涨到了你已接受的价格之上。</td><td>先征询你的用户，再调用 <code>api.acceptPrice(svc, method)</code> 或传入 <code>{ maxPrice }</code>。</td></tr><tr><td><code>QUORUM_FAILED</code></td><td><code>callQuorum</code> 中的提供者未达成一致。</td><td>视为没有回答。</td></tr></tbody></table></div>
+<p>完整列表见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md" rel="noopener">TAP-21</a>。服务发出的错误同样带签名（<code>e.signed</code>）。</p>
+<h2 id="4-要求多个提供者之间达成一致"><a class="anchor" href="#4-要求多个提供者之间达成一致" aria-hidden="true">#</a>4. 要求多个提供者之间达成一致</h2>
+<p>单个服务的签名回答只能证明是谁说的，不能证明它是真的。对于重要的数值，请向多个独立提供者询问同一个区块，只接受逐字节相同的结果：</p>
+<div class="code"><pre data-lang="js"><code>const [a, b] = await Promise.all([api.resolve('0x&lt;container A&gt;'), api.resolve('0x&lt;container B&gt;')])
+const first = await api.call(a, 'bnbUsd', {})
+const block = first.result.blockPinned.blockNumber            // 把每个提供者都固定到同一个区块
+const q = await api.callQuorum([a, b], 'bnbUsd', { block }, { quorum: 2 })
+console.log(q.result, 'agreed by', q.agreed)                  // 否则抛出 TapeAPIError('QUORUM_FAILED')</code></pre></div>
+<p>只有描述以 <code>[quorum]</code> 开头的方法才能这样比较；<code>[no-quorum]</code> 方法（带随机 id 的报价、<code>latest</code> 读取）按设计就会各不相同。使用单一来源数值的协议仍应施加边界检查、新鲜度检查和熔断机制。</p>
+<h2 id="5-为调用付费"><a class="anchor" href="#5-为调用付费" aria-hidden="true">#</a>5. 为调用付费</h2>
+<p>免费方法无需任何东西。付费方法需要一张由消费者签名的凭证（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-22.md" rel="noopener">TAP-22</a>）：</p>
+<div class="code"><pre data-lang="js"><code>const payer = api.payer({
+  consumer: '0x&lt;your address&gt;',
+  signTypedData: (typed) =&gt; wallet.request({ method: 'eth_signTypedData_v4', params: [consumer, JSON.stringify(typed)] }),
+})
+const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code></pre></div>
+<p>为避免每次调用都弹出钱包提示，可以一次性授权一把会话密钥（<code>api.tx.authorizeSession(svc, sessionAddress, expires)</code>），然后改为传入 <code>{ consumer, sessionKey, sessionExpiry }</code>。为通道充值需要两笔交易，由 SDK 为你的钱包构建：先 <code>api.tx.approve({ amount })</code>，再 <code>api.tx.fund(svc, amount)</code>。</p>
+<blockquote><p>托管合约尚未部署，因此付费服务还没有在主网上线。以上内容都可以针对示例运行（本地使用 <code>FREE_ALL=1</code> 跳过付费）。</p></blockquote>
+<p>SDK 只在收到经过验证的回答之后才推进本地计量，并在提供者的计数不一致时自动重新同步。传入 <code>store: { get, set }</code> 可在重启之间保留计量。</p>
+<h2 id="6-在浏览器或-deweb-站点中使用"><a class="anchor" href="#6-在浏览器或-deweb-站点中使用" aria-hidden="true">#</a>6. 在浏览器或 DeWEB 站点中使用</h2>
+<p>SDK 是普通的 ES 模块。在 DeWEB 站点上，按相对路径导入它，并用 import map 映射 <code>@noble/*</code>；完整页面见 <a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/demo-site" rel="noopener"><code>examples/demo-site/</code></a>，更多代码片段见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/examples/consumer-snippets.md" rel="noopener"><code>examples/consumer-snippets.md</code></a>。</p>
+<h2 id="不使用-sdk-进行验证"><a class="anchor" href="#不使用-sdk-进行验证" aria-hidden="true">#</a>不使用 SDK 进行验证</h2>
+<p>任何语言都可以检查回答。对于发往容器 <code>c</code> 的方法 <code>m</code> 的请求 <code>{ id, params }</code>，服务使用 EIP-191 <code>personal_sign</code> 对以下内容签名：</p>
+<div class="code"><pre><code>digest = keccak256( &quot;TAPI-1/resp/v2&quot; ‖ c ‖ keccak256(id) ‖ keccak256(canonicalJSON({method: m, params}))
+                    ‖ uint8(ok) ‖ keccak256(canonicalJSON(result or error)) ‖ uint64BE(ts) )</code></pre></div>
+<p>恢复出签名者（只接受低 s），将其与 <code>manifest.signer</code> 比较，检查持有者的委托指明的正是该签名者，并且 <code>|now - ts| &lt;= 300</code>。规范 JSON 的定义见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md" rel="noopener">TAP-21</a>；测试向量和一个独立的 Python 实现位于 <a href="https://github.com/BruceLanLan/tapeapi/tree/main/spec/vectors" rel="noopener"><code>spec/vectors/</code></a>。</p>
+</article>
+<nav class="pn"><a class="prev" href="index.html"><span>上一篇</span>简介</a><a class="next" href="provide.html"><span>下一篇</span>运行服务</a></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/consume.md" rel="noopener">在 GitHub 上编辑此页</a></p>
+</main>
+<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#1-在本地试用">1. 在本地试用</a></li><li class="l2"><a href="#2-在-bnb-chain-上解析真实服务">2. 在 BNB Chain 上解析真实服务</a></li><li class="l2"><a href="#3-处理错误">3. 处理错误</a></li><li class="l2"><a href="#4-要求多个提供者之间达成一致">4. 要求多个提供者之间达成一致</a></li><li class="l2"><a href="#5-为调用付费">5. 为调用付费</a></li><li class="l2"><a href="#6-在浏览器或-deweb-站点中使用">6. 在浏览器或 DeWEB 站点中使用</a></li><li class="l2"><a href="#不使用-sdk-进行验证">不使用 SDK 进行验证</a></li></ul></aside>
+</div>
+</body>
+</html>

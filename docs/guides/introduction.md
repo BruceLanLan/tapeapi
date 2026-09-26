@@ -1,0 +1,79 @@
+# Introduction
+
+**Tape out a circuit, and its container is your API.** TapeAPI is the service and communication layer of the
+[TapeOut](https://tapeout.net) ecosystem on BNB Chain: DeWEB is websites, TapeSend is messaging, and TapeAPI is
+services.
+
+An API today is a URL plus an account plus trust. TapeAPI replaces the account with an on-chain identity and the
+trust with a signature anyone can check:
+
+- **The service is a circuit.** Whoever holds the circuit NFT owns the service. Transfer the NFT and the service moves
+  with it.
+- **Every answer is signed and bound to your request.** A client checks the signature against a key the circuit's
+  holder authorised on chain. A tampered, replayed or unsigned answer is an error, never a result.
+- **No sign-up, no API keys.** Free methods are just called. Paid methods take off-chain vouchers that settle on chain
+  in batches, and the protocol takes zero fees.
+- **Containers can talk privately.** End-to-end encrypted channels and groups between containers, carried by relays or
+  by the chain itself.
+
+## How it works
+
+1. **Identity.** A provider tapes out a circuit on TapeOut. The circuit's container (an ERC-6551 account) is the
+   service's address.
+2. **Manifest.** The provider writes `.well-known/tapeapi.json` into the container's site: endpoints, methods, prices,
+   the signing key, and the holder's EIP-712 delegation of that key.
+3. **Resolve.** A client reads the manifest from the chain through several RPC nodes that must agree, checks its hash,
+   and checks the delegation against the circuit's current holder.
+4. **Call.** The client sends a request; the service answers with an envelope signed by the delegated key and bound to
+   that request. The SDK returns the result only after checking it.
+
+## Choose your path
+
+| I want to | Read |
+|---|---|
+| Call a TapeAPI service from an app | [Call a service](consume.md) |
+| Offer my code or an existing API as a service | [Run a service](provide.md) |
+| Send encrypted messages between containers | [Private channels](channels.md) |
+| Let an AI agent use services safely | [AI agents](agents.md) |
+| Fix an error | [FAQ](faq.md) |
+
+## Status
+
+Pre-alpha, version 0.1.0. The free tier runs on TapeOut's deployed contracts. Our own contracts have no third-party
+audit; the paid-call escrow is not deployed yet. Interfaces may still change, and the TAP numbers are proposed to the
+TapeKit maintainers, not yet assigned.
+
+## On-chain addresses
+
+BNB Smart Chain, chainId 56.
+
+| Contract | Address | Owner |
+|---|---|---|
+| DeWebHub | `0xe61A9C7213a6Aa616C246a2B569e555B417b25ee` | TapeOut |
+| SiteRegistry | `0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6` | TapeOut |
+| Processor factory | `0x68224F668083c29e9800Be2a646d42d18cedF7e2` | TapeOut |
+| BEM token | `0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a` | TapeOut |
+| ChannelBus | `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707` | TapeAPI: no owner, no state, no upgrade path |
+| TapeAPIEscrow, ServiceDirectory | not deployed | TapeAPI |
+
+## Specifications
+
+The protocol is written down as TAPs, in English and Chinese (English authoritative), under CC0.
+
+| TAP | Title |
+|---|---|
+| [TAP-20](../../spec/TAP-20.md) | Service identity and manifest |
+| [TAP-21](../../spec/TAP-21.md) | Signed response envelope |
+| [TAP-22](../../spec/TAP-22.md) | Metered payment |
+| [TAP-23](../../spec/TAP-23.md) | Attested cross-chain read |
+| [TAP-24](../../spec/TAP-24.md) | Intent RFQ (frozen) |
+| [TAP-25](../../spec/TAP-25.md) | Circuit-verified methods |
+| [TAP-26](../../spec/TAP-26.md) | Private channels |
+| [TAP-27](../../spec/TAP-27.md) | Private groups |
+
+Source code, examples and the conformance suite are on [GitHub](https://github.com/BruceLanLan/tapeapi).
+
+## Credits
+
+The idea of a service layer for TapeOut came from [@Theairresearch](https://x.com/Theairresearch/status/2101640697426448632).
+A permanent 10% of any revenue TapeAPI earns goes to them.

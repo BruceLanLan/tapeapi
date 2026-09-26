@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Run a service · TapeAPI Docs</title>
+<meta name="description" content="This guide turns your code, or an API you already run, into a TapeAPI service anyone can verify. It covers the concepts, a local run, going live (from a phone, ">
+<link rel="stylesheet" href="../docs.css">
+<link rel="alternate" hreflang="zh-CN" href="../zh/provide.html">
+<script src="../docs.js"></script>
+</head>
+<body data-page="provide" data-other="../zh/provide.html" data-l-copy="Copy" data-l-copied="Copied" data-l-none="No results" data-l-light="Light" data-l-dark="Dark" data-l-theme="Theme">
+<header class="top">
+  <button class="ctl menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+  <a class="brand" href="/">TAPEAPI</a><a class="section" href="index.html">Docs</a>
+  <div class="search"><input id="q" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <span class="sp"></span>
+  <a class="ctl" href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a>
+  <button class="ctl" id="lang-btn" type="button" lang="zh-CN">中文</button>
+  <button class="ctl" id="theme-btn" type="button">Theme</button>
+</header>
+<div class="layout">
+<nav class="side" id="side" aria-label="Docs"><div class="group"><p class="gtitle">Getting started</p><ul><li><a href="index.html">Introduction</a></li><li><a href="consume.html">Call a service</a></li><li><a href="provide.html" aria-current="page">Run a service</a></li></ul></div><div class="group"><p class="gtitle">Features</p><ul><li><a href="channels.html">Private channels</a></li><li><a href="agents.html">AI agents</a></li></ul></div><div class="group"><p class="gtitle">Help</p><ul><li><a href="faq.html">FAQ and troubleshooting</a></li><li><a href="changelog.html">Changelog</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="run-a-service">Run a service</h1>
+<p>This guide turns your code, or an API you already run, into a TapeAPI service anyone can verify. It covers the concepts, a local run, going live (from a phone, or from a server), renewal and operations.</p>
+<h2 id="the-five-things-a-live-service-needs"><a class="anchor" href="#the-five-things-a-live-service-needs" aria-hidden="true">#</a>The five things a live service needs</h2>
+<div class="table"><table><thead><tr><th>Thing</th><th>What it is</th><th>Who makes it</th></tr></thead><tbody><tr><td><strong>Circuit</strong></td><td>An NFT minted on a TapeOut processor. Whoever holds it owns the service.</td><td>You, on <a href="https://tapeout.net" rel="noopener">tapeout.net</a>.</td></tr><tr><td><strong>Container</strong></td><td>The circuit's ERC-6551 account: the service's identity and address. It must be <strong>opened</strong> (0.012 BNB) before its site accepts files.</td><td>You, on the circuit's page.</td></tr><tr><td><strong>Signing key</strong></td><td>A hot key your server signs every answer with. It is not your wallet and holds no funds.</td><td>Generated for you (console) or by you.</td></tr><tr><td><strong>Delegation</strong></td><td>An EIP-712 signature by the circuit's holder: &quot;this signing key speaks for my container until this date&quot;. No funds move.</td><td>The holder's wallet.</td></tr><tr><td><strong>Manifest</strong></td><td><code>.well-known/tapeapi.json</code> in the container's site: endpoints, methods, prices, signing key and delegation.</td><td>Written on chain by the holder (one transaction).</td></tr></tbody></table></div>
+<p>The container address is fixed by the circuit, so the manifest is the only thing you ever republish: to add methods, change the endpoint, or renew the delegation.</p>
+<h2 id="1-write-the-service-and-run-it-locally"><a class="anchor" href="#1-write-the-service-and-run-it-locally" aria-hidden="true">#</a>1. Write the service and run it locally</h2>
+<p><code>createProvider</code> does the protocol for you: request parsing, the signed envelope, errors, rate limits and, for paid methods, voucher checks and metering. You write plain functions:</p>
+<div class="code"><pre data-lang="js"><code>import { readFile } from 'node:fs/promises'
+import { createProvider } from '@tapeapi/server'
+
+const provider = createProvider({
+  manifest: JSON.parse(await readFile('manifest.json', 'utf8')),
+  signerKey: process.env.SIGNER_KEY,
+  rpcUrls: ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io'],
+  quorum: 2,
+  methods: {
+    blockNumber: async (_params, ctx) =&gt; ({ blockNumber: ctx.block }),
+    quote: async ({ symbol }) =&gt; {
+      if (!/^[A-Z]{2,10}$/.test(symbol)) throw Object.assign(new Error('bad symbol'), { code: 'BAD_REQUEST' })
+      return fetch(`https://your.api/quote/${symbol}`).then((r) =&gt; r.json())
+    },
+  },
+})
+await provider.listen(8787)                     // Node
+// On Cloudflare Workers: export default { fetch: (request) =&gt; provider.handleRequest(request) }</code></pre></div>
+<p>Start from a working example rather than a blank file:</p>
+<ul><li><a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/reader-service" rel="noopener"><code>examples/reader-service/</code></a>: the smallest complete service, with the delegation script.</li><li><a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/web2-adapter" rel="noopener"><code>examples/web2-adapter/</code></a>: one config file turns existing REST endpoints into methods; the upstream API key stays in an environment variable.</li><li><a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/cloudflare-worker" rel="noopener"><code>examples/cloudflare-worker/</code></a>: the same on Cloudflare Workers, deployable from a phone.</li></ul>
+<p>Without a delegation the service runs in dev mode: clients connect with <code>createTapeAPI({ dev: true })</code>. Check it against the protocol with the black-box conformance suite:</p>
+<div class="code"><pre data-lang="bash"><code>node conformance/run.mjs --url http://127.0.0.1:8787</code></pre></div>
+<h2 id="2-go-live-from-a-phone-cloudflare-holder-console"><a class="anchor" href="#2-go-live-from-a-phone-cloudflare-holder-console" aria-hidden="true">#</a>2. Go live from a phone (Cloudflare + holder console)</h2>
+<p>This is the path with no server and no command line.</p>
+<ol><li><strong>Circuit and container.</strong> On <a href="https://tapeout.net" rel="noopener">tapeout.net</a>: create a processor, Tape Out a circuit, open its container (0.012 BNB). The container's <code>.tape</code> name works by itself; no name binding is needed.</li><li><strong>Deploy the service.</strong> In the Cloudflare dashboard: Workers &amp; Pages → Create → Workers → Import a repository → your fork of this repository. Build command <code>npm ci</code>, deploy command <code>npm run deploy:provider</code>. The Worker starts in setup mode and answers only its health check.</li><li><strong>Open the holder console</strong> at <a href="https://tapeapi.fun/console/" rel="noopener">tapeapi.fun/console</a> in your wallet's in-app browser, connected with the wallet that holds the circuit, and follow steps 4 to 7:
+<ul><li><strong>4</strong> reads your circuit, checks you are the holder and that the container is opened;</li><li><strong>5</strong> generates the signing key on your phone and shows the variables to add in Cloudflare (<code>SIGNER_KEY</code> as a secret; the rest are public);</li><li><strong>6</strong> checks the service reports that same key, asks your wallet for the delegation signature, and checks the signature really comes from the holder;</li><li><strong>7</strong> builds the manifest from what you read and signed, requires the service's copy to match it field for field, shows it to you, and writes it on chain with one transaction.</li></ul></li></ol>
+<p>Do all four steps in the same wallet app; the page keeps its progress in that browser. <strong>Never screenshot or send the signing key to anyone.</strong></p>
+<h2 id="3-go-live-from-a-server"><a class="anchor" href="#3-go-live-from-a-server" aria-hidden="true">#</a>3. Go live from a server</h2>
+<ol><li>Generate a signing key and keep it in your secret store.</li><li><p>Have the holder sign the delegation. The key never needs to leave the wallet:</p>
+<div class="code"><pre data-lang="bash"><code>node examples/reader-service/sign-delegation.mjs --container 0x&lt;container&gt; --signer 0x&lt;signing key address&gt; --expires &lt;unix time&gt;
+# sign the printed typed data with the holder's wallet (eth_signTypedData_v4; a Safe signs via EIP-1271), then
+node examples/reader-service/sign-delegation.mjs --container 0x&lt;container&gt; --signer 0x&lt;address&gt; --expires &lt;unix time&gt; --sig 0x&lt;signature&gt;</code></pre></div></li><li>Run the service over HTTPS with <code>SIGNER_KEY</code>, <code>CIRCUITS</code>, <code>TOKEN_ID</code>, <code>CONTAINER</code>, <code>DELEGATION_EXPIRES</code>, <code>DELEGATION_SIG</code> and <code>PUBLIC_URL</code>. A live manifest must advertise an <code>https://</code> endpoint.</li><li>Publish the manifest: <code>api.tx.publishManifest({ container, manifest })</code> returns the <code>SiteRegistry.putFile</code> transaction for the holder's wallet. The key is <code>.well-known/tapeapi.json</code>, with no leading slash.</li></ol>
+<p>Check it the way any client would:</p>
+<div class="code"><pre data-lang="js"><code>const svc = await createTapeAPI({ rpcUrls: [/* ... */], quorum: 2 }).resolve('0x&lt;container&gt;')</code></pre></div>
+<h2 id="4-renew"><a class="anchor" href="#4-renew" aria-hidden="true">#</a>4. Renew</h2>
+<p>A delegation lasts 90 days by default. Before it ends: sign a new one (console step 6), update <code>DELEGATION_EXPIRES</code> and <code>DELEGATION_SIG</code>, <strong>and publish the manifest again</strong> (console step 7), because clients read the delegation from the on-chain manifest. The signing key can stay the same. There is no revocation: an old delegation stays valid until its own expiry, so if the signing key leaks, rotate it and republish at once.</p>
+<h2 id="5-paid-methods"><a class="anchor" href="#5-paid-methods" aria-hidden="true">#</a>5. Paid methods</h2>
+<p>Set <code>priceBEM</code> on a method and name an escrow in <code>payment</code>. The runtime verifies each voucher, meters per consumer and refuses anything below the price. Every endpoint of one paid service must share one atomic meter store (D1 on Cloudflare, see <a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/cloudflare-worker" rel="noopener"><code>examples/cloudflare-worker/</code></a>), or the same voucher could be served twice. A settler submits vouchers to the escrow in batches.</p>
+<blockquote><p>The escrow is not deployed on mainnet yet. Paid methods run against the examples today.</p></blockquote>
+<h2 id="6-operate"><a class="anchor" href="#6-operate" aria-hidden="true">#</a>6. Operate</h2>
+<p><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/OPERATING.md" rel="noopener"><code>docs/OPERATING.md</code></a> covers keys, monitoring, RPC choice, rate limits (600 free calls per minute per IP by default) and relay capacity. Two rules worth repeating:</p>
+<ul><li>Use at least three RPC nodes with <code>quorum: 2</code>: one node down or refusing a method still leaves a quorum.</li><li>Keep the signing key only where the service runs. Anyone who can change the service's code can read it.</li></ul>
+</article>
+<nav class="pn"><a class="prev" href="consume.html"><span>Previous</span>Call a service</a><a class="next" href="channels.html"><span>Next</span>Private channels</a></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/provide.md" rel="noopener">Edit this page on GitHub</a></p>
+</main>
+<aside class="toc"><p class="gtitle">On this page</p><ul><li class="l2"><a href="#the-five-things-a-live-service-needs">The five things a live service needs</a></li><li class="l2"><a href="#1-write-the-service-and-run-it-locally">1. Write the service and run it locally</a></li><li class="l2"><a href="#2-go-live-from-a-phone-cloudflare-holder-console">2. Go live from a phone (Cloudflare + holder console)</a></li><li class="l2"><a href="#3-go-live-from-a-server">3. Go live from a server</a></li><li class="l2"><a href="#4-renew">4. Renew</a></li><li class="l2"><a href="#5-paid-methods">5. Paid methods</a></li><li class="l2"><a href="#6-operate">6. Operate</a></li></ul></aside>
+</div>
+</body>
+</html>

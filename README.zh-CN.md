@@ -8,7 +8,7 @@
 TapeAPI 是 BNB Chain 上 [TapeOut](https://tapeout.net) 生态的服务与通信层。在这个生态中，DeWEB 是网站，TapeSend 是
 消息，**TapeAPI 是服务**。
 
-[English](README.md) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [网站](https://tapeapi.fun) · [更新日志](CHANGELOG.md)
+[English](README.md) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [手册](https://tapeapi.fun/docs/zh/) · [网站](https://tapeapi.fun) · [更新日志](CHANGELOG.md)
 
 > **状态：pre-alpha（v0.1.0）。** 免费层不需要我们的任何合约，运行在 TapeOut 已部署的合约之上。
 > 我们自己的合约（付费调用托管合约、服务目录、ChannelBus）**未经第三方审计**；ChannelBus 已部署（地址见下文）。

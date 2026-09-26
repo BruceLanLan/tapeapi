@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>私密通道 · TapeAPI 手册</title>
+<meta name="description" content="Tape Channel（ TAP-26 ）是两个 TapeOut 容器之间一条端到端加密、双向认证的通道。无论由什么承载（中继服务、WebRTC 连接或链本身），承载方只能看到密文，并且无法在不被发现的情况下伪造、重排或重放帧。最多 32 个容器的群组见 TAP-27 。">
+<link rel="stylesheet" href="../docs.css">
+<link rel="alternate" hreflang="en" href="../en/channels.html">
+<script src="../docs.js"></script>
+</head>
+<body data-page="channels" data-other="../en/channels.html" data-l-copy="复制" data-l-copied="已复制" data-l-none="没有结果" data-l-light="浅色" data-l-dark="深色" data-l-theme="主题">
+<header class="top">
+  <button class="ctl menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">目录</button>
+  <a class="brand" href="/">TAPEAPI</a><a class="section" href="index.html">手册</a>
+  <div class="search"><input id="q" type="search" placeholder="搜索手册" aria-label="搜索手册" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <span class="sp"></span>
+  <a class="ctl" href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a>
+  <button class="ctl" id="lang-btn" type="button" lang="en">English</button>
+  <button class="ctl" id="theme-btn" type="button">主题</button>
+</header>
+<div class="layout">
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="consume.html">调用服务</a></li><li><a href="provide.html">运行服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html" aria-current="page">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="私密通道">私密通道</h1>
+<p>Tape Channel（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-26.md" rel="noopener">TAP-26</a>）是两个 TapeOut 容器之间一条端到端加密、双向认证的通道。无论由什么承载（中继服务、WebRTC 连接或链本身），承载方只能看到密文，并且无法在不被发现的情况下伪造、重排或重放帧。最多 32 个容器的群组见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-27.md" rel="noopener">TAP-27</a>。</p>
+<h2 id="工作原理"><a class="anchor" href="#工作原理" aria-hidden="true">#</a>工作原理</h2>
+<div class="table"><table><thead><tr><th>步骤</th><th>发生了什么</th></tr></thead><tbody><tr><td><strong>身份</strong></td><td>每个容器在其站点的 <code>.well-known/tape-channel.json</code> 中发布通道密钥（X25519 用于密钥协商，Ed25519 用于签名），由电路持有者以 EIP-712 签名授权。对方对照<strong>当前</strong>持有者检查这些密钥，因此电路售出后，旧密钥随即失效。</td></tr><tr><td><strong>邀请</strong>（A → B）</td><td>A 向 B 发送一份密封给 B 密钥的邀请，投进 B 在中继或 ChannelBus 上的收件房间（或作为 TapeSend 消息发送）。邀请中写明 A 将监听的中继和总线。</td></tr><tr><td><strong>接受</strong>（B → A）</td><td>B 经由其中一个传输作答。B 此时已可随之发送数据。</td></tr><tr><td><strong>就绪</strong>（A → B）</td><td>A 确认。三次 Diffie-Hellman 提供双向认证、前向保密和抗密钥泄露冒充（即去掉预密钥的 X3DH 核心）。</td></tr><tr><td><strong>帧</strong></td><td>ChaCha20-Poly1305，每个方向一把密钥，使用计数器 nonce，与 WireGuard 和 Noise 相同。</td></tr></tbody></table></div>
+<h2 id="1-发布容器的通道密钥"><a class="anchor" href="#1-发布容器的通道密钥" aria-hidden="true">#</a>1. 发布容器的通道密钥</h2>
+<p>由持有者的钱包签名；私钥保存在你自己保管的文件中：</p>
+<div class="code"><pre data-lang="bash"><code>node scripts/channel-keys.mjs new --container 0x&lt;container&gt; --identity ./identity.json --days 180 \
+  --relay https://relay.example/tapeapi/v1@0x&lt;relay container&gt;
+# sign the printed typed data with the holder's wallet (eth_signTypedData_v4), then
+node scripts/channel-keys.mjs record --identity ./identity.json --sig 0x&lt;signature&gt;
+# prints the record and the putFile transaction that publishes it</code></pre></div>
+<p>（先用持有者的钱包签署打印出的类型化数据：<code>eth_signTypedData_v4</code>；第二条命令会打印出记录，以及发布该记录的 <code>putFile</code> 交易。）</p>
+<p><code>identity.json</code> 保存私密材料（文件权限 600）。已发布的记录和交易中都不包含它们。</p>
+<h2 id="2-代码中的握手"><a class="anchor" href="#2-代码中的握手" aria-hidden="true">#</a>2. 代码中的握手</h2>
+<p>密码学核心与传输无关：</p>
+<div class="code"><pre data-lang="js"><code>import { channel } from '@tapeapi/sdk'
+
+// A（发起方）：一份给 B 的邀请，以及一个待完成句柄
+const { invite, pending } = channel.createInvite({
+  self: { container: A, chainId: 56, staticSecret: aKeys.secretKey },
+  peer: { container: B, chainId: 56, staticPublic: bKeys.publicKey },
+  relays: [{ url: 'https://relay.example/tapeapi/v1', container: '0x&lt;relay container&gt;' }],
+})
+
+// B（响应方）：接受，并得到一个 B 已经可以发送的会话
+const { accept, session: bob } = channel.acceptInvite({
+  self: { container: B, chainId: 56, staticSecret: bKeys.secretKey },
+  peer: { container: A, chainId: 56, staticPublic: aKeys.publicKey },
+  invite,
+})
+
+// A：完成握手，并得到一条发给 B 的就绪消息
+const { ready, session: alice } = channel.completeInvite(pending, accept)
+bob.confirm(ready)
+
+const frame = alice.seal('hello')                     // 待承载的字节
+bob.open(frame, { text: true }).data                 // 'hello'</code></pre></div>
+<p>在真实应用中，对方的公钥来自其已发布的记录（<code>api.chain.channelKeys(container)</code>），而邀请、接受和就绪消息经由某个传输传递。</p>
+<h2 id="3-选择传输"><a class="anchor" href="#3-选择传输" aria-hidden="true">#</a>3. 选择传输</h2>
+<div class="table"><table><thead><tr><th>传输</th><th>适用场景</th><th>API</th></tr></thead><tbody><tr><td><strong>中继</strong>（默认）</td><td>低延迟，无 gas。中继是一个普通的 TapeAPI 服务，按房间存储密文。</td><td><code>channel.relayTransport({ api, svc, inbound, outbound })</code></td></tr><tr><td><strong>ChannelBus</strong></td><td>没有需要信任或维持运行的服务器；每条消息都是一笔交易（约 50,000 gas）。</td><td><code>channel.busTransport({ rpc, bus: MAINNET.channelBus, inbound, outbound, sendTx })</code></td></tr><tr><td><strong>同时使用多个</strong></td><td>响应方可以在邀请所列的任一传输上作答，因此要在所有传输上监听。</td><td><code>channel.fanIn([t1, t2])</code></td></tr></tbody></table></div>
+<p>运行中继：<a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/relay-service" rel="noopener"><code>examples/relay-service/</code></a>（Node）或 <a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/cloudflare-worker" rel="noopener"><code>examples/cloudflare-worker/</code></a>（每个房间一个 Durable Object）。用 <code>node conformance/relay.mjs --url &lt;relay&gt;</code> 检查任意中继。</p>
+<h2 id="4-可靠地读取链"><a class="anchor" href="#4-可靠地读取链" aria-hidden="true">#</a>4. 可靠地读取链</h2>
+<p>ChannelBus 消息是事件，而公共 BNB Chain 节点只保留部分历史，会限制单次回答所含的结果数量，有时还会出错。读取器（<code>busTransport</code>，多房间时用 <code>busReader</code>）建立在一条规则之上：<strong>宁可停住，绝不跳过</strong>。当没有任何节点能为某个区块作证时，游标就停在那里；只有当每个节点都对该区块给出了免责回答时，游标才越过它，并且会告诉你。</p>
+<div class="table"><table><thead><tr><th>消息（发给 <code>warn</code>，或作为停住的那次轮询的错误）</th><th>含义</th><th>应对</th></tr></thead><tbody><tr><td><code>the cursor has held for N polls at blocks X..Y</code></td><td>还没有节点回答这些区块，而某个节点可能仍保留着它们。</td><td>通常会自行恢复。如果某个节点已永久下线，移除它；如果它只是慢，调大 <code>budgetMs</code>。</td></tr><tr><td><code>RPC_UNAVAILABLE: eth_getLogs: no node serves logs</code></td><td>每个节点都以区块太旧为由拒绝了这些区块。</td><td>读取器的起点早于节点所保留的历史（publicnode 约保留 10,000 个区块）。从更新的 <code>fromBlock</code> 开始，或添加一个保留更多历史的节点。</td></tr><tr><td><code>block N is too old for &lt;node&gt;, so it was read from &lt;others&gt; alone</code></td><td>某个节点已不再保留该区块；其它节点代为作答。</td><td>无需处理；帧已送达。</td></tr><tr><td><code>block N holds more logs than &lt;node&gt; returns ...</code> / <code>was read only from the receipts of ...</code></td><td>对某个节点来说过满的区块，改从其它节点读取，或从它们的区块回执中读取。</td><td>有人用垃圾帧塞满了一个区块；你的帧仍然送达，但只由较少的节点作证。</td></tr><tr><td><code>&lt;node&gt; has not served for N polls, so blocks from X on are passed without it</code></td><td>一个停止作答的节点不再被等待，因此死节点无法让通道停摆。</td><td>替换或移除该节点。</td></tr></tbody></table></div>
+<p>默认节点集（publicnode 加两个 BNB Chain dataseed 节点）正是读取器测试所针对的节点集，测试中也包括这些节点的录制回答。</p>
+<h2 id="5-限制"><a class="anchor" href="#5-限制" aria-hidden="true">#</a>5. 限制</h2>
+<ul><li>一帧最多承载 16 KiB 明文；一份邀请最多存活一小时。</li><li>中继能看到房间名、大小和时间，永远看不到内容或身份。ChannelBus 会把这些元数据永久公开。</li><li>在单个方向达到 2^32 帧之前很早就应重新握手（SDK 拒绝超出这一上限）。</li></ul>
+</article>
+<nav class="pn"><a class="prev" href="provide.html"><span>上一篇</span>运行服务</a><a class="next" href="agents.html"><span>下一篇</span>AI 智能体</a></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/channels.md" rel="noopener">在 GitHub 上编辑此页</a></p>
+</main>
+<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#工作原理">工作原理</a></li><li class="l2"><a href="#1-发布容器的通道密钥">1. 发布容器的通道密钥</a></li><li class="l2"><a href="#2-代码中的握手">2. 代码中的握手</a></li><li class="l2"><a href="#3-选择传输">3. 选择传输</a></li><li class="l2"><a href="#4-可靠地读取链">4. 可靠地读取链</a></li><li class="l2"><a href="#5-限制">5. 限制</a></li></ul></aside>
+</div>
+</body>
+</html>

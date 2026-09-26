@@ -6,7 +6,7 @@ chain, and containers can talk to each other over end-to-end encrypted channels.
 TapeAPI is the service and communication layer of the [TapeOut](https://tapeout.net) ecosystem on BNB Chain. In that
 ecosystem, DeWEB is websites, TapeSend is messaging, and **TapeAPI is services**.
 
-[中文说明](README.zh-CN.md) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Website](https://tapeapi.fun) · [Changelog](CHANGELOG.md)
+[中文说明](README.zh-CN.md) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Docs](https://tapeapi.fun/docs/) · [Website](https://tapeapi.fun) · [Changelog](CHANGELOG.md)
 
 > **Status: pre-alpha (v0.1.0).** The free tier needs no contract of ours and runs on TapeOut's deployed contracts.
 > Our own contracts (the paid-call escrow, the service directory, ChannelBus) are **not audited by a third party**;

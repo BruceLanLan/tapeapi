@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Changelog · TapeAPI Docs</title>
+<meta name="description" content="All notable changes to this project are listed here. The format follows Keep a Changelog , and versions follow Semantic Versioning . Before 1.0.0, a minor versi">
+<link rel="stylesheet" href="../docs.css">
+<link rel="alternate" hreflang="zh-CN" href="../zh/changelog.html">
+<script src="../docs.js"></script>
+</head>
+<body data-page="changelog" data-other="../zh/changelog.html" data-l-copy="Copy" data-l-copied="Copied" data-l-none="No results" data-l-light="Light" data-l-dark="Dark" data-l-theme="Theme">
+<header class="top">
+  <button class="ctl menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+  <a class="brand" href="/">TAPEAPI</a><a class="section" href="index.html">Docs</a>
+  <div class="search"><input id="q" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <span class="sp"></span>
+  <a class="ctl" href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a>
+  <button class="ctl" id="lang-btn" type="button" lang="zh-CN">中文</button>
+  <button class="ctl" id="theme-btn" type="button">Theme</button>
+</header>
+<div class="layout">
+<nav class="side" id="side" aria-label="Docs"><div class="group"><p class="gtitle">Getting started</p><ul><li><a href="index.html">Introduction</a></li><li><a href="consume.html">Call a service</a></li><li><a href="provide.html">Run a service</a></li></ul></div><div class="group"><p class="gtitle">Features</p><ul><li><a href="channels.html">Private channels</a></li><li><a href="agents.html">AI agents</a></li></ul></div><div class="group"><p class="gtitle">Help</p><ul><li><a href="faq.html">FAQ and troubleshooting</a></li><li><a href="changelog.html" aria-current="page">Changelog</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="changelog">Changelog</h1>
+<p>All notable changes to this project are listed here. The format follows <a href="https://keepachangelog.com/en/1.1.0/" rel="noopener">Keep a Changelog</a>, and versions follow <a href="https://semver.org/" rel="noopener">Semantic Versioning</a>. Before 1.0.0, a minor version may change interfaces.</p>
+<h2 id="unreleased"><a class="anchor" href="#unreleased" aria-hidden="true">#</a>[Unreleased]</h2>
+<h3 id="added"><a class="anchor" href="#added" aria-hidden="true">#</a>Added</h3>
+<ul><li>ChannelBus deployed on BNB Chain at <code>0x486110c35d9b90a9d6D85c8063A065f9e7b6b707</code> (code byte-for-byte the tested build); <code>MAINNET.channelBus</code> in the SDK. A test message was read back through public nodes, and the deployment is recorded for a replay test.</li></ul>
+<h2 id="010-2026-09-26"><a class="anchor" href="#010-2026-09-26" aria-hidden="true">#</a>[0.1.0] — 2026-09-26</h2>
+<p>First public release. Pre-alpha: the free tier runs on TapeOut's deployed contracts; our own contracts have no third-party audit.</p>
+<h3 id="protocol-proposed-taps-bilingual-english-authoritative"><a class="anchor" href="#protocol-proposed-taps-bilingual-english-authoritative" aria-hidden="true">#</a>Protocol (proposed TAPs, bilingual, English authoritative)</h3>
+<ul><li><strong>TAP-20</strong> service identity: a service is a circuit, its container is the address, the manifest lives at <code>.well-known/tapeapi.json</code> in the container's site, and the holder authorises a signing key with an EIP-712 delegation checked against the current holder.</li><li><strong>TAP-21</strong> signed response envelope with the <code>TAPI-1/resp/v2</code> digest, bound to the container, the request id, the method and parameters, the outcome and the timestamp; canonical JSON; stable error codes.</li><li><strong>TAP-22</strong> metered payment: cumulative vouchers, per-provider escrow channels, session keys, a withdrawal cooldown, zero protocol fee and an optional voluntary contribution.</li><li><strong>TAP-23</strong> attested reads of other chains, <strong>TAP-24</strong> intent RFQ (frozen), <strong>TAP-25</strong> circuit-verified methods.</li><li><strong>TAP-26</strong> private channels between containers (mutual authentication, forward secrecy, ChaCha20-Poly1305) over relays or ChannelBus; <strong>TAP-27</strong> private groups of up to 32 containers.</li></ul>
+<h3 id="sdk-tapeapisdk"><a class="anchor" href="#sdk-tapeapisdk" aria-hidden="true">#</a>SDK (<code>@tapeapi/sdk</code>)</h3>
+<ul><li>Resolution from a container or a circuit, with manifest integrity, delegation and processor checks through a quorum of RPC nodes that must agree.</li><li><code>call</code> with envelope verification and price consent; <code>callQuorum</code> across independent providers pinned to one block.</li><li>Vouchers signed by a wallet or a session key, with meter resynchronisation.</li><li>Channels and groups; relay, ChannelBus and fan-in transports.</li><li>A ChannelBus reader that holds rather than skips: it copes with public nodes' history limits, result caps, empty or lagging answers and failures, reads over-full blocks from receipts, and reports every block it cannot read.</li><li><code>exposeTapeAPI</code>: WebMCP tools for in-browser AI agents, with per-call and total budgets for paid methods.</li></ul>
+<h3 id="provider-runtime-tapeapiserver"><a class="anchor" href="#provider-runtime-tapeapiserver" aria-hidden="true">#</a>Provider runtime (<code>@tapeapi/server</code>)</h3>
+<ul><li><code>createProvider</code> for Node (<code>listen</code>) and the Fetch API (<code>handleRequest</code>, Cloudflare Workers).</li><li>Signed answers and errors, voucher checks, per-consumer metering (shared D1 meter on Workers), rate limits.</li></ul>
+<h3 id="contracts"><a class="anchor" href="#contracts" aria-hidden="true">#</a>Contracts</h3>
+<ul><li><code>ChannelBus</code>: stateless, ownerless event bus for channel frames.</li><li><code>TapeAPIEscrow</code> and <code>ServiceDirectory</code> (not deployed).</li></ul>
+<h3 id="tooling"><a class="anchor" href="#tooling" aria-hidden="true">#</a>Tooling</h3>
+<ul><li>Examples: minimal reader, Web2 adapter, DeFi reads, attested cross-chain reads, relay service, Cloudflare Worker, WebMCP demo.</li><li>A black-box conformance suite for providers and relays.</li><li>The holder console at <a href="https://tapeapi.fun/console/" rel="noopener">tapeapi.fun/console</a>: go live, publish the manifest and deploy ChannelBus from a phone wallet.</li><li>Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.</li></ul>
+<p>[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.1.0...HEAD [0.1.0]: https://github.com/BruceLanLan/tapeapi/releases/tag/v0.1.0</p>
+</article>
+<nav class="pn"><a class="prev" href="faq.html"><span>Previous</span>FAQ and troubleshooting</a><span></span></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md" rel="noopener">Edit this page on GitHub</a></p>
+</main>
+<aside class="toc"><p class="gtitle">On this page</p><ul><li class="l2"><a href="#unreleased">[Unreleased]</a></li><li class="l3"><a href="#added">Added</a></li><li class="l2"><a href="#010-2026-09-26">[0.1.0] — 2026-09-26</a></li><li class="l3"><a href="#protocol-proposed-taps-bilingual-english-authoritative">Protocol (proposed TAPs, bilingual, English authoritative)</a></li><li class="l3"><a href="#sdk-tapeapisdk">SDK (<code>@tapeapi/sdk</code>)</a></li><li class="l3"><a href="#provider-runtime-tapeapiserver">Provider runtime (<code>@tapeapi/server</code>)</a></li><li class="l3"><a href="#contracts">Contracts</a></li><li class="l3"><a href="#tooling">Tooling</a></li></ul></aside>
+</div>
+</body>
+</html>

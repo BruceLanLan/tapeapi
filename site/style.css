@@ -131,6 +131,17 @@ button.ctl {
 }
 button.ctl:hover { color: var(--ink); border-color: var(--ink-3); }
 button.ctl:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+a.ctl {
+  font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--amber-ink); border: 1px solid var(--amber); padding: 6px 12px; text-decoration: none; line-height: normal;
+}
+a.ctl:hover { background: var(--amber-well); }
+a.ctl:focus-visible, a.doclink:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+a.doclink {
+  font-family: "IBM Plex Mono", monospace; font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--amber-ink); text-decoration: none; border-bottom: 1px solid var(--amber); padding-bottom: 1px;
+}
+a.doclink:hover { color: var(--amber); }
 
 /* ── sections ────────────────────────────────────────────── */
 section { padding-block: 54px 0; }

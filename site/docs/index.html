@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TapeAPI Docs</title>
+<script>
+// Pick the reader's language: the site's remembered choice, else the browser's. / 选语言：站点记住的选择，否则浏览器语言。
+(function () {
+  var l = null
+  try { l = localStorage.getItem('tapeapi.lang') } catch (e) {}
+  if (l !== 'zh' && l !== 'en') l = /^zh/i.test((navigator.languages && navigator.languages[0]) || navigator.language || '') ? 'zh' : 'en'
+  location.replace(l + '/')
+})()
+</script>
+</head>
+<body>
+<p><a href="en/">TapeAPI Docs (English)</a> · <a href="zh/">TapeAPI 手册（中文）</a></p>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FAQ and troubleshooting · TapeAPI Docs</title>
+<meta name="description" content="Do I need to deploy a contract to run a free service? No. Identity, the manifest and the delegation all use TapeOut's deployed contracts (DeWebHub, SiteRegistry">
+<link rel="stylesheet" href="../docs.css">
+<link rel="alternate" hreflang="zh-CN" href="../zh/faq.html">
+<script src="../docs.js"></script>
+</head>
+<body data-page="faq" data-other="../zh/faq.html" data-l-copy="Copy" data-l-copied="Copied" data-l-none="No results" data-l-light="Light" data-l-dark="Dark" data-l-theme="Theme">
+<header class="top">
+  <button class="ctl menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+  <a class="brand" href="/">TAPEAPI</a><a class="section" href="index.html">Docs</a>
+  <div class="search"><input id="q" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <span class="sp"></span>
+  <a class="ctl" href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a>
+  <button class="ctl" id="lang-btn" type="button" lang="zh-CN">中文</button>
+  <button class="ctl" id="theme-btn" type="button">Theme</button>
+</header>
+<div class="layout">
+<nav class="side" id="side" aria-label="Docs"><div class="group"><p class="gtitle">Getting started</p><ul><li><a href="index.html">Introduction</a></li><li><a href="consume.html">Call a service</a></li><li><a href="provide.html">Run a service</a></li></ul></div><div class="group"><p class="gtitle">Features</p><ul><li><a href="channels.html">Private channels</a></li><li><a href="agents.html">AI agents</a></li></ul></div><div class="group"><p class="gtitle">Help</p><ul><li><a href="faq.html" aria-current="page">FAQ and troubleshooting</a></li><li><a href="changelog.html">Changelog</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="faq-and-troubleshooting">FAQ and troubleshooting</h1>
+<h2 id="general"><a class="anchor" href="#general" aria-hidden="true">#</a>General</h2>
+<p><strong>Do I need to deploy a contract to run a free service?</strong> No. Identity, the manifest and the delegation all use TapeOut's deployed contracts (DeWebHub, SiteRegistry, the processor factory). Only paid services need the escrow, and on-chain channels need ChannelBus.</p>
+<p><strong>Does TapeAPI take a fee?</strong> No. There is no protocol fee and no operator fee switch. Each provider may choose a voluntary contribution to a maintenance treasury (default 0); calls work the same either way. See <a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/FEES.md" rel="noopener"><code>docs/FEES.md</code></a>.</p>
+<p><strong>What happens if I sell or transfer the circuit?</strong> The service goes with it: the container, its site and the right to sign delegations. The old holder's delegation stops being accepted, because clients check it against the current holder.</p>
+<p><strong>Which chain?</strong> BNB Smart Chain (chainId 56), where TapeOut lives.</p>
+<h2 id="calling-services"><a class="anchor" href="#calling-services" aria-hidden="true">#</a>Calling services</h2>
+<p><strong><code>MANIFEST_INVALID: ... does not match</code></strong> — the file in the container's site differs from its on-chain hash, or there is no manifest. The service is not correctly published.</p>
+<p><strong><code>DELEGATION_INVALID</code></strong> — the delegation expired, or the circuit changed hands since it was signed. The provider has to sign a new one and publish the manifest again.</p>
+<p><strong><code>RPC_UNAVAILABLE: only 1/2 nodes answered</code></strong> — use at least three RPC URLs with <code>quorum: 2</code>, so one node down still leaves a quorum. <code>allowSingleNode: true</code> exists for local development only.</p>
+<p><strong><code>RPC_DISAGREE</code></strong> — nodes returned different bytes for the same read. The SDK retries once; if it persists, one node is behind or misbehaving.</p>
+<p><strong>The answer's <code>ts</code> is rejected</strong> — your clock, or the service's, is more than 300 s off. Fix the clock; the window (<code>maxSkewS</code>) protects against replayed answers.</p>
+<h2 id="running-services"><a class="anchor" href="#running-services" aria-hidden="true">#</a>Running services</h2>
+<p><strong>The console says the service reports a different key than the one generated here.</strong> The service's <code>SIGNER_KEY</code> is not the key generated on that page (pasted twice, an old key, or the wrong service URL). Paste the key from step 5 again and wait for the redeploy.</p>
+<p><strong>The console refuses to publish: &quot;unexpected field&quot; / &quot;expected ...&quot;.</strong> The manifest the service serves differs from what you read and signed. Usually a variable has not taken effect yet; wait a minute and retry.</p>
+<p><strong><code>putFile</code> reverts with <code>NotOwner</code>.</strong> The container is not opened, or the wallet is not the circuit's holder. Open the container on the circuit's page (0.012 BNB).</p>
+<p><strong>My wallet swaps BNB into WBNB.</strong> Gas is paid only in native BNB. Keep a little native BNB in the holder's wallet.</p>
+<h2 id="on-chain-channels"><a class="anchor" href="#on-chain-channels" aria-hidden="true">#</a>On-chain channels</h2>
+<p><strong>The reader fails with <code>no node serves logs</code>.</strong> It started further back than the nodes keep history (publicnode: about 10,000 blocks). Frames in that range cannot be read from those nodes; start from a newer block or add an archive node.</p>
+<p><strong>The reader holds for a long time.</strong> A node is failing on the blocks the cursor is at. Holding is deliberate: a frame is never skipped while some node may still have it. After <code>SERVED_DECAY</code> (20) polls without an answer, the node is no longer waited for and you are told.</p>
+<p><strong>Are my messages private on ChannelBus?</strong> The content is end-to-end encrypted. The room, the size and the time of each message are public for ever.</p>
+<h2 id="getting-help"><a class="anchor" href="#getting-help" aria-hidden="true">#</a>Getting help</h2>
+<p>Open an issue on GitHub for bugs and questions. For security problems, follow <a href="https://github.com/BruceLanLan/tapeapi/blob/main/SECURITY.md" rel="noopener">SECURITY.md</a> and do not open a public issue.</p>
+</article>
+<nav class="pn"><a class="prev" href="agents.html"><span>Previous</span>AI agents</a><a class="next" href="changelog.html"><span>Next</span>Changelog</a></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/faq.md" rel="noopener">Edit this page on GitHub</a></p>
+</main>
+<aside class="toc"><p class="gtitle">On this page</p><ul><li class="l2"><a href="#general">General</a></li><li class="l2"><a href="#calling-services">Calling services</a></li><li class="l2"><a href="#running-services">Running services</a></li><li class="l2"><a href="#on-chain-channels">On-chain channels</a></li><li class="l2"><a href="#getting-help">Getting help</a></li></ul></aside>
+</div>
+</body>
+</html>
