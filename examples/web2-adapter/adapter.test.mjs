@@ -126,5 +126,6 @@ test('FIXED H-HOSTED-4: no redirects, a capped body and no private address behin
   assert.equal(fetched, 0, 'nothing was fetched from a name that resolves privately')
   assert.deepEqual(await makeHandler('x', at, { fetch: counting, policy: HOSTED_POLICY, resolve: async () => ['93.184.216.34'] })({}), { ok: 1 })
   for (const ip of ['10.1.2.3', '127.0.0.1', '169.254.169.254', '172.20.0.1', '192.168.1.1', '100.64.0.1', '0.0.0.0', '224.0.0.1', '::1', 'fd12::1', 'fe80::1', '::ffff:10.0.0.1', 'nonsense']) assert.ok(isPrivateIp(ip), ip)
-  for (const ip of ['93.184.216.34', '1.1.1.1', '2606:4700:4700::1111', '172.32.0.1']) assert.ok(!isPrivateIp(ip), ip)
+  for (const ip of ['::7f00:1', '::127.0.0.1', '2002:7f00:1::', '2001:0:4136::1', '100::1', '64:ff9b::a00:1', '2001:db8::1', '::', '1:2:3:4:5:6:7:8:9', 'zz::1', '::ffff:127.0.0.1']) assert.ok(isPrivateIp(ip), ip)
+  for (const ip of ['93.184.216.34', '1.1.1.1', '2606:4700:4700::1111', '172.32.0.1', '2a00:1450:4001:80b::200e']) assert.ok(!isPrivateIp(ip), ip)
 })

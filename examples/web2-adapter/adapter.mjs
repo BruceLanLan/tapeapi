@@ -65,7 +65,30 @@ export function isPrivateIp(ip) {
       (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 192 && b === 0) || (a === 198 && (b === 18 || b === 19))
   }
   if (!s.includes(':')) return true   // not an address at all: refuse / 根本不是地址：拒绝
-  return s === '::' || s === '::1' || /^f[cd]/.test(s) || /^fe[89ab]/.test(s) || /^ff/.test(s) || s.startsWith('64:ff9b:') || s.startsWith('2001:db8')
+  const v6 = expandV6(s)
+  if (!v6) return true
+  const [a, b] = v6
+  // Only global unicast 2000::/3 is public, minus the ranges that embed or tunnel to an IPv4 address or are reserved:
+  // 2001::/32 Teredo, 2001:db8::/32 docs, 2002::/16 6to4, 2001:10::/28 ORCHID. Everything else (::/8 incl. ::1 and
+  // IPv4-compatible ::a.b.c.d, 64:ff9b::/96, 100::/64, fc00::/7, fe80::/10, ff00::/8) is refused.
+  // 只有全局单播 2000::/3 是公网，再去掉嵌入或隧道到 IPv4、或保留的段；其余一律拒绝。
+  if ((a & 0xe000) !== 0x2000) return true
+  return (a === 0x2001 && (b === 0 || b === 0xdb8 || (b & 0xfff0) === 0x10)) || a === 0x2002
+}
+// '2001:db8::1' -> eight 16-bit numbers, or null. / 展开成八个 16 位数，失败返回 null。
+function expandV6(s) {
+  if (s.includes('.')) {   // trailing dotted IPv4 / 结尾是点分 IPv4
+    const m = s.match(/^(.*:)(\d+)\.(\d+)\.(\d+)\.(\d+)$/); if (!m) return null
+    const q = m.slice(2).map(Number); if (q.some((x) => x > 255)) return null
+    s = m[1] + ((q[0] << 8) | q[1]).toString(16) + ':' + ((q[2] << 8) | q[3]).toString(16)
+  }
+  const halves = s.split('::'); if (halves.length > 2) return null
+  const part = (h) => (h ? h.split(':') : [])
+  const head = part(halves[0]), tail = halves.length === 2 ? part(halves[1]) : []
+  const fill = halves.length === 2 ? 8 - head.length - tail.length : 0
+  const all = [...head, ...Array(fill).fill('0'), ...tail]
+  if (all.length !== 8 || all.some((x) => !/^[0-9a-f]{1,4}$/.test(x))) return null
+  return all.map((x) => parseInt(x, 16))
 }
 
 // Read a response body up to a byte cap; a larger body is an upstream error, never a memory spike on a shared isolate.
