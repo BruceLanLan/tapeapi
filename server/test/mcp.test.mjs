@@ -111,3 +111,11 @@ test('transport: GET is 405, OPTIONS is CORS, bad JSON is a parse error, batches
 test('a manifest with no free method cannot become an MCP endpoint', () => {
   assert.throws(() => createMcpEndpoint({ provider, manifest: { ...manifest, methods: [{ name: 'p', priceBEM: '1', params: {}, returns: {} }] } }), /no tool/)
 })
+
+test('onMessage sees every message (for counting callers) and cannot break a call', async () => {
+  const seen = []
+  const ep2 = createMcpEndpoint({ provider, manifest, onMessage: (m) => { seen.push(m); throw new Error('counter down') } })
+  const r = await ep2.handle(new Request('https://echo.example/mcp', { method: 'POST', body: JSON.stringify([{ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'echo', arguments: { text: 'a' } } }]) }), { clientIp: '4.4.4.4' })
+  assert.equal(r.status, 200)
+  assert.deepEqual(seen, [{ method: 'tools/list', tool: undefined, clientIp: '4.4.4.4' }, { method: 'tools/call', tool: 'echo', clientIp: '4.4.4.4' }])
+})

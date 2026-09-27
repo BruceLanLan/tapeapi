@@ -51,3 +51,10 @@ export declare function toBase64Url(text: string): string
 export declare function fromBase64Url(s: string): string
 export declare function verifyLink(receipt: Receipt, base?: string): string
 export declare function toolResultOf(o: { receipt: Receipt; checkedBy: 'client' | 'service'; signer?: string; link?: string }): CallToolResult
+
+/** The MCP tool fields that are hashed. */
+export declare const TOOL_DIGEST_FIELDS: readonly string[]
+/** Those fields only, sorted by name. */
+export declare function normalizeTools(tools: McpTool[]): Record<string, unknown>[]
+/** sha256 hex of the canonical JSON of normalizeTools(tools). */
+export declare function toolsDigest(tools: McpTool[]): string

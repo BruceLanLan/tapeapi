@@ -27,9 +27,11 @@ const rpcFail = (status, code, message) => reply(status, { jsonrpc: '2.0', id: n
  * @param {object} o.manifest   the manifest the provider serves / provider 提供的清单
  * @param {{ name?: string }} [o.identity]  the TapeOut name to show, e.g. '11.1013.tape' / 展示用的 TapeOut 名称
  * @param {string} [o.version]  serverInfo.version
+ * @param {(m: { method: string, tool?: string, clientIp?: string }) => void} [o.onMessage]  called for every JSON-RPC
+ *        message, for usage counting; errors in it are ignored / 每条 JSON-RPC 消息都会调用，用于用量统计；其中的错误被忽略
  * @returns {{ handle(request: Request, ctx?: { clientIp?: string }): Promise<Response>, tools: object[] }}
  */
-export function createMcpEndpoint({ provider, manifest, identity = {}, version = '0' }) {
+export function createMcpEndpoint({ provider, manifest, identity = {}, version = '0', onMessage }) {
   // This server signs its answers; it does not check them for the caller. The tool text says so.
   // 本服务器只签名，不替调用方核验。工具说明如实这么写。
   const trust = "The result is signed by the service's on-chain delegated key and carries a receipt; anyone can verify it against the chain (link in the result)."
@@ -77,6 +79,8 @@ export function createMcpEndpoint({ provider, manifest, identity = {}, version =
     let msg
     try { msg = JSON.parse(text) } catch { return rpcFail(400, mcp.JSONRPC.PARSE, 'parse error') }
     const server = serverFor(ctx.clientIp)
+    const note = (m) => { try { if (onMessage && m && typeof m.method === 'string') onMessage({ method: m.method, tool: m.method === 'tools/call' && typeof m.params?.name === 'string' ? m.params.name : undefined, clientIp: ctx.clientIp }) } catch { /* counting never breaks a call / 统计绝不影响调用 */ } }
+    for (const m of Array.isArray(msg) ? msg : [msg]) note(m)
     if (Array.isArray(msg)) {
       if (!msg.length || msg.length > BATCH_MAX) return rpcFail(400, mcp.JSONRPC.INVALID_REQUEST, `a batch holds 1 to ${BATCH_MAX} messages`)
       const out = (await Promise.all(msg.map((m) => server.handle(m)))).filter(Boolean)

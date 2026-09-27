@@ -9,4 +9,6 @@ export declare function createMcpEndpoint(o: {
   manifest: Manifest
   identity?: { name?: string }
   version?: string
+  /** Called for every JSON-RPC message (usage counting); errors in it are ignored. */
+  onMessage?: (m: { method: string; tool?: string; clientIp?: string }) => void
 }): { handle(request: Request, ctx?: { clientIp?: string }): Promise<Response>; tools: McpTool[] }

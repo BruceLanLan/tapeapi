@@ -52,6 +52,18 @@ export function build(env) {
   })
 }
 
+// One log line per MCP message, for counting distinct callers (Workers observability). The caller is a hash of IP and
+// UTC day: never the IP itself, and unlinkable across days. / 每条 MCP 消息一行日志，用于统计不同调用方。调用方是 IP 与
+// UTC 日期的哈希：从不记录 IP 本身，且跨天无法关联。
+async function callerTag(ip) {
+  const day = new Date().toISOString().slice(0, 10)
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${ip || '-'}|${day}|tapeapi-mcp`)))
+  return Array.from(d.slice(0, 6), (b) => b.toString(16).padStart(2, '0')).join('')
+}
+function logMcp({ method, tool, clientIp }) {
+  callerTag(clientIp).then((caller) => console.log(JSON.stringify({ evt: 'mcp', method, tool, caller })), () => {})
+}
+
 let provider = null, mcpEndpoint = null
 export default {
   async fetch(request, env) {
@@ -63,7 +75,7 @@ export default {
     // /mcp: the same methods as MCP tools (remote MCP, Streamable HTTP). Not in the manifest, so adding it changed
     // nothing on chain. / /mcp：同样的方法作为 MCP 工具（远程 MCP）。不在清单里，所以加它不改链上任何东西。
     if (new URL(request.url).pathname.replace(/\/+$/, '') === MCP_PATH) {
-      mcpEndpoint ??= createMcpEndpoint({ provider, manifest: provider.manifest ?? manifestOf(env), identity: { name: env.TAPE_NAME || undefined }, version: VERSION })
+      mcpEndpoint ??= createMcpEndpoint({ provider, manifest: provider.manifest ?? manifestOf(env), identity: { name: env.TAPE_NAME || undefined }, version: VERSION, onMessage: logMcp })
       return mcpEndpoint.handle(request, { clientIp })
     }
     return provider.handleRequest(request, { clientIp })

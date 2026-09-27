@@ -8,6 +8,9 @@
 // Only leaf modules are imported, no node: imports: this file runs in Workers, browsers and Node.
 // 只引用叶子模块、不引用 node:，可在 Workers、浏览器与 Node 中运行。
 import { TapeAPIError } from './errors.js'
+import { canonicalJSON } from './canon.js'
+import { sha256 } from '@noble/hashes/sha256'
+import { bytesToHex } from '@noble/hashes/utils'
 
 // Newest first. The server answers with the client's version when it knows it, else with its newest (MCP lifecycle).
 // 新的在前。认识客户端的版本就用它，否则用自己最新的（MCP 生命周期约定）。
@@ -144,4 +147,35 @@ export function toolResultOf({ receipt, checkedBy, signer, link = verifyLink(rec
   const out = { content: [{ type: 'text', text: JSON.stringify(receipt.result) }, { type: 'text', text: note }], isError: false, _meta: { [RECEIPT_META_KEY]: receipt } }
   if (isObj(receipt.result)) out.structuredContent = receipt.result
   return out
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Tool-definition digest / 工具定义摘要
+// ---------------------------------------------------------------------------------------------------------------
+// The fields of an MCP tool that tell a model what the tool does and how to call it. A change to any of them is a
+// change to the tool (an MCP "rug pull" edits exactly these); anything else (icons, _meta) is left out.
+// MCP 工具里告诉模型"做什么、怎么调"的字段。任何一处变化都是工具的变化（MCP "rug pull" 改的正是这些）；其余（图标、_meta）不计。
+export const TOOL_DIGEST_FIELDS = Object.freeze(['name', 'title', 'description', 'inputSchema', 'outputSchema', 'annotations'])
+
+/** The tools as they are hashed: those fields only, sorted by name; a repeated name is refused. / 参与哈希的形式。 */
+export function normalizeTools(tools) {
+  if (!Array.isArray(tools)) throw new TapeAPIError('BAD_REQUEST', 'tools must be an array')
+  const seen = new Set()
+  const out = tools.map((t) => {
+    if (!isObj(t) || typeof t.name !== 'string' || !t.name) throw new TapeAPIError('BAD_REQUEST', 'every tool needs a name')
+    if (seen.has(t.name)) throw new TapeAPIError('BAD_REQUEST', `tool ${t.name.slice(0, 64)} appears twice`)
+    seen.add(t.name)
+    return Object.fromEntries(TOOL_DIGEST_FIELDS.filter((k) => t[k] !== undefined).map((k) => [k, t[k]]))
+  })
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+}
+
+/**
+ * sha256 (hex, no 0x) of the canonical JSON (RFC 8785) of normalizeTools(tools). A manifest's `mcp.toolsSha256` pins
+ * it on chain: a client compares it with the tools/list it receives and refuses a difference.
+ * normalizeTools(tools) 规范 JSON 的 sha256（十六进制、无 0x）。清单的 mcp.toolsSha256 把它钉在链上：客户端比对收到的
+ * tools/list，不一致就拒绝。
+ */
+export function toolsDigest(tools) {
+  return bytesToHex(sha256(new TextEncoder().encode(canonicalJSON(normalizeTools(tools)))))
 }

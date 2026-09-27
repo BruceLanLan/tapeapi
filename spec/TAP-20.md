@@ -79,6 +79,7 @@ TapeAPI closes this gap without changing the protocol: identity is the existing 
 | `endpoints.live` | string[] | MUST | Zero or more absolute `https://` URLs without query or fragment. Providers SHOULD list at most 4. |
 | `endpoints.async` | boolean | MUST | `true` means the service accepts requests via its TAP-10 (TapeSend) inbox addressed to `container`. At least one of `live` non-empty or `async == true` MUST hold. |
 | `methods` | array | MUST | Non-empty. Method names MUST be unique. |
+| `mcp` | object | MAY | The service's tools as an MCP server, pinned by digest; see §3.8. |
 | `payment` | object | MUST* | `{ "escrow": address, "unit": "BEM", "decimals": 8 }`. *REQUIRED if any `priceBEM != "0"`, and then `escrow` is a non-zero address (a zero escrow can settle nothing). `unit` and `decimals` carry no information, since both are fixed: either may be omitted and is then read as `"BEM"` and `8`; any other value is invalid. |
 
 Method descriptor:
@@ -154,6 +155,21 @@ A shell (preview or gateway) MAY expose a `tape.api` object to a site running un
 - A site that uses `tape.api` contains an off-chain reference and MUST NOT display the SPEC §8 "100% on-chain" badge.
 - A future Core TAP MAY define a "verified service" badge tier for sites whose only off-chain traffic is TAP-20/21 traffic with verified signatures. Such a tier is explicitly out of scope for this TAP and MUST NOT be inferred from it.
 - Per-origin isolation (§7) is unchanged: `tape.api` MUST NOT allow one site to observe another site's calls, grants, or vouchers.
+
+### 3.8 MCP Binding (`mcp`)
+
+A service whose methods are the tools of a Model Context Protocol (MCP) server MAY say so with an optional `mcp` object:
+
+```json
+"mcp": { "endpoint": "https://mcp.example.com/mcp", "toolsSha256": "<64 lowercase hex digits>" }
+```
+
+- `endpoint` MUST be an absolute `https://` URL without query or fragment, where the service answers MCP over Streamable HTTP.
+- `toolsSha256` MUST be the SHA-256, as 64 lowercase hex digits, of the RFC 8785 canonical JSON of the tool list: each tool reduced to the members `name`, `title`, `description`, `inputSchema`, `outputSchema` and `annotations` that it has, the list sorted by `name` in UTF-16 code-unit order, names unique.
+- A client that uses the MCP endpoint MUST compute that digest over the `tools/list` result it receives and MUST refuse the service's tools when the digest differs from `toolsSha256`. A client SHOULD pin the value and treat a later change as a change of the service that needs the user's consent.
+- A manifest method named after a tool MUST call that tool: `POST <live>/<name>` with the tool's arguments as `params`, and the TAP-21 `result` is the tool's MCP result without `_meta`. A tool error (`isError: true`) is still `ok: true`: the signature attests what the tool answered.
+- A provider whose upstream tool definitions no longer match `toolsSha256` MUST refuse every call with a signed error until the holder publishes a new manifest.
+- `toolsSha256` binds the definitions, not the behaviour: a server can still answer differently under the same definitions. Signed results make that attributable, not impossible.
 
 ## 4. Rationale
 
@@ -297,6 +313,7 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 | `endpoints.live` | string[] | MUST | 零个或多个不含 query 与 fragment 的绝对 `https://` URL。提供者 SHOULD 最多列出 4 个。 |
 | `endpoints.async` | boolean | MUST | `true` 表示服务接受经其 TAP-10（TapeSend）收件箱、以 `container` 为收件人的请求。`live` 非空或 `async == true` 至少 MUST 满足其一。 |
 | `methods` | array | MUST | 非空。方法名 MUST 唯一。 |
+| `mcp` | object | MAY | 服务作为 MCP 服务器提供的工具，以摘要钉住；见 §3.8。 |
 | `payment` | object | MUST* | `{ "escrow": address, "unit": "BEM", "decimals": 8 }`。*任一 `priceBEM != "0"` 时 REQUIRED，此时 `escrow` 为非零地址（零地址托管结算不了任何东西）。`unit` 与 `decimals` 都是固定值，不携带信息：二者均可省略，省略时按 `"BEM"` 与 `8` 读取；任何其它值无效。 |
 
 方法描述符：
@@ -371,6 +388,21 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 - 使用 `tape.api` 的站点含有链下引用，MUST NOT 展示 SPEC §8 的"100% 链上"徽章。
 - 未来的 Core TAP MAY 为"唯一链下流量是签名已验证的 TAP-20/21 流量"的站点定义"已验证服务"徽章等级。该等级明确不在本 TAP 范围内，且 MUST NOT 由本 TAP 推断得出。
 - 按源隔离（§7）不变：`tape.api` MUST NOT 允许一个站点观察另一站点的调用、授权或凭证。
+
+### 3.8 MCP 绑定（`mcp`）
+
+方法即某个 Model Context Protocol（MCP）服务器工具的服务，MAY 用可选的 `mcp` 对象声明这一点：
+
+```json
+"mcp": { "endpoint": "https://mcp.example.com/mcp", "toolsSha256": "<64 位小写十六进制>" }
+```
+
+- `endpoint` MUST 是不含 query 与 fragment 的绝对 `https://` URL，服务在此以 Streamable HTTP 应答 MCP。
+- `toolsSha256` MUST 是工具列表 RFC 8785 规范 JSON 的 SHA-256（64 位小写十六进制）：每个工具只保留它具有的 `name`、`title`、`description`、`inputSchema`、`outputSchema` 与 `annotations` 成员，列表按 `name` 的 UTF-16 码元顺序排序，名称唯一。
+- 使用 MCP 端点的客户端 MUST 对收到的 `tools/list` 结果计算该摘要，并在它与 `toolsSha256` 不同时 MUST 拒绝该服务的工具。客户端 SHOULD 钉住该值，把之后的变化视为需要用户同意的服务变更。
+- 以工具命名的清单方法 MUST 调用该工具：`POST <live>/<name>`，以工具参数作为 `params`，TAP-21 的 `result` 是该工具去掉 `_meta` 的 MCP 结果。工具错误（`isError: true`）仍是 `ok: true`：签名证明的是工具如何作答。
+- 上游工具定义不再与 `toolsSha256` 相符的提供者 MUST 以签名错误拒绝每次调用，直到持有者发布新的清单。
+- `toolsSha256` 约束的是定义而不是行为：同一套定义下服务器仍可能给出不同回答。签名结果让这种情况可以追责，而不是不可能发生。
 
 ## 4. 原理
 
