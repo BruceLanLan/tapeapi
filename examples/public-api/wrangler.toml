@@ -18,6 +18,8 @@ enabled = true
 
 [vars]
 SERVICE_NAME = "TapeAPI Public"
+# The TapeOut name the MCP endpoint shows in its receipts. / MCP 端点在回执里展示的 TapeOut 名称。
+TAPE_NAME = "11.1013.tape"
 PUBLIC_URL = "https://api.tapeapi.fun"
 RPC_URLS = "https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io"
 RPC_TIMEOUT_MS = "3000"

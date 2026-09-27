@@ -19,6 +19,7 @@ export * as channel from './channel.js'
 export * as group from './group.js'
 export * as tapesend from './tapesend.js'
 export * as webmcp from './webmcp.js'
+export * as mcp from './mcp.js'
 
 export declare const MAX_CONTRIBUTION_BPS: number
 export declare const RECOMMENDED_CONTRIBUTION_BPS: number

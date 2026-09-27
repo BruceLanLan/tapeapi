@@ -6,6 +6,15 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+### Added
+
+- **Remote MCP endpoint** `https://api.tapeapi.fun/mcp` (MCP Streamable HTTP, stateless): the eight public methods as MCP
+  tools for Claude, Cursor and any MCP client, added by URL with nothing to install. Every tool result is the service's
+  signed TAP-21 envelope and carries a receipt (`_meta["fun.tapeapi/receipt"]`) and a verification link.
+- `@tapeapi/sdk/mcp`: a transport-free MCP server core (`createMcpServer`), receipts (`receiptOf`, `verifyLink`) and
+  `toolResultOf`; `@tapeapi/server/mcp`: `createMcpEndpoint({ provider, manifest })` turns any provider into a remote MCP
+  server under the provider's own rate limits.
+
 ### Changed
 
 - The relay template (`examples/cloudflare-worker/wrangler-relay.toml`) no longer names the project's own Worker or

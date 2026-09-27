@@ -147,3 +147,19 @@ test('setup mode until the holder has signed; the served manifest once configure
   const h = await (await worker.fetch(new Request('https://api.tapeapi.fun/tapeapi/v1/health'), { SIGNER_KEY: '0x' + '22'.repeat(32), PUBLIC_URL: 'https://api.tapeapi.fun' })).json()
   assert.deepEqual([h.ok, h.setup], [false, true])
 })
+
+test('/mcp: once configured, the Worker answers MCP with the eight public methods as tools; in setup mode it does not', async () => {
+  const holder = '0x' + '11'.repeat(32), key = '0x' + '22'.repeat(32), expires = Math.floor(Date.now() / 1000) + 86400
+  const env = {
+    SIGNER_KEY: key, CIRCUITS: CIRCUITS, TOKEN_ID: '11', CONTAINER: CONTAINER, DELEGATION_EXPIRES: String(expires),
+    DELEGATION_SIG: signDigest(delegationDigest(56, MAINNET.hub, { container: CONTAINER, signer: privateKeyToAddress(key), expires }), holder),
+    PUBLIC_URL: 'https://api.tapeapi.fun', TAPE_NAME: '11.1013.tape', RPC_URLS: 'http://127.0.0.1:9,http://127.0.0.1:10',
+  }
+  const rpc = (body, e = env) => worker.fetch(new Request('https://api.tapeapi.fun/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }), e)
+  const init = await (await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } })).json()
+  assert.equal(init.result.serverInfo.name, 'tapeapi-11.1013.tape')
+  const list = await (await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).json()
+  assert.deepEqual(list.result.tools.map((t) => t.name), MANIFEST_METHODS.map((m) => m.name))
+  const setup = await rpc({ jsonrpc: '2.0', id: 3, method: 'tools/list' }, { SIGNER_KEY: key, PUBLIC_URL: 'https://api.tapeapi.fun' })
+  assert.notEqual(setup.status, 200)
+})

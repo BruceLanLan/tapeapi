@@ -11,6 +11,8 @@ import { sig } from '@tapeapi/sdk'
 import { setupAnswer } from '../cloudflare-worker/worker.js'
 import { createChainReader } from '../_lib/chain.mjs'
 import { MANIFEST_METHODS, publicMethods } from './methods.js'
+import { createMcpEndpoint, MCP_PATH } from '@tapeapi/server/mcp'
+import { VERSION } from '@tapeapi/server'
 
 const REQUIRED = ['CIRCUITS', 'TOKEN_ID', 'CONTAINER', 'DELEGATION_EXPIRES', 'DELEGATION_SIG', 'PUBLIC_URL']
 // Three operators. publicnode left the list on 2026-09-27 after timing out on every request. / 三家运营方；publicnode 因持续超时移出。
@@ -50,13 +52,20 @@ export function build(env) {
   })
 }
 
-let provider = null
+let provider = null, mcpEndpoint = null
 export default {
   async fetch(request, env) {
     // Values pasted on a phone often carry a trailing space or newline. / 手机上粘贴的值常带尾随空白。
     env = Object.fromEntries(Object.entries(env || {}).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]))
     if (!configured(env)) return setupAnswer(env, request)
     try { provider ??= build(env) } catch (e) { return setupAnswer(env, request, e.message) }
-    return provider.handleRequest(request, { clientIp: request.headers.get('cf-connecting-ip') || undefined })
+    const clientIp = request.headers.get('cf-connecting-ip') || undefined
+    // /mcp: the same methods as MCP tools (remote MCP, Streamable HTTP). Not in the manifest, so adding it changed
+    // nothing on chain. / /mcp：同样的方法作为 MCP 工具（远程 MCP）。不在清单里，所以加它不改链上任何东西。
+    if (new URL(request.url).pathname.replace(/\/+$/, '') === MCP_PATH) {
+      mcpEndpoint ??= createMcpEndpoint({ provider, manifest: provider.manifest ?? manifestOf(env), identity: { name: env.TAPE_NAME || undefined }, version: VERSION })
+      return mcpEndpoint.handle(request, { clientIp })
+    }
+    return provider.handleRequest(request, { clientIp })
   },
 }

@@ -21,6 +21,7 @@ import * as channelLib from './channel.js'
 export * as group from './group.js'        // TAP-27 private group channels / 私密群聊
 export * as tapesend from './tapesend.js' // TAP-10 sealed messages, byte-compatible with @tapekit/send / TapeSend 密封消息
 export * as webmcp from './webmcp.js'      // expose a service's methods as WebMCP agent tools / 把服务的方法注册为 WebMCP 代理工具
+export * as mcp from './mcp.js'            // MCP server core: tools with signed results and receipts / MCP 服务器核心：带签名结果与回执的工具
 
 // TAP-22 §3.4 贡献比例常量 / contribution constants (basis points).
 export const MAX_CONTRIBUTION_BPS = 5000          // contract hard cap / 合约硬上限

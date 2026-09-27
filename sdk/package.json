@@ -62,6 +62,10 @@
       "types": "./types/webmcp.d.ts",
       "default": "./src/webmcp.js"
     },
+    "./mcp": {
+      "types": "./types/mcp.d.ts",
+      "default": "./src/mcp.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
