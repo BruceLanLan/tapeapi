@@ -7,7 +7,7 @@
     "server"
   ],
   "scripts": {
-    "test": "node --test \"sdk/test/**/*.test.mjs\" \"server/test/**/*.test.mjs\" \"examples/**/*.test.mjs\" \"conformance/**/*.test.mjs\" \"scripts/*.test.mjs\"",
+    "test": "node scripts/test.mjs",
     "check:types": "npx --yes -p typescript@5.9.3 tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 --lib es2022,dom scripts/types-sample.ts",
     "compile": "node scripts/compile.mjs",
     "monitor": "node scripts/monitor.mjs",
