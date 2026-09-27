@@ -5,7 +5,7 @@
 // “我的服务”面板：只读查看自己运行的 TapeAPI 服务。每一项用真实 SDK（调试台 vendor/ 里的同一份）解析，再从浏览器
 // 直接请求它的健康检查。本页只向钱包发 eth_requestAccounts 取地址。清单、节点、提供者给出的一切只经 textContent 进入页面。
 import { createTapeAPI, TapeAPIError, abi } from '../playground/vendor/tapeapi-sdk/index.js'
-import { parseInput, classifyExpiry, healthUrl, sameAddress, loadList, saveList, addTo, removeFrom, PUBLIC_EXAMPLES, STORAGE_KEY } from './lib.js'
+import { parseInput, classifyExpiry, healthUrl, sameAddress, loadList, saveList, addTo, removeFrom, PUBLIC_EXAMPLES, STORAGE_KEY, HEALTH_PATH } from './lib.js'
 
 const RPC_URLS = ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io']
 const QUORUM = 2
@@ -258,6 +258,21 @@ function stateOf(r) {
   return 'ok'
 }
 
+// The console link for renewing this service: it prefills step 2 (processor and circuit numbers) and the service URL
+// of step 4; the console checks every value again and never reads or signs by itself. A container entry has no
+// processor number, so only what is known is passed. / 续期用的操作台链接：预填第 2 步（处理器与电路编号）和第 4 步的
+// 服务网址；操作台会重新检查每个值，也从不自行读取或签名。按容器添加的条目不知道处理器编号，只传已知的部分。
+function consoleLink(key, info) {
+  const q = new URLSearchParams()
+  const p = parseInput(key)
+  if (p?.kind === 'name') { q.set('processor', p.processor); q.set('circuit', p.id) }
+  else if (info?.tokenId && /^\d+$/.test(info.tokenId)) q.set('circuit', info.tokenId)
+  const health = healthUrl(info?.endpoint)
+  if (health) q.set('url', health.slice(0, -HEALTH_PATH.length))
+  const qs = q.toString()
+  return qs ? `../console/?${qs}` : '../console/'
+}
+
 function cardFor(key) {
   const r = results.get(key)
   const st = stateOf(r)
@@ -299,7 +314,7 @@ function cardFor(key) {
   }
   kids.push(el('div', { class: 'card-actions' },
     el('a', { class: 'ctl', href: `../playground/?q=${encodeURIComponent(key)}` }, t('playground')),
-    el('a', { class: 'ctl', href: '../console/' }, t('renew')),
+    el('a', { class: 'ctl', href: consoleLink(key, info) }, t('renew')),
     el('button', { class: 'ctl', type: 'button', disabled: !r || r.phase !== 'done', onclick: () => schedule(key) }, t('retry')),
     el('button', { class: 'ctl danger', type: 'button', onclick: () => doRemove(key) }, t('remove'))))
   return el('article', { class: 'card', 'data-state': st, 'data-key': key }, kids)

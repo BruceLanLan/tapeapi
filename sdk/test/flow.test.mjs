@@ -64,7 +64,7 @@ before(async () => {
 after(async () => { await provider.close() })
 
 test('resolve by label, container and {circuits,tokenId} verifies delegation against ownerOf', async () => {
-  for (const target of ['reader', ADDR.container, { circuits: ADDR.circuits, tokenId: '4246' }, '4246.7.tape', ' 4246.7.TAPE ']) {
+  for (const target of ['reader', ADDR.container, { circuits: ADDR.circuits, tokenId: '4246' }, '4246.7.tape', ' 4246.7.tape ']) {   // upper case is refused since SD-12 (TapeKit SPEC §2.2) / 大写自 SD-12 起拒绝
     const svc = await api.resolve(target)
     assert.equal(svc.container.toLowerCase(), ADDR.container)
     assert.deepEqual(svc.verified, { delegation: true, holder: holder })

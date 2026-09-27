@@ -25,9 +25,17 @@ export async function readJsonBounded(res, limit, { code = 'CANON_INVALID' } = {
     const all = new Uint8Array(n); let o = 0
     for (const c of chunks) { all.set(c, o); o += c.byteLength }
     text = new TextDecoder().decode(all)
+  } else if (typeof res.arrayBuffer === 'function') {
+    // No stream: the limit is still in BYTES, as on the stream path (TAP-21 §3.2; spec review SD-6).
+    // 没有流：上限仍按字节计，与流式路径相同。
+    const all = new Uint8Array(await res.arrayBuffer())
+    if (all.byteLength > limit) throw new TapeAPIError(code, `response body exceeds limit ${limit}`, { tooLarge: true })
+    text = new TextDecoder().decode(all)
   } else {
+    // String length counts UTF-16 units, which undercounts UTF-8 bytes up to 3x: measure the encoded bytes (SD-6).
+    // 字符串长度数的是 UTF-16 单元，最多把 UTF-8 字节少算 3 倍：按编码后的字节计。
     text = await res.text()
-    if (text.length > limit) throw new TapeAPIError(code, `response body exceeds limit ${limit}`, { tooLarge: true })
+    if (text.length > limit || new TextEncoder().encode(text).byteLength > limit) throw new TapeAPIError(code, `response body exceeds limit ${limit}`, { tooLarge: true })
   }
   return safeParseJSON(text, { code })
 }

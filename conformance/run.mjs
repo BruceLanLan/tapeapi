@@ -212,7 +212,15 @@ export async function runSuite(opts = {}) {
     const r = await rejectCheck('tap21.request.duplicate-key', 'MUST', 'TAP-21 §3.3(1)', text, { codes: ['BAD_REQUEST', 'CANON_INVALID'], statuses: [400], context: ctx })
     if (r.json?.error?.code) check(r.json.error.code === 'BAD_REQUEST', 'tap21.request.duplicate-key.code', 'SHOULD', 'TAP-21 §3.2 (error code list)', ctx, `rejected with ${r.json.error.code}; only the five TAP-21 codes may appear on the wire`)
   }
-  await rejectCheck('tap21.request.missing-id', 'SHOULD', 'TAP-21 §3.1', JSON.stringify({ params: {} }), { context: 'missing-id' })
+  {
+    // Non-empty params beside the missing id: the refusal is bound to ("", {}), not to params the provider
+    // could not attribute to any id (TAP-21 §3.2, spec review SD-1). / 缺失 id 旁边带非空 params：拒绝必须绑定 ("", {})。
+    const r = await rejectCheck('tap21.request.missing-id', 'SHOULD', 'TAP-21 §3.1', JSON.stringify({ params: { conf: 1 } }), { context: 'missing-id' })
+    if (isPlainObject(r.json) && typeof r.json.sig === 'string') {
+      const v = verifies(r.json, '', probeMethod, {})
+      check(v.ok, 'tap21.request.missing-id-signed', 'SHOULD', 'TAP-21 §3.2', 'missing-id', `BAD_REQUEST for a missing id does not verify under (id="", method=${probeMethod}, params={}): ${v.got}`)
+    }
+  }
   await rejectCheck('tap21.request.params-not-object', 'SHOULD', 'TAP-21 §3.1', JSON.stringify({ id: 'conf-arr', params: [1] }), { context: 'params-array' })
   {
     const limit = Number(opts.bodyLimit ?? ENVELOPE_LIMIT)

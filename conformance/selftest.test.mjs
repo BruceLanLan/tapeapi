@@ -107,7 +107,7 @@ test('reference provider (native listen(), paid + rate-limit checks) passes ever
   assert.equal(summary.conformant, true)
   // The checks that matter actually ran, rather than being skipped. / 关键检查确实执行了，而非被跳过。
   for (const id of ['tap21.envelope.sig-recovers', 'tap21.canon.request-hash', 'tap21.tamper.ok-flip', 'tap21.tamper.body', 'tap21.method-not-found',
-    'tap21.request.malformed-json', 'tap21.request.duplicate-key', 'tap21.request.proto-key', 'tap22.payment-required', 'tap22.payment-required.data.price',
+    'tap21.request.malformed-json', 'tap21.request.missing-id-signed', 'tap21.request.duplicate-key', 'tap21.request.proto-key', 'tap22.payment-required', 'tap22.payment-required.data.price',
     'tap22.payment-required.price-matches-manifest', 'tap22.bad-voucher.data.price.non-stale',
     'tap22.bad-voucher.data.lastCumulative', 'tap22.bad-voucher.data.onChainClaimed', 'tap22.bad-voucher.data.price', 'tap22.bad-voucher.minVoucherLifeS',
     'tap21.ratelimit.unsigned', 'tap21.ratelimit.retry-after', 'tap21.ratelimit.code']) {

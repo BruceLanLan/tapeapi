@@ -1,17 +1,56 @@
 {
   "name": "@tapeapi/server",
   "version": "0.1.0",
-  "description": "TapeAPI provider runtime (Node http handler)",
+  "description": "TapeAPI provider runtime: serve signed, optionally paid methods from Node or any fetch runtime (TapeOut protocol on BNB Smart Chain)",
+  "keywords": [
+    "tapeapi",
+    "tapeout",
+    "bnb",
+    "bsc",
+    "web3",
+    "api",
+    "provider",
+    "signed-response",
+    "micropayments",
+    "cloudflare-workers"
+  ],
+  "homepage": "https://tapeapi.fun/docs/",
+  "bugs": {
+    "url": "https://github.com/BruceLanLan/tapeapi/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BruceLanLan/tapeapi.git",
+    "directory": "server"
+  },
+  "license": "MIT",
+  "author": "Bruce (@BruceLanLan)",
   "type": "module",
   "main": "./src/index.js",
-  "exports": { ".": "./src/index.js" },
-  "files": ["src"],
-  "engines": { "node": ">=20" },
-  "scripts": { "test": "node --test test" },
-  "dependencies": {
-    "@tapeapi/sdk": "file:../sdk",
-    "@noble/curves": "^1",
-    "@noble/hashes": "^1"
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json"
   },
-  "license": "MIT"
+  "files": [
+    "src",
+    "types",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test"
+  },
+  "dependencies": {
+    "@tapeapi/sdk": "^0.1.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

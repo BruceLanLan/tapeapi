@@ -72,7 +72,9 @@ export function validateManifest(m, { requireDelegation = true, allowHttp = fals
     if (!Number.isInteger(d.expires) || d.expires <= 0) fail('delegation.expires must be positive integer')
     // the 366-day bound is a client SHOULD checked at resolution (DELEGATION_INVALID), not a schema rule
     // 366 天上限是客户端在解析时检查的 SHOULD（DELEGATION_INVALID），不是模式规则
-    if (typeof d.sig !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(d.sig)) fail('delegation.sig must be 65-byte hex')
+    // hex65 for an ECDSA holder; a contract holder's EIP-1271 signature MAY be longer (TAP-20 §3.3/§3.4, spec review
+    // SD-4), bounded like a TAP-26 channel record's. / ECDSA 持有人为 65 字节；合约持有人的 EIP-1271 签名可以更长，上限与通道记录相同。
+    if (typeof d.sig !== 'string' || !/^0x(?:[0-9a-fA-F]{2}){65,1024}$/.test(d.sig)) fail('delegation.sig must be hex of 65 to 1024 bytes (65 for an ECDSA holder)')
     delegation = { expires: d.expires, sig: d.sig }
   } else if (requireDelegation) fail('delegation required')
   const ep = m.endpoints
@@ -107,7 +109,10 @@ export function validateManifest(m, { requireDelegation = true, allowHttp = fals
   // A `dev: true` manifest is exempt: it is what every example boots with before an escrow exists, consumers
   // already treat dev manifests as not-for-money, and the provider refuses its paid calls with INTERNAL and logs why.
   // `dev: true` 的清单豁免：示例在托管部署前都以它启动；消费者本就把 dev 清单当作不收钱；提供者会以清楚的 INTERNAL 拒绝付费调用。
-  else if (anyPriced && m.dev !== true && pay.escrow.toLowerCase() === ZERO_ADDRESS) {
+  // The exemption holds only where no delegation is required (a provider checking its own manifest, a dev-sourced
+  // manifest): a manifest read from the chain cannot switch the rule off with a field of its own (TAP-20 §3.3,
+  // spec review SD-7). / 豁免只在不要求委托的场合成立（提供者自检、dev 来源的清单）：从链上读到的清单不能用自己的字段关掉这条规则。
+  else if (anyPriced && !(m.dev === true && !requireDelegation) && pay.escrow.toLowerCase() === ZERO_ADDRESS) {
     fail('payment.escrow is the zero address but some methods are priced; set a real escrow or price every method at 0')
   }
   if (pay.unit != null && pay.unit !== 'BEM') fail('payment.unit must be BEM')

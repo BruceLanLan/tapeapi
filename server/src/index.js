@@ -256,7 +256,7 @@ export function createProvider(opts = {}) {
     return next
   }
   async function verifyVoucher(v, price) {
-    // TAP-22 §3.3: every BAD_VOUCHER carries data.price, so a consumer holding a stale manifest can always tell,
+    // TAP-22 §3.2: every BAD_VOUCHER carries data.price, so a consumer holding a stale manifest can always tell,
     // whatever else was wrong with the voucher. / 每个 BAD_VOUCHER 都带 data.price，持旧清单的消费者总能察觉。
     const bad = (msg, extra) => { throw new TapeAPIError('BAD_VOUCHER', msg, { ...extra, data: { ...(extra?.data || {}), price: price.toString() } }) }
     if (!isPlainObject(v)) bad('voucher missing')
@@ -388,6 +388,21 @@ export function createProvider(opts = {}) {
 
   const utf8Length = (str) => new TextEncoder().encode(str).length
 
+  // TAP-21 §3.2: what an answer to a parsed request object is signed over. An invalid `id` (missing, not a string,
+  // empty, over 128 UTF-16 units) is not trusted, and neither are the params beside it: ("", {}). Params with no
+  // canonical form: (id, {}). Otherwise the request's own (id, params). One helper for the normal path and the crash
+  // path, so a spec-conformant client verifies every answer (spec review SD-1).
+  // TAP-21 §3.2：对已解析请求对象的回答签在什么之上。无效 `id`（缺失、非字符串、空、超过 128 个 UTF-16 单元）不可信，
+  // 它旁边的 params 也不可信：("", {})。没有规范形式的 params：(id, {})。否则就是请求自己的 (id, params)。
+  // 正常路径与崩溃路径共用一个函数，使按规范实现的客户端能验证每一个回答。
+  function bindingOf(body, method) {
+    const id = typeof body?.id === 'string' && body.id.length >= 1 && body.id.length <= 128 ? body.id : ''
+    let params = id && isPlainObject(body?.params) ? body.params : {}
+    let paramsError = null
+    try { canonicalJSON({ method, params }) } catch (e) { paramsError = e; params = {} }
+    return { req: { id, method, params }, paramsError }
+  }
+
   // 执行一次调用（不含 HTTP）/ Execute one call (transport-agnostic).
   // `ip` is the caller identity the HTTP layer vouches for. A return of { rateLimited: seconds } means "answer with an
   // unsigned 429", never an envelope. / `ip` 由 HTTP 层给出；返回 { rateLimited } 表示回未签名的 429，而不是信封。
@@ -395,15 +410,13 @@ export function createProvider(opts = {}) {
   // 返回 { status, unsigned }（委托已过期）表示原样回 `unsigned`，不签名。
   async function invoke(body, { ip = 'unknown', sentMethod } = {}) {
     if (delegationLapsed()) return { status: 503, unsigned: lapsedError(), paid: false }   // arch A3
-    const id = typeof body?.id === 'string' ? body.id : ''
     const method = typeof body?.method === 'string' ? body.method : ''
-    let params = isPlainObject(body?.params) ? body.params : {}
     // A request whose params have no canonical form cannot be answered with an envelope bound to them. Check it
-    // BEFORE any handler runs, and bind the refusal to empty params (runtime audit F-07).
-    // 参数没有规范形式的请求，无法用绑定这些参数的信封作答。在任何处理器运行之前检查，拒绝时绑定空参数。
-    let paramsError = null
-    try { canonicalJSON({ method, params }) } catch (e) { paramsError = e; params = {} }
-    const req = { id, method, params }
+    // BEFORE any handler runs, and bind the refusal to empty params (runtime audit F-07). An invalid id binds to
+    // ("", {}) (TAP-21 §3.2, SD-1). / 参数没有规范形式的请求，无法用绑定这些参数的信封作答。在任何处理器运行之前
+    // 检查，拒绝时绑定空参数。无效 id 绑定 ("", {})。
+    const { req, paramsError } = bindingOf(body, method)
+    const { id, params } = req
     const block = await currentBlock()
     let lease = null
     let verified = false
@@ -412,7 +425,7 @@ export function createProvider(opts = {}) {
     // budget (runtime audit F-01). / 未经验证的工作都从该 IP 的免费预算里扣；只有验过的凭证才让调用改走付费预算。
     const spendFree = () => (rl ? rateLimited(`free:${ip}`, rl.free) : 0)
     try {
-      if (!id || id.length > 128) { const w = spendFree(); if (w) return { rateLimited: w }; throw new TapeAPIError('BAD_REQUEST', 'id (string, 1..128 chars) required') }
+      if (!id) { const w = spendFree(); if (w) return { rateLimited: w }; throw new TapeAPIError('BAD_REQUEST', 'id (string, 1..128 chars) required') }
       if (paramsError) { const w = spendFree(); if (w) return { rateLimited: w }; throw new TapeAPIError('BAD_REQUEST', `params have no canonical form: ${paramsError.message}`) }
       // TAP-21 §3.1: a body `method` that disagrees with the path is refused, never silently overwritten (D14)
       // 与路径不一致的 body `method` 被拒绝，而不是被悄悄覆盖
@@ -522,7 +535,7 @@ export function createProvider(opts = {}) {
   }
 
   // Fixed window, bounded map. Not distributed: two processes each get their own budget, which is stated in
-  // TAP-21 §7 rather than papered over. / 固定窗口、有界表。不跨进程共享：两个进程各有一份预算，这一点写进规范而不是假装没有。
+  // TAP-21 §3.4 rather than papered over. / 固定窗口、有界表。不跨进程共享：两个进程各有一份预算，这一点写进规范而不是假装没有。
   const buckets = new Map()
   function rateLimited(key, budget) {
     if (!rl || !budget) return 0
@@ -608,7 +621,9 @@ export function createProvider(opts = {}) {
     try { out = await invoke(body, { ip, sentMethod }) }
     catch (e) {
       log('invoke crashed', e)
-      out = { status: 500, env: envelope({ id: typeof body.id === 'string' ? body.id : '', method: m[1], params: {} }, false, { code: 'INTERNAL', message: 'internal error' }, lastBlock), paid: false }
+      // Bound to the same (id, params) the answer would have carried, so the client that sent it can verify it
+      // (TAP-21 §3.2, SD-1). / 与正常回答相同的 (id, params) 绑定，发出请求的客户端才能验证它。
+      out = { status: 500, env: envelope(bindingOf(body, m[1]).req, false, { code: 'INTERNAL', message: 'internal error' }, lastBlock), paid: false }
     }
     if (out.rateLimited) return tooMany(out.rateLimited)
     if (out.unsigned) { stats.delegationLapsed++; return json(out.status, out.unsigned) }   // lapsed mid-request / 请求途中过期

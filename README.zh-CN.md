@@ -218,7 +218,7 @@ await provider.listen(8787)                  // Node；在 Cloudflare Workers �
 
 ## 质量
 
-- **测试：** 约 630 个 JavaScript 测试（`npm test`）、169 个 Foundry 测试（`cd contracts && forge test`），以及由签名、
+- **测试：** 约 710 个 JavaScript 测试（`npm test`）、169 个 Foundry 测试（`cd contracts && forge test`），以及由签名、
   哈希和编码的独立 Python 实现执行的 102 项检查（`python3 spec/vectors/verify.py`）。
 - **对抗性评审：** 共十二轮评审，每个问题都有书面记录、一个失败的测试和一个修复；链上读取器由一个随机化测试覆盖，
   其中包括故障、说谎和嘈杂的节点、重组以及房间变化。

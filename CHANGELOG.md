@@ -14,8 +14,9 @@ Before 1.0.0, a minor version may change interfaces.
   `balance`, `tokenInfo`, `tokenBalance`, `nftOwner`, `pairPrice`, `bnbUsd`, `tapeName` (source `examples/public-api`).
 - **Public relay** https://relay.tapeapi.fun (`12.1013.tape`) for TAP-26 channels.
 - **Playground** https://tapeapi.fun/playground/: resolve any service by name, see every check, call it, copy the code.
-- **Status page** https://tapeapi.fun/status/ and a monitor (`npm run monitor`, a scheduled GitHub workflow that opens an
-  issue when a service is down or a delegation has fewer than 14 days left).
+- **Status page** https://tapeapi.fun/status/ and a monitor (`npm run monitor`: a GitHub workflow scheduled about every
+  30 minutes, which GitHub may delay, that opens an issue when a service is down or a delegation has fewer than 14 days
+  left).
 - **Docs site** https://tapeapi.fun/docs/ (English and Chinese), generated from `docs/guides` with `npm run build:docs`,
   including a Public API guide.
 - SDK: `api.resolve('11.1013.tape')` resolves TapeOut names (`<#ID>.<processor>.tape`) through `factory.cpuAt`.
@@ -25,12 +26,17 @@ Before 1.0.0, a minor version may change interfaces.
   links to try or renew; never signs or sends).
 - Homepage: live services, a 30-second quick start and a roadmap; `docs/ROADMAP.md`, `CODE_OF_CONDUCT.md`, a rewritten
   `CONTRIBUTING.md` and current issue templates; GitHub private vulnerability reporting enabled.
+- Website: social preview (Open Graph / Twitter tags and `og.png`), a favicon, a 404 page, `robots.txt` and `sitemap.xml`.
+- The dashboard's "Renew in console" link prefills the console's processor and circuit numbers and service URL; the
+  console only fills those fields after checking them, and never reads, signs or sends by itself.
 
 ### Changed
 
 - Default RPC nodes are bnbchain, defibit and ninicoin dataseeds (publicnode timed out on every request on
   2026-09-27), with a 3 s per-node timeout on the Workers.
 - The provider template (`examples/cloudflare-worker/wrangler.toml`) no longer names the project's own Worker or domain.
+- The `examples/web2-adapter` config calls Coinbase's public price API (`spotPrice`, `cryptoRates`) instead of
+  worldtimeapi.org, which no longer answered, and frankfurter at its current `api.frankfurter.dev` address.
 
 ## [0.1.0] — 2026-09-26
 

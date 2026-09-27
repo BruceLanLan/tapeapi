@@ -30,7 +30,8 @@ with `npm run deploy:public`; that command is not for forks.
 `npm run deploy:provider`, which pins the wrangler version in package.json). The Worker's name in the dashboard must
 match `name` in `wrangler.toml` (`my-tapeapi-service`; change both if you want another). `wrangler.toml` sets no route:
 add your hostname in the dashboard (Worker → Settings → Domains & Routes → Add → Custom domain) and set the variable
-`PUBLIC_URL` to `https://<your host>`. Then open the holder console at `https://tapeapi.fun/console/` (source
+`PUBLIC_URL` to `https://<your host>`. A Workers custom domain needs the hostname's zone on the same Cloudflare account;
+without one, use the Worker's own `https://<worker name>.<your account>.workers.dev` URL as `PUBLIC_URL` (still https). Then open the holder console at `https://tapeapi.fun/console/` (source
 `site/console/`) in a wallet's in-app browser, replace the default service URL `https://api.tapeapi.fun` with
 `https://<your host>`, and it does steps 2, 3 and 5 below. Until the delegation and `PUBLIC_URL` are set the Worker is
 in setup mode: it answers only `/tapeapi/v1/health`, naming the signer address derived from `SIGNER_KEY` and the
@@ -38,7 +39,8 @@ variables still missing.
 **只用手机：** Cloudflare Workers Builds 从你的 fork 部署本 Worker（构建 `npm ci`，部署 `npm run deploy:provider`）。后台里
 Worker 的名称必须与 `wrangler.toml` 的 `name` 一致（`my-tapeapi-service`；想换名字就两处一起改）。`wrangler.toml` 不设路由：
 在后台为 Worker 添加你的主机名（Worker → Settings → Domains & Routes → Add → Custom domain），并把变量 `PUBLIC_URL` 设为
-`https://<你的主机名>`。然后在钱包内置浏览器里打开持有人操作台（`site/console/`），把默认服务网址 `https://api.tapeapi.fun`
+`https://<你的主机名>`。Workers 自定义域名要求该主机名所在的域托管在同一个 Cloudflare 账户下；没有的话，就把 Worker 自带的
+`https://<Worker 名称>.<你的账户>.workers.dev` 网址设为 `PUBLIC_URL`（仍然是 https）。然后在钱包内置浏览器里打开持有人操作台（`site/console/`），把默认服务网址 `https://api.tapeapi.fun`
 换成 `https://<你的主机名>`，它会完成下面第 2、3、5 步。委托和 `PUBLIC_URL` 设好之前 Worker 处于设置模式，只回答健康检查，
 其中给出由 `SIGNER_KEY` 推导的签名地址和仍缺的变量。
 
@@ -49,7 +51,7 @@ Worker 的名称必须与 `wrangler.toml` 的 `name` 一致（`my-tapeapi-servic
    生成一把热签名密钥，由电路持有人为它签一份委托：
    ```
    HOLDER_KEY=0x... node examples/reader-service/sign-delegation.mjs \
-     --container 0x<container> --signer 0x<signer> --expires $(( $(date +%s) + 30*86400 ))
+     --container 0x<container> --signer 0x<signer> --expires $(( $(date +%s) + 90*86400 ))
    ```
 3. Set the variables. `SIGNER_KEY` is the only secret; `CIRCUITS`, `TOKEN_ID`, `CONTAINER`, `DELEGATION_EXPIRES`,
    `DELEGATION_SIG` and `PUBLIC_URL` are public (they end up in the manifest) and can be plain dashboard variables,
@@ -65,9 +67,11 @@ Worker 的名称必须与 `wrangler.toml` 的 `name` 一致（`my-tapeapi-servic
      --var PUBLIC_URL:https://<your host>
    ```
 4. Add your custom domain to the Worker (dashboard: Worker → Settings → Domains & Routes → Add → Custom domain; this
-   `wrangler.toml` deliberately has no route) and check it answers:
+   `wrangler.toml` deliberately has no route; the zone must be on the same Cloudflare account, otherwise use the
+   `https://<worker name>.<your account>.workers.dev` URL) and check it answers:
    为 Worker 添加你的自定义域名（后台：Worker → Settings → Domains & Routes → Add → Custom domain；这份 `wrangler.toml`
-   刻意不设路由），然后确认它有回应：
+   刻意不设路由；该域必须在同一个 Cloudflare 账户下，否则改用 `https://<Worker 名称>.<你的账户>.workers.dev` 网址），
+   然后确认它有回应：
    ```
    curl https://<your host>/tapeapi/v1/health
    curl -X POST https://<your host>/tapeapi/v1/blockNumber \
@@ -126,11 +130,11 @@ A Durable Object is one instance per name, globally, so every isolate sees the s
 经由一个实例发出的帧到不了经由另一个实例轮询的对端。Durable Object 按名字全局唯一，所有实例看到同一个房间。
 
 The relay is set up exactly like the provider (steps above): deploy it (`npm run deploy:relay`, or a Workers Build
-with that deploy command), add the secret `SIGNER_KEY`, and let the holder console (steps 4 to 7, service URL
+with that deploy command), add the secret `SIGNER_KEY`, and let the holder console (steps 1 to 5, service URL in step 4
 `https://relay.<your domain>`) show the variables to add and publish the manifest. Until then the relay answers only
 its health, in setup mode. The identity is never written in `wrangler-relay.toml`, because a value there would
 overwrite the dashboard's on every deploy.
-中继的设置方式与服务完全相同：部署（`npm run deploy:relay`），添加密钥 `SIGNER_KEY`，再用持有人控制台第 4 到 7 步（服务网址
+中继的设置方式与服务完全相同：部署（`npm run deploy:relay`），添加密钥 `SIGNER_KEY`，再用持有人控制台第 1 到 5 步（第 4 步的服务网址
 填 `https://relay.<你的域名>`）拿到要添加的变量并发布清单。在此之前中继处于设置模式。身份不写在 `wrangler-relay.toml` 里，
 因为那里的值每次部署都会覆盖后台的值。
 

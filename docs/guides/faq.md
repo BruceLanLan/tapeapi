@@ -27,7 +27,7 @@ directory ([Call a service](consume.md)).
 there is no manifest. The service is not correctly published.
 
 **`DELEGATION_INVALID`** — the delegation expired, or the circuit changed hands since it was signed. The provider has
-to sign a new one and publish the manifest again.
+to sign a new one and publish the manifest again ([Renew](provide.md#4-renew)).
 
 **`RPC_UNAVAILABLE: only 1/2 nodes answered`** — use at least three RPC URLs with `quorum: 2`, so one node down still
 leaves a quorum. `allowSingleNode: true` exists for local development only.
@@ -42,7 +42,7 @@ is behind or misbehaving.
 
 **The console says the service reports a different key than the one generated here.**
 The service's `SIGNER_KEY` is not the key generated on that page (pasted twice, an old key, or the wrong service URL).
-Paste the key from step 5 again and wait for the redeploy.
+Paste the key generated in step 3 again (or generate a new one there) and wait for the redeploy.
 
 **The console refuses to publish: "unexpected field" / "expected ...".**
 The manifest the service serves differs from what you read and signed. Usually a variable has not taken effect yet;

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title data-zh-title="TapeAPI 持有人操作台" data-en-title="TapeAPI holder console">TapeAPI holder console</title>
 <style>
   :root { --bg: #f4f5f1; --card: #ffffff; --fg: #1b211d; --muted: #5a645c; --line: #d6ddd4; --accent: #2e6b4b; --ok: #2e6b4b; --bad: #a3342a; --warn: #8a5a00; --warn-bg: #fbf3e2; }
@@ -97,10 +98,10 @@
     <h2><span lang="zh">3. 服务密钥与变量</span><span lang="en">3. Service key and variables</span></h2>
     <p class="muted">
       <span lang="zh">服务用这把密钥给每个回答签名。它在你的手机上生成，本页不会把它发到任何地方，也不会保存；关掉页面就没了。复制后粘到 Cloudflare：
-        Workers 和 Pages → <b>这个服务的 Worker</b>（例如公共服务 <code>tapeapi-provider</code>、中继 <code>tapeapi-relay</code>）→ 设置 →
+        Workers 和 Pages → <b>你的服务的 Worker</b>（例如 <code>my-tapeapi-service</code>；本项目自己的是 <code>tapeapi-provider</code> 和 <code>tapeapi-relay</code>）→ 设置 →
         “+ 添加变量”，名称 <code>SIGNER_KEY</code>，“密钥”方框<b>打勾</b>。先刷新 Cloudflare 页面再改，旧页面保存时会覆盖别的变量。</span>
       <span lang="en">The service signs every answer with this key. It is generated on your phone; this page never sends it anywhere and does not keep it, so it is gone when you close the page. Copy it into Cloudflare:
-        Workers &amp; Pages → <b>your service's Worker</b> (for example the public service <code>tapeapi-provider</code> or the relay <code>tapeapi-relay</code>) → Settings →
+        Workers &amp; Pages → <b>your Worker</b> (for example <code>my-tapeapi-service</code>; the project's own are <code>tapeapi-provider</code> and <code>tapeapi-relay</code>) → Settings →
         "+ Add variable", name <code>SIGNER_KEY</code>, with <b>Encrypt / Secret ticked</b>. Reload the Cloudflare page before editing: saving from a stale page overwrites the other variables.</span>
     </p>
     <button id="btn-key" type="button"><span lang="zh">生成服务密钥</span><span lang="en">Generate a service key</span></button>

@@ -67,17 +67,20 @@ node conformance/run.mjs --url http://127.0.0.1:8787
    `examples/cloudflare-worker/wrangler.toml` 的 `name` 一致（`my-tapeapi-service`；想换名字就两处一起改）。Worker 以设置
    模式启动，只响应健康检查。
 3. **给它你自己的主机名。** 端点会写进链上清单，所以请使用你控制的主机名，例如 `api.yourdomain.com`：在控制台中，
-   Worker → Settings → Domains & Routes → Add → Custom domain。然后添加变量 `PUBLIC_URL` = `https://<你的主机名>`
+   Worker → Settings → Domains & Routes → Add → Custom domain。Workers 自定义域名要求该主机名所在的域（`yourdomain.com`）
+   托管在同一个 Cloudflare 账户下。如果你在 Cloudflare 上没有域名，就改用 Worker 自带的
+   `https://<Worker 名称>.<你的账户>.workers.dev` 网址（仍然是 https）。然后添加变量 `PUBLIC_URL` = `https://<你的主机名>`
    （Settings → Variables and Secrets）。设置之前，设置模式会把 `PUBLIC_URL` 列为缺失。
-4. **打开持有者控制台** [tapeapi.fun/console](https://tapeapi.fun/console/)，在钱包的内置浏览器中打开，并用持有该电路
-   的钱包连接。把其中服务网址一栏的默认值 `https://api.tapeapi.fun` 换成 `https://<你的主机名>`，然后按控制台的第 4 到
-   7 步操作：
-   - **4** 读取你的电路，检查你是否为持有者，以及容器是否已开通；
-   - **5** 在你的手机上生成签名密钥，并显示需要在 Cloudflare 中添加的变量（`SIGNER_KEY` 作为 secret；其余为公开变量）；
-   - **6** 检查服务报告的正是同一把密钥，请求你的钱包签署委托，并检查该签名确实来自持有者；
-   - **7** 根据你读取和签署的内容构建清单，要求服务所持副本与之逐字段一致，向你展示清单，并用一笔交易把它写上链。
+4. **打开持有者控制台** [tapeapi.fun/console](https://tapeapi.fun/console/)，在钱包的内置浏览器中打开，按它的五步操作：
+   - **1** 连接持有该电路的钱包；
+   - **2** 读取你的电路，检查你是否为持有者，以及容器是否已开通；
+   - **3** 在你的手机上生成签名密钥，并显示需要在 Cloudflare 中添加的变量（`SIGNER_KEY` 作为 secret；其余为公开变量）；
+   - **4** 检查服务报告的正是同一把密钥，请求你的钱包签署委托，并检查该签名确实来自持有者。把这一步服务网址一栏的默认值
+     `https://api.tapeapi.fun` 换成 `https://<你的主机名>`。把它给出的两个值 `DELEGATION_EXPIRES` 和 `DELEGATION_SIG`
+     添加为变量；
+   - **5** 根据你读取和签署的内容构建清单，要求服务所持副本与之逐字段一致，向你展示清单，并用一笔交易把它写上链。
 
-控制台的这四步请在同一个钱包应用中完成；页面会把进度保存在该浏览器中。**切勿截图签名密钥，也不要把它发送给任何人。**
+控制台的这五步请在同一个钱包应用中完成；页面会把进度保存在该浏览器中。**切勿截图签名密钥，也不要把它发送给任何人。**
 
 `npm run deploy:public` 部署的是本项目自己的公共服务（`api.tapeapi.fun`，来自
 [`examples/public-api/`](../../../examples/public-api/)），不是给 fork 用的：请用 `npm run deploy:provider`。
@@ -105,9 +108,16 @@ const svc = await createTapeAPI({ rpcUrls: [/* ... */], quorum: 2 }).resolve('0x
 
 ## 4. 续期
 
-委托默认有效 90 天。到期之前：签署一份新的委托（控制台第 6 步），更新 `DELEGATION_EXPIRES` 和 `DELEGATION_SIG`，
-**并重新发布清单**（控制台第 7 步），因为客户端是从链上清单中读取委托的。签名密钥可以保持不变。委托无法撤销：旧委托
-在其自身到期之前一直有效，因此一旦签名密钥泄露，请立即轮换并重新发布。
+委托默认有效 90 天。客户端从链上清单中读取委托，所以续期既要重新签名，**也要**重新发布清单。签名密钥保持不变。
+在[持有者控制台](https://tapeapi.fun/console/)中：
+
+1. **第 2 步：** 读取你的电路。控制台同时读取链上已有的清单，以及它授权的签名地址。
+2. **第 4 步：** 点 **续期**。它为已经发布的那把密钥签一份新委托；不生成新密钥，跳过第 3 步。服务网址必须与链上的一致。
+3. 在 Cloudflare 中把 `DELEGATION_EXPIRES` 和 `DELEGATION_SIG` 换成两个新值，等待重新部署。
+4. **第 5 步：** 重新发布清单。
+
+委托无法撤销：旧委托在其自身到期之前一直有效。因此一旦签名密钥泄露，不要续期：立即用第 3 步生成新密钥，在第 4 步为它签名，
+并在第 5 步发布。
 
 ## 5. 付费方法
 

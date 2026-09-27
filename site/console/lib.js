@@ -168,6 +168,25 @@ export function addressOfKey(key) {
 /** A service base URL: https://host[:port], or http on a loopback address for local testing (as the Worker allows).
  *  服务基础网址：https://主机[:端口]；本地测试时允许回环地址用 http（与 Worker 一致）。 */
 export const isServiceBase = (u) => /^https:\/\/[^/?#@\s]+$/.test(u) || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(u)
+/** Prefill from a link such as the dashboard's "Renew in console": ?processor=<digits>&circuit=<digits>&url=<service base>.
+ *  Returns only the values that pass the page's own checks (whole numbers; a service base as isServiceBase accepts it).
+ *  The page only fills the step 2 and step 4 inputs with them; it never reads, signs or sends by itself.
+ *  从链接预填（例如面板的“去操作台续期”）：只返回通过本页检查的值（整数；isServiceBase 接受的服务网址）。
+ *  页面只把它们填进第 2 步和第 4 步的输入框，从不自行读取、签名或发送。 */
+export function prefillFromQuery(search) {
+  const q = new URLSearchParams(typeof search === 'string' ? search : '')
+  const num = (v) => (typeof v === 'string' && /^\d{1,78}$/.test(v) ? v : null)
+  const out = {}
+  const processor = num(q.get('processor')), circuit = num(q.get('circuit'))
+  if (processor) out.processor = processor
+  if (circuit) out.circuit = circuit
+  const url = q.get('url')
+  if (typeof url === 'string' && url.length <= 300) {
+    const base = url.trim().replace(/\/+$/, '')
+    if (isServiceBase(base)) out.url = base
+  }
+  return out
+}
 const METHODS = [{ name: 'blockNumber', priceBEM: '0', params: {}, returns: { blockNumber: 'number' } }]
 const NAME_OK = (n) => typeof n === 'string' && n.length >= 1 && n.length <= 64 && !/[\u0000-\u001f\u007f]/.test(n)
 

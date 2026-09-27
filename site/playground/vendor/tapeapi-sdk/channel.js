@@ -471,7 +471,10 @@ export function relayTransport({ api, svc, payer, inbound, outbound, waitMs = 20
   // 一次轮询。帧逐个交出：格式错误的帧被跳过，绝不连累前后的好帧。房间被重建时中继会报告新的纪元，
   // 我们从头读这个房间，而不是悄悄跳过它最开始的那些帧。
   const poll = async (wait = waitMs, { signal } = {}) => {
-    const params = { room: inbound, after: cursor, waitMs: wait, ...(epoch ? { epoch } : {}) }
+    // `epoch` is always sent, `null` until the relay has named one (TAP-26 §3.5 MUST; spec review SD-9). Behaviour is
+    // unchanged: the cursor is -1 whenever epoch is still null. / `epoch` 总是发送，中继报出之前为 `null`；行为不变：
+    // epoch 仍为 null 时游标必为 -1。
+    const params = { room: inbound, after: cursor, waitMs: wait, epoch }
     const r = await api.call(svc, 'relayRecv', params, { timeoutMs: wait + 10_000, signal })
     const res = r.result || {}
     if (typeof res.epoch === 'string' && res.epoch !== epoch) { epoch = res.epoch; cursor = -1 }
@@ -587,7 +590,8 @@ const checkWire = (wire) => {
  * 本来就要读的区间放宽）；延迟增加 `confirmations` 个区块，BSC 约 0.45 秒一块，约 1 秒。比重叠更深的重组仍可能丢帧：
  * 通道会把它报告为空洞。
  *
- * History (arch A4). Public nodes keep logs for a window only (publicnode: about 5,200 blocks, ~39 min). The first time
+ * History (arch A4). Public nodes keep logs for a window only (publicnode: about 5,000 to 10,000 blocks depending on
+ * the backend, ~40-75 min, measured 2026-09-24/25; 48 Club and 1RPC, the BUS_RPC_URLS set, at least 500,000). The first time
  * a node refuses a block as too old, a probe finds the oldest block it serves (`oldestServed`, `stats()`); blocks that
  * every node excuses and none served are skipped and `warn` (default console.warn) is told once per stretch -- before,
  * a cursor older than the window failed every poll for ever. No request is added while nothing is refused.
@@ -598,7 +602,8 @@ const checkWire = (wire) => {
  * served during a hold is kept for the next poll (a window sliding meanwhile cannot take it away), and `warn` is told
  * after 10 holds in a row. Several rooms on one bus: busReader (arch B8), the same reading code with one eth_getLogs
  * per node for all of them.
- * 历史窗口。公共节点只保留一段时间的日志（publicnode 约 5,200 个区块、约 39 分钟）。节点第一次以"太旧"拒绝某区块时，
+ * 历史窗口。公共节点只保留一段时间的日志（publicnode 视后端约 5,000 到 10,000 个区块、约 40 到 75 分钟，2026-09-24/25 实测；
+ * BUS_RPC_URLS 里的 48 Club 与 1RPC 至少 500,000 个区块）。节点第一次以"太旧"拒绝某区块时，
  * 探测它提供的最早区块（`oldestServed`、`stats()`）；每个节点都豁免、没有节点提供的区块被跳过，并对每一段调用一次
  * `warn`（默认 console.warn）——以前，早于窗口的游标会让每次轮询永远失败。没有拒绝时不增加任何请求。
  * 宁可停住，绝不跳过。每个节点各自读取；只有当某节点提供了该区块，或每个节点都以本次轮询之前已知、且本次又说了一遍的结论
@@ -797,9 +802,9 @@ const isRangeLimit = (m) => !isRateLimit(m) && !isBehindHead(m) && /range|limit|
 // results", Alchemy "Log response size exceeded", Erigon "too many logs". Anyone can fill a block with frames, so this
 // is answered by splitting that stretch, never by narrowing the node for good (review R6-3).
 // 限制的是一个回答里的日志条数，而不是区间跨多少区块。任何人都能用帧塞满一个区块，所以对它只拆分那一段，绝不永久收窄节点。
-// publicnode (the default node set) says -32602 "query exceeds max results 20000, retry with the range A-B" (HTTP 200,
+// publicnode (a node often configured, though not in BUS_RPC_URLS) says -32602 "query exceeds max results 20000, retry with the range A-B" (HTTP 200,
 // recorded 2026-09-25 in fixtures/bsc-getlogs-answers.json, review R7-1): the wording that matters most.
-// publicnode（默认节点集）的原话，已录制：最要紧的一种措辞。
+// publicnode（常被配置的节点，但不在 BUS_RPC_URLS 里）的原话，已录制：最要紧的一种措辞。
 const isResultCap = (m) => /exceeds? max(imum)? results|max results \d+|retry with the range|more than \d+ (results|logs)|too many (results|logs)|response size|log response/i.test(m)
 // What a node said when it refused an eth_getLogs, or null when it could not be reached. rpc.js puts node-limit answers
 // (and JSON-RPC errors sent with an HTTP error status, review R4-1) on RPC_UNAVAILABLE as `refusals`; any other JSON-RPC

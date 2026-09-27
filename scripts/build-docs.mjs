@@ -232,6 +232,7 @@ function template(r, all) {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${esc(r.title)} · TapeAPI ${L.docs}</title>
 <meta name="description" content="${esc(sections(r)[0]?.x.slice(0, 160) || r.title)}">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../docs.css">
 <link rel="alternate" hreflang="${LANGS[other].html}" href="../${other}/${pageFile(r.page)}">
 ${THEME_BOOT}

@@ -482,3 +482,25 @@ test('the page: step 4 re-reads the chain, renewal signs only lib\'s decision, a
   assert.ok(box.includes('<span lang="zh">') && (box.match(/<span lang="zh">/g) || []).length === (box.match(/<span lang="en">/g) || []).length)
   assert.match(box, /恢复出你（当前持有人）/); assert.match(box, /recovers to you, the current holder/)
 })
+
+// ---------------------------------------------------------------- prefill from a link (the dashboard's "Renew in console") ----
+// The page fills the step 2 and step 4 inputs from ?processor=&circuit=&url= and nothing else: bad values are dropped,
+// and it never taps a button for you. / 页面只用 ?processor=&circuit=&url= 预填第 2 步和第 4 步的输入框：坏值丢弃，从不替你点按钮。
+test('prefillFromQuery keeps only whole numbers and a service base URL; the page never reads, signs or sends by itself', () => {
+  assert.deepEqual(C.prefillFromQuery('?processor=1013&circuit=11&url=https%3A%2F%2Fapi.tapeapi.fun%2F'), { processor: '1013', circuit: '11', url: 'https://api.tapeapi.fun' })
+  assert.deepEqual(C.prefillFromQuery('processor=1013&circuit=11&url=https://api.example.com'), { processor: '1013', circuit: '11', url: 'https://api.example.com' })
+  assert.deepEqual(C.prefillFromQuery('?url=http://127.0.0.1:8797'), { url: 'http://127.0.0.1:8797' }, 'loopback http, as isServiceBase allows')
+  assert.deepEqual(C.prefillFromQuery(''), {})
+  assert.deepEqual(C.prefillFromQuery(undefined), {})
+  for (const bad of ['0x68224F668083c29e9800Be2a646d42d18cedF7e2', '1e3', '-1', '1.5', ' 11', '', '١٢']) {
+    assert.deepEqual(C.prefillFromQuery(`?processor=${encodeURIComponent(bad)}&circuit=${encodeURIComponent(bad)}`), {}, bad)
+  }
+  for (const bad of ['javascript:alert(1)', 'https://user@api.tapeapi.fun', 'http://api.tapeapi.fun', 'https://api.tapeapi.fun/tapeapi/v1', 'https://api.tapeapi.fun?x=1', 'https://api.tapeapi.fun#x', 'data:text/html,x', 'https://' + 'a'.repeat(300)]) {
+    assert.deepEqual(C.prefillFromQuery(`?url=${encodeURIComponent(bad)}`), {}, bad)
+  }
+  const js = pageScript()
+  assert.match(js, /C\.prefillFromQuery\(location\.search\)/)
+  assert.doesNotMatch(js, /\.click\(\)|dispatchEvent\(/, 'no button is tapped for you')
+  const block = js.slice(js.indexOf('C.prefillFromQuery(location.search)'))
+  assert.doesNotMatch(block.slice(0, block.indexOf('\n}\n')), /rpc\(|fetch\(|signDelegation|onclick/, 'the prefill only sets input values')
+})

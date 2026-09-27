@@ -55,7 +55,7 @@ Error:
 { "id": "...", "ok": false, "error": { "code": "PAYMENT_REQUIRED", "message": "...", "data": { } }, "container": "0x..", "ts": 1758300000, "sig": "0x..." }
 ```
 
-- `id` MUST echo the request `id`. A request the provider could not parse (malformed JSON, not an object, over its body limit, missing or invalid `id`) has no `id` or `params` it can trust: it is refused with a `BAD_REQUEST` (HTTP 400, or 413 for size) signed over `id` `""` and `params` `{}`, and a request whose `params` have no canonical form is refused signed over its own `id` and `params` `{}` (§3.3). A client that receives a `BAD_REQUEST` which verifies under either binding MUST report its own request as malformed (`BAD_REQUEST`), not `BAD_SIGNATURE`.
+- `id` MUST echo the request `id`. A request the provider could not parse (malformed JSON, not an object, over its body limit, missing or invalid `id`) has no `id` or `params` it can trust: it is refused with a `BAD_REQUEST` (HTTP 400, or 413 for size) signed over `id` `""` and `params` `{}`, and a request whose `params` have no canonical form is refused signed over its own `id` and `params` `{}` (§3.3). An invalid `id` is anything other than a string of 1–128 UTF-16 code units (§3.1), an over-long one included; the `params` sent beside it are not used for the binding either. Every other answer to a request, including an `INTERNAL` for a failure inside the provider, is signed over that request's own `id` and `params`. A client that receives a `BAD_REQUEST` which verifies under either binding MUST report its own request as malformed (`BAD_REQUEST`), not `BAD_SIGNATURE`.
 - `ok` MUST be a JSON boolean and is covered by the signature (§3.3).
 - `container` MUST equal the service container. Clients MUST reject a response whose `container` differs from the resolved container, and MUST compute the digest with the container they resolved, not with the value in the envelope.
 - `ts`: provider Unix time in seconds. Clients MUST reject `|now − ts| > maxSkew`; `maxSkew` defaults to 300 s and MAY be configured.
@@ -198,7 +198,7 @@ TLS 认证主机，而非服务身份。没有绑定到容器的签名，客户�
 { "id": "...", "ok": false, "error": { "code": "PAYMENT_REQUIRED", "message": "...", "data": { } }, "container": "0x..", "ts": 1758300000, "sig": "0x..." }
 ```
 
-- `id` MUST 回显请求的 `id`。提供者无法解析的请求（畸形 JSON、不是对象、超过请求体上限、`id` 缺失或无效）没有可信的 `id` 或 `params`：以绑定 `id` `""` 与 `params` `{}` 的签名 `BAD_REQUEST` 拒绝（HTTP 400，超限为 413）；`params` 没有规范形式的请求以绑定其自身 `id` 与 `params` `{}` 的签名拒绝（§3.3）。收到在任一绑定下验证通过的 `BAD_REQUEST` 的客户端 MUST 报告自己的请求有误（`BAD_REQUEST`），而不是 `BAD_SIGNATURE`。
+- `id` MUST 回显请求的 `id`。提供者无法解析的请求（畸形 JSON、不是对象、超过请求体上限、`id` 缺失或无效）没有可信的 `id` 或 `params`：以绑定 `id` `""` 与 `params` `{}` 的签名 `BAD_REQUEST` 拒绝（HTTP 400，超限为 413）；`params` 没有规范形式的请求以绑定其自身 `id` 与 `params` `{}` 的签名拒绝（§3.3）。无效 `id` 指除 1–128 个 UTF-16 码元的字符串以外的任何值（§3.1），过长的 `id` 也算；与它一同发送的 `params` 同样不用于绑定。对请求的其它一切回答，包括提供者内部故障导致的 `INTERNAL`，都绑定该请求自己的 `id` 与 `params` 签名。收到在任一绑定下验证通过的 `BAD_REQUEST` 的客户端 MUST 报告自己的请求有误（`BAD_REQUEST`），而不是 `BAD_SIGNATURE`。
 - `ok` MUST 为 JSON 布尔值，且在签名范围内（§3.3）。
 - `container` MUST 等于服务容器。客户端 MUST 拒绝 `container` 与解析所得容器不一致的响应，且 MUST 用自己解析出的容器（而非信封中的值）计算摘要。
 - `ts`：提供者的 Unix 秒级时间。客户端 MUST 拒绝 `|now − ts| > maxSkew`；`maxSkew` 默认 300 秒，MAY 配置。

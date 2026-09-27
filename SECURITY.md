@@ -33,7 +33,7 @@ Anything in this repository, and the services the project runs from it:
 - **SDK** — `@tapeapi/sdk` (`sdk/src/*`). Signature verification and malleability, canonical JSON, the resolution algorithm, container derivation, quorum behaviour, the `dev` / `allowSingleNode` / `allowHttp` / `maxSkewS` switches, RPC handling.
 - **Provider runtime** — `@tapeapi/server` (`server/src/*`). Envelope construction and signing, metering and billing, key handling, request parsing, anything that bills for work not delivered or delivers work unbilled.
 - **Specifications** — `spec/TAP-*.md`. A design-level flaw in the standard is in scope and is the most valuable kind of report: if the spec mandates something unsafe, every conforming implementation inherits it.
-- **Examples and scripts** — including a leak in `scripts/publish-site.mjs` that would let an internal document reach the public site.
+- **Examples and scripts** — including anything that would let an internal document reach the public website, which Cloudflare Pages deploys from the `site/` directory.
 - **Hosted services run by the project** — the holder console `https://tapeapi.fun/console/` (source `site/console/`), the public service `https://api.tapeapi.fun` (`11.1013.tape`, source `examples/public-api/`) and the public relay `https://relay.tapeapi.fun` (`12.1013.tape`, source `examples/cloudflare-worker/relay-worker.js`). Especially: anything that makes the console leak a signing key or get a holder to sign or publish something other than what it shows, and anything that makes either service sign an answer that is not what it read. Test these without disrupting them: no load, flood or denial-of-service testing against the live hosts; run your own copy for that.
 
 ## 3. Out of scope
@@ -89,7 +89,7 @@ These are documented properties, not undisclosed findings — a report saying on
 - **SDK**——`@tapeapi/sdk`（`sdk/src/*`）。签名校验与可延展性、规范 JSON、解析算法、容器推导、法定人数行为、`dev` / `allowSingleNode` / `allowHttp` / `maxSkewS` 开关、RPC 处理。
 - **提供者运行时**——`@tapeapi/server`（`server/src/*`）。信封构造与签名、计量与计费、密钥处理、请求解析，以及任何"没交付却计费"或"交付了却不计费"的情形。
 - **规范**——`spec/TAP-*.md`。标准层面的设计缺陷在范围内，**而且是最有价值的一类报告**：规范若要求了不安全的做法，所有合规实现都会继承它。
-- **示例与脚本**——包括 `scripts/publish-site.mjs` 中可能让内部文档流到公网的泄漏。
+- **示例与脚本**——包括任何可能让内部文档流到公开网站的问题；网站由 Cloudflare Pages 从 `site/` 目录部署。
 - **本项目运行的托管服务**——持有人控制台 `https://tapeapi.fun/console/`（源码 `site/console/`）、公共服务 `https://api.tapeapi.fun`（`11.1013.tape`，源码 `examples/public-api/`）与公共中继 `https://relay.tapeapi.fun`（`12.1013.tape`，源码 `examples/cloudflare-worker/relay-worker.js`）。尤其是：任何让控制台泄露签名密钥、或让持有人签署或发布与页面所示不同内容的方法，以及任何让这两个服务对并非其所读的内容签名的方法。测试时不要干扰它们：不要对线上主机做压测、洪水或拒绝服务测试；这类测试请用你自己的副本。
 
 ## 3. 不在范围内

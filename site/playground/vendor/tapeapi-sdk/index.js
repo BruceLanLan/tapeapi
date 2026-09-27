@@ -63,6 +63,26 @@ export function registryKey(path) {
   if (typeof path !== 'string') throw new TapeAPIError('MANIFEST_INVALID', 'registry path must be a string')
   return path.replace(/^\/+/, '')
 }
+// TapeOut names (TapeKit SPEC §2.2 / §2.4, TAP-20 §3.6 step 1; spec review SD-12). The canonical form is
+// `<#ID>.<processor>.tape`: decimal, no leading zeros (except `0`), all lowercase, #ID >= 1. The suffix-less `<#ID>.<processor>`
+// is TapeKit's tolerated input for the same name. Anything else that looks like a name (leading zeros, `.TAPE`, #ID 0,
+// `#4246@0`, `tape://...`) is refused rather than guessed at, and never looked up as a directory label, so a label
+// cannot squat a spelling of someone's name. Returns { tokenId, processor, name } or null (not name-shaped).
+// TapeOut 名字。规范形式为 `<#ID>.<processor>.tape`：十进制、无前导零（`0` 除外）、全小写、#ID >= 1。不带后缀的
+// `<#ID>.<processor>` 是 TapeKit 容许的同一名字的输入形式。其它看起来像名字的（前导零、`.TAPE`、#ID 为 0、`#4246@0`、
+// `tape://...`）一律拒绝而不猜，也绝不当作目录标签查找，标签因此无法抢注某个名字的写法。不像名字时返回 null。
+const NAME_SHAPED = /^(?:(?:web\+)?tape:\/\/)?#?\d+(?:[.@]\d+)(?:\.tape)?(?:\/.*)?$/i
+const CANONICAL_NAME = /^([1-9]\d{0,77})\.(0|[1-9]\d{0,77})(\.tape)?$/
+function tapeName(str) {
+  if (typeof str !== 'string') return null
+  const t = str.trim()
+  if (!NAME_SHAPED.test(t)) return null
+  const m = CANONICAL_NAME.exec(t)
+  if (!m || BigInt(m[1]) >= 2n ** 256n || BigInt(m[2]) >= 2n ** 256n) {
+    throw new TapeAPIError('MANIFEST_INVALID', `"${t.slice(0, 80)}" is not a TapeOut name in canonical form: write <#ID>.<processor>.tape, decimal without leading zeros, lowercase, #ID >= 1 (TapeKit SPEC §2.2)`)
+  }
+  return { tokenId: m[1], processor: m[2], name: `${m[1]}.${m[2]}.tape` }
+}
 const ZERO_HASH = '0x' + '00'.repeat(32)                    // TapeKit "no-hash" state: file exists but was never hashed
 export const MANIFEST_LIMIT = 64 * 1024        // TAP-20: manifest ≤ 64 KiB
 export const ENVELOPE_LIMIT = 1024 * 1024      // TAP-21 §3.2: response body ≤ 1 MiB
@@ -85,8 +105,11 @@ const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : toHex(
 //   maxSkewS (默认 300)  信封 ts 与本地时钟的最大偏差（TAP-21 §3.2）/ envelope ts freshness window
 //   identityCacheS (默认 300，上限 300；0 = 不缓存), identityCacheSize (默认 1024)：通道身份缓存（arch B7）
 //                        channel-identity cache for chain.channelKeys and groupVerifier (0 disables; never above 300 s)
-//   chainId (默认 56), hub, siteRegistry, factory, directory, escrow：合约地址，默认为主网（MAINNET）。
-//                        contract addresses, mainnet (MAINNET) by default. On any other chain pass `factory` (the TapeOut
+//   chainId (默认 56), hub, siteRegistry, factory：合约地址，默认为主网（MAINNET）。directory 与 escrow 没有默认值：
+//                        不传就没有（主网尚无部署的目录与托管）；付费服务用它自己清单里的 escrow（TAP-22 §3.4）。
+//                        contract addresses, mainnet (MAINNET) by default. `directory` and `escrow` have NO default (MAINNET
+//                        names neither): without them there is no directory cross-check and no configured escrow; a priced
+//                        service is paid through the escrow its own manifest names (TAP-22 §3.4). On any other chain pass `factory` (the TapeOut
 //                        processor factory, isCPU) with hub and siteRegistry: the mainnet factory has no code there, and
 //                        every identity and manifest read fails with BAD_KEY (review R2-6).
 //                        在其它链上须与 hub、siteRegistry 一起传 `factory`（TapeOut 处理器工厂）：主网工厂在那里没有代码，
@@ -433,23 +456,39 @@ export function createTapeAPI(opts = {}) {
       if (dev) return { delegation: false, holder: null, dev: true }
       throw new TapeAPIError('DELEGATION_INVALID', 'delegation missing')
     }
+    // TAP-20 §3.6 step 4 BEFORE step 5 (spec review SD-3): a burned circuit is MANIFEST_INVALID whatever its
+    // delegation looks like, so every client reports the same code. ownerOf reverting (no such token) is
+    // MANIFEST_INVALID; an RPC outage stays what it is.
+    // 先做第 4 步再做第 5 步：已销毁的电路无论委托如何都是 MANIFEST_INVALID，各客户端报同一个错误码。
+    // ownerOf 回滚（没有这个 token）是 MANIFEST_INVALID；RPC 故障保持原样。
+    const checkHolder = !(dev && !rpc)
+    let holder
+    if (checkHolder) {
+      try { holder = await chain.ownerOf(m.circuits, m.tokenId) } catch (e) {
+        if (isRevert(e)) throw new TapeAPIError('MANIFEST_INVALID', `ownerOf(${m.circuits}, ${m.tokenId}) reverted: the manifest names a circuit that does not exist`)
+        throw e
+      }
+    }
     if (m.delegation.expires <= now()) throw new TapeAPIError('DELEGATION_INVALID', 'delegation expired')
     // TAP-20 §3.4 (client SHOULD): a delegation more than 366 days out is refused / 超过 366 天的委托拒绝
     if (m.delegation.expires > now() + MAX_DELEGATION_S) throw new TapeAPIError('DELEGATION_INVALID', 'delegation.expires is more than 366 days ahead')
     const dir = hub   // 委托锚定在中枢，无需部署目录 / delegation is anchored on the hub; no directory needed
     const digest = delegationDigest(chainId, dir, { container: m.container, signer: m.signer, expires: m.delegation.expires })
-    let recovered
-    try { recovered = recoverAddress(digest, m.delegation.sig) } catch (e) { throw new TapeAPIError('DELEGATION_INVALID', `bad delegation signature: ${e.message}`) }
-    if (dev && !rpc) return { delegation: true, holder: recovered, dev: true, checked: false }
-    let holder
-    // TAP-20 §3.6 step 4: ownerOf reverting (no such token) is MANIFEST_INVALID; an RPC outage stays what it is.
-    // 第 4 步：ownerOf 回滚（没有这个 token）是 MANIFEST_INVALID；RPC 故障保持原样。
-    try { holder = await chain.ownerOf(m.circuits, m.tokenId) } catch (e) {
-      if (isRevert(e)) throw new TapeAPIError('MANIFEST_INVALID', `ownerOf(${m.circuits}, ${m.tokenId}) reverted: the manifest names a circuit that does not exist`)
-      throw e
+    // A 65-byte sig is ECDSA and must recover (a malformed one is refused before EIP-1271, as before). A longer one
+    // can only be a contract holder's EIP-1271 signature (TAP-20 §3.3/§3.4, spec review SD-4): no ECDSA recovery.
+    // 65 字节的签名是 ECDSA，必须能恢复（格式错误的在尝试 EIP-1271 前就拒绝，与以前相同）。更长的只能是合约持有人的
+    // EIP-1271 签名：不做 ECDSA 恢复。
+    const ecdsa = m.delegation.sig.length === 132
+    let recovered = null
+    if (ecdsa) {
+      try { recovered = recoverAddress(digest, m.delegation.sig) } catch (e) { throw new TapeAPIError('DELEGATION_INVALID', `bad delegation signature: ${e.message}`) }
     }
-    if (!eqAddr(holder, recovered) && !(await holderApproves(holder, digest, m.delegation.sig))) {
-      throw new TapeAPIError('DELEGATION_INVALID', `delegation signed by ${recovered}, holder is ${holder}`)
+    if (!checkHolder) {
+      if (!ecdsa) throw new TapeAPIError('DELEGATION_INVALID', 'a delegation signed under EIP-1271 can only be checked on chain: configure rpcUrls')
+      return { delegation: true, holder: recovered, dev: true, checked: false }
+    }
+    if (!(recovered && eqAddr(holder, recovered)) && !(await holderApproves(holder, digest, m.delegation.sig))) {
+      throw new TapeAPIError('DELEGATION_INVALID', recovered ? `delegation signed by ${recovered}, holder is ${holder}` : `holder ${holder} does not accept this delegation signature under EIP-1271`)
     }
     return dev ? { delegation: true, holder: checksumAddress(holder), dev: true, checked: true } : { delegation: true, holder: checksumAddress(holder) }
   }
@@ -495,12 +534,12 @@ export function createTapeAPI(opts = {}) {
   async function resolve(target) {
     let src
     if (typeof target === 'string') {
-      const name = /^(\d{1,15})\.(\d{1,15})\.tape$/i.exec(target.trim())
+      const name = tapeName(target)
       if (isAddress(target)) src = await manifestFromContainer(target)
       // A TapeOut name, <#ID>.<processor>.tape: the processor number gives the circuits contract, which with #ID gives
       // the container (TapeKit SPEC §3.2), so the name adds no trust beyond the { circuits, tokenId } path.
       // TapeOut 名字：处理器编号 → 电路合约，再与 #ID 得到容器；与 { circuits, tokenId } 路径信任相同。
-      else if (name) src = await manifestFromContainer(await chain.accountOf(await chain.cpuAt(name[2]), name[1]))
+      else if (name) src = await manifestFromContainer(await chain.accountOf(await chain.cpuAt(name.processor), name.tokenId))
       else {
         const container = await chain.resolve(target)
         if (eqAddr(container, ZERO_ADDRESS)) throw new TapeAPIError('NOT_FOUND', `label "${target}" not registered`)
@@ -664,12 +703,22 @@ export function createTapeAPI(opts = {}) {
   // 信封签名者不是 manifest.signer，可能是持有人换了密钥。重读清单（从第 2 步起）；若链上现在指定的正是签名的那把钥匙，
   // 这个信封就有效并被采用——不再发第二次请求，提供者已计费的结果不会被付两次。与价格提示同样限频。
   async function signerRotated(svc, signer, retried) {
-    if (retried || svc.target === undefined) return false
+    if (retried) return false
+    return (await rereadAfterBadSignature(svc)) && eqAddr(signer, svc.manifest.signer)
+  }
+  // TAP-20 §3.6 / TAP-21 §3.4: EVERY envelope-binding failure triggers a re-read from step 2, not only a foreign key
+  // (spec review SD-2). `refresh` updates `svc` in place, so the next call already uses the re-read endpoints and
+  // signer even though this one still fails. Best effort, and one re-read per service per HINT_MIN_INTERVAL_S, shared
+  // with signerRotated: a hostile endpoint cannot turn every call into chain reads. true when the re-read succeeded.
+  // 每一种信封绑定失败都触发从第 2 步起的重读，而不只是签名密钥不同。`refresh` 就地更新 `svc`，这次调用仍失败，
+  // 下一次调用已用上重读后的端点与签名者。尽力而为；每个服务每 HINT_MIN_INTERVAL_S 秒至多一次（与 signerRotated 共用），
+  // 恶意端点无法把每次调用都变成链上读取。重读成功返回 true。
+  async function rereadAfterBadSignature(svc) {
+    if (svc.target === undefined) return false
     const last = SIGNER_REREAD.get(svc)
     if (last && now() - last < HINT_MIN_INTERVAL_S) return false
     SIGNER_REREAD.set(svc, now())
-    try { await refresh(svc) } catch { return false }
-    return eqAddr(signer, svc.manifest.signer)
+    try { await refresh(svc); return true } catch { return false }
   }
 
   async function attempt(svc, def, method, params, price, { payer, reqId, signal, timeoutMs, retried }) {
@@ -695,6 +744,14 @@ export function createTapeAPI(opts = {}) {
         res = await needFetch()(`${urls[i]}/${method}`, {
           method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body), signal: ac.signal,
         })
+        // HTTP 429 IS the answer, whatever its body (TAP-21 §3.4): a CDN's HTML 429 must not send the same voucher on
+        // to the next endpoint (spec review SD-5). The body is read only for a retryAfterS hint.
+        // HTTP 429 本身就是答复，不论响应体是什么：CDN 的 HTML 429 不能让同一张凭证被送往下一个端点。只为 retryAfterS 提示读响应体。
+        if (res.status === 429) {
+          try { env = await readJsonBounded(res, ENVELOPE_LIMIT, { code: 'PROVIDER_UNAVAILABLE' }) } catch { env = null }
+          lastErr = null
+          break
+        }
         env = await readJsonBounded(res, ENVELOPE_LIMIT, { code: 'PROVIDER_UNAVAILABLE' })
         lastErr = null
         break
@@ -720,7 +777,9 @@ export function createTapeAPI(opts = {}) {
       throw new TapeAPIError('PROVIDER_UNAVAILABLE', `provider request failed on all ${urls.length} endpoint(s): ${lastErr.message}`)
     }
     // 信封校验：用自己发出的 method/params 与解析出的 container 重算摘要（TAP-21 v2）/ recompute with our own request
-    const reject = (msg, extra) => { lease?.release(); throw new TapeAPIError('BAD_SIGNATURE', msg, extra) }
+    // BAD_SIGNATURE re-reads the manifest first (SD-2); awaited at every call site, so it still ends the attempt.
+    // BAD_SIGNATURE 先重读清单；每个调用点都 await 它，因此仍然终止本次尝试。
+    const reject = async (msg, extra) => { lease?.release(); await rereadAfterBadSignature(svc); throw new TapeAPIError('BAD_SIGNATURE', msg, extra) }
     // TAP-21 §3.2: only JSON carrying a `sig` is an envelope. Anything else -- a CDN or proxy error page, the
     // provider's own unsigned 404 -- is a transport failure, not a bad signature, and must not trigger a re-resolve.
     // 只有带 `sig` 的 JSON 才是信封。其它（CDN/代理错误页、提供者自己未签名的 404）是传输失败，不是坏签名。
@@ -745,18 +804,18 @@ export function createTapeAPI(opts = {}) {
       try { return eqAddr(recoverResponseSigner({ container: svc.container, id, method, params: {}, ok: false, body: env.error, ts: env.ts }, env.sig), m.signer) } catch { return false }
     }
     const refuseMalformed = () => { lease?.release(); throw new TapeAPIError('BAD_REQUEST', env.error.message || 'malformed request', { signed: true, ts: env.ts, httpStatus: res.status }) }
-    if (env.id !== reqId) { if (env.id === '' && malformed('')) refuseMalformed(); reject('response id mismatch') }
-    if (typeof env.ok !== 'boolean') reject('response ok flag missing')
-    if (!eqAddr(env.container, svc.container)) reject('response container mismatch')
-    if (!Number.isInteger(env.ts)) reject('response ts missing')
-    if (Math.abs(now() - env.ts) > maxSkewS) reject(`response ts ${env.ts} outside the ±${maxSkewS}s freshness window`)
+    if (env.id !== reqId) { if (env.id === '' && malformed('')) refuseMalformed(); await reject('response id mismatch') }
+    if (typeof env.ok !== 'boolean') await reject('response ok flag missing')
+    if (!eqAddr(env.container, svc.container)) await reject('response container mismatch')
+    if (!Number.isInteger(env.ts)) await reject('response ts missing')
+    if (Math.abs(now() - env.ts) > maxSkewS) await reject(`response ts ${env.ts} outside the ±${maxSkewS}s freshness window`)
     const payload = env.ok ? env.result : env.error
-    if (payload === undefined) reject(env.ok ? 'result missing' : 'error missing')
+    if (payload === undefined) await reject(env.ok ? 'result missing' : 'error missing')
     let signer
-    try { signer = recoverResponseSigner({ container: svc.container, id: reqId, method, params, ok: env.ok, body: payload, ts: env.ts }, env.sig) } catch (e) { reject(`envelope: ${e.message}`) }
+    try { signer = recoverResponseSigner({ container: svc.container, id: reqId, method, params, ok: env.ok, body: payload, ts: env.ts }, env.sig) } catch (e) { await reject(`envelope: ${e.message}`) }
     // params the provider found non-canonical are refused bound to params {} (TAP-21 §3.3) / 非规范参数的拒绝绑定 params {}
     if (!eqAddr(signer, m.signer) && malformed(reqId)) refuseMalformed()
-    if (!eqAddr(signer, m.signer) && !(await signerRotated(svc, signer, retried))) reject(`envelope signed by ${signer}, expected ${m.signer}`)
+    if (!eqAddr(signer, m.signer) && !(await signerRotated(svc, signer, retried))) await reject(`envelope signed by ${signer}, expected ${m.signer}`)
     if (!env.ok) {
       const code = typeof env.error?.code === 'string' ? env.error.code : 'INTERNAL'
       const data = env.error?.data && typeof env.error.data === 'object' ? env.error.data : undefined
@@ -780,8 +839,10 @@ export function createTapeAPI(opts = {}) {
         // checking the counter first would retry at the same stale price and deadlock the consumer for ever.
         // 顺序要紧：价格过期必须先于计数器过期处理。提供者的 lastCumulative 不高于本地时 `resync` 直接空转，
         // 而涨价后正是这种情况 —— 先查计数器就会按同一个旧价重试，把消费者永久卡死。
-        // PAYMENT_REQUIRED for "insufficient" is what a provider following TAP-22 §3.2 literally may send; heal it the same way.
-        // 按 TAP-22 §3.2 字面对"不足"回 PAYMENT_REQUIRED 的提供者，也同样自愈。
+        // TAP-22 §3.2 says an insufficient voucher is BAD_VOUCHER and PAYMENT_REQUIRED only means "no voucher"; a provider
+        // that answers PAYMENT_REQUIRED to a voucher anyway still carries data.price, so heal it the same way.
+        // TAP-22 §3.2 规定额度不足是 BAD_VOUCHER，PAYMENT_REQUIRED 只表示"没带凭证"；对带了凭证的请求仍回 PAYMENT_REQUIRED 的提供者
+        // 同样带 data.price，照样自愈。
         if ((code === 'BAD_VOUCHER' || code === 'PAYMENT_REQUIRED') && !retried && typeof quoted === 'string' && /^\d+$/.test(quoted) && BigInt(quoted) !== price) {
           return { retry: true, refreshPrice: true, quoted }
         }
@@ -1265,7 +1326,7 @@ export function createTapeAPI(opts = {}) {
   const acceptedPrice = (svc, method) => ACCEPTED.get(svc)?.[method]
 
   /**
-   * TAP-27 §3.3 step 5: a verifier for group rosters. Each member's keys must equal the channel record its circuit's
+   * TAP-27 §3.3 step 6: a verifier for group rosters. Each member's keys must equal the channel record its circuit's
    * holder published; records are cached for GROUP_VERIFY_CACHE_S (300 s) in the client's identity cache (arch B7).
    * 群名单核验器：每个成员的密钥必须等于其电路持有人发布的通道记录；记录只缓存 300 秒（客户端身份缓存）。
    */

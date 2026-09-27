@@ -6,7 +6,7 @@
   "methods": {
     "fxRate": {
       "priceBEM": "0",
-      "url": "https://api.frankfurter.app/latest",
+      "url": "https://api.frankfurter.dev/v1/latest",
       "method": "GET",
       "params": { "from": "string", "to": "string" },
       "defaults": { "from": "USD", "to": "EUR" },
@@ -16,7 +16,7 @@
     },
     "fxConvert": {
       "priceBEM": "0.0001",
-      "url": "https://api.frankfurter.app/latest",
+      "url": "https://api.frankfurter.dev/v1/latest",
       "method": "GET",
       "params": { "amount": "number", "from": "string", "to": "string" },
       "required": ["amount"],
@@ -25,22 +25,24 @@
       "pick": { "amount": "amount", "base": "base", "date": "date", "rates": "rates" },
       "returns": { "amount": "number", "base": "string", "date": "string", "rates": "object" }
     },
-    "utcTime": {
+    "spotPrice": {
       "priceBEM": "0",
-      "url": "https://worldtimeapi.org/api/timezone/Etc/UTC",
+      "url": "https://api.coinbase.com/v2/prices/{pair}/spot",
       "method": "GET",
-      "params": {},
-      "pick": { "datetime": "datetime", "unixtime": "unixtime", "utcOffset": "utc_offset" },
-      "returns": { "datetime": "string", "unixtime": "number", "utcOffset": "string" }
+      "params": { "pair": "string" },
+      "required": ["pair"],
+      "pick": { "amount": "data.amount", "base": "data.base", "currency": "data.currency" },
+      "returns": { "amount": "string", "base": "string", "currency": "string" }
     },
-    "zoneTime": {
+    "cryptoRates": {
       "priceBEM": "0",
-      "url": "https://worldtimeapi.org/api/timezone/{area}/{location}",
+      "url": "https://api.coinbase.com/v2/exchange-rates",
       "method": "GET",
-      "params": { "area": "string", "location": "string" },
-      "required": ["area", "location"],
-      "pick": { "timezone": "timezone", "datetime": "datetime", "unixtime": "unixtime" },
-      "returns": { "timezone": "string", "datetime": "string", "unixtime": "number" }
+      "params": { "currency": "string" },
+      "defaults": { "currency": "BNB" },
+      "query": { "currency": "currency" },
+      "pick": { "currency": "data.currency", "usd": "data.rates.USD", "eur": "data.rates.EUR" },
+      "returns": { "currency": "string", "usd": "string", "eur": "string" }
     }
   }
 }

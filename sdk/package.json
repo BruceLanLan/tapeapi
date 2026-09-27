@@ -1,21 +1,74 @@
 {
   "name": "@tapeapi/sdk",
   "version": "0.1.0",
-  "description": "TapeAPI JavaScript SDK (TapeOut protocol on BNB Smart Chain)",
+  "description": "TapeAPI JavaScript SDK: resolve on-chain services, call them and verify every signed answer (TapeOut protocol on BNB Smart Chain)",
+  "keywords": [
+    "tapeapi",
+    "tapeout",
+    "bnb",
+    "bsc",
+    "web3",
+    "api",
+    "signed-response",
+    "micropayments",
+    "webmcp",
+    "mcp"
+  ],
+  "homepage": "https://tapeapi.fun/docs/",
+  "bugs": {
+    "url": "https://github.com/BruceLanLan/tapeapi/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BruceLanLan/tapeapi.git",
+    "directory": "sdk"
+  },
+  "license": "MIT",
+  "author": "Bruce (@BruceLanLan)",
   "type": "module",
+  "sideEffects": false,
   "main": "./src/index.js",
+  "types": "./types/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
-    "./rpc": "./src/rpc.js",
-    "./abi": "./src/abi.js",
-    "./canon": "./src/canon.js",
-    "./sig": "./src/sig.js",
-    "./channel": "./src/channel.js",
-    "./manifest": "./src/manifest.js",
-    "./webmcp": "./src/webmcp.js"
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./rpc": {
+      "types": "./types/rpc.d.ts",
+      "default": "./src/rpc.js"
+    },
+    "./abi": {
+      "types": "./types/abi.d.ts",
+      "default": "./src/abi.js"
+    },
+    "./canon": {
+      "types": "./types/canon.d.ts",
+      "default": "./src/canon.js"
+    },
+    "./sig": {
+      "types": "./types/sig.d.ts",
+      "default": "./src/sig.js"
+    },
+    "./channel": {
+      "types": "./types/channel.d.ts",
+      "default": "./src/channel.js"
+    },
+    "./manifest": {
+      "types": "./types/manifest.d.ts",
+      "default": "./src/manifest.js"
+    },
+    "./webmcp": {
+      "types": "./types/webmcp.d.ts",
+      "default": "./src/webmcp.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
-    "src"
+    "src",
+    "types",
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"
@@ -24,9 +77,11 @@
     "test": "node --test test"
   },
   "dependencies": {
-    "@noble/ciphers": "^1.3.0",
-    "@noble/curves": "^1",
-    "@noble/hashes": "^1"
+    "@noble/ciphers": "1.3.0",
+    "@noble/curves": "1.9.7",
+    "@noble/hashes": "1.8.0"
   },
-  "license": "MIT"
+  "publishConfig": {
+    "access": "public"
+  }
 }

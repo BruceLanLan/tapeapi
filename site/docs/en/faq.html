@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>FAQ and troubleshooting · TapeAPI Docs</title>
 <meta name="description" content="Do I need to deploy a contract to run a free service? No. Identity, the manifest and the delegation all use TapeOut's deployed contracts (DeWebHub, SiteRegistry">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../docs.css">
 <link rel="alternate" hreflang="zh-CN" href="../zh/faq.html">
 <script src="../docs.js"></script>
@@ -32,12 +33,12 @@
 <h2 id="calling-services"><a class="anchor" href="#calling-services" aria-hidden="true">#</a>Calling services</h2>
 <p><strong><code>ERR_MODULE_NOT_FOUND: Cannot find package '@tapeapi/sdk'</code></strong> — the packages are not on npm yet and resolve through the repository's workspace. Clone the repository, run <code>npm install</code> in it, and save your script inside the <code>tapeapi</code> directory (<a href="consume.html">Call a service</a>).</p>
 <p><strong><code>MANIFEST_INVALID: ... does not match</code></strong> — the file in the container's site differs from its on-chain hash, or there is no manifest. The service is not correctly published.</p>
-<p><strong><code>DELEGATION_INVALID</code></strong> — the delegation expired, or the circuit changed hands since it was signed. The provider has to sign a new one and publish the manifest again.</p>
+<p><strong><code>DELEGATION_INVALID</code></strong> — the delegation expired, or the circuit changed hands since it was signed. The provider has to sign a new one and publish the manifest again (<a href="provide.html#4-renew">Renew</a>).</p>
 <p><strong><code>RPC_UNAVAILABLE: only 1/2 nodes answered</code></strong> — use at least three RPC URLs with <code>quorum: 2</code>, so one node down still leaves a quorum. <code>allowSingleNode: true</code> exists for local development only.</p>
 <p><strong><code>RPC_DISAGREE</code></strong> — nodes returned different bytes for the same read. The SDK retries once; if it persists, one node is behind or misbehaving.</p>
 <p><strong>The answer's <code>ts</code> is rejected</strong> — your clock, or the service's, is more than 300 s off. Fix the clock; the window (<code>maxSkewS</code>) protects against replayed answers.</p>
 <h2 id="running-services"><a class="anchor" href="#running-services" aria-hidden="true">#</a>Running services</h2>
-<p><strong>The console says the service reports a different key than the one generated here.</strong> The service's <code>SIGNER_KEY</code> is not the key generated on that page (pasted twice, an old key, or the wrong service URL). Paste the key from step 5 again and wait for the redeploy.</p>
+<p><strong>The console says the service reports a different key than the one generated here.</strong> The service's <code>SIGNER_KEY</code> is not the key generated on that page (pasted twice, an old key, or the wrong service URL). Paste the key generated in step 3 again (or generate a new one there) and wait for the redeploy.</p>
 <p><strong>The console refuses to publish: &quot;unexpected field&quot; / &quot;expected ...&quot;.</strong> The manifest the service serves differs from what you read and signed. Usually a variable has not taken effect yet; wait a minute and retry.</p>
 <p><strong><code>putFile</code> reverts with <code>NotOwner</code>.</strong> The container is not opened, or the wallet is not the circuit's holder. Open the container on the circuit's page (0.012 BNB).</p>
 <p><strong>My wallet swaps BNB into WBNB.</strong> Gas is paid only in native BNB. Keep a little native BNB in the holder's wallet.</p>

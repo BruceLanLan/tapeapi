@@ -25,7 +25,7 @@ BNB Smart Chain（chainId 56），也就是 TapeOut 所在的链。
 
 **`MANIFEST_INVALID: ... does not match`**：容器站点中的文件与其链上哈希不一致，或者没有清单。该服务没有被正确发布。
 
-**`DELEGATION_INVALID`**：委托已过期，或者电路在委托签署之后易主。提供者必须签署一份新的委托，并重新发布清单。
+**`DELEGATION_INVALID`**：委托已过期，或者电路在委托签署之后易主。提供者必须签署一份新的委托，并重新发布清单（[续期](provide.md#4-续期)）。
 
 **`RPC_UNAVAILABLE: only 1/2 nodes answered`**：至少使用三个 RPC URL 并设置 `quorum: 2`，这样一个节点宕机时仍能凑够
 法定人数。`allowSingleNode: true` 仅用于本地开发。
@@ -37,8 +37,8 @@ BNB Smart Chain（chainId 56），也就是 TapeOut 所在的链。
 ## 运行服务
 
 **控制台提示服务报告的密钥与此处生成的不同。**
-服务的 `SIGNER_KEY` 不是在该页面上生成的密钥（粘贴了两次、用了旧密钥，或服务 URL 填错）。重新粘贴第 5 步中的密钥，
-并等待重新部署完成。
+服务的 `SIGNER_KEY` 不是在该页面上生成的密钥（粘贴了两次、用了旧密钥，或服务 URL 填错）。重新粘贴第 3 步生成的密钥
+（或在那里生成一把新的），并等待重新部署完成。
 
 **控制台拒绝发布："unexpected field" / "expected ..."。**
 服务所提供的清单与你读取并签署的内容不同。通常是某个变量尚未生效；等一分钟再重试。

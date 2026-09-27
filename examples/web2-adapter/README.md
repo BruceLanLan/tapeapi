@@ -5,15 +5,15 @@
 签名信封（TAP-21）、按次计费（TAP-22）、清单（TAP-20）全部由 `@tapeapi/server` 完成，公司只写配置。
 上游 API Key 从环境变量注入（`${UPSTREAM_API_KEY}`），永远不会出现在清单或响应里。
 
-自带的配置包了两个免 Key 的公开 JSON API：[frankfurter](https://api.frankfurter.app)（汇率，`fxRate` 免费 / `fxConvert` 0.0001 BEM）
-和 [worldtimeapi](https://worldtimeapi.org)（`utcTime`、`zoneTime`，免费，演示 URL 模板 `{area}/{location}`）。
+自带的配置包了两个免 Key 的公开 JSON API：[frankfurter](https://frankfurter.dev)（汇率，`fxRate` 免费 / `fxConvert` 0.0001 BEM）
+和 [Coinbase 公开价格接口](https://api.coinbase.com/v2/prices/BNB-USD/spot)（`spotPrice`、`cryptoRates`，免费；`spotPrice` 演示 URL 模板 `{pair}`，例如 `BNB-USD`）。
 
 ## 公司只需要写这 10 行
 
 ```json
 "fxRate": {
   "priceBEM": "0",
-  "url": "https://api.frankfurter.app/latest",
+  "url": "https://api.frankfurter.dev/v1/latest",
   "method": "GET",
   "headers": { "x-api-key": "${UPSTREAM_API_KEY}" },
   "params": { "from": "string", "to": "string" },
@@ -38,10 +38,11 @@ node examples/web2-adapter/index.mjs        # :8788，临时 signer key
 node examples/web2-adapter/consumer.mjs     # 另一个终端：解析 → 免费调用 → 付费调用演示
 ```
 
-一条 curl：
+两条 curl：
 
 ```sh
 curl -s -X POST http://127.0.0.1:8788/tapeapi/v1/fxRate -H 'content-type: application/json' -d '{"id":"1","params":{"to":"JPY"}}'
+curl -s -X POST http://127.0.0.1:8788/tapeapi/v1/spotPrice -H 'content-type: application/json' -d '{"id":"2","params":{"pair":"BNB-USD"}}'
 ```
 
 `consumer.mjs` 先 `api.resolve({ dev: url })`，再 `api.call(svc, 'fxRate')`（SDK 校验签名后才返回），
@@ -66,8 +67,9 @@ provider 查不到链上余额/授权，所以付费调用会得到一个**签�
 and lets `@tapeapi/server` do the signed envelopes (TAP-21), per-call metering (TAP-22) and the manifest (TAP-20).
 The upstream API key comes from the environment (`${UPSTREAM_API_KEY}`) and never appears in the manifest or responses.
 
-The shipped config wraps two key-less public JSON APIs: frankfurter (`fxRate` free, `fxConvert` 0.0001 BEM) and worldtimeapi
-(`utcTime`, `zoneTime` free, showing `{area}/{location}` URL templating).
+The shipped config wraps two key-less public JSON APIs: [frankfurter](https://frankfurter.dev) (`fxRate` free, `fxConvert`
+0.0001 BEM) and Coinbase's public price API (`spotPrice`, `cryptoRates` free; `spotPrice` shows `{pair}` URL templating,
+e.g. `BNB-USD`).
 
 ## All a company writes is the 10-line block above
 
@@ -88,10 +90,11 @@ node examples/web2-adapter/index.mjs        # :8788 with an ephemeral signer key
 node examples/web2-adapter/consumer.mjs     # second terminal: resolve -> free call -> paid-call demo
 ```
 
-One curl:
+Two curls:
 
 ```sh
 curl -s -X POST http://127.0.0.1:8788/tapeapi/v1/fxRate -H 'content-type: application/json' -d '{"id":"1","params":{"to":"JPY"}}'
+curl -s -X POST http://127.0.0.1:8788/tapeapi/v1/spotPrice -H 'content-type: application/json' -d '{"id":"2","params":{"pair":"BNB-USD"}}'
 ```
 
 `consumer.mjs` resolves with `api.resolve({ dev: url })`, calls `fxRate` (the SDK verifies the envelope signature before returning),

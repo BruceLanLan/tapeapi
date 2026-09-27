@@ -5,7 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>TapeAPI Status</title>
 <meta name="description" content="Live status of the public TapeAPI service and relay: health, latency, signer and delegation expiry.">
-<link rel="icon" href="data:,">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="TapeAPI">
+<meta property="og:title" content="TapeAPI Status">
+<meta property="og:description" content="Live status of the public TapeAPI service and relay: health, latency, signer and delegation expiry.">
+<meta property="og:url" content="https://tapeapi.fun/status/">
+<meta property="og:image" content="https://tapeapi.fun/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="TapeAPI: signed, verifiable APIs for TapeOut circuits on BNB Chain. tapeapi.fun">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="TapeAPI Status">
+<meta name="twitter:description" content="Live status of the public TapeAPI service and relay: health, latency, signer and delegation expiry.">
+<meta name="twitter:image" content="https://tapeapi.fun/og.png">
 <link rel="stylesheet" href="status.css">
 <!-- In <head> so the theme and language apply before the first paint. / 放在 head 里，主题与语言在首次绘制前生效。 -->
 <script src="status.js"></script>
@@ -47,8 +60,8 @@
       <span lang="en">Your browser asks each service's health endpoint directly and shows whether it answers, the round-trip time, the address it signs answers with (signer), and when the holder's delegation expires. Once a delegation lapses, clients reject every answer from that service, so fewer than 14 days left is flagged here.</span>
     </p>
     <p>
-      <span lang="zh">更深的检查每 30 分钟在仓库的监控任务里运行：像客户端一样从 BNB Chain 解析服务（circuit 11 与 12，处理器 1013），核对链上清单里的 signer 与服务实际使用的一致，并做一次经过验签的真实调用。</span>
-      <span lang="en">A deeper check runs every 30 minutes in the repository's monitor: it resolves each service from BNB Chain exactly as a client does (circuits 11 and 12 of processor 1013), checks that the signer in the on-chain manifest is the one the service uses, and makes one real call whose signed answer is verified.</span>
+      <span lang="zh">更深的检查在仓库的监控任务里定时运行，大约每 30 分钟一次（GitHub 可能推迟定时任务）：像客户端一样从 BNB Chain 解析服务（circuit 11 与 12，处理器 1013），核对链上清单里的 signer 与服务实际使用的一致，并做一次经过验签的真实调用。</span>
+      <span lang="en">A deeper check runs in the repository's monitor, scheduled about every 30 minutes (GitHub may delay scheduled runs): it resolves each service from BNB Chain exactly as a client does (circuits 11 and 12 of processor 1013), checks that the signer in the on-chain manifest is the one the service uses, and makes one real call whose signed answer is verified.</span>
     </p>
   </section>
 

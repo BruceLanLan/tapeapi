@@ -1,6 +1,6 @@
 {
   "tapeapi": "0.1",
-  "name": "Web2 Adapter (FX + Time)",
+  "name": "Web2 Adapter (FX + crypto prices)",
   "circuits": "0x0000000000000000000000000000000000000000",
   "tokenId": "0",
   "container": "0x0000000000000000000000000000000000000000",

@@ -3,8 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>TapeAPI Datasheet</title>
+<title>TapeAPI — signed APIs for TapeOut circuits</title>
 <meta name="description" content="Tape out a circuit, and its container is your API. Free signed BNB Chain reads at api.tapeapi.fun, an encrypted relay, and the protocol behind them. 流片一枚电路，它的容器就是你的 API。">
+<link rel="canonical" href="https://tapeapi.fun/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="TapeAPI">
+<meta property="og:title" content="TapeAPI — signed APIs for TapeOut circuits">
+<meta property="og:description" content="Signed, verifiable APIs for TapeOut circuits on BNB Chain: free signed reads at api.tapeapi.fun, an encrypted relay, and the open protocol behind them.">
+<meta property="og:url" content="https://tapeapi.fun/">
+<meta property="og:image" content="https://tapeapi.fun/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="TapeAPI: signed, verifiable APIs for TapeOut circuits on BNB Chain. tapeapi.fun">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="TapeAPI — signed APIs for TapeOut circuits">
+<meta name="twitter:description" content="Signed, verifiable APIs for TapeOut circuits on BNB Chain: free signed reads at api.tapeapi.fun, an encrypted relay, and the open protocol behind them.">
+<meta name="twitter:image" content="https://tapeapi.fun/og.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -27,8 +42,8 @@
   <h1 lang="zh">流片一枚电路，它的容器就是你的 API</h1>
   <h1 lang="en">Tape out a circuit, and its container is your API</h1>
 
-  <p class="lede" lang="zh">每个响应由它签名，每次调用付一张链下凭证，进一条只属于这个 API 的通道。DeWEB 是网站，TapeSend 是通信，TapeAPI 是服务。</p>
-  <p class="lede" lang="en">Every response signed by it, every call paid with an off-chain voucher into a channel that belongs to that API alone. DeWEB is websites, TapeSend is communication, TapeAPI is services.</p>
+  <p class="lede" lang="zh">每个响应由它签名；服务收费时，每次调用可用一张链下凭证支付，进一条只属于这个 API 的通道。DeWEB 是网站，TapeSend 是通信，TapeAPI 是服务。</p>
+  <p class="lede" lang="en">Every response signed by it; when a service charges, every call is payable with an off-chain voucher into a channel that belongs to that API alone. DeWEB is websites, TapeSend is communication, TapeAPI is services.</p>
 
   <div class="badges">
     <span class="stamp">PRELIMINARY</span>
@@ -463,8 +478,8 @@ console.log(r.result.bnbUsd, r.agreed)</pre>
 <footer>
   <div>
     <h4 lang="zh">状态</h4><h4 lang="en">Status</h4>
-    <p lang="zh">预发布。公共服务 api.tapeapi.fun 与公共中继 relay.tapeapi.fun 已上线，ChannelBus 已部署；付费托管合约尚未部署，要先通过独立审计；目前没有第三方审计。测试：JS 约 670 项（npm test）、合约 169 项（forge）、Python 验证器 102 项，全部通过。</p>
-    <p lang="en">Pre-alpha. The public service api.tapeapi.fun and the public relay relay.tapeapi.fun are live and ChannelBus is deployed; the paid-call escrow is not deployed and waits for an independent audit; there is no third-party audit yet. Tests: about 670 JS (npm test), 169 contract (forge) and 102 in the Python verifier, all passing.</p>
+    <p lang="zh">预发布。公共服务 api.tapeapi.fun 与公共中继 relay.tapeapi.fun 已上线，ChannelBus 已部署；付费托管合约尚未部署，要先通过独立审计；目前没有第三方审计。测试：JS 约 710 项（npm test）、合约 169 项（forge）、Python 验证器 102 项，全部通过。</p>
+    <p lang="en">Pre-alpha. The public service api.tapeapi.fun and the public relay relay.tapeapi.fun are live and ChannelBus is deployed; the paid-call escrow is not deployed and waits for an independent audit; there is no third-party audit yet. Tests: about 710 JS (npm test), 169 contract (forge) and 102 in the Python verifier, all passing.</p>
   </div>
   <div>
     <h4 lang="zh">想法来源</h4><h4 lang="en">Idea by</h4>

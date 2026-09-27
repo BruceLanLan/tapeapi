@@ -16,8 +16,8 @@ the [changelog](../CHANGELOG.md).
   carries channel frames on-chain when no relay is wanted.
 - **Playground** at [tapeapi.fun/playground](https://tapeapi.fun/playground/): resolve any service by name, see every
   check the SDK makes, call it, copy the code.
-- **Status page** at [tapeapi.fun/status](https://tapeapi.fun/status/), with a monitor that runs every 30 minutes and
-  opens a GitHub issue when a service is down or a delegation has fewer than 14 days left.
+- **Status page** at [tapeapi.fun/status](https://tapeapi.fun/status/), with a monitor scheduled about every 30 minutes
+  (GitHub may delay scheduled runs) that opens a GitHub issue when a service is down or a delegation has fewer than 14 days left.
 - **Docs** at [tapeapi.fun/docs](https://tapeapi.fun/docs/), in English and Chinese, generated from
   [`docs/guides/`](guides/).
 - **Holder console** at [tapeapi.fun/console](https://tapeapi.fun/console/): take a service live, publish its manifest
@@ -70,7 +70,7 @@ specification starts as a *spec proposal (TAP)* issue; see [CONTRIBUTING.md](../
   不想用中继时在链上承载通道帧。
 - **调试台** [tapeapi.fun/playground](https://tapeapi.fun/playground/)：按名称解析任意服务，查看 SDK 做的每一项核对，
   调用并复制代码。
-- **状态页** [tapeapi.fun/status](https://tapeapi.fun/status/)，配有每 30 分钟运行一次的监控：服务挂了或委托不足 14 天到期时
+- **状态页** [tapeapi.fun/status](https://tapeapi.fun/status/)，配有定时监控，大约每 30 分钟运行一次（GitHub 可能推迟定时任务）：服务挂了或委托不足 14 天到期时
   自动开 GitHub issue。
 - **手册** [tapeapi.fun/docs](https://tapeapi.fun/docs/)，中英双语，由 [`docs/guides/`](guides/) 生成。
 - **持有人控制台** [tapeapi.fun/console](https://tapeapi.fun/console/)：用手机钱包让服务上线、发布清单、签署委托。

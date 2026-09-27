@@ -69,21 +69,24 @@ This is the path with no server and no command line.
    dashboard must match `name` in your fork's `examples/cloudflare-worker/wrangler.toml` (`my-tapeapi-service`; change
    both if you want another). The Worker starts in setup mode and answers only its health check.
 3. **Give it your own hostname.** The endpoint is written into the on-chain manifest, so use a hostname you control,
-   such as `api.yourdomain.com`: in the dashboard, Worker → Settings → Domains & Routes → Add → Custom domain. Then add
-   the variable `PUBLIC_URL` = `https://<your host>` (Settings → Variables and Secrets). Setup mode lists `PUBLIC_URL`
-   as missing until it is set.
+   such as `api.yourdomain.com`: in the dashboard, Worker → Settings → Domains & Routes → Add → Custom domain. A Workers
+   custom domain needs that hostname's zone (`yourdomain.com`) on the same Cloudflare account. If you have no domain on
+   Cloudflare, use the Worker's own `https://<worker name>.<your account>.workers.dev` URL instead (still https). Then
+   add the variable `PUBLIC_URL` = `https://<your host>` (Settings → Variables and Secrets). Setup mode lists
+   `PUBLIC_URL` as missing until it is set.
 4. **Open the holder console** at [tapeapi.fun/console](https://tapeapi.fun/console/) in your wallet's in-app browser,
-   connected with the wallet that holds the circuit. In its service URL field, replace the default
-   `https://api.tapeapi.fun` with `https://<your host>`, then follow the console's steps 4 to 7:
-   - **4** reads your circuit, checks you are the holder and that the container is opened;
-   - **5** generates the signing key on your phone and shows the variables to add in Cloudflare (`SIGNER_KEY` as a
+   and follow its five steps:
+   - **1** connects the wallet that holds the circuit;
+   - **2** reads your circuit, checks you are the holder and that the container is opened;
+   - **3** generates the signing key on your phone and shows the variables to add in Cloudflare (`SIGNER_KEY` as a
      secret; the rest are public);
-   - **6** checks the service reports that same key, asks your wallet for the delegation signature, and checks the
-     signature really comes from the holder;
-   - **7** builds the manifest from what you read and signed, requires the service's copy to match it field for field,
+   - **4** checks the service reports that same key, asks your wallet for the delegation signature, and checks the
+     signature really comes from the holder. In its service URL field, replace the default `https://api.tapeapi.fun`
+     with `https://<your host>`. Add the two values it shows, `DELEGATION_EXPIRES` and `DELEGATION_SIG`, as variables;
+   - **5** builds the manifest from what you read and signed, requires the service's copy to match it field for field,
      shows it to you, and writes it on chain with one transaction.
 
-Do all four console steps in the same wallet app; the page keeps its progress in that browser. **Never screenshot or
+Do all five console steps in the same wallet app; the page keeps its progress in that browser. **Never screenshot or
 send the signing key to anyone.**
 
 `npm run deploy:public` deploys the project's own public service (`api.tapeapi.fun`, from
@@ -111,10 +114,18 @@ const svc = await createTapeAPI({ rpcUrls: [/* ... */], quorum: 2 }).resolve('0x
 
 ## 4. Renew
 
-A delegation lasts 90 days by default. Before it ends: sign a new one (console step 6), update `DELEGATION_EXPIRES`
-and `DELEGATION_SIG`, **and publish the manifest again** (console step 7), because clients read the delegation from the
-on-chain manifest. The signing key can stay the same. There is no revocation: an old delegation stays valid until its
-own expiry, so if the signing key leaks, rotate it and republish at once.
+A delegation lasts 90 days by default. Clients read it from the on-chain manifest, so renewing means a new signature
+**and** publishing the manifest again. The signing key stays the same. In the [holder console](https://tapeapi.fun/console/):
+
+1. **Step 2:** read your circuit. The console also reads the manifest already on chain and the signing address it
+   authorises.
+2. **Step 4:** tap **Renew**. It signs a new delegation for the key already published; no new key is generated, and
+   step 3 is skipped. The service URL must be the one on chain.
+3. In Cloudflare, replace `DELEGATION_EXPIRES` and `DELEGATION_SIG` with the two new values and wait for the redeploy.
+4. **Step 5:** publish the manifest again.
+
+There is no revocation: an old delegation stays valid until its own expiry, so if the signing key leaks, do not renew:
+generate a new key in step 3, sign for it in step 4 and publish in step 5 at once.
 
 ## 5. Paid methods
 

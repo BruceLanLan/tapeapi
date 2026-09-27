@@ -53,7 +53,7 @@ A Solver lists a method with an `intentRfq` object in its descriptor (TAP-20 §3
   "intentRfq": { "routes": [ { "fromChain": 56, "toChain": 8453 } ] } }
 ```
 
-`params` fields are as named; `amountIn` is a decimal string in the smallest unit of `fromToken`. `fromToken`/`toToken` equal to the zero address denote the chain's native coin. A Solver that does not serve the route MUST answer `METHOD_NOT_FOUND`. `result` MUST be `{ quote, sig, escrow }` where `quote` is the struct in §3.3, `sig` its signature, and `escrow` the `IntentEscrow` address on `fromChain`. The whole `result` is additionally covered by the TAP-21 envelope signature, binding the quote to the Solver's service identity.
+`params` fields are as named; `amountIn` is a decimal string in the smallest unit of `fromToken`. `fromToken`/`toToken` equal to the zero address denote the chain's native coin. A Solver that does not serve the route MUST answer `METHOD_NOT_FOUND`. `result` MUST be `{ quote, sig, escrow }` where `quote` is the struct in §3.3, `sig` its signature, and `escrow` the `IntentEscrow` address on `fromChain`. A Solver MAY add informative fields beside these three (the reference Solver adds `typehash`, `digest` and `domain`); a client ignores them and computes the digest itself from `quote` and the domain of §3.3, never taking a Solver's `digest` in its place. The whole `result` is additionally covered by the TAP-21 envelope signature, binding the quote to the Solver's service identity.
 
 ### 3.3 Signed Quote
 
@@ -189,7 +189,7 @@ Solver 在其描述符（TAP-20 §3.3）中列出带 `intentRfq` 对象的方法
   "intentRfq": { "routes": [ { "fromChain": 56, "toChain": 8453 } ] } }
 ```
 
-`params` 字段如其名；`amountIn` 为以 `fromToken` 最小单位计的十进制字符串。`fromToken`/`toToken` 为零地址表示该链原生币。不服务该路线的 Solver MUST 回应 `METHOD_NOT_FOUND`。`result` MUST 为 `{ quote, sig, escrow }`，其中 `quote` 为 §3.3 的结构体，`sig` 为其签名，`escrow` 为 `fromChain` 上的 `IntentEscrow` 地址。整个 `result` 另受 TAP-21 信封签名覆盖，将报价绑定到 Solver 的服务身份。
+`params` 字段如其名；`amountIn` 为以 `fromToken` 最小单位计的十进制字符串。`fromToken`/`toToken` 为零地址表示该链原生币。不服务该路线的 Solver MUST 回应 `METHOD_NOT_FOUND`。`result` MUST 为 `{ quote, sig, escrow }`，其中 `quote` 为 §3.3 的结构体，`sig` 为其签名，`escrow` 为 `fromChain` 上的 `IntentEscrow` 地址。Solver MAY 在这三个字段之外附加信息性字段（参考 Solver 附加了 `typehash`、`digest` 与 `domain`）；客户端忽略它们，自己根据 `quote` 与 §3.3 的域计算摘要，绝不用 Solver 给出的 `digest` 代替。整个 `result` 另受 TAP-21 信封签名覆盖，将报价绑定到 Solver 的服务身份。
 
 ### 3.3 签名报价
 

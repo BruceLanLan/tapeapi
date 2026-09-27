@@ -191,6 +191,16 @@ async function verify(address) {
 }
 
 load()
+// A link such as the dashboard's "Renew in console" may carry ?processor=&circuit=&url=. Only values that pass
+// lib prefillFromQuery fill the step 2 and step 4 fields; nothing is read, signed or sent until you tap a button.
+// 面板“去操作台续期”这类链接可带 ?processor=&circuit=&url=。只有通过 lib prefillFromQuery 检查的值会填进第 2 步和第 4 步的
+// 输入框；在你点按钮之前，本页不读取、不签名、不发送任何东西。
+{
+  const pre = C.prefillFromQuery(location.search)
+  if (pre.processor) $('c-proc').value = pre.processor
+  if (pre.circuit) $('c-id').value = pre.circuit
+  if (pre.url) $('svc-url').value = pre.url
+}
 
 // ---------------------------------------------------------------- steps 2-5: publish a service ----
 function showVars() {

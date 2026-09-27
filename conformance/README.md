@@ -20,6 +20,12 @@ node conformance/run.mjs --url https://api.example.com \
 node conformance/run.mjs --url http://127.0.0.1:8787 --check-rate-limit 600 --junit conformance.xml
 ```
 
+Check the public service with the example arguments its methods need / 用公共服务方法所需的示例参数检查它：
+
+```bash
+node conformance/run.mjs --url https://api.tapeapi.fun --params examples/public-api/conformance-params.json
+```
+
 | Option | Meaning |
 |---|---|
 | `--manifest file.json` | Trusted manifest (the one you resolved on chain). Without it the suite trusts the served `/.well-known/tapeapi.json` |

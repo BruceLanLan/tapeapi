@@ -21,7 +21,7 @@ const T = {
   zh: {
     section: '调试台', docs: '手册', theme: '主题', light: '浅色', dark: '深色', other: 'English', copy: '复制', copied: '已复制',
     title: '调试台',
-    lede: '输入一个 TapeOut 服务名，在浏览器里解析并调用它。每一项核对都由 @tapeapi/sdk 在本页完成，与你安装的 SDK 是同一份代码；没有中间服务器替你判断。',
+    lede: '输入一个 TapeOut 服务名，在浏览器里解析并调用它。每一项核对都由 @tapeapi/sdk 在本页完成，与仓库中的 SDK 是同一份代码；没有中间服务器替你判断。',
     'h.service': '解析服务', 'h.methods': '选择方法', 'h.call': '调用', 'h.code': '在你的代码里',
     'target.label': '服务', resolve: '解析',
     'target.hint': '可以填名称 <code>11.1013.tape</code>（#ID.处理器编号.tape）、容器地址 <code>0x…</code>，或处理器合约加编号 <code>0x… #11</code>。',
@@ -71,7 +71,7 @@ const T = {
   en: {
     section: 'Playground', docs: 'Docs', theme: 'Theme', light: 'Light', dark: 'Dark', other: '中文', copy: 'Copy', copied: 'Copied',
     title: 'Playground',
-    lede: 'Type a TapeOut service name, then resolve and call it from your browser. Every check is made on this page by @tapeapi/sdk, the same code you install; no server in the middle decides for you.',
+    lede: 'Type a TapeOut service name, then resolve and call it from your browser. Every check is made on this page by @tapeapi/sdk, the same SDK code as in the repository; no server in the middle decides for you.',
     'h.service': 'Resolve a service', 'h.methods': 'Pick a method', 'h.call': 'Call', 'h.code': 'In your code',
     'target.label': 'Service', resolve: 'Resolve',
     'target.hint': 'A name such as <code>11.1013.tape</code> (#ID.processor.tape), a container address <code>0x…</code>, or a processor contract and number <code>0x… #11</code>.',

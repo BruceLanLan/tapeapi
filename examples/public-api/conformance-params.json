@@ -1,0 +1,8 @@
+{
+  "balance": { "address": "0x086bFB1908B1DF8C0c4412f28E4DD22Bdd52d715" },
+  "tokenInfo": { "token": "0x55d398326f99059fF775485246999027B3197955" },
+  "tokenBalance": { "token": "0x55d398326f99059fF775485246999027B3197955", "address": "0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE" },
+  "nftOwner": { "contract": "0xe02c26c7432A7121168AA9B610DE24eCf9a1a414", "tokenId": "11" },
+  "pairPrice": { "pair": "0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE" },
+  "tapeName": { "name": "11.1013.tape" }
+}

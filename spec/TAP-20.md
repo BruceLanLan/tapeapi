@@ -34,7 +34,7 @@ TapeAPI closes this gap without changing the protocol: identity is the existing 
 - A **service** is a circuit: the pair `(circuits, tokenId)` where `circuits` is an ERC-721 processor contract.
 - The **container** of a service is `DeWebHub.accountOf(circuits, tokenId)` (DeWebHub proxy `0xe61A9C7213a6Aa616C246a2B569e555B417b25ee` on chainId 56). Clients MUST derive the container and MUST NOT accept a self-reported container.
 - The **holder** is `IERC721(circuits).ownerOf(tokenId)` at the time of verification.
-- The service's on-chain name is the SPEC name `<#ID>.<processor>.tape`, where `#ID` is `tokenId` and `processor` is the number under which the TapeOut processor factory lists `circuits` (TapeKit SPEC §3.2). This TAP defines no new name syntax.
+- The service's on-chain name is the SPEC name `<#ID>.<processor>.tape`, where `#ID` is `tokenId` and `processor` is the number under which the TapeOut processor factory lists `circuits` (TapeKit SPEC §2.2, §3.2). This TAP defines no new name syntax.
 - A **label** is a `bytes32` alias registered in a ServiceDirectory contract (§3.5). A label is a lookup convenience only; it carries no authority.
 
 ### 3.2 Manifest Location
@@ -42,7 +42,7 @@ TapeAPI closes this gap without changing the protocol: identity is the existing 
 - The manifest MUST be stored in the container's DeWEB site at URL path `/.well-known/tapeapi.json`, content type `application/json`, UTF-8.
 - SiteRegistry keys carry **no leading slash** (TapeKit SPEC §6 step 3 strips it before lookup; on mainnet `4246.0.tape` stores `index.html`, and `fileInfo(container, "/index.html")` answers size 0). The registry key of the manifest is therefore `.well-known/tapeapi.json`. Clients MUST strip leading slashes before every `read` / `fileInfo` call.
 - Clients MUST read it with `SiteRegistry.read(container, ".well-known/tapeapi.json")` (SiteRegistry proxy `0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6`) and MUST verify the returned bytes against `SiteRegistry.fileInfo(container, path)`: byte length MUST equal `size` and `sha256(bytes)` MUST equal `sha256Hash`.
-- All `eth_call`s in this TAP MUST be issued to at least `quorum` independently configured RPC nodes (RECOMMENDED `quorum ≥ 2`) and accepted only if all results are byte-identical. Disagreement MUST be treated as failure (`RPC_DISAGREE`), never resolved by majority. A node that fails in transport (timeout, HTTP error, oversize body) has not answered and is not a disagreement, but at least `quorum` nodes MUST answer. A revert on one node and a value on another is a disagreement. A JSON-RPC error in which the node describes ITSELF -- rate limiting (`-32005`), a method it does not implement (`-32601`), or a refusal to scan the range asked for -- is a node failure, exactly like a timeout: the node has not answered. Concretely, `-32005` and `-32601` are node failures, and a `-32000` whose message describes a range, result or size limit, a timeout or an unsupported method is a node failure unless the message mentions a revert, gas or an allowance (those are answers about the chain). Any other JSON-RPC error, a revert in particular, is an answer about the chain: it is a result, compared across nodes by its `code` (message texts differ between node implementations), and an error agreed by every answering node surfaces as `RPC_ERROR`. A client MAY re-ask all nodes once to absorb a race across a block boundary on `latest`; the re-ask MUST itself be unanimous. `eth_blockNumber` is not an `eth_call`: honest nodes differ by a block or two, so clients use the lowest head among at least `quorum` answers and SHOULD refuse (`RPC_DISAGREE`) a spread wider than a configured bound (reference: 64 blocks). Clients MUST NOT fetch node lists from a server at runtime.
+- All `eth_call`s in this TAP MUST be issued to at least `quorum` independently configured RPC nodes (RECOMMENDED `quorum ≥ 2`) and accepted only if all results are byte-identical. Disagreement MUST be treated as failure (`RPC_DISAGREE`), never resolved by majority. A node that fails in transport (timeout, HTTP error, oversize body) has not answered and is not a disagreement, but at least `quorum` nodes MUST answer. A revert on one node and a value on another is a disagreement. A JSON-RPC error in which the node describes ITSELF -- rate limiting (`-32005`), a method it does not implement (`-32601`), or a refusal to scan the range asked for -- is a node failure, exactly like a timeout: the node has not answered. Concretely, `-32005` and `-32601` are node failures, and a `-32000` whose message describes a range, result or size limit, a timeout or an unsupported method is a node failure unless the message mentions a revert, gas or an allowance (those are answers about the chain). Any other JSON-RPC error, a revert in particular, is an answer about the chain: it is a result, compared across nodes by its `code` and by whether it reports a revert (code `3`, or a message that mentions a revert; message texts otherwise differ between node implementations and are not compared), so that a revert and a `-32000` "header not found" never count as the same answer, and an error agreed by every answering node surfaces as `RPC_ERROR`. A client MAY re-ask all nodes once to absorb a race across a block boundary on `latest`; the re-ask MUST itself be unanimous. `eth_blockNumber` is not an `eth_call`: honest nodes differ by a block or two, so clients use the lowest head among at least `quorum` answers and SHOULD refuse (`RPC_DISAGREE`) a spread wider than a configured bound (reference: 64 blocks). Clients MUST NOT fetch node lists from a server at runtime.
 - The manifest MUST NOT exceed 65 536 bytes.
 - A development mode that accepts a manifest object or URL directly MAY exist in SDKs; it MUST be opt-in (`dev: true`) and MUST NOT be reachable from a default configuration.
 
@@ -79,13 +79,13 @@ TapeAPI closes this gap without changing the protocol: identity is the existing 
 | `endpoints.live` | string[] | MUST | Zero or more absolute `https://` URLs without query or fragment. Providers SHOULD list at most 4. |
 | `endpoints.async` | boolean | MUST | `true` means the service accepts requests via its TAP-10 (TapeSend) inbox addressed to `container`. At least one of `live` non-empty or `async == true` MUST hold. |
 | `methods` | array | MUST | Non-empty. Method names MUST be unique. |
-| `payment` | object | MUST* | `{ "escrow": address, "unit": "BEM", "decimals": 8 }`. *REQUIRED if any `priceBEM != "0"`. |
+| `payment` | object | MUST* | `{ "escrow": address, "unit": "BEM", "decimals": 8 }`. *REQUIRED if any `priceBEM != "0"`, and then `escrow` is a non-zero address (a zero escrow can settle nothing). `unit` and `decimals` carry no information, since both are fixed: either may be omitted and is then read as `"BEM"` and `8`; any other value is invalid. |
 
 Method descriptor:
 
 | Field | Type | Req. | Constraint |
 |---|---|---|---|
-| `name` | string | MUST | `^[A-Za-z_][A-Za-z0-9_]{0,63}$`. |
+| `name` | string | MUST | `^[A-Za-z_][A-Za-z0-9_]{0,63}$`, and not `__proto__`, `constructor` or `prototype`: TAP-21 §3.1 forbids those keys everywhere, so no handler table can hold them safely. |
 | `priceBEM` | string | MUST | Decimal string, ≥ 0, at most 8 fractional digits, no exponent. Interpreted in BEM (`0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a`, **8 decimals** — verified on chain 2026-09-21; assuming 18 is a 10^10 error). `"0"` means free. |
 | `params` | object | MUST | Map of parameter name → type name. Type names are informative; the wire format is JSON. MAY be `{}`. |
 | `returns` | object | MUST | Map of field name → type name. Informative. |
@@ -103,7 +103,7 @@ The holder authorises `signer` with an EIP-712 signature.
 - `structHash = keccak256(abi.encode(DELEGATION_TYPEHASH, container, signer, expires))`.
 - `digest = keccak256(0x1901 ‖ DOMAIN_SEPARATOR ‖ structHash)`.
 - `sig` is 65 bytes `r ‖ s ‖ v`, `v ∈ {27, 28}` (a `v` of 0 or 1 is normalised to 27 or 28 first, as in TAP-21 §3.3), `s` in the lower half-order. The recovered address MUST equal the holder at verification time, unless the holder is a contract that accepts `sig` (below). `expires` MUST be strictly greater than the verifier's current Unix time. Verifiers SHOULD reject `expires` more than 366 days in the future. The same bound is a MUST for TAP-26 channel records, intentionally: a channel identity must lapse, while a service delegation is renewed with its manifest.
-- **Contract holders.** A client MAY accept a delegation from a holder that is a contract under EIP-1271: `isValidSignature(digest, sig)` on the holder MUST return the full 32-byte word `0x1626ba7e` followed by zeros. The delegation `sig` may then be longer than 65 bytes. The reference SDK accepts a contract holder this way only when its signature is a well-formed 65-byte ECDSA signature (it recovers the signature first and refuses a malformed one before trying EIP-1271), and the reference ServiceDirectory verifies ECDSA only, so a contract holder's delegation is accepted by clients alone until that contract adds EIP-1271.
+- **Contract holders.** A client MAY accept a delegation from a holder that is a contract under EIP-1271: `isValidSignature(digest, sig)` on the holder MUST return the full 32-byte word `0x1626ba7e` followed by zeros. The delegation `sig` may then be longer than 65 bytes. The reference SDK treats a 65-byte `sig` as ECDSA (it recovers it first and refuses a malformed one before trying EIP-1271) and passes a longer `sig`, up to 1024 bytes as for TAP-26 channel records, to EIP-1271 directly. The reference ServiceDirectory verifies ECDSA only, so a contract holder's delegation is accepted by clients alone until that contract adds EIP-1271.
 - `ServiceDirectory.verifyDelegation(circuits, tokenId, signer, expires, sig)` MUST implement the MUST-level checks of this section (the 366-day bound is a client SHOULD and is not enforced on-chain) and MAY be used by clients instead of local recovery; either way the holder MUST be read on-chain, never from the manifest.
 
 ### 3.5 ServiceDirectory
@@ -112,7 +112,7 @@ A non-upgradeable contract per chain that maps labels to containers and records 
 
 - `register` MUST reject any `circuits` for which `factory.isCPU(circuits)` is false, so that a counterfeit ERC-721 cannot claim labels.
 - `register` MUST derive the container via `DeWebHub.accountOf` and MUST refuse a label already held by a different container.
-- `register` and `update` MUST be called by the current holder; an `ownerOf` that reverts (a burned circuit) MUST fail closed, not revert the transaction.
+- `register` and `update` MUST be called by the current holder. An `ownerOf` that reverts or returns no address (a burned circuit) MUST be treated as "no holder", so the call is refused (the reference contract reverts with `NotHolder()`), never treated as authorised and never allowed to bubble up the circuit contract's own revert.
 - When `domainBinding` is configured, claiming a non-zero label MUST require `isContainerLive(container)`. A liveness call that reverts, returns fewer than 32 bytes, or returns any value other than `1` MUST be treated as not live.
 - `release` is normally restricted to the holder; when the circuit has been burned and has no holder, anyone MAY release the label so it does not stay locked forever.
 - A `labelFee` MAY be charged for non-zero labels. Clients MUST read `labelFee()` and attach exactly that,
@@ -121,13 +121,13 @@ A non-upgradeable contract per chain that maps labels to containers and records 
   activation gate are published with its address.
 - `manifestPath` is informative only. Clients MUST NOT use it for resolution (§3.6 always reads `.well-known/tapeapi.json`), and anything that does pass it to the SiteRegistry MUST strip leading slashes first (§3.2). The reference SDK registers the registry form `.well-known/tapeapi.json`.
 
-The full interface is in `contracts/src/ServiceDirectory.sol`. The directory is a hint: nothing a client trusts comes from it except the `label → container` mapping, and even that is followed only by the algorithm in §3.6.
+The full interface is in `contracts/src/ServiceDirectory.sol`. The directory is a hint: nothing a client trusts comes from it except the `label → container` mapping, and even that is followed only by the algorithm in §3.6. A client with a directory configured MAY also compare the directory's record for the resolved container (`serviceOf`) with the manifest's `(circuits, tokenId)` and refuse a mismatch as `MANIFEST_INVALID` (the reference SDK does); since the directory derives the container on the hub, a mismatch means a broken directory. A container with no record, or a directory whose `serviceOf` reverts, does not block resolution.
 
 ### 3.6 Resolution Algorithm
 
 Input: a label, a TapeOut name `<#ID>.<processor>.tape`, a container address, or a `(circuits, tokenId)` pair. Output: `{ manifest, container, verified: { delegation, holder } }` or an error.
 
-1. **Locate.** If input is a label, `container = ServiceDirectory.resolve(label)`; zero address → `NOT_FOUND`. If input is `(circuits, tokenId)`, `container = DeWebHub.accountOf(circuits, tokenId)`. If input is a TapeOut name `<#ID>.<processor>.tape` (grammar per TapeKit SPEC §3.2), it is resolved exactly as TapeKit SPEC §3.2 resolves it: `circuits = factory.cpuAt(processor)` on the TapeOut processor factory (step 3), then `container = DeWebHub.accountOf(circuits, #ID)`; a processor number past the last one (`cpuAt` reverts) → `NOT_FOUND`. A string of this form is a name, never a label, and is not looked up in any directory. If input is a container, use it as given.
+1. **Locate.** If input is a label, `container = ServiceDirectory.resolve(label)`; zero address → `NOT_FOUND`. If input is `(circuits, tokenId)`, `container = DeWebHub.accountOf(circuits, tokenId)`. If input is a TapeOut name `<#ID>.<processor>.tape` (canonical form per TapeKit SPEC §2.2: both parts decimal without leading zeros except `0` itself, all lowercase, `#ID ≥ 1`; a client MAY also accept the suffix-less `<#ID>.<processor>`, which TapeKit SPEC §2.4 lets an address bar accept for the same name), it is resolved exactly as TapeKit SPEC §3.2 resolves it: `circuits = factory.cpuAt(processor)` on the TapeOut processor factory (step 3), then `container = DeWebHub.accountOf(circuits, #ID)`; a processor number past the last one (`cpuAt` reverts) → `NOT_FOUND`. A string of this form is a name, never a label, and is not looked up in any directory. A string that looks like a name but is not in that form (leading zeros, an upper-case `.TAPE`, `#ID` 0) MUST be refused rather than guessed at, and is not looked up as a label either, so that no label can squat a spelling of a name. TapeKit's other address-bar forms (`#4246@0`, `tape://4246.0.tape/`) are not inputs to this algorithm: a shell converts them to the canonical name first, and the reference SDK refuses them like a non-canonical spelling. If input is a container, use it as given.
 
    The name form adds no trust beyond the `(circuits, tokenId)` path: it only computes that pair from on-chain reads made under §3.2, and steps 2–5 run unchanged, so step 3 still re-derives the container from the manifest's own `(circuits, tokenId)` and checks `isCPU`.
 2. **Read manifest.** `fileInfo(container, path)` then `read(container, path)`, both with quorum agreement (§3.2). Verify length and SHA-256. Parse JSON; validate against §3.3. Failure → `MANIFEST_INVALID`.
@@ -252,7 +252,7 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 - **服务**是一个电路：二元组 `(circuits, tokenId)`，其中 `circuits` 为 ERC-721 处理器合约。
 - 服务的**容器**为 `DeWebHub.accountOf(circuits, tokenId)`（chainId 56 上 DeWebHub 代理 `0xe61A9C7213a6Aa616C246a2B569e555B417b25ee`）。客户端 MUST 自行推导容器，MUST NOT 接受自报的容器。
 - **持有者**为验证时刻的 `IERC721(circuits).ownerOf(tokenId)`。
-- 服务的链上名称即 SPEC 名称 `<#ID>.<processor>.tape`，其中 `#ID` 即 `tokenId`，`processor` 是 TapeOut 处理器工厂列出 `circuits` 所用的编号（TapeKit SPEC §3.2）。本 TAP 不定义新的名称语法。
+- 服务的链上名称即 SPEC 名称 `<#ID>.<processor>.tape`，其中 `#ID` 即 `tokenId`，`processor` 是 TapeOut 处理器工厂列出 `circuits` 所用的编号（TapeKit SPEC §2.2、§3.2）。本 TAP 不定义新的名称语法。
 - **标签**是在 ServiceDirectory 合约（§3.5）中注册的 `bytes32` 别名。标签仅为查找便利，不承载任何权威。
 
 ### 3.2 清单位置
@@ -260,7 +260,7 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 - 清单 MUST 存于容器 DeWEB 站点的 URL 路径 `/.well-known/tapeapi.json`，内容类型 `application/json`，UTF-8 编码。
 - SiteRegistry 的键**不带前导斜杠**（TapeKit SPEC §6 第 3 步在查找前去掉它；主网 `4246.0.tape` 存的是 `index.html`，`fileInfo(container, "/index.html")` 返回 size 0）。因此清单的注册表键是 `.well-known/tapeapi.json`。客户端 MUST 在每次 `read` / `fileInfo` 前去掉前导斜杠。
 - 客户端 MUST 通过 `SiteRegistry.read(container, ".well-known/tapeapi.json")`（SiteRegistry 代理 `0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6`）读取，并 MUST 依据 `SiteRegistry.fileInfo(container, path)` 校验返回字节：字节长度 MUST 等于 `size`，`sha256(bytes)` MUST 等于 `sha256Hash`。
-- 本 TAP 中所有 `eth_call` MUST 发往至少 `quorum` 个独立配置的 RPC 节点（RECOMMENDED `quorum ≥ 2`），且仅当所有结果逐字节一致时才接受。不一致 MUST 视为失败（`RPC_DISAGREE`），永不以多数决解决。传输失败的节点（超时、HTTP 错误、响应体超限）视为未作答，不算不一致，但 MUST 至少有 `quorum` 个节点作答。一个节点回滚而另一个节点返回值，属于不一致。节点在描述**它自己**的 JSON-RPC 错误——限流（`-32005`）、不支持该方法（`-32601`）、拒绝扫描所要求的区间——属于节点故障，与超时完全一样：该节点没有作答。具体而言，`-32005` 与 `-32601` 是节点故障；`-32000` 的消息若描述区间、结果或大小限制、超时或不支持的方法，也是节点故障，除非消息提到 revert、gas 或 allowance（这些是关于链的回答）。其它 JSON-RPC 错误（尤其是回滚）说的是链，属于结果，节点之间按其 `code` 比较（不同节点实现的消息文本不同），所有作答节点一致的错误以 `RPC_ERROR` 呈现。为吸收 `latest` 跨区块边界的竞态，客户端 MAY 向全部节点重问一次；重问本身 MUST 全体一致。`eth_blockNumber` 不是 `eth_call`：诚实节点之间会相差一两个区块，因此客户端取至少 `quorum` 个答案中最低的链头，且 SHOULD 拒绝（`RPC_DISAGREE`）超过配置上限的分散（参考实现：64 个区块）。客户端 MUST NOT 在运行时从服务器获取节点列表。
+- 本 TAP 中所有 `eth_call` MUST 发往至少 `quorum` 个独立配置的 RPC 节点（RECOMMENDED `quorum ≥ 2`），且仅当所有结果逐字节一致时才接受。不一致 MUST 视为失败（`RPC_DISAGREE`），永不以多数决解决。传输失败的节点（超时、HTTP 错误、响应体超限）视为未作答，不算不一致，但 MUST 至少有 `quorum` 个节点作答。一个节点回滚而另一个节点返回值，属于不一致。节点在描述**它自己**的 JSON-RPC 错误——限流（`-32005`）、不支持该方法（`-32601`）、拒绝扫描所要求的区间——属于节点故障，与超时完全一样：该节点没有作答。具体而言，`-32005` 与 `-32601` 是节点故障；`-32000` 的消息若描述区间、结果或大小限制、超时或不支持的方法，也是节点故障，除非消息提到 revert、gas 或 allowance（这些是关于链的回答）。其它 JSON-RPC 错误（尤其是回滚）说的是链，属于结果，节点之间按其 `code` 以及它是否报告回滚（code `3`，或消息提到 revert；除此之外不同节点实现的消息文本各不相同，不参与比较）来比较，使回滚与 `-32000` "header not found" 绝不被当作同一个回答，所有作答节点一致的错误以 `RPC_ERROR` 呈现。为吸收 `latest` 跨区块边界的竞态，客户端 MAY 向全部节点重问一次；重问本身 MUST 全体一致。`eth_blockNumber` 不是 `eth_call`：诚实节点之间会相差一两个区块，因此客户端取至少 `quorum` 个答案中最低的链头，且 SHOULD 拒绝（`RPC_DISAGREE`）超过配置上限的分散（参考实现：64 个区块）。客户端 MUST NOT 在运行时从服务器获取节点列表。
 - 清单 MUST NOT 超过 65 536 字节。
 - SDK MAY 提供直接接受清单对象或 URL 的开发模式；该模式 MUST 为显式开启（`dev: true`），且 MUST NOT 能从默认配置到达。
 
@@ -297,13 +297,13 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 | `endpoints.live` | string[] | MUST | 零个或多个不含 query 与 fragment 的绝对 `https://` URL。提供者 SHOULD 最多列出 4 个。 |
 | `endpoints.async` | boolean | MUST | `true` 表示服务接受经其 TAP-10（TapeSend）收件箱、以 `container` 为收件人的请求。`live` 非空或 `async == true` 至少 MUST 满足其一。 |
 | `methods` | array | MUST | 非空。方法名 MUST 唯一。 |
-| `payment` | object | MUST* | `{ "escrow": address, "unit": "BEM", "decimals": 8 }`。*任一 `priceBEM != "0"` 时 REQUIRED。 |
+| `payment` | object | MUST* | `{ "escrow": address, "unit": "BEM", "decimals": 8 }`。*任一 `priceBEM != "0"` 时 REQUIRED，此时 `escrow` 为非零地址（零地址托管结算不了任何东西）。`unit` 与 `decimals` 都是固定值，不携带信息：二者均可省略，省略时按 `"BEM"` 与 `8` 读取；任何其它值无效。 |
 
 方法描述符：
 
 | 字段 | 类型 | 要求 | 约束 |
 |---|---|---|---|
-| `name` | string | MUST | `^[A-Za-z_][A-Za-z0-9_]{0,63}$`。 |
+| `name` | string | MUST | `^[A-Za-z_][A-Za-z0-9_]{0,63}$`，且不得为 `__proto__`、`constructor` 或 `prototype`：TAP-21 §3.1 在任何位置都禁止这些键，任何处理器表都无法安全地容纳它们。 |
 | `priceBEM` | string | MUST | 十进制字符串，≥ 0，最多 8 位小数，无指数。以 BEM（`0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a`，**8 位小数**——2026-09-21 链上核实；按 18 计算会差 10^10 倍）计。`"0"` 表示免费。 |
 | `params` | object | MUST | 参数名 → 类型名的映射。类型名仅供参考；线上格式为 JSON。MAY 为 `{}`。 |
 | `returns` | object | MUST | 字段名 → 类型名的映射。仅供参考。 |
@@ -321,7 +321,7 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 - `structHash = keccak256(abi.encode(DELEGATION_TYPEHASH, container, signer, expires))`。
 - `digest = keccak256(0x1901 ‖ DOMAIN_SEPARATOR ‖ structHash)`。
 - `sig` 为 65 字节 `r ‖ s ‖ v`，`v ∈ {27, 28}`（值为 0 或 1 的 `v` 先规范化为 27 或 28，与 TAP-21 §3.3 相同），`s` 位于低半阶。恢复出的地址 MUST 等于验证时刻的持有者，除非持有者是认可该 `sig` 的合约（见下）。`expires` MUST 严格大于验证方当前 Unix 时间。验证方 SHOULD 拒绝超过未来 366 天的 `expires`。同一上限对 TAP-26 通道记录是 MUST，这是有意为之：通道身份必须会失效，而服务委托随清单一起续期。
-- **合约持有者。** 客户端 MAY 按 EIP-1271 接受由合约持有者签发的委托：对持有者调用 `isValidSignature(digest, sig)` MUST 返回完整的 32 字节字 `0x1626ba7e` 后接零。此时委托的 `sig` 可以长于 65 字节。参考 SDK 只在签名是格式正确的 65 字节 ECDSA 签名时以这种方式接受合约持有者（它先恢复签名，格式错误的签名在尝试 EIP-1271 之前就被拒绝），参考 ServiceDirectory 只验证 ECDSA，因此在该合约加入 EIP-1271 之前，合约持有者的委托只被客户端接受。
+- **合约持有者。** 客户端 MAY 按 EIP-1271 接受由合约持有者签发的委托：对持有者调用 `isValidSignature(digest, sig)` MUST 返回完整的 32 字节字 `0x1626ba7e` 后接零。此时委托的 `sig` 可以长于 65 字节。参考 SDK 把 65 字节的 `sig` 当作 ECDSA（先恢复签名，格式错误的签名在尝试 EIP-1271 之前就被拒绝），更长的 `sig`（与 TAP-26 通道记录相同，至多 1024 字节）直接交给 EIP-1271。参考 ServiceDirectory 只验证 ECDSA，因此在该合约加入 EIP-1271 之前，合约持有者的委托只被客户端接受。
 - `ServiceDirectory.verifyDelegation(circuits, tokenId, signer, expires, sig)` MUST 实现本节中 MUST 级别的检查（366 天上限是客户端的 SHOULD，链上不强制），客户端 MAY 用它代替本地恢复；无论哪种方式，持有者 MUST 从链上读取，永不取自清单。
 
 ### 3.5 ServiceDirectory
@@ -330,7 +330,7 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 
 - `register` MUST 拒绝 `factory.isCPU(circuits)` 为假的任何 `circuits`，使伪造的 ERC-721 无法占用标签。
 - `register` MUST 经 `DeWebHub.accountOf` 推导容器，且 MUST 拒绝已被不同容器持有的标签。
-- `register` 与 `update` MUST 由当前持有者调用；`ownerOf` 回滚（电路已销毁）MUST 按失败处理，而非让交易回滚。
+- `register` 与 `update` MUST 由当前持有者调用。`ownerOf` 回滚或未返回地址（电路已销毁）MUST 视为"没有持有者"，调用因此被拒绝（参考合约以 `NotHolder()` 回滚），绝不视为已授权，也绝不把电路合约自己的回滚原样抛出。
 - 配置了 `domainBinding` 时，占用非零标签 MUST 要求 `isContainerLive(container)`。存活查询回滚、返回少于 32 字节、或返回非 `1` 的任何值，MUST 一律视为未激活。
 - `release` 通常仅限持有者；当电路已销毁而无持有者时，任何人 MAY 释放该标签，以免其永久锁死。
 - 非零标签 MAY 收取 `labelFee`。客户端 MUST 先读取 `labelFee()` 并精确附带该金额，或不附带：
@@ -338,13 +338,13 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
   以及是否配置激活门槛，随其地址一并公布。
 - `manifestPath` 仅供参考。客户端 MUST NOT 用它做解析（§3.6 始终读取 `.well-known/tapeapi.json`），任何确实把它交给 SiteRegistry 的代码 MUST 先去掉前导斜杠（§3.2）。参考 SDK 注册的是注册表键形式 `.well-known/tapeapi.json`。
 
-完整接口见 `contracts/src/ServiceDirectory.sol`。目录只是提示：除 `label → container` 映射外，客户端不信任来自目录的任何内容，且即便该映射也仅按 §3.6 算法使用。
+完整接口见 `contracts/src/ServiceDirectory.sol`。目录只是提示：除 `label → container` 映射外，客户端不信任来自目录的任何内容，且即便该映射也仅按 §3.6 算法使用。配置了目录的客户端 MAY 另外把目录中该容器的记录（`serviceOf`）与清单的 `(circuits, tokenId)` 比较，并以 `MANIFEST_INVALID` 拒绝不一致（参考 SDK 这样做）；目录是在中枢上推导容器的，不一致意味着目录本身有问题。没有记录的容器，或 `serviceOf` 回滚的目录，不会阻塞解析。
 
 ### 3.6 解析算法
 
 输入：标签、TapeOut 名称 `<#ID>.<processor>.tape`、容器地址或 `(circuits, tokenId)` 二元组。输出：`{ manifest, container, verified: { delegation, holder } }` 或错误。
 
-1. **定位。** 若输入为标签，`container = ServiceDirectory.resolve(label)`；零地址 → `NOT_FOUND`。若输入为 `(circuits, tokenId)`，`container = DeWebHub.accountOf(circuits, tokenId)`。若输入为 TapeOut 名称 `<#ID>.<processor>.tape`（语法见 TapeKit SPEC §3.2），则完全按 TapeKit SPEC §3.2 的方式解析：先在 TapeOut 处理器工厂（见步骤 3）上取 `circuits = factory.cpuAt(processor)`，再取 `container = DeWebHub.accountOf(circuits, #ID)`；处理器编号超出最后一个（`cpuAt` 回滚）→ `NOT_FOUND`。这种形式的字符串是名称，永远不是标签，也不在任何目录中查找。若输入为容器，按原样使用。
+1. **定位。** 若输入为标签，`container = ServiceDirectory.resolve(label)`；零地址 → `NOT_FOUND`。若输入为 `(circuits, tokenId)`，`container = DeWebHub.accountOf(circuits, tokenId)`。若输入为 TapeOut 名称 `<#ID>.<processor>.tape`（规范形式见 TapeKit SPEC §2.2：两部分均为十进制、除 `0` 本身外无前导零、全小写、`#ID ≥ 1`；客户端 MAY 另外接受不带后缀的 `<#ID>.<processor>`，TapeKit SPEC §2.4 允许地址栏把它当作同一名称接受），则完全按 TapeKit SPEC §3.2 的方式解析：先在 TapeOut 处理器工厂（见步骤 3）上取 `circuits = factory.cpuAt(processor)`，再取 `container = DeWebHub.accountOf(circuits, #ID)`；处理器编号超出最后一个（`cpuAt` 回滚）→ `NOT_FOUND`。这种形式的字符串是名称，永远不是标签，也不在任何目录中查找。看起来像名称但不符合该形式的字符串（前导零、大写的 `.TAPE`、`#ID` 为 0）MUST 被拒绝而不是猜测，也不作为标签查找，使任何标签都无法抢注某个名称的写法。TapeKit 的其它地址栏形式（`#4246@0`、`tape://4246.0.tape/`）不是本算法的输入：外壳先把它们转换成规范名称，参考 SDK 则像对待非规范写法一样拒绝它们。若输入为容器，按原样使用。
 
    名称形式在 `(circuits, tokenId)` 路径之外不增加任何信任：它只是用按 §3.2 进行的链上读取算出这一二元组，步骤 2–5 照常执行，因此步骤 3 仍会用清单自己的 `(circuits, tokenId)` 重新推导容器并检查 `isCPU`。
 2. **读取清单。** 先 `fileInfo(container, path)` 再 `read(container, path)`，二者均需法定人数一致（§3.2）。校验长度与 SHA-256。解析 JSON；按 §3.3 校验。失败 → `MANIFEST_INVALID`。

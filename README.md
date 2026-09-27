@@ -220,7 +220,7 @@ the container's site. The [holder console](https://tapeapi.fun/console/) does al
 
 ## Quality
 
-- **Tests:** about 630 JavaScript tests (`npm test`), 169 Foundry tests (`cd contracts && forge test`), and 102
+- **Tests:** about 710 JavaScript tests (`npm test`), 169 Foundry tests (`cd contracts && forge test`), and 102
   checks by an independent Python implementation of the signatures, hashes and encodings
   (`python3 spec/vectors/verify.py`).
 - **Adversarial review:** twelve rounds of review with a written finding, a failing test and a fix for each; the
