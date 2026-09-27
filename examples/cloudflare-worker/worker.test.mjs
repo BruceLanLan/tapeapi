@@ -57,5 +57,25 @@ test('a key or variable pasted with a trailing newline or spaces still works', a
 test('the deploy scripts pin an exact wrangler version (Workers Builds runs them; an unpinned npx takes whatever is latest)', async () => {
   const { readFile } = await import('node:fs/promises')
   const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'))
-  for (const name of ['deploy:provider', 'deploy:relay']) assert.match(pkg.scripts[name], /npx --yes wrangler@\d+\.\d+\.\d+ deploy -c examples\/cloudflare-worker\/wrangler(-relay)?\.toml$/, name)
+  for (const name of ['deploy:provider', 'deploy:my-relay']) assert.match(pkg.scripts[name], /npx --yes wrangler@\d+\.\d+\.\d+ deploy -c examples\/cloudflare-worker\/wrangler(-relay)?\.toml$/, name)
+  for (const name of ['deploy:public', 'deploy:relay']) assert.match(pkg.scripts[name], /npx --yes wrangler@\d+\.\d+\.\d+ deploy -c examples\/public-api\/wrangler(-relay)?\.toml$/, name)
+})
+
+test('the fork templates name neither the project\'s Workers nor its domains outside comments', async () => {
+  const { readFile } = await import('node:fs/promises')
+  for (const f of ['wrangler.toml', 'wrangler-relay.toml']) {
+    const live = (await readFile(new URL(f, import.meta.url), 'utf8')).split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n')
+    assert.doesNotMatch(live, /tapeapi\.fun|name = "tapeapi-/, f)
+  }
+})
+
+test('the project\'s own relay config keeps the live Worker name, Durable Object class and migration (rooms and variables survive)', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const ours = await readFile(new URL('../public-api/wrangler-relay.toml', import.meta.url), 'utf8')
+  const tpl = await readFile(new URL('wrangler-relay.toml', import.meta.url), 'utf8')
+  assert.match(ours, /^name = "tapeapi-relay"$/m)
+  assert.match(ours, /^main = "\.\.\/cloudflare-worker\/relay-worker\.js"$/m)
+  assert.match(ours, /^pattern = "relay\.tapeapi\.fun"$/m)
+  const body = (s) => s.slice(s.indexOf('[[durable_objects.bindings]]')).replace(/^PUBLIC_URL = .*$/m, '').replace(/^#.*\n/gm, '')
+  assert.equal(body(ours), body(tpl), 'the live relay and the template share everything from the Durable Object block down, except PUBLIC_URL')
 })

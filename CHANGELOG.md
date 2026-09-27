@@ -6,6 +6,12 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+### Changed
+
+- The relay template (`examples/cloudflare-worker/wrangler-relay.toml`) no longer names the project's own Worker or
+  domain: a fork deploys it as `my-tapeapi-relay` with `npm run deploy:my-relay`. The project's own relay config moved
+  to `examples/public-api/wrangler-relay.toml`; `npm run deploy:relay` still deploys it, unchanged.
+
 ## [0.2.0] — 2026-09-27
 
 ### Added

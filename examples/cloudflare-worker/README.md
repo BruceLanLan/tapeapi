@@ -129,14 +129,18 @@ A Durable Object is one instance per name, globally, so every isolate sees the s
 **每个房间是一个 Durable Object**。这不是优化：隔离实例之间不共享内存，房间放在实例里会裂成好几份，
 经由一个实例发出的帧到不了经由另一个实例轮询的对端。Durable Object 按名字全局唯一，所有实例看到同一个房间。
 
-The relay is set up exactly like the provider (steps above): deploy it (`npm run deploy:relay`, or a Workers Build
-with that deploy command), add the secret `SIGNER_KEY`, and let the holder console (steps 1 to 5, service URL in step 4
+The relay is set up exactly like the provider (steps above): deploy it (`npm run deploy:my-relay`, or a Workers Build
+with that deploy command; the Worker's name in the dashboard must match `name` in `wrangler-relay.toml`,
+`my-tapeapi-relay`), add your hostname and set `PUBLIC_URL` to it, add the secret `SIGNER_KEY`, and let the holder console (steps 1 to 5, service URL in step 4
 `https://relay.<your domain>`) show the variables to add and publish the manifest. Until then the relay answers only
 its health, in setup mode. The identity is never written in `wrangler-relay.toml`, because a value there would
-overwrite the dashboard's on every deploy.
-中继的设置方式与服务完全相同：部署（`npm run deploy:relay`），添加密钥 `SIGNER_KEY`，再用持有人控制台第 1 到 5 步（第 4 步的服务网址
+overwrite the dashboard's on every deploy. `npm run deploy:relay` deploys the project's own public relay
+(`relay.tapeapi.fun`, from `examples/public-api/wrangler-relay.toml`); it is not for forks.
+中继的设置方式与服务完全相同：部署（`npm run deploy:my-relay`，或用这条部署命令的 Workers Build；后台 Worker 名称必须与
+`wrangler-relay.toml` 的 `name` 一致，即 `my-tapeapi-relay`），添加你的主机名并把 `PUBLIC_URL` 设为它，添加密钥 `SIGNER_KEY`，再用持有人控制台第 1 到 5 步（第 4 步的服务网址
 填 `https://relay.<你的域名>`）拿到要添加的变量并发布清单。在此之前中继处于设置模式。身份不写在 `wrangler-relay.toml` 里，
-因为那里的值每次部署都会覆盖后台的值。
+因为那里的值每次部署都会覆盖后台的值。`npm run deploy:relay` 部署的是本项目自己的公共中继（`relay.tapeapi.fun`，
+来自 `examples/public-api/wrangler-relay.toml`），不是给 fork 用的。
 
 Frames are held in memory only; an evicted room loses them and TAP-26 receivers see the gap. The relay holds no
 key and cannot read a byte of what it carries. `relay-worker.test.mjs` runs two isolates against one simulated

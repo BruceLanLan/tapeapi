@@ -1,22 +1,21 @@
-# A TAP-26 relay on its own Worker and its own hostname: the template a fork deploys with `npm run deploy:my-relay`
-# (from the repository root; the wrangler version is pinned in package.json). Rename the Worker if you like. The
-# project's own public relay (relay.tapeapi.fun) deploys from examples/public-api/wrangler-relay.toml.
-# 独立 Worker、独立主机名上的 TAP-26 中继：fork 用 `npm run deploy:my-relay` 部署的模板（在仓库根目录运行；wrangler 版本
-# 写死在 package.json）。Worker 名字可以改。本项目的公共中继（relay.tapeapi.fun）从 examples/public-api/wrangler-relay.toml 部署。
-name = "my-tapeapi-relay"
-main = "relay-worker.js"
+# The project's own public relay, relay.tapeapi.fun (12.1013.tape). Deployed by Cloudflare Workers Builds with
+# `npm run deploy:relay`; not for forks: a fork deploys the template examples/cloudflare-worker/wrangler-relay.toml
+# with `npm run deploy:my-relay`. The Worker keeps its name, Durable Object class and migration tag, so its rooms,
+# secret and dashboard variables stay.
+# 本项目自己的公共中继 relay.tapeapi.fun（12.1013.tape），由 Cloudflare Workers Builds 以 `npm run deploy:relay` 部署；
+# 不是给 fork 用的：fork 用 `npm run deploy:my-relay` 部署模板 examples/cloudflare-worker/wrangler-relay.toml。
+# Worker 名称、Durable Object 类名与迁移标签保持不变，房间、密钥与后台变量因此保留。
+name = "tapeapi-relay"
+main = "../cloudflare-worker/relay-worker.js"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
 # Variables set in the dashboard (CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES, DELEGATION_SIG) survive deploys.
 # 后台设置的变量在部署之间保留。
 keep_vars = true
 
-# Add your hostname in the dashboard (Worker -> Settings -> Domains & Routes -> Custom domain) and set PUBLIC_URL to it,
-# or uncomment and edit these lines. A subdomain, never a path: the endpoint is written into the on-chain manifest.
-# 在后台为 Worker 添加自定义域名并把 PUBLIC_URL 设为它，或取消下面的注释并修改。用子域名而不是路径：端点写在链上清单里。
-# [[routes]]
-# pattern = "relay.example.com"
-# custom_domain = true
+[[routes]]
+pattern = "relay.tapeapi.fun"
+custom_domain = true
 
 # One Durable Object per room: the only way every isolate sees the same room.
 # 每个房间一个 Durable Object：这是让所有隔离实例看到同一个房间的唯一办法。
@@ -44,8 +43,7 @@ enabled = true
 
 [vars]
 SERVICE_NAME = "relay.tape"
-# Your relay's public URL, the same one the holder console publishes. / 你的中继的公开网址，与持有人控制台发布的一致。
-PUBLIC_URL = "https://relay.example.com"
+PUBLIC_URL = "https://relay.tapeapi.fun"
 RELAY_PRICE_BEM = "0"
 # New rooms one client IP may create per minute, per isolate (arch A2). / 每个客户端 IP 每分钟（每个隔离实例）可新建的房间数。
 RATE_NEW_ROOMS = "60"
