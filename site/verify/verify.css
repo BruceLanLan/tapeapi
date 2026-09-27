@@ -1,0 +1,42 @@
+/* Receipt checker. Hand-written; on top of ../playground/playground.css (tokens, header, panels, checks, code blocks).
+   No inline styles anywhere: the page's policy allows stylesheets from this site only.
+   回执核验页样式，手写；建立在调试台样式之上。页面策略只允许本站样式表，所以没有任何内联样式。 */
+
+/* Bilingual text: <span class="t" lang="zh">…</span><span class="t" lang="en">…</span>. / 中英成对的文字。 */
+.t[lang] { display: none; }
+:root[data-lang="zh"] .t[lang="zh"], :root[data-lang="en"] .t[lang="en"] { display: inline; }
+
+.note { margin: 0 0 12px; font-size: 14px; color: var(--ink-2); background: var(--amber-well); border-left: 3px solid var(--amber); padding: 8px 12px; }
+#input-form .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; }
+#receipt-input { min-height: 110px; word-break: break-all; }
+#input-error { margin: 12px 0 0; }
+.sub { font-size: 16px; margin: 22px 0 8px; }
+.how-list { margin: 0 0 12px; padding-left: 22px; font-size: 14.5px; color: var(--ink-2); }
+.how-list li { margin: 0 0 6px; }
+
+/* ── verdict ─────────────────────────────────────────────── */
+.vd { border: 1px solid var(--hair); border-left-width: 4px; padding: 12px 16px; background: var(--bg); }
+.vd .vd-title { display: flex; align-items: baseline; gap: 10px; font-weight: 750; font-size: 18px; letter-spacing: .01em; margin: 0 0 6px; }
+.vd .vd-mark { font-family: var(--mono); }
+.vd .vd-text { margin: 0; font-size: 14.5px; color: var(--ink-2); }
+.vd .vd-text + .vd-text { margin-top: 6px; }
+.vd .vd-text code { background: none; padding: 0; font-size: 13px; }
+.vd.valid { border-color: var(--ok); }
+.vd.valid .vd-title { color: var(--ok); }
+.vd.other-key { border-color: var(--amber); background: var(--amber-well); }
+.vd.other-key .vd-title { color: var(--amber-ink); }
+.vd.invalid { border-color: var(--bad); background: var(--bad-well); }
+.vd.invalid .vd-title { color: var(--bad); }
+.vd.unchecked .vd-title { color: var(--ink-2); }
+
+/* check marks: pass, fail, could not check, not run / 通过、失败、没能核对、未执行 */
+.checks .mk.fail { color: var(--bad); }
+.checks .mk.unknown { color: var(--amber-ink); }
+.checks .mk.skip { color: var(--ink-3); font-weight: 400; }
+.checks li.is-fail .k { color: var(--bad); font-weight: 650; }
+.kv .aside { display: block; color: var(--ink-3); font-size: 12.5px; }
+
+@media (max-width: 420px) {
+  .vd { padding: 10px 12px; }
+  .vd .vd-title { font-size: 16px; }
+}

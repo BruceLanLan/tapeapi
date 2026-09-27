@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Use TapeAPI from Claude, Cursor and other MCP clients · TapeAPI Docs</title>
+<meta name="description" content="The public service's eight methods are available as Model Context Protocol (MCP) tools. Add one URL to Claude, Cursor or any MCP client, and your assistant can ">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../docs.css?v=07114d1e64">
+<link rel="alternate" hreflang="zh-CN" href="../zh/mcp.html">
+<script src="../docs.js?v=dee763d4ca"></script>
+</head>
+<body data-page="mcp" data-other="../zh/mcp.html" data-l-copy="Copy" data-l-copied="Copied" data-l-none="No results" data-l-light="Light" data-l-dark="Dark" data-l-theme="Theme">
+<header class="hd-bar top"><div class="hd">
+  <button class="hd-btn menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+  <a class="hd-brand" href="/" aria-label="TapeAPI"><svg class="hd-mark" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" width="99" height="11" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a><a class="hd-sec" href="index.html">Docs</a>
+  <div class="search"><input id="q" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <nav class="hd-nav" aria-label="TapeAPI"><a href="index.html" aria-current="true">Docs</a><a href="https://tapeapi.fun/playground/">Playground</a><a href="https://tapeapi.fun/dashboard/">Dashboard</a><a href="https://tapeapi.fun/status/">Status</a><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></nav>
+  <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="zh-CN">中文</button><button class="hd-btn" id="theme-btn" type="button">Theme</button></div>
+</div></header>
+<div class="layout">
+<nav class="side" id="side" aria-label="Docs"><div class="group"><p class="gtitle">Getting started</p><ul><li><a href="index.html">Introduction</a></li><li><a href="public-api.html">Public API</a></li><li><a href="mcp.html" aria-current="page">Use TapeAPI from Claude, Cursor and other MCP clients</a></li><li><a href="consume.html">Call a service</a></li><li><a href="provide.html">Run a service</a></li></ul></div><div class="group"><p class="gtitle">Features</p><ul><li><a href="channels.html">Private channels</a></li><li><a href="agents.html">AI agents</a></li></ul></div><div class="group"><p class="gtitle">Help</p><ul><li><a href="faq.html">FAQ and troubleshooting</a></li><li><a href="changelog.html">Changelog</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">Home</a></li><li><a href="https://tapeapi.fun/playground/">Playground</a></li><li><a href="https://tapeapi.fun/dashboard/">Dashboard</a></li><li><a href="https://tapeapi.fun/status/">Status</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="use-tapeapi-from-claude-cursor-and-other-mcp-clients">Use TapeAPI from Claude, Cursor and other MCP clients</h1>
+<p>The public service's eight methods are available as <a href="https://modelcontextprotocol.io" rel="noopener">Model Context Protocol</a> (MCP) tools. Add one URL to Claude, Cursor or any MCP client, and your assistant can read BNB Smart Chain with answers that are signed and can be checked by anyone, later, against the chain.</p>
+<p>There are two ways to connect:</p>
+<ul><li><strong>The remote server</strong> at <code>https://api.tapeapi.fun/mcp</code>. Nothing to install. The service signs every answer; you or anyone else can check it afterwards with the link that comes with it.</li><li><strong>The local command</strong> <code>tapeapi-mcp</code>. It runs on your machine, checks every answer against the chain before the model sees it, and refuses a service whose tools changed on chain until you accept the change.</li></ul>
+<h2 id="what-you-get"><a class="anchor" href="#what-you-get" aria-hidden="true">#</a>What you get</h2>
+<p>Eight read-only tools, free, with no sign-up and no key: <code>blockNumber</code>, <code>balance</code>, <code>tokenInfo</code>, <code>tokenBalance</code>, <code>nftOwner</code>, <code>pairPrice</code>, <code>bnbUsd</code> and <code>tapeName</code>. Their parameters and results are the ones in <a href="public-api.html#methods">Public API</a>.</p>
+<p>Every tool result carries three things:</p>
+<ul><li><strong>The data</strong>, as text and as <code>structuredContent</code>.</li><li><strong>A provenance line</strong> the model can quote: which service signed, its container and signing key, the block, and a verification link <code>https://tapeapi.fun/verify/#r=...</code>.</li><li><strong>A receipt</strong> in <code>_meta[&quot;fun.tapeapi/receipt&quot;]</code>: everything needed to check the signature again later, with no trust in whoever passes the receipt on.</li></ul>
+<p><strong>Why this matters.</strong> In MCP, a tool result is whatever the server sent, and a tool definition is whatever the server lists today. Neither says who stands behind it, and a server can change its tools after you approved them. A TapeAPI service is a circuit on TapeOut. Its methods are listed in a manifest stored in its container's on-chain site, which only the circuit's holder can rewrite. Every answer is signed by a key the holder delegated on chain, and the signature is bound to your request: the method, the parameters and the result.</p>
+<h2 id="add-the-remote-server"><a class="anchor" href="#add-the-remote-server" aria-hidden="true">#</a>Add the remote server</h2>
+<p>URL: <code>https://api.tapeapi.fun/mcp</code>. Transport: MCP Streamable HTTP, stateless, POST only. No sign-in and no key.</p>
+<h3 id="claudeai-and-claude-desktop"><a class="anchor" href="#claudeai-and-claude-desktop" aria-hidden="true">#</a>Claude.ai and Claude Desktop</h3>
+<p>Open <strong>Settings &gt; Connectors &gt; Add custom connector</strong>. Name it <code>TapeAPI</code>, enter <code>https://api.tapeapi.fun/mcp</code> as the URL, and leave the authentication fields empty. Custom connectors depend on your Claude plan.</p>
+<h3 id="claude-code"><a class="anchor" href="#claude-code" aria-hidden="true">#</a>Claude Code</h3>
+<div class="code"><pre data-lang="bash"><code>claude mcp add --transport http tapeapi https://api.tapeapi.fun/mcp</code></pre></div>
+<h3 id="cursor"><a class="anchor" href="#cursor" aria-hidden="true">#</a>Cursor</h3>
+<p>Add this to <code>~/.cursor/mcp.json</code> (all projects) or <code>.cursor/mcp.json</code> (one project):</p>
+<div class="code"><pre data-lang="json"><code>{
+  &quot;mcpServers&quot;: {
+    &quot;tapeapi&quot;: { &quot;url&quot;: &quot;https://api.tapeapi.fun/mcp&quot; }
+  }
+}</code></pre></div>
+<h3 id="vs-code"><a class="anchor" href="#vs-code" aria-hidden="true">#</a>VS Code</h3>
+<p>Add this to <code>.vscode/mcp.json</code>:</p>
+<div class="code"><pre data-lang="json"><code>{
+  &quot;servers&quot;: {
+    &quot;tapeapi&quot;: { &quot;type&quot;: &quot;http&quot;, &quot;url&quot;: &quot;https://api.tapeapi.fun/mcp&quot; }
+  }
+}</code></pre></div>
+<h3 id="any-other-client"><a class="anchor" href="#any-other-client" aria-hidden="true">#</a>Any other client</h3>
+<p>Point it at the URL as a Streamable HTTP server. The server answers each POST with <code>application/json</code>; it offers no server-to-client stream, so a GET gets HTTP 405. You can talk to it with curl:</p>
+<div class="code"><pre data-lang="bash"><code>curl -s https://api.tapeapi.fun/mcp \
+  -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+  -d '{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:1,&quot;method&quot;:&quot;tools/call&quot;,&quot;params&quot;:{&quot;name&quot;:&quot;bnbUsd&quot;,&quot;arguments&quot;:{}}}'</code></pre></div>
+<h3 id="try-it"><a class="anchor" href="#try-it" aria-hidden="true">#</a>Try it</h3>
+<p>Ask your assistant: <em>&quot;What is the BNB price in USDT right now? Use TapeAPI and give me the verification link.&quot;</em> A result looks like this (the link shortened):</p>
+<div class="code"><pre data-lang="text"><code>{&quot;bnbUsd&quot;:&quot;776.200189730784569077&quot;,&quot;pair&quot;:&quot;0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE&quot;,&quot;blockPinned&quot;:{&quot;blockNumber&quot;:124374250,...}}
+
+Signed by TapeAPI service 11.1013.tape (container 0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8, signer
+0xaB70dEe8e1CEabb1D10eDFeBcbe0c313c53cf154) at BNB Chain block 124374251. Anyone can verify this signature against
+the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2aWNl...</code></pre></div>
+<h2 id="the-local-verifying-command"><a class="anchor" href="#the-local-verifying-command" aria-hidden="true">#</a>The local verifying command</h2>
+<p><code>tapeapi-mcp</code> is a local MCP server (stdio) in the SDK's release package. It needs Node.js 20 or later. <code>npx</code> fetches it from the GitHub release, not from the npm registry:</p>
+<div class="code"><pre data-lang="bash"><code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz tapeapi-mcp 11.1013.tape</code></pre></div>
+<p>What it does differently from the remote server:</p>
+<ul><li><strong>It checks every answer itself.</strong> It resolves the service from the chain the way the SDK does (<a href="consume.html">Call a service</a> explains each step), then checks each answer's signature against the key the holder delegated, before the result reaches the model.</li><li><strong>It pins the service's tool definitions.</strong> On first use it records each service's methods (names, descriptions, parameters, prices) and its signing key in <code>~/.tapeapi/mcp-pins.json</code>. If the holder later publishes a manifest where these differ, the command refuses every call to that service, sends nothing, and says what changed. A change can be a legitimate update or a rug pull; the command does not guess. To accept it, restart the command once with <code>--allow-changed</code>, which re-pins the new definitions. A renewed delegation or a new endpoint is not a change.</li><li><strong>It takes any service.</strong> Replace <code>11.1013.tape</code> with the TapeOut name or container address of another TapeAPI service, or list several. Only free methods become tools.</li></ul>
+<p><code>tapeapi-mcp --help</code> lists the other options: <code>--rpc</code> for your own BNB Chain nodes, <code>--pin</code> for another pin file, <code>--no-pin</code> to pin for one session only.</p>
+<h3 id="claude-desktop"><a class="anchor" href="#claude-desktop" aria-hidden="true">#</a>Claude Desktop</h3>
+<p>Open <strong>Settings &gt; Developer &gt; Edit Config</strong> and add the server to <code>claude_desktop_config.json</code>, then restart Claude Desktop:</p>
+<div class="code"><pre data-lang="json"><code>{
+  &quot;mcpServers&quot;: {
+    &quot;tapeapi&quot;: {
+      &quot;command&quot;: &quot;npx&quot;,
+      &quot;args&quot;: [
+        &quot;-y&quot;,
+        &quot;--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz&quot;,
+        &quot;tapeapi-mcp&quot;,
+        &quot;11.1013.tape&quot;
+      ]
+    }
+  }
+}</code></pre></div>
+<h3 id="cursor-2"><a class="anchor" href="#cursor-2" aria-hidden="true">#</a>Cursor</h3>
+<p>The same entry goes under <code>mcpServers</code> in <code>~/.cursor/mcp.json</code> or <code>.cursor/mcp.json</code>:</p>
+<div class="code"><pre data-lang="json"><code>{
+  &quot;mcpServers&quot;: {
+    &quot;tapeapi&quot;: {
+      &quot;command&quot;: &quot;npx&quot;,
+      &quot;args&quot;: [
+        &quot;-y&quot;,
+        &quot;--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz&quot;,
+        &quot;tapeapi-mcp&quot;,
+        &quot;11.1013.tape&quot;
+      ]
+    }
+  }
+}</code></pre></div>
+<h3 id="claude-code-2"><a class="anchor" href="#claude-code-2" aria-hidden="true">#</a>Claude Code</h3>
+<div class="code"><pre data-lang="bash"><code>claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz tapeapi-mcp 11.1013.tape</code></pre></div>
+<h3 id="remote-or-local"><a class="anchor" href="#remote-or-local" aria-hidden="true">#</a>Remote or local</h3>
+<div class="table"><table><thead><tr><th></th><th>Remote server</th><th>Local command</th></tr></thead><tbody><tr><td>Install</td><td>Nothing</td><td>Node.js 20 or later</td></tr><tr><td>Who checks the signature</td><td>Anyone, afterwards, with the link</td><td>The command, before the model sees the result</td></tr><tr><td>Tool list</td><td>As the server lists it</td><td>Read from the on-chain manifest and pinned; a change is refused until you accept it</td></tr><tr><td>Services</td><td><code>11.1013.tape</code></td><td>Any TapeAPI service, by name or container address</td></tr><tr><td>Rate limit</td><td>Per IP address, shared by everyone behind it</td><td>Your own IP address</td></tr></tbody></table></div>
+<h2 id="read-and-verify-a-receipt"><a class="anchor" href="#read-and-verify-a-receipt" aria-hidden="true">#</a>Read and verify a receipt</h2>
+<p>A receipt is a small JSON object:</p>
+<div class="table"><table><thead><tr><th>Field</th><th>Meaning</th></tr></thead><tbody><tr><td><code>service</code></td><td><code>circuits</code> and <code>tokenId</code> (the circuit), <code>container</code> (its address) and <code>name</code> (the TapeOut name)</td></tr><tr><td><code>method</code>, <code>params</code></td><td>The request the signature is bound to</td></tr><tr><td><code>id</code>, <code>ts</code></td><td>The request id and the time the service signed, in Unix seconds</td></tr><tr><td><code>ok</code> and <code>result</code> or <code>error</code></td><td>The answer; a refusal is signed too</td></tr><tr><td><code>block</code></td><td>The chain head the service saw when it signed</td></tr><tr><td><code>sig</code></td><td>The service's signature over all of the above (<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md" rel="noopener">TAP-21</a>)</td></tr></tbody></table></div>
+<h3 id="in-the-browser"><a class="anchor" href="#in-the-browser" aria-hidden="true">#</a>In the browser</h3>
+<p>Open the verification link. The receipt travels in the part of the URL after <code>#</code>, which browsers never send to a server. The page at <code>https://tapeapi.fun/verify/</code> resolves the service from the chain in your browser, recovers the signer from the signature, checks it against the holder's delegation, and shows the result.</p>
+<h3 id="offline-with-the-sdk"><a class="anchor" href="#offline-with-the-sdk" aria-hidden="true">#</a>Offline, with the SDK</h3>
+<p>Save the receipt (the <code>_meta[&quot;fun.tapeapi/receipt&quot;]</code> object) as <code>receipt.json</code>. Install the SDK from the GitHub release, or work inside a clone of the repository as in <a href="consume.html">Call a service</a>:</p>
+<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz</code></pre></div>
+<div class="code"><pre data-lang="js"><code>import { readFile } from 'node:fs/promises'
+import { createTapeAPI, sig } from '@tapeapi/sdk'
+
+const r = JSON.parse(await readFile('receipt.json', 'utf8'))
+const api = createTapeAPI({
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  quorum: 2,
+})
+// The service as the chain has it now: container, on-chain manifest, the holder's delegation of the signing key.
+const svc = await api.resolve({ circuits: r.service.circuits, tokenId: r.service.tokenId })
+const signer = sig.recoverResponseSigner({
+  container: svc.container, id: r.id, method: r.method, params: r.params,
+  ok: r.ok, body: r.ok ? r.result : r.error, ts: r.ts,
+}, r.sig)
+const same = (a, b) =&gt; a.toLowerCase() === b.toLowerCase()
+console.log(same(signer, svc.manifest.signer) &amp;&amp; same(r.service.container, svc.container) ? 'valid' : 'NOT valid')</code></pre></div>
+<p>Change one character of the result and the recovered signer changes, so the check fails. This compares the receipt with the service's <strong>current</strong> delegation: if the holder has since delegated a different signing key, an older receipt no longer matches it. To check without the SDK, see <a href="consume.html#verify-without-the-sdk">Verify without the SDK</a>.</p>
+<h2 id="limits"><a class="anchor" href="#limits" aria-hidden="true">#</a>Limits</h2>
+<ul><li><strong>The remote server attests its own answers.</strong> It signs them; it does not check them for you. The link lets anyone check. The local command checks every answer itself before the model sees it.</li><li><strong>An answer without a receipt is not signed.</strong> When the service is rate-limited or its delegation has lapsed, the tool returns an error with no receipt and no link. There is nothing to verify.</li><li><strong>Rate limits are the public service's:</strong> 600 free calls per minute per IP address. A hosted client such as Claude.ai calls from its own servers, so many users can share one address and its limit.</li><li><strong>The public tools are reads of BNB Smart Chain</strong> and of TapeOut. They are free, send no transactions and move no funds.</li><li><strong>&quot;Signed&quot; proves who answered, not that the data is right.</strong> For values that matter, ask a second, independent provider for the same block (<a href="public-api.html#prices-and-cross-checking">Prices and cross-checking</a>).</li><li><strong>Spot prices can be moved.</strong> <code>pairPrice</code> and <code>bnbUsd</code> come from one pool's reserves at one block, and a large trade can move them. Do not use them alone for anything an attacker profits from moving.</li><li><strong>Results are data, not instructions.</strong> Token names and symbols are chosen by whoever deployed the token, and a signature does not make them safe to follow.</li><li>Pre-alpha. The public service is best effort, with no SLA.</li></ul>
+<h2 id="run-your-own-tapeapi-service-as-an-mcp-server"><a class="anchor" href="#run-your-own-tapeapi-service-as-an-mcp-server" aria-hidden="true">#</a>Run your own TapeAPI service as an MCP server</h2>
+<p><code>createMcpEndpoint</code> from <code>@tapeapi/server/mcp</code> turns any provider into a remote MCP server. The packages are not on npm and the server package has no release file yet, so work inside a clone of the repository, as in <a href="provide.html">Run a service</a>. This is how the public service does it (<a href="https://github.com/BruceLanLan/tapeapi/blob/main/examples/public-api/worker.js" rel="noopener"><code>examples/public-api/worker.js</code></a>):</p>
+<div class="code"><pre data-lang="js"><code>import { createProvider } from '@tapeapi/server'
+import { createMcpEndpoint, MCP_PATH } from '@tapeapi/server/mcp'
+
+const provider = createProvider({ manifest, signerKey, rpcUrls, quorum: 2, methods })
+const mcp = createMcpEndpoint({ provider, manifest: provider.manifest, identity: { name: '42.1013.tape' } })
+
+export default {
+  fetch(request) {
+    const clientIp = request.headers.get('cf-connecting-ip') || undefined
+    if (new URL(request.url).pathname === MCP_PATH) return mcp.handle(request, { clientIp })
+    return provider.handleRequest(request, { clientIp })
+  },
+}</code></pre></div>
+<ul><li>Each free method in the manifest becomes a tool. Priced methods are not exposed.</li><li>Every tool call goes through <code>provider.handleRequest</code> like any other call, so the result is the same signed envelope, under the same rate limits, with a receipt and a verification link.</li><li><code>/mcp</code> is a route on your server, not part of the manifest, so adding it changes nothing on chain and needs no republish.</li><li><code>identity.name</code> is the TapeOut name shown in results and receipts.</li></ul>
+</article>
+<nav class="pn"><a class="prev" href="public-api.html"><span>Previous</span>Public API</a><a class="next" href="consume.html"><span>Next</span>Call a service</a></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/mcp.md" rel="noopener">Edit this page on GitHub</a></p>
+</main>
+<aside class="toc"><p class="gtitle">On this page</p><ul><li class="l2"><a href="#what-you-get">What you get</a></li><li class="l2"><a href="#add-the-remote-server">Add the remote server</a></li><li class="l3"><a href="#claudeai-and-claude-desktop">Claude.ai and Claude Desktop</a></li><li class="l3"><a href="#claude-code">Claude Code</a></li><li class="l3"><a href="#cursor">Cursor</a></li><li class="l3"><a href="#vs-code">VS Code</a></li><li class="l3"><a href="#any-other-client">Any other client</a></li><li class="l3"><a href="#try-it">Try it</a></li><li class="l2"><a href="#the-local-verifying-command">The local verifying command</a></li><li class="l3"><a href="#claude-desktop">Claude Desktop</a></li><li class="l3"><a href="#cursor-2">Cursor</a></li><li class="l3"><a href="#claude-code-2">Claude Code</a></li><li class="l3"><a href="#remote-or-local">Remote or local</a></li><li class="l2"><a href="#read-and-verify-a-receipt">Read and verify a receipt</a></li><li class="l3"><a href="#in-the-browser">In the browser</a></li><li class="l3"><a href="#offline-with-the-sdk">Offline, with the SDK</a></li><li class="l2"><a href="#limits">Limits</a></li><li class="l2"><a href="#run-your-own-tapeapi-service-as-an-mcp-server">Run your own TapeAPI service as an MCP server</a></li></ul></aside>
+</div>
+</body>
+</html>

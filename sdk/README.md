@@ -9,7 +9,7 @@ EIP-712 vouchers against an escrow; nothing is signed or sent without you.
 ## Install
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.2.0/tapeapi-sdk-0.2.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz
 ```
 
 Not on the npm registry yet: each GitHub release carries the package file. Built from https://github.com/BruceLanLan/tapeapi
@@ -40,6 +40,34 @@ console.log(result.bnbUsd, verified)                // price of BNB in USDT, sig
 | `@tapeapi/sdk/webmcp` | `exposeTapeAPI`, `manifestToTools`: a service's methods as WebMCP tools for in-browser agents |
 | `@tapeapi/sdk/channel` | TAP-26 private channels (invites, relay and ChannelBus transports) |
 | `@tapeapi/sdk/rpc`, `/abi`, `/sig`, `/canon`, `/manifest` | the building blocks |
+
+## Local MCP server: `tapeapi-mcp`
+
+The package ships a command that exposes any TapeAPI service's free methods as MCP tools over stdio (Claude Desktop,
+Cursor, any MCP client), and verifies every answer in your own process before the model sees it:
+
+```bash
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz tapeapi-mcp 11.1013.tape
+```
+
+```json
+{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
+```
+
+- **Identity from the chain.** Each service (a TapeOut name like `11.1013.tape` or a container address) is resolved
+  on BNB Chain, with the holder's delegation checked; every chain read needs 2 nodes to agree (`--rpc url,url,...`).
+- **Every answer verified.** A result is returned only if its signature recovers the delegated signer. Otherwise it is
+  discarded and the tool result says so. Each verified result carries a receipt (`_meta["fun.tapeapi/receipt"]`)
+  and a link that anyone can use to check it again at https://tapeapi.fun/verify/.
+- **Pinned tool definitions.** On first use, the service's signer, name and methods are pinned in
+  `~/.tapeapi/mcp-pins.json` (`--pin <file>`, `--no-pin`). If they later change on chain, calls to that service are
+  refused, and the refusal lists the methods that were added, removed or changed, plus any change of signing key.
+  Restart with `--allow-changed` to accept the change once and re-pin. Delegation renewals and endpoint moves are
+  not treated as changes.
+- One service gives tools named after its methods. With several services, each tool name gets a prefix
+  (`t11_1013_bnbUsd`). Priced methods are not exposed. Logs go to stderr; stdout carries only JSON-RPC.
+
+`--dev <url>` exists for this package's tests only. It skips every on-chain identity check and prints a warning.
 
 ## Docs
 

@@ -32,6 +32,7 @@ trust with a signature anyone can check:
 | I want to | Read |
 |---|---|
 | Read BNB Chain data now, free and signed, or use a public relay | [Public API](public-api.md) |
+| Give Claude, Cursor or another MCP client signed tools | [MCP](mcp.md) |
 | Call a TapeAPI service from an app | [Call a service](consume.md) |
 | Offer my code or an existing API as a service | [Run a service](provide.md) |
 | Send encrypted messages between containers | [Private channels](channels.md) |
@@ -40,7 +41,7 @@ trust with a signature anyone can check:
 
 ## Status
 
-Pre-alpha, version 0.2.0. The free tier runs on TapeOut's deployed contracts. Our own contracts have no third-party
+Pre-alpha, version 0.3.0. The free tier runs on TapeOut's deployed contracts. Our own contracts have no third-party
 audit; the paid-call escrow is not deployed yet. Interfaces may still change, and the TAP numbers are proposed to the
 TapeKit maintainers, not yet assigned.
 
@@ -66,6 +67,9 @@ Free TapeAPI services run by the project, each under its own circuit on processo
 |---|---|---|---|
 | Public API (8 read methods) | `11.1013.tape` | `0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8` | `https://api.tapeapi.fun` |
 | Public relay (`relaySend`, `relayHandshake`, `relayRecv`) | `12.1013.tape` | `0x9cD838625251576c199B2DeF7A17e50266843185` | `https://relay.tapeapi.fun` |
+
+The public API's methods are also MCP tools at `https://api.tapeapi.fun/mcp`, for Claude, Cursor and any MCP client.
+Every result is signed and carries a receipt anyone can verify; see [MCP](mcp.md).
 
 ## Specifications
 

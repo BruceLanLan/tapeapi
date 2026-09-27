@@ -11,6 +11,9 @@ the [changelog](../CHANGELOG.md).
 - **Public service** at `https://api.tapeapi.fun`, TapeOut name `11.1013.tape`: eight free, signed
   methods, pinned to a block except `blockNumber` (block number, balances, token and NFT reads, pair price, BNB/USD, name lookup). See the
   [Public API guide](guides/public-api.md).
+- **MCP server** at `https://api.tapeapi.fun/mcp`: the same eight methods as MCP tools for Claude, Cursor and any MCP
+  client, added by URL with nothing to install. Every result is signed and carries a receipt anyone can verify against
+  the chain. See the [MCP guide](guides/mcp.md).
 - **Public relay** at relay.tapeapi.fun (`12.1013.tape`) for end-to-end encrypted channels between containers (TAP-26).
 - **ChannelBus** on BNB Chain at `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`: a stateless, ownerless event bus that
   carries channel frames on-chain when no relay is wanted.
@@ -29,13 +32,13 @@ the [changelog](../CHANGELOG.md).
 - **Developer dashboard, full version.** A read-only *My services* page is live at https://tapeapi.fun/dashboard/ (add
   service names; see health, delegation expiry, links to try or renew). Next: list the circuits you hold automatically
   (needs an index), and renew and manage them from the same page.
-- **Hosted services.** Start a service from a template (for example a chain reader or a Web2 adapter) without running a
-  server. The platform holds the signing key under a delegation you sign, and each service has quotas. The trade-off is
-  stated plainly: you trust the platform to sign for you while the delegation is valid; you can end it by letting it
-  expire or by publishing a manifest that delegates to another key, and callers still verify every answer against
-  the chain.
-- **npm packages** `@tapeapi/sdk` and `@tapeapi/server`, so a script no longer has to live inside a clone of this
-  repository.
+- **MCP: tape out your MCP server.** Keep your own MCP server and your own domain, and add what MCP lacks: an on-chain
+  identity (a circuit), a tool list pinned in the on-chain manifest so clients can refuse tools that changed, and a
+  signature on every result.
+- **Receipt-grounded reputation.** Reviews of a service that only a caller can write, and only with a signed receipt
+  for its own request; the reviewer must itself be a container. A review then costs a real call and a real circuit.
+- **npm packages** `@tapeapi/sdk` and `@tapeapi/server`. Today the SDK installs from each GitHub release, and the
+  server package is used from a clone of this repository.
 - **TAP review with the TapeOut maintainers.** The TAP numbers are proposals until the maintainers assign them; the
   discussion is in [TapeKit#8](https://github.com/TapeOutProtocol/TapeKit/issues/8).
 
@@ -65,6 +68,8 @@ specification starts as a *spec proposal (TAP)* issue; see [CONTRIBUTING.md](../
 
 - **公共服务** `https://api.tapeapi.fun`，TapeOut 名称 `11.1013.tape`：八个免费、签名的方法（除 `blockNumber` 外都锚定区块）
   （区块号、余额、代币与 NFT 读取、交易对价格、BNB/USD、名称查询）。见[公共 API 指南](guides/zh-CN/public-api.md)。
+- **MCP 服务器** `https://api.tapeapi.fun/mcp`：同样的八个方法作为 Claude、Cursor 和任何 MCP 客户端的工具，按网址添加，
+  无需安装。每个结果都有签名，并附带任何人都能对照链上核验的回执。见 [MCP 指南](guides/zh-CN/mcp.md)。
 - **公共中继** relay.tapeapi.fun（`12.1013.tape`），用于容器之间的端到端加密通道（TAP-26）。
 - **ChannelBus** 已部署在 BNB Chain，地址 `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`：无状态、无所有者的事件总线，
   不想用中继时在链上承载通道帧。
@@ -80,10 +85,11 @@ specification starts as a *spec proposal (TAP)* issue; see [CONTRIBUTING.md](../
 
 - **开发者控制台（完整版）。** 只读版*我的服务*已在 https://tapeapi.fun/dashboard/ 上线（添加服务名，查看健康、
   委托到期、试用和续期链接）。接下来：自动列出你持有的电路（需要索引），并在同一页面完成续期与管理。
-- **托管服务。** 从模板（例如链上读取器或 Web2 适配器）启动服务，不用自己跑服务器。签名密钥由平台在你签署的委托下
-  持有，每个服务有配额。取舍如实说明：委托有效期内，你信任平台代你签名；让委托到期、或发布一份委托给另一把密钥的新清单即可终止，
-  而调用方仍会对照链上核验每一个响应。
-- **npm 包** `@tapeapi/sdk` 与 `@tapeapi/server`，脚本不再必须放在本仓库的克隆目录里。
+- **MCP：tape out 你的 MCP 服务器。** 保留你自己的 MCP 服务器和域名，只补上 MCP 缺少的东西：链上身份（一个电路）、
+  钉在链上清单里的工具列表（工具被改动时客户端可以拒绝），以及每个结果上的签名。
+- **凭回执的信誉。** 只有调用方才能评价一个服务，而且必须持有该服务为它自己的请求签发的回执；评价者本身也必须是一个容器。
+  这样每条评价都要付出一次真实调用和一个真实电路的代价。
+- **npm 包** `@tapeapi/sdk` 与 `@tapeapi/server`。目前 SDK 从每个 GitHub Release 安装，服务端包在本仓库的克隆目录里使用。
 - **与 TapeOut 维护者评审 TAP。** 在维护者分配编号之前，TAP 编号都只是提议；讨论在
   [TapeKit#8](https://github.com/TapeOutProtocol/TapeKit/issues/8)。
 

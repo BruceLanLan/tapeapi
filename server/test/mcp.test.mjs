@@ -50,6 +50,8 @@ test('tools/list: the manifest methods with JSON Schemas and read-only hints', a
   assert.ok(echo.inputSchema.properties.text)
   assert.match(echo.description, /^Says it back\. -- /)
   assert.equal(echo.annotations.readOnlyHint, true)
+  assert.match(echo.description, /anyone can verify it against the chain/)
+  assert.doesNotMatch(echo.description, /verified \(TAP-21\) before it is returned/, 'the server does not verify for the caller')
   for (const t of result.tools) assert.deepEqual(Object.keys(t).sort().filter((k) => !['annotations', 'title'].includes(k)), ['description', 'inputSchema', 'name'])
 })
 

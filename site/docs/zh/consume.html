@@ -19,7 +19,7 @@
   <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="en">English</button><button class="hd-btn" id="theme-btn" type="button">主题</button></div>
 </div></header>
 <div class="layout">
-<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="public-api.html">公共 API</a></li><li><a href="consume.html" aria-current="page">调用服务</a></li><li><a href="provide.html">运行服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="public-api.html">公共 API</a></li><li><a href="mcp.html">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume.html" aria-current="page">调用服务</a></li><li><a href="provide.html">运行服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
 <main class="doc">
 <article>
 <h1 id="调用服务">调用服务</h1>
@@ -29,7 +29,7 @@
 <p>这些包尚未发布到 npm，所以要在仓库的克隆里操作（Node.js 20 或更高版本）：</p>
 <div class="code"><pre data-lang="bash"><code>git clone https://github.com/BruceLanLan/tapeapi.git &amp;&amp; cd tapeapi &amp;&amp; npm install</code></pre></div>
 <p>或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：</p>
-<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.2.0/tapeapi-sdk-0.2.0.tgz</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz</code></pre></div>
 <p>把下面的脚本保存为 <code>.mjs</code> 文件，<strong>放在 <code>tapeapi</code> 目录之内</strong>，然后用 <code>node &lt;文件&gt;.mjs</code> 运行。<code>@tapeapi/sdk</code> 通过仓库的 workspace 解析，保存在其它任何位置的脚本都会以 <code>ERR_MODULE_NOT_FOUND</code> 失败。</p>
 <h3 id="调用线上的公共服务"><a class="anchor" href="#调用线上的公共服务" aria-hidden="true">#</a>调用线上的公共服务</h3>
 <p>一个免费的公共服务运行在 <code>https://api.tapeapi.fun</code>，TapeOut 名称为 <code>11.1013.tape</code>。用 curl：</p>
@@ -108,7 +108,7 @@ const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code><
                     ‖ uint8(ok) ‖ keccak256(canonicalJSON(result or error)) ‖ uint64BE(ts) )</code></pre></div>
 <p>恢复出签名者（只接受低 s），将其与 <code>manifest.signer</code> 比较，检查持有者的委托指明的正是该签名者，并且 <code>|now - ts| &lt;= 300</code>。规范 JSON 的定义见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md" rel="noopener">TAP-21</a>；测试向量和一个独立的 Python 实现位于 <a href="https://github.com/BruceLanLan/tapeapi/tree/main/spec/vectors" rel="noopener"><code>spec/vectors/</code></a>。</p>
 </article>
-<nav class="pn"><a class="prev" href="public-api.html"><span>上一篇</span>公共 API</a><a class="next" href="provide.html"><span>下一篇</span>运行服务</a></nav>
+<nav class="pn"><a class="prev" href="mcp.html"><span>上一篇</span>在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a><a class="next" href="provide.html"><span>下一篇</span>运行服务</a></nav>
 <p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/consume.md" rel="noopener">在 GitHub 上编辑此页</a></p>
 </main>
 <aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#1-试用">1. 试用</a></li><li class="l3"><a href="#一次性准备">一次性准备</a></li><li class="l3"><a href="#调用线上的公共服务">调用线上的公共服务</a></li><li class="l3"><a href="#在本地运行服务">在本地运行服务</a></li><li class="l2"><a href="#2-在-bnb-chain-上解析真实服务">2. 在 BNB Chain 上解析真实服务</a></li><li class="l2"><a href="#3-处理错误">3. 处理错误</a></li><li class="l2"><a href="#4-要求多个提供者之间达成一致">4. 要求多个提供者之间达成一致</a></li><li class="l2"><a href="#5-为调用付费">5. 为调用付费</a></li><li class="l2"><a href="#6-在浏览器或-deweb-站点中使用">6. 在浏览器或 DeWEB 站点中使用</a></li><li class="l2"><a href="#不使用-sdk-进行验证">不使用 SDK 进行验证</a></li></ul></aside>

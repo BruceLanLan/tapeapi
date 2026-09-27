@@ -15,7 +15,7 @@ ecosystem, DeWEB is websites, TapeSend is messaging, and **TapeAPI is services**
 
 [中文说明](README.zh-CN.md) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Docs](https://tapeapi.fun/docs/) · [Website](https://tapeapi.fun) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md) · [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md)
 
-> **Status: pre-alpha (v0.2.0).** The free tier needs no contract of ours and runs on TapeOut's deployed contracts.
+> **Status: pre-alpha (v0.3.0).** The free tier needs no contract of ours and runs on TapeOut's deployed contracts.
 > Our own contracts (the paid-call escrow, the service directory, ChannelBus) are **not audited by a third party**;
 > ChannelBus is deployed (address below). Interfaces may still change. The TAP
 > numbers below are **proposed** to the TapeKit maintainers and not yet assigned.
@@ -38,7 +38,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 Or install just the SDK into your own project from the GitHub release (not the npm registry):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.2.0/tapeapi-sdk-0.2.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz
 ```
 
 Save this as `try.mjs` **inside the `tapeapi` directory** (`@tapeapi/sdk` resolves through the repository's workspace;
@@ -58,6 +58,21 @@ console.log(result, verified)                              // verified is true o
 
 No install at all: the [playground](https://tapeapi.fun/playground/) runs the same SDK in the browser. Every method of
 the public service is listed in [Public API](docs/guides/public-api.md).
+
+## Use it from Claude, Cursor or any MCP client
+
+The same eight methods are [MCP](https://modelcontextprotocol.io) tools at `https://api.tapeapi.fun/mcp` (Streamable
+HTTP, no key). In Claude, add it under **Settings > Connectors > Add custom connector**; in Cursor, add it to
+`mcp.json`:
+
+```json
+{ "mcpServers": { "tapeapi": { "url": "https://api.tapeapi.fun/mcp" } } }
+```
+
+Every result is signed by the service's on-chain delegated key and carries a receipt with a verification link that
+anyone can check against the chain. The remote server signs its answers; the local command `tapeapi-mcp`, in the SDK's
+release package, checks every answer itself before the model sees it. Setup for each client, receipts and limits:
+[MCP guide](docs/guides/mcp.md).
 
 ---
 

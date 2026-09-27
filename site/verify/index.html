@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-PlXSgCPIX8ivpAKrPar7Fx8VRHe//ygBAytI7yZYliY='; style-src 'self'; font-src 'self'; img-src 'self'; connect-src https:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>TapeAPI 核验回执 · Verify a receipt</title>
+<meta name="description" content="Check a TapeAPI receipt against BNB Chain in your browser: who signed it, whether that key is the service's on-chain key today, and exactly what was asked and answered. 在浏览器里对照 BNB 链核验 TapeAPI 回执。">
+<!-- Hand-written page. A receipt is untrusted input: it arrives in the URL fragment (#r=, which browsers never send to a
+     server) or is pasted, and every claim in it is checked against the chain here, with the playground's vendored SDK
+     (../playground/vendor/; the import map below is the playground's with ./vendor/ read as ../playground/vendor/).
+     Scripts: files from this site only, plus the import map by its hash (scripts/verify-page.test.mjs keeps the hash,
+     the map and the policy in step). No external resources.
+     手写页面。回执是不可信输入：来自 URL 片段（#r=，浏览器不会发给服务器）或粘贴，其中每一项说法都在本页对照链上核对，
+     用的是调试台 vendor/ 里的 SDK。脚本只允许本站文件与按哈希放行的 import map（由测试保持同步）。无外部资源。 -->
+<script src="boot.js?v=b046eee3c4"></script>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="TapeAPI">
+<meta property="og:title" content="TapeAPI: verify a receipt">
+<meta property="og:description" content="Check a TapeAPI receipt against BNB Chain in your browser: who signed it, and whether that is the service's key today.">
+<meta property="og:url" content="https://tapeapi.fun/verify/">
+<meta property="og:image" content="https://tapeapi.fun/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="TapeAPI: signed, verifiable APIs for TapeOut circuits on BNB Chain. tapeapi.fun">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="TapeAPI: verify a receipt">
+<meta name="twitter:description" content="Check a TapeAPI receipt against BNB Chain in your browser: who signed it, and whether that is the service's key today.">
+<meta name="twitter:image" content="https://tapeapi.fun/og.png">
+<link rel="stylesheet" href="../playground/playground.css?v=645ac28c4b">
+<link rel="stylesheet" href="verify.css?v=f3d6e0507f">
+<script type="importmap">
+{
+  "imports": {
+    "@noble/ciphers/chacha": "../playground/vendor/noble-ciphers/chacha.js",
+    "@noble/curves/ed25519": "../playground/vendor/noble-curves/ed25519.js",
+    "@noble/curves/secp256k1": "../playground/vendor/noble-curves/secp256k1.js",
+    "@noble/hashes/crypto": "../playground/vendor/noble-hashes/crypto.js",
+    "@noble/hashes/hkdf": "../playground/vendor/noble-hashes/hkdf.js",
+    "@noble/hashes/hmac": "../playground/vendor/noble-hashes/hmac.js",
+    "@noble/hashes/hmac.js": "../playground/vendor/noble-hashes/hmac.js",
+    "@noble/hashes/sha2.js": "../playground/vendor/noble-hashes/sha2.js",
+    "@noble/hashes/sha256": "../playground/vendor/noble-hashes/sha256.js",
+    "@noble/hashes/sha3": "../playground/vendor/noble-hashes/sha3.js",
+    "@noble/hashes/utils": "../playground/vendor/noble-hashes/utils.js",
+    "@noble/hashes/utils.js": "../playground/vendor/noble-hashes/utils.js"
+  }
+}
+</script>
+<script type="module" src="verify.js?v=e020f71c24"></script>
+</head>
+<body>
+<header class="hd-bar">
+  <div class="hd">
+    <a class="hd-brand" href="../" aria-label="TapeAPI"><svg class="hd-mark" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" width="99" height="11" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a>
+    <nav class="hd-nav" aria-label="TapeAPI">
+      <a href="../docs/"><span lang="zh">手册</span><span lang="en">Docs</span></a>
+      <a href="../playground/"><span lang="zh">调试台</span><span lang="en">Playground</span></a>
+      <a href="../dashboard/"><span lang="zh">我的服务</span><span lang="en">Dashboard</span></a>
+      <a href="../status/"><span lang="zh">状态</span><span lang="en">Status</span></a>
+      <a href="https://github.com/BruceLanLan/tapeapi">GitHub</a>
+    </nav>
+    <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button">English</button><button class="hd-btn" id="theme-btn" type="button">主题</button></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="intro">
+    <h1><span class="t" lang="zh">核验回执</span><span class="t" lang="en">Verify a receipt</span></h1>
+    <p class="lede"><span class="t" lang="zh">TapeAPI 服务的每个回答都有签名，MCP 工具结果还附带一份回执。本页在你的浏览器里重新从 BNB 链解析这个服务、从签名恢复签名者，再比对两者。回执自己说的任何话都不采信。</span><span class="t" lang="en">Every answer from a TapeAPI service is signed, and MCP tool results come with a receipt. This page resolves the service again from BNB Chain in your browser, recovers the signer from the signature, and compares the two. Nothing the receipt says about itself is taken on trust.</span></p>
+  </div>
+
+  <section class="panel" id="s-input" aria-labelledby="h-input">
+    <h2 id="h-input"><span class="num">1</span><span class="t" lang="zh">回执</span><span class="t" lang="en">Receipt</span></h2>
+    <p class="note" id="from-link" hidden><span class="t" lang="zh">正在核验本页链接里的回执（#r= 片段）。片段只在你的浏览器里，不会发给任何服务器。</span><span class="t" lang="en">Checking the receipt in this page's link (the #r= fragment). The fragment stays in your browser and is never sent to a server.</span></p>
+    <form id="input-form" autocomplete="off">
+      <label for="receipt-input" class="lbl"><span class="t" lang="zh">粘贴回执</span><span class="t" lang="en">Paste a receipt</span></label>
+      <textarea id="receipt-input" rows="5" spellcheck="false" autocapitalize="off"></textarea>
+      <div class="actions">
+        <button class="btn" id="check-btn" type="submit"><span class="t" lang="zh">核验</span><span class="t" lang="en">Verify</span></button>
+        <span class="muted" id="status" role="status" aria-live="polite"></span>
+      </div>
+    </form>
+    <p class="hint"><span class="t" lang="zh">可以粘贴：核验链接（<code>https://tapeapi.fun/verify/#r=…</code>）、它的 <code>#r=</code> 部分、回执 JSON，或整个 MCP 工具结果（含 <code>_meta["fun.tapeapi/receipt"]</code>，也可以是外层的 JSON-RPC 回应）。最多 64 KiB。</span><span class="t" lang="en">Paste the verify link (<code>https://tapeapi.fun/verify/#r=…</code>), its <code>#r=</code> part, the receipt JSON, or a whole MCP tool result (with <code>_meta["fun.tapeapi/receipt"]</code>, or the JSON-RPC response around it). Up to 64 KiB.</span></p>
+    <div id="input-error" class="errbox" role="alert" hidden></div>
+  </section>
+
+  <section class="panel" id="s-result" aria-labelledby="h-result" hidden>
+    <h2 id="h-result"><span class="num">2</span><span class="t" lang="zh">结论</span><span class="t" lang="en">Verdict</span></h2>
+    <div id="verdict" class="vd"></div>
+    <p><button class="ctl" id="retry-btn" type="button" hidden><span class="t" lang="zh">重新读链</span><span class="t" lang="en">Read the chain again</span></button></p>
+    <ul class="checks" id="checks"></ul>
+    <h3 class="sub"><span class="t" lang="zh">回执内容</span><span class="t" lang="en">What the receipt says</span></h3>
+    <dl class="kv" id="details"></dl>
+    <p class="lbl"><span class="t" lang="zh">请求参数（已签名）</span><span class="t" lang="en">Request params (signed)</span></p>
+    <div class="code"><pre id="params-json"></pre></div>
+    <p class="lbl" id="body-label"></p>
+    <div class="code"><pre id="body-json"></pre></div>
+    <details class="raw"><summary><span class="t" lang="zh">回执 JSON（原样）</span><span class="t" lang="en">Receipt JSON (as received)</span></summary><div class="code"><pre id="receipt-json"></pre></div></details>
+  </section>
+
+  <section class="panel" aria-labelledby="h-how">
+    <h2 id="h-how"><span class="t" lang="zh">本页核对什么</span><span class="t" lang="en">What this page checks</span></h2>
+    <ol class="how-list">
+      <li><span class="t" lang="zh">从签名恢复签名者：签名覆盖容器、请求 id、方法与参数、成功或拒绝、结果、时间。改动其中任何一项，恢复出的就是另一个地址。</span><span class="t" lang="en">Recover the signer from the signature, which covers the container, request id, method and params, success or refusal, the result, and the time. Change any of them and a different address comes out.</span></li>
+      <li><span class="t" lang="zh">用回执里的电路合约和 #ID 在链上解析服务（3 个公共 BSC 节点，至少 2 个一致）：容器由中枢推导，清单字节与 SiteRegistry 的哈希一致，委托由当前持有人签署且未过期。</span><span class="t" lang="en">Resolve the service on chain from the receipt's circuit contract and #ID (3 public BSC nodes, at least 2 agreeing): the hub derives the container, the manifest bytes match the SiteRegistry hash, and the delegation is signed by the current holder and not expired.</span></li>
+      <li><span class="t" lang="zh">比对：链上推导的容器等于回执里的容器；回执里的名字属于这个服务；恢复出的签名者等于清单今天指定的签名密钥。</span><span class="t" lang="en">Compare: the container the chain derives equals the receipt's; the receipt's name belongs to this service; the recovered signer equals the signing key the manifest names today.</span></li>
+    </ol>
+    <p class="muted"><span class="t" lang="zh">手上没有回执？在<a href="../playground/">调试台</a>里调用一个方法，或者用 MCP 端点 <code>https://api.tapeapi.fun/mcp</code>：每个工具结果都带核验链接。</span><span class="t" lang="en">No receipt at hand? Call a method in the <a href="../playground/">Playground</a>, or use the MCP endpoint <code>https://api.tapeapi.fun/mcp</code>: every tool result carries a verify link.</span></p>
+  </section>
+
+  <footer class="foot">
+    <p><span class="t" lang="zh">只读：本页不连接钱包，也不需要任何密钥。回执不会发给任何服务器，本页只向公共 BSC 节点读取链上数据。</span><span class="t" lang="en">Read-only: this page connects no wallet and needs no key. The receipt is sent to no server; the page only reads the chain from public BSC nodes.</span></p>
+  </footer>
+</main>
+</body>
+</html>

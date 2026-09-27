@@ -11,6 +11,7 @@ The same guides, with search, are at [tapeapi.fun/docs](https://tapeapi.fun/docs
 | [Call a service](consume.md) | App and backend developers | Resolve a service on chain, call it, verify the answer, pay for calls, require agreement between providers. |
 | [Run a service](provide.md) | API providers | Turn functions or an existing REST API into signed methods, go live from a phone or a server, renew, operate. |
 | [Private channels](channels.md) | Apps, agents and services that talk to each other | Publish channel keys, open an encrypted channel, choose a relay or the chain as the carrier. |
+| [MCP](mcp.md) | Anyone using Claude, Cursor or another MCP client | Add the public service as MCP tools by URL, or run the local command that verifies every answer and pins the tool list. |
 | [AI agents](agents.md) | Anyone giving tools to an in-browser agent | Expose a service as WebMCP tools whose answers are always signature-checked. |
 | [FAQ and troubleshooting](faq.md) | Everyone | Error codes, common mistakes, and what the reader's warnings mean. |
 

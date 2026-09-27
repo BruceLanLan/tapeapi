@@ -37,13 +37,14 @@ export const LANGS = {
   zh: { html: 'zh-CN', label: '中文', docs: '手册', onThisPage: '本页内容', search: '搜索手册', noResults: '没有结果', prev: '上一篇', next: '下一篇', edit: '在 GitHub 上编辑此页', menu: '目录', home: '首页', theme: '主题', light: '浅色', dark: '深色', copy: '复制', copied: '已复制', other: 'en', otherLabel: 'English' },
 }
 export const GROUPS = [
-  { en: 'Getting started', zh: '开始', pages: ['index', 'public-api', 'consume', 'provide'] },
+  { en: 'Getting started', zh: '开始', pages: ['index', 'public-api', 'mcp', 'consume', 'provide'] },
   { en: 'Features', zh: '功能', pages: ['channels', 'agents'] },
   { en: 'Help', zh: '帮助', pages: ['faq', 'changelog'] },
 ]
 const SOURCES = {
   index: { en: 'docs/guides/introduction.md', zh: 'docs/guides/zh-CN/introduction.md' },
   'public-api': { en: 'docs/guides/public-api.md', zh: 'docs/guides/zh-CN/public-api.md' },
+  mcp: { en: 'docs/guides/mcp.md', zh: 'docs/guides/zh-CN/mcp.md' },
   consume: { en: 'docs/guides/consume.md', zh: 'docs/guides/zh-CN/consume.md' },
   provide: { en: 'docs/guides/provide.md', zh: 'docs/guides/zh-CN/provide.md' },
   channels: { en: 'docs/guides/channels.md', zh: 'docs/guides/zh-CN/channels.md' },

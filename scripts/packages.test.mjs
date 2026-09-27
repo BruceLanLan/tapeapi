@@ -34,7 +34,7 @@ for (const [dir, pkg] of Object.entries(PKGS)) {
     assert.equal(pkg.bugs?.url, `${REPO}/issues`)
     assert.equal(pkg.engines?.node, '>=20')
     assert.ok(Array.isArray(pkg.keywords) && pkg.keywords.includes('tapeapi'))
-    assert.deepEqual(pkg.files, ['src', 'types', 'README.md', 'LICENSE'], 'files whitelist')
+    assert.deepEqual(pkg.files, dir === 'sdk' ? ['src', 'types', 'bin', 'README.md', 'LICENSE'] : ['src', 'types', 'README.md', 'LICENSE'], 'files whitelist')
     for (const f of ['README.md', 'LICENSE']) assert.ok(existsSync(join(ROOT, dir, f)), `${dir}/${f} must exist inside the package`)
     assert.equal(readFileSync(join(ROOT, dir, 'LICENSE'), 'utf8'), readFileSync(join(ROOT, 'LICENSE'), 'utf8'), `${dir}/LICENSE is a copy of the root LICENSE`)
   })
@@ -63,7 +63,7 @@ for (const [dir, pkg] of Object.entries(PKGS)) {
     const [info] = JSON.parse(out)
     const files = info.files.map((f) => f.path).sort()
     for (const f of files) {
-      assert.ok(/^(src\/[a-z0-9-]+\.js|types\/[a-z0-9-]+\.d\.ts|README\.md|LICENSE|package\.json)$/.test(f), `unexpected file in the tarball: ${f}`)
+      assert.ok(/^(src\/[a-z0-9-]+\.js|types\/[a-z0-9-]+\.d\.ts|bin\/tapeapi-mcp\.js|README\.md|LICENSE|package\.json)$/.test(f), `unexpected file in the tarball: ${f}`)
     }
     for (const f of ['package.json', 'README.md', 'LICENSE']) assert.ok(files.includes(f), `${f} is packed`)
     const srcOnDisk = readdirSync(join(ROOT, dir, 'src')).filter((f) => f.endsWith('.js')).map((f) => `src/${f}`)

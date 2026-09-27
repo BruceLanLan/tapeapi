@@ -17,7 +17,7 @@ TapeAPI 是 BNB Chain 上 [TapeOut](https://tapeout.net) 生态的服务与通�
 
 [English](README.md) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [手册](https://tapeapi.fun/docs/zh/) · [网站](https://tapeapi.fun) · [更新日志](CHANGELOG.md) · [路线图](docs/ROADMAP.md) · [参与贡献](CONTRIBUTING.md) · [行为准则](CODE_OF_CONDUCT.md)
 
-> **状态：pre-alpha（v0.2.0）。** 免费层不需要我们的任何合约，运行在 TapeOut 已部署的合约之上。
+> **状态：pre-alpha（v0.3.0）。** 免费层不需要我们的任何合约，运行在 TapeOut 已部署的合约之上。
 > 我们自己的合约（付费调用托管合约、服务目录、ChannelBus）**未经第三方审计**；ChannelBus 已部署（地址见下文）。
 > 接口仍可能变化。下文的 TAP 编号是向 TapeKit 维护者**提议**的编号，尚未正式分配。
 
@@ -39,7 +39,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.2.0/tapeapi-sdk-0.2.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz
 ```
 
 把下面的代码保存为 `try.mjs`，**放在 `tapeapi` 目录之内**（`@tapeapi/sdk` 通过仓库的 workspace 解析；保存在其它任何位置
@@ -59,6 +59,19 @@ console.log(result, verified)                              // 只有签名检查
 
 完全不想安装：[调试台](https://tapeapi.fun/playground/)在浏览器里运行同一份 SDK。公共服务的全部方法列在
 [公共 API](docs/guides/zh-CN/public-api.md) 中。
+
+## 在 Claude、Cursor 等 MCP 客户端中使用
+
+同样的八个方法也是 [MCP](https://modelcontextprotocol.io) 工具，地址是 `https://api.tapeapi.fun/mcp`（Streamable
+HTTP，无需密钥）。在 Claude 里，到 **Settings > Connectors > Add custom connector** 添加；在 Cursor 里，写进 `mcp.json`：
+
+```json
+{ "mcpServers": { "tapeapi": { "url": "https://api.tapeapi.fun/mcp" } } }
+```
+
+每个结果都由服务在链上委托的密钥签名，并附带回执和核验链接，任何人都能对照链上核验。远程服务器只负责签名；SDK 发布包里的
+本地命令 `tapeapi-mcp` 会在模型看到结果之前自己核验每个回答。各客户端的配置、回执与限制见
+[MCP 指南](docs/guides/zh-CN/mcp.md)。
 
 ---
 

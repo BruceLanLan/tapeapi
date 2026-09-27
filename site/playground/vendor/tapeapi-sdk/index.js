@@ -852,7 +852,7 @@ export function createTapeAPI(opts = {}) {
           return { retry: true }
         }
       }
-      throw new TapeAPIError(code, env.error?.message || code, { signed: true, ts: env.ts, block: env.block, httpStatus: res.status, data })
+      throw new TapeAPIError(code, env.error?.message || code, { signed: true, ts: env.ts, block: env.block, id: env.id, sig: env.sig, error: env.error, httpStatus: res.status, data })
     }
     lease?.commit()
     return { value: { result: env.result, verified: true, ts: env.ts, block: env.block ?? null, id: reqId, sig: env.sig } }

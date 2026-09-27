@@ -1,6 +1,6 @@
 {
   "name": "@tapeapi/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "TapeAPI JavaScript SDK: resolve on-chain services, call them and verify every signed answer (TapeOut protocol on BNB Smart Chain)",
   "keywords": [
     "tapeapi",
@@ -29,6 +29,9 @@
   "sideEffects": false,
   "main": "./src/index.js",
   "types": "./types/index.d.ts",
+  "bin": {
+    "tapeapi-mcp": "./bin/tapeapi-mcp.js"
+  },
   "exports": {
     ".": {
       "types": "./types/index.d.ts",
@@ -71,6 +74,7 @@
   "files": [
     "src",
     "types",
+    "bin",
     "README.md",
     "LICENSE"
   ],

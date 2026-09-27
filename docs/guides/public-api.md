@@ -96,6 +96,12 @@ use the SDK, or recover the signer yourself as described at the end of [Call a s
 with the signer the holder delegated on chain. The copy of the manifest at
 `https://api.tapeapi.fun/.well-known/tapeapi.json` is a convenience for reading; the SDK uses the one on chain.
 
+## Use it from an AI assistant (MCP)
+
+The same eight methods are MCP tools at `https://api.tapeapi.fun/mcp` (Streamable HTTP, no key). Add the URL to
+Claude, Cursor or any MCP client. Each result carries a receipt and a verification link, and a local command can check
+every answer against the chain before the model sees it. See [MCP](mcp.md).
+
 ## Methods
 
 Every method is free. `block` is optional everywhere it appears: a block number, or `'finalized'` (the default),

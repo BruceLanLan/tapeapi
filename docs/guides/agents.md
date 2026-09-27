@@ -34,7 +34,8 @@ await exposeTapeAPI(api, '0x<container>', {
 ## Desktop agents
 
 `manifestToTools(manifest, opts)` is the pure part, with no DOM: a Node MCP server can use it to offer the same tools
-to a desktop agent.
+to a desktop agent. The public service already does this at `https://api.tapeapi.fun/mcp`, and the SDK ships a local
+MCP command that verifies every answer itself: see [MCP](mcp.md).
 
 ## Try it
 

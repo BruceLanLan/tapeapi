@@ -26,6 +26,7 @@ DeWEB 是网站，TapeSend 是消息，TapeAPI 是服务。
 | 我想要 | 阅读 |
 |---|---|
 | 现在就免费读取有签名的 BNB Chain 数据，或使用公共中继 | [公共 API](public-api.md) |
+| 给 Claude、Cursor 或其他 MCP 客户端提供有签名的工具 | [MCP](mcp.md) |
 | 在应用里调用 TapeAPI 服务 | [调用服务](consume.md) |
 | 把我的代码或现有 API 变成服务 | [运行服务](provide.md) |
 | 在容器之间发送加密消息 | [私密通道](channels.md) |
@@ -34,7 +35,7 @@ DeWEB 是网站，TapeSend 是消息，TapeAPI 是服务。
 
 ## 状态
 
-Pre-alpha，版本 0.2.0。免费层运行在 TapeOut 已部署的合约之上。我们自己的合约未经第三方审计；付费调用的托管合约尚未
+Pre-alpha，版本 0.3.0。免费层运行在 TapeOut 已部署的合约之上。我们自己的合约未经第三方审计；付费调用的托管合约尚未
 部署。接口仍可能变化，TAP 编号是向 TapeKit 维护者提议的编号，尚未正式分配。
 
 ## 链上地址
@@ -59,6 +60,9 @@ BNB Smart Chain，chainId 56。
 |---|---|---|---|
 | 公共 API（8 个读取方法） | `11.1013.tape` | `0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8` | `https://api.tapeapi.fun` |
 | 公共中继（`relaySend`、`relayHandshake`、`relayRecv`） | `12.1013.tape` | `0x9cD838625251576c199B2DeF7A17e50266843185` | `https://relay.tapeapi.fun` |
+
+公共 API 的方法也以 MCP 工具的形式提供，地址是 `https://api.tapeapi.fun/mcp`，适用于 Claude、Cursor 和任何 MCP 客户端。
+每个结果都有签名，并附带任何人都能核验的回执；见 [MCP](mcp.md)。
 
 ## 规范
 

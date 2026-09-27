@@ -6,17 +6,29 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-28
+
 ### Added
 
 - **Remote MCP endpoint** `https://api.tapeapi.fun/mcp` (MCP Streamable HTTP, stateless): the eight public methods as MCP
   tools for Claude, Cursor and any MCP client, added by URL with nothing to install. Every tool result is the service's
   signed TAP-21 envelope and carries a receipt (`_meta["fun.tapeapi/receipt"]`) and a verification link.
+- **Local MCP command** `tapeapi-mcp` in the SDK release tarball
+  (`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz tapeapi-mcp 11.1013.tape`):
+  resolves any TapeOut service on chain, verifies every answer before the model sees it (a tampered answer is discarded),
+  and pins each service's tool definitions and signer, refusing calls after they change on chain until the user accepts
+  (`--allow-changed`).
+- **Receipt verification page** https://tapeapi.fun/verify/: open a receipt link or paste a receipt; the page resolves
+  the service on chain in the browser, recovers the signer and says Valid, Invalid, Cannot confirm or Not checked, with
+  every check listed.
 - `@tapeapi/sdk/mcp`: a transport-free MCP server core (`createMcpServer`), receipts (`receiptOf`, `verifyLink`) and
   `toolResultOf`; `@tapeapi/server/mcp`: `createMcpEndpoint({ provider, manifest })` turns any provider into a remote MCP
   server under the provider's own rate limits.
+- Docs: an MCP guide (English and Chinese); the homepage, README and roadmap list the MCP endpoint.
 
 ### Changed
 
+- A signed refusal thrown by `api.call` now carries its `id`, `sig` and `error`, so it can be receipted like an answer.
 - The relay template (`examples/cloudflare-worker/wrangler-relay.toml`) no longer names the project's own Worker or
   domain: a fork deploys it as `my-tapeapi-relay` with `npm run deploy:my-relay`. The project's own relay config moved
   to `examples/public-api/wrangler-relay.toml`; `npm run deploy:relay` still deploys it, unchanged.
@@ -114,6 +126,7 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/BruceLanLan/tapeapi/releases/tag/v0.2.0
 [0.1.0]: https://github.com/BruceLanLan/tapeapi/releases/tag/v0.1.0

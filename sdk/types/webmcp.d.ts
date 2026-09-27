@@ -26,6 +26,8 @@ export interface ManifestToToolsOptions {
   paid?: { maxPriceBEM: string | number; methods?: string[]; [key: string]: unknown }
   accepted?: Record<string, bigint | string | number>
   taken?: Set<string>
+  /** Replaces the sentence saying who checks the signature (a remote MCP server signs, the client checks). */
+  trust?: string
 }
 
 /** Pure: a TAP-20 manifest -> WebMCP tool descriptors (no execute, no DOM). */

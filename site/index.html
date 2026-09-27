@@ -39,7 +39,7 @@
 <div class="sheet">
 
 <div class="plate">
-  <p class="docno"><span><span lang="zh">数据手册</span><span lang="en">Datasheet</span></span><span>v0.2.0</span><span>2026-09-27</span><span>BNB Smart Chain · 56</span></p>
+  <p class="docno"><span><span lang="zh">数据手册</span><span lang="en">Datasheet</span></span><span>v0.3.0</span><span>2026-09-28</span><span>BNB Smart Chain · 56</span></p>
 
   <h1 lang="zh">流片一枚电路，它的容器就是你的 API</h1>
   <h1 lang="en">Tape out a circuit, and its container is your API</h1>
@@ -73,6 +73,17 @@
       <p lang="en">Eight free, signed, block-pinned reads of BNB Chain and TapeOut:</p>
         <p class="meth"><span>blockNumber ·</span> <span>balance ·</span> <span>tokenInfo ·</span> <span>tokenBalance ·</span> <span>nftOwner ·</span> <span>pairPrice ·</span> <span>bnbUsd ·</span> <span>tapeName</span></p>
         <div class="more"><a class="doclink" href="docs/zh/public-api.html" lang="zh">公共 API 指南 →</a><a class="doclink" href="docs/en/public-api.html" lang="en">Public API guide →</a></div>
+      </div>
+      <span class="st on">Live</span>
+    </div>
+    <div class="pin">
+      <span class="pno">MCP</span>
+      <div class="pb">
+        <h3><span lang="zh">MCP 服务器</span><span lang="en">MCP server</span></h3>
+        <div class="where">https://api.tapeapi.fun/mcp</div>
+        <p lang="zh">同样的 8 个方法，作为 Claude、Cursor 等 MCP 客户端的工具。按网址添加即可，无需安装。每个结果都有签名，并附带任何人都能对照链上核验的回执。</p>
+      <p lang="en">The same eight methods as tools for Claude, Cursor and any MCP client. Add it by URL, nothing to install. Every result is signed and carries a receipt anyone can verify against the chain.</p>
+        <div class="more"><a class="doclink" href="docs/zh/mcp.html" lang="zh">MCP 指南 →</a><a class="doclink" href="docs/en/mcp.html" lang="en">MCP guide →</a></div>
       </div>
       <span class="st on">Live</span>
     </div>
@@ -435,9 +446,9 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
     </div>
     <div class="app">
       <div class="no">NEXT 02</div>
-      <h3 lang="zh">托管服务</h3><h3 lang="en">Hosted services</h3>
-      <p lang="zh">在浏览器里创建一个服务，不必自己运行服务器。</p>
-      <p lang="en">Create a service in the browser, without running a server of your own.</p>
+      <h3 lang="zh">Tape out 你的 MCP 服务器</h3><h3 lang="en">Tape out your MCP server</h3>
+      <p lang="zh">服务器和域名仍是你自己的。加一个链上身份、一份钉在链上清单里的工具列表（改动要持有人签名），以及每个结果的签名。</p>
+      <p lang="en">Keep your own server and domain. Add an on-chain identity, a tool list pinned in the on-chain manifest (a change needs the holder's signature), and a signature on every result.</p>
     </div>
     <div class="app">
       <div class="no nope">AFTER AUDIT</div>

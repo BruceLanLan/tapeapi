@@ -91,6 +91,12 @@ curl -s -X POST https://api.tapeapi.fun/tapeapi/v1/bnbUsd \
 [调用服务](consume.md)末尾的说明自行恢复签名者，并与持有者在链上委托的签名者比较。
 `https://api.tapeapi.fun/.well-known/tapeapi.json` 上的清单副本只是方便阅读；SDK 使用的是链上那一份。
 
+## 在 AI 助手中使用（MCP）
+
+同样的八个方法也是 MCP 工具，地址是 `https://api.tapeapi.fun/mcp`（Streamable HTTP，无需密钥）。把这个网址加到
+Claude、Cursor 或任何 MCP 客户端即可。每个结果都附带回执和核验链接；还有一个本地命令，能在模型看到结果之前对照链上
+核验每个回答。见 [MCP](mcp.md)。
+
 ## 方法
 
 每个方法都免费。凡出现 `block` 的地方它都是可选的：一个区块号，或 `'finalized'`（默认）、`'safe'`、`'latest'`。

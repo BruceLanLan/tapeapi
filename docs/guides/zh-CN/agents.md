@@ -35,6 +35,7 @@ await exposeTapeAPI(api, '0x<container>', {
 ## 桌面智能体
 
 `manifestToTools(manifest, opts)` 是不依赖 DOM 的纯函数部分：Node MCP 服务器可以用它向桌面智能体提供同样的工具。
+公共服务已经在 `https://api.tapeapi.fun/mcp` 这样做了，SDK 还附带一个自己核验每个回答的本地 MCP 命令：见 [MCP](mcp.md)。
 
 ## 试一试
 

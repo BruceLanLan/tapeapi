@@ -30,7 +30,10 @@ const rpcFail = (status, code, message) => reply(status, { jsonrpc: '2.0', id: n
  * @returns {{ handle(request: Request, ctx?: { clientIp?: string }): Promise<Response>, tools: object[] }}
  */
 export function createMcpEndpoint({ provider, manifest, identity = {}, version = '0' }) {
-  const { tools, skipped } = webmcp.manifestToTools(manifest, { prefix: '' })
+  // This server signs its answers; it does not check them for the caller. The tool text says so.
+  // 本服务器只签名，不替调用方核验。工具说明如实这么写。
+  const trust = "The result is signed by the service's on-chain delegated key and carries a receipt; anyone can verify it against the chain (link in the result)."
+  const { tools, skipped } = webmcp.manifestToTools(manifest, { prefix: '', trust })
   if (!tools.length) throw new TapeAPIError('MANIFEST_INVALID', `no tool to expose (${skipped.map((s) => `${s.method}: ${s.code}`).join(', ') || 'no free methods'})`)
   const byName = new Map(tools.map((t) => [t.name, t]))
   const label = identity.name || manifest.name || 'TapeAPI service'
