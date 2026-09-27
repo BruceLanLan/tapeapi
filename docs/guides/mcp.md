@@ -11,6 +11,8 @@ There are two ways to connect:
 - **The local command** `tapeapi-mcp`. It runs on your machine, checks every answer against the chain before the
   model sees it, and refuses a service whose tools changed on chain until you accept the change.
 
+Already run an MCP server of your own? See [Tape out your own MCP server](#tape-out-your-own-mcp-server).
+
 ## What you get
 
 Eight read-only tools, free, with no sign-up and no key: `blockNumber`, `balance`, `tokenInfo`, `tokenBalance`,
@@ -100,7 +102,7 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2a
 it from the GitHub release, not from the npm registry:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.4.0/tapeapi-sdk-0.4.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 What it does differently from the remote server:
@@ -131,7 +133,7 @@ Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.4.0/tapeapi-sdk-0.4.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -151,7 +153,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.4.0/tapeapi-sdk-0.4.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -163,7 +165,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.4.0/tapeapi-sdk-0.4.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### Remote or local
@@ -201,7 +203,7 @@ Save the receipt (the `_meta["fun.tapeapi/receipt"]` object) as `receipt.json`. 
 release, or work inside a clone of the repository as in [Call a service](consume.md):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.4.0/tapeapi-sdk-0.4.0.tgz
 ```
 
 ```js
@@ -274,3 +276,153 @@ export default {
 - `/mcp` is a route on your server, not part of the manifest, so adding it changes nothing on chain and needs no
   republish.
 - `identity.name` is the TapeOut name shown in results and receipts.
+
+## Tape out your own MCP server
+
+This is for you if you already run an MCP server. You keep your server and your domain. A signing proxy in front of
+it adds what MCP lacks:
+
+- **An on-chain identity.** The proxy answers for a TapeOut circuit's container, so who is answering is a chain lookup,
+  not a claim.
+- **Tool definitions pinned on chain.** The manifest in your container's on-chain site carries `mcp.toolsSha256`, a
+  SHA-256 over every tool's name, title, description, input and output schemas and annotations
+  ([TAP-20 §3.8](../../spec/TAP-20.md)). If the tools change after users approved them (an MCP "rug pull"), clients
+  that check the digest refuse them, and the proxy itself stops serving.
+- **Every result signed.** Each tool call is answered with a signed TAP-21 envelope, and on `/mcp` with a receipt and a
+  verification link, as for the public service above.
+
+The proxy and the console support for it are available now. No third-party MCP server has been taped out yet. The
+packages are not on npm, so work inside a clone of the repository, as in [Run a service](provide.md).
+
+### 1. Run the proxy in front of your server
+
+The proxy is `createMcpProxy` from `@tapeapi/server/mcp-proxy`.
+[`examples/mcp-proxy/`](../../examples/mcp-proxy/) runs it with Node or as a Cloudflare Worker. Try it locally first:
+with no `UPSTREAM_URL` set, it starts a small demo MCP server with two tools, `add` and `shout`, and wraps that.
+
+```bash
+npm install --no-audit --no-fund       # once, in the repository root
+node examples/mcp-proxy/index.mjs      # http://127.0.0.1:8796, with a throwaway signing key
+```
+
+```bash
+curl -s http://127.0.0.1:8796/.well-known/tapeapi.json
+curl -s -X POST http://127.0.0.1:8796/tapeapi/v1/add -H 'content-type: application/json' -d '{"id":"1","params":{"a":2,"b":40}}'
+curl -s -X POST http://127.0.0.1:8796/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"shout","arguments":{"text":"hi","times":2}}}'
+```
+
+The proxy has three routes:
+
+| Route | What it is |
+|---|---|
+| `GET /.well-known/tapeapi.json` | The manifest: your identity fields, one free method per tool, and `mcp: { endpoint, toolsSha256 }` |
+| `POST /tapeapi/v1/<tool>` | A signed call: `{ id, params }` in, a TAP-21 envelope out, whose `result` is your server's tool result without `_meta` |
+| `POST /mcp` | Remote MCP (Streamable HTTP, stateless): `tools/list` returns your tools as your server lists them; `tools/call` returns your server's content plus a provenance line, with the receipt in `_meta` |
+
+To wrap your own server, point `UPSTREAM_URL` at its Streamable HTTP endpoint. If it needs a key, set
+`UPSTREAM_AUTHORIZATION`: a fixed header you choose. A caller's headers are never forwarded to your server.
+
+```bash
+UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..." node examples/mcp-proxy/index.mjs
+```
+
+To go live, the proxy needs an https hostname of yours, because its URL is written into the on-chain manifest:
+
+- **Cloudflare Worker.** Set `UPSTREAM_URL` in `examples/mcp-proxy/wrangler.toml` (the Worker is named
+  `my-tapeapi-mcp-proxy`) and deploy with `npx --yes wrangler@4.141.0 deploy -c examples/mcp-proxy/wrangler.toml`. Add
+  a custom domain to the Worker in the Cloudflare dashboard and set the variable `PUBLIC_URL` to it. Until its identity
+  is set, the Worker answers only `/tapeapi/v1/health`, which names the signing address derived from the secret
+  `SIGNER_KEY`: the same setup mode as in
+  [Go live from a phone](provide.md#2-go-live-from-a-phone-cloudflare-holder-console).
+- **Node.** Run `examples/mcp-proxy/index.mjs` behind your own https reverse proxy, with `PUBLIC_URL`, `SIGNER_KEY`
+  and the identity variables below in its environment (`HOST` and `PORT` say where it listens, `NAME` sets the service
+  name).
+
+The identity is added exactly as for any TapeAPI service: mint a circuit and open its container, enter the proxy's URL
+in the [holder console](https://tapeapi.fun/console/), sign the delegation, and set `CIRCUITS`, `TOKEN_ID`,
+`CONTAINER`, `DELEGATION_EXPIRES` and `DELEGATION_SIG` as variables and `SIGNER_KEY` as a secret.
+[Run a service](provide.md#2-go-live-from-a-phone-cloudflare-holder-console) walks through each step.
+
+### 2. Publish the manifest with the holder console
+
+The console's publishing step reads the proxy's `/.well-known/tapeapi.json`. When the manifest has an `mcp` field, the
+console does not take the proxy's word for the digest. It fetches `tools/list` from `mcp.endpoint` itself, in your
+browser, and computes the digest the way clients do. Nothing is published unless that digest equals the proxy's
+`toolsSha256` and every method is one of the tools. Before your wallet is asked to sign, the console shows every
+tool's name and description. Read them: this is the tool set you are putting your circuit's name to. The published
+manifest carries the `mcp` field.
+
+Then set `TOOLS_SHA256` (a Worker variable, or the environment for Node) to the `mcp.toolsSha256` you published.
+Without it, a proxy that restarts takes whatever tools it reads at start-up as the published ones, and a Worker
+isolate can be restarted at any time. With it, changed tools are refused after a restart too.
+
+### 3. Let people connect
+
+- **By URL.** Users add `https://<your host>/mcp` to Claude, Cursor or any MCP client, as for the public service at the
+  top of this guide. Every result carries a receipt and a verification link.
+- **With the local command.** `tapeapi-mcp` takes your TapeOut name (or container address), resolves your service on
+  chain, and shows your tools as your server defines them, after checking them against the digest on chain (v0.4.0
+  or later):
+
+  ```bash
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.4.0/tapeapi-sdk-0.4.0.tgz tapeapi-mcp 42.1013.tape
+  ```
+
+### What clients check
+
+- **`tapeapi-mcp`** resolves the service and the holder's delegation on chain. It fetches `tools/list` from
+  `mcp.endpoint`, computes the digest, and refuses every tool of the service, sending nothing, if it differs from the
+  `mcp.toolsSha256` on chain. It pins that digest in `~/.tapeapi/mcp-pins.json` together with the methods and the
+  signing key. Each call goes to `/tapeapi/v1/<tool>`, and the envelope's signature is checked against the delegated
+  key, bound to this request, before the model sees the result.
+- **A client connected to `/mcp` by URL checks nothing itself.** It relies on the proxy, which refuses to serve tools
+  that no longer match the published digest, and on the receipts, which anyone can check afterwards at
+  `https://tapeapi.fun/verify/`.
+- **A tool error is still signed as an answer.** When your server returns `isError: true`, the envelope is `ok: true`:
+  the signature says what your server answered. Only the proxy's own refusals are `ok: false`.
+
+### When you change your tools
+
+Any change to a tool definition changes the digest, even one word of a description. The proxy re-reads your tools on
+every `tools/list` and on the first call more than 60 seconds after its last read. From the moment they differ from
+the published digest:
+
+- every call is refused with a signed `TOOLS_CHANGED` error (HTTP 409, with `data: { published, current }`);
+- `tools/list` on `/mcp` answers a JSON-RPC error, and `/tapeapi/v1/health` reports `ok: false`.
+
+This lasts until you publish the new tool set:
+
+1. Make sure the change is yours.
+2. Set `TOOLS_SHA256` to the new digest (the `current` value in the refusal, also shown as `upstreamToolsSha256` on
+   `/tapeapi/v1/health`), or remove it, and restart or redeploy the proxy. While `TOOLS_SHA256` still names the old
+   digest, the proxy refuses `tools/list`, so the console cannot read your tools.
+3. Publish the manifest again with the holder console, as in step 2 above.
+
+Between the restart and the publish, clients connected to `/mcp` by URL already see the new tools; `tapeapi-mcp`
+refuses them, because they do not match the chain yet. After the publish, `tapeapi-mcp` sees a new digest on chain,
+which differs from the one it pinned, and refuses your service until its user accepts the change by restarting it
+once with `--allow-changed`. A new tool set reaches those users only with their consent.
+
+### What this does not do
+
+- **A signature proves who answered and that the tool definitions are the published ones. It does not prove the
+  answers are right.** The digest binds the definitions, not the behaviour: a server can answer differently under the
+  same definitions. Signing makes that attributable, not impossible. You vouch for the server you put behind your
+  circuit.
+- **Streamable HTTP servers only.** Your server must speak MCP over Streamable HTTP; a stdio server needs an HTTP
+  bridge first. Only tools are proxied: resources and prompts are not, there is no server-to-client stream (a GET on
+  `/mcp` gets HTTP 405), and sampling, elicitation and progress notifications are not relayed. Your server's
+  `instructions` are not relayed either, because they are not covered by the digest.
+- **Tool names must be TAP-20 method names** (`[A-Za-z_][A-Za-z0-9_]{0,63}`). A tool with another name is still listed
+  in `tools/list`, because the digest covers every tool, but it cannot be called through the proxy. The proxy's
+  start-up log names such tools.
+- **Free tools only, for now.** Every tool becomes a free method. Paid calls wait for the escrow audit
+  ([Roadmap](../ROADMAP.md)).
+- **The console step needs CORS.** The console reads `tools/list` from `mcp.endpoint` in your browser, so that endpoint
+  must allow cross-origin requests from `https://tapeapi.fun`. The proxy's `/mcp` already does. Do not put anything in
+  front of it that blocks `OPTIONS` requests or strips the CORS headers.
+- **Sizes.** One answer from your server may be at most 1 MiB and take at most 20 seconds. In the manifest, each
+  method's description is cut to 256 characters (Unicode code points); the full text is pinned by `toolsSha256`. The console publishes at
+  most 24 000 bytes and 64 methods in one transaction.
+- **Rate limits** are per process (per isolate on Workers): 600 free calls per minute per IP address by default.

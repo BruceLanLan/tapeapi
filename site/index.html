@@ -39,7 +39,7 @@
 <div class="sheet">
 
 <div class="plate">
-  <p class="docno"><span><span lang="zh">数据手册</span><span lang="en">Datasheet</span></span><span>v0.3.0</span><span>2026-09-28</span><span>BNB Smart Chain · 56</span></p>
+  <p class="docno"><span><span lang="zh">数据手册</span><span lang="en">Datasheet</span></span><span>v0.4.0</span><span>2026-09-28</span><span>BNB Smart Chain · 56</span></p>
 
   <h1 lang="zh">流片一枚电路，它的容器就是你的 API</h1>
   <h1 lang="en">Tape out a circuit, and its container is your API</h1>
@@ -109,8 +109,8 @@
       <span class="st on">Live</span>
     </div>
   </div>
-  <p class="tcap tools-cap" lang="zh">工具 · 都在浏览器里运行</p>
-  <p class="tcap tools-cap" lang="en">Tools · all in the browser</p>
+  <p class="tcap tools-cap" lang="zh">工具 · 在浏览器里运行，或由你自己部署</p>
+  <p class="tcap tools-cap" lang="en">Tools · in the browser, or yours to run</p>
   <div class="tools">
     <div class="tool">
       <div class="tt"><span class="pno">PLY</span><span class="st on">Live</span></div>
@@ -141,6 +141,12 @@
       <h3><a href="console/"><span lang="zh">持有人操作台</span><span lang="en">Holder console</span></a></h3>
       <p lang="zh">给 TapeOut 电路持有人：在钱包浏览器里把自己的容器发布成 TapeAPI 服务。</p>
       <p lang="en">For TapeOut circuit holders: publish your container as a TapeAPI service from a wallet browser.</p>
+    </div>
+    <div class="tool">
+      <div class="tt"><span class="pno">PRX</span><span class="st">Available</span></div>
+      <h3><a href="docs/zh/mcp.html#tape-out-你自己的-mcp-服务器" lang="zh">Tape out 你的 MCP 服务器</a><a href="docs/en/mcp.html#tape-out-your-own-mcp-server" lang="en">Tape out your MCP server</a></h3>
+      <p lang="zh">服务器和域名仍是你自己的。在前面放一个签名代理（Node 或 Cloudflare Worker），加上链上身份、钉在链上清单里的工具定义（改动要持有人重新发布），以及每个结果的签名。还没有第三方服务器接入。</p>
+      <p lang="en">Keep your own server and domain. Put a signing proxy in front of it (Node or a Cloudflare Worker) for an on-chain identity, tool definitions pinned in the on-chain manifest (a change needs the holder to republish), and a signature on every result. No third-party server has been taped out yet.</p>
     </div>
     <div class="tool">
       <div class="tt"><span class="pno">SRC</span><span class="st">Public</span></div>
@@ -443,12 +449,6 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
       <h3 lang="zh">开发者控制台（完整版）</h3><h3 lang="en">Developer dashboard, full</h3>
       <p lang="zh">只读版“我的服务”已上线。接下来：自动列出你名下的服务，并在同一页面完成续期与管理。</p>
       <p lang="en">A read-only My services page is live. Next: list the services you hold automatically, and renew and manage them on the same page.</p>
-    </div>
-    <div class="app">
-      <div class="no">NEXT 02</div>
-      <h3 lang="zh">Tape out 你的 MCP 服务器</h3><h3 lang="en">Tape out your MCP server</h3>
-      <p lang="zh">服务器和域名仍是你自己的。加一个链上身份、一份钉在链上清单里的工具列表（改动要持有人签名），以及每个结果的签名。</p>
-      <p lang="en">Keep your own server and domain. Add an on-chain identity, a tool list pinned in the on-chain manifest (a change needs the holder's signature), and a signature on every result.</p>
     </div>
     <div class="app">
       <div class="no nope">AFTER AUDIT</div>

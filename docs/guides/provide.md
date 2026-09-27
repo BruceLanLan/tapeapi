@@ -3,6 +3,11 @@
 This guide turns your code, or an API you already run, into a TapeAPI service anyone can verify. It covers the
 concepts, a local run, going live (from a phone, or from a server), renewal and operations.
 
+Already run an MCP server? A signing proxy lets you keep your server and your domain and add an on-chain identity, tool
+definitions pinned on chain and a signature on every result: see
+[Tape out your own MCP server](mcp.md#tape-out-your-own-mcp-server). The identity, delegation and publishing steps are
+the ones below.
+
 ## The five things a live service needs
 
 | Thing | What it is | Who makes it |

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>运行服务 · TapeAPI 手册</title>
-<meta name="description" content="本指南把你的代码，或你已经在运行的 API，变成任何人都能验证的 TapeAPI 服务。内容包括基本概念、本地运行、上线（从手机或从服务器）、续期和运维。">
+<meta name="description" content="本指南把你的代码，或你已经在运行的 API，变成任何人都能验证的 TapeAPI 服务。内容包括基本概念、本地运行、上线（从手机或从服务器）、续期和运维。 已经在运行 MCP 服务器？用签名代理可以保留你的服务器和域名，只加上链上身份、钉在链上的工具定义和每个结果的签名：见 Tape out 你自己的 MCP 服务器 ">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../docs.css?v=07114d1e64">
 <link rel="alternate" hreflang="en" href="../en/provide.html">
@@ -24,6 +24,7 @@
 <article>
 <h1 id="运行服务">运行服务</h1>
 <p>本指南把你的代码，或你已经在运行的 API，变成任何人都能验证的 TapeAPI 服务。内容包括基本概念、本地运行、上线（从手机或从服务器）、续期和运维。</p>
+<p>已经在运行 MCP 服务器？用签名代理可以保留你的服务器和域名，只加上链上身份、钉在链上的工具定义和每个结果的签名：见 <a href="mcp.html#tape-out-你自己的-mcp-服务器">Tape out 你自己的 MCP 服务器</a>。身份、委托和发布清单的步骤与下文相同。</p>
 <h2 id="上线服务需要的五样东西"><a class="anchor" href="#上线服务需要的五样东西" aria-hidden="true">#</a>上线服务需要的五样东西</h2>
 <div class="table"><table><thead><tr><th>东西</th><th>是什么</th><th>由谁制作</th></tr></thead><tbody><tr><td><strong>电路</strong></td><td>在 TapeOut 处理器上铸造的 NFT。谁持有它，谁就拥有该服务。</td><td>你，在 <a href="https://tapeout.net" rel="noopener">tapeout.net</a> 上。</td></tr><tr><td><strong>容器</strong></td><td>电路的 ERC-6551 账户：服务的身份与地址。它必须先<strong>开通</strong>（0.012 BNB），其站点才接受文件。</td><td>你，在电路页面上。</td></tr><tr><td><strong>签名密钥</strong></td><td>你的服务器用来为每个回答签名的热钥。它不是你的钱包，也不持有资金。</td><td>为你生成（控制台）或由你自己生成。</td></tr><tr><td><strong>委托</strong></td><td>电路持有者的一个 EIP-712 签名：“这把签名密钥代表我的容器发言，直到某个日期”。不涉及资金转移。</td><td>持有者的钱包。</td></tr><tr><td><strong>清单</strong></td><td>容器站点中的 <code>.well-known/tapeapi.json</code>：端点、方法、价格、签名密钥和委托。</td><td>由持有者写上链（一笔交易）。</td></tr></tbody></table></div>
 <p>容器地址由电路决定，因此清单是你唯一需要重新发布的东西：无论是添加方法、更改端点，还是续期委托。</p>

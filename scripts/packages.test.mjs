@@ -114,6 +114,7 @@ test('declarations name every runtime export of every subpath', async () => {
     ['sdk', 'tapesend', { default: './src/tapesend.js', types: './types/tapesend.d.ts' }],
     ['server', '.', PKGS.server.exports['.']],
     ['server', './mcp', PKGS.server.exports['./mcp']],
+    ['server', './mcp-proxy', PKGS.server.exports['./mcp-proxy']],
   ]
   for (const [dir, sub, value] of cases) {
     const runtime = Object.keys(await import(pathToFileURL(join(ROOT, dir, value.default)).href)).sort()

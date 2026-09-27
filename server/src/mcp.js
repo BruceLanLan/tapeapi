@@ -4,10 +4,14 @@
 // 把 TapeAPI 提供者作为远程 MCP 服务器（Streamable HTTP，无状态）：POST /mcp 收 JSON-RPC、回 JSON。每次工具调用都像普通调用
 // 一样经过 provider.handleRequest，所以结果是同样签名的 TAP-21 信封、受同样的限流，并附带任何人都能对照链上核验的回执。
 import { mcp, webmcp, TapeAPIError } from '@tapeapi/sdk'
+import { readCapped, TooLarge } from './read-capped.js'
 
 export const MCP_PATH = '/mcp'
 const BODY_LIMIT = 64 * 1024
 const BATCH_MAX = 16
+// What onMessage gets of a method or tool name: enough to count, never a caller-sized string in the log.
+// onMessage 拿到的方法名、工具名的长度上限：够统计用，日志里绝不出现调用方决定长度的字符串。
+const NOTE_MAX = 64
 // Browser-based MCP clients need CORS; the server holds no cookies or sessions, so any origin is fine.
 // 浏览器里的 MCP 客户端需要 CORS；服务器不持有 cookie 或会话，任何来源都可以。
 const CORS = {
@@ -27,8 +31,11 @@ const rpcFail = (status, code, message) => reply(status, { jsonrpc: '2.0', id: n
  * @param {object} o.manifest   the manifest the provider serves / provider 提供的清单
  * @param {{ name?: string }} [o.identity]  the TapeOut name to show, e.g. '11.1013.tape' / 展示用的 TapeOut 名称
  * @param {string} [o.version]  serverInfo.version
- * @param {(m: { method: string, tool?: string, clientIp?: string }) => void} [o.onMessage]  called for every JSON-RPC
- *        message, for usage counting; errors in it are ignored / 每条 JSON-RPC 消息都会调用，用于用量统计；其中的错误被忽略
+ * @param {(m: { method: string, tool?: string, clientIp?: string }) => void} [o.onMessage]  called once for every
+ *        JSON-RPC message the endpoint handles (never for a request refused as too large, unparsable or an oversized
+ *        batch), for usage counting; method and tool are cut to 64 characters; errors in it are ignored
+ *        对实际处理的每条 JSON-RPC 消息调用一次（过大、无法解析或超长批量的请求不计），用于用量统计；method 和 tool 截到
+ *        64 个字符；其中的错误被忽略
  * @returns {{ handle(request: Request, ctx?: { clientIp?: string }): Promise<Response>, tools: object[] }}
  */
 export function createMcpEndpoint({ provider, manifest, identity = {}, version = '0', onMessage }) {
@@ -71,22 +78,34 @@ export function createMcpEndpoint({ provider, manifest, identity = {}, version =
     if (request.method === 'OPTIONS') return reply(204, null)
     // No server-to-client stream is offered: GET is 405, as Streamable HTTP allows. / 不提供服务器推送流：GET 回 405。
     if (request.method !== 'POST') return reply(405, { jsonrpc: '2.0', id: null, error: { code: mcp.JSONRPC.INVALID_REQUEST, message: 'use POST' } }, { allow: 'POST, OPTIONS' })
+    // A declared size over the cap is refused unread; a chunked body (no content-length) is read with a byte cap, so
+    // nothing past the first chunk beyond 64 KiB is ever held. / 声明大小超限的不读直接拒绝；分块正文（无 content-length）
+    // 按字节上限读取，超过 64 KiB 后的第一块之外什么都不留。
     const declared = Number(request.headers.get('content-length'))
     if (Number.isFinite(declared) && declared > BODY_LIMIT) return rpcFail(413, mcp.JSONRPC.INVALID_REQUEST, 'request too large')
     let text
-    try { text = await request.text() } catch { return rpcFail(400, mcp.JSONRPC.PARSE, 'unreadable body') }
-    if (text.length > BODY_LIMIT) return rpcFail(413, mcp.JSONRPC.INVALID_REQUEST, 'request too large')
+    try { text = await readCapped(request.body, BODY_LIMIT) } catch (e) {
+      return e instanceof TooLarge ? rpcFail(413, mcp.JSONRPC.INVALID_REQUEST, 'request too large') : rpcFail(400, mcp.JSONRPC.PARSE, 'unreadable body')
+    }
     let msg
     try { msg = JSON.parse(text) } catch { return rpcFail(400, mcp.JSONRPC.PARSE, 'parse error') }
+    if (Array.isArray(msg) && (!msg.length || msg.length > BATCH_MAX)) return rpcFail(400, mcp.JSONRPC.INVALID_REQUEST, `a batch holds 1 to ${BATCH_MAX} messages`)
     const server = serverFor(ctx.clientIp)
-    const note = (m) => { try { if (onMessage && m && typeof m.method === 'string') onMessage({ method: m.method, tool: m.method === 'tools/call' && typeof m.params?.name === 'string' ? m.params.name : undefined, clientIp: ctx.clientIp }) } catch { /* counting never breaks a call / 统计绝不影响调用 */ } }
-    for (const m of Array.isArray(msg) ? msg : [msg]) note(m)
+    // Counted only once the request is accepted, once per message handled, with bounded strings (review MCP-R1).
+    // 请求被接受后才计数，每条处理的消息一次，字符串有界（审查 MCP-R1）。
+    const note = (m) => {
+      try {
+        if (!onMessage || !m || typeof m.method !== 'string') return
+        const tool = m.method === 'tools/call' && typeof m.params?.name === 'string' ? m.params.name.slice(0, NOTE_MAX) : undefined
+        onMessage({ method: m.method.slice(0, NOTE_MAX), tool, clientIp: ctx.clientIp })
+      } catch { /* counting never breaks a call / 统计绝不影响调用 */ }
+    }
+    const one = (m) => { note(m); return server.handle(m) }
     if (Array.isArray(msg)) {
-      if (!msg.length || msg.length > BATCH_MAX) return rpcFail(400, mcp.JSONRPC.INVALID_REQUEST, `a batch holds 1 to ${BATCH_MAX} messages`)
-      const out = (await Promise.all(msg.map((m) => server.handle(m)))).filter(Boolean)
+      const out = (await Promise.all(msg.map(one))).filter(Boolean)
       return out.length ? reply(200, out) : reply(202, null)
     }
-    const out = await server.handle(msg)
+    const out = await one(msg)
     return out ? reply(200, out) : reply(202, null)
   }
 

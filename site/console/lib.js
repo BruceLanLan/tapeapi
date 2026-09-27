@@ -225,19 +225,261 @@ export function methodsProblems(methods) {
 
 /** The manifest the page publishes, built from what the holder read and signed, never taken from the service: the same
  *  fields in the same order as examples/cloudflare-worker/worker.js build() (a test keeps the two equal). Only the display
- *  name and the free method list (methodsProblems) may come from the service, and the holder sees both before signing.
+ *  name and the free method list (methodsProblems) may come from the service, and the holder sees both before signing;
+ *  so may an `mcp` field of exactly its shape (mcpProblems), whose tools the page reads and hashes itself (step 5).
  *  页面发布的清单：由持有人读到和签过的内容构造，不取自服务；字段和顺序与 worker.js build() 相同（有测试保证一致）。
- *  只有显示名称和免费方法列表（methodsProblems）可以来自服务，持有人签名前能看到两者。 */
-export function expectedManifest({ circuits, tokenId, container, signer, expires, sig, endpoint, name = 'TapeAPI Reader', methods = METHODS }) {
+ *  只有显示名称和免费方法列表（methodsProblems）可以来自服务，持有人签名前能看到两者；形状完全符合的 `mcp` 字段也可以
+ *  （mcpProblems），它的工具由页面自己读取并计算摘要（第 5 步）。 */
+export function expectedManifest({ circuits, tokenId, container, signer, expires, sig, endpoint, name = 'TapeAPI Reader', methods = METHODS, mcp }) {
   if (!NAME_OK(name)) throw new Error('name must be 1 to 64 printable characters')
   const bad = methodsProblems(methods)
   if (bad.length) throw new Error(bad.join('; '))
   if (!isServiceBase(String(endpoint).replace(/\/tapeapi\/v1$/, '')) || !String(endpoint).endsWith('/tapeapi/v1')) throw new Error(`endpoint must be https://<host>/tapeapi/v1, not ${endpoint}`)
+  if (mcp !== undefined) {
+    const badMcp = mcpProblems(mcp, { local: String(endpoint).startsWith('http:') })
+    if (badMcp.length) throw new Error(badMcp.join('; '))
+  }
   return {
     tapeapi: '0.1', name, circuits, tokenId: String(tokenId), container, signer,
     delegation: { expires: Number(expires), sig },
     endpoints: { live: [endpoint], async: false },
     methods,
+    ...(mcp !== undefined ? { mcp: { endpoint: mcp.endpoint, toolsSha256: mcp.toolsSha256 } } : {}),
+  }
+}
+
+// ---------------------------------------------------------------- a taped-out MCP server ----
+// A service may be the signing proxy of an MCP server. Its manifest then carries one more field, `mcp: { endpoint,
+// toolsSha256 }` (docs: PLAN-MCP, "阶段 2 接口约定"): toolsSha256 pins the upstream tool definitions on chain, and every
+// client refuses tools that do not hash to it. The page does not take the service's word for it: it reads tools/list
+// from mcp.endpoint itself, hashes it exactly as the SDK's mcp.toolsDigest does (RFC 8785 canonical JSON, SHA-256; the
+// page loads no library, so both are written out here and sdk/test/console.test.mjs checks them against the SDK), and
+// shows the holder every tool before the wallet is asked. / 服务可以是某个 MCP 服务器的签名代理，清单里就多一个字段
+// `mcp: { endpoint, toolsSha256 }`：toolsSha256 把上游工具定义钉在链上，客户端拒绝哈希不符的工具。页面不听服务一面之词：
+// 自己从 mcp.endpoint 读 tools/list，按 SDK 的 mcp.toolsDigest 同样的方法算摘要（RFC 8785 规范 JSON + SHA-256；页面不加载库，
+// 所以在这里写出，console.test.mjs 对照 SDK 检查），并在钱包请求之前把每个工具展示给持有人。
+const MCP_KEYS = ['endpoint', 'toolsSha256']
+/** Why a manifest's `mcp` field cannot be published ([] when it can): exactly { endpoint, toolsSha256 }, an https URL
+ *  (http on a loopback address only when `local`, as for the service itself) and the lowercase hex the page computes.
+ *  清单的 mcp 字段为何不能发布（可以则为空）：恰好是 { endpoint, toolsSha256 }，https 网址，页面算出的小写十六进制。 */
+export function mcpProblems(mcp, { local = false } = {}) {
+  if (!isPlain(mcp)) return [`mcp must be an object { endpoint, toolsSha256 }, not ${clip(mcp)}`]
+  const out = []
+  for (const k of Object.keys(mcp)) if (!MCP_KEYS.includes(k)) out.push(`mcp has an unexpected field ${clip(k)}`)
+  if (typeof mcp.toolsSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(mcp.toolsSha256)) out.push(`mcp.toolsSha256 must be 64 lowercase hex characters, not ${clip(mcp.toolsSha256)}`)
+  const e = mcp.endpoint
+  const ok = typeof e === 'string' && e.length <= 200 && !CONTROL.test(e) &&
+    (/^https:\/\/[^/?#@\s]+(\/[^?#\s]*)?$/.test(e) || (local && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/[^?#\s]*)?$/.test(e)))
+  if (!ok) out.push(`mcp.endpoint must be https://<host>/<path> with no query, fragment or credentials, not ${clip(e)}`)
+  return out
+}
+
+// RFC 8785 canonical JSON, exactly as the SDK's canon.js canonicalJSON: keys sorted by UTF-16 code units, leaves written
+// by JSON.stringify, and the same refusals (non-finite numbers, integers past 2^53, -0, lone surrogates in strings or
+// keys, prototype keys, undefined, toJSON, bigint/function/symbol). Whatever the SDK refuses, the page refuses.
+// RFC 8785 规范 JSON，与 SDK 的 canonicalJSON 完全一致：键按 UTF-16 码元排序，叶子交给 JSON.stringify，拒绝的东西也相同。
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+const canonStr = (s, path) => { if (LONE_SURROGATE.test(s)) throw new Error(`lone UTF-16 surrogate at ${path || '$'}`); return JSON.stringify(s) }
+export function canonicalJSON(v, path = '') {
+  if (v === null) return 'null'
+  const t = typeof v
+  if (t === 'boolean') return v ? 'true' : 'false'
+  if (t === 'string') return canonStr(v, path)
+  if (t === 'number') {
+    if (!Number.isFinite(v)) throw new Error(`non-finite number at ${path || '$'}`)
+    if (Number.isInteger(v) && !Number.isSafeInteger(v)) throw new Error(`integer ${v} at ${path || '$'} is outside the exactly representable range`)
+    if (Object.is(v, -0)) throw new Error(`negative zero at ${path || '$'}`)
+    return JSON.stringify(v)
+  }
+  if (t !== 'object') throw new Error(`unsupported ${t} at ${path || '$'}`)
+  if (Array.isArray(v)) return '[' + v.map((x, i) => canonicalJSON(x, `${path}[${i}]`)).join(',') + ']'
+  if (typeof v.toJSON === 'function') throw new Error(`value at ${path || '$'} has a toJSON() method`)
+  const parts = []
+  for (const k of Object.keys(v).sort()) {
+    if (FORBIDDEN.has(k)) throw new Error(`forbidden key "${k}" at ${path || '$'}`)
+    if (v[k] === undefined) throw new Error(`undefined at ${path}.${k}`)
+    parts.push(canonStr(k, `${path}.<key>`) + ':' + canonicalJSON(v[k], `${path}.${k}`))
+  }
+  return '{' + parts.join(',') + '}'
+}
+
+/** The tool fields that are hashed, as the SDK's TOOL_DIGEST_FIELDS. / 参与哈希的工具字段，同 SDK。 */
+export const TOOL_DIGEST_FIELDS = Object.freeze(['name', 'title', 'description', 'inputSchema', 'outputSchema', 'annotations'])
+const isObjLoose = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
+/** The tools as they are hashed, as the SDK's mcp.normalizeTools: those fields only, sorted by name, no repeated name.
+ *  参与哈希的工具形式，同 SDK 的 normalizeTools。 */
+export function normalizeTools(tools) {
+  if (!Array.isArray(tools)) throw new Error('tools must be an array')
+  const seen = new Set()
+  const out = tools.map((t) => {
+    if (!isObjLoose(t) || typeof t.name !== 'string' || !t.name) throw new Error('every tool needs a name')
+    if (seen.has(t.name)) throw new Error(`tool ${clip(t.name)} appears twice`)
+    seen.add(t.name)
+    return Object.fromEntries(TOOL_DIGEST_FIELDS.filter((k) => t[k] !== undefined).map((k) => [k, t[k]]))
+  })
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+}
+const webSha256 = async (b) => hex(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', b)))
+/** sha256 hex of canonicalJSON(normalizeTools(tools)): the SDK's mcp.toolsDigest, computed with WebCrypto.
+ *  与 SDK 的 mcp.toolsDigest 相同，用 WebCrypto 计算。 */
+export async function toolsDigest(tools, sha256 = webSha256) {
+  return String(await sha256(utf8(canonicalJSON(normalizeTools(tools))))).replace(/^0x/, '').toLowerCase()
+}
+
+/** Text a model reads but a person does not see, in any string of the pinned tool fields (keys included, any depth):
+ *  Unicode format characters (category Cf: tag characters, zero-width, bidi controls, soft hyphen) and C0/C1 controls,
+ *  except a line feed or a tab inside a `description`. One "tool X: field path: U+XXXX" line per offending string.
+ *  The SDK's mcp.invisibleProblems, character for character (the page loads no library; sdk/test/mcp-review.test.mjs
+ *  keeps the two equal). / 模型能读、人看不见的文本：Unicode 格式字符（Cf）和 C0/C1 控制符（description 里的换行、制表符除外）。
+ *  与 SDK 的 mcp.invisibleProblems 逐字相同（页面不加载库；由测试保证一致）。 */
+export function invisibleProblems(tools) {
+  const FIELDS = ['name', 'title', 'description', 'inputSchema', 'outputSchema', 'annotations']
+  const obj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
+  const u = (c) => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
+  const bad = (c, text) => /\p{Cf}/u.test(c) || (/\p{Cc}/u.test(c) && !(text && (c === '\n' || c === '\t')))
+  const first = (s, text) => { for (const c of s) if (bad(c, text)) return c; return null }
+  const show = (s) => Array.from(s).slice(0, 64).map((c) => (bad(c, false) ? `<${u(c)}>` : c)).join('')
+  const out = []
+  for (const t of Array.isArray(tools) ? tools : []) {
+    if (!obj(t)) continue
+    const who = `tool ${JSON.stringify(show(typeof t.name === 'string' ? t.name : String(t.name)))}`
+    const walk = (v, path, key) => {
+      if (typeof v === 'string') { const c = first(v, key === 'description'); if (c) out.push(`${who}: ${path}: ${u(c)}`); return }
+      if (Array.isArray(v)) { v.forEach((x, i) => walk(x, `${path}[${i}]`, key)); return }
+      if (!obj(v)) return
+      for (const k of Object.keys(v)) {
+        const c = first(k, false)
+        if (c) out.push(`${who}: ${path} key ${JSON.stringify(show(k))}: ${u(c)}`)
+        walk(v[k], /^[A-Za-z_$][\w$]*$/.test(k) ? `${path}.${k}` : `${path}[${JSON.stringify(show(k))}]`, k)
+      }
+    }
+    for (const f of FIELDS) if (t[f] !== undefined) walk(t[f], f, f)
+  }
+  return out
+}
+
+/** Why the tools read from mcp.endpoint cannot be published with this manifest ([] when they can): their digest must be
+ *  the toolsSha256 the service reports, every method must be one of the tools (the proxy makes one method per tool), and
+ *  no pinned text may be invisible to the holder who approves it (review MCP-R7).
+ *  从 mcp.endpoint 读到的工具为何不能随这份清单发布：摘要必须等于服务报出的 toolsSha256，每个方法都必须是其中一个工具，
+ *  钉住的文本不能有批准它的持有人看不见的部分（审查 MCP-R7）。 */
+export async function mcpToolsProblems({ mcp, methods, tools }) {
+  let digest
+  try { digest = await toolsDigest(tools) } catch (e) { return [`the tool list cannot be hashed as clients hash it: ${e.message}`] }
+  const out = []
+  if (digest !== mcp?.toolsSha256) out.push(`the tools served by ${clip(mcp?.endpoint)} hash to ${digest}, but the service reports toolsSha256 ${clip(mcp?.toolsSha256)}`)
+  const names = new Set(tools.map((t) => t.name))
+  for (const x of Array.isArray(methods) ? methods : []) if (!names.has(x?.name)) out.push(`method ${clip(x?.name)} is not one of the MCP tools`)
+  for (const p of invisibleProblems(tools)) out.push(`${p}: an invisible or format character (text a model reads but you cannot see)`)
+  return out
+}
+
+// JSON as the SDK's safeParseJSON reads it: a prototype key or a repeated key anywhere is refused (two parsers may
+// disagree about which duplicate survives, and so about the digest). / 与 SDK 的 safeParseJSON 一样：拒绝原型键和重复键。
+function findDuplicateKey(text) {
+  const n = text.length, stack = []
+  let i = 0, expectKey = false
+  const readString = () => {
+    let s = ''
+    i++
+    while (i < n) {
+      const c = text[i]
+      if (c === '\\') {
+        const e = text[i + 1]
+        if (e === 'u') { s += String.fromCharCode(parseInt(text.slice(i + 2, i + 6), 16)); i += 6 } else { s += ({ '"': '"', '\\': '\\', '/': '/', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' })[e] ?? e; i += 2 }
+        continue
+      }
+      if (c === '"') { i++; return s }
+      s += c; i++
+    }
+    return s
+  }
+  const inObject = () => stack.length > 0 && stack[stack.length - 1] !== null
+  while (i < n) {
+    const c = text[i]
+    if (c === '"') {
+      const key = readString()
+      if (expectKey && inObject()) { const seen = stack[stack.length - 1]; if (seen.has(key)) return key; seen.add(key); expectKey = false }
+      continue
+    }
+    if (c === '{') { stack.push(new Set()); expectKey = true } else if (c === '[') { stack.push(null); expectKey = false } else if (c === '}' || c === ']') { stack.pop(); expectKey = false } else if (c === ',') expectKey = inObject()
+    i++
+  }
+  return null
+}
+export function strictParseJSON(text) {
+  const v = JSON.parse(text, (k, x) => { if (FORBIDDEN.has(k)) throw new Error(`forbidden key "${k}" in JSON`); return x })
+  const dup = findDuplicateKey(text)
+  if (dup !== null) throw new Error(`duplicate key ${clip(dup)} in JSON`)
+  return v
+}
+
+const MCP_BODY_LIMIT = 4 * 1024 * 1024
+const MCP_MAX_PAGES = 20
+const sseMessages = (text) => text.replace(/\r\n?/g, '\n').split('\n\n').slice(0, -1).flatMap((ev) => {
+  const data = ev.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).replace(/^ /, '')).join('\n')
+  if (!data) return []
+  try { return [].concat(strictParseJSON(data)) } catch { return [] }
+})
+/** tools/list of an MCP server over Streamable HTTP, as the SDK's tapeapi-mcp reads it: initialize,
+ *  notifications/initialized, then tools/list page by page (nextCursor); JSON or SSE answers; the mcp-session-id carried.
+ *  From a browser the endpoint must allow this origin (CORS, including the mcp-session-id header both ways).
+ *  经 Streamable HTTP 读 MCP 服务器的 tools/list，与 SDK 的 tapeapi-mcp 相同。浏览器里端点必须允许本页来源跨域。 */
+export async function fetchMcpTools(endpoint, { fetch: f = (...a) => globalThis.fetch(...a), timeoutMs = 15_000 } = {}) {
+  let session = null, protocol = null, seq = 0
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), timeoutMs)
+  const read = async (res, done) => {
+    const reader = res.body?.getReader?.()
+    if (!reader) return await res.text()
+    const dec = new TextDecoder()
+    let text = '', size = 0
+    for (;;) {
+      const { value, done: end } = await reader.read()
+      if (end) return text + dec.decode()
+      size += value.byteLength
+      if (size > MCP_BODY_LIMIT) { reader.cancel().catch(() => {}); throw new Error(`answer larger than ${MCP_BODY_LIMIT} bytes`) }
+      text += dec.decode(value, { stream: true })
+      if (done && done(text)) { reader.cancel().catch(() => {}); return text }   // an SSE stream may stay open / SSE 流可能不关
+    }
+  }
+  const post = async (msg) => {
+    const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }
+    if (session) headers['mcp-session-id'] = session
+    if (protocol) headers['mcp-protocol-version'] = protocol
+    const res = await f(endpoint, { method: 'POST', headers, body: JSON.stringify(msg), signal: ac.signal, cache: 'no-store', credentials: 'omit' })
+    const sid = res.headers.get('mcp-session-id')
+    if (sid && !session) { if (!/^[\x21-\x7e]{1,256}$/.test(sid)) throw new Error('invalid mcp-session-id'); session = sid }
+    if (msg.id === undefined) { res.body?.cancel?.().catch(() => {}); if (!res.ok) throw new Error(`HTTP ${res.status} for ${msg.method}`); return null }
+    if (!res.ok) { res.body?.cancel?.().catch(() => {}); throw new Error(`HTTP ${res.status} for ${msg.method}`) }
+    const sse = /^text\/event-stream\b/i.test(res.headers.get('content-type') || '')
+    const mine = (m) => isObjLoose(m) && m.id === msg.id && ('result' in m || 'error' in m)
+    const text = await read(res, sse ? (t) => sseMessages(t).some(mine) : null)
+    const reply = (sse ? sseMessages(text) : [].concat(strictParseJSON(text))).find(mine)
+    if (!reply) throw new Error(`no answer to ${msg.method}`)
+    if (reply.error) throw new Error(`${msg.method} failed: ${clip(reply.error?.message)}`)
+    return reply.result
+  }
+  try {
+    const init = await post({ jsonrpc: '2.0', id: ++seq, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'tapeapi-console', version: '1' } } })
+    if (!isObjLoose(init)) throw new Error('initialize returned no result')
+    protocol = typeof init.protocolVersion === 'string' && /^[\x21-\x7e]{1,32}$/.test(init.protocolVersion) ? init.protocolVersion : null
+    await post({ jsonrpc: '2.0', method: 'notifications/initialized' })
+    const tools = []
+    let cursor
+    for (let page = 0; ; page++) {
+      if (page >= MCP_MAX_PAGES) throw new Error(`tools/list has more than ${MCP_MAX_PAGES} pages`)
+      const r = await post({ jsonrpc: '2.0', id: ++seq, method: 'tools/list', ...(cursor ? { params: { cursor } } : {}) })
+      if (!isObjLoose(r) || !Array.isArray(r.tools)) throw new Error('tools/list returned no tools array')
+      tools.push(...r.tools)
+      cursor = r.nextCursor
+      if (typeof cursor !== 'string' || !cursor) return tools
+    }
+  } catch (e) {
+    throw new Error(ac.signal.aborted ? `no answer within ${timeoutMs / 1000} s` : e?.message || String(e))
+  } finally {
+    clearTimeout(timer)
+    if (session) Promise.resolve().then(() => f(endpoint, { method: 'DELETE', headers: { 'mcp-session-id': session }, credentials: 'omit' })).then((r) => r?.body?.cancel?.().catch(() => {}), () => {})
   }
 }
 
@@ -251,8 +493,10 @@ const norm = (v) => Array.isArray(v) ? v.map(norm)
   : typeof v === 'string' && /^0x[0-9a-fA-F]+$/.test(v) ? v.toLowerCase() : v
 
 /** What differs between the manifest the service serves and the one the page will publish ([] when they agree).
- *  Any field the page did not build (payment, dev, a second endpoint, other prices) is a difference.
- *  服务提供的清单与页面将发布的清单有何不同（一致则为空）。页面没构造的任何字段（payment、dev、第二个端点、别的价格）都算不同。 */
+ *  Any field the page did not build (payment, dev, a second endpoint, other prices) is a difference. The shape of an
+ *  `mcp` field is checked here; its tools are checked by mcpToolsProblems once the page has read them.
+ *  服务提供的清单与页面将发布的清单有何不同（一致则为空）。页面没构造的任何字段（payment、dev、第二个端点、别的价格）都算不同。
+ *  `mcp` 字段的形状在这里检查；它的工具在页面读到之后由 mcpToolsProblems 检查。 */
 export function manifestProblems(text, s) {
   let m
   try { m = JSON.parse(text) } catch { return ['not JSON'] }
@@ -260,7 +504,8 @@ export function manifestProblems(text, s) {
   const bad = methodsProblems(m.methods)
   if (bad.length) return bad
   let want
-  try { want = expectedManifest({ ...s, name: NAME_OK(m.name) ? m.name : undefined, methods: m.methods }) } catch (e) { return [e.message] }
+  // `mcp` is the one optional field, and only with exactly its shape (mcpProblems). / mcp 是唯一的可选字段，形状必须完全符合。
+  try { want = expectedManifest({ ...s, name: NAME_OK(m.name) ? m.name : undefined, methods: m.methods, mcp: Object.hasOwn(m, 'mcp') ? m.mcp : undefined }) } catch (e) { return [e.message] }
   const out = []
   if (!NAME_OK(m.name)) out.push('name must be 1 to 64 printable characters')
   for (const k of new Set([...Object.keys(want), ...Object.keys(m)])) {

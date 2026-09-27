@@ -9,7 +9,7 @@ EIP-712 vouchers against an escrow; nothing is signed or sent without you.
 ## Install
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.4.0/tapeapi-sdk-0.4.0.tgz
 ```
 
 Not on the npm registry yet: each GitHub release carries the package file. Built from https://github.com/BruceLanLan/tapeapi
@@ -47,11 +47,11 @@ The package ships a command that exposes any TapeAPI service's free methods as M
 Cursor, any MCP client), and verifies every answer in your own process before the model sees it:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.4.0/tapeapi-sdk-0.4.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ```json
-{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
+{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.4.0/tapeapi-sdk-0.4.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
 ```
 
 - **Identity from the chain.** Each service (a TapeOut name like `11.1013.tape` or a container address) is resolved

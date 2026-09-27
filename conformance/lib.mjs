@@ -8,8 +8,8 @@ import { recoverResponseSigner } from '../sdk/src/sig.js'
 import { safeParseJSON } from '../sdk/src/canon.js'
 import { eqAddr } from '../sdk/src/abi.js'
 
-export const PROVIDER_CODES = ['PAYMENT_REQUIRED', 'BAD_VOUCHER', 'METHOD_NOT_FOUND', 'BAD_REQUEST', 'INTERNAL']
-export const CODE_STATUS = { PAYMENT_REQUIRED: [402], BAD_VOUCHER: [402], METHOD_NOT_FOUND: [404], BAD_REQUEST: [400, 413], INTERNAL: [500] }
+export const PROVIDER_CODES = ['PAYMENT_REQUIRED', 'BAD_VOUCHER', 'METHOD_NOT_FOUND', 'BAD_REQUEST', 'INTERNAL', 'TOOLS_CHANGED']
+export const CODE_STATUS = { PAYMENT_REQUIRED: [402], BAD_VOUCHER: [402], METHOD_NOT_FOUND: [404], BAD_REQUEST: [400, 413], INTERNAL: [500], TOOLS_CHANGED: [409] }
 export const ENVELOPE_LIMIT = 1024 * 1024       // TAP-21 §3.2
 export const MANIFEST_LIMIT = 65536             // TAP-20 §3.2
 

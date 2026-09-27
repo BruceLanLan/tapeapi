@@ -9,6 +9,6 @@ export declare function createMcpEndpoint(o: {
   manifest: Manifest
   identity?: { name?: string }
   version?: string
-  /** Called for every JSON-RPC message (usage counting); errors in it are ignored. */
+  /** Called once per JSON-RPC message handled (not for refused requests; usage counting); method and tool are cut to 64 characters; errors in it are ignored. */
   onMessage?: (m: { method: string; tool?: string; clientIp?: string }) => void
 }): { handle(request: Request, ctx?: { clientIp?: string }): Promise<Response>; tools: McpTool[] }

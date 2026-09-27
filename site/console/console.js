@@ -358,6 +358,28 @@ async function signDelegation(renew) {
   } catch (e) { note(out, false, bi(`没有完成：${e.message}`, `Not completed: ${e.message}`)) }
 }
 
+// The tools of a taped-out MCP server, as the holder must see them before signing: every field the digest pins (name,
+// title, description, inputSchema with its nested descriptions, outputSchema, annotations), as text. A one-line summary
+// per tool, then the whole pinned tool as pretty-printed JSON. Invisible characters were refused before this runs
+// (mcpToolsProblems), so what is shown is all a model will read. / 已 tape out 的 MCP 服务器的工具：签名前持有人必须看到摘要钉住的
+// 每个字段（name、title、description、含嵌套说明的 inputSchema、outputSchema、annotations），都作为纯文本显示。每个工具先一行摘要，
+// 再是整个钉住的工具（格式化 JSON）。不可见字符在此之前已被拒绝（mcpToolsProblems），所以显示的就是模型将读到的全部内容。
+function showTools(out, mcp, tools) {
+  note(out, true, bi(`✓ MCP 工具定义核对通过：从 ${mcp.endpoint} 读到的 ${tools.length} 个工具，本页算出的摘要等于服务报出的 toolsSha256（${mcp.toolsSha256}），且不含看不见的字符。这个摘要随清单写上链，客户端只接受与它一致的工具定义，模型会读到下面每个字段（name、title、description、inputSchema 及其中的说明、outputSchema、annotations）。签名前请逐个看一遍：`,
+    `✓ The MCP tool definitions check out: the ${tools.length} tools read from ${mcp.endpoint} hash, as computed by this page, to the toolsSha256 the service reports (${mcp.toolsSha256}), and carry no invisible characters. That digest goes on chain with the manifest, clients accept only tool definitions that match it, and a model reads every field below (name, title, description, inputSchema with the descriptions inside it, outputSchema, annotations). Read each one before you sign:`))
+  const ul = document.createElement('ul'); ul.className = 'tools'
+  for (const tool of C.normalizeTools(tools)) {
+    const li = document.createElement('li'), name = document.createElement('code'), desc = document.createElement('span')
+    name.textContent = tool.name
+    desc.textContent = `${typeof tool.title === 'string' && tool.title ? ` (${tool.title})` : ''}${typeof tool.description === 'string' && tool.description ? ` — ${tool.description}` : ''}`
+    // Everything pinned for this tool, exactly as hashed: title, description, inputSchema, outputSchema, annotations.
+    // 这个工具被钉住的全部内容，与参与哈希的完全一致。
+    const pre = document.createElement('pre'); pre.className = 'mono'; pre.textContent = JSON.stringify(tool, null, 2)
+    li.append(name, desc, pre); ul.append(li)
+  }
+  out.append(ul)
+}
+
 $('btn-publish').onclick = async () => {
   const out = $('publish-out'); out.replaceChildren()
   $('btn-publish').disabled = true   // one tap, one transaction (review F5) / 一次点击一笔交易
@@ -370,9 +392,25 @@ $('btn-publish').onclick = async () => {
     // Publish the page's own bytes, built from what you read and signed; the service only has to agree (review F2).
     // 发布页面自己构造的字节（来自你读到和签过的内容）；服务只需与之一致（审查 F2）。
     const sm = JSON.parse(served)
-    const text = C.manifestText({ ...s, name: sm.name, methods: sm.methods })
+    // A taped-out MCP server (the manifest has `mcp`): the page reads the tools from mcp.endpoint itself and hashes them as
+    // every client will (lib toolsDigest); only if that equals the toolsSha256 the service reports, and every method is one
+    // of those tools, is anything published. / 已 tape out 的 MCP 服务器：页面自己从 mcp.endpoint 读工具、按客户端的方法算摘要；
+    // 等于服务报出的 toolsSha256、且每个方法都是其中的工具，才发布。
+    let tools = null
+    if (sm.mcp !== undefined) {
+      note(out, null, bi(`这是一个 MCP 服务：正在从 ${sm.mcp.endpoint} 读取它的工具定义…`, `This is an MCP service: reading its tool definitions from ${sm.mcp.endpoint}…`))
+      try { tools = await C.fetchMcpTools(sm.mcp.endpoint) } catch (e) {
+        note(out, false, bi(`读不到 ${sm.mcp.endpoint} 的工具列表（${e.message}），暂不上链。本页必须自己核对工具定义：这个 MCP 端点要允许 https://tapeapi.fun 跨域访问（CORS：允许 POST 以及 content-type、mcp-session-id、mcp-protocol-version 请求头，并暴露 mcp-session-id 响应头）。`,
+          `Could not read the tool list from ${sm.mcp.endpoint} (${e.message}), so nothing is published. This page must check the tool definitions itself: the MCP endpoint has to allow cross-origin requests from https://tapeapi.fun (CORS: POST with the content-type, mcp-session-id and mcp-protocol-version request headers, and the mcp-session-id response header exposed).`))
+        return
+      }
+      const bad = await C.mcpToolsProblems({ mcp: sm.mcp, methods: sm.methods, tools })
+      if (bad.length) { note(out, false, bi(`MCP 工具定义核对不通过，暂不上链：${bad.join('；')}。`, `The MCP tool definitions do not check out, so nothing is published: ${bad.join('; ')}.`)); return }
+    }
+    const text = C.manifestText({ ...s, name: sm.name, methods: sm.methods, mcp: sm.mcp })
     const size = new TextEncoder().encode(text).length, names = sm.methods.map((x) => x.name)
     note(out, true, bi(`✓ 清单核对通过（${size} 字节）。服务名「${sm.name}」，${names.length} 个免费方法：${names.join('、')}。将写上链的完整内容：`, `✓ The manifest checks out (${size} bytes). Service name "${sm.name}", ${names.length} free methods: ${names.join(', ')}. The full content to be written on chain:`))
+    if (tools) showTools(out, sm.mcp, tools)
     const pre = document.createElement('pre'); pre.className = 'mono'; pre.textContent = JSON.stringify(JSON.parse(text), null, 2); out.append(pre)
     const sha = '0x' + Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))).map((b) => b.toString(16).padStart(2, '0')).join('')
     const tx = C.putFileTx({ container: s.container, text, sha256Hex: sha })

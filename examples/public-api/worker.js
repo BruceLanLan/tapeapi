@@ -52,16 +52,31 @@ export function build(env) {
   })
 }
 
-// One log line per MCP message, for counting distinct callers (Workers observability). The caller is a hash of IP and
-// UTC day: never the IP itself, and unlinkable across days. / 每条 MCP 消息一行日志，用于统计不同调用方。调用方是 IP 与
-// UTC 日期的哈希：从不记录 IP 本身，且跨天无法关联。
-async function callerTag(ip) {
-  const day = new Date().toISOString().slice(0, 10)
-  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${ip || '-'}|${day}|tapeapi-mcp`)))
-  return Array.from(d.slice(0, 6), (b) => b.toString(16).padStart(2, '0')).join('')
+// One log line per MCP message, for counting distinct callers (Workers observability). The caller tag is
+// HMAC-SHA256(key, `${ip}|${UTC day}`) cut to 12 hex characters, with key = SHA-256("tapeapi-mcp-caller|" + SIGNER_KEY):
+// never the IP itself, unlinkable across days, and not reversible by whoever reads the logs, since trying every IP needs
+// the key (a plain hash of IP and day is, in hours: review MCP-R5). Without SIGNER_KEY no caller tag is logged.
+// 每条 MCP 消息一行日志，用于统计不同调用方。调用方标签是 HMAC-SHA256(key, `${ip}|${UTC 日期}`) 取前 12 个十六进制字符，
+// key = SHA-256("tapeapi-mcp-caller|" + SIGNER_KEY)：从不记录 IP 本身，跨天无法关联；读日志的人也无法反推，因为穷举 IP 需要
+// 密钥（IP 与日期的普通哈希几小时就能穷举：审查 MCP-R5）。没有 SIGNER_KEY 时不记录调用方标签。
+const enc = new TextEncoder()
+const hmacKeys = new Map()   // SIGNER_KEY -> Promise<CryptoKey> / 按 SIGNER_KEY 缓存
+function callerKey(signerKey) {
+  let k = hmacKeys.get(signerKey)
+  if (!k) {
+    k = crypto.subtle.digest('SHA-256', enc.encode(`tapeapi-mcp-caller|${signerKey}`))
+      .then((raw) => crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']))
+    hmacKeys.set(signerKey, k)
+  }
+  return k
 }
-function logMcp({ method, tool, clientIp }) {
-  callerTag(clientIp).then((caller) => console.log(JSON.stringify({ evt: 'mcp', method, tool, caller })), () => {})
+export async function callerTag(ip, signerKey, day = new Date().toISOString().slice(0, 10)) {
+  if (!signerKey) return undefined
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', await callerKey(signerKey), enc.encode(`${ip || '-'}|${day}`)))
+  return Array.from(mac.slice(0, 6), (b) => b.toString(16).padStart(2, '0')).join('')
+}
+function logMcp({ method, tool, clientIp }, env) {
+  callerTag(clientIp, env?.SIGNER_KEY).then((caller) => console.log(JSON.stringify({ evt: 'mcp', method, tool, caller })), () => {})
 }
 
 let provider = null, mcpEndpoint = null
@@ -75,7 +90,7 @@ export default {
     // /mcp: the same methods as MCP tools (remote MCP, Streamable HTTP). Not in the manifest, so adding it changed
     // nothing on chain. / /mcp：同样的方法作为 MCP 工具（远程 MCP）。不在清单里，所以加它不改链上任何东西。
     if (new URL(request.url).pathname.replace(/\/+$/, '') === MCP_PATH) {
-      mcpEndpoint ??= createMcpEndpoint({ provider, manifest: provider.manifest ?? manifestOf(env), identity: { name: env.TAPE_NAME || undefined }, version: VERSION, onMessage: logMcp })
+      mcpEndpoint ??= createMcpEndpoint({ provider, manifest: provider.manifest ?? manifestOf(env), identity: { name: env.TAPE_NAME || undefined }, version: VERSION, onMessage: (m) => logMcp(m, env) })
       return mcpEndpoint.handle(request, { clientIp })
     }
     return provider.handleRequest(request, { clientIp })

@@ -7,7 +7,7 @@ const { voucherDigest, recoverAddress, signResponse, privateKeyToAddress } = sig
 // would stop this runtime loading on Cloudflare Workers, Deno or a browser. A test asserts the two agree.
 // 写成字面量而不是读 package.json：`createRequire` 属于 node:module，在模块顶层导入会让这套运行时无法在
 // Cloudflare Workers、Deno 或浏览器里加载。有测试断言两者一致。
-export const VERSION = '0.3.0'
+export const VERSION = '0.4.0'
 const now = () => Math.floor(Date.now() / 1000)
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -353,7 +353,9 @@ export function createProvider(opts = {}) {
   }
 
   // ---- 信封 / envelopes (TAP-21 v2: digest covers {method, params} and ok) ----
-  const STATUS = { PAYMENT_REQUIRED: 402, BAD_VOUCHER: 402, METHOD_NOT_FOUND: 404, BAD_REQUEST: 400, INTERNAL: 500 }
+  // TOOLS_CHANGED: an MCP-bound service whose upstream tools no longer match the manifest's toolsSha256 (TAP-20 §3.8).
+  // TOOLS_CHANGED：上游工具与清单 toolsSha256 不再相符的 MCP 绑定服务（TAP-20 §3.8）。
+  const STATUS = { PAYMENT_REQUIRED: 402, BAD_VOUCHER: 402, METHOD_NOT_FOUND: 404, BAD_REQUEST: 400, INTERNAL: 500, TOOLS_CHANGED: 409 }
   function envelope({ id, method, params }, ok, payload, block) {
     const ts = now()
     const env = ok ? { id, ok: true, result: payload } : { id, ok: false, error: payload }

@@ -122,6 +122,7 @@
   dd { margin: 0; min-width: 0; }
   label.check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
   label.check input { width: auto; min-height: 0; margin-top: 4px; }
+  ul.tools { margin: 0; padding-left: 20px; font-size: 14px; display: grid; gap: 4px; overflow-wrap: anywhere; }
   /* language switch, as on the homepage (site/style.css) / 语言切换，与首页相同 */
   body [lang] { display: none; }
   :root[data-lang="zh"] body [lang="zh"], :root[data-lang="en"] body [lang="en"] { display: revert; }
@@ -129,7 +130,7 @@
   @media (max-width: 420px) { dl { grid-template-columns: 1fr; gap: 0 0; } dd { margin-bottom: 6px; } }
 </style>
 <script src="./lang.js?v=5f71b1c280"></script>
-<script type="module" src="./console.js?v=d88ae01914"></script>
+<script type="module" src="./console.js?v=02295f86c4"></script>
 </head>
 <body>
 <header class="hd-bar">
@@ -224,6 +225,10 @@
     <p class="muted">
       <span lang="zh">把第 4 步的两个值设为变量、服务重新部署后，本页读取服务提供的清单，逐项核对它与你签的一致，再发一笔 SiteRegistry.putFile 交易把它写进容器站点。</span>
       <span lang="en">Once the two values from step 4 are set as variables and the service has redeployed, this page reads the manifest the service serves, checks every field against what you signed, then sends one SiteRegistry.putFile transaction that writes it into your container's site.</span>
+    </p>
+    <p class="muted">
+      <span lang="zh">如果服务是某个 MCP 服务器的签名代理（清单里有 <code>mcp</code> 字段），本页还会自己去读它的工具列表、计算工具定义的摘要，与服务报出的一致才发布，并在钱包请求之前列出每个工具的名字和说明。</span>
+      <span lang="en">If the service is the signing proxy of an MCP server (its manifest has an <code>mcp</code> field), this page also reads its tool list itself, hashes the tool definitions, publishes only if that matches what the service reports, and lists every tool's name and description before your wallet is asked.</span>
     </p>
     <p id="publish-prev" class="warn" hidden></p>
     <label class="check" id="republish-wrap" hidden><input type="checkbox" id="republish">

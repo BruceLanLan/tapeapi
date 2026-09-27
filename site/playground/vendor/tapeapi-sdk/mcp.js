@@ -81,8 +81,11 @@ export function createMcpServer({ info, instructions, listTools, callTool }) {
   return { handle }
 }
 
-// Only MCP's tool fields leave the server (manifestToTools adds method/price bookkeeping). / 只输出 MCP 的工具字段。
+// Only MCP's tool fields leave the server (manifestToTools adds method/price bookkeeping). A tool that carries
+// `mcpPublic` (an upstream MCP tool, published as is and pinned by digest) is shown exactly as that object.
+// 只输出 MCP 的工具字段。带 mcpPublic 的工具（上游 MCP 工具，按原样发布并以摘要钉住）原样展示该对象。
 function publicTool(t) {
+  if (isObj(t.mcpPublic)) return t.mcpPublic
   const out = { name: t.name, description: t.description, inputSchema: t.inputSchema }
   if (t.title) out.title = t.title
   if (t.annotations) out.annotations = { readOnlyHint: t.paid !== true, openWorldHint: true, ...pickMcpAnnotations(t.annotations) }
@@ -135,7 +138,8 @@ export const verifyLink = (receipt, base = VERIFY_BASE) => `${base}#r=${toBase64
  */
 export function toolResultOf({ receipt, checkedBy, signer, link = verifyLink(receipt) }) {
   const who = receipt.service.name || `circuit #${receipt.service.tokenId} of ${receipt.service.circuits}`
-  const where = Number.isInteger(receipt.block) ? ` at BNB Chain block ${receipt.block}` : ''
+  // block is unsigned and informative; 0 means the service ran without chain nodes. / block 未签名、仅供参考；0 表示没有链节点。
+  const where = Number.isInteger(receipt.block) && receipt.block > 0 ? ` at BNB Chain block ${receipt.block}` : ''
   const check = checkedBy === 'client'
     ? 'The signature was verified against the on-chain delegation before this result was returned.'
     : 'Anyone can verify this signature against the chain with the link.'
@@ -178,4 +182,71 @@ export function normalizeTools(tools) {
  */
 export function toolsDigest(tools) {
   return bytesToHex(sha256(new TextEncoder().encode(canonicalJSON(normalizeTools(tools)))))
+}
+
+/**
+ * Text a model reads but a person does not see: every code point of Unicode general category Cf (format: tag
+ * characters U+E0000-E007F, zero-width U+200B-U+200F, U+2060-U+2064, U+FEFF, bidi controls, soft hyphen) and every C0/C1
+ * control, except a line feed or a tab inside a `description`. Checked in every string of the digest-covered fields of
+ * each tool, keys included, at any depth. Returns one "tool X: field path: U+XXXX" line per offending string ([] when
+ * none). A pinned tool with any of these is refused: whoever approves a digest must be able to read what it pins.
+ * The holder console (site/console/lib.js) carries the same function, character for character; a test keeps them equal.
+ * 模型能读、人看不见的文本：Unicode 类别 Cf 的每个码点（格式字符：标签字符、零宽字符、双向控制符、软连字符）和每个
+ * C0/C1 控制符（`description` 里的换行和制表符除外）。检查每个工具摘要字段里的所有字符串（含键、任意深度）。每个有问题的
+ * 字符串返回一行 "tool X: field path: U+XXXX"（没有则为空）。带这些字符的工具一律拒绝：批准摘要的人必须能读到它钉住的内容。
+ * 持有人操作台（site/console/lib.js）有逐字相同的副本，由测试保证一致。
+ * @param {unknown} tools
+ * @returns {string[]}
+ */
+export function invisibleProblems(tools) {
+  const FIELDS = ['name', 'title', 'description', 'inputSchema', 'outputSchema', 'annotations']
+  const obj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
+  const u = (c) => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
+  const bad = (c, text) => /\p{Cf}/u.test(c) || (/\p{Cc}/u.test(c) && !(text && (c === '\n' || c === '\t')))
+  const first = (s, text) => { for (const c of s) if (bad(c, text)) return c; return null }
+  const show = (s) => Array.from(s).slice(0, 64).map((c) => (bad(c, false) ? `<${u(c)}>` : c)).join('')
+  const out = []
+  for (const t of Array.isArray(tools) ? tools : []) {
+    if (!obj(t)) continue
+    const who = `tool ${JSON.stringify(show(typeof t.name === 'string' ? t.name : String(t.name)))}`
+    const walk = (v, path, key) => {
+      if (typeof v === 'string') { const c = first(v, key === 'description'); if (c) out.push(`${who}: ${path}: ${u(c)}`); return }
+      if (Array.isArray(v)) { v.forEach((x, i) => walk(x, `${path}[${i}]`, key)); return }
+      if (!obj(v)) return
+      for (const k of Object.keys(v)) {
+        const c = first(k, false)
+        if (c) out.push(`${who}: ${path} key ${JSON.stringify(show(k))}: ${u(c)}`)
+        walk(v[k], /^[A-Za-z_$][\w$]*$/.test(k) ? `${path}.${k}` : `${path}[${JSON.stringify(show(k))}]`, k)
+      }
+    }
+    for (const f of FIELDS) if (t[f] !== undefined) walk(t[f], f, f)
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Provenance lines / 来源说明行
+// ---------------------------------------------------------------------------------------------------------------
+// A line of the form TapeAPI's own provenance line takes (toolResultOf), or a link to its verify page. Upstream text
+// that carries one is the tool's own output imitating an attestation. No g flag: .test must not keep state.
+// 形如 TapeAPI 自己的来源说明行（toolResultOf）或指向核验页的文本。上游文本里出现它，就是工具自己的输出在冒充证明。不带 g：.test 不能有状态。
+export const PROVENANCE_RE = /^\s*Signed by TapeAPI service|tapeapi\.fun\/verify/im
+export const QUOTED_PREFIX = "[quoted from the tool's own output, not a TapeAPI attestation] "
+const SIGNED_PHRASE = /Signed by TapeAPI service/gi
+
+/**
+ * Upstream MCP content as the model is shown it: every text item that matches PROVENANCE_RE is prefixed with
+ * QUOTED_PREFIX, and its "Signed by TapeAPI service" phrases become "Signed (claimed by the tool) by TapeAPI service",
+ * so the genuine provenance line (first in the result) is the only one of its form. Other items are passed as they are.
+ * The receipt keeps the original content: that is what was signed.
+ * 展示给模型的上游 MCP 内容：匹配 PROVENANCE_RE 的文本项加上 QUOTED_PREFIX 前缀，其中的 "Signed by TapeAPI service" 改成
+ * "Signed (claimed by the tool) by TapeAPI service"，使真正的来源说明行（结果中的第一项）是唯一这种形式的行。其余项原样。
+ * 回执保留原始内容：签名的就是它。
+ * @param {Array<object>} content
+ * @returns {Array<object>}
+ */
+export function quoteProvenance(content) {
+  return content.map((c) => (isObj(c) && c.type === 'text' && typeof c.text === 'string' && PROVENANCE_RE.test(c.text)
+    ? { ...c, text: QUOTED_PREFIX + c.text.replace(SIGNED_PHRASE, 'Signed (claimed by the tool) by TapeAPI service') }
+    : c))
 }

@@ -6,6 +6,34 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-28
+
+### Added
+
+- **Tape out your MCP server.** `@tapeapi/server/mcp-proxy` (`createMcpProxy`) puts a signing proxy in front of an
+  existing MCP server (Streamable HTTP, JSON or SSE): the server keeps its own host and domain, gains an on-chain identity
+  (a TapeOut circuit's container), its tool definitions are pinned by digest in the on-chain manifest, and every tool
+  result is a signed TAP-21 envelope with a receipt. A runnable example for Node and Cloudflare Workers is in
+  `examples/mcp-proxy/`.
+- TAP-20 §3.8, the optional `mcp` binding: `{ endpoint, toolsSha256 }`, where `toolsSha256` is the SHA-256 of the RFC 8785
+  canonical JSON of the tools' model-facing fields (`sdk mcp.toolsDigest`). Clients compare it with the `tools/list`
+  they receive and refuse a difference.
+- TAP-21: provider code `TOOLS_CHANGED` (HTTP 409): a service whose upstream tools no longer match its `toolsSha256`
+  refuses every call, signed, until the holder republishes.
+- `tapeapi-mcp` checks `mcp.toolsSha256` against the service's live `tools/list`, shows the upstream tools exactly as
+  pinned, returns upstream content with a verified receipt, and pins the tool set (a republished set is a change the
+  user must accept).
+- The holder console publishes MCP-bound manifests: it reads `tools/list` itself, recomputes the digest in the browser,
+  shows every pinned field of every tool before the wallet signs, and refuses invisible or format characters.
+- The MCP guide covers taping out your own server.
+
+### Security
+
+- Adversarial review of the MCP code (MCP-R1 to R7), all fixed with tests: the remote `/mcp` caps chunked bodies and
+  counts only messages it handles; caller tags in logs are keyed hashes (HMAC) rather than plain hashes of the IP;
+  the proxy serves only the digest-covered fields of each tool; tool text that imitates a TapeAPI provenance line is
+  labelled as the tool's own output and the genuine line comes first.
+
 ## [0.3.0] — 2026-09-28
 
 ### Added
@@ -126,7 +154,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/BruceLanLan/tapeapi/releases/tag/v0.2.0
 [0.1.0]: https://github.com/BruceLanLan/tapeapi/releases/tag/v0.1.0

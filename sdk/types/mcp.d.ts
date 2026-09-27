@@ -58,3 +58,15 @@ export declare const TOOL_DIGEST_FIELDS: readonly string[]
 export declare function normalizeTools(tools: McpTool[]): Record<string, unknown>[]
 /** sha256 hex of the canonical JSON of normalizeTools(tools). */
 export declare function toolsDigest(tools: McpTool[]): string
+/**
+ * Invisible or format code points (Unicode Cf; C0/C1 controls except \n and \t in a description) in any string of the
+ * digest-covered fields, keys included: one "tool X: field path: U+XXXX" line per offending string, [] when none.
+ */
+export declare function invisibleProblems(tools: unknown): string[]
+
+/** Text that looks like TapeAPI's provenance line or links to its verify page (no g flag). */
+export declare const PROVENANCE_RE: RegExp
+/** Prefixed to upstream text items that match PROVENANCE_RE. */
+export declare const QUOTED_PREFIX: string
+/** Upstream content with every PROVENANCE_RE match labelled as the tool's own output and its "Signed by" phrase neutralised. */
+export declare function quoteProvenance<T extends { type: string; text?: string }>(content: T[]): T[]
