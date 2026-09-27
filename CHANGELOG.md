@@ -34,10 +34,10 @@ Before 1.0.0, a minor version may change interfaces.
 
 ### Changed
 
+- Website: new logo and favicon, one header across all pages, redesigned homepage and social preview.
 - `callQuorum`: a signed revert (TAP-23 §3.3) counts as disagreement and is never an accepted result; other signed
   errors stay neutral. TapeOut names must be in canonical form (TapeKit SPEC §2.2): lowercase, no leading zeros.
 - The SDK is installable from each GitHub release: `npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.2.0/tapeapi-sdk-0.2.0.tgz`.
-
 - Default RPC nodes are bnbchain, defibit and ninicoin dataseeds (publicnode timed out on every request on
   2026-09-27), with a 3 s per-node timeout on the Workers.
 - The provider template (`examples/cloudflare-worker/wrangler.toml`) no longer names the project's own Worker or domain.
