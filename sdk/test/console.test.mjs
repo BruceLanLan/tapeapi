@@ -244,8 +244,8 @@ test('the console has no inline script, so /console/* can forbid every script th
   for (const tag of scripts) {
     const src = tag.match(/\ssrc="([^"]+)"/)?.[1]
     assert.ok(src, `inline script: ${tag}`)
-    assert.match(src, /^\.\/[a-z]+\.js$/, `a file next to the page: ${src}`)
-    assert.ok(existsSync(new URL(`console/${src.slice(2)}`, SITE)), `${src} exists`)
+    assert.match(src, /^\.\/[a-z]+\.js\?v=[0-9a-f]{10}$/, `a file next to the page, stamped with its content hash: ${src}`)
+    assert.ok(existsSync(new URL(`console/${src.slice(2).split('?')[0]}`, SITE)), `${src} exists`)
   }
   assert.doesNotMatch(html, /<script\b(?![^>]*\bsrc=)/i)
   assert.doesNotMatch(html, /\son[a-z]+\s*=/i, 'no inline event handlers')

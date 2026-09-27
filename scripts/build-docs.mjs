@@ -11,6 +11,7 @@
 // 唯一来源是 docs/guides/*.md、docs/guides/zh-CN/*.md 与 CHANGELOG.md。输出是确定性的（无时间戳）；已提交的
 // site/docs/ 与重新构建不一致时，scripts/build-docs.test.mjs 失败。无依赖、无外部资源：渲染器只覆盖指南用到的 markdown。
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, existsSync } from 'node:fs'
+import { versionRefs } from './version-assets.mjs'
 import { join, dirname, relative, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -313,6 +314,9 @@ export function build(read) {
     }
     files.set(`${lang}/search.json`, JSON.stringify(idx) + '\n')
   }
+  // docs.css and docs.js carry a content hash, so a returning visitor never pairs a new page with a cached old
+  // stylesheet (scripts/version-assets.mjs). / docs.css 与 docs.js 带内容哈希，回访者不会拿到新页面配旧样式表。
+  for (const [p, c] of files) if (p.endsWith('.html')) files.set(p, versionRefs(c, dirname(join(ROOT, OUT, p))))
   return files
 }
 

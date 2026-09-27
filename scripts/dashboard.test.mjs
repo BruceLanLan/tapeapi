@@ -76,7 +76,7 @@ test('dashboard: every import of the page scripts and the vendored SDK they load
       walk(target)
     }
   }
-  assert.match(html, /<script type="module" src="dashboard\.js"><\/script>/)
+  assert.match(html, /<script type="module" src="dashboard\.js\?v=[0-9a-f]{10}"><\/script>/)
   walk('dashboard/dashboard.js')
   assert.ok(seen.has('dashboard/lib.js') && seen.has('playground/vendor/tapeapi-sdk/index.js'))
   assert.ok(seen.size > 20, `only ${seen.size} modules reached`)

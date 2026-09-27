@@ -45,7 +45,7 @@ test('build-docs: no raw markdown reaches a page, and every internal link and an
       if (/^(https?:|mailto:)/.test(href)) continue
       if (href === '/') { assert.ok(existsSync(join(ROOT, 'site/index.html'))); continue }
       if (href === '/favicon.svg') { assert.ok(existsSync(join(ROOT, 'site/favicon.svg'))); continue }   // the site's icon, outside docs/ / 站点图标，不在 docs/ 下
-      const [path, hash] = href.split('#')
+      const [path, hash] = href.replace(/\?v=[0-9a-f]{10}(?=#|$)/, '').split('#')   // a content hash (version-assets.mjs) is not part of the path
       if (!path) { assert.ok(ids.has(decodeURIComponent(hash)), `${p}: anchor #${hash} does not exist`); continue }
       const target = posix.normalize(posix.join(posix.dirname(p), path))
       assert.ok(files.has(target) || HAND_WRITTEN.has(target), `${p}: link ${href} -> ${target} does not exist`)
