@@ -193,10 +193,12 @@ test('FIXED SD-9: relayRecv always carries `epoch`, null until the relay has nam
   assert.match(zh, /中继 SHOULD 同时接受不带 `epoch` 字段的请求/)
 })
 
-test('FIXED SD-10: TAP-23 §3.4 says a signed error envelope is neither agreement nor disagreement', () => {
+test('FIXED SD-10: TAP-23 §3.4 compares a signed revert like an answer (never accepted) and keeps other signed errors neutral', () => {
   const { en, zh } = spec(23)
-  assert.match(en, /Only a verified envelope with `ok: true` is an answer that steps 4 and 5 compare\. A verified error envelope, the revert of §3\.3 included, is not compared/)
-  assert.match(zh, /只有 `ok: true` 的已验证信封才是步骤 4 与 5 比较的回答。已验证的错误信封（包括 §3\.3 的回滚）不参与比较/)
+  assert.match(en, /A verified error envelope that carries revert data \(§3\.3\) is also a statement about chain state/)
+  assert.match(en, /a group of reverts is never accepted as a result\. Any other verified error envelope is a refusal/)
+  assert.match(zh, /带回滚数据（§3\.3）的已验证错误信封同样是对链上状态的陈述/)
+  assert.match(zh, /一组回滚永远不会被接受为结果。其他已验证错误信封都是拒答/)
 })
 
 test('FIXED SD-11: TAP-24 §3.2 lets a Solver add informative fields beside { quote, sig, escrow }', () => {

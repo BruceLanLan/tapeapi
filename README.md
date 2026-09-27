@@ -15,7 +15,7 @@ ecosystem, DeWEB is websites, TapeSend is messaging, and **TapeAPI is services**
 
 [中文说明](README.zh-CN.md) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Docs](https://tapeapi.fun/docs/) · [Website](https://tapeapi.fun) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md) · [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md)
 
-> **Status: pre-alpha (v0.1.0).** The free tier needs no contract of ours and runs on TapeOut's deployed contracts.
+> **Status: pre-alpha (v0.2.0).** The free tier needs no contract of ours and runs on TapeOut's deployed contracts.
 > Our own contracts (the paid-call escrow, the service directory, ChannelBus) are **not audited by a third party**;
 > ChannelBus is deployed (address below). Interfaces may still change. The TAP
 > numbers below are **proposed** to the TapeKit maintainers and not yet assigned.
@@ -33,6 +33,12 @@ The packages are not on npm yet, so set up the repository once (Node.js 20 or la
 
 ```bash
 git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm install
+```
+
+Or install just the SDK into your own project from the GitHub release (not the npm registry):
+
+```bash
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.2.0/tapeapi-sdk-0.2.0.tgz
 ```
 
 Save this as `try.mjs` **inside the `tapeapi` directory** (`@tapeapi/sdk` resolves through the repository's workspace;

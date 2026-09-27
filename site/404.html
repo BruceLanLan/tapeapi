@@ -9,24 +9,27 @@
 <!-- Served by Cloudflare Pages for any missing path, so every link and asset here is absolute. No script, no external
      resource. / Cloudflare Pages 对任何不存在的路径返回本页，所以这里的链接和资源都用绝对路径。无脚本、无外部资源。 -->
 <style>
-  :root { color-scheme: light; --bg: #EEF0F3; --panel: #FFFFFF; --ink: #0C0F14; --ink-2: #3D4550; --ink-3: #78818E; --hair: #CCD2DA; --amber: #B4660A; --amber-ink: #8A4E06; }
+  :root { color-scheme: light; --bg: #EEF0F3; --panel: #FFFFFF; --ink: #0C0F14; --ink-2: #3D4550; --ink-3: #677080; --hair: #CCD2DA; --amber: #B4660A; --amber-ink: #8A4E06; }
   @media (prefers-color-scheme: dark) {
-    :root { color-scheme: dark; --bg: #0A0C10; --panel: #12161D; --ink: #EEF1F5; --ink-2: #A9B2BF; --ink-3: #6E7887; --hair: #262D38; --amber: #FFB224; --amber-ink: #FFC759; }
+    :root { color-scheme: dark; --bg: #0A0C10; --panel: #11151C; --ink: #EEF1F5; --ink-2: #A9B2BF; --ink-3: #7F8998; --hair: #262D38; --amber: #FFB224; --amber-ink: #FFC759; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--ink);
     font: 16px/1.6 system-ui, -apple-system, "Helvetica Neue", "PingFang SC", "Noto Sans SC", sans-serif;
     padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); }
-  main { width: 100%; max-width: 560px; background: var(--panel); border: 1px solid var(--hair); border-radius: 12px; padding: 28px 24px; }
-  .rail { display: flex; gap: 12px; align-items: center; font: 600 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; color: var(--ink-3); }
-  .rail img { width: 28px; height: 28px; }
-  .rail b { color: var(--amber); }
+  main { width: 100%; max-width: 560px; background: var(--panel); border: 1px solid var(--hair); padding: 28px 24px; }
+  .rail { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding-bottom: 16px; border-bottom: 1px solid var(--hair);
+    font: 500 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); }
+  .brand svg { display: block; fill: currentColor; }
+  .brand:hover .mark { color: var(--amber); }
+  .brand:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
   .code { font: 700 64px/1 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 22px 0 8px; letter-spacing: -.02em; }
   h1 { font-size: 22px; margin: 0; }
   p { margin: 6px 0 0; color: var(--ink-2); overflow-wrap: anywhere; }
   hr { border: 0; border-top: 1px solid var(--hair); margin: 18px 0; }
   nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
-  nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--hair); border-radius: 8px; color: var(--ink); text-decoration: none; font-weight: 600; }
+  nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--hair); color: var(--ink); text-decoration: none; font-weight: 600; }
   nav a:first-child { border-color: var(--amber); color: var(--amber-ink); }
   nav a:hover, nav a:focus-visible { border-color: var(--amber); outline: none; }
   nav span { color: var(--ink-3); font-weight: 400; margin-left: 6px; }
@@ -34,7 +37,7 @@
 </head>
 <body>
 <main>
-  <div class="rail"><img src="/favicon.svg" alt=""><b>TAPEAPI</b><span>BNB Smart Chain · 56</span></div>
+  <div class="rail"><a class="brand" href="/" aria-label="TapeAPI"><svg class="mark" width="26" height="26" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg width="110" height="12" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a><span>BNB Smart Chain · 56</span></div>
   <div class="code">404</div>
   <h1>Page not found</h1>
   <p>This address is not a page of tapeapi.fun. The link may be old or mistyped.</p>
@@ -45,6 +48,7 @@
     <a href="/">Home<span lang="zh-CN">首页</span></a>
     <a href="/docs/">Docs<span lang="zh-CN">手册</span></a>
     <a href="/playground/">Playground<span lang="zh-CN">调试台</span></a>
+    <a href="/status/">Status<span lang="zh-CN">状态</span></a>
   </nav>
 </main>
 </body>

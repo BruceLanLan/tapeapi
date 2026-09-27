@@ -6,6 +6,8 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-27
+
 ### Added
 
 - ChannelBus deployed on BNB Chain at `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707` (code byte-for-byte the tested build); `MAINNET.channelBus` in the SDK.
@@ -31,6 +33,10 @@ Before 1.0.0, a minor version may change interfaces.
   console only fills those fields after checking them, and never reads, signs or sends by itself.
 
 ### Changed
+
+- `callQuorum`: a signed revert (TAP-23 §3.3) counts as disagreement and is never an accepted result; other signed
+  errors stay neutral. TapeOut names must be in canonical form (TapeKit SPEC §2.2): lowercase, no leading zeros.
+- The SDK is installable from each GitHub release: `npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.2.0/tapeapi-sdk-0.2.0.tgz`.
 
 - Default RPC nodes are bnbchain, defibit and ninicoin dataseeds (publicnode timed out on every request on
   2026-09-27), with a 3 s per-node timeout on the Workers.
@@ -86,5 +92,6 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/BruceLanLan/tapeapi/releases/tag/v0.2.0
 [0.1.0]: https://github.com/BruceLanLan/tapeapi/releases/tag/v0.1.0

@@ -13,6 +13,12 @@ The packages are not on npm yet, so you work inside a clone of the repository (N
 git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm install
 ```
 
+Or install just the SDK into your own project from the GitHub release (not the npm registry):
+
+```bash
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.2.0/tapeapi-sdk-0.2.0.tgz
+```
+
 Save the scripts below as `.mjs` files **inside the `tapeapi` directory** and run them with `node <file>.mjs`.
 `@tapeapi/sdk` resolves through the repository's workspace, so a script saved anywhere else fails with
 `ERR_MODULE_NOT_FOUND`.

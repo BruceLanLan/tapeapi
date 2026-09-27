@@ -1,5 +1,5 @@
 /* TapeAPI Playground. Hand-written. Same tokens as the docs (site/docs/docs.css) and system faces.
-   No external resources (DeWEB SPEC 8): no CDN, no web fonts, no remote images.
+   No external resources (DeWEB SPEC 8): no CDN, no remote fonts or images; the header labels use ../fonts/.
    调试台样式，手写。沿用文档站的颜色变量与系统字体。无外部资源。 */
 :root {
   color-scheme: light;
@@ -77,21 +77,78 @@ code, pre, kbd, textarea, .mono { font-family: var(--mono); }
 [hidden] { display: none !important; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-/* ── top bar (as in the docs) ────────────────────────────── */
-.top {
-  position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; gap: 10px 14px;
-  min-height: var(--top); padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px);
+/* ── site header ─────────────────────────────────────────────
+   One header for every page. This block is copied verbatim into site/style.css, docs/docs.css,
+   playground/playground.css (the dashboard uses it too), status/status.css and console/index.html;
+   change all five together. The mark and wordmark are inline SVG paths (logo.svg), so they need no font
+   and follow the theme through currentColor. The labels use a 2 KB IBM Plex Mono subset (OFL): capitals,
+   digits and . - / · only; Chinese falls through to the system face. Sub-pages load it from fonts/tapeapi-rail.woff2;
+   the homepage embeds the same bytes, because its DeWEB copy ships only index.html, style.css and app.js.
+   全站统一的页头。本段原样复制到上述五个样式里，改动时五处一起改。标志与字标是内联 SVG 路径，
+   不依赖字体，颜色随主题。标签用 2 KB 的 IBM Plex Mono 子集，只含大写字母、数字与少量符号，中文走系统字体。子页面从 fonts/tapeapi-rail.woff2
+   加载；首页内嵌同一份字节，因为它在 DeWEB 上只发布 index.html、style.css 和 app.js。 */
+@font-face {
+  font-family: "TapeAPI Rail"; font-style: normal; font-weight: 500; font-display: swap;
+  unicode-range: U+20, U+2D-2F, U+30-39, U+41-5A, U+B7;
+  src: url(../fonts/tapeapi-rail.woff2) format("woff2");
+}
+.hd-bar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(10px); backdrop-filter: saturate(1.4) blur(10px);
   border-bottom: 1px solid var(--hair);
 }
-.top .brand { font-weight: 800; font-size: 14px; letter-spacing: .26em; color: var(--ink); text-decoration: none; }
-.top .section {
-  font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
-  color: var(--amber-ink); text-decoration: none; border-left: 1px solid var(--hair); padding-left: 14px;
+.hd {
+  display: flex; align-items: center; gap: 6px 22px; min-height: 58px;
+  max-width: var(--hd-max, 1060px); margin: 0 auto;
+  padding-left: max(var(--hd-pad, 20px), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--hd-pad, 20px), env(safe-area-inset-right, 0px));
 }
-.top .sp { flex: 1 1 auto; }
+.hd-brand {
+  display: inline-flex; align-items: center; gap: 10px; flex: none;
+  color: var(--ink); text-decoration: none; padding: 6px 0;
+}
+.hd-mark { display: block; width: 24px; height: 24px; fill: currentColor; flex: none; transition: color .15s; }
+.hd-word { display: block; height: 11px; width: 99px; fill: currentColor; }
+.hd-brand:hover .hd-mark { color: var(--amber); }
+.hd-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 0 20px; margin-left: auto; }
+.hd-nav a, .hd-btn {
+  font-family: "TapeAPI Rail", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px; font-weight: 500; line-height: 1; letter-spacing: .1em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.hd-nav a {
+  color: var(--ink-3); text-decoration: none;
+  padding: 9px 0 7px; border-bottom: 2px solid transparent;
+}
+.hd-nav a:hover { color: var(--ink); }
+.hd-nav a[aria-current] { color: var(--ink); border-bottom-color: var(--amber); }
+.hd-tools { display: flex; align-items: center; gap: 6px; flex: none; }
+.hd-btn {
+  background: transparent; color: var(--ink-2); border: 1px solid var(--hair); border-radius: 0;
+  padding: 0 10px; min-height: 30px; cursor: pointer; margin: 0;
+}
+.hd-btn:hover { color: var(--ink); border-color: var(--ink-3); }
+.hd a:focus-visible, .hd button:focus-visible, .hd input:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+@media (max-width: 760px) {
+  .hd-bar { position: relative; top: auto; }   /* two rows on a phone: let it scroll away / 手机上两行，不吸顶 */
+  .hd { flex-wrap: wrap; column-gap: 12px; padding-top: 4px; }
+  .hd-tools { margin-left: auto; }
+  .hd-nav {
+    order: 3; flex: 1 0 100%; margin: 0; justify-content: space-between; gap: 0 12px;
+    border-top: 1px solid var(--hair-2);
+  }
+  .hd-nav a { letter-spacing: .07em; padding: 11px 0 9px; }
+}
+@media (prefers-reduced-motion: reduce) { .hd-mark { transition: none; } }
+
+:root { --hd-max: 980px; --hd-pad: 16px; }
+/* Nav labels come as <span lang="zh">/<span lang="en"> pairs; only the header's spans are switched here, since the
+   page script puts lang= on the root and on the language button too.
+   导航标签是中英 span 对；这里只切换页头里的 span，因为页面脚本也会给根元素和语言按钮加 lang=。 */
+.hd-nav span[lang] { display: none; }
+:root[data-lang="zh"] .hd-nav span[lang="zh"], :root[data-lang="en"] .hd-nav span[lang="en"] { display: inline; }
+
 .ctl {
   font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; line-height: 1;
   background: transparent; color: var(--ink-3); border: 1px solid var(--hair); border-radius: 0;
@@ -198,7 +255,6 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
 
 /* ── phone ───────────────────────────────────────────────── */
 @media (max-width: 720px) {
-  .top .section { display: none; }
   .wrap { padding-top: 20px; gap: 14px; }
   .panel { padding: 14px 14px 16px; }
   .callgrid { grid-template-columns: minmax(0, 1fr); }

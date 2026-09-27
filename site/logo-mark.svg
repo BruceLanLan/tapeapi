@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="512" height="512">
+<title>TapeAPI</title>
+<!-- TapeAPI mark: a chip package whose two sides are a pair of braces, legs out, the die in the middle.
+     32-unit grid; the chamfered corner is pin 1. Paths use currentColor. -->
+<style>svg{color:#0C0F14}</style>
+<path fill="currentColor" d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/>
+</svg>

@@ -24,7 +24,13 @@ before(async () => {
       methods: [{ name: 'read', priceBEM: '0', params: { chainId: 'number' }, returns: { value: 'string' } }],
       payment: { escrow: ADDR.escrow, unit: 'BEM', decimals: 8 },
     }
-    const p = createProvider({ minVoucherLifeS: 0,  manifest, signerKey: keys[i], dev: true, methods: { read: async () => answers[containers[i]] } }) // dev: http endpoints
+    const p = createProvider({ minVoucherLifeS: 0,  manifest, signerKey: keys[i], dev: true, methods: { read: async () => {
+      const a = answers[containers[i]]
+      // a signed revert (TAP-23 §3.3) or a signed refusal / 签名的回滚或签名的拒答
+      if (a?.__revert) throw new TapeAPIError('INTERNAL', 'execution reverted', { data: { revert: a.__revert } })
+      if (a?.__refuse) throw new TapeAPIError('BAD_REQUEST', 'block not available')
+      return a
+    } } }) // dev: http endpoints
     const srv = await p.listen(0)
     manifest.endpoints.live = [`http://127.0.0.1:${srv.address().port}/tapeapi/v1`]
     providers.push(p)
@@ -261,4 +267,25 @@ test('H-02: "100" and 100 never share a bucket, and only strict decimal strings 
   set({ price: '-1.5' }, { price: '-1.5001' }, { price: '0' })
   const neg = await api.callQuorum(three(), 'read', {}, { quorum: 2, compare: { relTolBps: 100, paths: ['price'] }, onDissent: 'quorum' })
   assert.equal(neg.agreed.length, 2)
+})
+
+// SD-10 (owner's decision 2026-09-27): a signed revert is a statement about chain state, so it counts as disagreement;
+// a signed refusal stays neutral so one provider without the block cannot veto the others.
+// SD-10（2026-09-27 定）：签名的回滚是对链上状态的陈述，算作不一致；签名的拒答保持中立，没有该区块的提供者不能否决其他人。
+test('FIXED SD-10: a signed revert beside agreeing results is disagreement (strict rejects), and reverts never win', async () => {
+  set({ value: '0xabc' }, { value: '0xabc' }, { __revert: '0x08c379a0' })
+  await assert.rejects(api.callQuorum(three(), 'read', { chainId: 1 }), (e) => e.code === 'QUORUM_FAILED' && /rejects on any disagreement/.test(e.message))
+  const q = await api.callQuorum(three(), 'read', { chainId: 1 }, { onDissent: 'quorum' })
+  assert.deepEqual(q.result, { value: '0xabc' }, 'quorum mode: the agreeing pair still wins')
+  assert.deepEqual(q.disagreed.map((a) => a.toLowerCase()), [containers[2]], 'the reverting provider is a dissenter')
+  set({ __revert: '0x01' }, { __revert: '0x01' }, { value: '0xabc' })
+  await assert.rejects(api.callQuorum(three(), 'read', { chainId: 1 }, { onDissent: 'quorum' }), (e) => e.code === 'QUORUM_FAILED' && /agree the call reverts/.test(e.message), 'two colluding reverts cannot become the accepted result')
+  set({ __revert: '0x01' }, { __revert: '0x01' }, { __revert: '0x01' })
+  await assert.rejects(api.callQuorum(three(), 'read', { chainId: 1 }), (e) => /agree the call reverts/.test(e.message))
+})
+test('FIXED SD-10: a signed refusal (not a revert) stays neutral: two agreeing answers still pass in strict mode', async () => {
+  set({ value: '0xabc' }, { value: '0xabc' }, { __refuse: true })
+  const r = await api.callQuorum(three(), 'read', { chainId: 1 })
+  assert.deepEqual(r.result, { value: '0xabc' })
+  assert.equal(r.failed.length, 1); assert.equal(r.failed[0].code, 'BAD_REQUEST')
 })

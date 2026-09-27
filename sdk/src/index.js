@@ -987,7 +987,22 @@ export function createTapeAPI(opts = {}) {
     const failed = []         // no verifiable answer: transport error, signed error, bad envelope / 无可验证答案
     settled.forEach((r, i) => {
       const container = services[i].container
-      if (r.status === 'rejected') { const e = r.reason; failed.push({ container, code: e?.code || 'INTERNAL', message: e?.message || String(e) }); return }
+      if (r.status === 'rejected') {
+        const e = r.reason
+        failed.push({ container, code: e?.code || 'INTERNAL', message: e?.message || String(e) })
+        // A SIGNED revert (TAP-23 §3.3: error.data.revert) is a statement about chain state, so it is compared like an
+        // answer: a revert beside a result is disagreement (strict mode rejects), and a revert group can never be the
+        // accepted result. Other signed errors are refusals (no such block, bad request) and stay neutral (review SD-10).
+        // 签名的回滚是对链上状态的陈述，与回答一样参与比较：回滚与结果并存即不一致（严格模式拒绝），回滚组永远不能成为被接受的结果。
+        // 其他签名错误是拒答（没有该区块、请求有误），保持中立。
+        const rev = e?.signed === true && typeof e?.data?.revert === 'string' && /^0x[0-9a-fA-F]*$/.test(e.data.revert) ? e.data.revert.toLowerCase() : null
+        if (rev !== null) {
+          const k = '\u0001revert:' + rev
+          const b = buckets.get(k) || { result: { reverted: true, revert: rev }, containers: [], responses: [], revert: true }
+          b.containers.push(container); buckets.set(k, b)
+        }
+        return
+      }
       let key, tol
       try {
         // TAP-23 §3.4(4): attested envelopes agree on chainId, blockNumber, blockHash and result; stateRoot is
@@ -1039,6 +1054,7 @@ export function createTapeAPI(opts = {}) {
     const reaching = [...buckets.values()].filter((b) => b.containers.length >= quorum)
     if (reaching.length === 1) {
       const win = reaching[0]
+      if (win.revert) fail(`${win.containers.length} providers agree the call reverts (${win.result.revert}); a revert is never an accepted result`, { quorum, agreed: [], disagreed: groups.flatMap((g) => g.containers), failed, groups })
       const disagreed = [...buckets.values()].filter((b) => b !== win).flatMap((b) => b.containers)
       return { result: win.result, agreed: win.containers, disagreed, failed, verified: true, quorum, responses: win.responses, groups }
     }

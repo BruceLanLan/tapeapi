@@ -9,10 +9,11 @@ EIP-712 vouchers against an escrow; nothing is signed or sent without you.
 ## Install
 
 ```bash
-npm i @tapeapi/sdk
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.2.0/tapeapi-sdk-0.2.0.tgz
 ```
 
-Published from https://github.com/BruceLanLan/tapeapi (folder `sdk/`). ES modules only; Node 20+, browsers,
+Not on the npm registry yet: each GitHub release carries the package file. Built from https://github.com/BruceLanLan/tapeapi
+(folder `sdk/`). ES modules only; Node 20+, browsers,
 Cloudflare Workers and Deno. TypeScript declarations are included.
 
 ## Example

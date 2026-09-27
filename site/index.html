@@ -23,21 +23,23 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<header class="hd-bar">
+  <div class="hd">
+    <a class="hd-brand" href="./" aria-label="TapeAPI"><svg class="hd-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a>
+    <nav class="hd-nav" aria-label="TapeAPI">
+      <a href="docs/"><span lang="zh">手册</span><span lang="en">Docs</span></a>
+      <a href="playground/"><span lang="zh">调试台</span><span lang="en">Playground</span></a>
+      <a href="dashboard/"><span lang="zh">我的服务</span><span lang="en">Dashboard</span></a>
+      <a href="status/"><span lang="zh">状态</span><span lang="en">Status</span></a>
+      <a href="https://github.com/BruceLanLan/tapeapi">GitHub</a>
+    </nav>
+    <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button">中文</button><button class="hd-btn" id="theme-btn" type="button">Theme</button></div>
+  </div>
+</header>
 <div class="sheet">
 
-<header class="plate">
-  <div class="rail">
-    <span class="brand">TAPEAPI</span>
-    <span>Rev 0.6</span>
-    <span>2026-09-27</span>
-    <span>BNB Smart Chain · 56</span>
-    <span class="sp"></span>
-    <a class="ctl" href="docs/"><span lang="zh">手册</span><span lang="en">Docs</span></a>
-    <a class="ctl" href="playground/"><span lang="zh">调试台</span><span lang="en">Playground</span></a>
-    <a class="ctl" href="dashboard/"><span lang="zh">我的服务</span><span lang="en">Dashboard</span></a>
-    <button class="ctl" id="lang-btn" type="button">中文</button>
-    <button class="ctl" id="theme-btn" type="button">Theme</button>
-  </div>
+<div class="plate">
+  <p class="docno"><span><span lang="zh">数据手册</span><span lang="en">Datasheet</span></span><span>Rev 0.6</span><span>2026-09-27</span><span>BNB Smart Chain · 56</span></p>
 
   <h1 lang="zh">流片一枚电路，它的容器就是你的 API</h1>
   <h1 lang="en">Tape out a circuit, and its container is your API</h1>
@@ -49,10 +51,13 @@
     <span class="stamp">PRELIMINARY</span>
     <span class="meta" lang="zh">预发布 · 规范 CC0 · 代码 MIT · 公共服务已上线 · 未经第三方审计</span>
     <span class="meta" lang="en">Pre-alpha · Spec CC0 · Code MIT · Public service live · No third-party audit</span>
-    <a class="doclink" href="playground/"><span lang="zh">在线试用 →</span><span lang="en">Try it live →</span></a>
-    <a class="doclink" href="docs/"><span lang="zh">阅读手册 →</span><span lang="en">Read the docs →</span></a>
   </div>
-</header>
+  <div class="cta">
+    <a class="btn pri" href="playground/"><span lang="zh">在线试用</span><span lang="en">Try it live</span><span class="ar" aria-hidden="true">→</span></a>
+    <a class="btn" href="docs/"><span lang="zh">阅读手册</span><span lang="en">Read the docs</span><span class="ar" aria-hidden="true">→</span></a>
+    <a class="btn ghost" href="https://github.com/BruceLanLan/tapeapi">GitHub</a>
+  </div>
+</div>
 
 <section id="live">
   <div class="shead"><span class="idx">01</span><h2 lang="zh">现已上线</h2><h2 lang="en">Live Now</h2><span class="line"></span></div>
@@ -65,7 +70,7 @@
         <h3><span lang="zh">公共服务</span><span lang="en">Public service</span></h3>
         <div class="where"><a href="https://api.tapeapi.fun/.well-known/tapeapi.json">api.tapeapi.fun</a> · 11.1013.tape</div>
         <p lang="zh">8 个免费的签名方法，按区块钉定读取 BNB Chain 与 TapeOut：</p>
-        <p lang="en">Eight free, signed, block-pinned reads of BNB Chain and TapeOut:</p>
+      <p lang="en">Eight free, signed, block-pinned reads of BNB Chain and TapeOut:</p>
         <p class="meth"><span>blockNumber ·</span> <span>balance ·</span> <span>tokenInfo ·</span> <span>tokenBalance ·</span> <span>nftOwner ·</span> <span>pairPrice ·</span> <span>bnbUsd ·</span> <span>tapeName</span></p>
         <div class="more"><a class="doclink" href="docs/zh/public-api.html" lang="zh">公共 API 指南 →</a><a class="doclink" href="docs/en/public-api.html" lang="en">Public API guide →</a></div>
       </div>
@@ -77,7 +82,7 @@
         <h3><span lang="zh">公共中继</span><span lang="en">Public relay</span></h3>
         <div class="where"><a href="https://relay.tapeapi.fun/.well-known/tapeapi.json">relay.tapeapi.fun</a> · 12.1013.tape</div>
         <p lang="zh">容器之间的端到端加密通道（TAP-26）。中继只存密文，看不到内容与身份。</p>
-        <p lang="en">End-to-end encrypted channels between containers (TAP-26). The relay stores ciphertext and never sees content or identities.</p>
+      <p lang="en">End-to-end encrypted channels between containers (TAP-26). The relay stores ciphertext and never sees content or identities.</p>
         <div class="more"><a class="doclink" href="docs/zh/channels.html" lang="zh">通道指南 →</a><a class="doclink" href="docs/en/channels.html" lang="en">Channels guide →</a></div>
       </div>
       <span class="st on">Live</span>
@@ -88,85 +93,70 @@
         <h3>ChannelBus</h3>
         <div class="where"><a href="https://bscscan.com/address/0x486110c35d9b90a9d6D85c8063A065f9e7b6b707">0x486110c35d9b90a9d6D85c8063A065f9e7b6b707</a></div>
         <p lang="zh">把通道帧直接写上链的合约。没有所有者，没有状态，不可升级。</p>
-        <p lang="en">Carries channel frames on chain. No owner, no state, not upgradeable.</p>
+      <p lang="en">Carries channel frames on chain. No owner, no state, not upgradeable.</p>
       </div>
       <span class="st on">Live</span>
     </div>
-    <div class="pin">
-      <span class="pno">PLY</span>
-      <div class="pb">
-        <h3><a href="playground/"><span lang="zh">调试台</span><span lang="en">Playground</span></a></h3>
-        <p lang="zh">输入服务名，在浏览器里调用，看到 SDK 做的每一项核对。无需安装。</p>
-        <p lang="en">Type a service name, call it from the browser and see every check the SDK makes. Nothing to install.</p>
-      </div>
-      <span class="st on">Live</span>
+  </div>
+  <p class="tcap tools-cap" lang="zh">工具 · 都在浏览器里运行</p>
+  <p class="tcap tools-cap" lang="en">Tools · all in the browser</p>
+  <div class="tools">
+    <div class="tool">
+      <div class="tt"><span class="pno">PLY</span><span class="st on">Live</span></div>
+      <h3><a href="playground/"><span lang="zh">调试台</span><span lang="en">Playground</span></a></h3>
+      <p lang="zh">输入服务名，在浏览器里调用，看到 SDK 做的每一项核对。无需安装。</p>
+      <p lang="en">Type a service name, call it from the browser and see every check the SDK makes. Nothing to install.</p>
     </div>
-    <div class="pin">
-      <span class="pno">DOC</span>
-      <div class="pb">
-        <h3><a href="docs/"><span lang="zh">手册</span><span lang="en">Docs</span></a></h3>
-        <p lang="zh">调用服务、运行服务、私密通道、AI 代理、常见问题。</p>
-        <p lang="en">Calling a service, running one, private channels, AI agents, FAQ.</p>
-      </div>
-      <span class="st on">Live</span>
+    <div class="tool">
+      <div class="tt"><span class="pno">DOC</span><span class="st on">Live</span></div>
+      <h3><a href="docs/"><span lang="zh">手册</span><span lang="en">Docs</span></a></h3>
+      <p lang="zh">调用服务、运行服务、私密通道、AI 代理、常见问题。</p>
+      <p lang="en">Calling a service, running one, private channels, AI agents, FAQ.</p>
     </div>
-    <div class="pin">
-      <span class="pno">STS</span>
-      <div class="pb">
-        <h3><a href="status/"><span lang="zh">服务状态</span><span lang="en">Status</span></a></h3>
-        <p lang="zh">公共服务与中继的健康、延迟、签名密钥与委托到期时间。</p>
-        <p lang="en">Health, latency, signer and delegation expiry of the public service and relay.</p>
-      </div>
-      <span class="st on">Live</span>
+    <div class="tool">
+      <div class="tt"><span class="pno">STS</span><span class="st on">Live</span></div>
+      <h3><a href="status/"><span lang="zh">服务状态</span><span lang="en">Status</span></a></h3>
+      <p lang="zh">公共服务与中继的健康、延迟、签名密钥与委托到期时间。</p>
+      <p lang="en">Health, latency, signer and delegation expiry of the public service and relay.</p>
     </div>
-    <div class="pin">
-      <span class="pno">DSH</span>
-      <div class="pb">
-        <h3><a href="dashboard/"><span lang="zh">我的服务</span><span lang="en">Dashboard</span></a></h3>
-        <p lang="zh">添加你的服务名，一览是否在线、委托还剩几天，一键去调试或续期。只读：不签名、不发交易。</p>
-        <p lang="en">Add your service names and see at a glance whether each is up and how many days its delegation has left, with links to try or renew it. Read-only: it never signs or sends.</p>
-      </div>
-      <span class="st on">Live</span>
+    <div class="tool">
+      <div class="tt"><span class="pno">DSH</span><span class="st on">Live</span></div>
+      <h3><a href="dashboard/"><span lang="zh">我的服务</span><span lang="en">Dashboard</span></a></h3>
+      <p lang="zh">添加你的服务名，一览是否在线、委托还剩几天，一键去调试或续期。只读：不签名、不发交易。</p>
+      <p lang="en">Add your service names and see at a glance whether each is up and how many days its delegation has left, with links to try or renew it. Read-only: it never signs or sends.</p>
     </div>
-    <div class="pin">
-      <span class="pno">CON</span>
-      <div class="pb">
-        <h3><a href="console/"><span lang="zh">持有人操作台</span><span lang="en">Holder console</span></a></h3>
-        <p lang="zh">给 TapeOut 电路持有人：在钱包浏览器里把自己的容器发布成 TapeAPI 服务。</p>
-        <p lang="en">For TapeOut circuit holders: publish your container as a TapeAPI service from a wallet browser.</p>
-      </div>
-      <span class="st on">Live</span>
+    <div class="tool">
+      <div class="tt"><span class="pno">CON</span><span class="st on">Live</span></div>
+      <h3><a href="console/"><span lang="zh">持有人操作台</span><span lang="en">Holder console</span></a></h3>
+      <p lang="zh">给 TapeOut 电路持有人：在钱包浏览器里把自己的容器发布成 TapeAPI 服务。</p>
+      <p lang="en">For TapeOut circuit holders: publish your container as a TapeAPI service from a wallet browser.</p>
     </div>
-    <div class="pin">
-      <span class="pno">SRC</span>
-      <div class="pb">
-        <h3><span lang="zh">源代码</span><span lang="en">Source</span></h3>
-        <div class="where"><a href="https://github.com/BruceLanLan/tapeapi">github.com/BruceLanLan/tapeapi</a></div>
-        <p lang="zh">公开仓库。代码 MIT，规范 CC0。</p>
-        <p lang="en">Public repository. Code MIT, specs CC0.</p>
-      </div>
-      <span class="st on">Public</span>
+    <div class="tool">
+      <div class="tt"><span class="pno">SRC</span><span class="st">Public</span></div>
+      <h3><a href="https://github.com/BruceLanLan/tapeapi"><span lang="zh">源代码</span><span lang="en">Source</span></a></h3>
+      <p lang="zh">公开仓库。代码 MIT，规范 CC0。</p>
+      <p lang="en">Public repository. Code MIT, specs CC0.</p>
     </div>
   </div>
 
   <div class="try">
     <div class="subh"><span class="idx">01.1</span><h3 lang="zh">30 秒试用</h3><h3 lang="en">Try It in 30 Seconds</h3></div>
     <p class="step"><span class="no">A · curl</span><span lang="zh">向公共服务要 BNB 价格。curl 只显示签名信封（<code>result</code>、<code>container</code>、<code>ts</code>、<code>block</code>、<code>sig</code>），不做任何核对；验签请用 SDK 或<a href="playground/">调试台</a>。</span><span lang="en">Ask the public service for the BNB price. curl shows the signed envelope (<code>result</code>, <code>container</code>, <code>ts</code>, <code>block</code>, <code>sig</code>) but checks nothing; the SDK or the <a href="playground/">playground</a> verifies it.</span></p>
-<pre class="sys">curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{"id":"1","params":{}}'</pre>
+<div class="code"><div class="cap">shell</div><pre class="sys">curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{"id":"1","params":{}}'</pre></div>
     <p class="step"><span class="no">B · SDK</span><span lang="zh">包还没发到 npm，先准备一次仓库（Node.js 20 或以上）：</span><span lang="en">The packages are not on npm yet, so set up the repository once (Node.js 20 or later):</span></p>
-<pre>git clone https://github.com/BruceLanLan/tapeapi.git
+<div class="code"><div class="cap">shell</div><pre>git clone https://github.com/BruceLanLan/tapeapi.git
 cd tapeapi
-npm install</pre>
+npm install</pre></div>
     <p class="step"><span lang="zh">把下面存为 <code>try.mjs</code>，<b>必须放在 tapeapi 目录里</b>（<code>@tapeapi/sdk</code> 通过仓库的 workspace 解析），然后运行 <code>node try.mjs</code>：</span><span lang="en">Save this as <code>try.mjs</code> <b>inside the tapeapi directory</b> (<code>@tapeapi/sdk</code> resolves through the repository's workspace), then run <code>node try.mjs</code>:</span></p>
-<pre><span class="k">import</span> { createTapeAPI } <span class="k">from</span> '@tapeapi/sdk'
+<div class="code"><div class="cap">try.mjs</div><pre><span class="k">import</span> { createTapeAPI } <span class="k">from</span> <span class="s">'@tapeapi/sdk'</span>
 
 <span class="k">const</span> api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  rpcUrls: [<span class="s">'https://bsc-dataseed.bnbchain.org'</span>, <span class="s">'https://bsc-dataseed1.defibit.io'</span>, <span class="s">'https://bsc-dataseed1.ninicoin.io'</span>],
   quorum: 2,
 })
-<span class="k">const</span> svc = <span class="k">await</span> api.resolve('11.1013.tape')   <span class="c">// <span lang="zh">名字、容器、链上清单、持有人委托</span><span lang="en">name, container, on-chain manifest, delegation</span></span>
-<span class="k">const</span> { result, verified } = <span class="k">await</span> api.call(svc, 'bnbUsd', {})
-console.log(result.bnbUsd, verified)            <span class="c">// <span lang="zh">验签通过才为 true</span><span lang="en">true only after the signature checked out</span></span></pre>
+<span class="k">const</span> svc = <span class="k">await</span> api.resolve(<span class="s">'11.1013.tape'</span>)   <span class="c">// <span lang="zh">名字、容器、链上清单、持有人委托</span><span lang="en">name, container, on-chain manifest, delegation</span></span>
+<span class="k">const</span> { result, verified } = <span class="k">await</span> api.call(svc, <span class="s">'bnbUsd'</span>, {})
+console.log(result.bnbUsd, verified)            <span class="c">// <span lang="zh">验签通过才为 true</span><span lang="en">true only after the signature checked out</span></span></pre></div>
   </div>
 </section>
 
@@ -190,11 +180,11 @@ console.log(result.bnbUsd, verified)            <span class="c">// <span lang="z
       </ul>
       <div class="desc">
         <p lang="zh">今天的网站要调用服务，必须连上某家公司的服务器。TapeAPI 把服务本身变成一个链上身份：<b>一枚 TapeOut 电路、它的 ERC-6551 容器，以及存在容器站点里的一份服务清单。</b></p>
-        <p lang="en">A website that needs a service today must reach a company's server. TapeAPI turns the service itself into an on-chain identity: <b>one TapeOut circuit, its ERC-6551 container, and a manifest stored in that container's site.</b></p>
+      <p lang="en">A website that needs a service today must reach a company's server. TapeAPI turns the service itself into an on-chain identity: <b>one TapeOut circuit, its ERC-6551 container, and a manifest stored in that container's site.</b></p>
         <p lang="zh">调用走普通 HTTPS，所以和现有 API 一样快。区别在于响应由容器绑定的密钥签名，调用方可以验签，也可以要求两家互不相干的提供者给出一致答案才采信。</p>
-        <p lang="en">Calls go over ordinary HTTPS, so they are as fast as any API. The difference is that the response is signed by a key bound to the container, and the caller can verify it, or require two unrelated providers to agree before believing it.</p>
+      <p lang="en">Calls go over ordinary HTTPS, so they are as fast as any API. The difference is that the response is signed by a key bound to the container, and the caller can verify it, or require two unrelated providers to agree before believing it.</p>
         <p lang="zh">付费用离线签发的累计凭证，提供者攒够了再上链结算一次。<b>调用本身不花 gas。</b>付费所需的托管合约尚未部署，要先通过独立审计；今天所有公共方法都免费。</p>
-        <p lang="en">Payment uses off-chain cumulative vouchers; the provider settles once on chain when it is worth doing. <b>The call itself costs no gas.</b> The escrow that paid calls need is not deployed yet and waits for an independent audit; today every public method is free.</p>
+      <p lang="en">Payment uses off-chain cumulative vouchers; the provider settles once on chain when it is worth doing. <b>The call itself costs no gas.</b> The escrow that paid calls need is not deployed yet and waits for an independent audit; today every public method is free.</p>
       </div>
     </div>
   </div>
@@ -387,22 +377,22 @@ console.log(result.bnbUsd, verified)            <span class="c">// <span lang="z
 <section>
   <div class="shead"><span class="idx">08</span><h2 lang="zh">典型应用电路</h2><h2 lang="en">Typical Application Circuit</h2><span class="line"></span></div>
   <figure>
-<pre><span class="c">// <span lang="zh">解析身份，验签，要求两家独立提供者一致</span><span lang="en">Resolve, verify, require two independent providers to agree</span></span>
-<span class="k">import</span> { createTapeAPI } <span class="k">from</span> '@tapeapi/sdk'
+<div class="code"><div class="cap">js</div><pre><span class="c">// <span lang="zh">解析身份，验签，要求两家独立提供者一致</span><span lang="en">Resolve, verify, require two independent providers to agree</span></span>
+<span class="k">import</span> { createTapeAPI } <span class="k">from</span> <span class="s">'@tapeapi/sdk'</span>
 
 <span class="k">const</span> api = createTapeAPI({ rpcUrls: RPC_URLS, quorum: 2 })
 
 <span class="c">// <span lang="zh">按名字或容器地址解析，不需要任何目录合约</span><span lang="en">Resolve by name or by container address; no directory contract needed</span></span>
-<span class="k">const</span> a = <span class="k">await</span> api.resolve('11.1013.tape')
-<span class="k">const</span> b = <span class="k">await</span> api.resolve('0x…')   <span class="c">// <span lang="zh">第二家独立提供者</span><span lang="en">a second, independent provider</span></span>
+<span class="k">const</span> a = <span class="k">await</span> api.resolve(<span class="s">'11.1013.tape'</span>)
+<span class="k">const</span> b = <span class="k">await</span> api.resolve(<span class="s">'0x…'</span>)   <span class="c">// <span lang="zh">第二家独立提供者</span><span lang="en">a second, independent provider</span></span>
 
 <span class="c">// <span lang="zh">钉同一个区块，两家的答案才可比较</span><span lang="en">Pin one block so the answers are comparable</span></span>
-<span class="k">const</span> first = <span class="k">await</span> api.call(a, 'bnbUsd', {})
+<span class="k">const</span> first = <span class="k">await</span> api.call(a, <span class="s">'bnbUsd'</span>, {})
 <span class="k">const</span> block = first.result.blockPinned.blockNumber
-<span class="k">const</span> r = <span class="k">await</span> api.callQuorum([a, b], 'bnbUsd', { block }, { quorum: 2 })
+<span class="k">const</span> r = <span class="k">await</span> api.callQuorum([a, b], <span class="s">'bnbUsd'</span>, { block }, { quorum: 2 })
 
 <span class="c">// <span lang="zh">两份信封各自验签通过，且结果逐字节相同，才会返回</span><span lang="en">Returns only if both envelopes verified and the results matched byte for byte</span></span>
-console.log(r.result.bnbUsd, r.agreed)</pre>
+console.log(r.result.bnbUsd, r.agreed)</pre></div>
     <figcaption lang="zh"><span class="fno">图 2</span>最小调用回路。今天 api.tapeapi.fun 是这些方法唯一的公共提供者，第二家要由你或别人运行（示例在 examples/public-api/）。付费方法再加一个 payer，凭证在本地签发，不产生链上交易；它要等托管合约审计并部署之后。</figcaption>
     <figcaption lang="en"><span class="fno">Fig. 2</span>Minimum call loop. Today api.tapeapi.fun is the only public provider of these methods, so the second one is yours or someone else's to run (examples/public-api/). A paid method adds a payer that signs vouchers locally, with no on-chain transaction; that waits for the escrow to be audited and deployed.</figcaption>
   </figure>
@@ -436,7 +426,7 @@ console.log(r.result.bnbUsd, r.agreed)</pre>
   <div class="shead"><span class="idx">10</span><h2 lang="zh">路线图</h2><h2 lang="en">Roadmap</h2><span class="line"></span></div>
   <p class="tcap" lang="zh">以下都还没有上线，也不承诺日期</p>
   <p class="tcap" lang="en">None of this is live yet, and no dates are promised</p>
-  <div class="apps">
+  <div class="apps road">
     <div class="app">
       <div class="no">NEXT 01</div>
       <h3 lang="zh">开发者控制台（完整版）</h3><h3 lang="en">Developer dashboard, full</h3>
@@ -476,6 +466,11 @@ console.log(r.result.bnbUsd, r.agreed)</pre>
 </section>
 
 <footer>
+  <div class="fbrand">
+    <a class="fb-brand" href="./" aria-label="TapeAPI"><svg class="hd-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a>
+    <p lang="zh">TapeOut 电路的签名 API · BNB Smart Chain</p>
+    <p lang="en">Signed APIs for TapeOut circuits · BNB Smart Chain</p>
+  </div>
   <div>
     <h4 lang="zh">状态</h4><h4 lang="en">Status</h4>
     <p lang="zh">预发布。公共服务 api.tapeapi.fun 与公共中继 relay.tapeapi.fun 已上线，ChannelBus 已部署；付费托管合约尚未部署，要先通过独立审计；目前没有第三方审计。测试：JS 约 710 项（npm test）、合约 169 项（forge）、Python 验证器 102 项，全部通过。</p>

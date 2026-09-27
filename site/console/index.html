@@ -7,8 +7,21 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title data-zh-title="TapeAPI 持有人操作台" data-en-title="TapeAPI holder console">TapeAPI holder console</title>
 <style>
-  :root { --bg: #f4f5f1; --card: #ffffff; --fg: #1b211d; --muted: #5a645c; --line: #d6ddd4; --accent: #2e6b4b; --ok: #2e6b4b; --bad: #a3342a; --warn: #8a5a00; --warn-bg: #fbf3e2; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #121614; --card: #1a201c; --fg: #e3e9e2; --muted: #98a399; --line: #2c3530; --accent: #86c7a0; --ok: #86c7a0; --bad: #ec8a7f; --warn: #e2b562; --warn-bg: #2a2416; } }
+  /* The site's palette (site/style.css), under this page's own token names; the --ink/--hair/--amber names feed the
+     shared header. This page has no theme switch (its script is not changed), so it follows the system theme.
+     全站配色，沿用本页自己的变量名；--ink/--hair/--amber 供共用页头使用。本页没有主题开关，跟随系统。 */
+  :root {
+    --bg: #EEF0F3; --card: #FFFFFF; --fg: #0C0F14; --muted: #5B6472; --line: #CCD2DA; --line-2: #E0E4EA;
+    --accent: #8A4E06; --ok: #1D7A46; --bad: #A32D19; --warn: #8A5A00; --warn-bg: #FDF1DE;
+    --ink: var(--fg); --ink-2: #3D4550; --ink-3: var(--muted); --hair: var(--line); --hair-2: var(--line-2); --amber: #B4660A; --amber-ink: #8A4E06;
+    --hd-max: 592px; --hd-pad: 16px;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    color-scheme: dark;
+    --bg: #0A0C10; --card: #11151C; --fg: #EEF1F5; --muted: #8B95A3; --line: #283039; --line-2: #1B212B;
+    --accent: #FFB224; --ok: #4CC88A; --bad: #F07A5F; --warn: #E2B562; --warn-bg: #221804;
+    --ink-2: #AAB3C0; --amber: #FFB224; --amber-ink: #FFC759;
+  } }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }   /* label.check sets display: flex, which would otherwise override hidden */
   body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, -apple-system, "PingFang SC", "Noto Sans SC", sans-serif; padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); }
@@ -25,6 +38,70 @@
   summary { font-weight: 600; cursor: pointer; min-height: 28px; }
   summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .top { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  /* ── site header ─────────────────────────────────────────────
+     One header for every page. This block is copied verbatim into site/style.css, docs/docs.css,
+     playground/playground.css (the dashboard uses it too), status/status.css and console/index.html;
+     change all five together. The mark and wordmark are inline SVG paths (logo.svg), so they need no font
+     and follow the theme through currentColor. The labels use a 2 KB IBM Plex Mono subset (OFL), loaded
+     from fonts/tapeapi-rail.woff2 (same origin, so this page's CSP allows it); Chinese falls through to the system face.
+     全站统一的页头。本段原样复制到上述五个样式里，改动时五处一起改。标志与字标是内联 SVG 路径，
+     不依赖字体，颜色随主题。标签用 2 KB 的 IBM Plex Mono 子集，从 fonts/tapeapi-rail.woff2 加载（同源，CSP 允许）；中文走系统字体。 */
+  @font-face {
+    font-family: "TapeAPI Rail"; font-style: normal; font-weight: 500; font-display: swap;
+    unicode-range: U+20, U+2D-2F, U+30-39, U+41-5A, U+B7;
+    src: url(../fonts/tapeapi-rail.woff2) format("woff2");
+  }
+  .hd-bar {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    -webkit-backdrop-filter: saturate(1.4) blur(10px); backdrop-filter: saturate(1.4) blur(10px);
+    border-bottom: 1px solid var(--hair);
+  }
+  .hd {
+    display: flex; align-items: center; gap: 6px 22px; min-height: 58px;
+    max-width: var(--hd-max, 1060px); margin: 0 auto;
+    padding-left: max(var(--hd-pad, 20px), env(safe-area-inset-left, 0px));
+    padding-right: max(var(--hd-pad, 20px), env(safe-area-inset-right, 0px));
+  }
+  .hd-brand {
+    display: inline-flex; align-items: center; gap: 10px; flex: none;
+    color: var(--ink); text-decoration: none; padding: 6px 0;
+  }
+  .hd-mark { display: block; width: 24px; height: 24px; fill: currentColor; flex: none; transition: color .15s; }
+  .hd-word { display: block; height: 11px; width: 99px; fill: currentColor; }
+  .hd-brand:hover .hd-mark { color: var(--amber); }
+  .hd-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 0 20px; margin-left: auto; }
+  .hd-nav a, .hd-btn {
+    font-family: "TapeAPI Rail", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px; font-weight: 500; line-height: 1; letter-spacing: .1em; text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .hd-nav a {
+    color: var(--ink-3); text-decoration: none;
+    padding: 9px 0 7px; border-bottom: 2px solid transparent;
+  }
+  .hd-nav a:hover { color: var(--ink); }
+  .hd-nav a[aria-current] { color: var(--ink); border-bottom-color: var(--amber); }
+  .hd-tools { display: flex; align-items: center; gap: 6px; flex: none; }
+  .hd-btn {
+    background: transparent; color: var(--ink-2); border: 1px solid var(--hair); border-radius: 0;
+    padding: 0 10px; min-height: 30px; cursor: pointer; margin: 0;
+  }
+  .hd-btn:hover { color: var(--ink); border-color: var(--ink-3); }
+  .hd a:focus-visible, .hd button:focus-visible, .hd input:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+  @media (max-width: 760px) {
+    .hd-bar { position: relative; top: auto; }   /* two rows on a phone: let it scroll away / 手机上两行，不吸顶 */
+    .hd { flex-wrap: wrap; column-gap: 12px; padding-top: 4px; }
+    .hd-tools { margin-left: auto; }
+    .hd-nav {
+      order: 3; flex: 1 0 100%; margin: 0; justify-content: space-between; gap: 0 12px;
+      border-top: 1px solid var(--hair-2);
+    }
+    .hd-nav a { letter-spacing: .07em; padding: 11px 0 9px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .hd-mark { transition: none; } }
+  /* The header runs edge to edge over the body's side padding. / 页头越过 body 的左右内边距，通栏显示。 */
+  .hd-bar { margin: calc(-1 * max(16px, env(safe-area-inset-top))) -16px 18px; padding-top: env(safe-area-inset-top, 0px); }
   .banner { border: 2px solid var(--warn); background: var(--warn-bg); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
   .banner.bad { border-color: var(--bad); color: var(--bad); }
   button { font: inherit; font-weight: 600; min-height: 46px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: var(--card); padding: 0 14px; cursor: pointer; }
@@ -55,10 +132,22 @@
 <script type="module" src="./console.js"></script>
 </head>
 <body>
+<header class="hd-bar">
+  <div class="hd">
+    <a class="hd-brand" href="../" aria-label="TapeAPI"><svg class="hd-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a>
+    <nav class="hd-nav" aria-label="TapeAPI">
+      <a href="../docs/"><span lang="zh">手册</span><span lang="en">Docs</span></a>
+      <a href="../playground/"><span lang="zh">调试台</span><span lang="en">Playground</span></a>
+      <a href="../dashboard/"><span lang="zh">我的服务</span><span lang="en">Dashboard</span></a>
+      <a href="../status/"><span lang="zh">状态</span><span lang="en">Status</span></a>
+      <a href="https://github.com/BruceLanLan/tapeapi">GitHub</a>
+    </nav>
+    <div class="hd-tools"><button id="lang-btn" class="hd-btn" type="button">中文</button></div>
+  </div>
+</header>
 <main>
   <div class="top">
-    <h1><span lang="zh">TapeAPI 持有人操作台</span><span lang="en">TapeAPI holder console</span></h1>
-    <button id="lang-btn" class="ghost small" type="button">中文</button>
+    <h1><span lang="zh">持有人操作台</span><span lang="en">Holder console</span></h1>
   </div>
 
   <p id="phish" class="banner" role="note">

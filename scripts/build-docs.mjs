@@ -17,6 +17,17 @@ import { fileURLToPath } from 'node:url'
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 export const OUT = 'site/docs'
 const REPO = 'https://github.com/BruceLanLan/tapeapi'
+// The site header, the same on every page of tapeapi.fun (site/logo.svg: the mark, then the outlined wordmark).
+// Pages outside docs/ are linked by absolute URL: the link check below only knows the files of this build.
+// 全站统一页头（标志与轮廓化字标，见 site/logo.svg）。docs/ 以外的页面用绝对地址：链接检查只认本次生成的文件。
+const SITE = 'https://tapeapi.fun'
+const MARK = 'M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z'
+const WORDMARK = 'M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z'
+const BRAND = `<a class="hd-brand" href="/" aria-label="TapeAPI"><svg class="hd-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="${MARK}"/></svg><svg class="hd-word" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="${WORDMARK}"/></svg></a>`
+const SITE_NAV = {
+  en: [['playground', 'Playground'], ['dashboard', 'Dashboard'], ['status', 'Status']],
+  zh: [['playground', '调试台'], ['dashboard', '我的服务'], ['status', '状态']],
+}
 
 // Sidebar: groups of pages, in order. `src` is per language; the changelog is English only.
 // 侧边栏：按顺序分组。`src` 按语言给出；更新日志只有英文。
@@ -225,6 +236,8 @@ function template(r, all) {
     .map((h) => `<li class="l${h.level}"><a href="#${h.id}">${h.html.replace(/<a [^>]*>|<\/a>/g, '')}</a></li>`).join('')
   const pn = `<nav class="pn">${prev ? `<a class="prev" href="${pageFile(prev.page)}"><span>${L.prev}</span>${esc(prev.title)}</a>` : '<span></span>'}${next ? `<a class="next" href="${pageFile(next.page)}"><span>${L.next}</span>${esc(next.title)}</a>` : '<span></span>'}</nav>`
   const other = LANGS[r.lang].other
+  const siteLinks = SITE_NAV[r.lang].map(([p, t]) => `<a href="${SITE}/${p}/">${t}</a>`).join('')
+  const siteGroup = `<div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">${L.home}</a></li>${SITE_NAV[r.lang].map(([p, t]) => `<li><a href="${SITE}/${p}/">${t}</a></li>`).join('')}<li><a href="${REPO}" rel="noopener">GitHub</a></li></ul></div>`
   return `<!doctype html>
 <html lang="${L.html}" data-lang="${r.lang}">
 <head>
@@ -238,17 +251,15 @@ function template(r, all) {
 ${THEME_BOOT}
 </head>
 <body data-page="${r.page}" data-other="../${other}/${pageFile(r.page)}" data-l-copy="${L.copy}" data-l-copied="${L.copied}" data-l-none="${L.noResults}" data-l-light="${L.light}" data-l-dark="${L.dark}" data-l-theme="${L.theme}">
-<header class="top">
-  <button class="ctl menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">${L.menu}</button>
-  <a class="brand" href="/">TAPEAPI</a><a class="section" href="index.html">${L.docs}</a>
+<header class="hd-bar top"><div class="hd">
+  <button class="hd-btn menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">${L.menu}</button>
+  ${BRAND}<a class="hd-sec" href="index.html">${L.docs}</a>
   <div class="search"><input id="q" type="search" placeholder="${L.search}" aria-label="${L.search}" autocomplete="off"><div class="results" id="results" hidden></div></div>
-  <span class="sp"></span>
-  <a class="ctl" href="${REPO}" rel="noopener">GitHub</a>
-  <button class="ctl" id="lang-btn" type="button" lang="${LANGS[other].html}">${LANGS[r.lang].otherLabel}</button>
-  <button class="ctl" id="theme-btn" type="button">${L.theme}</button>
-</header>
+  <nav class="hd-nav" aria-label="TapeAPI"><a href="index.html" aria-current="true">${L.docs}</a>${siteLinks}<a href="${REPO}" rel="noopener">GitHub</a></nav>
+  <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="${LANGS[other].html}">${LANGS[r.lang].otherLabel}</button><button class="hd-btn" id="theme-btn" type="button">${L.theme}</button></div>
+</div></header>
 <div class="layout">
-<nav class="side" id="side" aria-label="${L.docs}">${nav}</nav>
+<nav class="side" id="side" aria-label="${L.docs}">${nav}${siteGroup}</nav>
 <main class="doc">
 <article>
 ${r.body}
