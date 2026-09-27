@@ -21,7 +21,9 @@ const { RPC_URLS, QUORUM, CHAIN_ID, SIGNER_KEY, log, store } = env
 manifest.methods = manifestMethods(config)
 applyEnvToManifest(manifest, env)
 
-const methods = buildMethods(config, { log })
+// Only the upstream key is handed to the adapter: a ${NAME} in the config can expand to nothing else (H-HOSTED-1).
+// 只把上游密钥交给适配器：配置里的 ${NAME} 不可能展开成别的任何东西（H-HOSTED-1）。
+const methods = buildMethods(config, { log, env: { UPSTREAM_API_KEY: process.env.UPSTREAM_API_KEY } })
 
 const provider = createProvider({
   manifest, signerKey: SIGNER_KEY, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID,

@@ -11,6 +11,13 @@ Before 1.0.0, a minor version may change interfaces.
 - The relay template (`examples/cloudflare-worker/wrangler-relay.toml`) no longer names the project's own Worker or
   domain: a fork deploys it as `my-tapeapi-relay` with `npm run deploy:my-relay`. The project's own relay config moved
   to `examples/public-api/wrangler-relay.toml`; `npm run deploy:relay` still deploys it, unchanged.
+- Web2 adapter: a `${NAME}` in the config expands only from the `env` passed to `buildMethods` (no `process.env`
+  default; a name missing from it is refused when the service is created), and a hosted policy (`HOSTED_POLICY`) for
+  running other people's configs: https on 443 only, no IP literals, local or platform hosts, at most 3 hosts, no
+  redirects, a header allow-list, a fixed User-Agent, a streamed 256 KiB body cap and an optional resolver check
+  against private addresses. Responses are capped at 1 MiB under the default policy too.
+- Site: stylesheets and scripts carry a content hash (`npm run build:assets`), and the logo has a fixed size without
+  its stylesheet.
 
 ## [0.2.0] — 2026-09-27
 

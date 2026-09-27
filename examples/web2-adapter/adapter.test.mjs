@@ -65,3 +65,66 @@ test('manifestMethods derives params from query/body/url templates', () => {
   assert.deepEqual(ms[0], { name: 'zoneTime', priceBEM: '0', params: { area: 'string', location: 'string' }, returns: {} })
   assert.equal(ms[1].priceBEM, '0.0001')
 })
+
+// ---- hosting hardening (docs/DESIGN-hosted.md, "Web2 adapter hardening") / 托管加固 ----
+import { buildMethods, checkUpstreamUrl, isPrivateIp, readCapped, expandEnv, HOSTED_POLICY } from './adapter.mjs'
+
+test('FIXED H-HOSTED-1: ${NAME} expands only from the env passed in, never from process.env', async () => {
+  process.env.TAPEAPI_TEST_SECRET = 'platform-secret'
+  const leaky = { url: 'https://api.example.com/v1/x', headers: { 'x-api-key': '${TAPEAPI_TEST_SECRET}' } }
+  // not passed -> refused when the handler is created, before any request / 未传入：创建处理器时即拒绝，任何请求都没发出
+  assert.throws(() => makeHandler('x', leaky, { fetch: fakeFetch() }), (e) => e.code === 'INTERNAL' && /TAPEAPI_TEST_SECRET/.test(e.message))
+  assert.throws(() => buildMethods({ methods: { x: leaky } }, { fetch: fakeFetch(), env: { UPSTREAM_API_KEY: 'k' } }), (e) => e.code === 'INTERNAL')
+  assert.throws(() => expandEnv('${TAPEAPI_TEST_SECRET}'), (e) => e.code === 'INTERNAL')
+  // passed but unset -> header dropped, as the example config relies on / 传了键但值未设置：丢弃该头部，示例配置依赖这一点
+  const h = makeHandler('x', { url: 'https://api.example.com/v1/x', headers: { 'x-api-key': '${UPSTREAM_API_KEY}' } }, { fetch: fakeFetch(), env: { UPSTREAM_API_KEY: undefined } })
+  await h({})
+  assert.deepEqual(seen.pop().init.headers, {})
+  delete process.env.TAPEAPI_TEST_SECRET
+})
+
+test('FIXED H-HOSTED-2: the hosted policy refuses local, platform, IP-literal, non-443, userinfo and plain-http upstreams', () => {
+  const refused = ['http://api.example.org/x', 'https://127.0.0.1/x', 'https://0x7f.1/x', 'https://2130706433/x', 'https://0177.0.0.1/x',
+    'https://[::1]/x', 'https://[fd00::1]/x', 'https://api.example.org:8443/x', 'https://u:p@api.example.org/x', 'https://localhost/x',
+    'https://db.internal/x', 'https://printer.local/x', 'https://metadata/x', 'https://api.tapeapi.fun/x', 'https://tapeapi.fun/x',
+    'https://1.0.0.127.in-addr.arpa/x', 'https://api.example.org./x'.replace('org.', 'localhost.')]
+  for (const u of refused) assert.throws(() => checkUpstreamUrl(u, HOSTED_POLICY), (e) => e.code === 'INTERNAL', u)
+  for (const u of ['https://api.coinbase.com/v2/prices', 'https://api.frankfurter.dev/v1/latest']) assert.equal(checkUpstreamUrl(u, HOSTED_POLICY).href, u)
+  // the open (self-hosted) policy keeps http and any host / 自托管策略保留 http 与任意主机
+  assert.ok(checkUpstreamUrl('http://127.0.0.1:8080/x'))
+  assert.throws(() => checkUpstreamUrl('ftp://x.example.org/'), (e) => e.code === 'INTERNAL')
+  // a template is checked when the service is created / 模板在创建服务时即被检查
+  assert.throws(() => parseTemplate('https://169.254.169.254/latest/{p}', HOSTED_POLICY), (e) => e.code === 'INTERNAL')
+})
+
+test('FIXED H-HOSTED-3: at most 3 upstream hosts, header allow-list and a fixed User-Agent under the hosted policy', async () => {
+  const m = (host) => ({ url: `https://${host}/v1/x` })
+  assert.throws(() => buildMethods({ methods: { a: m('a.example.org'), b: m('b.example.org'), c: m('c.example.org'), d: m('d.example.org') } }, { policy: HOSTED_POLICY }), /4 upstream hosts/)
+  assert.ok(buildMethods({ methods: { a: m('a.example.org'), b: m('b.example.org'), c: m('c.example.org'), a2: m('a.example.org') } }, { policy: HOSTED_POLICY }))
+  for (const bad of ['host', 'cookie', 'x-forwarded-for', 'cf-connecting-ip', 'user-agent']) {
+    assert.throws(() => makeHandler('x', { url: 'https://a.example.org/x', headers: { [bad]: 'v' } }, { policy: HOSTED_POLICY }), (e) => e.code === 'INTERNAL', bad)
+  }
+  const h = makeHandler('x', { url: 'https://a.example.org/x', headers: { authorization: 'Bearer ${UPSTREAM_API_KEY}' } }, { fetch: fakeFetch(), env: { UPSTREAM_API_KEY: 'k' }, policy: HOSTED_POLICY })
+  await h({})
+  const { init } = seen.pop()
+  assert.deepEqual(init.headers, { authorization: 'Bearer k', 'user-agent': HOSTED_POLICY.userAgent })
+  assert.equal(init.redirect, 'manual')
+})
+
+test('FIXED H-HOSTED-4: no redirects, a capped body and no private address behind a public name under the hosted policy', async () => {
+  const at = { url: 'https://a.example.org/x' }
+  const redirect = async () => new Response('', { status: 302, headers: { location: 'http://169.254.169.254/' } })
+  await assert.rejects(makeHandler('x', at, { fetch: redirect, policy: HOSTED_POLICY })({}), (e) => e.code === 'INTERNAL')
+  const huge = async () => new Response(new ReadableStream({ start(c) { for (let i = 0; i < 40; i++) c.enqueue(new Uint8Array(8192).fill(32)); c.close() } }))
+  await assert.rejects(makeHandler('x', at, { fetch: huge, policy: HOSTED_POLICY })({}), (e) => e.code === 'INTERNAL')   // 320 KiB > 256 KiB
+  const said = async () => new Response('{}', { headers: { 'content-length': String(10 * 1024 * 1024) } })
+  await assert.rejects(readCapped(await said(), 1024), /exceeds/)
+  let fetched = 0
+  const counting = async () => { fetched++; return new Response('{"ok":1}') }
+  await assert.rejects(makeHandler('x', at, { fetch: counting, policy: HOSTED_POLICY, resolve: async () => ['93.184.216.34', '10.0.0.5'] })({}), (e) => e.code === 'INTERNAL')
+  await assert.rejects(makeHandler('x', at, { fetch: counting, policy: HOSTED_POLICY, resolve: async () => [] })({}), (e) => e.code === 'INTERNAL')
+  assert.equal(fetched, 0, 'nothing was fetched from a name that resolves privately')
+  assert.deepEqual(await makeHandler('x', at, { fetch: counting, policy: HOSTED_POLICY, resolve: async () => ['93.184.216.34'] })({}), { ok: 1 })
+  for (const ip of ['10.1.2.3', '127.0.0.1', '169.254.169.254', '172.20.0.1', '192.168.1.1', '100.64.0.1', '0.0.0.0', '224.0.0.1', '::1', 'fd12::1', 'fe80::1', '::ffff:10.0.0.1', 'nonsense']) assert.ok(isPrivateIp(ip), ip)
+  for (const ip of ['93.184.216.34', '1.1.1.1', '2606:4700:4700::1111', '172.32.0.1']) assert.ok(!isPrivateIp(ip), ip)
+})

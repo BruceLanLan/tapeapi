@@ -4,6 +4,8 @@
 **做什么**：一个通用适配器。读 `adapter.config.json`，把每个 TapeAPI 方法映射到一个上游 HTTP 端点；
 签名信封（TAP-21）、按次计费（TAP-22）、清单（TAP-20）全部由 `@tapeapi/server` 完成，公司只写配置。
 上游 API Key 从环境变量注入（`${UPSTREAM_API_KEY}`），永远不会出现在清单或响应里。
+配置里的 `${NAME}` 只能展开成 `index.mjs` 显式交给适配器的值（这里只有 `UPSTREAM_API_KEY`），读不到进程里的其它环境变量。
+替别人运行配置的平台应传 `policy: HOSTED_POLICY`：只许 443 端口的 https、不许 IP 与本地主机、最多 3 个主机、不跟随跳转、头部白名单、响应体上限 256 KiB。
 
 自带的配置包了两个免 Key 的公开 JSON API：[frankfurter](https://frankfurter.dev)（汇率，`fxRate` 免费 / `fxConvert` 0.0001 BEM）
 和 [Coinbase 公开价格接口](https://api.coinbase.com/v2/prices/BNB-USD/spot)（`spotPrice`、`cryptoRates`，免费；`spotPrice` 演示 URL 模板 `{pair}`，例如 `BNB-USD`）。
@@ -66,6 +68,9 @@ provider 查不到链上余额/授权，所以付费调用会得到一个**签�
 **What**: a generic adapter. It reads `adapter.config.json`, maps each TapeAPI method to one upstream HTTP endpoint,
 and lets `@tapeapi/server` do the signed envelopes (TAP-21), per-call metering (TAP-22) and the manifest (TAP-20).
 The upstream API key comes from the environment (`${UPSTREAM_API_KEY}`) and never appears in the manifest or responses.
+A `${NAME}` in the config expands only to values `index.mjs` passes to the adapter explicitly (here only `UPSTREAM_API_KEY`),
+never to other variables of the process. A platform running other people's configs passes `policy: HOSTED_POLICY`: https
+on 443 only, no IP or local host, at most 3 hosts, no redirects, a header allow-list and a 256 KiB body cap.
 
 The shipped config wraps two key-less public JSON APIs: [frankfurter](https://frankfurter.dev) (`fxRate` free, `fxConvert`
 0.0001 BEM) and Coinbase's public price API (`spotPrice`, `cryptoRates` free; `spotPrice` shows `{pair}` URL templating,
