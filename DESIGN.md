@@ -2,6 +2,8 @@
 
 > v0.2 变更：零协议费 + 提供者自设贡献比例（docs/FEES.md）；目录别名可选激活门槛；SDK `callQuorum` 多提供者一致模式（docs/CROSSCHAIN.md §1）。
 > v0.2.1（SDK 审查修复）：信封摘要升级为 `TAPI-1/resp/v2`（覆盖请求与 ok）；全线拒绝高 s 签名；payer 签发/确认分离 + `lastCumulative` 重同步；`dev`/`allowSingleNode`/`allowHttp`/`maxSkewS` 显式开关；原型键拒绝；错误消息不含 URL/密钥。
+>
+> 2026-09-28：费用模型改为 v0.3（无强制协议费；默认 1% 维护贡献，提供者可设为 0；运营方没有费率开关），由下一版托管实现。下文的 TapeAPIEscrow 描述的是仓库里现有的 v2 合约（贡献默认 0），见 docs/FEES.md 与 TAP-22 §3.4。
 
 链：BNB Smart Chain, chainId 56。测试：本地 mock RPC。
 

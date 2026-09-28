@@ -139,7 +139,13 @@ refuses anything below the price. Every endpoint of one paid service must share 
 Cloudflare, see [`examples/cloudflare-worker/`](../../examples/cloudflare-worker/)), or the same voucher could be served
 twice. A settler submits vouchers to the escrow in batches.
 
-> The escrow is not deployed on mainnet yet. Paid methods run against the examples today.
+At settlement, a maintenance contribution comes out of your share, never out of the consumer's price. It defaults to
+1% (100 bps, a constant in the escrow). You can set it to 0 to turn it off, or to anything up to 50%, for your own
+service with `api.tx.setContribution({ circuits, tokenId, bps })`, sent from the circuit holder's wallet. A service at 0
+gets exactly the same treatment. See [`docs/FEES.md`](../FEES.md).
+
+> The escrow is not deployed on mainnet yet. Paid methods run against the examples today, and nothing is charged. The
+> reference escrow in the repository still starts at 0; the default of 1% comes with the version that goes to audit.
 
 ## 6. Operate
 

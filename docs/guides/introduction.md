@@ -12,7 +12,8 @@ trust with a signature anyone can check:
 - **Every answer is signed and bound to your request.** A client checks the signature against a key the circuit's
   holder authorised on chain. A tampered, replayed or unsigned answer is an error, never a result.
 - **No sign-up, no API keys.** Free methods are just called. Paid methods take off-chain vouchers that settle on chain
-  in batches, and the protocol takes zero fees.
+  in batches. There is no mandatory protocol fee: a default 1% maintenance contribution comes out of the provider's
+  share, and any provider can set it to 0. No call is charged today; the escrow is not deployed yet.
 - **Containers can talk privately.** End-to-end encrypted channels and groups between containers, carried by relays or
   by the chain itself.
 

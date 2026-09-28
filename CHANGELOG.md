@@ -6,6 +6,16 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+### Changed
+
+- **Fee policy (before anything is charged):** no mandatory protocol fee. When paid calls settle through the next
+  escrow version (not deployed; only after an independent audit), a default 1% maintenance contribution comes out of the
+  provider's share (the consumer's price does not change); any provider can set it to 0, or up to 50%. The default is a
+  contract constant: the operator has no fee switch and cannot pause. Planned settlement tokens: BEM (primary), BNB,
+  USDT, USDC, ETH, USD1. The permanent 10% of any TapeAPI revenue to @Theairresearch includes this contribution.
+  TAP-22 §3.4, docs/FEES.md, README, the site and the guides say so; the escrow code in the repository still starts at 0
+  and changes with the next escrow version.
+
 ### Security
 
 - **RPC quorum counts operators, not URLs.** The default BNB Chain nodes were three dataseeds that all belong to one

@@ -48,13 +48,16 @@ the [changelog](../CHANGELOG.md).
 
 - **Escrow audit, then paid calls.** The paid-call escrow (TAP-22, `contracts/src/TapeAPIEscrow.sol`) is written and
   tested but **not deployed**. It will be deployed only after an independent third-party audit; paid calls start
-  after that. Until then every live method is free. See [SECURITY.md](../SECURITY.md).
+  after that. Until then every live method is free. The version that goes to audit is the next one: it adds the
+  default 1% contribution (provider can set 0) and is planned to settle in BEM, BNB (as WBNB), USDT, USDC, ETH and
+  USD1. See [SECURITY.md](../SECURITY.md).
 - **Service directory.** A place to find services by what they do. It is for discovery only: resolution always goes
   to the chain, and a listing never changes what a client trusts.
 
 ## 4. What we will not do
 
-- Charge a protocol fee, or add an operator fee switch to the escrow ([FEES.md](FEES.md)).
+- Charge a mandatory protocol fee, or give the operator a fee switch or a pause in the escrow. The escrow's default 1%
+  maintenance contribution comes out of the provider's share, and any provider can set it to 0 ([FEES.md](FEES.md)).
 - Make a client depend on an endpoint we run in order to resolve or verify a service. Resolution and verification stay
   free and on-chain.
 - Let a directory or a listing override what the chain says.
@@ -101,12 +104,14 @@ specification starts as a *spec proposal (TAP)* issue; see [CONTRIBUTING.md](../
 
 - **托管合约审计，然后才有付费调用。** 付费调用的托管合约（TAP-22，`contracts/src/TapeAPIEscrow.sol`）已写好并有
   测试，但**未部署**。只有通过独立第三方审计后才会部署，付费调用在那之后才开始。在此之前所有线上方法都免费。
+  送审的是下一版：它加入默认 1% 的维护贡献（提供者可设为 0），并计划支持 BEM、BNB（包装为 WBNB）、USDT、USDC、ETH、USD1 结算。
   见 [SECURITY.md](../SECURITY.md)。
 - **服务目录。** 按功能查找服务的地方，只用于发现：解析永远以链上为准，登记与否不改变客户端信任什么。
 
 ## 4. 我们不会做的事
 
-- 收协议费，或给托管合约加运营方费率开关（[FEES.md](FEES.md)）。
+- 收强制协议费，或给托管合约加运营方费率开关或暂停开关。托管合约默认的 1% 维护贡献从提供者所得中划出，任何提供者都
+  可以把它设为 0（[FEES.md](FEES.md)）。
 - 让客户端必须经过我们运营的端点才能解析或验证服务。解析与验证始终免费、在链上完成。
 - 让目录或登记凌驾于链上事实之上。
 

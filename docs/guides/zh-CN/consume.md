@@ -159,6 +159,10 @@ const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })
 expires)`），然后改为传入 `{ consumer, sessionKey, sessionExpiry }`。为通道充值需要两笔交易，由 SDK 为你的钱包构建：
 先 `api.tx.approve({ amount })`，再 `api.tx.fund(svc, amount)`。
 
+你只付提供者标明的价格：TapeAPI 不在消费者这一侧加任何费用。维护贡献（如果提供者保留它）从提供者的所得中划出
+（[`docs/FEES.md`](../../FEES.md)）。规范目前用 BEM 结算；下一版托管计划支持 BNB Smart Chain 上的 BEM、BNB（包装为
+WBNB）、USDT、USDC、ETH 与 USD1。
+
 > 托管合约尚未部署，因此付费服务还没有在主网上线。以上内容都可以针对示例运行（本地使用 `FREE_ALL=1` 跳过付费）。
 
 SDK 只在收到经过验证的回答之后才推进本地计量，并在提供者的计数不一致时自动重新同步。传入 `store: { get, set }`

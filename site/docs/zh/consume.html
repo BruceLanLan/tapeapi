@@ -98,6 +98,7 @@ const payer = api.payer({
 })
 const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code></pre></div>
 <p>为避免每次调用都弹出钱包提示，可以一次性授权一把会话密钥（<code>api.tx.authorizeSession(svc, sessionAddress, expires)</code>），然后改为传入 <code>{ consumer, sessionKey, sessionExpiry }</code>。为通道充值需要两笔交易，由 SDK 为你的钱包构建：先 <code>api.tx.approve({ amount })</code>，再 <code>api.tx.fund(svc, amount)</code>。</p>
+<p>你只付提供者标明的价格：TapeAPI 不在消费者这一侧加任何费用。维护贡献（如果提供者保留它）从提供者的所得中划出（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/FEES.md" rel="noopener"><code>docs/FEES.md</code></a>）。规范目前用 BEM 结算；下一版托管计划支持 BNB Smart Chain 上的 BEM、BNB（包装为 WBNB）、USDT、USDC、ETH 与 USD1。</p>
 <blockquote><p>托管合约尚未部署，因此付费服务还没有在主网上线。以上内容都可以针对示例运行（本地使用 <code>FREE_ALL=1</code> 跳过付费）。</p></blockquote>
 <p>SDK 只在收到经过验证的回答之后才推进本地计量，并在提供者的计数不一致时自动重新同步。传入 <code>store: { get, set }</code> 可在重启之间保留计量。</p>
 <h2 id="6-在浏览器或-deweb-站点中使用"><a class="anchor" href="#6-在浏览器或-deweb-站点中使用" aria-hidden="true">#</a>6. 在浏览器或 DeWEB 站点中使用</h2>

@@ -161,6 +161,10 @@ To avoid a wallet prompt per call, authorise a session key once (`api.tx.authori
 expires)`) and pass `{ consumer, sessionKey, sessionExpiry }` instead. Funding the channel takes two transactions the
 SDK builds for your wallet: `api.tx.approve({ amount })` then `api.tx.fund(svc, amount)`.
 
+You pay the provider's listed price and nothing more: TapeAPI adds no fee on the consumer side. The maintenance
+contribution, if the provider keeps it, comes out of the provider's share ([`docs/FEES.md`](../FEES.md)). The spec
+settles in BEM; the next escrow version plans BEM, BNB (wrapped as WBNB), USDT, USDC, ETH and USD1 on BNB Smart Chain.
+
 > The escrow contract is not deployed yet, so paid services are not live on mainnet. Everything above works against
 > the examples (`FREE_ALL=1` to skip payment locally).
 

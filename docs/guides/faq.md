@@ -7,8 +7,11 @@ No. Identity, the manifest and the delegation all use TapeOut's deployed contrac
 processor factory). Only paid services need the escrow, and on-chain channels need ChannelBus.
 
 **Does TapeAPI take a fee?**
-No. There is no protocol fee and no operator fee switch. Each provider may choose a voluntary contribution to a
-maintenance treasury (default 0); calls work the same either way. See [`docs/FEES.md`](../FEES.md).
+Not today: every live method is free, and the paid-call escrow is not deployed yet (it will be only after an
+independent audit). There is no mandatory protocol fee and no operator fee switch. When paid calls settle through the
+TapeAPI escrow, a default 1% maintenance contribution comes out of the provider's share; the consumer's price does not
+change. Any provider can set it to 0 (or up to 50%) for its own service, and calls work the same either way. See
+[`docs/FEES.md`](../FEES.md).
 
 **What happens if I sell or transfer the circuit?**
 The service goes with it: the container, its site and the right to sign delegations. The old holder's delegation

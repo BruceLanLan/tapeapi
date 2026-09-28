@@ -88,7 +88,9 @@ TapeAPI makes the identity of a service an on-chain object and every answer a si
 - **Every answer is signed and bound to your request.** A client checks the signature against a key the circuit's
   holder authorised on chain. A tampered, replayed or unsigned answer is an error, never a result.
 - **No sign-up, no API keys.** Free methods are just called. Paid methods are paid with off-chain vouchers that settle
-  on chain in batches; the protocol takes **zero fees**.
+  on chain in batches. There is **no mandatory protocol fee**: once the escrow is live, a default 1% maintenance
+  contribution comes out of the provider's share (the consumer's price does not change), and any provider can set it to
+  0. Today no call is charged: the escrow is not deployed yet.
 - **Private channels between containers.** Two services, two agents or two apps can open an end-to-end encrypted
   channel, carried by a relay or by the chain itself, where the carrier only ever sees ciphertext.
 
@@ -114,7 +116,9 @@ sequenceDiagram
    domain is anchored on TapeOut's deployed DeWebHub, so a service works before any contract of ours exists.
 3. **Signed envelope (TAP-21).** Every answer, success or error, is signed over a digest that binds the container,
    the request id, the method and parameters, the result and a timestamp.
-4. **Payment (TAP-22).** Paid methods take cumulative vouchers, settled from a per-provider escrow channel.
+4. **Payment (TAP-22).** Paid methods take cumulative vouchers, settled from a per-provider escrow channel. The spec
+   settles in BEM; the next escrow version plans BEM (primary), BNB (wrapped as WBNB by the contract), USDT, USDC, ETH
+   and USD1 on BNB Smart Chain. It is deployed only after an independent audit.
 5. **Channels (TAP-26, TAP-27).** Holder-authorised channel keys, an X3DH-style handshake and ChaCha20-Poly1305
    frames, over a relay or over ChannelBus, a stateless event-only contract.
 
@@ -194,7 +198,7 @@ the container's site. The [holder console](https://tapeapi.fun/console/) does al
 |---|---|
 | **Verifiable answers** | Signed envelopes bound to the exact request; signer checked against the on-chain holder; freshness window; an independent Python implementation checks the test vectors. |
 | **Quorum reads** | Chain reads need agreement from every answering node, never a majority. `callQuorum` accepts a result only when independent providers return the same bytes. |
-| **Pay per call** | Cumulative EIP-712 vouchers, session keys, an escrow with a withdrawal cooldown, zero protocol fee, optional voluntary contribution chosen by each provider. |
+| **Pay per call** | Cumulative EIP-712 vouchers, session keys, an escrow with a withdrawal cooldown, no mandatory protocol fee and no operator fee switch; a default 1% maintenance contribution from the provider's share that each provider can set to 0 (or up to 50%). Not deployed yet. |
 | **Private channels** | TAP-26: mutual authentication, forward secrecy, per-direction keys, replay and reorder protection; relay or on-chain transport. |
 | **Private groups** | TAP-27: up to 32 containers, owner-managed epochs, encrypted roster, per-sender signatures. |
 | **On-chain transport that does not lose messages** | The ChannelBus reader holds rather than skips: it works with public nodes' history limits, result caps and failures, and warns about anything it cannot read. Tested with thousands of randomised adversarial runs. |
@@ -221,7 +225,7 @@ the container's site. The [holder console](https://tapeapi.fun/console/) does al
 | [TAP-1](spec/TAP-1.md) | TAP process | Types, statuses, numbering and required sections. |
 | [TAP-20](spec/TAP-20.md) | Service identity and manifest | A service is a circuit; `.well-known/tapeapi.json`; the holder's EIP-712 delegation; the resolution algorithm. |
 | [TAP-21](spec/TAP-21.md) | Signed response envelope | `POST {live}/{method}`; the `TAPI-1/resp/v2` digest; canonical JSON; error codes. |
-| [TAP-22](spec/TAP-22.md) | Metered payment | Cumulative vouchers, per-provider escrow channels, zero protocol fee. |
+| [TAP-22](spec/TAP-22.md) | Metered payment | Cumulative vouchers, per-provider escrow channels, no mandatory protocol fee (default 1% contribution, provider can set 0). |
 | [TAP-23](spec/TAP-23.md) | Attested Read | Signed, block-pinned reads of other chains, agreed by independent providers. |
 | [TAP-24](spec/TAP-24.md) | Intent RFQ | Signed quotes for bridge-free cross-chain swaps (frozen until staking exists). |
 | [TAP-25](spec/TAP-25.md) | Circuit-Verified Methods | Methods bound to a circuit whose on-chain `eval()` settles disputes. |

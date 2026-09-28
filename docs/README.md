@@ -23,7 +23,7 @@
 | [`spec/TAP-1.md`](../spec/TAP-1.md) | TAP 流程：类型、状态、编号、必需章节。The TAP process. |
 | [`spec/TAP-20.md`](../spec/TAP-20.md) | **实现者的入口。** 服务身份与清单：服务 = 电路，`.well-known/tapeapi.json`，持有人 EIP-712 委托，解析算法。Service identity and manifest. |
 | [`spec/TAP-21.md`](../spec/TAP-21.md) | 签名响应信封、规范 JSON、错误码。Signed response envelope, canonical JSON, error codes. |
-| [`spec/TAP-22.md`](../spec/TAP-22.md) | 计量支付：累计凭证、托管合约、零协议费 + 自愿贡献。Metered payment. |
+| [`spec/TAP-22.md`](../spec/TAP-22.md) | 计量支付：累计凭证、托管合约、无强制协议费（默认 1% 维护贡献，提供者可设为 0）。Metered payment. |
 | [`spec/TAP-23.md`](../spec/TAP-23.md) | 块锚定的跨链读取。Attested Read. |
 | [`spec/TAP-24.md`](../spec/TAP-24.md) | 无桥跨链兑换（冻结）。Intent RFQ (frozen). |
 | [`spec/TAP-25.md`](../spec/TAP-25.md) | 链上 `eval()` 裁决的方法。Circuit-Verified Methods. |
@@ -36,7 +36,7 @@
 | 文件 | 是什么 / What |
 |---|---|
 | [`DESIGN.md`](../DESIGN.md) | 设计契约：外部合约地址、身份模型、信封、凭证、合约接口。The design contract. |
-| [`docs/FEES.md`](FEES.md) | 费用模型：零协议费 + 提供者自设自愿贡献。Fees. |
+| [`docs/FEES.md`](FEES.md) | 费用模型：无强制协议费；默认 1% 维护贡献，提供者可设为 0；运营方没有费率开关。Fees. |
 | [`BUSINESS.md`](../BUSINESS.md) | 收入模型与我们在协议里的位置。How TapeAPI makes money. |
 | [`docs/CROSSCHAIN.md`](CROSSCHAIN.md) | 跨链、流动性、可验证计算；TAP-23/24/25 的动机。Cross-chain rationale. |
 | [`docs/CHEAPEST-CIRCUIT.md`](CHEAPEST-CIRCUIT.md) | 最便宜拿到"电路 + 已激活容器"的实测路径。Getting a circuit cheaply. |

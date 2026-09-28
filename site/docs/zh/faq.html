@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>常见问题与排障 · TapeAPI 手册</title>
-<meta name="description" content="运行免费服务需要部署合约吗？ 不需要。身份、清单和委托都使用 TapeOut 已部署的合约（DeWebHub、SiteRegistry、处理器工厂）。只有付费服务需要托管合约，链上通道需要 ChannelBus。 TapeAPI 收费吗？ 不收。没有协议费，也没有运营方的费用开关。每个提供者可以自行选择向维护金库作一笔">
+<meta name="description" content="运行免费服务需要部署合约吗？ 不需要。身份、清单和委托都使用 TapeOut 已部署的合约（DeWebHub、SiteRegistry、处理器工厂）。只有付费服务需要托管合约，链上通道需要 ChannelBus。 TapeAPI 收费吗？ 今天不收：所有线上方法都免费，付费调用用的托管合约还没有部署（要先通过独立审计）">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../docs.css?v=07114d1e64">
 <link rel="alternate" hreflang="en" href="../en/faq.html">
@@ -25,7 +25,7 @@
 <h1 id="常见问题与排障">常见问题与排障</h1>
 <h2 id="一般问题"><a class="anchor" href="#一般问题" aria-hidden="true">#</a>一般问题</h2>
 <p><strong>运行免费服务需要部署合约吗？</strong> 不需要。身份、清单和委托都使用 TapeOut 已部署的合约（DeWebHub、SiteRegistry、处理器工厂）。只有付费服务需要托管合约，链上通道需要 ChannelBus。</p>
-<p><strong>TapeAPI 收费吗？</strong> 不收。没有协议费，也没有运营方的费用开关。每个提供者可以自行选择向维护金库作一笔自愿贡献（默认为 0）；无论是否贡献，调用的效果都一样。见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/FEES.md" rel="noopener"><code>docs/FEES.md</code></a>。</p>
+<p><strong>TapeAPI 收费吗？</strong> 今天不收：所有线上方法都免费，付费调用用的托管合约还没有部署（要先通过独立审计）。没有强制协议费，也没有运营方的费用开关。付费调用通过 TapeAPI 托管合约结算时，默认从提供者的所得中划出 1% 作为维护贡献，消费者的价格不变。任何提供者都可以为自己的服务把它设为 0（或最高 50%），无论设为多少，调用的效果都一样。见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/FEES.md" rel="noopener"><code>docs/FEES.md</code></a>。</p>
 <p><strong>如果我出售或转让电路会怎样？</strong> 服务随之转移：容器、其站点以及签署委托的权利。旧持有者的委托不再被接受，因为客户端会对照当前持有者检查委托。</p>
 <p><strong>用哪条链？</strong> BNB Smart Chain（chainId 56），也就是 TapeOut 所在的链。</p>
 <h2 id="调用服务"><a class="anchor" href="#调用服务" aria-hidden="true">#</a>调用服务</h2>

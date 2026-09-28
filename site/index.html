@@ -190,8 +190,8 @@ console.log(result.bnbUsd, verified)            <span class="c">// <span lang="z
         <li lang="en"><b>Signed answers</b><span class="d">The digest covers method and params, so an error cannot be relabelled</span></li>
         <li lang="zh"><b>一次调用零 gas</b><span class="d">累计凭证进只属于该 API 的通道，多次调用一笔结算</span></li>
         <li lang="en"><b>No gas per call</b><span class="d">Cumulative vouchers into a channel that belongs to that API alone; many calls settle at once</span></li>
-        <li lang="zh"><b>零协议费</b><span class="d">贡献由提供者自设，默认 0</span></li>
-        <li lang="en"><b>Zero protocol fee</b><span class="d">Contribution is provider-set, default zero</span></li>
+        <li lang="zh"><b>无强制协议费</b><span class="d">默认 1% 维护贡献，提供者可设为 0</span></li>
+        <li lang="en"><b>No mandatory protocol fee</b><span class="d">Default 1% maintenance contribution; any provider can set it to 0</span></li>
         <li lang="zh"><b>多方一致</b><span class="d">任意两份已验证答案不一致即拒绝，永不多数决</span></li>
         <li lang="en"><b>Quorum</b><span class="d">Any disagreement rejects; never a majority vote</span></li>
       </ul>
@@ -296,7 +296,7 @@ console.log(result.bnbUsd, verified)            <span class="c">// <span lang="z
           <th><span lang="zh">依据</span><span lang="en">Source</span></th>
         </tr></thead>
         <tbody>
-          <tr><td class="sym">MAX_CONTRIBUTION</td><td class="dim"><span lang="zh">自愿贡献比例上限</span><span lang="en">Voluntary contribution cap</span></td><td class="val">5000 <span class="u">bps</span></td><td class="sym">TAP-22</td></tr>
+          <tr><td class="sym">MAX_CONTRIBUTION</td><td class="dim"><span lang="zh">维护贡献比例上限</span><span lang="en">Maintenance contribution cap</span></td><td class="val">5000 <span class="u">bps</span></td><td class="sym">TAP-22</td></tr>
           <tr><td class="sym">MAX_PAYLOAD</td><td class="dim"><span lang="zh">TapeSend 单条消息</span><span lang="en">TapeSend message</span></td><td class="val">16 000 <span class="u">B</span></td><td class="sym">TAP-10</td></tr>
           <tr><td class="sym">CHUNK</td><td class="dim"><span lang="zh">DeWEB 单块写入</span><span lang="en">DeWEB chunk write</span></td><td class="val">24 000 <span class="u">B</span></td><td class="sym">SPEC B.5</td></tr>
           <tr><td class="sym">FILE_MAX</td><td class="dim"><span lang="zh">DeWEB 单文件</span><span lang="en">DeWEB single file</span></td><td class="val">8.4 <span class="u">MB</span></td><td class="sym">SPEC B.5</td></tr>
@@ -427,15 +427,15 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
         </tr></thead>
         <tbody>
           <tr><td class="dim"><span lang="zh">解析身份、读清单、验签</span><span lang="en">Resolve, read manifest, verify</span></td><td class="dim"><span lang="zh">无</span><span lang="en">Nobody</span></td><td class="val yes">0</td></tr>
-          <tr><td class="dim"><span lang="zh">TapeAPI 协议费</span><span lang="en">TapeAPI protocol fee</span></td><td class="dim"><span lang="zh">无</span><span lang="en">Nobody</span></td><td class="val yes">0</td></tr>
-          <tr><td class="dim"><span lang="zh">自愿维护贡献</span><span lang="en">Voluntary maintenance contribution</span></td><td class="dim"><span lang="zh">提供者自设</span><span lang="en">Provider sets it</span></td><td class="val"><span lang="zh">默认 0，建议 1%</span><span lang="en">Default 0, suggested 1%</span></td></tr>
+          <tr><td class="dim"><span lang="zh">TapeAPI 强制协议费</span><span lang="en">Mandatory TapeAPI protocol fee</span></td><td class="dim"><span lang="zh">无</span><span lang="en">Nobody</span></td><td class="val yes">0</td></tr>
+          <tr><td class="dim"><span lang="zh">维护贡献（从提供者所得中划出）</span><span lang="en">Maintenance contribution (out of the provider's share)</span></td><td class="dim"><span lang="zh">提供者自设</span><span lang="en">Provider sets it</span></td><td class="val"><span lang="zh">默认 1%，可设为 0</span><span lang="en">Default 1%, can be 0</span></td></tr>
           <tr><td class="dim"><span lang="zh">服务调用价</span><span lang="en">Service call price</span></td><td class="dim"><span lang="zh">提供者</span><span lang="en">Provider</span></td><td class="val"><span lang="zh">自定</span><span lang="en">Provider's choice</span></td></tr>
           <tr><td class="dim"><span lang="zh">开通一个容器</span><span lang="en">Opening a container</span></td><td class="dim">TapeOut</td><td class="val">0.012 <span class="u">BNB</span></td></tr>
         </tbody>
       </table>
     </div>
-    <p class="note" lang="zh">合约里<b>没有任何我们能调的费率开关</b>。贡献由提供者自己设、默认为 0、不给功能完全一样。TAP-22 明写其它托管部署同样合规。</p>
-    <p class="note" lang="en">There is <b>no operator fee switch anywhere in the contracts</b>. The contribution is provider-set, defaults to zero, and refusing it changes nothing. TAP-22 states that alternative escrow deployments are equally conforming.</p>
+    <p class="note" lang="zh">合约里<b>没有任何我们能调的费率开关</b>，也不能暂停。1% 的默认值是合约常量，消费者的价格不变；每个提供者都可以把它设为 0（或最高 50%），设为 0 功能完全一样。TAP-22 明写其它托管部署同样合规。<b>今天没有任何调用收费</b>：托管合约尚未部署，要先通过独立审计。</p>
+    <p class="note" lang="en">There is <b>no operator fee switch anywhere in the contracts</b>, and no pause. The 1% default is a contract constant and the consumer's price does not change; any provider can set it to 0 (or up to 50%), and a provider at 0 gets exactly the same functionality. TAP-22 states that alternative escrow deployments are equally conforming. <b>No call is charged today</b>: the escrow is not deployed and waits for an independent audit.</p>
   </div>
 </section>
 

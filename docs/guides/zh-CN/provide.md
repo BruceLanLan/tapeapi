@@ -129,7 +129,12 @@ const svc = await createTapeAPI({ rpcUrls: [/* ... */], quorum: 2 }).resolve('0x
 [`examples/cloudflare-worker/`](../../../examples/cloudflare-worker/)），否则同一张凭证可能被服务两次。结算者会把凭证
 分批提交给托管合约。
 
-> 托管合约尚未在主网上部署。付费方法目前可以针对示例运行。
+结算时，维护贡献从你的所得中划出，不会加到消费者的价格上。默认是 1%（100 bps，托管合约里的常量）。你可以用电路持有者
+的钱包发送 `api.tx.setContribution({ circuits, tokenId, bps })`，为自己的服务把它设为 0（关闭），或最高 50% 的任意值。
+设为 0 的服务得到完全相同的对待。见 [`docs/FEES.md`](../../FEES.md)。
+
+> 托管合约尚未在主网上部署。付费方法目前可以针对示例运行，不收取任何费用。仓库里的参考托管合约仍从 0 开始；默认 1%
+> 随送审的那一版一起上线。
 
 ## 6. 运维
 

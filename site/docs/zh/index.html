@@ -25,7 +25,7 @@
 <h1 id="简介">简介</h1>
 <p><strong>Tape Out 一个电路，它的容器就是你的 API。</strong> TapeAPI 是 BNB Chain 上 <a href="https://tapeout.net" rel="noopener">TapeOut</a> 生态的服务与通信层： DeWEB 是网站，TapeSend 是消息，TapeAPI 是服务。</p>
 <p>今天的 API 等于一个网址、一个账号，再加上信任。TapeAPI 用链上身份取代账号，用任何人都能核对的签名取代信任：</p>
-<ul><li><strong>服务就是电路。</strong> 谁持有电路 NFT，谁就拥有这个服务。转让 NFT，服务随之转移。</li><li><strong>每个回答都有签名，并与你的请求绑定。</strong> 客户端用电路持有者在链上授权的密钥核对签名。被篡改、被重放或没有签名的回答一律报错，绝不会当作结果返回。</li><li><strong>无需注册，没有 API 密钥。</strong> 免费方法直接调用。付费方法使用链下凭证，批量在链上结算，协议本身零手续费。</li><li><strong>容器之间可以私密通信。</strong> 容器之间的端到端加密通道与群聊，由中继或链本身承载。</li></ul>
+<ul><li><strong>服务就是电路。</strong> 谁持有电路 NFT，谁就拥有这个服务。转让 NFT，服务随之转移。</li><li><strong>每个回答都有签名，并与你的请求绑定。</strong> 客户端用电路持有者在链上授权的密钥核对签名。被篡改、被重放或没有签名的回答一律报错，绝不会当作结果返回。</li><li><strong>无需注册，没有 API 密钥。</strong> 免费方法直接调用。付费方法使用链下凭证，批量在链上结算。没有强制协议费：默认从提供者的所得中划出 1% 作为维护贡献，任何提供者都可以把它设为 0。今天没有任何调用收费，托管合约还没有部署。</li><li><strong>容器之间可以私密通信。</strong> 容器之间的端到端加密通道与群聊，由中继或链本身承载。</li></ul>
 <h2 id="工作原理"><a class="anchor" href="#工作原理" aria-hidden="true">#</a>工作原理</h2>
 <ol><li><strong>身份。</strong> 提供者在 TapeOut 上 Tape Out 一个电路。电路的容器（一个 ERC-6551 账户）就是服务的地址。</li><li><strong>清单。</strong> 提供者把 <code>.well-known/tapeapi.json</code> 写进容器的站点：端点、方法、价格、签名密钥，以及持有者对该密钥的 EIP-712 委托。</li><li><strong>解析。</strong> 客户端通过多个必须一致的 RPC 节点从链上读取清单，核对其哈希，并对照电路当前的持有者核对委托。</li><li><strong>调用。</strong> 客户端发出请求；服务用被委托的密钥签名回答，签名与这次请求绑定。SDK 只在核对通过后才返回结果。</li></ol>
 <h2 id="选择你的路径"><a class="anchor" href="#选择你的路径" aria-hidden="true">#</a>选择你的路径</h2>

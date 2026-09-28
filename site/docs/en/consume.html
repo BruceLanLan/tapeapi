@@ -98,6 +98,7 @@ const payer = api.payer({
 })
 const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code></pre></div>
 <p>To avoid a wallet prompt per call, authorise a session key once (<code>api.tx.authorizeSession(svc, sessionAddress, expires)</code>) and pass <code>{ consumer, sessionKey, sessionExpiry }</code> instead. Funding the channel takes two transactions the SDK builds for your wallet: <code>api.tx.approve({ amount })</code> then <code>api.tx.fund(svc, amount)</code>.</p>
+<p>You pay the provider's listed price and nothing more: TapeAPI adds no fee on the consumer side. The maintenance contribution, if the provider keeps it, comes out of the provider's share (<a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/FEES.md" rel="noopener"><code>docs/FEES.md</code></a>). The spec settles in BEM; the next escrow version plans BEM, BNB (wrapped as WBNB), USDT, USDC, ETH and USD1 on BNB Smart Chain.</p>
 <blockquote><p>The escrow contract is not deployed yet, so paid services are not live on mainnet. Everything above works against the examples (<code>FREE_ALL=1</code> to skip payment locally).</p></blockquote>
 <p>The SDK advances its local meter only after a verified answer and resynchronises automatically if the provider's count differs. Pass <code>store: { get, set }</code> to keep the meter across restarts.</p>
 <h2 id="6-use-it-in-a-browser-or-a-deweb-site"><a class="anchor" href="#6-use-it-in-a-browser-or-a-deweb-site" aria-hidden="true">#</a>6. Use it in a browser or a DeWEB site</h2>
