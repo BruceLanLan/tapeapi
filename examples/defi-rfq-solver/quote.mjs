@@ -63,11 +63,11 @@ const UINT_DEC_RE = /^[1-9][0-9]*$/
  * spec/TAP-24.md §6. A mismatch throws: better to refuse to start than to sign quotes an escrow can never verify.
  */
 export function selfCheck() {
-  const typehash = toHex(sig.keccak256(QUOTE_TYPE_STRING))
+  const typehash = toHex(abi.keccak256(QUOTE_TYPE_STRING))
   if (typehash !== QUOTE_TYPEHASH) {
     throw new Error(`QUOTE_TYPEHASH self-check failed: keccak256(typeString) = ${typehash}, spec/TAP-24.md §6 says ${QUOTE_TYPEHASH}`)
   }
-  const nameHash = toHex(sig.keccak256(ESCROW_NAME))
+  const nameHash = toHex(abi.keccak256(ESCROW_NAME))
   if (nameHash !== ESCROW_NAME_HASH) {
     throw new Error(`keccak256("${ESCROW_NAME}") self-check failed: got ${nameHash}, spec/TAP-24.md §6 says ${ESCROW_NAME_HASH}`)
   }
@@ -82,7 +82,7 @@ export function quoteDomain(fromChain, escrow) {
 }
 /** `keccak256(abi.encode(QUOTE_TYPEHASH, quoteId, …, solver))` —— 返回 32 字节 / returns 32 bytes. */
 export function quoteStructHash(q) {
-  return sig.keccak256(encodeParams(QUOTE_ENCODE_TYPES, [
+  return abi.keccak256(encodeParams(QUOTE_ENCODE_TYPES, [
     QUOTE_TYPEHASH, q.quoteId, q.fromChain, q.fromToken, q.amountIn,
     q.toChain, q.toToken, q.amountOut, q.recipient, q.expires, q.solver,
   ]))

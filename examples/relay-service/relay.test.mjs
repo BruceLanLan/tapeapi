@@ -4,7 +4,8 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createProvider } from '../../server/src/index.js'
-import { createTapeAPI, channel, parseUnits, MANIFEST_KEY } from '../../sdk/src/index.js'
+import { createTapeAPI, parseUnits, MANIFEST_KEY } from '../../sdk/src/index.js'
+import * as channel from '../../sdk/src/channel.js'   // the implementation module (svc, toBase64) / 实现模块
 import { privateKeyToAddress, signDigest, delegationDigest } from '../../sdk/src/sig.js'
 import { createFakeChain, ADDR } from '../../sdk/test/helpers/fake-chain.mjs'
 import { createRelayCore, relayMethods, relayManifestMethods } from './relay-core.mjs'
@@ -37,7 +38,7 @@ async function startRelay(priceBEM) {
   chain.writeFile(ADDR.container, MANIFEST_KEY, JSON.stringify({ ...manifest, endpoints: { live: [url], async: false } }))
   // These tests check what arrives, not how fast: a generous timeout keeps a loaded machine from failing a 1 MiB answer
   // 这些测试检查送达什么而不是多快：宽松的超时让负载高的机器不会让 1 MiB 的回答超时失败
-  api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true, fetch: chain.fetchWith(), timeoutMs: 30_000 })
+  api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true, fetch: chain.fetchWith(), rpcTimeoutMs: 30_000 })
   svc = await api.resolve(ADDR.container)
 }
 

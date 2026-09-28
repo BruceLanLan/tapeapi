@@ -18,7 +18,11 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha'
 import { hkdf } from '@noble/hashes/hkdf'
 import { sha256 } from '@noble/hashes/sha256'
 import { randomBytes } from '@noble/hashes/utils'
-import { createTapeAPI, channel, group as G, sig, TapeAPIError, CHANNEL_KEYS_KEY, canonicalJSON } from '../src/index.js'
+import * as channel from '../src/channel.js'   // the implementation module (fromHex) / 实现模块
+import { createTapeAPI, sig, TapeAPIError, CHANNEL_KEYS_KEY, canonicalJSON } from '../src/index.js'
+// The implementation module: buildEpoch and senderKey are not in the public `group` namespace (review RC-7).
+// 实现模块：buildEpoch 与 senderKey 不在公开的 group 命名空间里。
+import * as G from '../src/group.js'
 import { createFakeChain, ADDR } from './helpers/fake-chain.mjs'
 
 const RPC = ['http://rpc1', 'http://rpc2']

@@ -49,22 +49,23 @@ before(async () => {
 })
 after(async () => { await provider.close() })
 
-test('signerKey must match manifest.signer; handlers must exist as OWN properties; http needs dev/allowHttp', () => {
+test('signerKey must match manifest.signer; handlers must exist as OWN properties; http needs dev/allowHttp (FIXED G1-S2: never the dev field of the manifest)', () => {
   assert.throws(() => mk({ signerKey: CONSUMER_KEY }), (e) => e.code === 'BAD_KEY')
-  assert.throws(() => mk({ methods: { blockNumber() {}, circuitHolder() {} } }), (e) => e.code === 'METHOD_NOT_FOUND')
+  assert.throws(() => mk({ methods: { blockNumber() {}, circuitHolder() {} } }), (e) => e.code === 'INVALID_ARGUMENT')
   // L-20 / M-08: prototype keys are not valid method names; other Object.prototype members are not satisfied by the prototype
   // 原型键不是合法方法名；其它 Object.prototype 成员也不算实现
   const m2 = { ...manifest, methods: [...manifest.methods, { name: 'constructor', priceBEM: '0', params: {}, returns: {} }] }
   assert.throws(() => mk({ manifest: m2 }), (e) => e.code === 'MANIFEST_INVALID' && /prototype key/.test(e.message))
   for (const name of ['toString', 'hasOwnProperty', 'valueOf']) {
     const m3 = { ...manifest, methods: [...manifest.methods, { name, priceBEM: '0', params: {}, returns: {} }] }
-    assert.throws(() => mk({ manifest: m3 }), (e) => e.code === 'METHOD_NOT_FOUND' && e.message.includes(name), name)
+    assert.throws(() => mk({ manifest: m3 }), (e) => e.code === 'INVALID_ARGUMENT' && e.message.includes(name), name)
   }
   // M-10: an http endpoint on a non-dev manifest is refused unless allowHttp / 非 dev 清单的 http 端点需显式允许
   assert.throws(() => mk({ allowHttp: false }), (e) => e.code === 'MANIFEST_INVALID' && /https/.test(e.message))
-  assert.ok(mk({ allowHttp: false, manifest: { ...manifest, dev: true } }))
+  // 1.0: the manifest's own `dev` field switches nothing (it is published data) / 清单自己的 dev 字段不再起作用
+  assert.throws(() => mk({ allowHttp: false, manifest: { ...manifest, dev: true } }), (e) => e.code === 'MANIFEST_INVALID' && /https/.test(e.message))
   assert.ok(mk({ allowHttp: false, dev: true }))
-  assert.throws(() => mk({ rpcUrls: ['http://rpc1'], quorum: 2, fetch: chain.fetch }), (e) => e.code === 'RPC_UNAVAILABLE') // M-11
+  assert.throws(() => mk({ rpcUrls: ['http://rpc1'], quorum: 2, fetch: chain.fetch }), (e) => e.code === 'INVALID_ARGUMENT') // M-11
   assert.equal(mk({ rpcUrls: ['http://rpc1'], quorum: 2, fetch: chain.fetch, allowSingleNode: true }).rpc.quorum, 1)
 })
 test('GET manifest, minimal health and CORS preflight', async () => {
@@ -425,11 +426,12 @@ test('a manifest with priced methods and a zero-address escrow is refused at val
   assert.ok(createProvider({ minVoucherLifeS: 0, manifest: free, signerKey: SIGNER_KEY, allowHttp: true, methods: { blockNumber() {}, circuitHolder() {}, leak() {} } }))
 })
 
-test('a dev manifest may boot with a zero escrow, and its paid calls are refused with INTERNAL and a logged reason', async () => {
+test('a dev provider may boot with a zero escrow, and its paid calls are refused with INTERNAL and a logged reason (FIXED G1-S2: dev is opts.dev, allowHttp is not enough)', async () => {
   const zero = '0x' + '00'.repeat(20)
   const logs = []
   const dev = { ...manifest, dev: true, payment: { escrow: zero, unit: 'BEM', decimals: 8 } }
-  const p = createProvider({ minVoucherLifeS: 0, manifest: dev, signerKey: SIGNER_KEY, allowHttp: true, log: (...a) => logs.push(a.join(' ')), methods: { blockNumber() { return 1 }, circuitHolder() {}, leak() {} } })
+  assert.throws(() => createProvider({ minVoucherLifeS: 0, manifest: dev, signerKey: SIGNER_KEY, allowHttp: true, methods: { blockNumber() {}, circuitHolder() {}, leak() {} } }), (e) => e.code === 'MANIFEST_INVALID' && /real escrow/.test(e.message), 'allowHttp and the manifest field no longer relax payments')
+  const p = createProvider({ minVoucherLifeS: 0, manifest: dev, signerKey: SIGNER_KEY, dev: true, log: (...a) => logs.push(a.join(' ')), methods: { blockNumber() { return 1 }, circuitHolder() {}, leak() {} } })
   assert.ok(logs.some((l) => /no escrow/.test(l)), 'the operator is warned at boot')
   const out = await p.invoke({ id: 'z', method: 'circuitHolder', params: {}, voucher: { consumer, provider: ADDR.container, cumulative: '1', expires: 1900000000, sig: '0x' + '11'.repeat(65) } })
   assert.equal(out.env.ok, false)
@@ -442,9 +444,9 @@ test('a dev manifest may boot with a zero escrow, and its paid calls are refused
 test('opts.escrow may only restate the manifest escrow, never replace it or zero it (runtime audit I-03)', () => {
   const methods = { blockNumber() {}, circuitHolder() {}, leak() {} }
   assert.throws(() => createProvider({ minVoucherLifeS: 0, manifest, signerKey: SIGNER_KEY, allowHttp: true, escrow: '0x' + '22'.repeat(20), methods }),
-    (e) => e.code === 'MANIFEST_INVALID' && /differs from manifest/.test(e.message))
+    (e) => e.code === 'INVALID_ARGUMENT' && /differs from manifest/.test(e.message))
   assert.throws(() => createProvider({ minVoucherLifeS: 0, manifest, signerKey: SIGNER_KEY, allowHttp: true, escrow: 'nope', methods }),
-    (e) => e.code === 'MANIFEST_INVALID')
+    (e) => e.code === 'INVALID_ARGUMENT')
   assert.ok(createProvider({ minVoucherLifeS: 0, manifest, signerKey: SIGNER_KEY, allowHttp: true, escrow: manifest.payment.escrow.toLowerCase(), methods }))
 })
 

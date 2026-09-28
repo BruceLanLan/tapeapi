@@ -36,7 +36,7 @@ const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result })
  * @returns {{ handle(message: any): Promise<object|null> }}  null for a notification (nothing to send) / 通知返回 null
  */
 export function createMcpServer({ info, instructions, listTools, callTool }) {
-  if (!info?.name || !info?.version) throw new TapeAPIError('BAD_REQUEST', 'info.name and info.version are required')
+  if (!info?.name || !info?.version) throw new TapeAPIError('INVALID_ARGUMENT', 'info.name and info.version are required')
   async function handle(msg) {
     if (!isObj(msg) || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') {
       return rpcError(isObj(msg) ? msg.id : null, JSONRPC.INVALID_REQUEST, 'not a JSON-RPC 2.0 request')

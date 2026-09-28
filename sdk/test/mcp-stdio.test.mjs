@@ -33,7 +33,7 @@ const manifestFor = (container, signerKey) => ({
 })
 async function startProvider(manifest, signerKey) {
   const provider = createProvider({
-    manifest, signerKey, allowHttp: true, rateLimit: false,
+    manifest, signerKey, dev: true, rateLimit: false,
     methods: { bnbUsd: async () => ({ bnbUsd: '600.5' }), echo: async (p) => { if (p.text === 'boom') { const e = new Error('no boom here'); e.code = 'BAD_REQUEST'; throw e } return { echo: p } }, premium: async () => ({}) },
     log: () => {},
   })

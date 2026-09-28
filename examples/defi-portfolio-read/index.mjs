@@ -92,7 +92,7 @@ async function balancesAt(c, chainId, address, tokens, pinned) {
 }
 
 const provider = createProvider({
-  manifest, signerKey: SIGNER_KEY, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID, allowSingleNode: !PROD, log, store,
+  manifest, signerKey: SIGNER_KEY, dev: !PROD, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID, allowSingleNode: !PROD, log, store,
   methods: {
     // [quorum] 一条链上的原生币 + ERC-20 余额 / native + ERC-20 balances on one chain
     balances: async ({ chainId, address, tokens, block } = {}) => {

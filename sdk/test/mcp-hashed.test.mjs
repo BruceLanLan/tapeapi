@@ -8,7 +8,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { receiptOf, hashReceipt, verifyLink, toolResultOf, fromBase64Url, VERIFY_BASE } from '../src/mcp.js'
-import { signResponse, responseDigest, responseDigestFromHashes, responseRequestHash, responseBodyHash, recoverResponseSignerFromHashes, recoverResponseSigner, privateKeyToAddress, bytesToHex } from '../src/sig.js'
+import { signResponse, responseDigest, responseDigestFromHashes, responseRequestHash, responseBodyHash, recoverResponseSignerFromHashes, recoverResponseSigner, privateKeyToAddress } from '../src/sig.js'
+import { bytesToHex } from '../src/abi.js'
 
 const KEY = '0x' + '42'.repeat(32)
 const SIGNER = privateKeyToAddress(KEY)

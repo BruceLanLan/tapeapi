@@ -16,6 +16,7 @@ The same guides, with search, are at [tapeapi.fun/docs](https://tapeapi.fun/docs
 | [MCP](mcp.md) | Anyone using Claude, Cursor or another MCP client, and MCP server authors | Add the public service as MCP tools by URL, run the local command that verifies every answer and pins the tool list, or tape out your own MCP server. |
 | [AI agents](agents.md) | Anyone giving tools to an in-browser agent | Expose a service as WebMCP tools whose answers are always signature-checked. |
 | [FAQ and troubleshooting](faq.md) | Everyone | Error codes, common mistakes, and what the reader's warnings mean. |
+| [Upgrading to 1.0](upgrade-1.0.md) | Everyone with 0.x code | See what 1.0 promises (Stable, Experimental, Internal), what changed from 0.x and what to write instead, and the full error-code table. |
 
 Before you start: Node.js 20 or later, and
 

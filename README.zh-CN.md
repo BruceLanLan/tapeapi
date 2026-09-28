@@ -2,11 +2,12 @@
 
 # TapeAPI
 
-**Tape Out 一个电路，它的容器就是你的 API。** 每个回答都由它签名，任何人都能对照链上数据验证，容器之间还能通过端到端
-加密的通道互相通信。
+**每次 AI 调用，都附一张签名回执。** 在你的 OpenAI 或 Anthropic 兼容接口前面加一个旁路，每个回答都会带上一张任何人都能核验的
+回执：谁回答的、回答的是哪个请求、回了哪些字节、声称用了多少 token、收多少钱。你的用户照旧用官方 SDK，只改 base URL，
+不改代码。
 
-TapeAPI 是 BNB Chain 上 [TapeOut](https://tapeout.net) 生态的服务与通信层。在这个生态中，DeWEB 是网站，TapeSend 是
-消息，**TapeAPI 是服务**。
+TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上身份和签名，也用在 MCP 工具、容器之间端到端加密的通道与
+群聊上，支持 BNB Chain、X Layer 和 Base。
 
 [![CI](https://github.com/BruceLanLan/tapeapi/actions/workflows/ci.yml/badge.svg)](https://github.com/BruceLanLan/tapeapi/actions/workflows/ci.yml)
 [![Code: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
@@ -15,255 +16,181 @@ TapeAPI 是 BNB Chain 上 [TapeOut](https://tapeout.net) 生态的服务与通�
 [![Playground](https://img.shields.io/badge/try-playground-orange.svg)](https://tapeapi.fun/playground/)
 [![Status](https://img.shields.io/badge/status-tapeapi.fun%2Fstatus-green.svg)](https://tapeapi.fun/status/)
 
-[English](README.md) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [手册](https://tapeapi.fun/docs/zh/) · [网站](https://tapeapi.fun) · [更新日志](CHANGELOG.md) · [路线图](docs/ROADMAP.md) · [参与贡献](CONTRIBUTING.md) · [行为准则](CODE_OF_CONDUCT.md)
+[English](README.md) · [网站](https://tapeapi.fun) · [手册](https://tapeapi.fun/docs/zh/) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [更新日志](CHANGELOG.md) · [路线图](docs/ROADMAP.md)
 
-> **状态：pre-alpha（v0.8.0）。** 免费层不需要我们的任何合约，运行在 TapeOut 已部署的合约之上。
-> 我们自己的合约（付费调用托管合约、服务目录、ChannelBus）**未经第三方审计**；ChannelBus 已部署（地址见下文）。
-> 接口仍可能变化。下文的 TAP 编号是向 TapeKit 维护者**提议**的编号，尚未正式分配。
+> **状态：预发布（v1.0.0-rc.1）。** 今天上线的一切都免费。1.0 之前接口仍可能变化。付费通道（TAP-22）是实验性的，没有部署。
+> 所有代码和合约都没有经过第三方审计。
 
-## 30 秒试用线上服务
+## 从这里开始
 
-一个免费的公共服务运行在 `https://api.tapeapi.fun`，TapeOut 名称为 `11.1013.tape`。向它询问 BNB 价格：
+| 你是 | 头 5 分钟做什么 | 指南 |
+|---|---|---|
+| **AI 服务方或中转站**（new-api、网关、自建模型） | 在 [`examples/new-api-sidecar`](examples/new-api-sidecar/) 里 `docker compose up`，到[持有人操作台](https://tapeapi.fun/console/)发布价目表，把用户的 base URL 指向旁路 | [AI 服务方指南](docs/guides/zh-CN/ai-providers.md) |
+| **MCP 服务器作者** | 在你的服务器前面跑[签名代理](examples/mcp-proxy/)，再用操作台发布清单 | [Tape out 你的 MCP 服务器](docs/guides/zh-CN/mcp.md#tape-out-你自己的-mcp-服务器) |
+| **应用开发者** | 跑一遍下面的示例；用 `createVerifyingFetch` 核验 AI 回执；通道和群聊从 [`examples/group-chat`](examples/group-chat/) 开始 | [调用服务](docs/guides/zh-CN/consume.md) · [私密通道](docs/guides/zh-CN/channels.md) · [群聊](docs/guides/zh-CN/groups.md) |
+| **TapeOut 电路持有人** | 开通电路的容器，然后在操作台里生成服务密钥、签委托、发布清单 | [运行服务](docs/guides/zh-CN/provide.md) |
+| **Claude、Cursor 等 MCP 客户端的用户** | 把 `https://api.tapeapi.fun/mcp` 添加为连接器 | [MCP 指南](docs/guides/zh-CN/mcp.md) |
+
+## 试一试
+
+**一个带签名的回答。** 公共服务 `11.1013.tape` 提供 8 个免费的读取方法，每个都钉在一个 BNB Chain 区块上：
 
 ```bash
 curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{"id":"1","params":{}}'
 ```
 
-curl 会显示签名信封（`result`、`container`、`ts`、`block`、`sig`），但不会检查它。SDK 会检查。
-这些包尚未发布到 npm，所以先准备一次仓库（Node.js 20 或更高版本）：
+curl 只显示签名信封，不做任何核对；核对交给 SDK。SDK 还没发到 npm，从 GitHub Release 安装（Node.js 20 或以上）：
 
 ```bash
-git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm install
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz
 ```
-
-或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：
-
-```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz
-```
-
-把下面的代码保存为 `try.mjs`，**放在 `tapeapi` 目录之内**（`@tapeapi/sdk` 通过仓库的 workspace 解析；保存在其它任何位置
-的脚本都会以 `ERR_MODULE_NOT_FOUND` 失败），然后运行 `node try.mjs`：
 
 ```js
-import { createTapeAPI } from '@tapeapi/sdk'
+// try.mjs：node try.mjs
+import { createTapeAPI, rpcUrlsFor } from '@tapeapi/sdk'
 
-const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
-  quorum: 2,
+const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })   // 3 家不同运营方的节点，2 家一致才采信
+const service = await api.resolve('11.1013.tape')         // 名字、容器、链上清单、持有人委托
+const { result, verified } = await api.call(service, 'bnbUsd', {})
+console.log(result.bnbUsd, verified)                      // 验签通过才为 true
+```
+
+**AI 回执。** 把 `createVerifyingFetch` 接进官方 OpenAI SDK（`npm install openai`；Anthropic SDK 同样接受 `fetch`）。
+把 `42.1013.tape` 换成服务方的 TapeOut 名字：
+
+```js
+import OpenAI from 'openai'
+import { createTapeAPI, rpcUrlsFor, ai } from '@tapeapi/sdk'
+
+const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })
+const service = await api.resolve('42.1013.tape')        // AI 服务方的名字（示例）
+const { baseUrl } = service.manifest.ai.endpoints.find((e) => e.format === 'openai-chat')
+const client = new OpenAI({
+  baseURL: baseUrl,                                      // 服务方发布在链上的地址
+  apiKey: process.env.API_KEY,                           // 你在该服务方的密钥，照旧
+  fetch: ai.createVerifyingFetch({ api, service }),      // 核验每张回执，不通过就抛错
 })
-const svc = await api.resolve('11.1013.tape')             // 名称 -> 容器 -> 链上清单 -> 持有者的委托
-const { result, verified } = await api.call(svc, 'bnbUsd', {})
-console.log(result, verified)                              // 只有签名检查通过后 verified 才为 true
+const r = await client.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'Hello' }] })
+console.log(r.choices[0].message.content)
 ```
 
-完全不想安装：[调试台](https://tapeapi.fun/playground/)在浏览器里运行同一份 SDK。公共服务的全部方法列在
-[公共 API](docs/guides/zh-CN/public-api.md) 中。
+链上还没有外部服务方发布价目表，所以这段代码是对 [`examples/ai-proxy`](examples/ai-proxy/) 里的参考旁路（本地开发模式）
+实际跑通的；接真实服务方时只换名字。
 
-## 在 Claude、Cursor 等 MCP 客户端中使用
+**Claude Code 和 Codex** 自己读不到回执。在本机开一个核验代理，再把它们指过去：
 
-同样的八个方法也是 [MCP](https://modelcontextprotocol.io) 工具，地址是 `https://api.tapeapi.fun/mcp`（Streamable
-HTTP，无需密钥）。在 Claude 里，到 **Settings > Connectors > Add custom connector** 添加；在 Cursor 里，写进 `mcp.json`：
-
-```json
-{ "mcpServers": { "tapeapi": { "url": "https://api.tapeapi.fun/mcp" } } }
+```bash
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz tapeapi-verify 42.1013.tape
+ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1
 ```
 
-每个结果都由服务在链上委托的密钥签名，并附带回执和核验链接，任何人都能对照链上核验。远程服务器只负责签名；SDK 发布包里的
-本地命令 `tapeapi-mcp` 会在模型看到结果之前自己核验每个回答。各客户端的配置、回执与限制见
-[MCP 指南](docs/guides/zh-CN/mcp.md)。
+**MCP。** 同样的 8 个读取方法也是 MCP 工具，地址是 `https://api.tapeapi.fun/mcp`，每个结果都带签名回执：
 
----
+```bash
+claude mcp add --transport http tapeapi https://api.tapeapi.fun/mcp
+```
 
-## 为什么需要 TapeAPI
+什么都不想装：[调试台](https://tapeapi.fun/playground/)在浏览器里跑同一个 SDK。
 
-今天的 API 等于一个 URL 加一个账号再加信任。你在供应商那里注册，信任它的服务器所说的一切，而供应商随时可以更改回答、
-价格或规则。
-
-TapeAPI 把服务的身份变成链上对象，把每个回答变成一份签名声明：
-
-- **服务就是电路。** 谁持有电路 NFT，谁就拥有该服务。转让 NFT，服务随之转移；没有人能夺走这个名字。
-- **每个回答都带签名，并绑定到你的请求。** 客户端对照电路持有者在链上授权的密钥检查签名。被篡改、被重放或未签名的回答
-  是错误，永远不会是结果。
-- **无需注册，无需 API 密钥。** 免费方法直接调用。付费方法用链下凭证支付，凭证分批在链上结算。
-  **没有强制协议费**：托管合约上线后，默认从提供者的所得中划出 1% 作为维护贡献（消费者的价格不变），任何提供者都可以
-  把它设为 0。今天没有任何调用收费：托管合约还没有部署。
-- **容器之间的私密通道。** 两个服务、两个智能体或两个应用可以打开一条端到端加密的通道，由中继或链本身承载，承载方
-  永远只能看到密文。
-
-## 工作原理
+## 各部分怎么配合
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    participant C as 客户端（SDK）
-    participant B as BNB Chain
-    participant S as 服务
-    C->>B: 解析：电路 -> 容器（DeWebHub），持有者（ownerOf）
-    C->>B: 从容器的站点读取清单（SiteRegistry，校验 SHA-256）
-    Note over C: 检查持有者对服务签名密钥的 EIP-712 委托
-    C->>S: POST /tapeapi/v1/{method} { id, params, voucher? }
-    S-->>C: { result, container, ts, block, sig }
-    Note over C: 对请求和回答验证签名；通过后才返回结果
+flowchart LR
+    client["客户端<br/>官方 SDK、Claude Code、Codex"]
+    sidecar["签名旁路或 MCP 代理<br/>（由你自己部署）"]
+    upstream["你的接口或 MCP 服务器"]
+    chain[("链上：BNB Chain、X Layer、Base<br/>身份、清单、价目表、签名密钥的委托")]
+    client -- "请求" --> sidecar
+    sidecar -- "原样转发" --> upstream
+    sidecar -- "回答 + 签名回执" --> client
+    sidecar -. "持有人发布一次" .-> chain
+    client -. "对照链上核验" .-> chain
 ```
 
-1. **身份（TAP-20）。** 电路的 ERC-6551 容器就是服务身份。其站点存有清单 `.well-known/tapeapi.json`：端点、方法、价格
-   以及服务的签名密钥。
-2. **委托。** 电路持有者签署一份 EIP-712 委托，写明那把签名密钥和到期时间。其域锚定在 TapeOut 已部署的 DeWebHub 上，
-   因此在我们的任何合约存在之前，服务就能工作。
-3. **签名信封（TAP-21）。** 每个回答，无论成功还是错误，都对一个摘要签名，该摘要绑定容器、请求 id、方法与参数、结果
-   以及时间戳。
-4. **支付（TAP-22）。** 付费方法接受累计凭证，从每个提供者各自的托管通道中结算。规范目前用 BEM 结算；下一版托管
-   计划支持 BNB Smart Chain 上的 BEM（主推）、BNB（由合约包装为 WBNB）、USDT、USDC、ETH 与 USD1，通过独立审计后才会部署。
-5. **通道（TAP-26、TAP-27）。** 持有者授权的通道密钥、X3DH 式握手和 ChaCha20-Poly1305 帧，经由中继或 ChannelBus
-   （一个无状态、只发事件的合约）传输。
+| 层 | 是什么 | 规范 |
+|---|---|---|
+| **身份** | 一枚 TapeOut 电路的 ERC-6551 容器。谁持有电路，谁就拥有这个服务；电路转手，服务跟着走。 | [TAP-20](spec/TAP-20.md) |
+| **清单** | 容器链上站点里的 `.well-known/tapeapi.json`：接口地址、方法、AI 价目表、MCP 工具定义的哈希、签名密钥，以及持有人对这把密钥的委托。 | [TAP-20](spec/TAP-20.md) |
+| **签名回答与回执** | 每个回答都有签名，并和它的请求绑定；AI 调用另有一张用量回执。 | [TAP-21](spec/TAP-21.md) |
+| **通道与群聊** | 端到端加密，经中继或 ChannelBus 传递；承载方只看得到密文。 | [TAP-26](spec/TAP-26.md)、[TAP-27](spec/TAP-27.md) |
 
-## 快速开始
+## 回执能证明什么，不能证明什么
 
-要求：Node.js 20 或更高版本。这些包尚未发布到 npm；请使用本仓库。
+回执能证明：**谁回答的**（电路持有人在链上委托的密钥）、**回答的是哪个请求**（请求的确切字节）、**回了哪些字节**，以及
+**声称的用量和价格**（按链上价目表计算）。
 
-```bash
-git clone https://github.com/BruceLanLan/tapeapi.git
-cd tapeapi
-npm install
-```
+回执**不证明实际跑的是哪个模型**：服务方可以把便宜模型的回答标成贵的。签名带来的是可追责：回执无法抵赖，任何人用
+[抽检探针](examples/spot-check/)发测试请求并公开结果，都会留下证据。
 
-### 调用服务
+## 现状与承诺
 
-在本地运行最小示例服务（它通过公共节点读取 BNB Chain）：
+- **已上线，免费，无需注册：** 公共服务 `api.tapeapi.fun`（8 个方法）和它的 MCP 端点，公共中继 `relay.tapeapi.fun`
+  （`relaySend`、`relayHandshake`、`relayRecv`），[ChannelBus](https://bscscan.com/address/0x486110c35d9b90a9d6D85c8063A065f9e7b6b707)，
+  以及网站上的[持有人操作台](https://tapeapi.fun/console/)、[回执核验页](https://tapeapi.fun/verify/)、
+  [调试台](https://tapeapi.fun/playground/)和[状态页](https://tapeapi.fun/status/)。
+- **可用，由你自己部署：** AI 签名旁路与 new-api 一键包、MCP 签名代理、`tapeapi-verify`、`tapeapi-mcp`、抽检探针，
+  以及 SDK 里的群聊一步投递（`deliverGroupUpdate`）。
+- **实验性，未部署：** 付费通道与托管合约（[TAP-22](spec/TAP-22.md)）、服务目录、可由电路验证的方法
+  （[TAP-25](spec/TAP-25.md)）。它们都不在 1.0 的稳定承诺里。
+- **1.0 承诺什么：** 按 1.0 文档写的代码，在所有 1.x 版本里都能继续工作；除了标注 `@experimental` 或 `@internal` 的，
+  其余全部是稳定的。从 0.x 升级：[升级到 1.0](docs/guides/zh-CN/upgrade-1.0.md)。
+- **我们不做的事：** 不替任何人托管旁路（它会经手你用户的 API 密钥，只能你自己部署）；不发币；不帮任何人绕开上游服务商的
+  封禁或地区限制（TapeAPI 只面向在上游条款范围内经营的服务方）。
+- **链：** BNB Chain（chainId 56）什么都能做，将来的支付也只在这条链上。X Layer（196）和 Base（8453）只读：身份、解析、
+  回执和 MCP 核验。X Layer 只有两家独立的 RPC 运营方。
+- **没有经过第三方审计。** 测试：约 1,140 个 JavaScript 测试（`npm test`）、169 个合约测试（`forge test`），另有一份独立的
+  Python 实现核对每一处签名、哈希和编码（`python3 spec/vectors/verify.py`）。
 
-```bash
-node examples/reader-service/index.mjs        # listens on :8787 with a throwaway signing key
-```
+## 隐私，如实说
 
-在代码中调用它。SDK 会解析清单、调用方法，并在返回之前验证签名：
+- **受保护的：** 通道和群聊的内容（端到端加密）；AI 回执只带哈希，经 SDK 或 `tapeapi-verify` 发出的请求还会追加 128 位
+  随机空白，短提示词没法靠猜哈希对上；MCP 核验链接默认只带哈希；SDK 的 `busPrivacyReader` 读取整个 ChannelBus 后在本地
+  筛选，节点看不出你的房间。
+- **藏不住的：** 服务方看得到它处理的一切（你的请求、IP 和 API 密钥）；公共 RPC 节点看得到你的 IP 和你在核验哪个服务；
+  中继和链看得到通道的房间、时间和大小；链上的一切都是公开的，将来的付款也一样。
 
-```js
-import { createTapeAPI } from '@tapeapi/sdk'
+## 费用
 
-const api = createTapeAPI({ dev: true })                           // dev：允许本地 http:// 服务
-const svc = await api.resolve({ dev: 'http://127.0.0.1:8787' })
-const { result, verified } = await api.call(svc, 'blockNumber', {})
-console.log(result.blockNumber, verified)
-```
-
-在主网上，按 TapeOut 名称、容器地址或电路解析，并使用至少两个必须达成一致的 RPC 节点：
-
-```js
-const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
-  quorum: 2,
-})
-const svc = await api.resolve('0x<container>')                     // 或 '11.1013.tape'，或 { circuits: '0x…', tokenId: '11' }
-const { result } = await api.call(svc, 'blockNumber', {})
-```
-
-也可以用 curl 调用，之后再手动验证（[方法](docs/guides/zh-CN/consume.md#不使用-sdk-进行验证)）：
-
-```bash
-curl -s -X POST http://127.0.0.1:8787/tapeapi/v1/blockNumber \
-  -H 'content-type: application/json' -d '{"id":"1","params":{}}'
-```
-
-### 运行服务
-
-把任意函数，或任意现有的 REST API，包装成签名方法：
-
-```js
-import { createProvider } from '@tapeapi/server'
-
-const provider = createProvider({
-  manifest,                                  // 你的 tapeapi.json
-  signerKey: process.env.SIGNER_KEY,         // 电路持有者所委托的密钥
-  rpcUrls: [/* >= 2 个 BNB Chain 节点 */], quorum: 2,
-  methods: {
-    blockNumber: async (_params, ctx) => ({ blockNumber: ctx.block }),
-    quote: async ({ symbol }) => fetch(`https://your.api/quote/${symbol}`).then((r) => r.json()),
-  },
-})
-await provider.listen(8787)                  // Node；在 Cloudflare Workers 上使用 provider.handleRequest(request)
-```
-
-上线需要：一个已开通容器的电路、一份由其持有者签署的委托，以及写入容器站点的清单。[持有者控制台](https://tapeapi.fun/console/)
-可以在手机钱包中完成这三件事。见[运行服务](docs/guides/zh-CN/provide.md)。
-
-## 功能
-
-| | |
-|---|---|
-| **可验证的回答** | 签名信封绑定到确切的请求；签名者对照链上持有者检查；新鲜度窗口；一个独立的 Python 实现检查测试向量。 |
-| **法定人数读取** | 链上读取要求每个作答节点都一致，绝不采用多数决。`callQuorum` 只有在独立提供者返回相同字节时才接受结果。 |
-| **按次付费** | 累计 EIP-712 凭证、会话密钥、带提款冷却期的托管合约；没有强制协议费，也没有运营方费率开关；默认从提供者所得中划出 1% 维护贡献，每个提供者都可以设为 0（或最高 50%）。尚未部署。 |
-| **私密通道** | TAP-26：双向认证、前向保密、每个方向独立的密钥、防重放与防乱序；中继或链上传输。 |
-| **私密群组** | TAP-27：最多 32 个容器，由群主管理的纪元，加密的成员名册，每个发送者单独签名。 |
-| **不丢消息的链上传输** | ChannelBus 读取器宁可停住也不跳过：它能应对公共节点的历史限制、结果数量上限和故障，并对任何读不到的内容发出警告。经过数千次随机化对抗运行的测试。 |
-| **AI 智能体** | `exposeTapeAPI` 把任何服务变成供浏览器内智能体使用的 WebMCP 工具；每个回答都经过签名检查，付费方法需要显式预算。 |
-| **随处运行** | Node、Cloudflare Workers（Fetch API）、浏览器和 DeWEB 站点；三个小巧且经过审计的依赖（`@noble/curves`、`@noble/hashes`、`@noble/ciphers`）。 |
-
-## 包与仓库结构
-
-| 路径 | 内容 |
-|---|---|
-| [`sdk/`](sdk/) | `@tapeapi/sdk`：解析、调用、支付、验证、通道、群组、WebMCP 桥接。 |
-| [`server/`](server/) | `@tapeapi/server`：提供者运行时（Node `listen` 与 Fetch `handleRequest`）、计量、限流。 |
-| [`contracts/`](contracts/) | Solidity 合约及 Foundry 测试：`TapeAPIEscrow`、`ServiceDirectory`、`ChannelBus`。 |
-| [`spec/`](spec/) | 各 TAP，中英双语（以英文为准），附测试向量和一个独立的 Python 验证器。 |
-| [`examples/`](examples/) | 可运行的服务：最小读取服务、Web2 适配器、DeFi 读取、经证明的跨链读取、一个中继、一个 Cloudflare Worker、一个 WebMCP 演示。 |
-| [`conformance/`](conformance/) | 一个黑盒测试套件，任何提供者或中继实现都可以针对某个 URL 运行它。 |
-| [`site/`](site/) | 网站和持有者控制台（`site/console/`），均为普通静态文件。 |
-| [`docs/`](docs/) | 指南和设计说明；从 [`docs/README.md`](docs/README.md) 开始阅读。 |
+无强制协议费；默认 1% 维护贡献，任何服务方都可以关闭；运营方没有费率开关。这 1% 只在付费通道结算时从服务方所得中扣，
+用户的价格不变。付费托管合约尚未部署，所以**今天所有调用都不收费**。AI 服务方照旧在链下向用户收费；清单里的价格是公开的
+声明，不经过结算。详见 [docs/FEES.md](docs/FEES.md)。
 
 ## 规范
 
-| TAP | 标题 | 一句话概括 |
+| TAP | 标题 | 状态 |
 |---|---|---|
-| [TAP-1](spec/TAP-1.md) | TAP 流程 | 类型、状态、编号和必备章节。 |
-| [TAP-20](spec/TAP-20.md) | 服务身份与清单 | 服务就是电路；`.well-known/tapeapi.json`；持有者的 EIP-712 委托；解析算法。 |
-| [TAP-21](spec/TAP-21.md) | 签名响应信封 | `POST {live}/{method}`；`TAPI-1/resp/v2` 摘要；规范 JSON；错误码。 |
-| [TAP-22](spec/TAP-22.md) | 计量支付 | 累计凭证、每个提供者各自的托管通道、无强制协议费（默认 1% 贡献，提供者可设为 0）。 |
-| [TAP-23](spec/TAP-23.md) | 经证明的读取（Attested Read） | 对其它链的签名、固定区块的读取，由多个独立提供者达成一致。 |
-| [TAP-24](spec/TAP-24.md) | 意图询价（Intent RFQ） | 无需跨链桥的跨链兑换的签名报价（在质押机制存在之前冻结）。 |
-| [TAP-25](spec/TAP-25.md) | 电路验证方法（Circuit-Verified Methods） | 绑定到某个电路的方法，由该电路的链上 `eval()` 裁决争议。 |
-| [TAP-26](spec/TAP-26.md) | Tape Channel | 容器之间的端到端加密通道；中继与 ChannelBus。 |
-| [TAP-27](spec/TAP-27.md) | Tape Group | 最多 32 个容器的私密群组。 |
+| [TAP-1](spec/TAP-1.md) | TAP 流程与状态 | Draft |
+| [TAP-20](spec/TAP-20.md) | 服务身份与清单，含 AI 价目表与多链名字 | Draft，目标 Stable (v1) |
+| [TAP-21](spec/TAP-21.md) | 签名响应信封，含 AI 用量回执 | Draft，目标 Stable (v1) |
+| [TAP-22](spec/TAP-22.md) | 计量支付：凭证与托管 | Experimental（实验性） |
+| [TAP-23](spec/TAP-23.md) | 多家交叉验证的读取 | Draft，目标 Stable (v1) |
+| [TAP-24](spec/TAP-24.md) | 跨链意图询价 | Withdrawn（已撤回） |
+| [TAP-25](spec/TAP-25.md) | 可由电路验证的方法 | Experimental（实验性） |
+| [TAP-26](spec/TAP-26.md) | 容器间的私密通道 | Draft，目标 Stable (v1) |
+| [TAP-27](spec/TAP-27.md) | 最多 32 个容器的私密群聊 | Draft，目标 Stable (v1) |
 
-## 链上地址（BNB Chain，chainId 56）
+规范中英双语，以英文为准。TAP 编号已[提交给 TapeKit 维护者](https://github.com/TapeOutProtocol/TapeKit/issues/8)，尚未正式分配。
 
-| 合约 | 地址 | 所有者 |
-|---|---|---|
-| DeWebHub | `0xe61A9C7213a6Aa616C246a2B569e555B417b25ee` | TapeOut（已部署） |
-| SiteRegistry | `0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6` | TapeOut（已部署） |
-| 处理器工厂 | `0x68224F668083c29e9800Be2a646d42d18cedF7e2` | TapeOut（已部署） |
-| BEM 代币 | `0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a` | TapeOut（已部署） |
-| ChannelBus | [`0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`](https://bscscan.com/address/0x486110c35d9b90a9d6D85c8063A065f9e7b6b707) | TapeAPI（无所有者、无状态、不可升级） |
-| TapeAPIEscrow、ServiceDirectory | *未部署* | TapeAPI |
+## 仓库
 
-## 质量
+[`sdk/`](sdk/) `@tapeapi/sdk`（解析、调用、验签、AI 回执、通道、群聊、MCP）·
+[`server/`](server/) `@tapeapi/server`（服务端、AI 旁路、MCP 代理）·
+[`contracts/`](contracts/)（ChannelBus，以及实验性的托管合约和服务目录）·
+[`spec/`](spec/)（各 TAP、测试向量、Python 验证器）· [`examples/`](examples/) ·
+[`conformance/`](conformance/) · [`site/`](site/)（网站）· [`docs/`](docs/README.md)。
+合约地址见[入门](docs/guides/zh-CN/introduction.md#链上地址)。
 
-- **测试：** 约 710 个 JavaScript 测试（`npm test`）、169 个 Foundry 测试（`cd contracts && forge test`），以及由签名、
-  哈希和编码的独立 Python 实现执行的 102 项检查（`python3 spec/vectors/verify.py`）。
-- **对抗性评审：** 共十二轮评审，每个问题都有书面记录、一个失败的测试和一个修复；链上读取器由一个随机化测试覆盖，
-  其中包括故障、说谎和嘈杂的节点、重组以及房间变化。
-- **记录真实情况：** 真实 BNB Chain 节点的回答（拒绝历史查询、结果数量上限、落后的后端）从主网录制，并在测试中回放。
-- **尚未完成：** 合约的外部审计。请不要在托管合约中存放你无法承受损失的资金。
-
-## 安全
-
-请按照 [SECURITY.md](SECURITY.md) 的说明私下报告漏洞。请不要为安全问题提交公开 issue。
-
-## 参与贡献
-
-欢迎提交 issue 和 pull request；见 [CONTRIBUTING.md](CONTRIBUTING.md)。规范变更需经过 [TAP-1](spec/TAP-1.md) 中的
-TAP 流程。三套测试必须全部通过。
+安全问题请按 [SECURITY.md](SECURITY.md) 私下报告。欢迎提 issue 和 pull request，见 [CONTRIBUTING.md](CONTRIBUTING.md) 与
+[行为准则](CODE_OF_CONDUCT.md)。
 
 ## 许可证
 
-代码采用 MIT 许可（[LICENSE](LICENSE)）：`contracts/`、`sdk/`、`server/`、`examples/`、`conformance/`、`scripts/`、`site/`。
-`spec/` 中的规范采用 CC0-1.0（[LICENSE-SPEC](LICENSE-SPEC)）。
+代码采用 MIT（[LICENSE](LICENSE)）：`contracts/`、`sdk/`、`server/`、`examples/`、`conformance/`、`scripts/`、`site/`。
+`spec/` 里的规范采用 CC0-1.0（[LICENSE-SPEC](LICENSE-SPEC)）。
 
 ## 致谢
 
-为 TapeOut 构建服务层的想法，即“DeWEB 是网站，TapeSend 是消息，TapeAPI 是服务”，来自
-**[@Theairresearch](https://x.com/Theairresearch/status/2101640697426448632)**。TapeAPI 所获任何收入的 10% 将永久归其所有。
+为 TapeOut 做一个服务层的想法，也就是“DeWEB 是网站，TapeSend 是消息，TapeAPI 是服务”，来自
+**[@Theairresearch](https://x.com/Theairresearch/status/2101640697426448632)**。TapeAPI 未来任何收入的 10% 永久归他们。
 
 构建于 [TapeOut](https://tapeout.net) 与 [TapeKit](https://github.com/TapeOutProtocol/TapeKit) 之上。

@@ -4,7 +4,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildRelay, RelayRoom } from './relay-worker.js'
-import { channel } from '../../sdk/src/index.js'
+import * as channel from '../../sdk/src/channel.js'   // the implementation module (toBase64, fromBase64) / 实现模块
 import { privateKeyToAddress, signDigest, delegationDigest, recoverResponseSigner } from '../../sdk/src/sig.js'
 import { ADDR } from '../../sdk/test/helpers/fake-chain.mjs'
 

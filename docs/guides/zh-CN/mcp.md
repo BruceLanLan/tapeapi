@@ -98,7 +98,7 @@ not the params or result.)
 不经过 npm 注册表：
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz tapeapi-mcp 11.1013.tape
 ```
 
 它和远程服务器的不同之处：
@@ -127,7 +127,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -147,7 +147,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -159,7 +159,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### 远程还是本地
@@ -208,7 +208,7 @@ claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeap
 [调用服务](consume.md)里那样在仓库的克隆目录里操作：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz
 ```
 
 ```js
@@ -249,8 +249,9 @@ console.log(same(signer, svc.manifest.signer) && same(r.service.container, svc.c
 
 ## 把你自己的 TapeAPI 服务变成 MCP 服务器
 
-`@tapeapi/server/mcp` 里的 `createMcpEndpoint` 能把任何提供者变成远程 MCP 服务器。这些包还没有发布到 npm，服务端包也还没有
-发布文件，所以请在仓库的克隆目录里操作，和[运行服务](provide.md)一样。公共服务就是这样做的
+`@tapeapi/server/mcp` 里的 `createMcpEndpoint` 能把任何提供者变成远程 MCP 服务器。这些包还没有发布到 npm：从 GitHub 发布页
+安装两个包，先装 SDK（见 [server README](../../../server/README.md#install)），或者在仓库的克隆目录里操作，和[运行服务](provide.md)
+一样。公共服务就是这样做的
 （[`examples/public-api/worker.js`](../../../examples/public-api/worker.js)）：
 
 ```js
@@ -258,12 +259,12 @@ import { createProvider } from '@tapeapi/server'
 import { createMcpEndpoint, MCP_PATH } from '@tapeapi/server/mcp'
 
 const provider = createProvider({ manifest, signerKey, rpcUrls, quorum: 2, methods })
-const mcp = createMcpEndpoint({ provider, manifest: provider.manifest, identity: { name: '42.1013.tape' } })
+const mcp = createMcpEndpoint({ provider, manifest: provider.manifest, name: '42.1013.tape' })
 
 export default {
   fetch(request) {
     const clientIp = request.headers.get('cf-connecting-ip') || undefined
-    if (new URL(request.url).pathname === MCP_PATH) return mcp.handle(request, { clientIp })
+    if (new URL(request.url).pathname === MCP_PATH) return mcp.handleRequest(request, { clientIp })
     return provider.handleRequest(request, { clientIp })
   },
 }
@@ -272,7 +273,7 @@ export default {
 - 清单里每个免费方法都会成为一个工具。收费方法不会暴露。
 - 每次工具调用都像普通调用一样经过 `provider.handleRequest`，所以结果是同样签名的信封，受同样的限流，并附带回执和核验链接。
 - `/mcp` 是你服务器上的一条路由，不属于清单，所以加上它不改变链上任何东西，也不需要重新发布清单。
-- `identity.name` 是结果和回执里显示的 TapeOut 名称。
+- `name` 是结果和回执里显示的 TapeOut 名称。
 - 核验链接只带哈希；`linkContent: true` 让链接带上明文参数与结果。
 
 ## Tape out 你自己的 MCP 服务器
@@ -354,7 +355,7 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
   再按你的服务器定义的样子展示它们（v0.5.0 及以后）：
 
   ```bash
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### 客户端核对什么

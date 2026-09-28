@@ -4,31 +4,19 @@ import type { FetchLike } from './common.js'
 /** The manifest field carrying { endpoints, models } (one constant so a rename is one line). */
 export declare const MANIFEST_FIELD: 'ai'
 export declare const RECEIPT_HEADER: 'x-tapeapi-receipt'
-export declare const SSE_RECEIPT_PREFIX: ': tapeapi-receipt '
 export declare const RECEIPT_METHOD: 'receipt'
 /** Marks an error the sidecar made itself (no upstream answer, no receipt): a transport failure. Informative only. */
 export declare const SIDECAR_ERROR_HEADER: 'x-tapeapi-sidecar-error'
-/** An answer id a sidecar uses as the receipt id: 1 to 128 characters in U+0021–U+007E (TAP-21 §3.5). */
+/** The header (value RECEIPT_INVALID) on the HTTP 502 a strict createVerifyingFetch answers in place of a whole answer whose receipt fails. */
+export declare const VERIFY_ERROR_HEADER: 'x-tapeapi-verify-error'
+/** An answer id a sidecar uses as the receipt id: 1 to 128 characters in U+0021–U+007E (TAP-21 §3.5). @internal */
 export declare function isAnswerId(v: unknown): v is string
-export declare const PRICE_UNIT: '1M tokens'
-export declare const CURRENCIES: readonly Currency[]
-export declare const MODELS_MAX: number
-export declare const ENDPOINTS_MAX: number
+/** @internal Used by the reference sidecar or the website; not part of the API. */
 export declare const MODEL_ID_MAX: number
-/** At most 16 aliases per model entry. */
-export declare const ALIASES_MAX: number
-/** At most 7 price entries (one per currency) per model entry. */
-export declare const PRICES_MAX: number
-/** Caller headers a proxy forwards verbatim (besides each format's own `headers` and the FORWARD_PREFIXES families). */
+/** Caller headers a proxy forwards verbatim (besides each format's own `headers` and the x-codex-* / x-stainless-* families). @internal */
 export declare const FORWARD_HEADERS: readonly string[]
-/** Header-name prefixes a proxy forwards: x-codex-*, x-stainless-*. */
-export declare const FORWARD_PREFIXES: readonly string[]
-/** Does a proxy pass this caller header upstream? Never cookies, forwarded / x-forwarded-* / x-real-ip / cf-*, hop-by-hop, host, content-length. */
+/** Does a proxy pass this caller header upstream? Never cookies, forwarded / x-forwarded-* / x-real-ip / cf-*, hop-by-hop, host, content-length. @internal */
 export declare function forwardsHeader(name: string, formats?: readonly AIFormat[]): boolean
-/** Prices carry at most, amounts exactly, this many decimals (8). */
-export declare const AMOUNT_DECIMALS: number
-/** An event's data is parsed as JSON (for the adapter) up to this many bytes; it is hashed whatever its size. */
-export declare const EVENT_PARSE_LIMIT: number
 
 export type Currency = 'BEM' | 'BNB' | 'USDT' | 'USDC' | 'ETH' | 'USD1' | 'USD'
 /** Counts as an adapter reads them; the core normalises and checks them. */
@@ -71,7 +59,8 @@ export interface AIFormat {
   /**
    * How a streamed answer is framed. `sentinel`: a data payload left out of the hash. `final`: the stream's last event,
    * by its first line (`data: X` or `event: Y`); the receipt comment goes right before it, or at the end when none came.
-   * null: never streamed.
+   * createVerifyingFetch needs `final` for every format that streams: strict refuses one without it (INVALID_ARGUMENT),
+   * otherwise it is reported once. null: never streamed.
    */
   stream: { framing: 'sse'; sentinel: string | null; final?: { data?: readonly string[]; event?: readonly string[] } } | null
   /** May change the body sent upstream (e.g. to ask for usage); `strip` removes the events that caused (isInjectedEvent). */
@@ -140,51 +129,49 @@ export interface VerifyReport {
   receipt: UsageReceipt | null
 }
 
-/** The URL path after the service root's path, or null when the path is not under it. */
+/** The URL path after the service root's path, or null when the path is not under it. @internal */
 export declare function apiPath(pathname: string, rootPath: string): string | null
-/** The service root of an endpoint's baseUrl (the baseUrl minus the format's suffix), or null. */
-export declare function rootOf(baseUrl: string, format: AIFormat | null | undefined): string | null
 export declare function formatFor(verb: string, path: string | null, formats?: readonly AIFormat[]): AIFormat | null
+/** @internal Used by the reference sidecar or the website; not part of the API. */
 export declare function formatOfMethod(method: string, formats?: readonly AIFormat[]): AIFormat | null
-export declare function sentinelOf(method: string, formats?: readonly AIFormat[]): string | null
 /** sha256 hex (no 0x) of bytes; a string is hashed as UTF-8. */
 export declare function sha256Hex(data: Uint8Array | ArrayBuffer | string): string
-/** A stream's responseSha256 from its data payloads, in order (the sentinel's events left out). */
-export declare function sseDigestOfPayloads(payloads: Array<string | Uint8Array>, o?: { sentinel?: string | null }): string
 
 export interface SseScanner {
-  push(chunk: Uint8Array | ArrayBuffer | string): void
+  /** Returns the offset in the chunk's bytes just after its last blank line (an event boundary), or -1 when it has none. */
+  push(chunk: Uint8Array | ArrayBuffer | string): number
   end(): void
-  info: { events: number; done: boolean; receipts: string[] }
+  /** `final`: the format's final event (createSseScanner({ final })) has been dispatched. */
+  /** `receiptsAtEnd`: how many receipt comments had arrived when the stream first ended (its final event or its sentinel); null before. */
+  info: { events: number; done: boolean; receipts: string[]; final: boolean; receiptsAtEnd: number | null }
   /** The receipt hash of the events dispatched so far. */
   digest(): string
   state(): { atLineStart: boolean; pendingCR: boolean; eventHasData: boolean; eventHasFields: boolean }
 }
-/** An incremental byte-level server-sent-events parser that hashes data payloads by the receipt rule. */
-export declare function createSseScanner(o?: { sentinel?: string | null; onEvent?: (json: unknown, eventName: string) => void; eventParseLimit?: number }): SseScanner
+/** An incremental byte-level server-sent-events parser that hashes data payloads by the receipt rule. @internal */
+export declare function createSseScanner(o?: { sentinel?: string | null; onEvent?: (json: unknown, eventName: string) => void; eventParseLimit?: number; final?: { data?: readonly string[]; event?: readonly string[] } | null }): SseScanner
 export declare function scanSse(body: Uint8Array | ArrayBuffer | string, o?: { format?: AIFormat; sentinel?: string | null }): { responseSha256: string; id: string | null; model: string | null; usage: Usage | null; complete: boolean; events: number; done: boolean; receipts: string[] }
 
 export declare function usageOf(u: unknown): Usage | null
-/** Disjoint buckets per 1M tokens (input, cache reads, cache writes, 1-hour cache writes, output, reasoning), rounded up once, exactly 8 decimals; BigInt only. */
-export declare function amountOf(price: Omit<TokenPrice, 'currency' | 'unit'> & Partial<TokenPrice>, usage: RawUsage): string
-/** The entry whose id or an alias equals `model` exactly, allowed for `format`; null when none. */
+/** The entry whose id or an alias equals `model` exactly, allowed for `format`; null when none. @internal */
 export declare function modelEntryOf(models: ModelPrice[], model: string | null, format?: string): ModelPrice | null
-/** A matched entry's amounts for a usage, one per currency; null without usage. */
-export declare function pricesOf(entry: ModelPrice | null, usage: RawUsage | null): ReceiptPrice[] | null
-/** What a receipt carries about price: the reported model matched first, the requested one only when none was reported. */
+/** What a receipt carries about price: the reported model matched first, the requested one only when none was reported. @internal */
 export declare function pricingOf(models: ModelPrice[], o: { reported?: string | null; requested?: string | null; usage?: RawUsage | null; format?: string }): { model: string | null; prices: ReceiptPrice[] | null; modelMatchedBy?: 'response' | 'request'; unpriced?: string[] }
-/** Is the answer complete: 2xx and, for a stream, the format's final success event seen. */
+/** Is the answer complete: 2xx and, for a stream, the format's final success event seen. @internal */
 export declare function completeOf(o: { status: number; stream: boolean; read: { complete?: boolean } | null | undefined }): boolean
 /** Validate a manifest's AI field; throws MANIFEST_INVALID. */
 export declare function validateAIField(o: unknown, opts?: { allowHttp?: boolean }): AIField
 
+/** @internal Used by the reference sidecar or the website; not part of the API. */
 export declare function encodeReceipt(envelope: UsageReceipt): string
-/** The `: tapeapi-receipt <base64url>` line, without its line end. */
+/** The `: tapeapi-receipt <base64url>` line, without its line end. @internal */
 export declare function receiptComment(envelope: UsageReceipt): string
 export declare function decodeReceiptHeader(value: string | null): UsageReceipt
 /** The last `: tapeapi-receipt` comment of an event-stream text, decoded; null when there is none. */
 export declare function readSseReceipt(text: string | Uint8Array): UsageReceipt | null
+/** @internal Used by the reference sidecar or the website; not part of the API. */
 export declare function envelopeProblems(env: unknown): string[]
+/** @internal Used by the reference sidecar or the website; not part of the API. */
 export declare function priceProblems(field: { models: ModelPrice[] }, result: UsageReceipt['result'], format?: string): string[]
 
 /** Check one receipt against a trusted (resolved) manifest and the bytes you sent and received. Pure: no network. */
@@ -210,31 +197,38 @@ export declare function verifyUsageReceipt(o: {
   formats?: readonly AIFormat[]
 }): VerifyReport
 
-/** The clients' session headers among the forwarded ones: x-claude-code-session-id, session-id, thread-id. */
+/** The clients' session headers among the forwarded ones: x-claude-code-session-id, session-id, thread-id. @internal */
 export declare const SESSION_HEADERS: readonly string[]
+/** @internal Used by the reference sidecar or the website; not part of the API. */
 export declare function isSessionHeader(name: string): boolean
-/** 64: the whitespace characters saltRequestBody appends (128 random bits). */
-export declare const SALT_LENGTH: number
-/**
- * A JSON request body with SALT_LENGTH random JSON whitespace characters appended (the parsed request is unchanged, so
- * no field, token or prompt cache changes; the SHA-256 of the bytes becomes unguessable), or null when it is left alone:
- * empty, compressed (Content-Encoding other than identity), a non-JSON Content-Type, or not a UTF-8 JSON object or array.
- */
-export declare function saltRequestBody(bytes: Uint8Array, headers?: Headers | Record<string, string>): Uint8Array | null
 
-/** A fetch for an official SDK (`new OpenAI({ baseURL, fetch })`) that verifies every usage receipt (streams when they end). */
+/**
+ * A fetch for an official SDK (`new OpenAI({ baseURL, fetch })`) that verifies every usage receipt. A stream ends at its
+ * format's final event, at its sentinel (`[DONE]`) or when the upstream closes, whichever comes first. Strict: chunks go
+ * on as they come until the one in which the stream ends, which is released only once a receipt that came before the
+ * end verifies; otherwise the stream errors and the SDK's iterator throws RECEIPT_INVALID. Not strict: nothing is held,
+ * the verdict goes to onReport. Nothing waits for the upstream to close, and an upstream that breaks off after the end
+ * (strict: once verified) does not fail the call. A request to a metered path that
+ * is not addressed to one of the manifest's `ai` endpoints (e.g. localhost for 127.0.0.1) is refused with
+ * INVALID_ARGUMENT before it is sent (strict), or passed on with an onReport of `mismatch: true` (not strict).
+ * Strict, a whole answer whose receipt fails: an HTTP 502 in the request format's error shape (code RECEIPT_INVALID) with
+ * `x-should-retry: false` and `x-tapeapi-verify-error: RECEIPT_INVALID`, onReport as always; the official SDKs throw an
+ * APIError and do not retry it, a caller of the fetch itself checks `res.ok`. Retrying a paid call after other 5xx
+ * errors is the caller's choice.
+ */
 export declare function createVerifyingFetch(o: {
   /** From api.resolve() (or a target api.resolve accepts, resolved on first use). */
   service: any
   api?: { resolve(target: any): Promise<any>; refresh?(svc: any): Promise<any> }
   fetch?: FetchLike
   /** sidecarError: an answer the sidecar made itself (code PROVIDER_UNAVAILABLE, or RATE_LIMITED for 429), never verified. */
-  onReport?: (report: VerifyReport & { url: string; stream: boolean; status: number; salted: boolean; incomplete?: boolean; sidecarError?: true; code?: 'PROVIDER_UNAVAILABLE' | 'RATE_LIMITED' }) => void
-  /** Append random whitespace to a JSON request body on a receipt path (saltRequestBody); default true. */
+  onReport?: (report: VerifyReport & { url: string; stream: boolean; status: number; salted: boolean; incomplete?: boolean; sidecarError?: true; code?: 'PROVIDER_UNAVAILABLE' | 'RATE_LIMITED'; mismatch?: true; expected?: string }) => void
+  /** Append 64 random JSON whitespace characters to a JSON request body on a receipt path (the request hash becomes unguessable); default true. */
   salt?: boolean
-  /** Throw (or error the stream) on a problem; default true. */
+  /** On a problem: an HTTP 502 RECEIPT_INVALID for a whole answer, an error for a stream, a throw before sending for an endpoint mismatch; default true. */
   strict?: boolean
   /** Default 300. */
   maxSkewS?: number
+  /** Default FORMATS. A format that streams must have `stream.final`: strict throws INVALID_ARGUMENT here without it; not strict reports it once. */
   formats?: readonly AIFormat[]
 }): (input: any, init?: any) => Promise<Response>

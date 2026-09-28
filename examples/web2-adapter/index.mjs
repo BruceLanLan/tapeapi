@@ -26,7 +26,7 @@ applyEnvToManifest(manifest, env)
 const methods = buildMethods(config, { log, env: { UPSTREAM_API_KEY: process.env.UPSTREAM_API_KEY } })
 
 const provider = createProvider({
-  manifest, signerKey: SIGNER_KEY, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID,
+  manifest, signerKey: SIGNER_KEY, dev: manifest.dev === true, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID,
   allowSingleNode: manifest.dev, // dev 允许单节点；生产 urls 少于 quorum 直接拒绝启动 / single node only in dev (review M-11)
   log, store, methods,
 })

@@ -21,7 +21,7 @@ const manifest = {
 }
 function endpoint(onMessage) {
   const provider = createProvider({ manifest, signerKey: KEY, rateLimit: { windowMs: 60_000, free: 3, paid: 3 }, methods: { echo: async ({ text }) => ({ text }) }, log: () => {} })
-  return createMcpEndpoint({ provider, manifest, identity: { name: '11.1013.tape' }, version: '0', onMessage })
+  return createMcpEndpoint({ provider, manifest, name: '11.1013.tape', version: '0', onMessage })
 }
 
 test('FIXED MCP-R1: a rejected /mcp batch of ~1300 tools/call messages is not counted at all (was: ~1300 usage events and log lines)', async () => {
@@ -31,17 +31,17 @@ test('FIXED MCP-R1: a rejected /mcp batch of ~1300 tools/call messages is not co
   const n = Math.floor((64 * 1024 - 2) / (one.length + 1))
   const body = `[${Array(n).fill(one).join(',')}]`
   assert.ok(body.length <= 64 * 1024)
-  const res = await ep.handle(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body }), { clientIp: '198.51.100.7' })
+  const res = await ep.handleRequest(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body }), { clientIp: '198.51.100.7' })
   assert.equal(res.status, 400, 'the batch itself is refused (more than 16 messages)')
   // What PLAN-MCP §1 counts ("tools/call 次数") must not be inflatable by a request that was refused.
   assert.equal(seen.length, 0, `onMessage (one Workers log line + one HMAC each) ran ${seen.length} times for one refused request`)
   // An accepted batch is counted once per message handled. / 被接受的批量按实际处理的消息各计一次。
-  const ok = await ep.handle(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify([{ jsonrpc: '2.0', id: 1, method: 'ping' }, { jsonrpc: '2.0', id: 2, method: 'tools/list' }]) }), { clientIp: '198.51.100.7' })
+  const ok = await ep.handleRequest(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify([{ jsonrpc: '2.0', id: 1, method: 'ping' }, { jsonrpc: '2.0', id: 2, method: 'tools/list' }]) }), { clientIp: '198.51.100.7' })
   assert.equal(ok.status, 200)
   assert.deepEqual(seen.map((m) => m.method), ['ping', 'tools/list'])
   // Too large and unparsable requests are not counted either. / 过大和无法解析的请求同样不计。
-  await ep.handle(new Request('https://echo.example/mcp', { method: 'POST', body: '{"method":"tools/call"' }), {})
-  await ep.handle(new Request('https://echo.example/mcp', { method: 'POST', body: `[${Array(n).fill(one).join(',')},${one}]`.padEnd(70_000, ' ') }), {})
+  await ep.handleRequest(new Request('https://echo.example/mcp', { method: 'POST', body: '{"method":"tools/call"' }), {})
+  await ep.handleRequest(new Request('https://echo.example/mcp', { method: 'POST', body: `[${Array(n).fill(one).join(',')},${one}]`.padEnd(70_000, ' ') }), {})
   assert.equal(seen.length, 2)
 })
 
@@ -49,11 +49,11 @@ test('FIXED MCP-R1b: the logged method and tool name are cut to 64 characters (w
   const seen = []
   const ep = endpoint((m) => seen.push(m))
   const big = 'x'.repeat(60_000)
-  await ep.handle(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: big } }) }), { clientIp: '198.51.100.7' })
+  await ep.handleRequest(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: big } }) }), { clientIp: '198.51.100.7' })
   assert.equal(seen.length, 1)
   assert.ok(String(seen[0].tool ?? '').length <= 64, `the logged tool name is ${String(seen[0].tool).length} characters`)
   assert.equal(seen[0].tool, 'x'.repeat(64))
-  await ep.handle(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: big }) }), { clientIp: '198.51.100.7' })
+  await ep.handleRequest(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: big }) }), { clientIp: '198.51.100.7' })
   assert.equal(seen[1].method.length, 64, 'the method name too')
 })
 
@@ -62,13 +62,13 @@ test('FIXED MCP-R2: /mcp stops reading a chunked body (no content-length) one ch
   let pulled = 0
   const body = new ReadableStream({ pull(c) { if (pulled >= TOTAL) return c.close(); pulled += CHUNK; c.enqueue(new Uint8Array(CHUNK).fill(0x20)) } })
   const ep = endpoint()
-  const res = await ep.handle(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body, duplex: 'half' }), { clientIp: '198.51.100.7' })
+  const res = await ep.handleRequest(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body, duplex: 'half' }), { clientIp: '198.51.100.7' })
   assert.equal(res.status, 413)
   // The proxy's readCapped stops one chunk past the limit; the endpoint should too.
   assert.ok(pulled <= 64 * 1024 + CHUNK, `read ${pulled} bytes into memory before refusing`)
   // A chunked body under the cap is still read and answered. / 未超限的分块正文照常读取和应答。
   const small = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('{"jsonrpc":"2.0",')); c.enqueue(new TextEncoder().encode('"id":1,"method":"ping"}')); c.close() } })
-  const ok = await ep.handle(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: small, duplex: 'half' }), {})
+  const ok = await ep.handleRequest(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: small, duplex: 'half' }), {})
   assert.equal(ok.status, 200); assert.deepEqual((await ok.json()).result, {})
 })
 

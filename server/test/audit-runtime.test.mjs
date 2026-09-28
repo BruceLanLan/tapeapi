@@ -215,7 +215,7 @@ test('P-01 (property): readBody settles exactly once on abort, on drain-then-413
 
 test('I-03 FIXED: opts.escrow = 0x0 is refused; a delegation near expiry boots with a warning', () => {
   const zero = '0x' + '00'.repeat(20)
-  assert.throws(() => mk({ escrow: zero }), (e) => e.code === 'MANIFEST_INVALID', 'an override may only restate the manifest escrow')
+  assert.throws(() => mk({ escrow: zero }), (e) => e.code === 'INVALID_ARGUMENT', 'an override may only restate the manifest escrow')
   const expires = nowS() + 2
   const m = manifestFor({ delegation: { expires, sig: signDigest(delegationDigest(56, ADDR.hub, { container: ADDR.container, signer, expires }), HOLDER_KEY) } })
   const logs = []

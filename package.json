@@ -20,6 +20,8 @@
     "deploy:my-relay": "npx --yes wrangler@4.141.0 deploy -c examples/cloudflare-worker/wrangler-relay.toml"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "0.128.0",
+    "openai": "7.23.0",
     "solc": "^0.8.28"
   }
 }

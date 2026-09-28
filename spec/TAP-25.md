@@ -2,7 +2,7 @@
 |---|---|
 | Title | TapeAPI: Circuit-Verified Methods |
 | Author | Bruce (@BruceLanLan) |
-| Status | Draft |
+| Status | Experimental |
 | Implementation | Not implemented (2026-09-27): no `verifier` support, bit encoding, local re-evaluation or dispute contract exists. The SDK passes the `verifier` field through unchanged, as §5 expects of clients unaware of it. |
 | Type | Standards |
 | Created | 2026-09-20 |
@@ -128,6 +128,8 @@ Copyright and related rights waived via CC0-1.0.
 > **占位编号。** TAP-25 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
 
 > **实现状态（2026-09-27）：** 未实现：`verifier` 支持、比特编码、本地重算与争议合约均不存在。SDK 原样透传 `verifier` 字段，符合 §5 对忽略它的客户端的要求。
+
+> **状态：** Experimental（实验性，见 [TAP-1](TAP-1.md) §4.1）：不在 TapeAPI 1.0 的稳定承诺之内，可能不兼容地修改或撤回。
 
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 

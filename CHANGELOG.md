@@ -6,6 +6,132 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] — 2026-09-29
+
+### Breaking changes toward 1.0
+
+The interface freeze review (1.0 plan G1). Every change below can break 0.x code; what to write instead, what 1.0
+promises (Stable, Experimental, Internal) and the full error-code table are in
+[docs/guides/upgrade-1.0.md](docs/guides/upgrade-1.0.md).
+
+- **`INVALID_ARGUMENT`, a new client code for the caller's own mistakes.** A configuration or argument error (`createRpc`,
+  `createTapeAPI` without `rpcUrls`, an unsupported `resolve` target, `payer` options, `tx` builder arguments,
+  `callQuorum` options, group-delivery carriers, `createProvider` / `createAIProxy` / `createMcpProxy` options) is now
+  `INVALID_ARGUMENT`, raised before anything is sent. It used to be `RPC_UNAVAILABLE`, `MANIFEST_INVALID`, `BAD_VOUCHER`,
+  `ABI_INVALID`, `BAD_KEY`, `CHANNEL_INVALID`, `BAD_REQUEST`, `QUORUM_FAILED`, `METHOD_NOT_FOUND` or `GROUP_DELIVERY`,
+  so a retry loop on `RPC_UNAVAILABLE` could spin on a missing `rpcUrls`. The codec layers (`abi`, `canon`) and the
+  protocol refusals of `callQuorum` are unchanged. TAP-21 §3.4 lists it, with `GROUP_DELIVERY`, `BAD_RESPONSE`,
+  `BUS_PRIVACY`, `BUS_BUDGET` and the MCP `error.data.code` values.
+- **`TapeAPIError` top-level fields are fixed**: `name`, `code`, `message`, `data`, `signed`, `httpStatus`, `cause`, and
+  `ts`, `block`, `id`, `sig`, `error` on a signed provider error. Every other detail is in `data` (`e.data.tooLarge`,
+  `e.data.rpcCode`, `e.data.rpcRevert`, `e.data.agreed`, `e.data.failed`, ...); the old top-level names still read, as
+  deprecated aliases, until 2.0.
+- **`channel` exports**: `toHex` (bare hex, unlike `abi.toHex`), `fromHex`, `toBase64`, `fromBase64` and the test hooks
+  `_keySchedule`, `_busMerge`, `_busKindOf` are no longer public; `@tapeapi/sdk/channel` and the root `channel`
+  namespace point at a public face (`sdk/src/channel-public.js`). `sig` no longer re-exports `keccak256`, `toHex`,
+  `bytesToHex`, `hexToBytes` (use `abi`). `@tapeapi/sdk/rpc` exports `createRpc` and `RPC_BODY_LIMIT` only
+  (`readJsonBounded`, `describeUrl`, `isNodeLimit` are internal). `abi.FUNCTIONS` and `abi.SERVICE_TUPLE` are `@internal`.
+- **`service`, not `svc`**: `channel.relayTransport({ service })`, relay carriers `{ api, service, payer }`, the WebMCP
+  handle's `service`. `svc` is refused with a pointer to the upgrade guide.
+- **`relayClients` and `busClients`, always lists**: `deliverGroupUpdate({ relayClients: [...], busClients: [...] })`,
+  `checkGroupInvites({ relayClients: [...] })`, clients `{ api, service, payer? }` and `{ address, sendTx }`. `relays`
+  stays the roster's and the invite's list of relay references `{ url, container }` (`createGroup`, `resumeGroup`,
+  `channel.createInvite`); `relay`, `bus`, `relays` and `buses` are refused by the delivery functions.
+- **Every `now` is Unix seconds.** `createGroup`, `joinGroup` and `resumeGroup` take `clock`, a function returning Unix
+  seconds; the 0.x `now` (a function of milliseconds) is refused, and so is a clock returning milliseconds (above 1e11,
+  e.g. `Date.now`), on the owner's side and the member's: `clock must return Unix seconds`. The TAP-27 vectors are
+  unchanged.
+- **`channelRecordFloor`** is keyed `<chainId>:<container>` and shared with the other chains' clients (`forChain`), so the
+  anti-rollback floor persists on X Layer and Base too; a 0.x entry is migrated on first read.
+- **The `openai-proxy` subpath of `@tapeapi/server` and `createOpenAIProxy` are removed**: use `@tapeapi/server/ai-proxy` and
+  `createAIProxy`.
+- **MCP endpoint and proxy**: `createMcpEndpoint()` returns `{ handleRequest, tools }` (was `handle`); `createMcpEndpoint`
+  and `createMcpProxy` take `name` (was `identity: { name }`; `identity` is refused). `UPSTREAM_TIMEOUT_MS` is
+  `AI_UPSTREAM_TIMEOUT_MS` in `ai-proxy` and `MCP_UPSTREAM_TIMEOUT_MS` in `mcp-proxy`.
+- **`ai.createVerifyingFetch` no longer lets anything through unverified.** Streams read by the official SDKs are
+  verified (they stop reading at `[DONE]` / `message_stop`, so the old end-of-stream check never ran). A stream ends at
+  its final event, at `[DONE]` or when the upstream closes, whichever comes first; in strict mode the chunk in which it
+  ends is released only once a receipt that came before the end verifies, else the iterator throws `RECEIPT_INVALID`
+  (a `[DONE]` inserted before `response.completed` used to let an unverified Responses stream through). Nothing waits
+  for the upstream to close the connection, and with `strict: false` nothing is held at all; an upstream that breaks off
+  after the end does not fail the call. A custom format that streams must name its final event (`stream.final`):
+  strict refuses one without it with `INVALID_ARGUMENT` when the fetch is made, otherwise `onReport` warns once.
+  A metered request to a host other than the manifest's endpoint (`localhost` for `127.0.0.1`) is refused with
+  `INVALID_ARGUMENT` in strict mode, reported with `mismatch: true` otherwise. `tapeapi-verify --strict` likewise ends the stream in an
+  error event when no receipt before its end verifies, and passes on only whole events. In strict mode a whole answer whose receipt fails is no longer thrown: it
+  becomes an HTTP 502 in the API's error shape (code `RECEIPT_INVALID`) with `x-should-retry: false` and
+  `x-tapeapi-verify-error: RECEIPT_INVALID`, so the official SDKs throw an `APIError` and do not retry it (a thrown
+  error was wrapped and retried twice by default: three requests, each possibly paid); a caller of the fetch itself
+  checks `res.ok`. `onReport` fires as before. Regression tests drive the official `openai` and `@anthropic-ai/sdk` packages
+  (root devDependencies only).
+- **Provider `dev` is `opts.dev` only**: `createProvider` relaxes its payment checks (priced methods without an escrow,
+  the in-memory meter warning) only for `dev: true`; `allowHttp` only allows http endpoints; a manifest's own `dev` field
+  switches nothing, in `createProvider` and `createMcpProxy`.
+- **`rpcTimeoutMs`**: `createTapeAPI`, its `chains[id]` and `createProvider` take `rpcTimeoutMs` for the timeout of one RPC
+  request; `timeoutMs` there is refused (`api.call` keeps its per-call `timeoutMs`).
+- **Decimal strings out**: `api.chain.tokenOf()` returns `tokenId` as a decimal string, like every `tokenId` and `processor`
+  the SDK returns. The public service's `tapeName` is unchanged.
+- **A narrower frozen surface**: the root `ai` namespace and `@tapeapi/sdk/ai` are a public face (`sdk/src/ai-public.js`):
+  the helpers the reference sidecar and the website use stay, marked `@internal`; `amountOf`, `pricesOf`,
+  `sseDigestOfPayloads`, `sentinelOf`, `rootOf`, `saltRequestBody` and the limit constants are no longer exported
+  there. `group.senderKey` and `group.buildEpoch` leave the public `group` namespace. The whole `bus-privacy` subpath
+  (options, defaults, `stats().privacy`) is `@experimental`.
+- **Option interfaces have no index signature**: `CreateProviderOptions`, `ChannelSelf`, `ChannelPeer` and WebMCP's `paid`
+  reject unknown keys at compile time.
+- **Types**: `Group` is `GroupHandle | OwnerGroup` (with `GroupSnapshot`, `Roster`); `ManifestBase` is shared by the two
+  proxies; payment declarations carry `@experimental`.
+
+Also: `api.addresses.factory`; `PROVIDER_UNAVAILABLE` carries `data.timedOut` / `data.aborted` for the caller's own
+timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0, 1, 2; no environment variables).
+
+### Website and READMEs
+
+- **Homepage rewritten for the current positioning** (`site/index.html`, `site/style.css`; 1.0 plan G9). It leads with
+  the signed receipt layer for AI services (the sidecar, what a receipt proves and what it does not: which model ran),
+  then MCP, private channels and groups, and multi-chain. New sections: a start-here path per reader (AI providers, MCP
+  server authors, app developers, circuit holders), the receipt layer with a figure and a "what a receipt proves" table,
+  chains (BNB Chain with payments only there; X Layer and Base read-only), and privacy (what is protected and what is
+  not). "Live now" adds the AI sidecar and new-api package (available, self-hosted only: it handles API keys),
+  `tapeapi-verify`, the console's AI price tables, one-call group delivery, the spot-check probe and the receipt
+  checker. Paid channels and their gas and amortisation figures move to "Experimental: paid channels" (not deployed);
+  the fee note uses the current wording, and says no call is charged today. Spec statuses follow TAP-1 §4.1. The
+  examples use `rpcUrlsFor(56)`; a new one plugs `createVerifyingFetch` into the official OpenAI SDK. Every example was
+  run against the v0.8.0 release package (the AI one against the reference sidecar in `examples/ai-proxy`, since no
+  outside provider has published a price table yet).
+- **README.md and README.zh-CN.md rewritten** to the same standard: the value in the first lines, a table of first
+  steps per reader, short examples that run (install from the release package, AI receipts, `tapeapi-verify`, MCP), a
+  Mermaid diagram of the layers, what a receipt proves, status and commitments, privacy, fees and the specs with their
+  statuses. Contract addresses and repository detail now live in the guides.
+
+### Specification statuses toward 1.0 (TAP-1 §4.1)
+
+- **TAP-1 §4.1 defines the interim statuses** this repository uses until TapeKit adopts a numbered-proposal process:
+  Draft, **Stable (v1)**, Experimental and Withdrawn. Stable (v1) freezes every field, encoding, signature domain and
+  error code; a revision may only add optional content or non-normative text; a breaking change is a new version (v2)
+  with its own wire markers, v1 stays valid beside it and is not withdrawn earlier than 12 months after v2 becomes
+  Stable. When TapeKit assigns numbers or statuses, TapeKit's prevails and the front matter records the mapping.
+  A new optional front-matter row, `Target`, names the status a Draft intends to reach.
+- **Status rows.** TAP-20, TAP-21, TAP-23, TAP-26 and TAP-27 stay Draft with `Target | Stable (v1) at TapeAPI 1.0`;
+  TAP-22 (metered payment and escrow) and TAP-25 (circuit-verified methods) are **Experimental**; TAP-24 (intent RFQ,
+  frozen since 2026-09-21) is **Withdrawn**. No normative text of TAP-20 to TAP-27 changed.
+
+### Test vectors
+
+- **TAP-20 §6.1 mainnet manifest filled in**: the live manifest of `11.1013.tape`, read only through `resolve` on the
+  SDK's default BSC nodes (quorum 2 by operator, all three operators identical), every `eth_call` pinned to block
+  124552456 by EIP-1898 `{ blockHash }`: size 3414, SHA-256 `0xee57f304…3b52c37a`, signer, delegation expiry and holder.
+  Recorder `scripts/record-mainnet-manifest.mjs`, fixture `sdk/test/fixtures/mainnet-11-1013-manifest.json`, offline
+  replay `sdk/test/mainnet-manifest.test.mjs` (clock pinned to the block; the table in the spec must quote the
+  fixture). The delegation is renewed before 2026-12-10, so the fixture pins a block's state, not the current manifest.
+- **TAP-23 §6 vectors**: `spec/vectors/tap-23-attested.json` (from `scripts/gen-vectors.mjs`), two providers signing
+  with public test keys, real Ethereum values for the example request (block 20000000, USDT `totalSupply()`), two
+  agreeing cases and three `ATTEST_DISAGREE` counterexamples, replayed through `callQuorum` by
+  `sdk/test/attested-vectors.test.mjs`. §6 now says plainly that no live service offers `attestedRead` yet
+  (`11.1013.tape` does not) and what the smallest change would be.
+- **`spec/vectors/verify.py`** checks both independently: it re-encodes the mainnet calldata, ABI-decodes the answers,
+  hashes and parses the manifest and recovers the delegation to `ownerOf`; and it rebuilds each TAP-23 envelope digest,
+  recovers both signers and decides agreement from §3.4 alone. 159 checks before, 249 now.
+
 ## [0.8.0] — 2026-09-28
 
 ### ChannelBus read privacy: contract-wide reads by default, cover rooms as the fallback
@@ -389,7 +515,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.1...HEAD
+[1.0.0-rc.1]: https://github.com/BruceLanLan/tapeapi/compare/v0.8.0...v1.0.0-rc.1
 [0.8.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.5.0...v0.6.0

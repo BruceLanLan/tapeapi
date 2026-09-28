@@ -25,8 +25,8 @@ const provider = createProvider({
   manifest, signerKey: KEY, rateLimit: { windowMs: 60_000, free: 3, paid: 3 },
   methods: { echo: async ({ text }) => ({ text }), fail: async () => { const e = new Error('nope'); e.code = 'BAD_REQUEST'; throw e } },
 })
-const ep = createMcpEndpoint({ provider, manifest, identity: { name: '11.1013.tape' }, version: '0.3.0' })
-const post = (body, ip = '1.1.1.1', headers = {}) => ep.handle(new Request('https://echo.example/mcp', {
+const ep = createMcpEndpoint({ provider, manifest, name: '11.1013.tape', version: '0.3.0' })
+const post = (body, ip = '1.1.1.1', headers = {}) => ep.handleRequest(new Request('https://echo.example/mcp', {
   method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body),
 }), { clientIp: ip })
 const rpc = async (method, params, id = 1, ip) => (await (await post({ jsonrpc: '2.0', id, method, params }, ip)).json())
@@ -78,8 +78,8 @@ test('tools/call: the result is the provider\'s signed envelope, and its receipt
 })
 
 test('linkContent: true puts the whole receipt in the verify link, params and result in clear, and says so', async () => {
-  const ep2 = createMcpEndpoint({ provider, manifest, identity: { name: '11.1013.tape' }, version: '0.3.0', linkContent: true })
-  const res = await ep2.handle(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'echo', arguments: { text: 'in clear' } } }) }), { clientIp: '4.4.4.4' })
+  const ep2 = createMcpEndpoint({ provider, manifest, name: '11.1013.tape', version: '0.3.0', linkContent: true })
+  const res = await ep2.handleRequest(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'echo', arguments: { text: 'in clear' } } }) }), { clientIp: '4.4.4.4' })
   const { result } = await res.json()
   const link = result.content[1].text.match(/Verify: (\S+)/)[1]
   assert.deepEqual(JSON.parse(mcp.fromBase64Url(link.split('#r=')[1])), result._meta[mcp.RECEIPT_META_KEY])
@@ -110,9 +110,9 @@ test('the provider\'s rate limit reaches MCP callers by IP, as an unsigned tool 
 })
 
 test('transport: GET is 405, OPTIONS is CORS, bad JSON is a parse error, batches are answered, bodies are capped', async () => {
-  const g = await ep.handle(new Request('https://echo.example/mcp'))
+  const g = await ep.handleRequest(new Request('https://echo.example/mcp'))
   assert.equal(g.status, 405); assert.equal(g.headers.get('allow'), 'POST, OPTIONS')
-  const o = await ep.handle(new Request('https://echo.example/mcp', { method: 'OPTIONS' }))
+  const o = await ep.handleRequest(new Request('https://echo.example/mcp', { method: 'OPTIONS' }))
   assert.equal(o.status, 204); assert.equal(o.headers.get('access-control-allow-origin'), '*')
   const bad = await post('{nope')
   assert.equal(bad.status, 400); assert.equal((await bad.json()).error.code, mcp.JSONRPC.PARSE)
@@ -131,7 +131,7 @@ test('a manifest with no free method cannot become an MCP endpoint', () => {
 test('onMessage sees every message (for counting callers) and cannot break a call', async () => {
   const seen = []
   const ep2 = createMcpEndpoint({ provider, manifest, onMessage: (m) => { seen.push(m); throw new Error('counter down') } })
-  const r = await ep2.handle(new Request('https://echo.example/mcp', { method: 'POST', body: JSON.stringify([{ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'echo', arguments: { text: 'a' } } }]) }), { clientIp: '4.4.4.4' })
+  const r = await ep2.handleRequest(new Request('https://echo.example/mcp', { method: 'POST', body: JSON.stringify([{ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'echo', arguments: { text: 'a' } } }]) }), { clientIp: '4.4.4.4' })
   assert.equal(r.status, 200)
   assert.deepEqual(seen, [{ method: 'tools/list', tool: undefined, clientIp: '4.4.4.4' }, { method: 'tools/call', tool: 'echo', clientIp: '4.4.4.4' }])
 })

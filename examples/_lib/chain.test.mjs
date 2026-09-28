@@ -143,7 +143,7 @@ test('readAt never retries a contract revert as if the block parameter were at f
   await assert.rejects(() => r.readAt(pinned, async () => { calls++; throw revert }), (e) => e === revert)
   assert.equal(calls, 1)
   // rpcCode 3 是 eth_call 的 revert 约定，消息里可能没有 "revert" 字样 / rpcCode 3 is the revert convention
-  assert.equal(rejectsBlockObject(Object.assign(new TapeAPIError('RPC_ERROR', 'OLD'), { rpcCode: 3 })), false)
+  assert.equal(rejectsBlockObject(new TapeAPIError('RPC_ERROR', 'OLD', { rpcCode: 3 })), false)
   assert.equal(rejectsBlockObject(new TapeAPIError('RPC_UNAVAILABLE', 'no nodes')), false)
 })
 

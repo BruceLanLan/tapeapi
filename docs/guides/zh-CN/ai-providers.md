@@ -124,10 +124,18 @@ const baseURL = svc.manifest.ai.endpoints.find((e) => e.format === 'openai-chat'
 const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
 ```
 
+请原样使用清单里的 `baseUrl`。发往任何其它主机（`localhost` 对 `127.0.0.1`、端口不同）的计量路径请求，会在发送之前以
+`INVALID_ARGUMENT` 拒绝，并写明期望的端点；`strict: false` 时照常发出，`onReport` 报告 `not verified: endpoint mismatch`。
+流式回答同样会核验。流在最终事件、`[DONE]` 或连接关闭时结束（先到者为准）；在默认的 `strict: true` 下，结束的那一段要等结束
+之前到达的回执核验通过才放出，核验不过的流会让 SDK 的迭代器抛出 `RECEIPT_INVALID`。`strict: false` 时不扣留任何内容，结论交给
+`onReport`。strict 下，核验不过的整体（非流式）回答会变成一个 HTTP 502：按该 API 的错误格式，code 为 `RECEIPT_INVALID`，
+带 `x-should-retry: false` 与 `x-tapeapi-verify-error: RECEIPT_INVALID` 两个头；官方 SDK 抛出 `APIError` 且不重试，自己调用
+这个 fetch 的代码检查 `res.ok`。付费调用在其它 5xx 上是否自动重试，由你自己决定（SDK 的 `maxRetries`）。
+
 **Claude Code 与 Codex 用户**自己读不到回执。他们在本机运行核验代理 `tapeapi-verify`，把客户端指向它：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
 

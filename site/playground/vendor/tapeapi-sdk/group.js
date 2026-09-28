@@ -54,6 +54,22 @@ const readU32 = (b, at) => new DataView(b.buffer, b.byteOffset + at, 4).getUint3
 const readU64 = (b, at) => new DataView(b.buffer, b.byteOffset + at, 8).getBigUint64(0)
 const sameContainer = (a, b) => String(a.container).toLowerCase() === String(b.container).toLowerCase() && (a.chainId ?? 56) === (b.chainId ?? 56)
 const nowS = (clock) => Math.floor(clock.now() / 1000)
+// `clock` (review G1 M4): every `now` in the SDK is Unix seconds, so a long-lived group takes a clock function that returns
+// Unix seconds too (fractional allowed); internally the group keeps milliseconds. The 0.x option `now` (a function of
+// milliseconds) is refused rather than misread. / 全 SDK 的 now 都是 Unix 秒；长期存在的群句柄接受返回 Unix 秒的 clock 函数（可带小数），
+// 内部仍用毫秒。0.x 的 `now`（返回毫秒的函数）直接拒绝，而不是被误读。
+const clockMs = (opts) => {
+  if (Object.prototype.hasOwnProperty.call(opts, 'now')) throw new TapeAPIError('INVALID_ARGUMENT', 'the group option `now` (milliseconds) was renamed in 1.0: pass `clock`, a function returning Unix seconds (docs/guides/upgrade-1.0.md)')
+  const { clock } = opts
+  if (clock === undefined) return undefined
+  if (typeof clock !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'clock must be a function returning Unix seconds')
+  // One sample when the group is made (review RC-10): above 1e11 (the year 5138 in seconds) it is milliseconds, e.g.
+  // Date.now, the 0.x default, which would issue epochs every member refuses as "in the future".
+  // 创建时取样一次：超过 1e11（按秒是 5138 年）就是毫秒，比如 0.x 默认的 Date.now，会签出所有成员都当作"来自未来"而拒绝的纪元。
+  const v = clock()
+  if (typeof v !== 'number' || !Number.isFinite(v) || v > 1e11) throw new TapeAPIError('INVALID_ARGUMENT', `clock must return Unix seconds: it returned ${typeof v === 'number' ? v : typeof v}${typeof v === 'number' && v > 1e11 ? ', which looks like milliseconds (pass () => Date.now() / 1000)' : ''}`)
+  return () => Math.round(clock() * 1000)
+}
 const edVerify = (sig, msg, pub) => { try { return ed25519.verify(sig, msg, pub, { zip215: false }) } catch { return false } }
 
 /** The one room a group uses: SHA-256("TAP-27/room/v1" ‖ gid) / 群所用的唯一房间 */
@@ -471,8 +487,10 @@ function ownerApi({ group, install, gid, owner, id, verifyMember, random, transp
  * **两个房间**：`epochWire` 发到**群房间**；`added` 中每个成员还需要 group.inviteFor(member) 发到**它自己的收件房间**，
  * 否则它永远不知道这个群。推荐直接用 deliverGroupUpdate({ group, update })，两者都投并逐条报告结果。
  */
-// `now` (ms) exists for vectors and tests / `now`（毫秒）用于向量与测试
-export async function createGroup({ self, identity, members = [], relays = [], bus, verifyMember, random = randomBytes, now }) {
+// `clock` (Unix seconds) exists for vectors and tests / `clock`（Unix 秒）用于向量与测试
+export async function createGroup(opts = {}) {
+  const { self, identity, members = [], relays = [], bus, verifyMember, random = randomBytes } = opts
+  const now = clockMs(opts)
   const id = checkIdentity(identity)
   const owner = { container: self.container.toLowerCase(), chainId: self.chainId ?? 56 }
   const ownerEntry = normMember({ ...owner, x25519: id.xPub, ed25519: id.edPub })
@@ -491,7 +509,9 @@ export async function createGroup({ self, identity, members = [], relays = [], b
  * epoch at once (re-checking every member) and returns its message to post.
  * 群主重启后：从 snapshot() 继续一个群。旧纪元密钥已不在，因此立即开启下一纪元（并重新核验全部成员），返回其消息。
  */
-export async function resumeGroup({ self, identity, snapshot, relays, bus, verifyMember, random = randomBytes }) {
+export async function resumeGroup(opts = {}) {
+  const { self, identity, snapshot, relays, bus, verifyMember, random = randomBytes } = opts
+  const now = clockMs(opts)
   const id = checkIdentity(identity)
   if (!snapshot || snapshot.v !== 1 || snapshot.role !== 'owner' || typeof snapshot.roster !== 'string') fail('resumeGroup needs an owner snapshot()')
   const owner = { container: self.container.toLowerCase(), chainId: self.chainId ?? 56 }
@@ -500,7 +520,7 @@ export async function resumeGroup({ self, identity, snapshot, relays, bus, verif
   try { roster = safeParseJSON(snapshot.roster, { code: 'GROUP_INVALID' }) } catch (e) { fail(`snapshot roster: ${e.message}`) }
   if (roster.gid !== snapshot.gid || roster.epoch !== snapshot.epoch) fail('snapshot roster does not match the snapshot')
   const gid = fromHex(snapshot.gid, 16, 'gid')
-  const { group, install } = makeGroup({ gid, self: owner, id, ownerRef: owner, ownerEd: id.edPub, isOwner: true, lastSeq: parseLastSeq(snapshot.lastSeq), random })
+  const { group, install } = makeGroup({ gid, self: owner, id, ownerRef: owner, ownerEd: id.edPub, isOwner: true, lastSeq: parseLastSeq(snapshot.lastSeq), random, ...(now ? { now } : {}) })
   // stand the old roster up without a key, only so the next epoch chains to it / 立起旧名单（无密钥），只为让下一纪元接上
   install(roster.epoch, roster, te.encode(snapshot.roster), new Uint8Array(32))
   const next = ownerApi({ group, install, gid, owner, id, verifyMember, random, transports: { relays: relays ?? roster.relays ?? [], bus: bus ?? roster.bus }, startList: roster.members.map(normMember) })
@@ -537,7 +557,9 @@ export function openGroupInvite(wire, { self }) {
  * 只用于"去哪里找"；接受纪元后应改用名单里的（群主签过的）。重启后传入快照中的 `minEpoch`，拒绝中继重放的旧纪元；
  * 并传入其中的 `lastSeq`，时钟回拨时序号也不后退。
  */
-export function joinGroup({ self, identity, invite, ownerKeys, minEpoch, lastSeq, now }) {
+export function joinGroup(opts = {}) {
+  const { self, identity, invite, ownerKeys, minEpoch, lastSeq } = opts
+  const now = clockMs(opts)
   const id = checkIdentity(identity)
   if (!ownerKeys || !sameContainer(ownerKeys, invite.owner)) fail('ownerKeys must be the channel keys of invite.owner')
   let ownerEd

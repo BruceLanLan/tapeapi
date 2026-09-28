@@ -72,8 +72,12 @@ Usage: tapeapi-mcp [options] <service> [<service> ...]
   --no-pin             do not read or write the pin file (definitions are still pinned for this session)
   --allow-changed      accept tool definitions that changed on chain since they were pinned, once, and re-pin them
   --link-content       put each call's params and result in its verify link, in clear (default: hashes only)
+  --dev <url>          TESTING ONLY: read a local provider's manifest over http, no on-chain identity check (repeatable)
   --version            print the version
   --help               print this help
+
+Exit status: 0 normal exit, 1 a runtime failure (a service cannot be used, the pin file is unreadable), 2 a usage
+mistake (an unknown option, no service, --rpc with fewer than 2 operators). No environment variable is read.
 
 Tools are named after the methods (one service) or <prefix>_<method> (several, e.g. t11_1013_bnbUsd). Only free
 methods are exposed. Each result carries a signed receipt and a link anyone can use to verify it again. By default

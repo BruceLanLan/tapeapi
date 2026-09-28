@@ -61,7 +61,7 @@ test('rejects: over the 64 KiB TAP-20 limit, wrong container, invalid manifest, 
   const bad = base(); delete bad.methods
   assert.throws(() => api.tx.publishManifest({ container: ADDR.container, manifest: bad }), (e) => e.code === 'MANIFEST_INVALID')
   assert.throws(() => api.tx.publishManifest({ container: ADDR.container, manifest: '{not json' }), (e) => e.code === 'MANIFEST_INVALID' && /not JSON/.test(e.message))
-  assert.throws(() => api.tx.publishManifest({ container: 'nope', manifest: base() }), (e) => e.code === 'MANIFEST_INVALID')
+  assert.throws(() => api.tx.publishManifest({ container: 'nope', manifest: base() }), (e) => e.code === 'INVALID_ARGUMENT')
 })
 
 test('removeManifest -> removeFile(container, bare key)', () => {

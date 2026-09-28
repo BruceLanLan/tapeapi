@@ -103,7 +103,7 @@ not the params or result.)
 it from the GitHub release, not from the npm registry:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz tapeapi-mcp 11.1013.tape
 ```
 
 What it does differently from the remote server:
@@ -134,7 +134,7 @@ Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -154,7 +154,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -166,7 +166,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### Remote or local
@@ -220,7 +220,7 @@ Save the receipt (the `_meta["fun.tapeapi/receipt"]` object) as `receipt.json`. 
 release, or work inside a clone of the repository as in [Call a service](consume.md):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz
 ```
 
 ```js
@@ -267,8 +267,8 @@ no longer matches it. To check without the SDK, see [Verify without the SDK](con
 ## Run your own TapeAPI service as an MCP server
 
 `createMcpEndpoint` from `@tapeapi/server/mcp` turns any provider into a remote MCP server. The packages are not on
-npm and the server package has no release file yet, so work inside a clone of the repository, as in
-[Run a service](provide.md). This is how the public service does it
+npm: install both from the GitHub release, the SDK first (see the [server README](../../server/README.md#install)), or
+work inside a clone of the repository, as in [Run a service](provide.md). This is how the public service does it
 ([`examples/public-api/worker.js`](../../examples/public-api/worker.js)):
 
 ```js
@@ -276,12 +276,12 @@ import { createProvider } from '@tapeapi/server'
 import { createMcpEndpoint, MCP_PATH } from '@tapeapi/server/mcp'
 
 const provider = createProvider({ manifest, signerKey, rpcUrls, quorum: 2, methods })
-const mcp = createMcpEndpoint({ provider, manifest: provider.manifest, identity: { name: '42.1013.tape' } })
+const mcp = createMcpEndpoint({ provider, manifest: provider.manifest, name: '42.1013.tape' })
 
 export default {
   fetch(request) {
     const clientIp = request.headers.get('cf-connecting-ip') || undefined
-    if (new URL(request.url).pathname === MCP_PATH) return mcp.handle(request, { clientIp })
+    if (new URL(request.url).pathname === MCP_PATH) return mcp.handleRequest(request, { clientIp })
     return provider.handleRequest(request, { clientIp })
   },
 }
@@ -292,7 +292,7 @@ export default {
   envelope, under the same rate limits, with a receipt and a verification link.
 - `/mcp` is a route on your server, not part of the manifest, so adding it changes nothing on chain and needs no
   republish.
-- `identity.name` is the TapeOut name shown in results and receipts.
+- `name` is the TapeOut name shown in results and receipts.
 - Verification links carry hashes only; `linkContent: true` puts the params and results in them, in clear.
 
 ## Tape out your own MCP server
@@ -384,7 +384,7 @@ isolate can be restarted at any time. With it, changed tools are refused after a
   or later):
 
   ```bash
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### What clients check

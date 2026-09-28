@@ -14,11 +14,11 @@
 //   ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 //
 // Strict mode and streams: a stream's receipt comes right before its final event (message_stop, response.completed,
-// [DONE]) and covers it, so in strict mode everything from the receipt on is held until the stream ends and checked;
-// if the check fails the final event is never delivered and a format-shaped error event is sent instead. A stream whose
-// receipt is appended after its end (no final event) can only be failed after it has been delivered.
-// 严格模式与流：流的回执紧挨在最终事件之前并覆盖它，所以严格模式下从回执起的内容一直扣到流结束、核验后才放出；核验失败则
-// 最终事件永不送达，改发一个该格式的错误事件。回执追加在末尾的流（没有最终事件）只能在送达之后判定失败。
+// [DONE]) and covers it. A stream ends at its final event, at [DONE] or when the upstream closes, whichever comes first;
+// in strict mode the chunk in which it ends is held until a receipt that came before the end verifies, and released at
+// once. If none does, the end is never delivered and a format-shaped error event is sent instead.
+// 严格模式与流：流的回执紧挨在最终事件之前并覆盖它。流在最终事件、[DONE] 或上游关闭时结束（先到者为准）；严格模式下，流在其中
+// 结束的那一块被扣住，直到结束之前到达的回执核验通过，随即放出；都不通过则结束永不送达，改发一个该格式的错误事件。
 //
 // Salt: on a metered path, a JSON request body gets 64 random whitespace characters appended before it is forwarded
 // (ai.saltRequestBody), so the request hash in the receipt cannot be confirmed by hashing guessed prompts. The upstream
@@ -74,6 +74,9 @@ Usage: tapeapi-verify [options] <service>
   --dev <url>          TESTING ONLY: read the manifest from a local sidecar, no on-chain identity check
   --quiet              no line for calls that carry no receipt (models, count_tokens, ...)
   --version, --help
+
+Exit status: 0 normal exit, 1 a runtime failure (the service cannot be resolved, the port cannot be opened), 2 a
+usage mistake (an unknown option, no service, --rpc with fewer than 2 operators). No environment variable is read.
 
 Then point your client at it:
   Claude Code   ANTHROPIC_BASE_URL=http://127.0.0.1:${DEFAULT_PORT}
@@ -313,45 +316,89 @@ async function main() {
       res.writeHead(up.status, out)
       return res.end(bytes)
     }
-    // A stream: passed on chunk by chunk; in strict mode everything from the receipt comment on is held until it checks.
-    // 流：逐块转交；严格模式下从回执注释起的内容扣住，直到核验通过。
+    // A stream: passed on as it arrives. It ends at the format's final event, at its sentinel ([DONE]) or when the upstream
+    // closes, whichever comes first (the openai SDKs stop reading at [DONE]). Strict: only whole events are passed on (the
+    // bytes after a chunk's last blank line wait for the rest of their event), and the event that ends the stream waits
+    // until a receipt that came before it verifies, then goes on at once; with none, a format-shaped error event is sent
+    // in its place, and the client never holds half an event that the error could complete (review G1 M14, RC-2). After
+    // a verified end, an event the receipt does not cover is not passed on. Not strict: nothing is held; the verdict is
+    // logged when the upstream closes. The upstream breaking off after the end (strict: once verified) is not a failure
+    // (review RC-4).
+    // 流：到达即转交。流在格式的最终事件、sentinel（[DONE]）或上游关闭时结束（先到者为准；openai SDK 读到 [DONE] 就停止）。严格模式：
+    // 只转交完整的事件（块中最后一个空行之后的字节等待其事件的其余部分），结束流的那个事件要等结束之前到达的回执核验通过，随即放出；
+    // 否则改发一个该格式的错误事件，客户端手里也不会有半个会被错误事件补全的事件。核验通过之后，回执不覆盖的事件不再转交。
+    // 非严格模式不扣留，上游关闭时记录结论。上游在结束之后断开（严格模式：须已核验通过）不算失败。
     const st = format.streamState()
-    const scanner = ai.createSseScanner({ sentinel: format.stream.sentinel ?? null, onEvent: (j, n) => { try { st.event(j, n) } catch { /* the adapter's problem is the verdict's */ } } })
-    const held = []
+    const scanner = ai.createSseScanner({ sentinel: format.stream.sentinel ?? null, final: format.stream.final ?? null, onEvent: (j, n) => { try { st.event(j, n) } catch { /* the adapter's problem is the verdict's */ } } })
+    // The last receipt first (the outermost sidecar's); an earlier one only if the last does not verify.
+    // 先看最后一个回执（最外层旁路的）；它核验不过时才看更早的。
+    async function verify(receipts, atEnd) {
+      let rep = null
+      for (let i = receipts.length - 1; i >= 0; i--) {
+        let envelope
+        try { envelope = ai.decodeReceiptHeader(receipts[i]) } catch { continue }
+        const v = await check({ ...common, envelope, responseSha256: scanner.digest(), stream: true, answer: st.result() })
+        if (v.ok || !rep) rep = v
+        if (v.ok) break
+      }
+      if (!rep) rep = { ok: false, problems: [atEnd ? 'no tapeapi-receipt comment before the end of the event stream' : 'no tapeapi-receipt comment in the event stream'], warnings: [], unchecked: [], receipt: null }
+      rep = { ...base, ...rep, stream: true }
+      report(rep)
+      return rep
+    }
+    // "\n\n" first: the receipt comment may have arrived split, its head already passed on unterminated; a line end closes
+    // it and a blank line after a comment dispatches nothing, so the error event always stands on its own.
+    // 先写 "\n\n"：回执注释可能被切开到达，前半截已转出且未结束；换行把它结束，注释后的空行不分派任何事件，错误事件因此总是独立的。
+    const fail = (rep) => { res.write('\n\n' + streamErrorEvent(format, `the usage receipt did not verify: ${rep.problems.join('; ')}`, st.result().id)); res.end(); ac.abort() }
+    // Strict: the bytes of an event not yet whole. At most this much; an event larger than that fails the stream.
+    // 严格模式：尚不完整的事件的字节。至多这么多；更大的事件让流失败。
+    let partial = [], partialLen = 0
+    const flushPartial = () => { for (const p of partial) res.write(p); partial = []; partialLen = 0 }
+    let verdict = null
     res.writeHead(up.status, out)
     try {
       for await (const c of up.body) {
         const chunk = new Uint8Array(c)
-        const before = scanner.info.receipts.length
-        scanner.push(chunk)
-        if (opts.strict && (held.length || scanner.info.receipts.length > before)) held.push(chunk)
-        else res.write(chunk)
+        const events = scanner.info.events, wasEnded = scanner.info.receiptsAtEnd !== null
+        const cut = scanner.push(chunk)
+        if (!opts.strict) { res.write(chunk); continue }
+        if (wasEnded) {
+          if (scanner.info.events > events) {
+            report({ ...base, ok: false, problems: ['an event after the end of the stream is not covered by its receipt'], warnings: [], unchecked: [], receipt: verdict?.receipt ?? null, stream: true })
+            res.end(); ac.abort(); return
+          }
+          res.write(chunk); continue
+        }
+        if (scanner.info.receiptsAtEnd === null) {
+          if (cut < 0) {
+            partial.push(chunk); partialLen += chunk.length
+            if (partialLen > ai.EVENT_PARSE_LIMIT) { report(verdict = { ...base, ok: false, problems: [`an event larger than ${ai.EVENT_PARSE_LIMIT} bytes`], warnings: [], unchecked: [], receipt: null, stream: true }); return fail(verdict) }
+            continue
+          }
+          flushPartial(); res.write(chunk.subarray(0, cut))
+          if (cut < chunk.length) { partial.push(chunk.subarray(cut)); partialLen = chunk.length - cut }
+          continue
+        }
+        verdict = await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
+        if (!verdict.ok) return fail(verdict)
+        flushPartial(); res.write(chunk)
       }
     } catch (e) {
+      // After the end the answer is whole: the upstream breaking off then is not a failure (strict: once verified).
+      // 结束之后回答已完整：此时上游断开不算失败（严格模式：须已核验通过）。
+      if (!ac.signal.aborted && scanner.info.receiptsAtEnd !== null && (!opts.strict || verdict?.ok)) {
+        if (!verdict) await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
+        return res.end()
+      }
       if (!ac.signal.aborted) log(`FAIL ${verb} ${url.pathname}: the stream broke off (${e?.message || e})`)
       return res.destroy()
     }
     scanner.end()
-    let rep = null
-    const receipts = scanner.info.receipts
-    // The last receipt first (the outermost sidecar's); an earlier one only if the last does not verify.
-    // 先看最后一个回执（最外层旁路的）；它核验不过时才看更早的。
-    for (let i = receipts.length - 1; i >= 0; i--) {
-      let envelope
-      try { envelope = ai.decodeReceiptHeader(receipts[i]) } catch { continue }
-      const v = await check({ ...common, envelope, responseSha256: scanner.digest(), stream: true, answer: st.result() })
-      if (v.ok || !rep) rep = v
-      if (v.ok) break
+    if (!verdict) {
+      verdict = await verify(scanner.info.receipts, false)
+      if (!verdict.ok && opts.strict) return fail(verdict)
+      flushPartial()
     }
-    if (!rep) rep = { ok: false, problems: ['no tapeapi-receipt comment in the event stream'], warnings: [], unchecked: [], receipt: null }
-    const sid = st.result().id
-    rep = { ...base, ...rep, stream: true }
-    report(rep)
-    // "\n\n" first: the receipt comment may have arrived split, its head already passed on unterminated; a line end closes
-    // it and a blank line after a comment dispatches nothing, so the error event always stands on its own.
-    // 先写 "\n\n"：回执注释可能被切开到达，前半截已转出且未结束；换行把它结束，注释后的空行不分派任何事件，错误事件因此总是独立的。
-    if (!rep.ok && opts.strict) res.write('\n\n' + streamErrorEvent(format, `the usage receipt did not verify: ${rep.problems.join('; ')}`, sid))
-    else for (const c of held) res.write(c)
     res.end()
   })
   // No overall request timeout: a stream may run for minutes. / 不设整体请求超时：流可能持续数分钟。

@@ -3,7 +3,7 @@
 // invite. deliverGroupUpdate posts both; checkGroupInvites reads the member's inbox. See docs/guides/groups.md.
 import type { Address, TxRequest } from './common.js'
 import type { Identity } from './channel.js'
-import type { Group } from './group.js'
+import type { Group, OwnerGroup } from './group.js'
 import type { TapeAPI, ResolvedService, Payer } from './index.js'
 
 /** The error code of every failure in this module. */
@@ -12,11 +12,16 @@ export declare const DELIVERY_ERROR: 'GROUP_DELIVERY'
 /** A relay to post to or read from: a TapeAPI client and the resolved relay service (e.g. api.resolve('12.1013.tape')). */
 export interface RelayCarrier {
   api: Pick<TapeAPI, 'call'> & Partial<Pick<TapeAPI, 'chain' | 'chainId'>>
-  svc: ResolvedService
-  /** For a priced relay: the payment channel relaySend is paid from. */
+  /** The resolved relay service. Renamed from `svc` in 1.0. */
+  service: ResolvedService
+  /** @experimental For a priced relay: the payment channel relaySend is paid from (TAP-22). */
   payer?: Payer
 }
-/** A ChannelBus to post to. The SDK holds no wallet: sendTx sends the transaction and returns its hash. */
+/**
+ * A ChannelBus to post to. The SDK holds no wallet: sendTx sends the transaction and returns its hash.
+ * (`bus` elsewhere in the SDK: in busTransport / busReader / busPrivacyReader it is the ChannelBus contract ADDRESS; in
+ * createInvite / createGroup and a channel record's `inbox.bus` it is the TAP-26 bus DESCRIPTOR. Here it is a carrier.)
+ */
 export interface BusCarrier {
   address: Address
   sendTx: (tx: TxRequest) => Promise<string> | string
@@ -57,11 +62,15 @@ export interface GroupDeliveryResult {
  * `data: GroupDeliveryResult`; with throwOnError: false the result says ok: false instead.
  */
 export declare function deliverGroupUpdate(opts: {
-  group: Group
-  update?: { epochWire: Uint8Array; added?: Array<{ container: Address; chainId?: number }>; [key: string]: unknown }
+  group: OwnerGroup
+  /** What createGroup / addMembers / removeMembers / rotate / resumeGroup returned (a GroupUpdate, or any object with its epochWire and added). */
+  update?: { epochWire: Uint8Array; added?: ReadonlyArray<{ container: Address; chainId?: number }> }
   invite?: 'new' | 'all' | 'none' | Array<Address | { container: Address; chainId?: number }>
-  relay?: RelayCarrier | RelayCarrier[]
-  bus?: BusCarrier | BusCarrier[]
+  /** Relay clients to post through (always a list). Not `relays`, which is a roster's list of { url, container }
+   *  (createGroup); `relays`, `relay`, `buses` and `bus` are refused with INVALID_ARGUMENT. */
+  relayClients?: RelayCarrier[]
+  /** ChannelBus contracts to post to (always a list). */
+  busClients?: BusCarrier[]
   throwOnError?: boolean
   random?: (n: number) => Uint8Array
 }): Promise<GroupDeliveryResult>
@@ -92,11 +101,12 @@ export interface GroupInviteCheck {
 export declare function checkGroupInvites(opts: {
   self: { container: Address; chainId?: number; staticSecret?: Uint8Array }
   identity?: Identity
-  relay: RelayCarrier | RelayCarrier[]
+  /** Relay clients to read (always a list; `relays` and `relay` are refused). */
+  relayClients: RelayCarrier[]
   cursors?: CursorStore
   waitMs?: number
   /** The holder's wallet, if known: the call is refused when it equals self.container. */
   holder?: Address
-  /** true (use relay[0].api) or a TapeAPI client: check the container's channel record publishes this identity. */
+  /** true (use relayClients[0].api) or a TapeAPI client: check the container's channel record publishes this identity. */
   checkSelf?: boolean | Pick<TapeAPI, 'chain' | 'chainId'>
 }): Promise<GroupInviteCheck>

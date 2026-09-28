@@ -33,7 +33,7 @@ export const RESPONSE_LIMIT = 16 * 1024 * 1024
 /** A non-stream answer must be complete, and a stream must have started, within this many ms (600 s, the official SDKs'
  *  own timeout: Claude Code falls back to a non-streaming call after a stream error, and that call may be long).
  *  / 非流式回答须在此时限内完成、流须在此时限内开始（600 秒，与官方 SDK 的超时相同）。 */
-export const UPSTREAM_TIMEOUT_MS = 600_000
+export const AI_UPSTREAM_TIMEOUT_MS = 600_000
 /** A stream that sends nothing for this many ms is ended there (its receipt appended, complete false). / 流在这么久没有
  *  任何字节时就此结束（回执追加在末尾，complete 为 false）。 */
 export const STREAM_IDLE_MS = 300_000
@@ -214,42 +214,42 @@ function validFormat(f) {
  */
 export function createAIProxy(opts = {}) {
   const { upstream, manifestBase, signerKey, models, receiptTtlMs = RECEIPT_TTL_MS, maxReceipts = MAX_RECEIPTS, formats = ai.FORMATS, requireRequestHash = false, forwardSessionHeaders = true } = opts
-  if (!isObj(upstream) || typeof upstream.baseUrl !== 'string') throw new TapeAPIError('BAD_REQUEST', 'upstream must be { baseUrl, headers? }')
+  if (!isObj(upstream) || typeof upstream.baseUrl !== 'string') throw new TapeAPIError('INVALID_ARGUMENT', 'upstream must be { baseUrl, headers? }')
   let up
-  try { up = new URL(upstream.baseUrl) } catch { throw new TapeAPIError('BAD_REQUEST', 'upstream.baseUrl must be a URL') }
-  if (up.protocol !== 'https:' && up.protocol !== 'http:') throw new TapeAPIError('BAD_REQUEST', 'upstream.baseUrl must be http(s)')
-  if (up.username || up.password || up.search || up.hash) throw new TapeAPIError('BAD_REQUEST', 'upstream.baseUrl must not carry credentials, a query or a fragment (put a key in upstream.headers)')
+  try { up = new URL(upstream.baseUrl) } catch { throw new TapeAPIError('INVALID_ARGUMENT', 'upstream.baseUrl must be a URL') }
+  if (up.protocol !== 'https:' && up.protocol !== 'http:') throw new TapeAPIError('INVALID_ARGUMENT', 'upstream.baseUrl must be http(s)')
+  if (up.username || up.password || up.search || up.hash) throw new TapeAPIError('INVALID_ARGUMENT', 'upstream.baseUrl must not carry credentials, a query or a fragment (put a key in upstream.headers)')
   const upPath = up.pathname.replace(/\/+$/, '')
   const operatorHeaders = new Headers()
   if (upstream.headers !== undefined) {
-    if (!isObj(upstream.headers)) throw new TapeAPIError('BAD_REQUEST', 'upstream.headers must be an object of strings')
+    if (!isObj(upstream.headers)) throw new TapeAPIError('INVALID_ARGUMENT', 'upstream.headers must be an object of strings')
     for (const [k, v] of Object.entries(upstream.headers)) {
-      if (typeof v !== 'string') throw new TapeAPIError('BAD_REQUEST', `upstream.headers.${k} must be a string`)
-      try { operatorHeaders.set(k, v) } catch { throw new TapeAPIError('BAD_REQUEST', `upstream.headers.${k} is not a valid header`) }
+      if (typeof v !== 'string') throw new TapeAPIError('INVALID_ARGUMENT', `upstream.headers.${k} must be a string`)
+      try { operatorHeaders.set(k, v) } catch { throw new TapeAPIError('INVALID_ARGUMENT', `upstream.headers.${k} is not a valid header`) }
     }
   }
-  if (!isObj(manifestBase)) throw new TapeAPIError('MANIFEST_INVALID', 'manifestBase must be an object')
-  if (!signerKey) throw new TapeAPIError('BAD_KEY', 'signerKey required')
-  if (!Number.isFinite(receiptTtlMs) || receiptTtlMs <= 0) throw new TapeAPIError('BAD_REQUEST', 'receiptTtlMs must be a positive number')
-  if (!Number.isInteger(maxReceipts) || maxReceipts <= 0) throw new TapeAPIError('BAD_REQUEST', 'maxReceipts must be a positive integer')
-  if (typeof requireRequestHash !== 'boolean') throw new TapeAPIError('BAD_REQUEST', 'requireRequestHash must be true or false')
-  if (typeof forwardSessionHeaders !== 'boolean') throw new TapeAPIError('BAD_REQUEST', 'forwardSessionHeaders must be true or false')
+  if (!isObj(manifestBase)) throw new TapeAPIError('INVALID_ARGUMENT', 'manifestBase must be an object')
+  if (!signerKey) throw new TapeAPIError('INVALID_ARGUMENT', 'signerKey required')
+  if (!Number.isFinite(receiptTtlMs) || receiptTtlMs <= 0) throw new TapeAPIError('INVALID_ARGUMENT', 'receiptTtlMs must be a positive number')
+  if (!Number.isInteger(maxReceipts) || maxReceipts <= 0) throw new TapeAPIError('INVALID_ARGUMENT', 'maxReceipts must be a positive integer')
+  if (typeof requireRequestHash !== 'boolean') throw new TapeAPIError('INVALID_ARGUMENT', 'requireRequestHash must be true or false')
+  if (typeof forwardSessionHeaders !== 'boolean') throw new TapeAPIError('INVALID_ARGUMENT', 'forwardSessionHeaders must be true or false')
   const receiptRl = opts.receiptRateLimit === false ? null : {
     ip: Number(opts.receiptRateLimit?.ip ?? RECEIPT_LOOKUPS_PER_MIN),
     windowMs: Number(opts.receiptRateLimit?.windowMs ?? 60_000),
   }
-  if (receiptRl && (!Number.isInteger(receiptRl.ip) || receiptRl.ip < 0 || !Number.isInteger(receiptRl.windowMs) || receiptRl.windowMs <= 0)) throw new TapeAPIError('BAD_REQUEST', 'receiptRateLimit must be false or { ip: a non-negative integer, windowMs: a positive integer }')
-  if (!Array.isArray(formats) || !formats.length || !formats.every(validFormat)) throw new TapeAPIError('BAD_REQUEST', 'formats must be a non-empty list of adapters (see sdk ai.js)')
-  if (new Set(formats.map((f) => f.method)).size !== formats.length || new Set(formats.map((f) => f.name)).size !== formats.length) throw new TapeAPIError('BAD_REQUEST', 'two formats share a name or a receipt method')
+  if (receiptRl && (!Number.isInteger(receiptRl.ip) || receiptRl.ip < 0 || !Number.isInteger(receiptRl.windowMs) || receiptRl.windowMs <= 0)) throw new TapeAPIError('INVALID_ARGUMENT', 'receiptRateLimit must be false or { ip: a non-negative integer, windowMs: a positive integer }')
+  if (!Array.isArray(formats) || !formats.length || !formats.every(validFormat)) throw new TapeAPIError('INVALID_ARGUMENT', 'formats must be a non-empty list of adapters (see sdk ai.js)')
+  if (new Set(formats.map((f) => f.method)).size !== formats.length || new Set(formats.map((f) => f.name)).size !== formats.length) throw new TapeAPIError('INVALID_ARGUMENT', 'two formats share a name or a receipt method')
   const listOf = (k) => formats.flatMap((f) => (Array.isArray(f[k]) ? f[k].map((h) => String(h).toLowerCase()) : []))
   const forward = [...new Set([...FORWARD_BASE, ...listOf('headers')])]
   const allowHeaders = forward.join(', ')
   const CORS = { 'access-control-allow-origin': '*', 'access-control-expose-headers': [...new Set([...EXPOSE_BASE, ...listOf('exposeHeaders')])].join(', ') }
   const oaError = (status, code, message, extra = {}) => errorResponse(status, code, message, { ...CORS, ...extra })
-  const timeoutMs = Number(opts.upstreamTimeoutMs ?? UPSTREAM_TIMEOUT_MS)
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new TapeAPIError('BAD_REQUEST', 'upstreamTimeoutMs must be a positive number')
+  const timeoutMs = Number(opts.upstreamTimeoutMs ?? AI_UPSTREAM_TIMEOUT_MS)
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new TapeAPIError('INVALID_ARGUMENT', 'upstreamTimeoutMs must be a positive number')
   const idleMs = Number(opts.streamIdleMs ?? STREAM_IDLE_MS)
-  if (!Number.isFinite(idleMs) || idleMs < 0) throw new TapeAPIError('BAD_REQUEST', 'streamIdleMs must be 0 or a positive number')
+  if (!Number.isFinite(idleMs) || idleMs < 0) throw new TapeAPIError('INVALID_ARGUMENT', 'streamIdleMs must be 0 or a positive number')
   const signer = sig.privateKeyToAddress(signerKey)
   const log = opts.log || ((...a) => console.error('[tapeapi/ai-proxy]', ...a))
   const fetchImpl = opts.fetch || ((...a) => globalThis.fetch(...a))
@@ -263,7 +263,7 @@ export function createAIProxy(opts = {}) {
   const { tapeapi = '0.1', ...base } = manifestBase
   const live = base.endpoints?.live?.[0]
   const root = (opts.publicUrl ?? (typeof live === 'string' ? live.replace(/\/tapeapi\/v1\/*$/, '') : null))?.replace(/\/+$/, '')
-  if (!root) throw new TapeAPIError('MANIFEST_INVALID', 'publicUrl is required when endpoints.live is empty')
+  if (!root) throw new TapeAPIError('INVALID_ARGUMENT', 'publicUrl is required when endpoints.live is empty')
   const field = ai.validateAIField({ endpoints: formats.map((f) => ({ format: f.name, baseUrl: root + f.baseSuffix })), models }, { allowHttp: opts.allowHttp === true || base.dev === true })
   const rootPath = new URL(root).pathname.replace(/\/+$/, '')
   const manifest = { tapeapi, ...base, signer, methods: [{ ...RECEIPT_METHOD, params: { ...RECEIPT_METHOD.params }, returns: { ...RECEIPT_METHOD.returns }, description: receiptDescription(receiptTtlMs) }], [ai.MANIFEST_FIELD]: field }

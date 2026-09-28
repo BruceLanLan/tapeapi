@@ -166,7 +166,7 @@ async function tracedFetch(url, init) {
   return res
 }
 // 4 s per node: a node that drops the connection must not hold every read for the 8 s default. / 每节点 4 秒。
-const api = createTapeAPI({ rpcUrls: RPC_URLS, quorum: QUORUM, timeoutMs: 4000, fetch: tracedFetch })
+const api = createTapeAPI({ rpcUrls: RPC_URLS, quorum: QUORUM, rpcTimeoutMs: 4000, fetch: tracedFetch })
 
 // ── locate: name, container, or processor contract + number / 定位：名称、容器，或处理器合约加编号 ─────────────
 // <#ID>.<processor>.tape on BNB Smart Chain, <#ID>.<area>.<processor>.tape on X Layer (2) and Base (3)

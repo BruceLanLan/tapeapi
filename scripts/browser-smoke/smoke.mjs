@@ -1,6 +1,7 @@
 // Runs the spec vectors and a live TAP-26 handshake inside a real browser, against the unbundled SDK source.
 // 在真实浏览器里、对未打包的 SDK 源码运行规范向量与一次真实的 TAP-26 握手。
-import { canonicalJSON, channel, safeParseJSON } from '/sdk/src/index.js'
+import { canonicalJSON, safeParseJSON } from '/sdk/src/index.js'
+import * as channel from '/sdk/src/channel.js'   // the implementation module (toHex, fromHex) / 实现模块
 import { responseDigest, signDigest, recoverAddress, privateKeyToAddress } from '/sdk/src/sig.js'
 import { toHex } from '/sdk/src/abi.js'
 

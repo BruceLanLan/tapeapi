@@ -33,6 +33,7 @@ import { createProvider } from '@tapeapi/server'
 const provider = createProvider({
   manifest: JSON.parse(await readFile('manifest.json', 'utf8')),
   signerKey: process.env.SIGNER_KEY,
+  dev: true,                                    // local run: http endpoint, no delegation yet; remove it to go live
   rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
   quorum: 2,
   methods: {
@@ -56,12 +57,17 @@ Start from a working example rather than a blank file:
 - [`examples/cloudflare-worker/`](../../examples/cloudflare-worker/): the same on Cloudflare Workers, deployable from a
   phone.
 
-Without a delegation the service runs in dev mode: clients connect with `createTapeAPI({ dev: true })`. Check it
-against the protocol with the black-box conformance suite:
+`dev: true` is what lets it run locally: an http endpoint, no delegation, priced methods without an escrow. A
+manifest's own `dev` field switches nothing; remove the option when you go live. Clients connect to a dev service
+with `createTapeAPI({ dev: true })`. Check it against the protocol with the black-box conformance suite:
 
 ```bash
 node conformance/run.mjs --url http://127.0.0.1:8787
 ```
+
+A dev service reports NOT CONFORMANT, and that is expected: it has no delegation (a MUST), and methods that need
+parameters are skipped unless you pass them with `--params`. Run the suite again once the service is live with a
+holder delegation; that is the result that counts.
 
 ## 2. Go live from a phone (Cloudflare + holder console)
 
@@ -133,6 +139,8 @@ There is no revocation: an old delegation stays valid until its own expiry, so i
 generate a new key in step 3, sign for it in step 4 and publish in step 5 at once.
 
 ## 5. Paid methods
+
+> **Experimental.** Payments (TAP-22 payment channels and the escrow contract) are not deployed or audited and are not covered by the 1.0 stability promise: the names below may change in a 1.x minor release. See [Upgrading to 1.0](upgrade-1.0.md#what-10-promises).
 
 Set `priceBEM` on a method and name an escrow in `payment`. The runtime verifies each voucher, meters per consumer and
 refuses anything below the price. Every endpoint of one paid service must share one atomic meter store (D1 on

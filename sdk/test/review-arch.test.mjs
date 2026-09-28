@@ -3,7 +3,11 @@
 // 架构审查中 SDK 部分的发现 A4、B1、B7、B8、B10、B13、B14。每个 `FIXED <id>` 测试重放审查描述的场景，断言现在的正确行为。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { channel, group as G, TapeAPIError, createTapeAPI, sig, CHANNEL_KEYS_KEY, canonicalJSON } from '../src/index.js'
+import * as channel from '../src/channel.js'   // the implementation module, test hooks included / 实现模块，含测试钩子
+import { TapeAPIError, createTapeAPI, sig, CHANNEL_KEYS_KEY, canonicalJSON } from '../src/index.js'
+// The implementation module: buildEpoch and senderKey are not in the public `group` namespace (review RC-7).
+// 实现模块：buildEpoch 与 senderKey 不在公开的 group 命名空间里。
+import * as G from '../src/group.js'
 import { validateManifest } from '../src/manifest.js'
 import { createRpc } from '../src/rpc.js'
 import { createFakeChain, ADDR } from './helpers/fake-chain.mjs'
@@ -56,7 +60,7 @@ test('FIXED B10: tapeapi is MAJOR.MINOR: "0.1" as before, "0.2" with a field 0.1
 async function trio({ ownerNow } = {}) {
   const ids = [1, 2, 3].map(() => channel.generateIdentity())
   const ms = ids.map((identity, i) => ({ container: C(0xa000 + i), chainId: 56, identity }))
-  const { group: owner, epochWire } = await G.createGroup({ self: ms[0], identity: ids[0], members: [entry(ms[1]), entry(ms[2])], bus: BUS, ...TRUST, ...(ownerNow ? { now: ownerNow } : {}) })
+  const { group: owner, epochWire } = await G.createGroup({ self: ms[0], identity: ids[0], members: [entry(ms[1]), entry(ms[2])], bus: BUS, ...TRUST, ...(ownerNow ? { clock: ownerNow } : {}) })
   const fresh = (m, o = {}) => G.joinGroup({ self: m, identity: m.identity, invite: { gid: owner.gid, owner: { container: ms[0].container, chainId: 56 } }, ownerKeys: entry(ms[0]), ...o })
   const join = async (m, o) => { const g = fresh(m, o); await g.acceptEpoch(epochWire, TRUST); return g }
   return { ms, owner, epochWire, fresh, join }
@@ -64,7 +68,7 @@ async function trio({ ownerNow } = {}) {
 
 test('FIXED B14: an owner whose clock runs 6 minutes fast no longer kills the group; a roster issued hours ahead is still refused', async () => {
   assert.equal(G.FUTURE_SKEW_S, 3600)
-  const { ms, join, fresh, owner } = await trio({ ownerNow: () => Date.now() + 6 * 60_000 })
+  const { ms, join, fresh, owner } = await trio({ ownerNow: () => (Date.now() + 6 * 60_000) / 1000 })
   const gb = await join(ms[1])
   assert.equal(gb.epoch, 0, 'the member accepts the epoch despite the owner\'s skew')
   assert.equal(gb.open(owner.seal('hi'), { text: true }).data, 'hi')
@@ -75,7 +79,7 @@ test('FIXED B14: an owner whose clock runs 6 minutes fast no longer kills the gr
 test('FIXED B14: a member restarting with a clock that stepped back keeps its seq above the last one it used (snapshot().lastSeq), so receivers do not take its messages for replays', async () => {
   const T = Date.now()
   const { ms, join, fresh, epochWire } = await trio()
-  const gb = await join(ms[1], { now: () => T })
+  const gb = await join(ms[1], { clock: () => T / 1000 })
   const gc = await join(ms[2])
   assert.equal(gb.snapshot().lastSeq, undefined, 'nothing sealed yet: no lastSeq')
   for (const t of ['one', 'two']) gc.open(gb.seal(t))
@@ -83,8 +87,8 @@ test('FIXED B14: a member restarting with a clock that stepped back keeps its se
   assert.equal(snap.lastSeq, ((BigInt(T) << 16n) + 1n).toString(), 'the last seq used, as a decimal string (it is beyond 2^53)')
   // B restarts; its clock is now a minute behind (NTP step, a VM restored from a snapshot).
   // B 重启；它的时钟慢了一分钟（NTP 校时、虚拟机从快照恢复）。
-  const back = () => T - 60_000
-  const b2 = fresh(ms[1], { now: back, minEpoch: snap.epoch, lastSeq: snap.lastSeq })
+  const back = () => (T - 60_000) / 1000
+  const b2 = fresh(ms[1], { clock: back, minEpoch: snap.epoch, lastSeq: snap.lastSeq })
   await b2.acceptEpoch(epochWire, TRUST)
   const w = b2.seal('after restart')
   assert.ok(seqOf(w) > BigInt(snap.lastSeq), 'max(clock_ms << 16, lastSeq + 1)')
@@ -93,7 +97,7 @@ test('FIXED B14: a member restarting with a clock that stepped back keeps its se
   assert.equal(b2.snapshot().lastSeq, seqOf(w).toString(), 'the restarted sender reports its new last seq')
   // Without lastSeq the new seq comes from the stepped-back clock and C refuses it: what the fix is for.
   // 不传 lastSeq 时，新序号来自回拨的时钟，C 会拒绝：这正是修复的对象。
-  const b3 = fresh(ms[1], { now: back })
+  const b3 = fresh(ms[1], { clock: back })
   await b3.acceptEpoch(epochWire, TRUST)
   assert.throws(() => gc.open(b3.seal('lost')), isGroupErr(/already seen/))
   for (const bad of ['-1', '01', '1.5', 'x', 12, '1' + '0'.repeat(20)]) assert.throws(() => fresh(ms[1], { lastSeq: bad }), isGroupErr(/lastSeq/), String(bad))
@@ -259,7 +263,7 @@ test('FIXED A3 (consumer): a lapsed provider\'s unsigned 503 is reported as DELE
     const url = `http://127.0.0.1:${srv.address().port}/tapeapi/v1`
     provider.manifest.endpoints.live = [url]
     cc.writeFile(A.container, MANIFEST_KEY, JSON.stringify(mf(url)))
-    const api = createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, chainId: 56, hub: A.hub, siteRegistry: A.siteRegistry, allowHttp: true, fetch: cc.fetchWith((u, init) => fetch(u, init)), timeoutMs: 1000 })
+    const api = createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, chainId: 56, hub: A.hub, siteRegistry: A.siteRegistry, allowHttp: true, fetch: cc.fetchWith((u, init) => fetch(u, init)), rpcTimeoutMs: 1000 })
     const svc = await api.resolve(A.container)
     assert.equal((await api.call(svc, 'ping', {})).verified, true)
     provider.manifest.delegation.expires = Math.floor(Date.now() / 1000)          // lapses on the provider / 提供者一侧过期
@@ -413,7 +417,7 @@ test('FIXED B7: the cache never lets an older record back in (arch B4), and the 
   const A2 = container(chain, 5, { issued: nowS() - 60 })                     // the holder rotates / 持有人轮换密钥
   const cur = await c2.chain.channelKeys(A2.container)
   assert.notEqual(cur.x25519, old.x25519)
-  assert.equal(floor.get(A2.container.toLowerCase()), cur.issued, 'the floor advanced')
+  assert.equal(floor.get(`56:${A2.container.toLowerCase()}`), cur.issued, "the floor advanced, under the 1.0 key <chainId>:<container>")
   assert.equal((await c1.chain.channelKeys(A1.container)).x25519, cur.x25519, 'c1\'s cached record is below the shared floor: a miss, read again, the new one')
   chain.writeFile(A1.container, CHANNEL_KEYS_KEY, oldBytes)                   // a site writer puts the old one back / 旧记录被放回
   assert.equal((await c1.chain.channelKeys(A1.container)).x25519, cur.x25519, 'the cache holds the newer one')

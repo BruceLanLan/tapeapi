@@ -1,8 +1,8 @@
 // Read a body with a byte cap, whatever content-length says (a chunked body has none): count the bytes as they arrive
 // and stop reading at the first chunk past the limit. Shared by the remote /mcp endpoint (mcp.js) and the signing
-// proxies (mcp-proxy.js and openai-proxy.js: request bodies and upstream answers). Internal: not a package export.
+// proxies (mcp-proxy.js and ai-proxy.js: request bodies and upstream answers). Internal: not a package export.
 // 按字节上限读取正文，不看 content-length（分块正文没有它）：边到边计数，超过上限的第一块就停止读取。远程 /mcp（mcp.js）
-// 与两个签名代理（mcp-proxy.js、openai-proxy.js：请求正文和上游应答）共用。内部模块，不是包导出。
+// 与两个签名代理（mcp-proxy.js、ai-proxy.js：请求正文和上游应答）共用。内部模块，不是包导出。
 //
 // No node: imports: runs in Workers and Node alike. / 不引用 node:，Workers 与 Node 都能运行。
 

@@ -158,7 +158,7 @@ async function readTwap({ pool, window, base, quote, deviationBps, block }) {
 }
 
 const provider = createProvider({
-  manifest, signerKey: SIGNER_KEY, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID, allowSingleNode: !PROD, log, store,
+  manifest, signerKey: SIGNER_KEY, dev: !PROD, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID, allowSingleNode: !PROD, log, store,
   methods: {
     // [quorum] 任意 PancakeSwap V3 池的 TWAP + 现价 + 偏离标志 / any V3 pool's TWAP, spot and deviation flag
     twap: async ({ pool, window, base, quote, deviationBps, block } = {}) =>

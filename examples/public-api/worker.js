@@ -46,7 +46,7 @@ export function build(env) {
     manifest: manifestOf(env),
     signerKey: env.SIGNER_KEY,
     allowHttp: /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(env.PUBLIC_URL),
-    rpcUrls, quorum: 2, chainId: 56, timeoutMs,
+    rpcUrls, quorum: 2, chainId: 56, rpcTimeoutMs: timeoutMs,
     // The edge sets cf-connecting-ip and a client cannot forge it. / 该头由边缘设置，客户端无法伪造。
     rateLimit: { windowMs: 60_000, free: Number(env.RATE_FREE || 600), paid: Number(env.RATE_PAID || 6000) },
     methods: publicMethods(chain),
@@ -91,8 +91,8 @@ export default {
     // /mcp: the same methods as MCP tools (remote MCP, Streamable HTTP). Not in the manifest, so adding it changed
     // nothing on chain. / /mcp：同样的方法作为 MCP 工具（远程 MCP）。不在清单里，所以加它不改链上任何东西。
     if (new URL(request.url).pathname.replace(/\/+$/, '') === MCP_PATH) {
-      mcpEndpoint ??= createMcpEndpoint({ provider, manifest: provider.manifest ?? manifestOf(env), identity: { name: env.TAPE_NAME || undefined }, version: VERSION, onMessage: (m) => logMcp(m, env) })
-      return mcpEndpoint.handle(request, { clientIp })
+      mcpEndpoint ??= createMcpEndpoint({ provider, manifest: provider.manifest ?? manifestOf(env), name: env.TAPE_NAME || undefined, version: VERSION, onMessage: (m) => logMcp(m, env) })
+      return mcpEndpoint.handleRequest(request, { clientIp })
     }
     return provider.handleRequest(request, { clientIp })
   },

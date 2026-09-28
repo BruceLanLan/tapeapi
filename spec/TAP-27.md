@@ -3,6 +3,7 @@
 | Title | Tape Group: Private Group Channels Between Containers |
 | Author | Bruce (@BruceLanLan) |
 | Status | Draft |
+| Target | Stable (v1) at TapeAPI 1.0 |
 | Implementation | Implemented (2026-09-27): `sdk/src/group.js` runs groups over any TAP-26 transport, including the deployed ChannelBus (`0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`) and the public relay `relay.tapeapi.fun`. There is no group service to host: the owner is a client. No third-party audit. |
 | Type | Standards |
 | Created | 2026-09-23 |
@@ -154,6 +155,8 @@ Copyright and related rights waived via [CC0](https://creativecommons.org/public
 > **占位编号。** TAP-27 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
 
 > **实现状态（2026-09-27）：** 已实现：`sdk/src/group.js` 可经任一 TAP-26 传输运行群聊，包括已部署的 ChannelBus（`0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`）与公共中继 `relay.tapeapi.fun`。群聊无需托管服务：群主本身是客户端。未经第三方审计。
+
+> **目标状态：** Target: Stable (v1) at TapeAPI 1.0。在 TapeAPI 1.0 发布时由 Draft 进入 Stable (v1)（见 [TAP-1](TAP-1.md) §4.1）；在此之前仍是 Draft。
 
 ## 1. 摘要
 

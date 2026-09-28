@@ -7,7 +7,7 @@ const { voucherDigest, recoverAddress, signResponse, privateKeyToAddress } = sig
 // would stop this runtime loading on Cloudflare Workers, Deno or a browser. A test asserts the two agree.
 // 写成字面量而不是读 package.json：`createRequire` 属于 node:module，在模块顶层导入会让这套运行时无法在
 // Cloudflare Workers、Deno 或浏览器里加载。有测试断言两者一致。
-export const VERSION = '0.8.0'
+export const VERSION = '1.0.0-rc.1'
 const now = () => Math.floor(Date.now() / 1000)
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -54,11 +54,18 @@ export function memoryStore() {
 //                                  When a withdraw request stops being executable; only an escrow deployed with
 //                                  different constants needs to override the 9-day default.
 export function createProvider(opts = {}) {
-  const { signerKey, methods = {}, rpcUrls = [], quorum = 2, fetch: fetchImpl, timeoutMs } = opts
-  if (!signerKey) throw new TapeAPIError('BAD_KEY', 'signerKey required')
+  // 1.0 (review G1 S4): as in createTapeAPI, the RPC timeout is `rpcTimeoutMs` (beside handlerTimeoutMs, requestTimeoutMs,
+  // headersTimeoutMs). / 与 createTapeAPI 一致，RPC 超时叫 rpcTimeoutMs。
+  if (Object.prototype.hasOwnProperty.call(opts, 'timeoutMs')) throw new TapeAPIError('INVALID_ARGUMENT', 'the option `timeoutMs` of createProvider was renamed `rpcTimeoutMs` in 1.0 (the timeout of one RPC request): see docs/guides/upgrade-1.0.md')
+  const { signerKey, methods = {}, rpcUrls = [], quorum = 2, fetch: fetchImpl, rpcTimeoutMs: timeoutMs } = opts
+  if (!signerKey) throw new TapeAPIError('INVALID_ARGUMENT', 'signerKey required')
   const manifest = opts.manifest // 保留引用，方便调用方后续补 endpoints / keep the reference (caller may patch endpoints later)
-  const devManifest = opts.dev === true || opts.allowHttp === true || manifest?.dev === true
-  const normalized = validateManifest(manifest, { requireDelegation: false, allowHttp: devManifest })
+  // 1.0 (review G1 S2): `dev` alone relaxes the payment checks (priced methods without an escrow, the in-memory meter
+  // warning); `allowHttp` only allows http endpoints (dev implies it). A manifest's own `dev` field switches nothing:
+  // it is published data, not configuration. / `dev` 只由 opts.dev 决定；allowHttp 只管 http；清单里的 dev 字段不再起作用。
+  const devMode = opts.dev === true
+  const allowHttp = devMode || opts.allowHttp === true
+  const normalized = validateManifest(manifest, { requireDelegation: false, allowHttp })
   // An already-expired delegation serves responses that every consumer rejects. Refuse to boot rather than
   // look healthy for hours. The consumer side keeps its own, more precise DELEGATION_INVALID.
   // 已过期的委托会一直发出所有消费者都拒绝的响应。宁可拒绝启动，也不要看起来健康地空转几小时。
@@ -82,15 +89,15 @@ export function createProvider(opts = {}) {
   // zero-escrow refusal above (runtime audit I-03).
   // 消费者按清单里的托管签凭证（EIP-712 verifyingContract），覆盖值只能与之相同；不同的验不过任何凭证，零地址会绕过上面的拒绝。
   if (opts.escrow != null) {
-    if (!isAddress(opts.escrow)) throw new TapeAPIError('MANIFEST_INVALID', `opts.escrow ${opts.escrow} is not an address`)
+    if (!isAddress(opts.escrow)) throw new TapeAPIError('INVALID_ARGUMENT', `opts.escrow ${opts.escrow} is not an address`)
     if (normalized.payment.escrow && !eqAddr(opts.escrow, normalized.payment.escrow)) {
-      throw new TapeAPIError('MANIFEST_INVALID', `opts.escrow ${opts.escrow} differs from manifest payment.escrow ${normalized.payment.escrow}; consumers sign against the manifest's`)
+      throw new TapeAPIError('INVALID_ARGUMENT', `opts.escrow ${opts.escrow} differs from manifest payment.escrow ${normalized.payment.escrow}; consumers sign against the manifest's`)
     }
   }
   const escrow = opts.escrow ?? normalized.payment.escrow
   const anyPriced = normalized.methods.some((x) => x.priceBEM !== '0')
   const hasEscrow = escrow != null && !eqAddr(escrow, '0x0000000000000000000000000000000000000000')
-  if (anyPriced && !hasEscrow && !devManifest) throw new TapeAPIError('MANIFEST_INVALID', 'priced methods need a real escrow (payment.escrow or opts.escrow)')
+  if (anyPriced && !hasEscrow && !devMode) throw new TapeAPIError('MANIFEST_INVALID', 'priced methods need a real escrow (payment.escrow or opts.escrow), or createProvider({ dev: true }) for local testing')
   const container = checksumAddress(manifest.container)
   const store = opts.store || memoryStore()
   const rpc = rpcUrls.length ? createRpc({ urls: rpcUrls, quorum, timeoutMs, fetch: fetchImpl, allowSingleNode: opts.allowSingleNode === true }) : null
@@ -128,8 +135,8 @@ export function createProvider(opts = {}) {
   // Numbers, validated at boot: a negative budget would refuse everything and NaN would silently switch a half off.
   // 0 is allowed and means "this half is off". / 启动时校验：负数会拒绝一切，NaN 会悄悄关掉某一半；0 表示关闭该半边。
   if (rl) {
-    for (const k of ['free', 'paid', 'ip', 'max']) if (!Number.isInteger(rl[k]) || rl[k] < 0) throw new TapeAPIError('BAD_KEY', `rateLimit.${k} must be a non-negative integer`)
-    if (!Number.isInteger(rl.windowMs) || rl.windowMs <= 0) throw new TapeAPIError('BAD_KEY', 'rateLimit.windowMs must be a positive integer')
+    for (const k of ['free', 'paid', 'ip', 'max']) if (!Number.isInteger(rl[k]) || rl[k] < 0) throw new TapeAPIError('INVALID_ARGUMENT', `rateLimit.${k} must be a non-negative integer`)
+    if (!Number.isInteger(rl.windowMs) || rl.windowMs <= 0) throw new TapeAPIError('INVALID_ARGUMENT', 'rateLimit.windowMs must be a positive integer')
   }
   // Which header identifies the caller when the process sits behind a proxy. UNSET BY DEFAULT: trusting a
   // client-settable header without a trusted proxy in front turns the limiter into a no-op, since the attacker
@@ -141,7 +148,7 @@ export function createProvider(opts = {}) {
   const clientIpHeader = typeof opts.clientIpHeader === 'string' ? opts.clientIpHeader.toLowerCase() : null
   const lastHop = (v) => { const parts = String(v || '').split(',').map((x) => x.trim()).filter(Boolean); return parts.length ? parts[parts.length - 1] : '' }
   const FAIL_BUDGET = 20   // failed paid attempts per window before an IP out of free budget is refused up front / 每窗口失败的付费尝试次数上限
-  if (!Number.isInteger(minVoucherLifeS) || minVoucherLifeS < 0) throw new TapeAPIError('BAD_KEY', 'minVoucherLifeS must be a non-negative integer')
+  if (!Number.isInteger(minVoucherLifeS) || minVoucherLifeS < 0) throw new TapeAPIError('INVALID_ARGUMENT', 'minVoucherLifeS must be a non-negative integer')
   const contributionCacheMs = opts.contributionCacheMs ?? 60_000
   const cacheMax = opts.cacheMax ?? 10_000
   const log = opts.log || (() => {})
@@ -161,14 +168,14 @@ export function createProvider(opts = {}) {
   // through `log` (which is silent by default).
   // 非 dev 的收费服务用默认计量（arch A1）：未结算凭证随进程消失，URL 后面的每个实例或隔离实例各有一份计量，
   // 会把同一张凭证再服务一次。直接说出来，而不是经由默认静默的 `log`。
-  if (anyPriced && !opts.store && !devManifest && opts.allowMemoryStore !== true) {
+  if (anyPriced && !opts.store && !devMode && opts.allowMemoryStore !== true) {
     (opts.warn || ((...a) => console.warn('[tapeapi/server]', ...a)))('priced methods on the in-memory meter: unsettled vouchers are lost on restart, and each instance behind this URL serves the same voucher again. Pass a persistent store with an atomic advance() (e.g. D1), or allowMemoryStore: true if you mean it')
   }
 
   // 只接受 methods 的自有属性，拒绝原型链上的 constructor/toString 等（L-20 / M-08）/ own properties only
-  if (!isPlainObject(methods)) throw new TapeAPIError('METHOD_NOT_FOUND', 'methods must be an object')
+  if (!isPlainObject(methods)) throw new TapeAPIError('INVALID_ARGUMENT', 'methods must be an object')
   for (const m of normalized.methods) {
-    if (!METHOD_NAME_RE.test(m.name) || !hasOwn(methods, m.name) || typeof methods[m.name] !== 'function') throw new TapeAPIError('METHOD_NOT_FOUND', `no handler for manifest method ${m.name}`)
+    if (!METHOD_NAME_RE.test(m.name) || !hasOwn(methods, m.name) || typeof methods[m.name] !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', `no handler for manifest method ${m.name}`)
   }
   const methodDef = (name) => (typeof name === 'string' && METHOD_NAME_RE.test(name) && hasOwn(methods, name)) ? (normalized.methods.find(m => m.name === name) || null) : null
 

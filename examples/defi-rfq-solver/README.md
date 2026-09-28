@@ -100,11 +100,11 @@ const { quote, sig: quoteSig, domain, escrow, typehash, digest } = env.result
 
 // ── 第一层：报价的 EIP-712 签名（TAP-24 §3.3，链上 IntentEscrow 验的就是这一层）──────────────
 const TYPE = 'Quote(bytes32 quoteId,uint64 fromChain,address fromToken,uint256 amountIn,uint64 toChain,address toToken,uint256 amountOut,address recipient,uint64 expires,address solver)'
-const TH = abi.toHex(sig.keccak256(TYPE))                       // 自己算，别信对方给的
+const TH = abi.toHex(abi.keccak256(TYPE))                       // 自己算，别信对方给的
 if (TH !== '0xe7c18a58c429974068166f7c27b8ba2a9a13177c83aeb69cdcac7a4bc7592d59') throw new Error('typehash')
 if (TH !== typehash) throw new Error('solver reported a different typehash')
 
-const structHash = sig.keccak256(abi.encodeParams(
+const structHash = abi.keccak256(abi.encodeParams(
   ['bytes32','bytes32','uint64','address','uint256','uint64','address','uint256','address','uint64','address'],
   [TH, quote.quoteId, quote.fromChain, quote.fromToken, quote.amountIn,
    quote.toChain, quote.toToken, quote.amountOut, quote.recipient, quote.expires, quote.solver]))

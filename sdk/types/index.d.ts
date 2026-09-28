@@ -1,5 +1,8 @@
 // Type declarations for @tapeapi/sdk (hand-written; the JavaScript in ../src is the source of truth).
 // Shapes that the protocol leaves open (manifests, results, channel records) are typed loosely on purpose.
+//
+// Stability (1.0): every declaration is Stable (no breaking change within 1.x) unless tagged @experimental (payments,
+// ServiceDirectory: may change in a 1.x minor release) or @internal (not part of the API). See docs/guides/upgrade-1.0.md.
 import type { Address, Hex, BigNumberish, FetchLike, TxRequest } from './common.js'
 import type { Rpc } from './rpc.js'
 import type { Manifest } from './manifest.js'
@@ -20,6 +23,7 @@ export { labelToBytes32 } from './abi.js'
 export * as abi from './abi.js'
 export * as sig from './sig.js'
 export * as channel from './channel.js'
+/** @experimental ChannelBus read privacy: every option, default, and stats().privacy may change in a 1.x minor release. */
 export * as busPrivacy from './bus-privacy.js'
 export * as group from './group.js'
 export { deliverGroupUpdate, checkGroupInvites } from './group-delivery.js'
@@ -29,7 +33,9 @@ export * as webmcp from './webmcp.js'
 export * as mcp from './mcp.js'
 export * as ai from './ai.js'
 
+/** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export declare const MAX_CONTRIBUTION_BPS: number
+/** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export declare const RECOMMENDED_CONTRIBUTION_BPS: number
 /** BNB Smart Chain mainnet contract addresses (the defaults). */
 export declare const MAINNET: {
@@ -37,6 +43,7 @@ export declare const MAINNET: {
   readonly hub: Address
   readonly siteRegistry: Address
   readonly factory: Address
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   readonly bem: Address
   readonly channelBus: Address
 }
@@ -58,13 +65,15 @@ export declare function registryKey(path: string): string
 
 export interface CreateTapeAPIOptions {
   /** JSON-RPC nodes of at least `quorum` distinct operators (see `operatorOf`; `rpcUrlsFor(56)` gives three).
-   *  Without them every chain read throws RPC_UNAVAILABLE. */
+   *  Without them every chain read throws INVALID_ARGUMENT (a configuration mistake, not an outage). */
   rpcUrls?: string[]
   /** How many node operators must agree on every read (default 2); URLs of one operator count once. */
   quorum?: number
   /** Development only: accept fewer nodes than `quorum`. */
   allowSingleNode?: boolean
-  timeoutMs?: number
+  /** Timeout of one RPC request in ms (default 8000). Renamed from `timeoutMs` in 1.0: passing `timeoutMs` throws
+   *  INVALID_ARGUMENT (api.call keeps its own per-call `timeoutMs`). */
+  rpcTimeoutMs?: number
   fetch?: FetchLike
   /** Allow resolve({ dev }) and http:// endpoints. Does not relax checks on chain-sourced manifests. */
   dev?: boolean
@@ -80,12 +89,14 @@ export interface CreateTapeAPIOptions {
   chainId?: number
   /** Nodes for the other TapeOut chains, used when a target names one (a name with an area code, or { chainId }).
    *  Without an entry, that chain's SDK defaults (rpcUrlsFor) are used. */
-  chains?: Record<number, { rpcUrls?: string[]; quorum?: number; timeoutMs?: number; allowSingleNode?: boolean; hub?: Address; factory?: Address; siteRegistry?: Address }>
+  chains?: Record<number, { rpcUrls?: string[]; quorum?: number; rpcTimeoutMs?: number; allowSingleNode?: boolean; hub?: Address; factory?: Address; siteRegistry?: Address }>
   hub?: Address
   siteRegistry?: Address
   /** TapeOut processor factory; required with hub and siteRegistry on a chain not in CHAINS. */
   factory?: Address
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   directory?: Address
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   escrow?: Address
 }
 
@@ -105,7 +116,7 @@ export interface ResolvedService {
   /** The chain the service lives on (its identity, manifest and delegation are read there). */
   chainId: number
   verified: { delegation: boolean; holder: Address | null; dev?: boolean; [key: string]: unknown }
-  /** Contribution in basis points (0 for a free service). */
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. Contribution in basis points (0 for a free service). */
   contribution: number
   file: { size: unknown; sha256Hash: Hex; updatedAt: unknown } | null
   target: ResolveTarget
@@ -115,13 +126,14 @@ export interface ResolvedService {
 }
 
 export interface CallOptions {
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   payer?: Payer
   /** Idempotency key, 1..128 chars (default: a random UUID). */
   id?: string
   signal?: AbortSignal
   timeoutMs?: number
   manifestTtlMs?: number
-  /** Highest price (base units) you consent to if the provider raised it. */
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. Highest price (base units) you consent to if the provider raised it. */
   maxPrice?: BigNumberish
 }
 
@@ -154,8 +166,10 @@ export interface QuorumResult<T = any> {
   groups: Array<{ result: T; containers: Address[] }>
 }
 
+/** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export interface SignedVoucher { consumer: Address; provider: Address; cumulative: string; expires: number; sig: Hex; signer: Address }
 
+/** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export interface PayerOptions {
   consumer: Address
   /** Session private key (authorised on the escrow), or use signTypedData with a wallet. */
@@ -168,6 +182,7 @@ export interface PayerOptions {
   store?: { get(key: string): unknown; set(key: string, value: string): unknown }
 }
 
+/** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export interface Payer {
   readonly consumer: Address
   readonly signer: Address
@@ -184,18 +199,27 @@ type ProviderRef = Address | ResolvedService
 
 /** Transaction builders: each returns a TxRequest for your own wallet to send; nothing is signed or sent. */
 export interface TxBuilders {
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   approve(opts: { amount: BigNumberish; token?: Address; spender?: ProviderRef }): TxRequest
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   fund(provider: ProviderRef, amount: BigNumberish): TxRequest
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   requestWithdraw(provider: ProviderRef, amount: BigNumberish): TxRequest
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   cancelWithdraw(provider: ProviderRef): TxRequest
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   withdraw(provider: ProviderRef): TxRequest
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   authorizeSession(provider: ProviderRef, key: Address, expires: BigNumberish): TxRequest
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   settle(voucher: { consumer: Address; provider: Address; cumulative: BigNumberish; expires: BigNumberish; sig: Hex }, svc?: ResolvedService): TxRequest
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   setContribution(opts: { circuits: Address; tokenId: BigNumberish; bps: number; escrow?: Address }): TxRequest
   publishManifest(opts: { container: Address; manifest: string | Record<string, unknown>; contentType?: string }): { txs: TxRequest[]; key: string; size: number; sha256Hash: Hex }
   removeManifest(container: Address): TxRequest
   publishChannelKeys(opts: { container: Address; record: Record<string, unknown> }): { txs: TxRequest[]; key: string; size: number; sha256Hash: Hex }
   removeChannelKeys(container: Address): TxRequest
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   register(opts: { circuits: Address; tokenId: BigNumberish; label?: string; manifestPath?: string; value?: BigNumberish }): TxRequest
 }
 
@@ -224,12 +248,15 @@ export interface ChainReads {
   channelKeys(container: Address, opts?: { fresh?: boolean }): Promise<ChannelKeysRecord>
   tapeSendKey(target: Address | { circuits: Address; tokenId: BigNumberish }): Promise<Record<string, unknown>>
   ownerOf(circuits: Address, tokenId: BigNumberish): Promise<Address>
-  /** ERC-6551 token() of a container on this chain. */
-  tokenOf(container: Address): Promise<{ circuits: Address; tokenId: bigint }>
+  /** ERC-6551 token() of a container on this chain; tokenId is a decimal string (1.0: was a bigint). */
+  tokenOf(container: Address): Promise<{ circuits: Address; tokenId: string }>
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   resolve(label: string): Promise<Address>
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   serviceOf(container: Address): Promise<any>
   readFile(container: Address, path: string): Promise<any>
   fileInfo(container: Address, path: string): Promise<any>
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   escrow: {
     channelOf(consumer: Address, provider: ProviderRef): Promise<any>
     claimedOf(consumer: Address, provider: ProviderRef): Promise<bigint>
@@ -245,14 +272,15 @@ export interface TapeAPI {
   resolve(target: ResolveTarget): Promise<ResolvedService>
   /** Re-read a resolved service from its source and update it in place. */
   refresh(svc: ResolvedService): Promise<ResolvedService>
-  /** Consent to the service's current prices (all methods, or one). Returns the accepted price map (base units). */
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. Consent to the service's current prices (all methods, or one). Returns the accepted price map (base units). */
   acceptPrice(svc: ResolvedService, method?: string): Record<string, bigint>
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   acceptedPrice(svc: ResolvedService, method: string): bigint | undefined
   /** Call one method; the answer's signature is verified against the delegated signer. */
   call<T = any>(svc: ResolvedService, method: string, params?: Record<string, unknown>, opts?: CallOptions): Promise<CallResult<T>>
   /** Call several independent providers and require `quorum` identical verified answers (TAP-23). */
   callQuorum<T = any>(services: ResolvedService[], method: string, params?: Record<string, unknown>, opts?: QuorumOptions): Promise<QuorumResult<T>>
-  /** A voucher signer for paid calls (TAP-22). */
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. A voucher signer for paid calls (TAP-22). */
   payer(opts: PayerOptions): Payer
   tx: TxBuilders
   /** The quorum RPC client, or null when no rpcUrls were given. */
@@ -260,7 +288,7 @@ export interface TapeAPI {
   chain: ChainReads
   chainId: number
   groupVerifier(): (member: Record<string, unknown>, opts?: { fresh?: boolean }) => Promise<boolean>
-  addresses: { hub: Address; siteRegistry: Address; directory: Address | undefined; escrow: Address | undefined }
+  addresses: { hub: Address; siteRegistry: Address; factory: Address; /** @experimental */ directory: Address | undefined; /** @experimental */ escrow: Address | undefined }
   randomPrivateKey(): Hex
   /** The client for another TapeOut chain (this client for its own chain). */
   forChain(chainId: number): TapeAPI

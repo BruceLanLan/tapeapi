@@ -38,7 +38,7 @@ function ranked() { return Object.entries(db.scores).sort((a, b) => b[1].best - 
 function rankOf(player) { return ranked().findIndex(([p]) => p === player) + 1 }
 
 const provider = createProvider({
-  manifest, signerKey: SIGNER_KEY, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID,
+  manifest, signerKey: SIGNER_KEY, dev: !PROD, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID,
   allowSingleNode: !PROD, // 生产环境 urls 少于 quorum 拒绝启动（M-11）/ production refuses fewer urls than quorum
   log: (...a) => console.error('[game]', ...a), store,
   methods: {

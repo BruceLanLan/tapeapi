@@ -1,10 +1,26 @@
 // Type declarations for @tapeapi/server (hand-written; the JavaScript in ../src is the source of truth).
 // Uses the global fetch types (Request, Response); no @types/node needed.
+//
+// Stability (1.0): every declaration is Stable (no breaking change within 1.x) unless tagged @experimental (payments,
+// ServiceDirectory: may change in a 1.x minor release) or @internal (not part of the API). See docs/guides/upgrade-1.0.md.
 import type { Rpc, Manifest, ManifestMethod, FetchLike, TxRequest } from '@tapeapi/sdk'
 
 export declare const VERSION: string
 
-/** A stored voucher (the latest per consumer). */
+/** The identity part of a manifest that createAIProxy and createMcpProxy complete (they add signer, methods and ai / mcp). */
+export interface ManifestBase {
+  tapeapi?: string
+  name?: string
+  circuits: string
+  tokenId: string
+  container: string
+  delegation?: { expires: number; sig: string } | null
+  endpoints: { live: string[]; async: boolean }
+  dev?: boolean
+  [key: string]: unknown
+}
+
+/** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. A stored voucher (the latest per consumer). */
 export interface VoucherRecord {
   consumer: string
   provider: string
@@ -15,7 +31,7 @@ export interface VoucherRecord {
   [key: string]: unknown
 }
 
-/** Voucher store. A store shared by several instances MUST implement advance() as one atomic statement. */
+/** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. Voucher store. A store shared by several instances MUST implement advance() as one atomic statement. */
 export interface VoucherStore {
   get(consumer: string, provider: string): Promise<VoucherRecord | null>
   set(consumer: string, provider: string, rec: VoucherRecord): Promise<void>
@@ -24,20 +40,22 @@ export interface VoucherStore {
   advance?(consumer: string, provider: string, rec: VoucherRecord): Promise<boolean>
 }
 
-/** The default in-process store (lost on restart; one instance only). */
+/** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. The default in-process store (lost on restart; one instance only). */
 export declare function memoryStore(): Required<VoucherStore>
 
 /** Context passed to every method handler. */
 export interface MethodContext {
-  /** The paying consumer, or null for a free call. */
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. The paying consumer, or null for a free call. */
   consumer: string | null
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   voucherSigner?: string
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   cumulative?: unknown
   /** The block the answer is pinned to (0 without rpcUrls). */
   block: number
   manifest: Manifest
   method: ManifestMethod
-  /** Price in base units. */
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. Price in base units. */
   price: bigint
   clientIp: string
   [key: string]: unknown
@@ -55,16 +73,22 @@ export interface CreateProviderOptions {
   methods: Record<string, MethodHandler>
   rpcUrls?: string[]
   quorum?: number
-  timeoutMs?: number
+  /** Timeout of one RPC request in ms. Renamed from `timeoutMs` in 1.0: passing `timeoutMs` throws INVALID_ARGUMENT. */
+  rpcTimeoutMs?: number
   fetch?: FetchLike
   allowSingleNode?: boolean
-  /** Accept http:// endpoints (development only). */
+  /** Development only: allows http:// endpoints, and priced methods without an escrow (paid calls are then refused) and
+   *  on the in-memory meter without a warning. Only this option switches dev on: since 1.0 a manifest's own `dev` field
+   *  does not. */
   dev?: boolean
+  /** Accept http:// endpoints (local testing). Relaxes nothing else. */
   allowHttp?: boolean
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   escrow?: string
   chainId?: number
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   store?: VoucherStore
-  /** Say that a priced service on the in-memory store is intended (silences the warning). */
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. Say that a priced service on the in-memory store is intended (silences the warning). */
   allowMemoryStore?: boolean
   warn?: (...args: unknown[]) => void
   log?: (...args: unknown[]) => void
@@ -72,18 +96,22 @@ export interface CreateProviderOptions {
   handlerTimeoutMs?: number
   requestTimeoutMs?: number
   headersTimeoutMs?: number
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   minVoucherLifeS?: number
   /** false disables the built-in rate limiter. */
   rateLimit?: false | { windowMs?: number; free?: number; paid?: number; max?: number; ip?: number }
   /** Proxy header that carries the client IP (e.g. 'cf-connecting-ip'); unset, the socket peer is used. */
   clientIpHeader?: string
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   escrowCacheMs?: number
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   sessionCacheMs?: number
   blockCacheMs?: number
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   contributionCacheMs?: number
   cacheMax?: number
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   withdrawCloseS?: number
-  [key: string]: unknown
 }
 
 /** A Node http.Server (typed structurally so consumers need no @types/node). */
@@ -93,6 +121,7 @@ export interface ListeningServer {
   [key: string]: any
 }
 
+/** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export interface Settlement extends VoucherRecord { deadline: number }
 
 export interface Provider {
@@ -106,17 +135,22 @@ export interface Provider {
   /** Dispatch one parsed request body without HTTP (tests, custom transports). */
   invoke(body: unknown, opts?: { ip?: string; sentMethod?: string }): Promise<Record<string, unknown>>
   stats(): Record<string, unknown>
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   pendingSettlements(): Promise<Settlement[]>
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   dueSettlements(opts?: { marginS?: number }): Promise<Array<Settlement & { reason: 'deadline' | 'withdraw-requested' }>>
-  /** Build the escrow settle transaction for a voucher; send it with your own wallet. */
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. Build the escrow settle transaction for a voucher; send it with your own wallet. */
   settleTx(v: { consumer: string; provider: string; cumulative: string | bigint; expires: number | bigint; sig: string }): TxRequest
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   contribution(): Promise<number | null>
   currentBlock(): Promise<number>
   manifest: Manifest
   container: string
   signer: string
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   escrow: string | undefined
   chainId: number
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   store: VoucherStore
   rpc: Rpc | null
   version: string

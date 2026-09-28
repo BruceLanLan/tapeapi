@@ -2,7 +2,7 @@
 """A second, independent implementation of the TapeAPI digests, in pure Python with no dependencies.
 
 Its only job is to disagree with the reference SDK if the specification is ambiguous. Everything here was
-written from the specifications (TAP-20, TAP-21, TAP-22, TAP-26, TAP-27) and checked against spec/vectors/*.json;
+written from the specifications (TAP-20, TAP-21, TAP-22, TAP-23, TAP-26, TAP-27) and checked against spec/vectors/*.json;
 nothing is imported from the JavaScript. X25519, HKDF, (X)ChaCha20-Poly1305 and Ed25519 follow their RFCs. If this file and the SDK ever disagree, the specification is the thing that is wrong.
 
 用纯 Python、零依赖写的第二个独立实现。它唯一的职责，是在规范存在歧义时与参考 SDK 产生分歧。
@@ -679,6 +679,115 @@ check('ai/§6.3 USDT', amount({'input': '1.25', 'cacheRead': '0.125', 'output': 
 check('ai/§6.3 BEM', amount({'input': '12.5', 'cacheRead': '1.25', 'output': '100'}, {'prompt_tokens': 1200, 'cache_read_tokens': 1000, 'completion_tokens': 300, 'reasoning_tokens': 100}), '0.03375000')
 check('ai/rounded up once, on the sum', amount({'input': '0.00000001', 'output': '0.00000001'}, {'prompt_tokens': 500000, 'completion_tokens': 500000}), '0.00000001')
 check('ai/exact past float precision', amount({'input': '999999999999999999.99999999', 'output': '0'}, {'prompt_tokens': 9007199254740991, 'completion_tokens': 0}), '9007199254740990999999999909.92800746')
+
+# ======================================================= TAP-20 §6.1 mainnet manifest of 11.1013.tape ====
+# The recorded mainnet answers (sdk/test/fixtures/mainnet-11-1013-manifest.json, BSC, one pinned block), checked from
+# TAP-20 §3.2-§3.6 alone: the calldata is re-encoded here, every result ABI-decoded here, the manifest bytes hashed and
+# parsed, and the delegation's EIP-712 digest recomputed and recovered to the ownerOf answer (a raw EIP-712 digest, not
+# the EIP-191 message of TAP-21).
+# 录下的主网回答（BSC，钉在一个区块上），只按 TAP-20 §3.2-§3.6 的文字核对：调用数据在此重新编码，结果在此 ABI 解码，
+# 清单字节在此哈希并解析，委托的 EIP-712 摘要在此重算并恢复出 ownerOf 的回答（原始 EIP-712 摘要，不是 TAP-21 的 EIP-191）。
+MF = json.loads((HERE.parent.parent / 'sdk' / 'test' / 'fixtures' / 'mainnet-11-1013-manifest.json').read_text())
+HUB, FACTORY, SITE_REGISTRY = '0xe61a9c7213a6aa616c246a2b569e555b417b25ee', '0x68224f668083c29e9800be2a646d42d18cedf7e2', '0xd006ffdd5ae313b17729621a00999cd3c71ce5e6'
+
+def sel(signature):
+    return keccak256(signature.encode())[:4]
+
+def w_uint(n):
+    return int(n).to_bytes(32, 'big')
+
+def w_str(s):
+    b = s.encode()
+    return w_uint(len(b)) + b + bytes(-len(b) % 32)
+
+def word(data, i):
+    return data[32 * i:32 * i + 32]
+
+def dyn_bytes(data, offset):
+    n = int.from_bytes(data[offset:offset + 32], 'big')
+    return data[offset + 32:offset + 32 + n]
+
+def mf_call(prefix):
+    hits = [c for c in MF['calls'].values() if c['data'].startswith(prefix)]
+    return hits[0] if len(hits) == 1 else None
+
+key = MF['manifest']['key']
+want_calls = {
+    'cpuAt': (FACTORY, sel('cpuAt(uint256)') + w_uint(MF['processor'])),
+    'accountOf': (HUB, sel('accountOf(address,uint256)') + addr32(MF['circuits']) + w_uint(MF['tokenId'])),
+    'isCPU': (FACTORY, sel('isCPU(address)') + addr32(MF['circuits'])),
+    'ownerOf': (MF['circuits'].lower(), sel('ownerOf(uint256)') + w_uint(MF['tokenId'])),
+    'fileInfo': (SITE_REGISTRY, sel('fileInfo(address,string)') + addr32(MF['container']) + w_uint(64) + w_str(key)),
+    'read': (SITE_REGISTRY, sel('read(address,string)') + addr32(MF['container']) + w_uint(64) + w_str(key)),
+}
+R = {}
+for fn, (to, data) in want_calls.items():
+    c = mf_call(h(data))
+    check('tap20-6.1/%s calldata re-encoded here is recorded exactly once' % fn, c is not None, True)
+    if c is None: continue
+    check('tap20-6.1/%s target' % fn, c['to'].lower(), to)
+    check('tap20-6.1/%s answered by >= quorum operators' % fn, len(set(c['operators'])) >= MF['rpc']['quorum'], True)
+    R[fn] = bytes.fromhex(c['result'][2:])
+check('tap20-6.1/no unexplained calls', len(MF['calls']), len(want_calls))
+check('tap20-6.1/name', MF['name'], '%s.%d.tape' % (MF['tokenId'], MF['processor']))
+check('tap20-6.1/cpuAt(1013) is the circuits', h(R['cpuAt'][12:32]), MF['circuits'].lower())
+check('tap20-6.1/accountOf is the container', h(R['accountOf'][12:32]), MF['container'].lower())
+check('tap20-6.1/isCPU(circuits) is true', int.from_bytes(R['isCPU'], 'big'), 1)
+check('tap20-6.1/ownerOf is the holder', h(R['ownerOf'][12:32]), MF['holder'].lower())
+fi = R['fileInfo']
+fi_size, fi_hash = int.from_bytes(word(fi, 0), 'big'), h(word(fi, 2))
+check('tap20-6.1/fileInfo.size', fi_size, MF['manifest']['size'])
+check('tap20-6.1/fileInfo.contentType', dyn_bytes(fi, int.from_bytes(word(fi, 1), 'big')).decode(), MF['manifest']['contentType'])
+check('tap20-6.1/fileInfo.sha256Hash', fi_hash, MF['manifest']['sha256Hash'].lower())
+mbytes = dyn_bytes(R['read'], int.from_bytes(word(R['read'], 0), 'big'))
+check('tap20-6.1/read length equals fileInfo.size', len(mbytes), fi_size)
+check('tap20-6.1/sha256(read bytes) equals fileInfo.sha256Hash', '0x' + hashlib.sha256(mbytes).hexdigest(), fi_hash)
+check('tap20-6.1/bytesSha256 recorded', MF['manifest']['bytesSha256'], fi_hash)
+mj = strict_parse(mbytes.decode('utf-8'))
+check('tap20-6.1/manifest.circuits', mj['circuits'].lower(), MF['circuits'].lower())
+check('tap20-6.1/manifest.tokenId', mj['tokenId'], MF['tokenId'])
+check('tap20-6.1/manifest.container', mj['container'].lower(), MF['container'].lower())
+check('tap20-6.1/manifest.signer', mj['signer'], MF['manifest']['signer'])
+check('tap20-6.1/manifest.delegation', mj['delegation'], MF['manifest']['delegation'])
+# §3.4: the digest names the container and the signer, anchored on the BNB Chain DeWebHub, and recovers to the holder.
+dom = eip712_domain('TapeAPI', '1', 56, HUB)
+sh = keccak256(keccak256(b'Delegation(address container,address signer,uint64 expires)') + addr32(mj['container']) + addr32(mj['signer']) + u64(mj['delegation']['expires']).rjust(32, b'\x00'))
+check('tap20-6.1/delegation recovers to ownerOf at the block', recover_address(typed_digest(dom, sh), mj['delegation']['sig']), MF['holder'].lower())
+exp, ts = mj['delegation']['expires'], MF['block']['timestamp']
+check('tap20-6.1/delegation live at the block, within 366 days', ts < exp <= ts + 366 * 86400, True)
+check('tap20-6.1/block hash is 32 bytes', len(bytes.fromhex(MF['block']['hash'][2:])), 32)
+# TAP-23 §6 cites this manifest: record that it offers no attestedRead method. / TAP-23 §6 引用此清单：它没有 attestedRead 方法。
+check('tap20-6.1/manifest offers no TAP-23 attestedRead method', any('attestedRead' in m for m in mj['methods']), False)
+
+# ======================================================= TAP-23 §6 two providers, one attested read ====
+# Each envelope's TAP-21 digest is rebuilt here and its signer recovered; agreement is then decided by the text of
+# §3.4 step 4 alone and compared with each case's expectation. / 每个信封的 TAP-21 摘要在此重建并恢复签名者；
+# 然后只按 §3.4 第 4 步的文字判定一致，再与各用例的期望比较。
+AR = json.loads((HERE / 'tap-23-attested.json').read_text())
+PA, PB = AR['providers']
+check('tap23/test keys are declared as such', 'TEST KEYS' in AR['testKeys'], True)
+check('tap23/different containers', PA['container'].lower() != PB['container'].lower(), True)
+check('tap23/different signers', PA['signerAddress'].lower() != PB['signerAddress'].lower(), True)
+check('tap23/different origins', PA['endpoint'].split('/')[2] != PB['endpoint'].split('/')[2], True)
+check('tap23/descriptor kind', AR['descriptor']['attestedRead'], {'kind': 'eth_call', 'chains': [AR['request']['params']['chainId']]})
+RESULT_FIELDS = {'chainId', 'blockNumber', 'blockHash', 'stateRoot', 'blockRef', 'result'}
+
+def agree(x, y):
+    if any(x.get(k) != y.get(k) for k in ('chainId', 'blockNumber', 'blockHash', 'result')): return False
+    return not ('stateRoot' in x and 'stateRoot' in y and x['stateRoot'] != y['stateRoot'])
+
+rq = AR['request']
+for c in AR['cases']:
+    for side, p in (('a', PA), ('b', PB)):
+        e = c[side]['envelope']
+        d = response_digest('TAPI-1/resp/v2', p['container'], rq['id'], rq['method'], rq['params'], True, e['result'], e['ts'])
+        check('tap23/%s/%s digest' % (c['name'], side), h(d), c[side]['digest'])
+        check('tap23/%s/%s signer' % (c['name'], side), recover_address(eip191(d), e['sig']), p['signerAddress'].lower())
+        check('tap23/%s/%s only §3.3 fields' % (c['name'], side), set(e['result']) <= RESULT_FIELDS, True)
+        check('tap23/%s/%s echoes chainId and block' % (c['name'], side), (e['result']['chainId'], e['result']['blockNumber']), (rq['params']['chainId'], rq['params']['block']))
+    got = 'agree' if agree(c['a']['envelope']['result'], c['b']['envelope']['result']) else 'ATTEST_DISAGREE'
+    check('tap23/%s verdict' % c['name'], got, c['expect'])
+check('tap23/at least one agreeing and one disagreeing case', {c['expect'] for c in AR['cases']}, {'agree', 'ATTEST_DISAGREE'})
 
 if fail:
     print('FAIL: %d of %d checks disagreed with the reference implementation\n' % (len(fail), checked))

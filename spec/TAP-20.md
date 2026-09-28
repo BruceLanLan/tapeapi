@@ -3,6 +3,7 @@
 | Title | TapeAPI: Service Identity and Manifest |
 | Author | Bruce (@BruceLanLan) |
 | Status | Draft |
+| Target | Stable (v1) at TapeAPI 1.0 |
 | Implementation | Live without a directory (2026-09-27): on BNB Chain, `api.tapeapi.fun` (`11.1013.tape`, source `examples/public-api/`) and `relay.tapeapi.fun` (`12.1013.tape`) publish TAP-20 manifests with holder delegations, and the SDK resolves containers, `(circuits, tokenId)` pairs and names `<#ID>.<processor>.tape`; read-only resolution on X Layer and Base (area-coded names) since 2026-09-28. ServiceDirectory (§3.5) is not deployed, so labels do not resolve on mainnet. No third-party audit. |
 | Type | Standards |
 | Created | 2026-09-20 |
@@ -311,23 +312,34 @@ This TAP adds nothing to `SPEC.md`. It does not alter the name grammar `<#ID>.<p
 
 ## 6. Test Vectors
 
-### 6.1 Mainnet manifest (TODO before Final)
+### 6.1 Mainnet manifest
+
+The live manifest of `11.1013.tape`, read only, at one block: the reference SDK's `resolve` ran against its default BSC nodes (`rpcUrlsFor(56)`: NodeReal, Alchemy, 48 Club) with quorum 2 counted by operator, every `eth_call` pinned to the block below with the EIP-1898 `{ blockHash }` parameter, and all three operators returned the same bytes for every call. Raw answers: `sdk/test/fixtures/mainnet-11-1013-manifest.json` (recorder: `scripts/record-mainnet-manifest.mjs`), replayed offline through `resolve` by `sdk/test/mainnet-manifest.test.mjs` and checked independently by `spec/vectors/verify.py`. The delegation is renewed before 2026-12-10 and the manifest changes with it: these values are the state at this block, not the current manifest.
 
 | Item | Value |
 |---|---|
 | chainId | 56 |
-| service | `11.1013.tape` (`https://api.tapeapi.fun`), resolved 2026-09-27 |
+| service | `11.1013.tape` (`https://api.tapeapi.fun`), recorded 2026-09-28 |
+| block number | 124552456 |
+| block hash | `0xb1699395b13b3f031a277928b862b96c976ec47cddebfe7ccda4fe54bc488a8b` |
+| block timestamp | 1790610971 (2026-09-28 15:56:11 UTC) |
 | circuits (`cpuAt(1013)`) | `0xe02c26c7432A7121168AA9B610DE24eCf9a1a414` |
 | tokenId | `11` |
 | container (`accountOf`) | `0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8` |
-| ServiceDirectory | TODO (not deployed) |
+| `isCPU(circuits)` | `true` |
+| holder (`ownerOf`) | `0x086bFB1908B1DF8C0c4412f28E4DD22Bdd52d715` |
+| ServiceDirectory | Not deployed (experimental, outside TapeAPI 1.0) |
 | manifest path (URL) | `/.well-known/tapeapi.json` |
 | manifest registry key | `.well-known/tapeapi.json` |
+| `fileInfo.size` | 3414 bytes, `application/json` |
+| `fileInfo.sha256Hash` | `0xee57f304f8316802978695e8e9f14e89ce1f9e5c79123b5a583fdcfd3b52c37a` |
+| SHA-256 of the manifest bytes (`read`) | `0xee57f304f8316802978695e8e9f14e89ce1f9e5c79123b5a583fdcfd3b52c37a`, equal to `fileInfo.sha256Hash` as §3.6 step 2 requires |
+| `fileInfo.updatedAt` | 1790442494 (2026-09-26 17:08:14 UTC) |
+| `signer` | `0xaB70dEe8e1CEabb1D10eDFeBcbe0c313c53cf154` |
+| `delegation.expires` | 1798190813 (2026-12-25 09:26:53 UTC) |
+| delegation check | the §3.4 digest (chainId 56, BNB Chain DeWebHub) recovers to the holder above |
 | live read vector (chainId 56, recorded 2026-09-21) | `accountOf(0x50a994e71615474b55559ff4f500928fbc339dd9, 4246)` = `0x86DDaEF00401E3F10418398D67D7189fc458eA95`; `fileInfo(container, "index.html")` = 756 bytes, `text/html; charset=utf-8`, SHA-256 `0xec444c899bd9229f9173082fff362da66dd297179482a58b30b6f53ce9f7a0b6`; `fileInfo(container, "/index.html")` = size 0; `read(container, "/index.html")` reverts `0x2a9df442`. Raw responses: `sdk/test/fixtures/mainnet-4246-index.json` |
 | nested-key vector (chainId 56, scanned 2026-09-21) | all 4,400 circuits on processor #0 scanned: 7 sites hold files; every nested key is stored bare, e.g. container `0x19366c3c69ffeb3b286d9fa6cc5e616375baafd3` (circuit 3114, 162 files) lists `assets/basic-BVO4OuW-.js`; 0 of 39 nested keys begin with `/` |
-| `fileInfo.size` | TODO (the manifest changes when its delegation is renewed; record size, hash and block together) |
-| `fileInfo.sha256Hash` | TODO |
-| block number | TODO |
 
 ### 6.2 Delegation digest (worked example)
 
@@ -396,6 +408,8 @@ Copyright and related rights waived via CC0-1.0.
 > **占位编号。** TAP-20 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
 
 > **实现状态（2026-09-27）：** 无目录运行中：在 BNB Chain 上，`api.tapeapi.fun`（`11.1013.tape`，源码 `examples/public-api/`）与 `relay.tapeapi.fun`（`12.1013.tape`）发布了带持有者委托的 TAP-20 清单，SDK 可按容器、`(circuits, tokenId)` 二元组与名称 `<#ID>.<processor>.tape` 解析。ServiceDirectory（§3.5）未部署，因此标签在主网上无法解析。未经第三方审计。
+
+> **目标状态：** Target: Stable (v1) at TapeAPI 1.0。在 TapeAPI 1.0 发布时由 Draft 进入 Stable (v1)（见 [TAP-1](TAP-1.md) §4.1）；在此之前仍是 Draft。
 
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 
@@ -692,23 +706,34 @@ amount = sum / 1 000 000，向上取整到 8 位小数
 
 ## 6. 测试向量
 
-### 6.1 主网清单（Final 前 TODO）
+### 6.1 主网清单
+
+`11.1013.tape` 的线上清单，只读，钉在一个区块上：参考 SDK 的 `resolve` 使用其默认 BSC 节点（`rpcUrlsFor(56)`：NodeReal、Alchemy、48 Club），按运营方计法定数 2；每个 `eth_call` 都用 EIP-1898 的 `{ blockHash }` 参数钉在下表的区块上，三家运营方对每个调用返回的字节完全相同。原始回答：`sdk/test/fixtures/mainnet-11-1013-manifest.json`（录制脚本 `scripts/record-mainnet-manifest.mjs`），由 `sdk/test/mainnet-manifest.test.mjs` 离线回放经 `resolve`，并由 `spec/vectors/verify.py` 独立核对。委托在 2026-12-10 之前续期，清单随之改变：以下数值是该区块上的状态，不是当前的清单。
 
 | 项目 | 值 |
 |---|---|
 | chainId | 56 |
-| 服务 | `11.1013.tape`（`https://api.tapeapi.fun`），2026-09-27 解析 |
+| 服务 | `11.1013.tape`（`https://api.tapeapi.fun`），2026-09-28 录制 |
+| 区块号 | 124552456 |
+| 区块哈希 | `0xb1699395b13b3f031a277928b862b96c976ec47cddebfe7ccda4fe54bc488a8b` |
+| 区块时间戳 | 1790610971（2026-09-28 15:56:11 UTC） |
 | circuits（`cpuAt(1013)`） | `0xe02c26c7432A7121168AA9B610DE24eCf9a1a414` |
 | tokenId | `11` |
 | container（`accountOf`） | `0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8` |
-| ServiceDirectory | TODO（未部署） |
+| `isCPU(circuits)` | `true` |
+| 持有者（`ownerOf`） | `0x086bFB1908B1DF8C0c4412f28E4DD22Bdd52d715` |
+| ServiceDirectory | 未部署（实验性，不在 TapeAPI 1.0 范围内） |
 | 清单路径（URL） | `/.well-known/tapeapi.json` |
 | 清单注册表键 | `.well-known/tapeapi.json` |
+| `fileInfo.size` | 3414 字节，`application/json` |
+| `fileInfo.sha256Hash` | `0xee57f304f8316802978695e8e9f14e89ce1f9e5c79123b5a583fdcfd3b52c37a` |
+| 清单字节（`read`）的 SHA-256 | `0xee57f304f8316802978695e8e9f14e89ce1f9e5c79123b5a583fdcfd3b52c37a`，与 `fileInfo.sha256Hash` 相同，符合 §3.6 步骤 2 的要求 |
+| `fileInfo.updatedAt` | 1790442494（2026-09-26 17:08:14 UTC） |
+| `signer` | `0xaB70dEe8e1CEabb1D10eDFeBcbe0c313c53cf154` |
+| `delegation.expires` | 1798190813（2026-12-25 09:26:53 UTC） |
+| 委托核对 | §3.4 摘要（chainId 56，BNB Chain 的 DeWebHub）恢复出上表的持有者 |
 | 主网读取向量（chainId 56，2026-09-21 记录） | `accountOf(0x50a994e71615474b55559ff4f500928fbc339dd9, 4246)` = `0x86DDaEF00401E3F10418398D67D7189fc458eA95`；`fileInfo(container, "index.html")` = 756 字节、`text/html; charset=utf-8`、SHA-256 `0xec444c899bd9229f9173082fff362da66dd297179482a58b30b6f53ce9f7a0b6`；`fileInfo(container, "/index.html")` = size 0；`read(container, "/index.html")` 回滚 `0x2a9df442`。原始响应见 `sdk/test/fixtures/mainnet-4246-index.json` |
 | 嵌套键向量（chainId 56，2026-09-21 扫描） | 扫描处理器 #0 全部 4,400 枚电路：7 个站点有文件；所有嵌套键均为裸键，例如容器 `0x19366c3c69ffeb3b286d9fa6cc5e616375baafd3`（电路 3114，162 个文件）列出 `assets/basic-BVO4OuW-.js`；39 个嵌套键中 0 个以 `/` 开头 |
-| `fileInfo.size` | TODO（委托续期时清单会变化；大小、哈希与区块号需一并记录） |
-| `fileInfo.sha256Hash` | TODO |
-| 区块号 | TODO |
 
 ### 6.2 委托摘要（完整算例）
 

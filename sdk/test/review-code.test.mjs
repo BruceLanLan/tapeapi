@@ -29,7 +29,7 @@ test('FIXED H-1: tx.approve({ spender: svc }) requires an explicit, bounded amou
   const api = createTapeAPI({ escrow: ADDR.escrow })
   const EVIL = '0x' + 'e5'.repeat(20)   // any contract a hostile provider writes into payment.escrow / 恶意服务方写进清单的任意合约
   const svc = { manifest: { payment: { escrow: EVIL } }, container: ADDR.container }
-  const abiErr = (re) => (e) => e instanceof TapeAPIError && e.code === 'ABI_INVALID' && re.test(e.message)
+  const abiErr = (re) => (e) => e instanceof TapeAPIError && e.code === 'INVALID_ARGUMENT' && re.test(e.message)
   assert.throws(() => api.tx.approve({ spender: svc }), abiErr(/needs an amount/), 'amount omitted, as a hurried integrator would: refused')
   assert.throws(() => api.tx.approve({ spender: svc, amount: 0n }), abiErr(/positive and bounded/))
   assert.throws(() => api.tx.approve({ spender: svc, amount: 2n ** 256n - 1n }), abiErr(/positive and bounded/), 'the old "unlimited" value is refused')

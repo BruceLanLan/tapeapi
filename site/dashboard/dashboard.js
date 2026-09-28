@@ -169,7 +169,7 @@ function persist(next) {
 // 4 s per node, as in the playground: a node that drops the connection must not hold every read. / 每节点 4 秒。
 // A name with an area code (1.2.344.tape on X Layer, 1.3.5.tape on Base) is resolved on its chain, through the SDK's
 // default nodes for that chain with the same operator quorum. / 带区号的名字在它的链上解析，用 SDK 对该链的默认节点，法定数相同。
-const api = createTapeAPI({ rpcUrls: RPC_URLS, quorum: QUORUM, timeoutMs: 4000 })
+const api = createTapeAPI({ rpcUrls: RPC_URLS, quorum: QUORUM, rpcTimeoutMs: 4000 })
 const chainName = (id) => CHAINS[id]?.name ?? `chain ${id}`
 
 // ── resolving, a few at a time / 解析，限制并发 ──────────────────────────────────────────────────────────────────

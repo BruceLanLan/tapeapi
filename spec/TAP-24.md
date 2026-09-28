@@ -2,8 +2,8 @@
 |---|---|
 | Title | TapeAPI: Intent RFQ for Cross-Chain Exchange |
 | Author | Bruce (@BruceLanLan) |
-| Status | Draft |
-| Implementation | Frozen (see the status note), not a build target (2026-09-27): no `IntentEscrow` exists or is deployed. `examples/defi-rfq-solver` builds and signs quotes (§3.2) only and moves no funds. |
+| Status | Withdrawn |
+| Implementation | Withdrawn (2026-09-28), after being frozen since 2026-09-21 (see the status note); not a build target: no `IntentEscrow` exists or is deployed. `examples/defi-rfq-solver` builds and signs quotes (§3.2) only and moves no funds. |
 | Type | Standards |
 | Created | 2026-09-20 |
 | Requires | TAP-20, TAP-21, TAP-23 |
@@ -24,6 +24,10 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "
 > arbitrary locked value. Nothing in this document may be implemented against real funds until a staking and
 > slashing TAP exists and TAP-23 requires it for attestations that gate fund release. The design is kept so the
 > interfaces can be reviewed; it is not a build target.
+>
+> **Withdrawn (2026-09-28).** The author has withdrawn this proposal: it is outside TapeAPI 1.0, and it stays
+> withdrawn at least until a staking and slashing TAP exists. The text is kept for the record under TAP-1 §4.1; its
+> number is not reused. A later proposal for the same flow is a new document.
 
 ## 1. Abstract
 
@@ -151,7 +155,7 @@ Copyright and related rights waived via CC0-1.0.
 
 > **占位编号。** TAP-24 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
 
-> **实现状态（2026-09-27）：** 冻结（见状态说明），不是构建目标：`IntentEscrow` 不存在，也未部署。`examples/defi-rfq-solver` 只构造并签署报价（§3.2），不移动任何资金。
+> **实现状态（2026-09-28）：** 已撤回（2026-09-28），此前自 2026-09-21 起冻结（见状态说明）；不是构建目标：`IntentEscrow` 不存在，也未部署。`examples/defi-rfq-solver` 只构造并签署报价（§3.2），不移动任何资金。
 
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 
@@ -160,6 +164,9 @@ Copyright and related rights waived via CC0-1.0.
 > 而释放资金需要二级保证。把两者组合起来，控制两个提供者身份（约 0.02 BNB）的攻击者即可释放任意锁定资产。
 > 在质押与罚没的 TAP 出现、且 TAP-23 要求用于释放资金的证明必须来自质押提供者之前，
 > 本文任何内容都不得面向真实资金实现。保留设计以便审阅接口；它不是构建目标。
+>
+> **已撤回（2026-09-28）。** 作者已撤回本提案：它不在 TapeAPI 1.0 范围内，至少在质押与罚没的 TAP 出现之前
+> 保持撤回。文本按 TAP-1 §4.1 保留备查，编号不复用。以后针对同一流程的提案将是一份新文档。
 
 ## 1. 摘要
 

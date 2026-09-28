@@ -96,7 +96,7 @@ test('only a fault in the token data degrades to TOKEN_READ_FAILED; a transport 
   // A fault in the contract itself degrades: it is a fact about the pinned block, so every provider agrees.
   assert.ok(isTokenDataFault(new Error('wordAt: word 0 is out of range')))            // 返回 0x，解码器抛 / decoder on empty data
   assert.ok(isTokenDataFault(new TapeAPIError('ABI_INVALID', 'bad return data')))
-  assert.ok(isTokenDataFault(Object.assign(new TapeAPIError('RPC_ERROR', 'execution reverted'), { rpcCode: 3 })))
+  assert.ok(isTokenDataFault(new TapeAPIError('RPC_ERROR', 'execution reverted', { rpcCode: 3 })))
 
   // 传输故障 → **不**降级，向上抛。否则我这边抖一下就标 TOKEN_READ_FAILED，另一家返回真实余额，
   // 两份已验签结果逐字节不同，callQuorum 必然 QUORUM_FAILED，而谁都没说谎。
@@ -104,7 +104,7 @@ test('only a fault in the token data degrades to TOKEN_READ_FAILED; a transport 
   // become two byte-different verified envelopes, and callQuorum rejects although nobody lied.
   assert.ok(!isTokenDataFault(new TapeAPIError('RPC_UNAVAILABLE', 'only 1/2 nodes answered')))
   assert.ok(!isTokenDataFault(new TapeAPIError('INTERNAL', 'This operation was aborted')))
-  assert.ok(!isTokenDataFault(Object.assign(new TapeAPIError('RPC_ERROR', 'rate limited'), { rpcCode: -32005 })))
+  assert.ok(!isTokenDataFault(new TapeAPIError('RPC_ERROR', 'rate limited', { rpcCode: -32005 })))
 
   // 实测到的具体情形：以太坊 USDT 完全标准（decimals 6、symbol "USDT"），一次上游超时不应把它标成非标准代币。
   // The measured case: Ethereum USDT is standard; an upstream timeout must not label it a non-standard token.

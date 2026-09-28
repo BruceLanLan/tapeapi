@@ -85,7 +85,7 @@ test('an independent Python implementation, written from the spec alone, agrees'
 })
 
 test('TAP-26 channel vectors: the real handshake, driven with the fixed secrets, reproduces every value', async () => {
-  const { channel } = await import('../src/index.js')
+  const channel = await import('../src/channel.js')   // the implementation module (toHex, fromHex) / 实现模块
   const v = load('tap-26-channel.json')
   const hx = (h) => channel.fromHex(h)
   // A random source that replays the vector's secrets in the order createInvite / acceptInvite draw them.

@@ -3,6 +3,7 @@
 | Title | Tape Channel: Real-Time Private Channels Between Containers |
 | Author | Bruce (@BruceLanLan) |
 | Status | Draft |
+| Target | Stable (v1) at TapeAPI 1.0 |
 | Implementation | Live (2026-09-27): ChannelBus is deployed on BNB Chain at `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707` (code byte-for-byte the reference build); a free public relay runs at `relay.tapeapi.fun` (`12.1013.tape`, source `examples/cloudflare-worker/relay-worker.js`); the SDK implements channels over relays and ChannelBus and exports a measured bus node set, `BUS_RPC_URLS` (§3.7). No third-party audit. |
 | Type | Standards |
 | Created | 2026-09-22 |
@@ -214,6 +215,8 @@ Copyright and related rights waived via [CC0](https://creativecommons.org/public
 > **占位编号。** TAP-26 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
 
 > **实现状态（2026-09-27）：** 运行中：ChannelBus 已部署于 BNB Chain `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`（代码与参考构建逐字节一致）；免费公共中继运行于 `relay.tapeapi.fun`（`12.1013.tape`，源码 `examples/cloudflare-worker/relay-worker.js`）；SDK 实现了经中继与 ChannelBus 的通道，并导出一组实测的总线节点 `BUS_RPC_URLS`（§3.7）。未经第三方审计。
+
+> **目标状态：** Target: Stable (v1) at TapeAPI 1.0。在 TapeAPI 1.0 发布时由 Draft 进入 Stable (v1)（见 [TAP-1](TAP-1.md) §4.1）；在此之前仍是 Draft。
 
 ## 1. 摘要
 

@@ -16,7 +16,13 @@ export declare function labelToBytes32(label: string): Hex
 export declare function bytes32ToLabel(h: string): string
 export declare function encodeParams(types: string[], values: unknown[]): Hex
 export declare function decodeParams(types: string[], data: string | Uint8Array, base?: number): any[]
+/** @internal The ServiceDirectory record layout (experimental contract); not part of the 1.0 API. */
 export declare const SERVICE_TUPLE: Record<string, unknown>
+/**
+ * @internal The ABI table encodeCall / decodeReturn look names up in. Its entries follow the contracts, including the
+ * experimental escrow and ServiceDirectory, and may change in any release; only the names of the stable contracts
+ * (hub, SiteRegistry, processor factory, ChannelBus, ERC-20/721, ERC-6551) are part of the 1.0 API.
+ */
 export declare const FUNCTIONS: Record<string, { inputs: unknown[]; outputs: unknown[]; [key: string]: unknown }>
 export declare function signatureOf(name: string): string
 export declare function selector(nameOrSig: string): Hex

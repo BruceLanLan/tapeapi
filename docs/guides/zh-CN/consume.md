@@ -18,7 +18,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz
 ```
 
 把下面的脚本保存为 `.mjs` 文件，**放在 `tapeapi` 目录之内**，然后用 `node <文件>.mjs` 运行。`@tapeapi/sdk` 通过仓库的
@@ -115,6 +115,7 @@ try {
 
 | 错误码 | 含义 | 应对 |
 |---|---|---|
+| `INVALID_ARGUMENT` | 你自己的选项或参数有误（没配 `rpcUrls`、不支持的目标、选项不合法）。没有发出任何请求。 | 改正调用；绝不重试。 |
 | `RPC_UNAVAILABLE` | 作答的 RPC 节点少于法定人数。 | 重试；增加节点。 |
 | `RPC_DISAGREE` | 节点返回了不同的字节。 | 重试；若持续出现，说明某个节点落后或在说谎。 |
 | `MANIFEST_INVALID` | 没有清单、清单有误，或其字节与链上不符。 | 该服务没有（正确地）发布。 |
@@ -143,6 +144,8 @@ console.log(q.result, 'agreed by', q.agreed)                  // 否则抛出 Ta
 各不相同。使用单一来源数值的协议仍应施加边界检查、新鲜度检查和熔断机制。
 
 ## 5. 为调用付费
+
+> **实验性。** 付费功能（TAP-22 付费通道与托管合约）尚未部署、未经审计，不在 1.0 的稳定承诺之内：下面的名字可能在 1.x 的次版本里改变。见[升级到 1.0](upgrade-1.0.md#10-承诺什么)。
 
 免费方法无需任何东西。付费方法需要一张由消费者签名的凭证（[TAP-22](../../../spec/TAP-22.md)）：
 

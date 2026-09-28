@@ -61,7 +61,7 @@ async function run(text, fromLink) {
   const t0 = performance.now()
   // A fresh SDK instance per check: nothing cached from an earlier receipt. 4 s per node, as in the playground.
   // 每次核对新建 SDK 实例：不沿用上一份回执的缓存。每个节点 4 秒，与调试台相同。
-  const api = createTapeAPI({ rpcUrls: RPC_URLS, quorum: QUORUM, timeoutMs: 4000 })
+  const api = createTapeAPI({ rpcUrls: RPC_URLS, quorum: QUORUM, rpcTimeoutMs: 4000 })
   let outcome
   try {
     // An AI usage receipt names only its container: the service is resolved from it. Its hashes are checked against

@@ -2,7 +2,7 @@
 |---|---|
 | Title | TapeAPI: Metered Payment Voucher and Escrow |
 | Author | Bruce (@BruceLanLan) |
-| Status | Draft |
+| Status | Experimental |
 | Implementation | Not deployed (2026-09-27). `contracts/src/TapeAPIEscrow.sol` (v2) is implemented and tested, and the SDK and server implement the voucher, but no escrow is deployed on BNB Chain and it needs an independent audit before it holds real funds. The live services (`11.1013.tape`, `12.1013.tape`) are free and name no escrow. The v2 contract predates the 2026-09-28 revision of §3.4 and still starts every provider at 0; the escrow version that goes to audit and deployment implements §3.4 as written (§7). |
 | Type | Standards |
 | Created | 2026-09-20 |
@@ -157,6 +157,8 @@ Copyright and related rights waived via CC0-1.0.
 > **占位编号。** TAP-22 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
 
 > **实现状态（2026-09-27）：** 未部署。`contracts/src/TapeAPIEscrow.sol`（v2）已实现并有测试，SDK 与服务端实现了凭证，但 BNB Chain 上没有部署任何托管合约，在它持有真实资金之前需要一次独立审计。运行中的服务（`11.1013.tape`、`12.1013.tape`）免费，不指定托管合约。v2 合约早于 2026-09-28 对 §3.4 的修订，仍让每个提供者从 0 开始；送审并部署的那一版托管按本文 §3.4 实现（§7）。
+
+> **状态：** Experimental（实验性，见 [TAP-1](TAP-1.md) §4.1）：不在 TapeAPI 1.0 的稳定承诺之内，可能不兼容地修改或撤回。
 
 RFC 2119 关键词适用。
 

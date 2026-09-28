@@ -65,7 +65,7 @@ and the invite, accept and ready travel over a transport.
 
 | Transport | When | API |
 |---|---|---|
-| **Relay** (default) | Low latency, no gas. A relay is an ordinary TapeAPI service that stores ciphertext per room. | `channel.relayTransport({ api, svc, inbound, outbound })` |
+| **Relay** (default) | Low latency, no gas. A relay is an ordinary TapeAPI service that stores ciphertext per room. | `channel.relayTransport({ api, service, inbound, outbound })` |
 | **ChannelBus** | No server to trust or keep running; every message is a transaction (about 50,000 gas). | `channel.busTransport({ rpc, bus: MAINNET.channelBus, inbound, outbound, sendTx })` |
 | **Several at once** | The responder may answer on any transport the invite names, so listen on all of them. | `channel.fanIn([t1, t2])` |
 
@@ -97,6 +97,8 @@ the reader read a real frame 73,700 blocks back (2026-09-27). The reader's tests
 publicnode and the dataseed nodes. The relay transport does not depend on any of this.
 
 ## 5. Read privacy
+
+Experimental in 1.0: the options, defaults and `stats().privacy` below may change in a 1.x minor release.
 
 `busTransport` and `busReader` ask every node for your rooms by name: one `eth_getLogs` whose room topic lists them,
 sent to each of the 2 to 4 operators of the client. Each node therefore sees "this IP reads these rooms", and an inbox

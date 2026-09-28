@@ -44,7 +44,7 @@ waits for ever; the relay is working, it just has nothing in the room the member
 import { createTapeAPI, rpcUrlsFor, group as G, deliverGroupUpdate } from '@tapeapi/sdk'
 
 const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), quorum: 2 })
-const relay = { api, svc: await api.resolve('12.1013.tape') }
+const relay = { api, service: await api.resolve('12.1013.tape') }
 const verifyMember = api.groupVerifier()                 // checks every member against its channel record
 
 // Other members as the chain publishes them: container addresses, never wallets
@@ -52,10 +52,10 @@ const members = await Promise.all([bobContainer, carolContainer].map((c) => api.
 
 const created = await G.createGroup({
   self: { container: myContainer, chainId: 56 }, identity: myIdentity, members, verifyMember,
-  relays: [{ url: 'https://relay.tapeapi.fun/tapeapi/v1', container: relay.svc.container }],
+  relays: [{ url: 'https://relay.tapeapi.fun/tapeapi/v1', container: relay.service.container }],
 })
 const group = created.group
-const sent = await deliverGroupUpdate({ group, update: created, relay })
+const sent = await deliverGroupUpdate({ group, update: created, relayClients: [relay] })
 // sent.deliveries: one entry per post, invites first, then the epoch message:
 //   { what: 'invite', room, container, chainId, via: 'relay', ok: true, i: 0, epoch: '<room epoch>' }
 //   { what: 'epoch',  room: group.room, via: 'relay', ok: true, i: 0, epoch: '<room epoch>' }
@@ -66,10 +66,10 @@ Membership changes return the same kind of update, and `added` says who is new:
 ```js
 const up = await group.addMembers([await api.chain.channelKeys(daveContainer)], { verifyMember })
 up.added                                                 // [{ container, chainId, x25519, ed25519 }]: invited by default
-await deliverGroupUpdate({ group, update: up, relay })
+await deliverGroupUpdate({ group, update: up, relayClients: [relay] })
 
-await deliverGroupUpdate({ group, update: await group.removeMembers([carolContainer]), relay })   // no invites
-await deliverGroupUpdate({ group, update: await group.rotate(), relay })                          // at least every 30 days
+await deliverGroupUpdate({ group, update: await group.removeMembers([carolContainer]), relayClients: [relay] })   // no invites
+await deliverGroupUpdate({ group, update: await group.rotate(), relayClients: [relay] })                          // at least every 30 days
 ```
 
 What `deliverGroupUpdate` does and returns:
@@ -78,7 +78,7 @@ What `deliverGroupUpdate` does and returns:
 - **Who is invited.** `invite: 'new'` (the default: `update.added`), `'all'` (every member but the owner), `'none'`, or
   a list of containers that must be in the current roster. Invites always use the roster's container and chainId, the
   ones the owner signed.
-- **Several transports.** `relay` and `bus` each take one or a list; every post goes to each of them. Each invite is
+- **Several transports.** `relayClients` and `busClients` are lists; every post goes to each entry of both. Each invite is
   sealed once, so a member that reads two transports sees one invite twice, not two invites.
 - **Failures.** Every post is tried. If any failed, the call then throws `TapeAPIError('GROUP_DELIVERY')`, whose message
   names the first failed room and whose `data` holds every delivery; pass `throwOnError: false` to get `{ ok: false,
@@ -88,7 +88,7 @@ What `deliverGroupUpdate` does and returns:
   public nodes:
 
 ```js
-setInterval(() => deliverGroupUpdate({ group, relay }).catch(report), 10 * 60_000)
+setInterval(() => deliverGroupUpdate({ group, relayClients: [relay] }).catch(report), 10 * 60_000)
 ```
 
 ## Member
@@ -97,16 +97,16 @@ setInterval(() => deliverGroupUpdate({ group, relay }).catch(report), 10 * 60_00
 import { createTapeAPI, rpcUrlsFor, channel, group as G, checkGroupInvites } from '@tapeapi/sdk'
 
 const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), quorum: 2 })
-const relay = { api, svc: await api.resolve('12.1013.tape') }
+const relay = { api, service: await api.resolve('12.1013.tape') }
 const self = { container: myContainer, chainId: 56 }    // the CONTAINER, on the chain it lives on
 const cursors = new Map()                                // or your own store: see "Saving state"
 
-const found = await checkGroupInvites({ self, identity: myIdentity, relay, cursors, waitMs: 20_000, checkSelf: true })
+const found = await checkGroupInvites({ self, identity: myIdentity, relayClients: [relay], cursors, waitMs: 20_000, checkSelf: true })
 for (const { invite } of found.invites) {
   const ownerKeys = await api.chain.channelKeys(invite.owner.container)   // from the chain, never from the invite
   const g = G.joinGroup({ self, identity: myIdentity, invite, ownerKeys })
   let greeted = false
-  const link = channel.relayTransport({ api, svc: relay.svc, inbound: g.room, outbound: g.room })
+  const link = channel.relayTransport({ api, service: relay.service, inbound: g.room, outbound: g.room })
   link.start(async (wire) => {
     const t = channel.decodeWire(wire)
     if (t.groupEpoch) {
@@ -138,8 +138,8 @@ for (const { invite } of found.invites) {
 | Latency and cost | about one round trip; the public relay is free | block time; every post is a transaction paid in gas |
 | What stays | rooms in memory, forgotten 15 minutes after the last access | events on chain, public for ever |
 | Limits | invites and epoch messages: 8 per source per room per 10 minutes on the reference relay | up to 16,448 bytes per post |
-| Owner | `relay: { api, svc, payer? }` | `bus: { address: MAINNET.channelBus, sendTx }`: your wallet sends, one transaction per room |
-| Member | `checkGroupInvites({ relay })`, `channel.relayTransport` | `busPrivacy.busPrivacyReader` (reads the whole contract by default, see [Read privacy](channels.md#5-read-privacy)) or `channel.busReader` on `channel.inboxRoom(...)` and `group.room` |
+| Owner | `relayClients: [{ api, service, payer? }]` | `busClients: [{ address: MAINNET.channelBus, sendTx }]`: your wallet sends, one transaction per room |
+| Member | `checkGroupInvites({ relayClients })`, `channel.relayTransport` | `busPrivacy.busPrivacyReader` (reads the whole contract by default, see [Read privacy](channels.md#5-read-privacy)) or `channel.busReader` on `channel.inboxRoom(...)` and `group.room` |
 
 Name both in `createGroup({ relays, bus })` and deliver over both when the group matters: a member can read either.
 
@@ -149,7 +149,7 @@ Nothing needs saving to stay **safe**; these keep a restart **smooth**:
 
 - **Owner:** save `group.snapshot()` (no secrets: the roster and the epoch). After a restart,
   `G.resumeGroup({ self, identity, snapshot, verifyMember })` starts the next epoch at once (the old key is gone) and
-  returns it as an update: `deliverGroupUpdate({ group: resumed.group, update: resumed, relay })`.
+  returns it as an update: `deliverGroupUpdate({ group: resumed.group, update: resumed, relayClients: [relay] })`.
 - **Member:** save `g.snapshot()` after sealing. After a restart, pass `minEpoch: snapshot.epoch` and
   `lastSeq: snapshot.lastSeq` to `joinGroup`: a relay replaying an older epoch is refused, and a clock that stepped
   back cannot make new messages look like replays.
@@ -163,10 +163,10 @@ Nothing needs saving to stay **safe**; these keep a restart **smooth**:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| The owner created the group, members never get an invite, the relay returns 0 frames | Only the epoch message was posted, to the group room; the invites were never posted to the inbox rooms | `deliverGroupUpdate({ group, update, relay })`, and check that `deliveries` has one `invite` per new member |
+| The owner created the group, members never get an invite, the relay returns 0 frames | Only the epoch message was posted, to the group room; the invites were never posted to the inbox rooms | `deliverGroupUpdate({ group, update, relayClients: [relay] })`, and check that `deliveries` has one `invite` per new member |
 | The same, with invites posted | Wrong room: the inbox room was computed from the holder's **wallet**, not the **container**, or with another chainId | Compare the `room` of the owner's invite delivery with the `room` that `checkGroupInvites` returns. Use the container address and the chainId it lives on; `checkSelf: true` names the mistake |
 | The invite at index 0 is never seen | The read reused the `after` cursor of another room (the group room) and sent no `epoch`, so the relay started past index 0 | Keep a cursor per room with its room epoch; the first read is `after: -1, epoch: null`. `checkGroupInvites` does this and ignores a stored cursor without an epoch |
-| Invites or the epoch message vanish after a while | A relay keeps a room in memory only, and forgets it 15 minutes after the last access | Repost the epoch message every 10 minutes (`deliverGroupUpdate({ group, relay })`); re-invite members who have not joined (`invite: 'all'`); a member's stale cursor is reset by the new room epoch |
+| Invites or the epoch message vanish after a while | A relay keeps a room in memory only, and forgets it 15 minutes after the last access | Repost the epoch message every 10 minutes (`deliverGroupUpdate({ group, relayClients: [relay] })`); re-invite members who have not joined (`invite: 'all'`); a member's stale cursor is reset by the new room epoch |
 | Posting fails with `too many invites / epoch messages from this source in this room` | The relay limits 0x03 / 0x04 frames per source per room (8 per 10 minutes on the reference relay) | Wait `error.retryAfterS` and deliver again; do not repost in a tight loop. Never swallow the error: `deliverGroupUpdate` throws `GROUP_DELIVERY` with `rateLimited: true` |
 | A mobile wallet never returns to the app when signing the channel keys | The app is served on a LAN HTTP address (`http://192.168.x.x`), which the wallet will not call back | Serve it through an HTTPS tunnel, and set WalletConnect's `metadata.url` to that exact HTTPS origin |
 | A new member logs "not a member of it" for some epoch messages | Older epochs in the group room were not made for it | Expected: catch and continue; the epoch that added it opens |

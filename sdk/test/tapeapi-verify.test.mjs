@@ -30,9 +30,9 @@ const TMP = mkdtempSync(join(tmpdir(), 'tapeapi-verify-test-'))
 const closers = []
 test.after(async () => { for (const c of closers.reverse()) await c(); rmSync(TMP, { recursive: true, force: true }) })
 
-// The sidecar on a real port, with knobs: `tamper` changes "Hi!" after signing; `chunk` writes the answer in pieces of
+// The sidecar on a real port, with knobs: `tamper` changes "Hi!" after signing; `strip` removes the receipt comment; `reset` breaks the connection 50 ms after the answer; `chunk` writes the answer in pieces of
 // that many bytes, a millisecond apart. / 真实端口上的旁路：tamper 在签名后改动 "Hi!"；chunk 把回答切成这么多字节一块写出。
-const knobs = { tamper: false, chunk: 0, down: false, bodies: [] }
+const knobs = { tamper: false, strip: false, reset: false, chunk: 0, down: false, bodies: [] }
 async function startSidecar() {
   const fake = createFakeUpstream({ keys: ['sk-demo'], models: MODELS.map((m) => m.id) })
   let proxy
@@ -46,8 +46,10 @@ async function startSidecar() {
     const r = await proxy.handleRequest(new Request(new URL(req.url, 'http://127.0.0.1'), { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(parts) }), { clientIp: '127.0.0.1' })
     let bytes = r.body ? Buffer.from(await r.arrayBuffer()) : null
     if (bytes && knobs.tamper) bytes = Buffer.from(bytes.toString('utf8').replace('Hi!', 'Hi?'))
+    if (bytes && knobs.strip) bytes = Buffer.from(bytes.toString('utf8').replace(/: ?tapeapi-receipt [A-Za-z0-9_-]*\r?\n/g, ''))
     res.writeHead(r.status, Object.fromEntries(r.headers))
     if (!bytes || req.method === 'HEAD') return res.end()
+    if (knobs.reset) { res.write(bytes); await new Promise((ok) => setTimeout(ok, 50)); return res.socket.destroy() }
     if (!knobs.chunk) return res.end(bytes)
     for (let i = 0; i < bytes.length; i += knobs.chunk) { res.write(bytes.subarray(i, i + knobs.chunk)); await new Promise((ok) => setTimeout(ok, 1)) }
     res.end()
@@ -220,6 +222,52 @@ test('--strict: a tampered JSON answer becomes HTTP 502 (not retried), a tampere
   // Untampered, strict passes everything as it is. / 未篡改时严格模式原样放行。
   const ok = await (await fetch(`${v.url}/v1/messages?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(true) })).text()
   assert.equal(events(ok).at(-1).event, 'message_stop')
+})
+
+// FIXED RC-2 (review 2026-09-29): with the receipt stripped and the answer arriving in pieces, the old strict mode passed
+// the final event's first bytes on and then wrote "\n\n" before its error event, which completed that final event: the
+// client dispatched message_stop. Only whole events go on now. / 回执被剥掉、回答分块到达时，旧的严格模式先转出最终事件的前半截，
+// 再在错误事件前写 "\n\n"，把那个最终事件补全了：客户端分派了 message_stop。现在只转交完整的事件。
+test('FIXED RC-2: --strict, receipt stripped, any chunking: the stream ends in one error event and its final event is never dispatched', async () => {
+  const side = await startSidecar()
+  const v = await startVerify(side.url, ['--strict'])
+  try {
+    knobs.strip = true
+    for (const chunk of [0, 5, 3, 64]) {
+      knobs.chunk = chunk
+      const ae = events(await (await fetch(`${v.url}/v1/messages?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(true) })).text())
+      assert.equal(ae.at(-1).event, 'error', `chunk ${chunk}`)
+      assert.ok(!ae.some((e) => e.event === 'message_stop'), `chunk ${chunk}: message_stop never dispatched`)
+      assert.equal(ae.filter((e) => e.event === 'error').length, 1)
+      const oe = events(await (await fetch(`${v.url}/v1/responses`, { method: 'POST', headers: CODEX_HEADERS, body: codexBody() })).text())
+      assert.equal(oe.at(-1).event, 'response.failed', `chunk ${chunk}`)
+      assert.ok(!oe.some((e) => e.event === 'response.completed'), `chunk ${chunk}: response.completed never dispatched`)
+    }
+  } finally { knobs.strip = false; knobs.chunk = 0 }
+  // Untampered and in pieces, strict passes the stream whole. / 未篡改、分块到达时，严格模式完整放行。
+  knobs.chunk = 5
+  try {
+    const ok = await (await fetch(`${v.url}/v1/messages?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(true) })).text()
+    assert.equal(events(ok).at(-1).event, 'message_stop')
+    assert.match(ok, /: tapeapi-receipt /)
+  } finally { knobs.chunk = 0 }
+})
+
+// FIXED RC-4 (review 2026-09-29): an upstream that breaks off after the end of a stream (its final event) does not fail
+// the call: strict once the receipt verified, and not strict at all. / 上游在流结束之后断开不算失败。
+test('FIXED RC-4: the sidecar breaking the connection after the final event: the client still gets the whole stream, with and without --strict', async () => {
+  const side = await startSidecar()
+  const strict = await startVerify(side.url, ['--strict'])
+  const lax = await startVerify(side.url)
+  knobs.reset = true
+  try {
+    for (const v of [strict, lax]) {
+      const text = await (await fetch(`${v.url}/v1/messages?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(true) })).text()
+      assert.equal(events(text).at(-1).event, 'message_stop')
+      await waitFor(() => v.log().length === 1, 'logged')
+      assert.equal(v.log()[0].ok, true)
+    }
+  } finally { knobs.reset = false }
 })
 
 test('an error the sidecar made itself passes through as it is, reported as a sidecar error (not a failed receipt), even with --strict', async () => {

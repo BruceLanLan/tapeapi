@@ -6,7 +6,7 @@
 // 为冻结 ai 清单字段与用量回执所作的决定，经由旁路端到端检验。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createAIProxy, REQUEST_LIMIT, UPSTREAM_TIMEOUT_MS, STREAM_IDLE_MS } from '../src/ai-proxy.js'
+import { createAIProxy, REQUEST_LIMIT, AI_UPSTREAM_TIMEOUT_MS, STREAM_IDLE_MS } from '../src/ai-proxy.js'
 import { ai } from '@tapeapi/sdk'
 
 const KEY = '0x' + '42'.repeat(32)
@@ -34,7 +34,7 @@ async function streamed(p, path, body, headers) {
 
 test('the new defaults: 32 MiB requests, 600 s for a non-stream answer, a stream silent for 300 s is ended', () => {
   assert.equal(REQUEST_LIMIT, 32 * 1024 * 1024)
-  assert.equal(UPSTREAM_TIMEOUT_MS, 600_000)
+  assert.equal(AI_UPSTREAM_TIMEOUT_MS, 600_000)
   assert.equal(STREAM_IDLE_MS, 300_000)
 })
 

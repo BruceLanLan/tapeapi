@@ -32,7 +32,7 @@ const chainOf = (chainId) => chainReaderOf(chains, chainId)
 const attest = (chainId, pinned, blockRef, extra) => ({ chainId, blockNumber: pinned.blockNumber, blockHash: pinned.blockHash, blockRef, ...extra })
 
 const provider = createProvider({
-  manifest, signerKey: SIGNER_KEY, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID, allowSingleNode: !PROD, log, store,
+  manifest, signerKey: SIGNER_KEY, dev: !PROD, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID, allowSingleNode: !PROD, log, store,
   methods: {
     // 收费：TAP-23 见证读取 / paid: the TAP-23 Attested Read, params exactly { chainId, call: { to, data }, block? }
     read: async ({ chainId, call, block }) => {
@@ -50,7 +50,7 @@ const provider = createProvider({
         return { chainId, blockNumber: pinned.blockNumber, blockHash: pinned.blockHash, ...(blockRef === 'number' ? { blockRef } : {}), result }
       } catch (e) {
         // §3.3: a reverting call is INTERNAL with the revert bytes, which every node agreed on / 回滚：INTERNAL + revert 字节
-        if (e?.code === 'RPC_ERROR' && typeof e.rpcData === 'string') throw new TapeAPIError('INTERNAL', 'execution reverted', { data: { revert: e.rpcData } })
+        if (e?.code === 'RPC_ERROR' && typeof e.data?.rpcData === 'string') throw new TapeAPIError('INTERNAL', 'execution reverted', { data: { revert: e.data.rpcData } })
         throw e
       }
     },

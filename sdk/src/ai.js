@@ -117,6 +117,9 @@ export const SSE_RECEIPT_PREFIX = ': tapeapi-receipt '
  *  failure to the client. Informative: anyone on the path can set or strip it, so it never makes an answer verified.
  *  标记旁路自己产生的错误（没有上游回答、没有回执、没有签名）的响应头：对客户端是传输失败。仅供参考，不会让回答变成已核验。 */
 export const SIDECAR_ERROR_HEADER = 'x-tapeapi-sidecar-error'
+/** Response header of the HTTP 502 a strict createVerifyingFetch answers in place of a whole answer whose receipt fails
+ *  (value RECEIPT_INVALID), next to `x-should-retry: false`. / strict 的核验 fetch 代替核验不过的整体回答返回的 HTTP 502 所带的头。 */
+export const VERIFY_ERROR_HEADER = 'x-tapeapi-verify-error'
 /** The free manifest method that returns a stored receipt by response id. / 按响应 id 取回回执的免费清单方法。 */
 export const RECEIPT_METHOD = 'receipt'
 export const PRICE_UNIT = '1M tokens'
@@ -249,14 +252,20 @@ export function sseDigestOfPayloads(payloads, { sentinel = null } = {}) {
  * （适配器的 streamState），并收集 `: tapeapi-receipt` 注释。内存与流长无关。与厂商无关：旁路与各核验方运行同一份代码。
  * @param {{ sentinel?: string|null, onEvent?: (json: any, eventName: string) => void, eventParseLimit?: number }} [o]
  */
-export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = EVENT_PARSE_LIMIT } = {}) {
+// `final` (a format's stream.final: { data?, event? }) sets info.final once the format's final event has been dispatched, so
+// a verifier can hold that event back until the receipt is checked (review G1 M14). info.receiptsAtEnd is the number of
+// receipt comments seen when the stream first ended, by its final event or its sentinel (review RC-2), null before.
+// 格式的最终事件分派后置 info.final。info.receiptsAtEnd：流第一次结束（最终事件或 sentinel）时已见到的回执注释数，之前为 null。
+export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = EVENT_PARSE_LIMIT, final = null } = {}) {
   const LF = 0x0a, CR = 0x0d, COLON = 0x3a, SPACE = 0x20
   const COMMENT_LIMIT = 64 * 1024
   const RECEIPTS_MAX = 16
   const BOM = [0xef, 0xbb, 0xbf]
   const end = sentinel == null ? null : enc.encode(sentinel)
   const hash = sha256.create()
-  const info = { events: 0, done: false, receipts: [] }
+  const info = { events: 0, done: false, receipts: [], final: false, receiptsAtEnd: null }
+  const finalData = (final?.data ?? []).map((d) => enc.encode(d))
+  const finalEvents = final?.event ?? []
   let bomMatched = 0, bomDone = false
   let lastCR = false
   // the line / 当前行
@@ -280,6 +289,7 @@ export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = E
   }
   function startDataLine() { if (evData) appendData(NL); evData = true }
   function dispatch() {
+    if (evData && !info.final && ((evName && finalEvents.includes(evName)) || (!over && finalData.some((d) => same(concat(pieces, size), d))))) info.final = true
     if (evData) {
       if (over) { hash.update(NL); info.events++ } else {
         const data = concat(pieces, size)
@@ -289,6 +299,7 @@ export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = E
           if (onEvent) { let v; try { v = JSON.parse(new TextDecoder().decode(data)) } catch { v = undefined } if (v !== undefined) onEvent(v, evName) }
         }
       }
+      if (info.receiptsAtEnd === null && (info.final || info.done)) info.receiptsAtEnd = info.receipts.length
     }
     evData = false; evFields = false; evName = ''; pieces = []; size = 0; over = false
   }
@@ -335,7 +346,8 @@ export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = E
     lineLen = 0; comment = false; commentParts = []; commentLen = 0; colon = false; field = []; fieldLen = 0; fieldOver = false
     isData = false; isEvent = false; eventParts = []; eventLen = 0; skipSpace = false
   }
-  function scan(chunk, i) {
+  let boundary = -1
+  function scan(chunk, i, own = true) {
     const n = chunk.length
     if (lastCR && i < n) { if (chunk[i] === LF) i++; lastCR = false }
     // Next CR / LF positions, cached so a chunk of many lines is scanned once, not once per line.
@@ -347,23 +359,29 @@ export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = E
       const j = nextLF < 0 ? (nextCR < 0 ? n : nextCR) : nextCR < 0 ? nextLF : Math.min(nextLF, nextCR)
       if (j > i) lineBytes(chunk.subarray(i, j))
       if (j === n) break
+      const blank = lineLen === 0
       endLine()
       let k = j + 1
       if (chunk[j] === CR) { if (k < n) { if (chunk[k] === LF) k++ } else lastCR = true }
+      if (blank && own) boundary = k
       i = k
     }
   }
+  // Returns the offset in the chunk's bytes just after its last blank line (an event boundary: what came before it is
+  // whole events and comments), or -1 when it has none (review RC-2). / 返回块中最后一个空行之后的偏移（事件边界），没有时为 -1。
   function push(chunk) {
     const b = toBytes(chunk)
     if (!b) throw new TapeAPIError('BAD_REQUEST', 'push takes bytes')
+    boundary = -1
     let i = 0
     if (!bomDone) {
       while (i < b.length && bomMatched < 3 && b[i] === BOM[bomMatched]) { bomMatched++; i++ }
       if (bomMatched === 3) bomDone = true
-      else if (i < b.length) { bomDone = true; if (bomMatched) scan(Uint8Array.from(BOM.slice(0, bomMatched)), 0) }
-      else return
+      else if (i < b.length) { bomDone = true; if (bomMatched) scan(Uint8Array.from(BOM.slice(0, bomMatched)), 0, false) }
+      else return -1
     }
     scan(b, i)
+    return boundary
   }
   function finish() { if (!bomDone && bomMatched) { bomDone = true; scan(Uint8Array.from(BOM.slice(0, bomMatched)), 0) } }
   return {
@@ -843,6 +861,17 @@ export function saltRequestBody(bytes, headers) {
 // ---------------------------------------------------------------------------------------------------------------
 // A verifying fetch for official SDKs / 给官方 SDK 用的核验 fetch
 // ---------------------------------------------------------------------------------------------------------------
+// In place of a whole answer whose receipt fails (strict, review RC-5): an HTTP 502 in the request format's error shape,
+// with code RECEIPT_INVALID, and `x-should-retry: false`, which the official SDKs obey: they throw an APIError and do not
+// send, and possibly pay for, the request again. / 代替核验不过的整体回答：按请求格式的错误结构返回 HTTP 502，code 为
+// RECEIPT_INVALID，并带 x-should-retry: false（官方 SDK 遵守：抛 APIError，不再重发、不再付费）。
+function verifyErrorResponse(format, message) {
+  const error = format.name === 'anthropic-messages'
+    ? { type: 'error', error: { type: 'api_error', message, code: 'RECEIPT_INVALID' } }
+    : { error: { message, type: 'tapeapi_verify_error', param: null, code: 'RECEIPT_INVALID' } }
+  return new Response(JSON.stringify(error), { status: 502, statusText: 'Bad Gateway', headers: { 'content-type': 'application/json', 'x-should-retry': 'false', [VERIFY_ERROR_HEADER]: 'RECEIPT_INVALID' } })
+}
+
 async function bodyBytes(url, init) {
   const b = init?.body
   if (b == null) return new Uint8Array(0)
@@ -856,7 +885,14 @@ async function bodyBytes(url, init) {
 }
 
 /**
- * A fetch for an official SDK that takes one (e.g. `new OpenAI({ baseURL: svc.manifest.openai.baseUrl, fetch })`):
+ * A fetch for an official SDK that takes one (e.g. `new OpenAI({ baseURL, fetch })`, baseURL an `ai` endpoint of the
+ * manifest). Strict: a whole answer whose receipt fails becomes an HTTP 502 in the request format's error shape (code
+ * RECEIPT_INVALID) with `x-should-retry: false` and VERIFY_ERROR_HEADER: RECEIPT_INVALID, so the official SDKs throw an
+ * APIError and do not send, and maybe pay for, the request again; a caller of this fetch itself checks `res.ok`
+ * (review RC-5). Retrying a paid call after other 5xx errors is the caller's choice. / strict：核验不过的整体回答变成
+ * HTTP 502（按请求格式的错误结构，code 为 RECEIPT_INVALID），带 x-should-retry: false，官方 SDK 抛 APIError 且不重试；
+ * 直接调用者检查 res.ok。付费调用在其它 5xx 上是否重试由调用方决定。
+ *
  * requests on a receipt path are sent as they are, their bytes kept; every answer is checked with verifyUsageReceipt
  * against the resolved manifest. A stream is passed on chunk by chunk as it arrives and checked when it ends; a problem
  * then errors the stream (strict) so the SDK's iterator throws. Everything else passes through untouched.
@@ -879,9 +915,11 @@ async function bodyBytes(url, init) {
  *        non-JSON bodies are sent as they are. false: send the bytes exactly as given. Reports carry `salted`.
  *        在回执路径上的 JSON 请求正文末尾追加随机空白（解析出的请求不变，请求哈希无法猜测）；压缩或非 JSON 正文原样发送。
  *        false：完全按给定字节发送。报告带 salted。
- * @param {boolean} [o.strict=true]  throw (or error the stream) on any problem; false: report only / 有问题即抛错；false 只报告
+ * @param {boolean} [o.strict=true]  on any problem: an HTTP 502 RECEIPT_INVALID for a whole answer, an error for a stream,
+ *        a throw before sending for an endpoint mismatch; false: report only / 有问题时：整体回答返回 502，流出错，端点不符在发送前抛出；false 只报告
  * @param {number} [o.maxSkewS=300]  the receipt's ts must be this close to now / 回执时间与当前时间的最大偏差
- * @param {object[]} [o.formats]  the adapters (default FORMATS) / 适配器
+ * @param {object[]} [o.formats]  the adapters (default FORMATS); each that streams must name its final event (stream.final):
+ *        strict refuses one without it with INVALID_ARGUMENT, otherwise it is reported once / 适配器；会流式的必须有 stream.final
  */
 export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport, strict = true, maxSkewS = 300, formats = FORMATS, salt = true } = {}) {
   const doFetch = fetchImpl || ((...a) => globalThis.fetch(...a))
@@ -889,13 +927,25 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
   let resolving = null
   async function current() {
     if (svc) return svc
-    if (!api || typeof api.resolve !== 'function' || service == null) throw new TapeAPIError('MANIFEST_INVALID', 'createVerifyingFetch needs a resolved service, or api and a target to resolve')
+    if (!api || typeof api.resolve !== 'function' || service == null) throw new TapeAPIError('INVALID_ARGUMENT', 'createVerifyingFetch needs a resolved service, or api and a target to resolve')
     resolving ??= api.resolve(service).then((s) => { svc = s; return s }).finally(() => { resolving = null })
     return resolving
   }
   const report = (r) => {
     if (onReport) { try { onReport(r) } catch { /* the reporter's own failure is not the call's / 回调自己的错误不影响调用 */ } }
     else if (!r.ok && !strict && r.problems.length) console.warn('[tapeapi/ai] usage receipt problem:', r.problems.join('; '))
+  }
+  // A format that streams must name its final event (stream.final): without it the end of its stream is only [DONE] or
+  // the upstream closing, and an SDK may stop reading at the final event before the receipt is checked (review RC-3).
+  // Strict refuses such a format here; otherwise it is reported once. / 会流式的格式必须给出最终事件（stream.final）；否则认不出流
+  // 在哪里结束，SDK 可能在回执核验之前就停止读取。strict 在此拒绝；否则报告一次。
+  for (const f of formats) {
+    const fin = f?.stream?.final
+    if (!f?.stream || (isObj(fin) && ((Array.isArray(fin.data) && fin.data.length) || (Array.isArray(fin.event) && fin.event.length)))) continue
+    const why = `format ${JSON.stringify(f.name)} streams but has no stream.final ({ data?: [...], event?: [...] }, the first line of its final event): the end of its stream cannot be recognised, so an SDK may stop reading before the receipt is checked`
+    if (strict) throw new TapeAPIError('INVALID_ARGUMENT', `createVerifyingFetch: ${why}`, { data: { format: f.name } })
+    const r = { ok: false, problems: [], warnings: [why], unchecked: [], receipt: null, url: null, stream: true, status: 0, salted: false, format: f.name }
+    if (onReport) { try { onReport(r) } catch { /* the reporter's own failure / 回调自己的错误 */ } } else console.warn('[tapeapi/ai]', why)
   }
   const failure = (r) => (r.sidecarError
     ? new TapeAPIError(r.code, r.problems.join('; '), { data: { status: r.status, problems: r.problems } })
@@ -929,6 +979,14 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
     // The request's format: an endpoint of the manifest whose root the URL is under, and whose adapter matches the path.
     // 请求的格式：URL 位于清单某个端点的根之下，且该端点格式的适配器认得这个路径。
     let rel = null, format = null
+    // A request that looks like a metered call (its path, taken under an endpoint's root path or as it stands, is one a
+    // format meters) but is not addressed to an endpoint of the manifest: 'localhost' for '127.0.0.1', another port, a
+    // base URL without its /v1. Passing it on unverified would be silent (review G1 M15): strict refuses it with
+    // INVALID_ARGUMENT before anything is sent; otherwise it goes on and onReport says it was not verified.
+    // 看起来是计量调用（其路径在某端点的根路径之下、或按原样，是某格式会计量的路径），却没有发往清单里的端点：
+    // localhost 对 127.0.0.1、端口不同、base URL 缺了 /v1。不核验就放行是静默的：strict 在发出任何请求之前以 INVALID_ARGUMENT 拒绝；
+    // 否则照常发出，并由 onReport 说明未核验。
+    let near = null
     try {
       const u = new URL(url)
       for (const ep of endpoints) {
@@ -938,8 +996,20 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
         const r = new URL(root)
         const p = r.origin === u.origin ? apiPath(u.pathname, r.pathname) : null
         if (p && f.match({ verb, path: p })) { rel = p; format = f; break }
+        if (!near) {
+          const q = apiPath(u.pathname, r.pathname)
+          if ((q && f.match({ verb, path: q })) || f.match({ verb, path: u.pathname })) near = { format: f.name, baseUrl: ep.baseUrl }
+        }
       }
-    } catch { /* not ours / 不是我们的 */ }
+    } catch { /* not a URL: not ours / 不是 URL：不是我们的 */ }
+    if (!format && near) {
+      let origin = String(url)
+      try { const u = new URL(url); origin = u.origin + u.pathname } catch { /* keep it as given */ }
+      const why = `${verb} ${origin} looks like a metered ${near.format} call, but the manifest's ${near.format} endpoint is ${near.baseUrl}: point the client's base URL at exactly that endpoint (not verified: endpoint mismatch)`
+      if (strict) throw new TapeAPIError('INVALID_ARGUMENT', why, { data: { expected: near.baseUrl, actual: origin, format: near.format } })
+      report({ ok: false, mismatch: true, problems: [`not verified: endpoint mismatch: ${why}`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: 0, salted: false, expected: near.baseUrl })
+      return doFetch(input, init)
+    }
     if (!format) return doFetch(input, init)
     // A Request object: its body is read here, once, and sent as those bytes. / Request 对象：在此读出正文一次，按这些字节发送。
     if (isRequest) {
@@ -981,38 +1051,101 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
       if (headerError && !envelope) r.problems.splice(0, r.problems.length, headerError === 'no receipt' ? `no ${RECEIPT_HEADER} header` : headerError)
       const rep = { ...r, url, stream: false, status: res.status, salted }
       report(rep)
-      if (!rep.ok && strict) throw failure(rep)
+      if (!rep.ok && strict) return verifyErrorResponse(format, `usage receipt: ${rep.problems.join('; ')}`)
       return new Response(res.status === 204 || res.status === 205 || res.status === 304 ? null : bytes, { status: res.status, statusText: res.statusText, headers: res.headers })
     }
-    // A stream: every chunk goes on at once; the check runs when the upstream ends. / 流：每块立即转交，上游结束时核验。
+    // A stream (review G1 M14, RC-2, RC-4). It ends at the format's final event (response.completed, message_stop, ...), at its
+    // sentinel ([DONE]) or when the upstream closes, whichever comes first: the official SDKs stop reading at [DONE] (openai
+    // does so for every format) and cancel the body, so nothing after the end can be relied on to be read.
+    // Strict: every chunk goes on as it arrives until the one in which the stream ends; that chunk is held while the
+    // receipts that came before the end are checked, and released as soon as one verifies. No receipt, or none that
+    // verifies: the stream errors with RECEIPT_INVALID instead and the SDK's iterator throws. After a verified end, an event
+    // the receipt does not cover errors the stream, and the upstream breaking off does not.
+    // Not strict: nothing is held. The receipts that came before the end are checked right after it is passed on (with
+    // none, when the upstream closes) and reported; an upstream that breaks off after the end does not fail the call.
+    // 流：在格式的最终事件、sentinel（[DONE]）或上游关闭时结束（先到者为准）：官方 SDK 读到 [DONE]（openai 对所有格式都如此）就停止
+    // 读取并取消正文，结束之后的内容不能指望被读到。strict：结束之前逐块立即转交；流在其中结束的那一块被扣住，核验结束之前到达的
+    // 回执，一旦通过立即放出。没有回执或都不通过：以 RECEIPT_INVALID 结束流，SDK 的迭代器抛出。核验通过之后，回执不覆盖的事件让流出错，
+    // 上游断开则不算。非 strict：不扣留任何内容；结束处放出之后立即核验结束之前到达的回执（没有时等上游关闭）并报告；上游在结束之后
+    // 断开不算失败。
     const st = format.streamState()
-    const scanner = createSseScanner({ sentinel: format.stream.sentinel ?? null, onEvent: (j, n) => st.event(j, n) })
-    let finished = false
-    const body = res.body.pipeThrough(new TransformStream({
-      transform(chunk, controller) { controller.enqueue(chunk); scanner.push(chunk) },
-      async flush(controller) {
-        finished = true
-        scanner.end()
-        const receipts = scanner.info.receipts
-        let rep = null
-        // The last receipt first (the outermost sidecar's); an earlier one only if the last does not verify.
-        // 先看最后一个回执（最外层旁路的）；它核验不过时才看更早的。
-        for (let i = receipts.length - 1; i >= 0; i--) {
-          let envelope = null
-          try { envelope = decodeReceiptHeader(receipts[i]) } catch { continue }
-          const r = await check(s, { ...common, envelope, responseSha256: scanner.digest(), stream: true, answer: st.result() })
-          if (r.ok || !rep) rep = r
-          if (r.ok) break
+    const scanner = createSseScanner({ sentinel: format.stream.sentinel ?? null, final: format.stream.final ?? null, onEvent: (j, n) => st.event(j, n) })
+    const reader = res.body.getReader()
+    const base = { url, stream: true, status: res.status, salted }
+    let settled = false, verdict = null
+    const ended = () => scanner.info.receiptsAtEnd !== null
+    // The last receipt first (the outermost sidecar's); an earlier one only if the last does not verify.
+    // 先看最后一个回执（最外层旁路的）；它核验不过时才看更早的。
+    async function verify(receipts, atEnd) {
+      settled = true
+      let rep = null
+      for (let i = receipts.length - 1; i >= 0; i--) {
+        let envelope = null
+        try { envelope = decodeReceiptHeader(receipts[i]) } catch { continue }
+        const r = await check(s, { ...common, envelope, responseSha256: scanner.digest(), stream: true, answer: st.result() })
+        if (r.ok || !rep) rep = r
+        if (r.ok) break
+      }
+      if (!rep) rep = { ok: false, problems: [atEnd ? 'no tapeapi-receipt comment before the end of the event stream' : 'no tapeapi-receipt comment in the event stream'], warnings: [], unchecked: [], receipt: null }
+      verdict = { ...rep, ...base }
+      report(verdict)
+      return verdict
+    }
+    const stop = () => { reader.cancel().catch(() => {}) }
+    const body = new ReadableStream({
+      // One pull reads until it has something to hand on: a pull that enqueues nothing is not called again.
+      // 一次 pull 读到有东西可转交为止：什么都没放入的 pull 不会再被调用。
+      async pull(controller) { for (;;) {
+        let got
+        try { got = await reader.read() } catch (e) {
+          // After the end the answer is whole: the upstream breaking off then is not a failure (strict: once verified).
+          // 结束之后回答已完整：此时上游断开不算失败（strict：须已核验通过）。
+          if (ended() && (!strict || verdict?.ok)) {
+            if (!settled) await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
+            return controller.close()
+          }
+          if (!settled) { settled = true; report({ ok: false, incomplete: true, problems: [], warnings: ['the upstream broke off before the stream ended; its receipt was not checked'], unchecked: ['request', 'response'], receipt: null, ...base }) }
+          return controller.error(e)
         }
-        if (!rep) rep = { ok: false, problems: ['no tapeapi-receipt comment in the event stream'], warnings: [], unchecked: [], receipt: null }
-        rep = { ...rep, url, stream: true, status: res.status, salted }
-        report(rep)
-        if (!rep.ok && strict) controller.error(failure(rep))
-      },
+        if (got.done) {
+          scanner.end()
+          if (!settled) {
+            const rep = await verify(scanner.info.receipts, false)
+            if (!rep.ok && strict) return controller.error(failure(rep))
+          }
+          return controller.close()
+        }
+        const chunk = got.value
+        const events = scanner.info.events, wasEnded = ended()
+        scanner.push(chunk)
+        if (!strict) {
+          controller.enqueue(chunk)
+          // Just ended, with receipts before the end: check now (the SDK may stop reading here). / 刚结束且之前有回执：立即核验。
+          if (!wasEnded && ended() && scanner.info.receiptsAtEnd > 0) await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
+          return
+        }
+        if (wasEnded) {
+          if (scanner.info.events > events) {
+            const rep = { ok: false, problems: ['an event after the end of the stream is not covered by its receipt'], warnings: [], unchecked: [], receipt: verdict?.receipt ?? null, ...base }
+            report(rep); stop()
+            return controller.error(failure(rep))
+          }
+          return controller.enqueue(chunk)
+        }
+        if (!ended()) return controller.enqueue(chunk)
+        // This chunk ends the stream: it goes on only once a receipt that came before the end verifies.
+        // 流在这一块中结束：只有结束之前到达的回执核验通过，它才放出。
+        const rep = await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
+        if (!rep.ok) { stop(); return controller.error(failure(rep)) }
+        return controller.enqueue(chunk)
+      } },
       // The consumer stopped reading (break, abort): nothing to verify, which is not a receipt problem.
       // 消费方停止读取（break、abort）：没有可核验的内容，这不是回执问题。
-      cancel() { if (!finished) report({ ok: false, incomplete: true, problems: [], warnings: ['the stream was not read to the end; its receipt was not checked'], unchecked: ['request', 'response'], receipt: null, url, stream: true, status: res.status, salted }) },
-    }))
+      cancel(reason) {
+        if (!settled) { settled = true; report({ ok: false, incomplete: true, problems: [], warnings: ['the stream was not read to the end; its receipt was not checked'], unchecked: ['request', 'response'], receipt: null, ...base }) }
+        return reader.cancel(reason)
+      },
+    }, { highWaterMark: 0 })
     const headers = new Headers(res.headers)
     headers.delete('content-length')
     return new Response(body, { status: res.status, statusText: res.statusText, headers })

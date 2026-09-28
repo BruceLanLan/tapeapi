@@ -1,14 +1,14 @@
 // Type declarations for @tapeapi/server/ai-proxy (hand-written; ../src/ai-proxy.js is the source of truth).
 import type { Manifest } from '@tapeapi/sdk'
 import type { ModelPrice, AIField, AIFormat } from '@tapeapi/sdk/ai'
-import type { CreateProviderOptions } from './index.js'
+import type { CreateProviderOptions, ManifestBase } from './index.js'
 
 /** Request bodies are refused past this many bytes (32 MiB). */
 export declare const REQUEST_LIMIT: number
 /** Non-stream upstream answers are refused past this many bytes (16 MiB); streams are not capped. */
 export declare const RESPONSE_LIMIT: number
 /** 600 s: a non-stream answer must be complete, a stream must have started. */
-export declare const UPSTREAM_TIMEOUT_MS: number
+export declare const AI_UPSTREAM_TIMEOUT_MS: number
 /** 300 s: a stream that sends nothing this long is ended (receipt appended, complete false). */
 export declare const STREAM_IDLE_MS: number
 export declare const RECEIPT_TTL_MS: number
@@ -23,17 +23,7 @@ export declare function idEntropyBits(id: string): number
 export declare const HOLD_LIMIT: number
 
 /** The identity part of the manifest; the sidecar adds signer, methods (receipt) and the AI field. */
-export interface AIProxyManifestBase {
-  tapeapi?: string
-  name?: string
-  circuits: string
-  tokenId: string
-  container: string
-  delegation?: { expires: number; sig: string } | null
-  endpoints: { live: string[]; async: boolean }
-  dev?: boolean
-  [key: string]: unknown
-}
+export type AIProxyManifestBase = ManifestBase
 
 export interface AIProxyStats {
   ready: boolean
@@ -101,7 +91,7 @@ export declare function createAIProxy(o: {
   signerKey: string
   /** The price table published in the manifest's AI field (1 to 256 entries, prices per 1M tokens). */
   models: ModelPrice[]
-  /** The API format adapters (default ai.FORMATS: OpenAI chat, completions, embeddings). */
+  /** The API format adapters (default ai.FORMATS: OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, OpenAI Embeddings). */
   formats?: readonly AIFormat[]
   fetch?: typeof fetch
   log?: (...args: unknown[]) => void

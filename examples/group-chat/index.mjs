@@ -35,8 +35,8 @@ function throwaway(chainId = 56) {
 }
 
 /**
- * The whole flow. `owner` and `member` are { api, svc } for the same relay seen by two independent clients.
- * 完整流程。`owner` 与 `member` 是两个独立客户端各自看到的同一个中继 { api, svc }。
+ * The whole flow. `owner` and `member` are { api, service } for the same relay seen by two independent clients.
+ * 完整流程。`owner` 与 `member` 是两个独立客户端各自看到的同一个中继 { api, service }。
  */
 export async function runGroupChat({ owner: ownerRelay, member: memberRelay, relayUrl = PUBLIC_RELAY_URL, log = console.log, waitMs = 5_000 }) {
   const alice = throwaway(), bob = throwaway()
@@ -47,11 +47,11 @@ export async function runGroupChat({ owner: ownerRelay, member: memberRelay, rel
   //    群主：建群并投递。纪元消息去群房间，邀请去 Bob 的收件房间。
   const created = await G.createGroup({
     self: alice.self, identity: alice.identity, members: [bob.keys],
-    relays: [{ url: relayUrl, container: ownerRelay.svc.container }],
+    relays: [{ url: relayUrl, container: ownerRelay.service.container }],
     verifyMember: 'trust-roster',   // DEMO ONLY: a real app passes api.groupVerifier() / 仅演示；正式应用用 api.groupVerifier()
   })
   const owner = created.group
-  const sent = await deliverGroupUpdate({ group: owner, update: created, relay: ownerRelay })   // throws if any post fails / 任何一条失败都会抛出
+  const sent = await deliverGroupUpdate({ group: owner, update: created, relayClients: [ownerRelay] })   // throws if any post fails / 任何一条失败都会抛出
   for (const d of sent.deliveries) log(`posted ${d.what.padEnd(6)} to room ${short(d.room)} ${d.what === 'invite' ? `(inbox of ${short(d.container)})` : '(group room)'}: i=${d.i}`)
 
   // 2. Member: check the inbox. The cursor store (here a Map) keeps { after, epoch } per room between checks.
@@ -59,7 +59,7 @@ export async function runGroupChat({ owner: ownerRelay, member: memberRelay, rel
   const cursors = new Map()
   let found
   for (let tries = 0; tries < 5; tries++) {
-    found = await checkGroupInvites({ self: bob.self, identity: bob.identity, relay: memberRelay, cursors, waitMs })
+    found = await checkGroupInvites({ self: bob.self, identity: bob.identity, relayClients: [memberRelay], cursors, waitMs })
     if (found.invites.length) break
   }
   if (!found.invites.length) throw new Error(`no invite in inbox room ${found.room}; the owner posted to ${sent.deliveries[0].room}`)
@@ -69,8 +69,8 @@ export async function runGroupChat({ owner: ownerRelay, member: memberRelay, rel
   // 3. Member: join. The owner's keys come from the chain in a real app (api.chain.channelKeys(invite.owner.container)).
   //    成员：入群。正式应用中群主公钥来自链上。
   const bobGroup = G.joinGroup({ self: bob.self, identity: bob.identity, invite, ownerKeys: alice.keys /* DEMO ONLY / 仅演示 */ })
-  const bobLink = channel.relayTransport({ api: memberRelay.api, svc: memberRelay.svc, inbound: bobGroup.room, outbound: bobGroup.room, waitMs })
-  const aliceLink = channel.relayTransport({ api: ownerRelay.api, svc: ownerRelay.svc, inbound: owner.room, outbound: owner.room, waitMs })
+  const bobLink = channel.relayTransport({ api: memberRelay.api, service: memberRelay.service, inbound: bobGroup.room, outbound: bobGroup.room, waitMs })
+  const aliceLink = channel.relayTransport({ api: ownerRelay.api, service: ownerRelay.service, inbound: owner.room, outbound: owner.room, waitMs })
   for (let tries = 0; bobGroup.epoch === null && tries < 5; tries++) {
     for (const w of await bobLink.poll()) {
       const t = channel.decodeWire(w)
@@ -104,7 +104,7 @@ export async function runGroupChat({ owner: ownerRelay, member: memberRelay, rel
 async function main() {
   const client = async () => {
     const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), quorum: 2 })
-    return { api, svc: await api.resolve(PUBLIC_RELAY) }
+    return { api, service: await api.resolve(PUBLIC_RELAY) }
   }
   const [owner, member] = await Promise.all([client(), client()])
   const r = await runGroupChat({ owner, member })

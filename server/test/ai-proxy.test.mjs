@@ -9,6 +9,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createAIProxy, REQUEST_LIMIT, RESPONSE_LIMIT, HOLD_LIMIT } from '../src/ai-proxy.js'
 import { ai as oa } from '@tapeapi/sdk'
+// Not in the public face (review RC-7): the implementation module. / 不在公开门面里：用实现模块。
+import { sentinelOf, sseDigestOfPayloads } from '../../sdk/src/ai.js'
 import { privateKeyToAddress, recoverResponseSigner } from '../../sdk/src/sig.js'
 
 const KEY = '0x' + '42'.repeat(32)
@@ -128,12 +130,12 @@ test('boot refuses a bad price table or upstream, before serving anything', () =
   assert.equal(boot({ models: [{ id: 'x', price: MODELS[0].prices[0] }] }), 'MANIFEST_INVALID', 'the single price object is gone')
   assert.equal(boot({ models: [{ ...MODELS[0], formats: ['gemini'] }] }), 'MANIFEST_INVALID', 'formats name configured endpoints')
   assert.equal(boot({ models: [{ id: 'x', input: '1', output: '1', unit: '1M tokens', currency: 'BEM' }] }), 'MANIFEST_INVALID', 'the old flat shape')
-  assert.equal(boot({ upstream: { baseUrl: 'ftp://upstream.example/v1' } }), 'BAD_REQUEST')
-  assert.equal(boot({ upstream: { baseUrl: 'https://user:pw@upstream.example/v1' } }), 'BAD_REQUEST', 'no credentials in the URL')
-  assert.equal(boot({ upstream: { baseUrl: `${UP}?key=1` } }), 'BAD_REQUEST')
-  assert.equal(boot({ upstream: { baseUrl: UP, headers: { 'x-key': 7 } } }), 'BAD_REQUEST')
+  assert.equal(boot({ upstream: { baseUrl: 'ftp://upstream.example/v1' } }), 'INVALID_ARGUMENT')
+  assert.equal(boot({ upstream: { baseUrl: 'https://user:pw@upstream.example/v1' } }), 'INVALID_ARGUMENT', 'no credentials in the URL')
+  assert.equal(boot({ upstream: { baseUrl: `${UP}?key=1` } }), 'INVALID_ARGUMENT')
+  assert.equal(boot({ upstream: { baseUrl: UP, headers: { 'x-key': 7 } } }), 'INVALID_ARGUMENT')
   assert.equal(boot({ manifestBase: { ...manifestBase(), endpoints: { live: ['http://ai.example/tapeapi/v1'], async: false } } }), 'MANIFEST_INVALID', 'https unless dev / allowHttp')
-  assert.equal(boot({ receiptTtlMs: 0 }), 'BAD_REQUEST')
+  assert.equal(boot({ receiptTtlMs: 0 }), 'INVALID_ARGUMENT')
 })
 
 test('non-stream: request and response bytes pass through unchanged; the receipt header verifies', async () => {
@@ -206,7 +208,7 @@ for (const size of [1, 7, 64, 4096]) {
       assert.equal(env.result.prices[0].amount, '0.00000480')
       assert.equal(env.result.usageInjected, undefined, 'the client asked for usage itself')
       const payloads = parseSse(out).map((e) => e.data)
-      assert.equal(env.result.responseSha256, oa.sseDigestOfPayloads(payloads, { sentinel: oa.sentinelOf('openai_chat') }))
+      assert.equal(env.result.responseSha256, sseDigestOfPayloads(payloads, { sentinel: sentinelOf('openai_chat') }))
       const v = oa.verifyUsageReceipt({ envelope: env, manifest: m, requestBytes: body, responseBytes: out, stream: true, maxSkewS: 300 })
       assert.deepEqual(v.problems, [], `${JSON.stringify(nl)}`)
       assert.equal(oa.verifyUsageReceipt({ envelope: env, manifest: m, requestBytes: body, sseDataPayloads: payloads, stream: true }).ok, true)
@@ -682,12 +684,12 @@ test('a non-OpenAI format plugs in as an adapter: its headers, its events, no se
     assert.match(oa.verifyUsageReceipt({ envelope: env, manifest: m }).problems.join(), /unknown receipt method test_events/, 'a verifier without the adapter says so')
   }
   const boot = (formats) => { try { make(stub(() => jsonResponse('{}')).fetch, { formats, models: [MODELS[0]] }); return 'booted' } catch (e) { return e.code } }
-  assert.equal(boot([eventsFormat, { ...eventsFormat, name: 'twin' }]), 'BAD_REQUEST', 'two adapters for one receipt method')
-  assert.equal(boot([{ ...eventsFormat, streamState: undefined }]), 'BAD_REQUEST')
-  assert.equal(boot([{ ...eventsFormat, stream: { framing: 'json-array' } }]), 'BAD_REQUEST', 'only SSE framing so far')
-  assert.equal(boot([{ ...eventsFormat, baseSuffix: 'v1' }]), 'BAD_REQUEST')
-  assert.equal(boot([{ ...eventsFormat, prepareUpstream: () => null }]), 'BAD_REQUEST', 'a format that changes requests must say which events it caused')
-  assert.equal(boot([]), 'BAD_REQUEST')
+  assert.equal(boot([eventsFormat, { ...eventsFormat, name: 'twin' }]), 'INVALID_ARGUMENT', 'two adapters for one receipt method')
+  assert.equal(boot([{ ...eventsFormat, streamState: undefined }]), 'INVALID_ARGUMENT')
+  assert.equal(boot([{ ...eventsFormat, stream: { framing: 'json-array' } }]), 'INVALID_ARGUMENT', 'only SSE framing so far')
+  assert.equal(boot([{ ...eventsFormat, baseSuffix: 'v1' }]), 'INVALID_ARGUMENT')
+  assert.equal(boot([{ ...eventsFormat, prepareUpstream: () => null }]), 'INVALID_ARGUMENT', 'a format that changes requests must say which events it caused')
+  assert.equal(boot([]), 'INVALID_ARGUMENT')
 })
 
 test('a final event larger than HOLD_LIMIT is not held: it streams through and the receipt is appended at the end, still verifying', async () => {

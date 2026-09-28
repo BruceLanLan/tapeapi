@@ -195,7 +195,7 @@ async function checkPage(p) {
 
 export async function run({ services = SERVICES, pages = PAGES, rpcUrls = RPC_URLS } = {}) {
   const { createTapeAPI } = await import('../sdk/src/index.js')
-  const api = createTapeAPI({ rpcUrls, quorum: 2, timeoutMs: 25000 })
+  const api = createTapeAPI({ rpcUrls, quorum: 2, rpcTimeoutMs: 25000 })
   const svcResults = await Promise.all(services.map(async (svc) => {
     const [health, cc] = await Promise.all([checkHealth(svc), checkChainAndCall(api, svc)])
     return { name: svc.name, label: svc.label, base: svc.base, health, ...cc }

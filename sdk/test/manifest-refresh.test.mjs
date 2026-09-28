@@ -128,7 +128,7 @@ test('refresh() re-reads in place, and refuses to turn into a different service'
   publish(manifestAt(DEAR, [url]))                 // put it back for the other tests / 还原
   await api.refresh(svc)
   await assert.rejects(api.refresh({ manifest: svc.manifest, container: svc.container, verified: svc.verified }),
-    (e) => e.code === 'MANIFEST_INVALID' && /no target/.test(e.message))
+    (e) => e.code === 'INVALID_ARGUMENT' && /no target/.test(e.message))
 })
 
 test('a dead first endpoint fails over to the next one', async () => {

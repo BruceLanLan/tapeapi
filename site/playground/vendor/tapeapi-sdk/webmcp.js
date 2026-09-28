@@ -189,11 +189,11 @@ function describe(m, x, price, { container, dev, trust: trustOverride }) {
 // 页面允许哪些收费方法。`paid.methods` 可缩小范围；`paid.maxPriceBEM` 必填。
 function paidPolicy(paid) {
   if (!paid) return null
-  if (typeof paid !== 'object') throw new TapeAPIError('BAD_REQUEST', 'paid must be an object { maxPriceBEM, budgetBEM, payer, methods? }')
-  if (paid.maxPriceBEM == null) throw new TapeAPIError('BAD_REQUEST', 'paid.maxPriceBEM is required: the per-call cap the human agreed to')
+  if (typeof paid !== 'object') throw new TapeAPIError('INVALID_ARGUMENT', 'paid must be an object { maxPriceBEM, budgetBEM, payer, methods? }')
+  if (paid.maxPriceBEM == null) throw new TapeAPIError('INVALID_ARGUMENT', 'paid.maxPriceBEM is required: the per-call cap the human agreed to')
   let maxPrice
-  try { maxPrice = parseUnits(String(paid.maxPriceBEM)) } catch { throw new TapeAPIError('BAD_REQUEST', `paid.maxPriceBEM ${paid.maxPriceBEM} is not a BEM decimal`) }
-  if (paid.methods != null && !Array.isArray(paid.methods)) throw new TapeAPIError('BAD_REQUEST', 'paid.methods must be an array of method names')
+  try { maxPrice = parseUnits(String(paid.maxPriceBEM)) } catch { throw new TapeAPIError('INVALID_ARGUMENT', `paid.maxPriceBEM ${paid.maxPriceBEM} is not a BEM decimal`) }
+  if (paid.methods != null && !Array.isArray(paid.methods)) throw new TapeAPIError('INVALID_ARGUMENT', 'paid.methods must be an array of method names')
   return { maxPrice, methods: paid.methods ? new Set(paid.methods) : null }
 }
 
@@ -266,7 +266,7 @@ export function manifestToTools(manifest, opts = {}) {
 // abort) may have left a voucher with the provider, so the budget keeps counting it: under-use, never over-spend.
 // 这些结束方式可以确定没有计费：已签名的拒绝（提供者只为交付的结果计费），或发送前的本地拒绝。其它情况（传输失败、坏签名、
 // 中止）凭证可能已到提供者手里，预算照算：宁可少用，绝不超支。
-const NOT_BILLED = new Set(['PRICE_CHANGED', 'PAYMENT_REQUIRED', 'METHOD_NOT_FOUND', 'BAD_REQUEST', 'RATE_LIMITED', 'DELEGATION_INVALID',
+const NOT_BILLED = new Set(['INVALID_ARGUMENT', 'PRICE_CHANGED', 'PAYMENT_REQUIRED', 'METHOD_NOT_FOUND', 'BAD_REQUEST', 'RATE_LIMITED', 'DELEGATION_INVALID',
   'MANIFEST_INVALID', 'BAD_VOUCHER', 'BUDGET_EXCEEDED', 'USER_DECLINED', 'RPC_DISAGREE', 'RPC_UNAVAILABLE', 'RPC_ERROR', 'CANON_INVALID'])
 
 // What an agent receives on failure: a plain Error (a TapeAPIError may not survive the agent boundary) whose message
@@ -305,7 +305,7 @@ const isSignal = (s) => s && typeof s === 'object' && typeof s.aborted === 'bool
  *   errors        'throw' (default: execute rejects) or 'content' (MCP { isError: true, content }) / 错误的呈现方式
  *   timeoutMs     per call (default 30000) / 单次超时
  *   onCall        (event) => void, for a page log: { tool, method, ok, code?, priceBEM } / 页面日志钩子
- * @returns handle -- callable: handle() disposes. { supported, reason?, svc, tools, skipped, spentBEM(),
+ * @returns handle -- callable: handle() disposes. { supported, reason?, service, tools, skipped, spentBEM(),
  *          refresh(), dispose() }. Without a modelContext nothing is resolved: { supported: false, reason }.
  *          返回的句柄可直接调用来注销；没有 modelContext 时不做任何解析，返回 supported: false。
  */
@@ -315,10 +315,10 @@ export async function exposeTapeAPI(api, target, opts = {}) {
   let budget = null
   if (policy) {
     const p = opts.paid
-    if (!p.payer || typeof p.payer.reserve !== 'function') throw new TapeAPIError('BAD_REQUEST', 'paid.payer is required (api.payer({...}))')
-    if (p.budgetBEM == null) throw new TapeAPIError('BAD_REQUEST', 'paid.budgetBEM is required: the total this page lets the agent spend')
-    try { budget = parseUnits(String(p.budgetBEM)) } catch { throw new TapeAPIError('BAD_REQUEST', `paid.budgetBEM ${p.budgetBEM} is not a BEM decimal`) }
-    if (p.confirm != null && typeof p.confirm !== 'function') throw new TapeAPIError('BAD_REQUEST', 'paid.confirm must be a function')
+    if (!p.payer || typeof p.payer.reserve !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'paid.payer is required (api.payer({...}))')
+    if (p.budgetBEM == null) throw new TapeAPIError('INVALID_ARGUMENT', 'paid.budgetBEM is required: the total this page lets the agent spend')
+    try { budget = parseUnits(String(p.budgetBEM)) } catch { throw new TapeAPIError('INVALID_ARGUMENT', `paid.budgetBEM ${p.budgetBEM} is not a BEM decimal`) }
+    if (p.confirm != null && typeof p.confirm !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'paid.confirm must be a function')
   }
   const format = opts.format === 'object' ? 'object' : 'mcp'
   const errorsAsContent = opts.errors === 'content'
@@ -328,7 +328,7 @@ export async function exposeTapeAPI(api, target, opts = {}) {
   let disposed = false
   let spent = 0n, inflight = 0n   // base units: settled-or-possibly-billed, and reserved by calls in flight / 已花（含可能计费）与在途预留
   const handle = Object.assign(() => handle.dispose(), {
-    supported: false, reason: null, svc: null, tools: [], skipped: [],
+    supported: false, reason: null, service: null, tools: [], skipped: [],
     spentBEM: () => formatUnits(spent + inflight),
     refresh: async () => { throw new TapeAPIError('BAD_REQUEST', 'nothing exposed') },
     dispose: () => { disposed = true },
@@ -337,7 +337,7 @@ export async function exposeTapeAPI(api, target, opts = {}) {
   if (typeof mc.registerTool !== 'function') { handle.reason = 'NO_REGISTER_TOOL'; return handle }
 
   const svc = isSvc(target) ? target : await api.resolve(target)
-  handle.supported = true; handle.svc = svc
+  handle.supported = true; handle.service = svc
   const prefix = opts.prefix ?? `${DEFAULT_PREFIX}${String(svc.container || '').slice(2, 10).toLowerCase() || 'dev'}_`
   const live = new Map()    // name -> { def, unregister, key } / 已注册的工具
   // Which manifest object the tools were built from. refresh() swaps svc.manifest for a new object; fetchedAt is in

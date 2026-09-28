@@ -86,9 +86,9 @@ test('agreed JSON-RPC error surfaces as RPC_ERROR; errors bucket by code, not me
 })
 test('M-11: fewer urls than quorum throws unless allowSingleNode: true; duplicates do not count twice', async () => {
   const chain = createFakeChain()
-  assert.throws(() => createRpc({ urls: URLS.slice(0, 2), quorum: 5, fetch: chain.fetch }), (e) => e.code === 'RPC_UNAVAILABLE' && /allowSingleNode/.test(e.message))
-  assert.throws(() => createRpc({ urls: ['http://rpc9'], quorum: 2, fetch: chain.fetch }), (e) => e.code === 'RPC_UNAVAILABLE')
-  assert.throws(() => createRpc({ urls: ['http://rpc1', 'http://rpc1'], quorum: 2, fetch: chain.fetch }), (e) => e.code === 'RPC_UNAVAILABLE')
+  assert.throws(() => createRpc({ urls: URLS.slice(0, 2), quorum: 5, fetch: chain.fetch }), (e) => e.code === 'INVALID_ARGUMENT' && /allowSingleNode/.test(e.message))
+  assert.throws(() => createRpc({ urls: ['http://rpc9'], quorum: 2, fetch: chain.fetch }), (e) => e.code === 'INVALID_ARGUMENT')
+  assert.throws(() => createRpc({ urls: ['http://rpc1', 'http://rpc1'], quorum: 2, fetch: chain.fetch }), (e) => e.code === 'INVALID_ARGUMENT')
   const single = createRpc({ urls: ['http://rpc9'], quorum: 2, fetch: chain.fetch, allowSingleNode: true })
   assert.equal(single.quorum, 1); assert.equal(single.degraded, true)
   assert.equal(await single.blockNumber(), 62_000_000)

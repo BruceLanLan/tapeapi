@@ -28,19 +28,36 @@ const WIRE_INVITE = 0x03
 const MAX_PAGES = 64                  // pages one check reads from one relay (a relay answer is at most 512 KiB) / 单次检查最多读的页数
 
 const fail = (msg, extra) => { throw new TapeAPIError(DELIVERY_ERROR, msg, extra) }
+// The caller's own arguments: INVALID_ARGUMENT, never retryable (review G1 M1). / 调用方自己的参数错误。
+const invalid = (msg) => { throw new TapeAPIError('INVALID_ARGUMENT', msg) }
 const isAddr = (a) => typeof a === 'string' && /^0x[0-9a-fA-F]{40}$/.test(a)
 const same = (a, b) => String(a).toLowerCase() === String(b).toLowerCase()
 const list = (x) => (x === undefined || x === null ? [] : Array.isArray(x) ? x : [x])
+// 1.0 (review G1 M10, RC-6): the carriers are always lists, `relayClients` and `busClients`. `relays` is a roster's list
+// of relay references { url, container } (createGroup, TAP-27); the carriers are clients, so they have their own names.
+// The 0.x singular options and the 1.0 candidates `relays` / `buses` are refused.
+// 1.0：载体一律是列表 `relayClients` 与 `busClients`。`relays` 是名单里的中继引用 { url, container }（createGroup、TAP-27）；
+// 载体是客户端，所以另起名字。0.x 的单数选项与 1.0 候选名 `relays` / `buses` 都会被拒绝。
+const listOf = (opts, name, olds) => {
+  for (const old of olds) {
+    if (opts && Object.prototype.hasOwnProperty.call(opts, old)) invalid(`the option \`${old}\` was renamed in 1.0: pass \`${name}\`, a list of ${name === 'relayClients' ? '{ api, service, payer? }' : '{ address, sendTx }'} (\`relays\` is the roster's list of { url, container }; see docs/guides/upgrade-1.0.md)`)
+  }
+  const x = opts?.[name]
+  if (x === undefined || x === null) return []
+  if (!Array.isArray(x)) invalid(`${name} must be a list`)
+  return x
+}
 const hexN = (n) => '0x' + n.toString(16)
 
-// One relay, as { api, svc, payer }: api is a TapeAPI client (createTapeAPI), svc the resolved relay service.
-// 一个中继：api 为 TapeAPI 客户端，svc 为解析出的中继服务。
+// One relay client, as { api, service, payer }: api is a TapeAPI client (createTapeAPI), service the resolved relay service.
+// 一个中继客户端：api 为 TapeAPI 客户端，service 为解析出的中继服务。
 function checkRelay(r, i) {
-  if (!r || typeof r.api?.call !== 'function') fail(`relay[${i}] needs { api, svc }: api is a TapeAPI client (createTapeAPI)`)
-  if (!r.svc || typeof r.svc !== 'object') fail(`relay[${i}] needs svc, the resolved relay service (await api.resolve('12.1013.tape'))`)
+  if (r && Object.prototype.hasOwnProperty.call(r, 'svc')) invalid(`relayClients[${i}]: the key \`svc\` was renamed in 1.0: pass { api, service }`)
+  if (!r || typeof r.api?.call !== 'function') invalid(`relayClients[${i}] needs { api, service }: api is a TapeAPI client (createTapeAPI)`)
+  if (!r.service || typeof r.service !== 'object') invalid(`relayClients[${i}] needs service, the resolved relay service (await api.resolve('12.1013.tape'))`)
   return r
 }
-const relayName = (r) => String(r.svc.container ?? r.svc.name ?? 'relay').toLowerCase()
+const relayName = (r) => String(r.service.container ?? r.service.name ?? 'relay').toLowerCase()
 
 // What went wrong, in a form an application can act on. The relay limits invites and epoch messages (0x03 / 0x04) per
 // source per room (8 per 10 minutes on the reference relay): that answer is BAD_REQUEST "too many invites / epoch
@@ -58,15 +75,15 @@ function describe(e) {
 /**
  * Owner: post what a membership change needs, to the rooms it needs to go to, and report every post.
  *
- *   deliverGroupUpdate({ group, update, invite, relay, bus })
+ *   deliverGroupUpdate({ group, update, invite, relayClients, busClients })
  *     group   the owner's handle (createGroup / resumeGroup)
  *     update  what createGroup, addMembers, removeMembers, rotate or resumeGroup returned ({ epochWire, added }).
  *             Omitted: repost the current epoch message (group.epochWire), for §3.5's periodic repost.
  *     invite  who gets an invite in their inbox room: 'new' (default: update.added, the members this epoch brought
  *             in), 'all' (every member but the owner: after a relay forgot its rooms), 'none', or a list of
  *             containers / { container, chainId } that must be in the current roster
- *     relay   { api, svc, payer? } or a list of them: relaySend through api.call (payer: a channel for a priced relay)
- *     bus     { address, sendTx } or a list: a ChannelBus; sendTx(tx) => txHash is the caller's wallet (the SDK holds
+ *     relayClients  a list of { api, service, payer? }: relaySend through api.call (payer: a channel for a priced relay)
+ *     busClients    a list of { address, sendTx }: a ChannelBus; sendTx(tx) => txHash is the caller's wallet (the SDK holds
  *             none), tx = { to, data, value, gas } as busTransport builds it. One transaction per room.
  *     throwOnError  default true: any failed post throws GROUP_DELIVERY after every post was tried, with
  *             e.data = { groupEpoch, deliveries }. false: returns { ok: false, ... } instead. Never silent.
@@ -79,19 +96,20 @@ function describe(e) {
  * 群主：把成员变动需要的东西投到该去的房间，逐条报告。顺序：先邀请、后纪元消息。每个成员的邀请只密封一次，同样的字节发往
  * 每个传输。任何一条失败，在全部尝试之后抛出 GROUP_DELIVERY（e.data 含每条结果）；throwOnError: false 时明确返回 ok: false。
  */
-export async function deliverGroupUpdate({ group, update, invite = 'new', relay, bus, throwOnError = true, random } = {}) {
-  if (!group || group.isOwner !== true || typeof group.inviteFor !== 'function') fail('deliverGroupUpdate needs the owner\'s group handle (createGroup / resumeGroup)')
-  const relays = list(relay).map(checkRelay)
-  const buses = list(bus).map((b, i) => {
-    if (!b || !isAddr(b.address)) fail(`bus[${i}] needs { address, sendTx }: address is the ChannelBus contract`)
-    if (typeof b.sendTx !== 'function') fail(`bus[${i}].sendTx is required: the SDK holds no wallet (sendTx(tx) => txHash)`)
+export async function deliverGroupUpdate(opts = {}) {
+  const { group, update, invite = 'new', throwOnError = true, random } = opts ?? {}
+  if (!group || group.isOwner !== true || typeof group.inviteFor !== 'function') invalid('deliverGroupUpdate needs the owner\'s group handle (createGroup / resumeGroup)')
+  const relays = listOf(opts, 'relayClients', ['relays', 'relay']).map(checkRelay)
+  const buses = listOf(opts, 'busClients', ['buses', 'bus']).map((b, i) => {
+    if (!b || !isAddr(b.address)) invalid(`busClients[${i}] needs { address, sendTx }: address is the ChannelBus contract`)
+    if (typeof b.sendTx !== 'function') invalid(`busClients[${i}].sendTx is required: the SDK holds no wallet (sendTx(tx) => txHash)`)
     return b
   })
-  if (!relays.length && !buses.length) fail('name at least one transport: relay { api, svc } or bus { address, sendTx }')
+  if (!relays.length && !buses.length) invalid('name at least one transport: relayClients [{ api, service }] or busClients [{ address, sendTx }]')
   const epochWire = update?.epochWire ?? group.epochWire
-  if (!(epochWire instanceof Uint8Array) || epochWire[0] !== 0x04) fail('no epoch message to deliver: pass the update that createGroup / addMembers / removeMembers / rotate / resumeGroup returned')
-  if (epochWire.length > CHANNELBUS_MAX_WIRE) fail('epoch message too large for one wire message')
-  if (toHex(epochWire.subarray(1, 17)) !== group.gid) fail('this epoch message belongs to another group: pass the update this group returned')
+  if (!(epochWire instanceof Uint8Array) || epochWire[0] !== 0x04) invalid('no epoch message to deliver: pass the update that createGroup / addMembers / removeMembers / rotate / resumeGroup returned')
+  if (epochWire.length > CHANNELBUS_MAX_WIRE) invalid('epoch message too large for one wire message')
+  if (toHex(epochWire.subarray(1, 17)) !== group.gid) invalid('this epoch message belongs to another group: pass the update this group returned')
 
   // Who is invited: always the roster's entries, so the inbox room comes from the container and chainId the owner signed.
   // 邀请谁：总是取名单里的条目，使收件房间来自群主签过的容器地址与 chainId。
@@ -99,10 +117,10 @@ export async function deliverGroupUpdate({ group, update, invite = 'new', relay,
   const ownerRef = group.roster?.owner
   const inRoster = (t) => {
     const c = typeof t === 'string' ? t : t?.container
-    if (!isAddr(c)) fail(`invite: ${JSON.stringify(t)} is not a container address`)
+    if (!isAddr(c)) invalid(`invite: ${JSON.stringify(t)} is not a container address`)
     const chainId = typeof t === 'object' && t.chainId !== undefined ? t.chainId : undefined
     const m = roster.find((x) => same(x.container, c) && (chainId === undefined || x.chainId === chainId))
-    if (!m) fail(`invite: ${c}${chainId !== undefined ? ` on chain ${chainId}` : ''} is not in the current roster. Invites go to the CONTAINER (the ERC-6551 account the channel record names), never the holder's wallet; add the member first (addMembers)`)
+    if (!m) invalid(`invite: ${c}${chainId !== undefined ? ` on chain ${chainId}` : ''} is not in the current roster. Invites go to the CONTAINER (the ERC-6551 account the channel record names), never the holder's wallet; add the member first (addMembers)`)
     return m
   }
   let targets
@@ -110,14 +128,14 @@ export async function deliverGroupUpdate({ group, update, invite = 'new', relay,
   else if (invite === 'all') targets = roster.filter((m) => !(ownerRef && same(m.container, ownerRef.container) && m.chainId === (ownerRef.chainId ?? 56)))
   else if (invite === 'none') targets = []
   else if (Array.isArray(invite)) targets = invite.map(inRoster)
-  else fail("invite must be 'new', 'all', 'none' or a list of members")
+  else invalid("invite must be 'new', 'all', 'none' or a list of members")
 
   const deliveries = []
   async function post(what, room, wire, extra) {
     for (const r of relays) {
       const d = { what, room, ...extra, via: 'relay', relay: relayName(r) }
       try {
-        const res = (await r.api.call(r.svc, 'relaySend', { room, frame: toBase64(wire) }, r.payer ? { payer: r.payer } : {}))?.result
+        const res = (await r.api.call(r.service, 'relaySend', { room, frame: toBase64(wire) }, r.payer ? { payer: r.payer } : {}))?.result
         if (!res || !Number.isInteger(res.i)) throw new TapeAPIError('BAD_RESPONSE', `relaySend answered ${JSON.stringify(res)}, not { i, epoch }`)
         Object.assign(d, { ok: true, i: res.i, epoch: res.epoch ?? null })
       } catch (e) { Object.assign(d, { ok: false, error: describe(e) }) }
@@ -172,17 +190,17 @@ function normCursor(c) {
 /**
  * Member: read this container's inbox room on each relay and open the group invites found there.
  *
- *   checkGroupInvites({ self, identity, relay, cursors, waitMs, holder, checkSelf })
+ *   checkGroupInvites({ self, identity, relayClients, cursors, waitMs, holder, checkSelf })
  *     self      { container, chainId }: the member's CONTAINER address (the ERC-6551 account its channel record names),
  *               NOT the holder's wallet, and the chain it lives on (default 56). Anything else is another room.
  *     identity  the channel identity whose keys the record publishes (channel.generateIdentity()); or self.staticSecret
- *     relay     { api, svc } or a list of them
+ *     relayClients  a list of { api, service }
  *     cursors   where the cursor of each room is kept: any { get(key), set(key, value) }, sync or async (a Map works;
  *               back it with a file or a database to survive restarts). Key: `relay:<relay container>:<room>`; value:
  *               { after, epoch }. Default: a new Map, so every call reads the room from the start.
  *     waitMs    long-poll for the first read on each relay (default 0: answer at once)
  *     holder    optional: the holder's wallet; if it equals self.container, the call is refused (wallet given for container)
- *     checkSelf optional: true (use relay[0].api) or a TapeAPI client. Reads this container's channel record and
+ *     checkSelf optional: true (use relayClients[0].api) or a TapeAPI client. Reads this container's channel record and
  *               refuses unless it publishes this identity's X25519 key on this chainId: catches a wallet address, a
  *               wrong chainId or a stale identity file before a silent empty read.
  *   -> { ok, room, container, chainId, invites: [{ invite, i, relay }], skipped, skippedBy, failed }
@@ -195,24 +213,25 @@ function normCursor(c) {
  * 成员：在每个中继上读取本容器的收件房间，打开其中的入群邀请。self 必须是**容器**地址与它所在链的 chainId。游标按房间保存，
  * 带中继返回的房间纪元，首次读取用 after: -1、epoch: null。打不开的帧跳过并计数。所有中继都读不了时抛出 GROUP_DELIVERY。
  */
-export async function checkGroupInvites({ self, identity, relay, cursors = new Map(), waitMs = 0, holder, checkSelf } = {}) {
-  if (!self || !isAddr(self.container)) fail('self.container must be the member\'s CONTAINER address (the ERC-6551 account), not the holder\'s wallet')
+export async function checkGroupInvites(opts = {}) {
+  const { self, identity, cursors = new Map(), waitMs = 0, holder, checkSelf } = opts ?? {}
+  if (!self || !isAddr(self.container)) invalid('self.container must be the member\'s CONTAINER address (the ERC-6551 account), not the holder\'s wallet')
   const chainId = self.chainId ?? 56
-  if (!Number.isInteger(chainId) || chainId < 1) fail('self.chainId must be a positive integer (the chain the container lives on)')
+  if (!Number.isInteger(chainId) || chainId < 1) invalid('self.chainId must be a positive integer (the chain the container lives on)')
   if (holder !== undefined && isAddr(holder) && same(holder, self.container)) {
-    fail(`self.container ${self.container} is the holder's wallet. Invites are sealed to the CONTAINER's inbox room: pass the container address (the ERC-6551 account of the circuit, as in its channel record), not the wallet that holds the circuit`)
+    invalid(`self.container ${self.container} is the holder's wallet. Invites are sealed to the CONTAINER's inbox room: pass the container address (the ERC-6551 account of the circuit, as in its channel record), not the wallet that holds the circuit`)
   }
   const staticSecret = self.staticSecret ?? identity?.x25519?.secretKey
-  if (!(staticSecret instanceof Uint8Array) || staticSecret.length !== 32) fail('identity.x25519.secretKey (or self.staticSecret) is required: the channel identity whose X25519 key the channel record publishes')
-  if (typeof cursors?.get !== 'function' || typeof cursors?.set !== 'function') fail('cursors must have get(key) and set(key, value) (a Map works)')
-  const relays = list(relay).map(checkRelay)
-  if (!relays.length) fail('relay { api, svc } is required')
+  if (!(staticSecret instanceof Uint8Array) || staticSecret.length !== 32) invalid('identity.x25519.secretKey (or self.staticSecret) is required: the channel identity whose X25519 key the channel record publishes')
+  if (typeof cursors?.get !== 'function' || typeof cursors?.set !== 'function') invalid('cursors must have get(key) and set(key, value) (a Map works)')
+  const relays = listOf(opts, 'relayClients', ['relays', 'relay']).map(checkRelay)
+  if (!relays.length) invalid('relayClients [{ api, service }] is required')
   const room = inboxRoom(self.container, chainId)
 
   if (checkSelf) {
     const api = checkSelf === true ? relays[0].api : checkSelf
-    if (typeof api?.chain?.channelKeys !== 'function') fail('checkSelf needs a TapeAPI client (createTapeAPI) with chain.channelKeys')
-    if (api.chainId !== undefined && api.chainId !== chainId) fail(`self.chainId is ${chainId} but the client reads chain ${api.chainId}: the inbox room depends on the chainId the container lives on`)
+    if (typeof api?.chain?.channelKeys !== 'function') invalid('checkSelf needs a TapeAPI client (createTapeAPI) with chain.channelKeys')
+    if (api.chainId !== undefined && api.chainId !== chainId) invalid(`self.chainId is ${chainId} but the client reads chain ${api.chainId}: the inbox room depends on the chainId the container lives on`)
     let rec
     try { rec = await api.chain.channelKeys(self.container) } catch (e) {
       if (e?.code === 'NOT_FOUND') fail(`${self.container} is not a TapeOut container on chain ${chainId} (${e.message}). Is it the holder's wallet? Pass the container address`, { cause: e })
@@ -230,7 +249,7 @@ export async function checkGroupInvites({ self, identity, relay, cursors = new M
     let cur = normCursor(await cursors.get(key))
     try {
       for (let page = 0; page < MAX_PAGES; page++) {
-        const ans = (await r.api.call(r.svc, 'relayRecv', { room, after: cur.after, waitMs: page === 0 ? waitMs : 0, epoch: cur.epoch }, { timeoutMs: (page === 0 ? waitMs : 0) + 10_000 }))?.result ?? {}
+        const ans = (await r.api.call(r.service, 'relayRecv', { room, after: cur.after, waitMs: page === 0 ? waitMs : 0, epoch: cur.epoch }, { timeoutMs: (page === 0 ? waitMs : 0) + 10_000 }))?.result ?? {}
         // No room (never posted, or forgotten after 15 idle minutes): nothing to read, and the next room starts at 0.
         // 没有房间（从未投递，或空闲 15 分钟后被遗忘）：没什么可读，下一个房间从 0 开始。
         if (typeof ans.epoch !== 'string') { cur = { after: -1, epoch: null }; break }

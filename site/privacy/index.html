@@ -60,6 +60,11 @@
       <li><span lang="zh">每条投递的来源（IP 地址，付费投递则是付款地址）与房间一起留在内存里，用于按来源限额（10 分钟窗口），随房间一起清除。</span><span lang="en">The source of each post (its IP address, or the paying address for a paid post) is held in memory with the room, for the per-source limit (10-minute window), and cleared with the room.</span></li>
       <li><span lang="zh">新建房间的计数按 IP，放在 Worker 实例的内存里，每分钟一个窗口。日志只有错误信息。</span><span lang="en">New-room counters are keyed by IP address and held in the Worker instance's memory, per minute. The logs hold error messages only.</span></li>
     </ul>
+    <h3><span lang="zh">tapeapi.fun 网站</span><span lang="en">The tapeapi.fun website</span></h3>
+    <ul>
+      <li><span lang="zh">网站使用 Cloudflare Web Analytics 统计页面访问：哪些页面被打开、来自哪个网站、大致的国家和设备类型。它不用 cookie，不做指纹识别，不追踪具体的人；统计脚本由 Cloudflare 自动加到页面里，数据在 Cloudflare。</span><span lang="en">The website uses Cloudflare Web Analytics to count page views: which pages are opened, the referring site, and the rough country and device type. It sets no cookies, does no fingerprinting and does not track individuals; Cloudflare adds its script to the pages and keeps the data.</span></li>
+      <li><span lang="zh">持有人操作台、回执核验页和本页只允许运行我们自己的脚本，统计脚本在这三页上会被浏览器拦下，不会运行（浏览器控制台里会看到一条被拦截的提示，这是预期的）。</span><span lang="en">The holder console, the receipt verification page and this page run only our own scripts, so the browser blocks the analytics script there and it does not run (the browser console shows one blocked-script note, as expected).</span></li>
+    </ul>
     <h3><span lang="zh">日志存在哪里、留多久</span><span lang="en">Where the logs are kept, and for how long</span></h3>
     <ul>
       <li><span lang="zh">以上日志行存在 Cloudflare 的 Workers Logs 里，按套餐保留（免费版 3 天、付费版 7 天；我们用的是哪一档：待核实）。</span><span lang="en">The log lines above are kept in Cloudflare's Workers Logs for the plan's retention (3 days on the free plan, 7 on the paid plan; which plan we are on: to be verified).</span></li>
@@ -73,7 +78,7 @@
       <li><span lang="zh">api.tapeapi.fun 的日志不写请求参数、回答内容，也不写 IP 本身；签名的回答发出后不另存。</span><span lang="en">api.tapeapi.fun writes neither request params nor answers nor the IP address itself into its logs; a signed answer is not stored once sent.</span></li>
       <li><span lang="zh">中继不解密帧，也不把帧写进持久存储。</span><span lang="en">The relay does not decrypt frames and does not write them to persistent storage.</span></li>
       <li><span lang="zh">核验页的回执放在网址的 <code>#r=</code> 片段里，浏览器不会把片段发给任何服务器；核验在你的浏览器里完成。</span><span lang="en">On the verification page the receipt rides in the <code>#r=</code> fragment of the URL, which browsers never send to a server; the check runs in your browser.</span></li>
-      <li><span lang="zh">网站没有第三方统计或广告脚本。浏览器本地存储（localStorage）里只放：语言与主题；"我的服务"页上你添加的服务列表；持有人操作台里填写中的服务设置与 ChannelBus 部署记录。这些只在你自己的浏览器里。</span><span lang="en">The website runs no third-party analytics or advertising scripts. Browser storage (localStorage) holds only: the language and theme; the list of services you add on the Dashboard; the service settings you are filling in and the ChannelBus deployment record in the holder console. These stay in your own browser.</span></li>
+      <li><span lang="zh">网站没有广告脚本；访问统计见上文"tapeapi.fun 网站"一节。浏览器本地存储（localStorage）里只放：语言与主题；"我的服务"页上你添加的服务列表；持有人操作台里填写中的服务设置与 ChannelBus 部署记录。这些只在你自己的浏览器里。</span><span lang="en">The website runs no advertising scripts; for page-view analytics see "The tapeapi.fun website" above. Browser storage (localStorage) holds only: the language and theme; the list of services you add on the Dashboard; the service settings you are filling in and the ChannelBus deployment record in the holder console. These stay in your own browser.</span></li>
       <li><span lang="zh">我们不运行 AI 签名旁路（每个服务方运行自己的），所以看不到任何服务方的提示词、回答或 API 密钥。</span><span lang="en">We run no AI signing sidecar (each service provider runs its own), so we see no provider's prompts, answers or API keys.</span></li>
     </ul>
   </section>

@@ -1,6 +1,7 @@
 // TAP-26 real-time private channels. Shapes are deliberately loose: see docs/guides/channels.md and spec/TAP-26.
 import type { Address, TxRequest } from './common.js'
 import type { Rpc } from './rpc.js'
+import type { ResolvedService, Payer } from './index.js'
 
 export declare const INVITE_KIND: string
 export declare const KEYS_CHANNEL: string
@@ -19,9 +20,9 @@ export interface KeyPair { secretKey: Uint8Array; publicKey: Uint8Array }
 export interface Identity { x25519: KeyPair; ed25519: KeyPair }
 
 /** This side of a channel: the container it speaks for and its static X25519 secret. */
-export interface ChannelSelf { container: Address; chainId?: number; staticSecret: Uint8Array; [key: string]: unknown }
+export interface ChannelSelf { container: Address; chainId?: number; staticSecret: Uint8Array }
 /** The other side: its container and its published static X25519 public key (from chain.channelKeys). */
-export interface ChannelPeer { container: Address; chainId?: number; staticPublic: Uint8Array | string; [key: string]: unknown }
+export interface ChannelPeer { container: Address; chainId?: number; staticPublic: Uint8Array | string }
 export interface RelayRef { url: string; container?: Address }
 
 export interface Invite {
@@ -89,11 +90,16 @@ export declare function acceptInvite(opts: {
 
 export declare function completeInvite(pending: PendingInvite, accept: AcceptMessage, opts?: { now?: number }): { ready: ReadyMessage; session: ChannelSession }
 
-/** Relay transport over a TAP-26 relay service resolved with api.resolve (e.g. '12.1013.tape'). */
+/**
+ * Relay transport over a TAP-26 relay service. `service` is the resolved relay (await api.resolve('12.1013.tape')).
+ * Renamed from `svc` in 1.0: passing `svc` throws INVALID_ARGUMENT.
+ */
 export declare function relayTransport(opts: {
-  api: { call: (...args: any[]) => Promise<any>; [key: string]: unknown }
-  svc: unknown
-  payer?: unknown
+  /** A TapeAPI client (createTapeAPI), or anything with its `call`. */
+  api: { call: (...args: any[]) => Promise<any> }
+  service: ResolvedService
+  /** @experimental A payment channel for a priced relay (TAP-22). */
+  payer?: Payer
   inbound: string
   outbound: string
   waitMs?: number
@@ -148,19 +154,10 @@ export declare function sealToInbox(content: unknown, opts: { to: Uint8Array | s
 export declare function openInvite(wire: Uint8Array, opts: { self: unknown }): Invite
 export declare function openFromInbox(wire: Uint8Array, opts: { self: unknown }): any
 export declare function encodeWire(x: Uint8Array | AcceptMessage | ReadyMessage): Uint8Array
-export declare function decodeWire(b: Uint8Array): { frame?: Uint8Array; sealedInvite?: Uint8Array; handshake?: AcceptMessage | ReadyMessage; [key: string]: unknown }
+/** One of: a channel frame (0x01), a sealed invite, a handshake message, a group epoch message (0x04) or a group message (0x05, TAP-27). */
+export declare function decodeWire(b: Uint8Array): { frame?: Uint8Array; sealedInvite?: Uint8Array; handshake?: AcceptMessage | ReadyMessage; groupEpoch?: Uint8Array; groupMessage?: Uint8Array }
 export declare function checkRelays(relays: RelayRef[]): void
 export declare function checkBus(bus: unknown): void
 export declare function assertPublicKey(pk: Uint8Array, name?: string): Uint8Array
 export declare function assertUsablePublicKey(pk: Uint8Array, name?: string): Uint8Array
 export declare function assertEd25519Public(pub: Uint8Array | string, name?: string): Uint8Array
-export declare function toHex(bytes: Uint8Array): string
-export declare function fromHex(h: string, len?: number, name?: string): Uint8Array
-export declare function toBase64(bytes: Uint8Array): string
-export declare function fromBase64(s: string): Uint8Array
-/** @internal exported for tests */
-export declare function _keySchedule(input: Record<string, unknown>): any
-/** @internal exported for tests */
-export declare function _busMerge(nodes: unknown, lo: number, hi: number): any
-/** @internal exported for tests */
-export declare function _busKindOf(error: unknown): any

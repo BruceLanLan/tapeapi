@@ -49,7 +49,7 @@ const params = (over = {}) => ({
 
 // ---------- §3.7：typehash 自检 / the typehash self-check ----------
 test('QUOTE_TYPEHASH is keccak256 of the primary type string in spec/TAP-24.md §3.3', () => {
-  assert.equal(abi.toHex(sig.keccak256(QUOTE_TYPE_STRING)), QUOTE_TYPEHASH)
+  assert.equal(abi.toHex(abi.keccak256(QUOTE_TYPE_STRING)), QUOTE_TYPEHASH)
   assert.equal(QUOTE_TYPEHASH, '0xe7c18a58c429974068166f7c27b8ba2a9a13177c83aeb69cdcac7a4bc7592d59') // spec/TAP-24.md §6
   // 字段名与顺序必须与主类型字符串一致 / field names and order must match the primary type string
   const parsed = QUOTE_TYPE_STRING.slice('Quote('.length, -1).split(',').map(s => s.trim().split(/\s+/)[1])
@@ -57,7 +57,7 @@ test('QUOTE_TYPEHASH is keccak256 of the primary type string in spec/TAP-24.md �
   assert.equal(QUOTE_FIELDS.length, 10)
 })
 test('keccak256("IntentEscrow") matches the domain-name hash in spec/TAP-24.md §6', () => {
-  assert.equal(abi.toHex(sig.keccak256(ESCROW_NAME)), ESCROW_NAME_HASH)
+  assert.equal(abi.toHex(abi.keccak256(ESCROW_NAME)), ESCROW_NAME_HASH)
   assert.equal(ESCROW_NAME_HASH, '0x2043479336d59fcf0f30222e9c9f674b6a85c2fa5b5033d0c47e20469de7f0ba')
   // 启动自检本身也必须通过 / the start-up self-check itself must pass
   assert.deepEqual(selfCheck(), { typehash: QUOTE_TYPEHASH, nameHash: ESCROW_NAME_HASH })

@@ -29,7 +29,7 @@ const rpcFail = (status, code, message) => reply(status, { jsonrpc: '2.0', id: n
  * @param {object} o
  * @param {object} o.provider   from createProvider / 来自 createProvider
  * @param {object} o.manifest   the manifest the provider serves / provider 提供的清单
- * @param {{ name?: string }} [o.identity]  the TapeOut name to show, e.g. '11.1013.tape' / 展示用的 TapeOut 名称
+ * @param {string} [o.name]  the TapeOut name to show, e.g. '11.1013.tape' / 展示用的 TapeOut 名称
  * @param {string} [o.version]  serverInfo.version
  * @param {boolean} [o.linkContent=false]  verify links carry the params and result in clear (sdk mcp.verifyLink
  *        `content`); default: hashes only / 核验链接带明文参数与结果；默认只带哈希
@@ -38,16 +38,19 @@ const rpcFail = (status, code, message) => reply(status, { jsonrpc: '2.0', id: n
  *        batch), for usage counting; method and tool are cut to 64 characters; errors in it are ignored
  *        对实际处理的每条 JSON-RPC 消息调用一次（过大、无法解析或超长批量的请求不计），用于用量统计；method 和 tool 截到
  *        64 个字符；其中的错误被忽略
- * @returns {{ handle(request: Request, ctx?: { clientIp?: string }): Promise<Response>, tools: object[] }}
+ * @returns {{ handleRequest(request: Request, ctx?: { clientIp?: string }): Promise<Response>, tools: object[] }} (1.0: was handle)
  */
-export function createMcpEndpoint({ provider, manifest, identity = {}, version = '0', onMessage, linkContent = false }) {
+export function createMcpEndpoint(o = {}) {
+  // 1.0 (review G1 S11): the display name is `name`; `identity` meant a key pair elsewhere in the SDK. / 展示名改为 name。
+  if (o && Object.prototype.hasOwnProperty.call(o, 'identity')) throw new TapeAPIError('INVALID_ARGUMENT', 'createMcpEndpoint takes { name } (the TapeOut name to show): the option `identity` was renamed in 1.0')
+  const { provider, manifest, name: tapeName, version = '0', onMessage, linkContent = false } = o
   // This server signs its answers; it does not check them for the caller. The tool text says so.
   // 本服务器只签名，不替调用方核验。工具说明如实这么写。
   const trust = "The result is signed by the service's on-chain delegated key and carries a receipt; anyone can verify it against the chain (link in the result)."
   const { tools, skipped } = webmcp.manifestToTools(manifest, { prefix: '', trust })
   if (!tools.length) throw new TapeAPIError('MANIFEST_INVALID', `no tool to expose (${skipped.map((s) => `${s.method}: ${s.code}`).join(', ') || 'no free methods'})`)
   const byName = new Map(tools.map((t) => [t.name, t]))
-  const label = identity.name || manifest.name || 'TapeAPI service'
+  const label = tapeName || manifest.name || 'TapeAPI service'
   const title = manifest.name || label
   const info = { name: `tapeapi-${label}`, title: /tapeapi/i.test(title) ? title : `${title} (TapeAPI)`, version }
   const instructions = `Tools of the TapeAPI service ${label}${manifest.name ? ` ("${manifest.name}")` : ''} on BNB Smart Chain. ` +
@@ -69,7 +72,7 @@ export function createMcpEndpoint({ provider, manifest, identity = {}, version =
       const e = env?.error || {}
       return { content: [{ type: 'text', text: `The service did not answer: ${e.code || `HTTP ${res.status}`}${e.message ? `: ${e.message}` : ''}` }], isError: true }
     }
-    const receipt = mcp.receiptOf({ envelope: env, method: t.method, params: args, circuits: manifest.circuits, tokenId: manifest.tokenId, name: identity.name })
+    const receipt = mcp.receiptOf({ envelope: env, method: t.method, params: args, circuits: manifest.circuits, tokenId: manifest.tokenId, name: tapeName })
     return mcp.toolResultOf({ receipt, checkedBy: 'service', signer: manifest.signer, linkContent: linkContent === true })
   }
 
@@ -111,5 +114,6 @@ export function createMcpEndpoint({ provider, manifest, identity = {}, version =
     return out ? reply(200, out) : reply(202, null)
   }
 
-  return { handle, tools }
+  // 1.0 (review G1 S10): handleRequest, like createProvider, createAIProxy and createMcpProxy. / 与其它入口同名。
+  return { handleRequest: handle, tools }
 }

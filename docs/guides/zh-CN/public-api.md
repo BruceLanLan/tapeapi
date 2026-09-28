@@ -157,7 +157,7 @@ const { invite, pending } = channel.createInvite({
 
 // （邀请密封后送到 B；B 接受，并把 accept 发到中继）
 const rooms = channel.roomsFor(invite.cid)            // 握手完成前 A 的房间
-const link = channel.relayTransport({ api, svc: relay, inbound: rooms.toInitiator, outbound: rooms.toResponder })
+const link = channel.relayTransport({ api, service: relay, inbound: rooms.toInitiator, outbound: rooms.toResponder })
 const [w] = await link.poll()
 const { ready, session } = channel.completeInvite(pending, channel.decodeWire(w).handshake)
 await link.send(channel.encodeWire(ready))

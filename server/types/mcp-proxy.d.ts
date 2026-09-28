@@ -1,13 +1,13 @@
 // Type declarations for @tapeapi/server/mcp-proxy (hand-written; ../src/mcp-proxy.js is the source of truth).
 import type { Manifest } from '@tapeapi/sdk'
 import type { McpTool } from '@tapeapi/sdk/mcp'
-import type { CreateProviderOptions } from './index.js'
+import type { CreateProviderOptions, ManifestBase } from './index.js'
 
 export declare const MCP_PATH: '/mcp'
 /** Upstream answers are refused past this many bytes (1 MiB). */
 export declare const UPSTREAM_RESPONSE_LIMIT: number
 /** Default upstream time bound in ms, below the provider's 25 s handler timeout. */
-export declare const UPSTREAM_TIMEOUT_MS: number
+export declare const MCP_UPSTREAM_TIMEOUT_MS: number
 
 export type McpProxyUpstream =
   /** A remote MCP server over Streamable HTTP. `headers` are static, operator-set (e.g. authorization); caller headers are never forwarded. */
@@ -16,17 +16,7 @@ export type McpProxyUpstream =
   | { call(message: object): Promise<object | null> | object | null }
 
 /** The identity part of the manifest; the proxy adds signer, methods and mcp. */
-export interface McpProxyManifestBase {
-  tapeapi?: string
-  name?: string
-  circuits: string
-  tokenId: string
-  container: string
-  delegation?: { expires: number; sig: string } | null
-  endpoints: { live: string[]; async: boolean }
-  dev?: boolean
-  [key: string]: unknown
-}
+export type McpProxyManifestBase = ManifestBase
 
 export interface McpProxyStats {
   ready: boolean
@@ -75,7 +65,7 @@ export declare function createMcpProxy(o: {
   /** The digest the holder published on chain; without it, the digest read at boot. */
   toolsSha256?: string
   /** The TapeOut name shown in receipts, e.g. '11.1013.tape'. */
-  identity?: { name?: string }
+  name?: string
   /** Verify links carry the params and result in clear; default false: hashes only. */
   linkContent?: boolean
   /** Default: endpoints.live[0] with /tapeapi/v1 replaced by /mcp. */

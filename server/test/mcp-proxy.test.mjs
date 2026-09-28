@@ -152,7 +152,7 @@ test('an upstream isError is still ok: true (signed: "the upstream answered this
 
 test('/mcp lifecycle: initialize, notifications, tools/list (pinned fields), tools/call with provenance + upstream content + receipt', async () => {
   const up = inProcess()
-  const p = make(up.upstream, { identity: { name: '11.1013.tape' } })
+  const p = make(up.upstream, { name: '11.1013.tape' })
   const m = await p.ready
   const init = await rpc(p, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } })
   assert.equal(init.result.protocolVersion, '2025-06-18')

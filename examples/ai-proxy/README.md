@@ -117,7 +117,8 @@ const claude = new Anthropic({ baseURL: base('anthropic-messages'), apiKey: '<�
 ```
 
 包装后的 fetch 保留自己发出的请求字节和收到的回应字节，重算两个哈希，核对签名是不是链上清单指定的 signer、`complete` 是否属实、
-金额是不是按价目表算的。任何一项不符都报错（默认抛出 `RECEIPT_INVALID`；流式在流结束时让迭代器抛出），不静默吞掉；流的每一块照常到达，
+金额是不是按价目表算的。任何一项不符都报错（默认：整体回答变成 HTTP 502、code 为 `RECEIPT_INVALID`、带 `x-should-retry: false`，
+官方 SDK 抛出 `APIError` 且不重试；流式在流结束时让迭代器抛出 `RECEIPT_INVALID`），不静默吞掉；流的每一块照常到达，
 不被延迟。命令行工具（Claude Code 设 `ANTHROPIC_BASE_URL`，Codex 在 `config.toml` 里设 `base_url`）不需要任何改动就能用；它们自己不核验回执：
 可以把它们指向本地核验代理 `tapeapi-verify`，或者事后按 id 取回回执再核验。
 手里只有一份回执时，可以贴到核验页 `https://tapeapi.fun/verify/`：它核对签名、身份和金额；两个哈希绑定的是确切的请求和回应字节，

@@ -208,7 +208,7 @@ async function accountsHealth(accounts, block) {
 }
 
 const provider = createProvider({
-  manifest, signerKey: SIGNER_KEY, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID, allowSingleNode: !PROD, log, store,
+  manifest, signerKey: SIGNER_KEY, dev: !PROD, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID, allowSingleNode: !PROD, log, store,
   methods: {
     // [quorum] 单地址健康度 / one account's health at a pinned block
     accountHealth: async ({ account, block } = {}) => {

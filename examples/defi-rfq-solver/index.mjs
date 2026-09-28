@@ -94,10 +94,10 @@ async function readInventory({ chainId, tokens, block } = {}) {
 // ---- 报价簿（进程内存，不是链上事实）/ the quote book (process memory, not an on-chain fact) ----
 const book = createQuoteBook(QUOTE_BOOK_MAX)
 // TAP-24 §3.3 RECOMMENDED: quoteId = keccak256(solver ‖ random32)
-const newQuoteId = () => toHex(sig.keccak256(solver.toLowerCase() + Buffer.from(randomBytes(32)).toString('hex')))
+const newQuoteId = () => toHex(abi.keccak256(solver.toLowerCase() + Buffer.from(randomBytes(32)).toString('hex')))
 
 const provider = createProvider({
-  manifest, signerKey: SIGNER_KEY, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID, allowSingleNode: !PROD, log, store,
+  manifest, signerKey: SIGNER_KEY, dev: !PROD, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID, allowSingleNode: !PROD, log, store,
   methods: {
     // [no-quorum]：每次调用都有新的 quoteId 与新的 expires / a fresh quoteId and a fresh expires on every call
     quote: async (params = {}) => {

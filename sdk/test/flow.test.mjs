@@ -106,8 +106,8 @@ test('TAP-20 §3.6 step 4: ownerOf reverting (no such circuit) is MANIFEST_INVAL
 })
 test('M-06: { dev } targets need createTapeAPI({ dev: true }); dev with RPC still checks the holder; dev never relaxes on-chain manifests', async () => {
   // (a) default configuration cannot reach dev resolution / 默认配置无法进入 dev
-  await assert.rejects(api.resolve({ dev: manifest }), (e) => e.code === 'MANIFEST_INVALID' && /dev resolve disabled/.test(e.message))
-  await assert.rejects(api.resolve({ dev: 'http://127.0.0.1:1' }), (e) => e.code === 'MANIFEST_INVALID' && /dev resolve disabled/.test(e.message))
+  await assert.rejects(api.resolve({ dev: manifest }), (e) => e.code === 'INVALID_ARGUMENT' && /dev resolve disabled/.test(e.message))
+  await assert.rejects(api.resolve({ dev: 'http://127.0.0.1:1' }), (e) => e.code === 'INVALID_ARGUMENT' && /dev resolve disabled/.test(e.message))
   // (b) dev client WITH rpcUrls: holder is read from chain, a non-holder delegation is rejected / 有 RPC 的 dev 客户端照样比对 holder
   const devRpc = client({ dev: true })
   const ok = await devRpc.resolve({ dev: manifest })
@@ -129,7 +129,7 @@ test('M-06: { dev } targets need createTapeAPI({ dev: true }); dev with RPC stil
 test('M-10 / M-11: https-only endpoints outside dev, strict quorum, manifest limits', async () => {
   const strict = createTapeAPI({ ...BASE, allowHttp: false, fetch: chain.fetchWith() })
   await assert.rejects(strict.resolve('reader'), (e) => e.code === 'MANIFEST_INVALID' && /https/.test(e.message))
-  assert.throws(() => createTapeAPI({ ...BASE, rpcUrls: ['http://rpc1'], quorum: 2, fetch: chain.fetch }), (e) => e.code === 'RPC_UNAVAILABLE' && /allowSingleNode/.test(e.message))
+  assert.throws(() => createTapeAPI({ ...BASE, rpcUrls: ['http://rpc1'], quorum: 2, fetch: chain.fetch }), (e) => e.code === 'INVALID_ARGUMENT' && /allowSingleNode/.test(e.message))
   const single = createTapeAPI({ ...BASE, rpcUrls: ['http://rpc1'], quorum: 2, allowSingleNode: true, fetch: chain.fetch })
   assert.equal(single.rpc.quorum, 1); assert.equal(single.rpc.degraded, true)
   const good = buildManifest(); good.endpoints.live = ['https://api.example.com/tapeapi/v1/']
@@ -281,7 +281,7 @@ test('H-05 store: committed cumulative persists across payer instances (reload),
   const r = await counting.call(svc, 'circuitHolder', P, { payer: b })
   assert.equal(r.verified, true); assert.equal(requests, 1) // continued from the store, no BAD_VOUCHER retry / 从 store 接续，无需重试
   assert.equal(b.cumulativeOf(svc), committed + PRICE)
-  assert.throws(() => api.payer({ consumer, sessionKey: SESSION_KEY, store: { get() {} } }), (e) => e.code === 'BAD_VOUCHER')
+  assert.throws(() => api.payer({ consumer, sessionKey: SESSION_KEY, store: { get() {} } }), (e) => e.code === 'INVALID_ARGUMENT')
 })
 // H-04：提供者的 reserve/commit 只为交付了的结果计费，客户端必须跟着释放，否则消费者为失败的调用付钱。
 // The provider bills only a delivered result, so the client must release too — otherwise the consumer pays for a
@@ -417,7 +417,7 @@ test('tx.setContribution builds setContribution(address,uint256,uint16) calldata
   assert.equal(args[0].toLowerCase(), ADDR.circuits); assert.equal(args[1], 4246n); assert.equal(args[2], 100n)
   // escrow override for services on another deployment / 可指定其它托管
   assert.equal(api.tx.setContribution({ circuits: ADDR.circuits, tokenId: 1, bps: 0, escrow: '0x' + '41'.repeat(20) }).to, '0x' + '41'.repeat(20))
-  for (const bad of [5001, -1, 1.5, 'x']) assert.throws(() => api.tx.setContribution({ circuits: ADDR.circuits, tokenId: 1, bps: bad }), (e) => e.code === 'ABI_INVALID')
+  for (const bad of [5001, -1, 1.5, 'x']) assert.throws(() => api.tx.setContribution({ circuits: ADDR.circuits, tokenId: 1, bps: bad }), (e) => e.code === 'INVALID_ARGUMENT')
   assert.equal(abi.signatureOf('contributionOf'), 'contributionOf(address)'); assert.equal(abi.signatureOf('treasury'), 'treasury()')
   assert.equal(await api.chain.escrow.treasury(), abi.checksumAddress(ADDR.treasury))
 })
@@ -559,8 +559,8 @@ test('TAP-20 §3.2 (a): a container resolves with NO directory configured; manif
   const api3 = createTapeAPI({ ...BASE, fetch: c2.fetch })
   assert.equal((await api3.resolve(ADDR.container)).manifest.name, 'TapeOut Reader')
   // directory-only reads still say so explicitly / 目录读取本身仍明确报错
-  await assert.rejects(async () => api2.chain.serviceOf(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /directory/.test(e.message))
-  await assert.rejects(api2.resolve('reader'), (e) => e.code === 'MANIFEST_INVALID' && /directory/.test(e.message))
+  await assert.rejects(async () => api2.chain.serviceOf(ADDR.container), (e) => e.code === 'INVALID_ARGUMENT' && /directory/.test(e.message))
+  await assert.rejects(api2.resolve('reader'), (e) => e.code === 'INVALID_ARGUMENT' && /directory/.test(e.message))
 })
 test('TAP-20 §3.2 (b): { circuits, tokenId } resolves with NO directory', async () => {
   const c2 = freshChain()
@@ -655,8 +655,8 @@ test('TAP-22 §3.4 (D15): tx builders given a resolved service use ITS escrow, n
   assert.equal(api.tx.fund(ADDR.container, 5n).to.toLowerCase(), ADDR.escrow.toLowerCase())
   // a free service has no escrow to fund / 免费服务没有可充值的托管
   const free = { container: ADDR.container, manifest: { container: ADDR.container, payment: { escrow: null } } }
-  assert.throws(() => api.tx.fund(free, 1n), (e) => e.code === 'MANIFEST_INVALID' && /takes no payment/.test(e.message))
-  assert.throws(() => api.chain.escrow.channelOf(ADDR.container, free), (e) => e.code === 'MANIFEST_INVALID' && /takes no payment/.test(e.message), 'reads say the same')
+  assert.throws(() => api.tx.fund(free, 1n), (e) => e.code === 'INVALID_ARGUMENT' && /takes no payment/.test(e.message))
+  assert.throws(() => api.chain.escrow.channelOf(ADDR.container, free), (e) => e.code === 'INVALID_ARGUMENT' && /takes no payment/.test(e.message), 'reads say the same')
 })
 
 test('a holder can delegate from a wallet: typed data for signTypedData, and an EIP-1271 contract holder', async () => {

@@ -12,6 +12,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createAIProxy } from '../src/ai-proxy.js'
 import { ai } from '@tapeapi/sdk'
+// pricesOf is not in the public face (review RC-7): the implementation module. / pricesOf 不在公开门面里：用实现模块。
+import { pricesOf } from '../../sdk/src/ai.js'
 import { createFakeUpstream } from '../../examples/ai-proxy/fake-upstream.mjs'
 
 const FIX = JSON.parse(readFileSync(new URL('../../sdk/test/fixtures/ai-cli.json', import.meta.url), 'utf8'))
@@ -130,7 +132,7 @@ for (const f of posts) {
       assert.equal(env.id, read.id)
       assert.deepEqual(env.result.usage, read.usage)
       assert.ok(env.result.prices, 'priced')
-      assert.deepEqual(env.result.prices, ai.pricesOf(ai.modelEntryOf(MODELS, env.result.model, format.name), env.result.usage))
+      assert.deepEqual(env.result.prices, pricesOf(ai.modelEntryOf(MODELS, env.result.model, format.name), env.result.usage))
       assert.equal(env.result.complete, true)
     }
   })

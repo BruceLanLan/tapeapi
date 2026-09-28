@@ -65,7 +65,7 @@ function build(env) {
     // 三家取二（SDK 默认节点）：一家宕机、限流或拒绝某方法时仍有法定数。
     rpcUrls: env.RPC_URLS ? env.RPC_URLS.split(',') : rpcUrlsFor(56),
     // 3 s per node: a hung node must not hold every call for the 8 s default. / 每节点 3 秒。
-    timeoutMs: Number(env.RPC_TIMEOUT_MS || 3000),
+    rpcTimeoutMs: Number(env.RPC_TIMEOUT_MS || 3000),
     quorum: 2,
     chainId: 56,
     // One D1 row per (consumer, provider) with a conditional UPDATE: the atomic compare-and-set that a

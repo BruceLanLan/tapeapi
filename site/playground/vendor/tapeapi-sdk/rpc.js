@@ -75,21 +75,21 @@ const warnedSets = new Set()
 const deployable = (u) => { const m = /^https:\/\/(?:[^/?#@]*@)?([^/?#:]+)/i.exec(u); return !!m && !/(?:^|\.)(?:invalid|example|test|localhost)$/i.test(m[1]) }
 
 export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl, allowSingleNode = false, bodyLimit = RPC_BODY_LIMIT, disagreeRetryMs = 300, maxHeadSpread = 64, quiet = false, warn } = {}) {
-  if (!Array.isArray(urls) || urls.length === 0) throw new TapeAPIError('RPC_UNAVAILABLE', 'no rpc urls')
+  if (!Array.isArray(urls) || urls.length === 0) throw new TapeAPIError('INVALID_ARGUMENT', 'no rpc urls')
   urls = [...new Set(urls.map(String))]
-  if (!Number.isInteger(quorum) || quorum < 1) throw new TapeAPIError('RPC_UNAVAILABLE', 'quorum must be a positive integer')
+  if (!Number.isInteger(quorum) || quorum < 1) throw new TapeAPIError('INVALID_ARGUMENT', 'quorum must be a positive integer')
   const f = fetchImpl || globalThis.fetch
-  if (typeof f !== 'function') throw new TapeAPIError('RPC_UNAVAILABLE', 'no fetch implementation')
+  if (typeof f !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'no fetch implementation')
   // opOf[i]: who runs urls[i] / urls[i] 的运营方
   const opOf = urls.map(operatorOf)
   const operators = [...new Set(opOf)]
   let need = quorum
   if (urls.length < quorum) {
-    if (allowSingleNode !== true) throw new TapeAPIError('RPC_UNAVAILABLE', `quorum ${quorum} needs at least ${quorum} distinct rpc urls, got ${urls.length} (pass allowSingleNode: true for a dev setup)`)
+    if (allowSingleNode !== true) throw new TapeAPIError('INVALID_ARGUMENT', `quorum ${quorum} needs at least ${quorum} distinct rpc urls, got ${urls.length} (pass allowSingleNode: true for a dev setup)`)
     need = urls.length
   }
   if (operators.length < need) {
-    if (allowSingleNode !== true) throw new TapeAPIError('RPC_UNAVAILABLE', `quorum ${quorum} needs nodes of at least ${quorum} independent operators, got ${operators.length} (${operators.join(', ')}); URLs of one operator count once (pass allowSingleNode: true for a dev setup)`)
+    if (allowSingleNode !== true) throw new TapeAPIError('INVALID_ARGUMENT', `quorum ${quorum} needs nodes of at least ${quorum} independent operators, got ${operators.length} (${operators.join(', ')}); URLs of one operator count once (pass allowSingleNode: true for a dev setup)`)
     need = operators.length
   }
   // Distinct operators among the nodes that answered (indexes into urls) / 作答节点中不同运营方的数目
@@ -243,7 +243,7 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
   // 反而会让这种读取在任一节点不可用或拒绝该方法时失败。
   // `o.bodyLimit` raises the answer size for one kind of read (a whole block's receipts, TAP-26 §3.7) / 为某类读取放宽回答大小
   const single = (url, o = {}) => {
-    if (!urls.includes(url)) throw new TapeAPIError('RPC_UNAVAILABLE', `${describeUrl(url, 0)} is not one of this client's nodes`)
+    if (!urls.includes(url)) throw new TapeAPIError('INVALID_ARGUMENT', `${describeUrl(url, 0)} is not one of this client's nodes`)
     return createRpc({ urls: [url], quorum: 1, timeoutMs, fetch: fetchImpl, bodyLimit: o.bodyLimit ?? bodyLimit, disagreeRetryMs, maxHeadSpread })
   }
   // `operators`: the distinct operators behind `urls`, in first-seen order / `urls` 背后的不同运营方

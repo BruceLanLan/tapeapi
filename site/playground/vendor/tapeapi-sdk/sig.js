@@ -5,10 +5,6 @@ import { TapeAPIError } from './errors.js'
 import { canonicalJSON } from './canon.js'
 import { hexToBytes, toHex, checksumAddress, encodeParams, isAddress } from './abi.js'
 
-export function keccak256(data) {
-  const b = typeof data === 'string' ? (data.startsWith('0x') ? hexToBytes(data) : utf8ToBytes(data)) : data
-  return keccak_256(b)
-}
 
 // ---------- 私钥 / keys ----------
 function normPriv(pk) {
@@ -235,4 +231,3 @@ export function responseDigestFromHashes({ container, id, requestHash, ok, bodyH
 }
 export function recoverResponseSignerFromHashes(env, sig) { return recoverAddress(personalDigest(responseDigestFromHashes(env)), sig) }
 
-export { bytesToHex, toHex, hexToBytes }

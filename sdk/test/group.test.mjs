@@ -2,7 +2,10 @@
 // TAP-27 群聊：只经链上完成一次群聊，以及它应当拒绝的每一种情形。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createTapeAPI, channel, group as G, sig, TapeAPIError, CHANNEL_KEYS_KEY, canonicalJSON } from '../src/index.js'
+import { createTapeAPI, channel, sig, TapeAPIError, CHANNEL_KEYS_KEY, canonicalJSON } from '../src/index.js'
+// The implementation module: buildEpoch and senderKey are not in the public `group` namespace (review RC-7).
+// 实现模块：buildEpoch 与 senderKey 不在公开的 group 命名空间里。
+import * as G from '../src/group.js'
 import { createRpc } from '../src/rpc.js'
 import { createFakeChain, ADDR } from './helpers/fake-chain.mjs'
 

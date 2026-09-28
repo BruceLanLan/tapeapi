@@ -64,7 +64,7 @@ test('newSignerKey draws from the CSPRNG and never returns 0 or a key outside th
 test('keccak256 and addressOfKey are the SDK\'s (noble), across block boundaries and random keys', () => {
   for (const n of [0, 1, 31, 32, 135, 136, 137, 271, 272, 1000]) {
     const b = Uint8Array.from({ length: n }, (_, i) => (i * 131 + n) & 0xff)
-    assert.equal(Buffer.from(C.keccak256(b)).toString('hex'), Buffer.from(sig.keccak256(b)).toString('hex'), `length ${n}`)
+    assert.equal(Buffer.from(C.keccak256(b)).toString('hex'), Buffer.from(abi.keccak256(b)).toString('hex'), `length ${n}`)
   }
   for (let i = 0; i < 25; i++) { const k = C.newSignerKey(); assert.equal(C.addressOfKey(k), privateKeyToAddress(k)) }
   for (const k of ['0x' + '00'.repeat(31) + '01', '0x' + 'ff'.repeat(15) + 'fe' + 'aa'.repeat(16)]) assert.equal(C.addressOfKey(k), privateKeyToAddress(k))

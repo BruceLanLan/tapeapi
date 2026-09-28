@@ -119,7 +119,7 @@ test('a tampered envelope is a failed (BAD_SIGNATURE) answer, never a vote', asy
   assert.deepEqual(r.disagreed, []); assert.equal(r.failed[0].code, 'BAD_SIGNATURE')
 })
 test('argument validation: empty, too few providers, duplicates, bad quorum', async () => {
-  await assert.rejects(api.callQuorum([], 'read', {}), (e) => e.code === 'QUORUM_FAILED' && /non-empty/.test(e.message))
+  await assert.rejects(api.callQuorum([], 'read', {}), (e) => e.code === 'INVALID_ARGUMENT' && /non-empty/.test(e.message))
   await assert.rejects(api.callQuorum([services[0]], 'read', {}), (e) => e.code === 'QUORUM_FAILED' && /at least 2/.test(e.message))
   await assert.rejects(api.callQuorum([services[0], services[0]], 'read', {}), (e) => e.code === 'QUORUM_FAILED' && /duplicate/.test(e.message))
   await assert.rejects(api.callQuorum(three(), 'read', {}, { quorum: 0 }), (e) => /positive integer/.test(e.message))
@@ -207,7 +207,7 @@ test('a malformed compare configuration is the caller error, and is caught befor
   for (const compare of [{ relTolBps: -1, paths: ['price'] }, { relTolBps: 100, paths: [] }, { relTolBps: 100, paths: [''] }, { relTolBps: 100, paths: ['a..b'] }, { relTolBps: 100, paths: [3] }]) {
     await assert.rejects(
       counting.callQuorum(three(), 'read', {}, { quorum: 2, compare }),
-      (e) => e.code === 'BAD_REQUEST',
+      (e) => e.code === 'INVALID_ARGUMENT',
     )
   }
   // H-03：形状错误在发请求之前就拒绝，付费方法不会白花钱 / rejected before any (paid) request goes out

@@ -326,18 +326,26 @@ test('verifying fetch: a non-stream answer is checked, returned intact, and repo
   assert.equal(await r2.text(), RES); assert.equal(reports[1].ok, true)
 })
 
-test('verifying fetch: a tampered answer or a missing receipt throws (strict) or is reported (strict: false)', async () => {
+// Strict answers a failed whole answer with a synthetic 502 (review RC-5), no longer by throwing.
+// strict 以合成的 502 回应核验不过的整体回答（RC-5），不再抛出。
+test('verifying fetch: a tampered answer or a missing receipt becomes an HTTP 502 RECEIPT_INVALID (strict) or is reported (strict: false)', async () => {
   const tamper = (res) => { const h = new Headers(res.headers); return res.text().then((t) => new Response(t.replace('20', '21'), { status: res.status, headers: h })) }
   const { p, fetch } = sidecar(() => new Response(RES, { headers: { 'content-type': 'application/json' } }))
   const bad = async (u, i) => tamper(await fetch(u, i))
   const vf = ai.createVerifyingFetch({ service: svcOf(p), fetch: bad })
-  await assert.rejects(vf('https://ai.example/v1/chat/completions', { method: 'POST', body: REQ }), (e) => e.code === 'RECEIPT_INVALID' && /responseSha256/.test(e.message))
+  const failed = async (res, why) => {
+    assert.equal(res.status, 502); assert.equal(res.ok, false)
+    assert.equal(res.headers.get('x-should-retry'), 'false'); assert.equal(res.headers.get(ai.VERIFY_ERROR_HEADER), 'RECEIPT_INVALID')
+    const e = (await res.json()).error
+    assert.equal(e.code, 'RECEIPT_INVALID'); assert.match(e.message, why)
+  }
+  await failed(await vf('https://ai.example/v1/chat/completions', { method: 'POST', body: REQ }), /^usage receipt: .*responseSha256/)
   const reports = []
   const lax = ai.createVerifyingFetch({ service: svcOf(p), fetch: bad, strict: false, onReport: (r) => reports.push(r) })
   const res = await lax('https://ai.example/v1/chat/completions', { method: 'POST', body: REQ })
   assert.equal(res.status, 200); assert.equal(reports[0].ok, false)
   const bare = async (u, i) => { const r = await fetch(u, i); const h = new Headers(r.headers); h.delete('x-tapeapi-receipt'); return new Response(await r.text(), { headers: h }) }
-  await assert.rejects(ai.createVerifyingFetch({ service: svcOf(p), fetch: bare })('https://ai.example/v1/chat/completions', { method: 'POST', body: REQ }), /no x-tapeapi-receipt header/)
+  await failed(await ai.createVerifyingFetch({ service: svcOf(p), fetch: bare })('https://ai.example/v1/chat/completions', { method: 'POST', body: REQ }), /no x-tapeapi-receipt header/)
 })
 
 test('verifying fetch: a stream reaches the reader chunk by chunk, is checked at its end, and a tampered one errors there', async () => {
@@ -376,16 +384,18 @@ test('verifying fetch: a stream reaches the reader chunk by chunk, is checked at
   assert.equal(r4.length, 1); assert.equal(r4[0].incomplete, true); assert.deepEqual(r4[0].problems, [])
 })
 
-test('verifying fetch: other paths pass through untouched; the service must be verified; a rotated key is re-read once', async () => {
+test('verifying fetch: other paths pass through untouched; a metered path on another host is refused (FIXED G1-M15); the service must be verified; a rotated key is re-read once', async () => {
   const calls = []
   const passthrough = async (u, i) => { calls.push([u, i]); return new Response('{"data":[]}') }
   const svc = { manifest: MANIFEST, container: CONTAINER, verified: { dev: true } }
   const vf = ai.createVerifyingFetch({ service: svc, fetch: passthrough, onReport: () => assert.fail('no report for a pass-through') })
   const init = { method: 'GET', headers: { authorization: 'Bearer k' } }
   await vf('https://ai.example/v1/models', init)
-  await vf('https://elsewhere.example/v1/chat/completions', { method: 'POST', body: '{}' })
+  // a metered path addressed to another host is not a pass-through: strict refuses it before sending (0.x let it through)
+  // 发往其它主机的计量路径不再透传：strict 在发送前拒绝（0.x 会放行）
+  await assert.rejects(vf('https://elsewhere.example/v1/chat/completions', { method: 'POST', body: '{}' }), (e) => e.code === 'INVALID_ARGUMENT' && /endpoint mismatch/.test(e.message))
   assert.equal(calls[0][1], init, 'the same init object, untouched')
-  assert.equal(calls.length, 2)
+  assert.equal(calls.length, 1)
   await assert.rejects(ai.createVerifyingFetch({ service: { manifest: MANIFEST, container: CONTAINER, verified: {} }, fetch: passthrough })('https://ai.example/v1/models'), (e) => e.code === 'DELEGATION_INVALID')
   await assert.rejects(ai.createVerifyingFetch({ service: { manifest: { ...MANIFEST, ai: undefined }, verified: { dev: true } }, fetch: passthrough })('https://ai.example/v1/models'), (e) => e.code === 'MANIFEST_INVALID')
   // A target is resolved on first use; a receipt by another key re-reads the manifest once. / 首次使用时解析；换钥时重读一次。
@@ -422,4 +432,47 @@ test('verifying fetch: the manifest endpoints route each format, Anthropic\'s wi
   assert.equal(reports.at(-1).ok, true); assert.equal(reports.at(-1).receipt.method, 'openai_responses'); assert.deepEqual(reports.at(-1).receipt.result.prices, [{ currency: 'USDT', amount: '0.00003000' }, { currency: 'BEM', amount: '0.00030000' }])
   await vf('https://ai.example/v1/messages/count_tokens', { method: 'POST', body: '{}' })
   assert.equal(reports.length, 2, 'count_tokens is not a receipt path')
+})
+
+// FIXED RC-2: the scanner says where a stream first ended ([DONE] or the final event) and how many receipts came before
+// that, and where the last whole event of a chunk ends. / 扫描器给出流第一次结束的位置之前有几份回执，以及块中最后一个完整事件的结尾。
+test('FIXED RC-2: createSseScanner: receiptsAtEnd counts the receipts before the first end ([DONE] or the final event); push returns the last event boundary', () => {
+  const te = new TextEncoder()
+  const responses = ai.FORMATS.find((f) => f.name === 'openai-responses')
+  const s = ai.createSseScanner({ sentinel: '[DONE]', final: responses.stream.final })
+  assert.equal(s.push(te.encode('event: response.created\ndata: {}\n\ndata: [DO')), 'event: response.created\ndata: {}\n\n'.length)
+  assert.equal(s.info.receiptsAtEnd, null)
+  const tail = 'NE]\n\n: tapeapi-receipt abc\n\nevent: response.completed\ndata: {}\n\n'
+  assert.equal(s.push(te.encode(tail)), tail.length)
+  assert.equal(s.info.done, true); assert.equal(s.info.final, true)
+  assert.equal(s.info.receiptsAtEnd, 0, 'the receipt came after [DONE]')
+  assert.deepEqual(s.info.receipts, ['abc'])
+  assert.equal(s.push(te.encode('data: {"x":1}')), -1)
+  const c = ai.createSseScanner({ sentinel: '[DONE]', final: { data: ['[DONE]'] } })
+  assert.equal(c.push(te.encode(': tapeapi-receipt r1\n\ndata: [DONE]\r\r')), 36)   // a CR at the chunk's end still ends the line / 块末的 CR 同样结束一行
+  assert.equal(c.info.receiptsAtEnd, 1)
+})
+
+// FIXED RC-3 (review 2026-09-29, F P1-2): a custom format that streams but names no final event (an adapter written for
+// 0.8) cannot tell where its stream ends, so a stream could be dropped by the SDK before its receipt is checked. Strict
+// refuses it when the fetch is made; not strict warns once through onReport.
+// FIXED RC-3：会流式、却没有 stream.final 的自定义格式认不出流在哪里结束。strict 在创建时拒绝；非 strict 通过 onReport 告警一次。
+test('FIXED RC-3: createVerifyingFetch refuses (strict) or warns once about (not strict) a streaming format without stream.final', () => {
+  const chat = ai.FORMATS.find((f) => f.name === 'openai-chat')
+  const legacy = { ...chat, name: 'legacy-chat', stream: { framing: 'sse', sentinel: '[DONE]' } }
+  const empty = { ...chat, name: 'empty-final', stream: { framing: 'sse', sentinel: null, final: { data: [], event: [] } } }
+  const service = { manifest: {}, container: '0x' + '00'.repeat(20), verified: { dev: true } }
+  for (const f of [legacy, empty]) {
+    assert.throws(() => ai.createVerifyingFetch({ service, formats: [...ai.FORMATS, f] }), (e) => e.code === 'INVALID_ARGUMENT' && e.message.includes(f.name) && /stream\.final/.test(e.message))
+  }
+  const reports = []
+  ai.createVerifyingFetch({ service, formats: [legacy, ...ai.FORMATS], strict: false, onReport: (r) => reports.push(r) })
+  assert.equal(reports.length, 1)
+  assert.equal(reports[0].ok, false)
+  assert.match(reports[0].warnings[0], /legacy-chat.*stream\.final/)
+  // the built-in formats and a format that does not stream are fine / 内置格式与不流式的格式没问题
+  const quiet = []
+  ai.createVerifyingFetch({ service, formats: [...ai.FORMATS, { ...chat, name: 'plain-json', stream: null }], strict: false, onReport: (r) => quiet.push(r) })
+  ai.createVerifyingFetch({ service })
+  assert.equal(quiet.length, 0)
 })

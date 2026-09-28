@@ -23,16 +23,16 @@ export { CHAINS, CHAIN_IDS, HOME_CHAIN_ID, IMPL_SLOT, chainById, chainByArea, ch
 export { TapeAPIError, createRpc, canonicalJSON, safeParseJSON, validateManifest, parseUnits, formatUnits, labelToBytes32, METHOD_NAME_RE, BEM_DECIMALS }
 export * as abi from './abi.js'
 export * as sig from './sig.js'
-export * as channel from './channel.js'   // TAP-26 real-time private channel / 实时私密通道
+export * as channel from './channel-public.js'   // TAP-26 real-time private channel / 实时私密通道
 export * as busPrivacy from './bus-privacy.js'   // ChannelBus reads that hide your rooms among cover rooms / 以掩护房间降低通道读取的关联性
 import * as channelLib from './channel.js'
-export * as group from './group.js'        // TAP-27 private group channels / 私密群聊
+export * as group from './group-public.js' // TAP-27 private group channels / 私密群聊
 // TAP-27 delivery in one call: epoch message to the group room AND invites to each member's inbox room / 一步投递
 export { deliverGroupUpdate, checkGroupInvites } from './group-delivery.js'
 export * as tapesend from './tapesend.js' // TAP-10 sealed messages, byte-compatible with @tapekit/send / TapeSend 密封消息
 export * as webmcp from './webmcp.js'      // expose a service's methods as WebMCP agent tools / 把服务的方法注册为 WebMCP 代理工具
 export * as mcp from './mcp.js'            // MCP server core: tools with signed results and receipts / MCP 服务器核心：带签名结果与回执的工具
-export * as ai from './ai.js'              // AI usage receipts: format adapters, hashing, prices, verification / AI 用量回执：格式适配器、哈希、价格、核验
+export * as ai from './ai-public.js'       // AI usage receipts: format adapters, hashing, prices, verification / AI 用量回执：格式适配器、哈希、价格、核验
 
 // TAP-22 §3.4 贡献比例常量 / contribution constants (basis points).
 export const MAX_CONTRIBUTION_BPS = 5000          // contract hard cap / 合约硬上限
@@ -77,7 +77,7 @@ const GROUP_VERIFY_CACHE_S = 300
 export const IDENTITY_CACHE_S = GROUP_VERIFY_CACHE_S
 export const IDENTITY_CACHE_SIZE = 1024
 export function registryKey(path) {
-  if (typeof path !== 'string') throw new TapeAPIError('MANIFEST_INVALID', 'registry path must be a string')
+  if (typeof path !== 'string') throw new TapeAPIError('INVALID_ARGUMENT', 'registry path must be a string')
   return path.replace(/^\/+/, '')
 }
 // TapeOut names (TapeKit SPEC §2.2 / §2.4 and kernel/src/name.js, TAP-20 §3.6 step 1; spec review SD-12). The canonical
@@ -107,7 +107,7 @@ const now = () => Math.floor(Date.now() / 1000)
 // `rpcRevert` only when EVERY answering node reported a revert, since the message is just the first node's (review R3-4).
 // 执行回滚：链的回答。rpc.js 把所有节点一致的 JSON-RPC 错误都报为 RPC_ERROR，回滚与 "header not found" 不分；只有每个作答节点
 // 都报回滚时才标 `rpcRevert`，因为消息只是第一个节点的。
-const isRevert = (e) => e instanceof TapeAPIError && e.code === 'RPC_ERROR' && (Number(e.rpcCode) === 3 || e.rpcRevert === true)
+const isRevert = (e) => e instanceof TapeAPIError && e.code === 'RPC_ERROR' && (Number(e.data?.rpcCode) === 3 || e.data?.rpcRevert === true)
 const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : toHex(crypto.getRandomValues(new Uint8Array(16))).slice(2))
 
 // 选项 / options:
@@ -135,6 +135,11 @@ const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : toHex(
 //                        在其它链上须与 hub、siteRegistry 一起传 `factory`（TapeOut 处理器工厂）：主网工厂在那里没有代码，
 //                        每次身份与清单读取都会以 BAD_KEY 失败。
 export function createTapeAPI(opts = {}) {
+  // 1.0 (review G1 S4): the RPC timeout is `rpcTimeoutMs`; `timeoutMs` is the per-call option of api.call only.
+  // 1.0：RPC 超时改名 rpcTimeoutMs；timeoutMs 只是 api.call 的每次调用选项。
+  const renamed = 'the option `timeoutMs` of createTapeAPI was renamed `rpcTimeoutMs` in 1.0 (it is the timeout of one RPC request; api.call keeps its own timeoutMs): see docs/guides/upgrade-1.0.md'
+  if (opts && Object.prototype.hasOwnProperty.call(opts, 'timeoutMs')) throw new TapeAPIError('INVALID_ARGUMENT', renamed)
+  for (const [id, c] of Object.entries(opts?.chains ?? {})) if (c && Object.prototype.hasOwnProperty.call(c, 'timeoutMs')) throw new TapeAPIError('INVALID_ARGUMENT', `chains[${id}]: ${renamed}`)
   const chainId = opts.chainId ?? MAINNET.chainId
   // A chain chains.js knows brings its own addresses; any other chain falls back to MAINNET's (and then needs opts.factory,
   // review R2-6). / chains.js 认识的链用它自己的地址；其它链退回 MAINNET 的地址（此时须传 opts.factory）。
@@ -148,23 +153,37 @@ export function createTapeAPI(opts = {}) {
   const allowHttp = devMode || opts.allowHttp === true
   const maxSkewS = Number.isFinite(opts.maxSkewS) ? Number(opts.maxSkewS) : DEFAULT_MAX_SKEW_S
   const rpc = (opts.rpcUrls && opts.rpcUrls.length)
-    ? createRpc({ urls: opts.rpcUrls, quorum: opts.quorum ?? 2, timeoutMs: opts.timeoutMs, fetch: fetchImpl, allowSingleNode: opts.allowSingleNode === true })
+    ? createRpc({ urls: opts.rpcUrls, quorum: opts.quorum ?? 2, timeoutMs: opts.rpcTimeoutMs, fetch: fetchImpl, allowSingleNode: opts.allowSingleNode === true })
     : null
   // Highest `issued` seen per container's channel record (arch B4). Pass a persistent Map-like { get, set } to keep it
   // across restarts. / 每个容器通道记录见过的最高 `issued`；传入持久化的 { get, set } 可跨重启保留。
   const recordFloor = opts.channelRecordFloor ?? new Map()
+  // The key is `${chainId}:${container, lowercase}` and the value an integer (Unix seconds), frozen for 1.x (review G1 M7).
+  // A 0.x store keyed by the container alone is read once and moved under the new key: an ERC-6551 address commits to
+  // one chainId, so an old entry can only belong to that chain. Every chain's client shares the one store (forChain).
+  // 键为 `${chainId}:${小写容器地址}`，值为整数（Unix 秒），1.x 内冻结。0.x 只按容器地址存的条目读一次并迁到新键。
+  const floorKey = (container) => `${chainId}:${String(container).toLowerCase()}`
+  async function readFloor(container) {
+    const k = floorKey(container)
+    const v = await recordFloor.get(k)
+    if (v != null) return v
+    const old = await recordFloor.get(String(container).toLowerCase())
+    if (old == null) return 0
+    await recordFloor.set(k, old)
+    return old
+  }
   const identityTtlS = Math.min(IDENTITY_CACHE_S, Math.max(0, Number.isFinite(opts.identityCacheS) ? Math.floor(opts.identityCacheS) : IDENTITY_CACHE_S))
   const identityMax = Number.isInteger(opts.identityCacheSize) && opts.identityCacheSize > 0 ? opts.identityCacheSize : IDENTITY_CACHE_SIZE
-  const needRpc = () => { if (!rpc) throw new TapeAPIError('RPC_UNAVAILABLE', 'rpcUrls not configured'); return rpc }
-  const needDirectory = () => { if (!isAddress(directory)) throw new TapeAPIError('MANIFEST_INVALID', 'directory address not configured'); return directory }
-  const needFetch = () => { if (typeof fetchImpl !== 'function') throw new TapeAPIError('PROVIDER_UNAVAILABLE', 'no fetch implementation'); return fetchImpl }
+  const needRpc = () => { if (!rpc) throw new TapeAPIError('INVALID_ARGUMENT', 'rpcUrls not configured'); return rpc }
+  const needDirectory = () => { if (!isAddress(directory)) throw new TapeAPIError('INVALID_ARGUMENT', 'directory address not configured'); return directory }
+  const needFetch = () => { if (typeof fetchImpl !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'no fetch implementation'); return fetchImpl }
 
   // ---- 链读 / chain reads ----
   async function view(to, name, args) { return decodeReturn(name, await needRpc().ethCall(to, encodeCall(name, args))) }
   const readTarget = (p) => {
     if (!(p && typeof p === 'object' && p.manifest)) return { to: escrow, provider: p }
     const to = p.manifest.payment?.escrow
-    if (!isAddress(to) || /^0x0{40}$/i.test(to)) throw new TapeAPIError('MANIFEST_INVALID', `${p.container} names no escrow: it takes no payment`)
+    if (!isAddress(to) || /^0x0{40}$/i.test(to)) throw new TapeAPIError('INVALID_ARGUMENT', `${p.container} names no escrow: it takes no payment`)
     return { to, provider: p.container }
   }
   const chain = {
@@ -206,7 +225,7 @@ export function createTapeAPI(opts = {}) {
      * 因此"自动失效"在缓存窗口内生效。
      */
     channelKeys: (container, { fresh = false } = {}) => {
-      if (!isAddress(container)) return Promise.reject(new TapeAPIError('CHANNEL_INVALID', 'channelKeys takes a container address'))
+      if (!isAddress(container)) return Promise.reject(new TapeAPIError('INVALID_ARGUMENT', 'channelKeys takes a container address'))
       return identities.lookup(container, { fresh })
     },
     // TAP-26 §3.1 fallback: a container's TapeSend (TAP-10) X25519 key. The hub withholds it unless the holder who
@@ -215,13 +234,13 @@ export function createTapeAPI(opts = {}) {
     tapeSendKey: async (target) => {
       let circuits, tokenId, expect = null
       if (typeof target === 'string') {
-        if (!isAddress(target)) throw new TapeAPIError('CHANNEL_INVALID', 'tapeSendKey takes a container address or { circuits, tokenId }')
+        if (!isAddress(target)) throw new TapeAPIError('INVALID_ARGUMENT', 'tapeSendKey takes a container address or { circuits, tokenId }')
         expect = target
         // tokenOf: an outage is an error, not NOT_FOUND (review R2-2) / 故障是错误，不是 NOT_FOUND
         ;({ circuits, tokenId } = await tokenOf(target))
       } else if (target && isAddress(target.circuits) && target.tokenId != null) {
         circuits = target.circuits; tokenId = BigInt(target.tokenId)
-      } else throw new TapeAPIError('CHANNEL_INVALID', 'tapeSendKey takes a container address or { circuits, tokenId }')
+      } else throw new TapeAPIError('INVALID_ARGUMENT', 'tapeSendKey takes a container address or { circuits, tokenId }')
       await requireCPU(circuits, 'CHANNEL_INVALID')
       const [container, endpoint, opened, current, suite, keyIndex, key, usable, version, chains] = await view(hub, 'keyFor', [circuits, tokenId])
       if (expect && !eqAddr(container, expect)) throw new TapeAPIError('CHANNEL_INVALID', `hub derives ${container} for (${circuits}, ${tokenId}), not ${expect}`)
@@ -236,9 +255,10 @@ export function createTapeAPI(opts = {}) {
       }
     },
     ownerOf: (circuits, tokenId) => view(circuits, 'ownerOf', [BigInt(tokenId)]),
-    /** ERC-6551 token() of a container on this chain: { circuits, tokenId }. NOT_FOUND when it is no container here,
-     *  CHANNEL_INVALID when it names another chain. / 容器在本链上的 token()；不是本链容器时为 NOT_FOUND 或 CHANNEL_INVALID。 */
-    tokenOf: (container) => tokenOf(container),
+    /** ERC-6551 token() of a container on this chain: { circuits, tokenId }, tokenId a decimal string like every tokenId
+     *  the SDK returns (review G1 S6; inputs still take any BigNumberish). NOT_FOUND when it is no container here,
+     *  CHANNEL_INVALID when it names another chain. / 容器在本链上的 token()；tokenId 为十进制字符串。 */
+    tokenOf: async (container) => { const t = await tokenOf(container); return { circuits: checksumAddress(t.circuits), tokenId: t.tokenId.toString() } },
     resolve: (label) => view(needDirectory(), 'resolve', [labelToBytes32(label)]),
     serviceOf: (container) => view(needDirectory(), 'serviceOf', [container]),
     readFile: (container, path) => view(siteRegistry, 'read', [container, registryKey(path)]),
@@ -299,10 +319,9 @@ export function createTapeAPI(opts = {}) {
       throw new TapeAPIError('CHANNEL_INVALID', `${container}: channel keys were not authorised by the current holder ${holder}`)
     }
     // Only an authorised record moves the floor, and never down. / 只有已授权的记录能抬高下限，且绝不降低。
-    const floorKey = container.toLowerCase()
-    const floor = (await recordFloor.get(floorKey)) ?? 0
+    const floor = await readFloor(container)
     if (r.issued < floor) bad(`issued ${r.issued} is older than a record already seen (${floor}): a replaced record was put back`)
-    if (r.issued > floor) await recordFloor.set(floorKey, r.issued)
+    if (r.issued > floor) await recordFloor.set(floorKey(container), r.issued)
     return {
       container: checksumAddress(container), chainId, circuits: checksumAddress(circuits), tokenId: tokenId.toString(),
       staticPublic: r.x25519.toLowerCase(), x25519: r.x25519.toLowerCase(), ed25519: r.ed25519.toLowerCase(), issued: r.issued, expires: r.expires,
@@ -335,7 +354,7 @@ export function createTapeAPI(opts = {}) {
       const e = cache.get(key)
       if (!e) return null
       if (e.at + identityTtlS <= now()) { cache.delete(key); return null }
-      if (e.rec && e.rec.issued < ((await recordFloor.get(key)) ?? 0)) { cache.delete(key); return null }
+      if (e.rec && e.rec.issued < (await readFloor(key))) { cache.delete(key); return null }
       return e
     }
     function read(container, key) {
@@ -457,12 +476,12 @@ export function createTapeAPI(opts = {}) {
   }
   // 只有 createTapeAPI({ dev: true }) 才能走到这里（M-06）/ reachable only with createTapeAPI({ dev: true }) (review M-06)
   async function manifestFromDev(dev) {
-    if (!devMode) throw new TapeAPIError('MANIFEST_INVALID', 'dev resolve disabled: createTapeAPI({ dev: true }) is required to resolve { dev } targets')
+    if (!devMode) throw new TapeAPIError('INVALID_ARGUMENT', 'dev resolve disabled: createTapeAPI({ dev: true }) is required to resolve { dev } targets')
     if (dev && typeof dev === 'object') return { manifest: dev, container: null, dev: true }
-    if (typeof dev !== 'string') throw new TapeAPIError('MANIFEST_INVALID', 'dev must be manifest object or url')
+    if (typeof dev !== 'string') throw new TapeAPIError('INVALID_ARGUMENT', 'dev must be manifest object or url')
     let url = dev.replace(/\/+$/, '')
     if (!/\.json$/i.test(url)) url += MANIFEST_PATH
-    let host; try { host = new URL(url).hostname } catch { throw new TapeAPIError('MANIFEST_INVALID', 'dev url is not a valid URL') }
+    let host; try { host = new URL(url).hostname } catch { throw new TapeAPIError('INVALID_ARGUMENT', 'dev url is not a valid URL') }
     // A wrong port or a dead host must surface as a TapeAPIError like every other failure; a raw
     // `TypeError: fetch failed` escapes the `instanceof TapeAPIError` handling the docs teach.
     // 端口写错或主机没起，必须和其它失败一样是 TapeAPIError；原生 `TypeError: fetch failed` 会穿过
@@ -552,15 +571,15 @@ export function createTapeAPI(opts = {}) {
     const n = Number(id)
     if (n === Number(chainId)) return api
     if (typeof opts._router === 'function') return opts._router(n)
-    if (!chainById(n)) throw new TapeAPIError('MANIFEST_INVALID', `chain ${id} is not a TapeOut chain this SDK supports (${CHAIN_IDS.join(', ')})`)
+    if (!chainById(n)) throw new TapeAPIError('INVALID_ARGUMENT', `chain ${id} is not a TapeOut chain this SDK supports (${CHAIN_IDS.join(', ')})`)
     let sub = subClients.get(n)
     if (!sub) {
       const conf = opts.chains?.[n] ?? {}
       sub = createTapeAPI({
-        chainId: n, rpcUrls: conf.rpcUrls ?? rpcUrlsFor(n), quorum: conf.quorum ?? 2, timeoutMs: conf.timeoutMs ?? opts.timeoutMs,
+        chainId: n, rpcUrls: conf.rpcUrls ?? rpcUrlsFor(n), quorum: conf.quorum ?? 2, rpcTimeoutMs: conf.rpcTimeoutMs ?? opts.rpcTimeoutMs,
         allowSingleNode: conf.allowSingleNode === true, hub: conf.hub, factory: conf.factory, siteRegistry: conf.siteRegistry,
         fetch: opts.fetch, dev: opts.dev, allowHttp: opts.allowHttp, maxSkewS: opts.maxSkewS,
-        identityCacheS: opts.identityCacheS, identityCacheSize: opts.identityCacheSize, _router: forChain,
+        identityCacheS: opts.identityCacheS, identityCacheSize: opts.identityCacheSize, channelRecordFloor: recordFloor, _router: forChain,
       })
       subClients.set(n, sub)
     }
@@ -572,7 +591,7 @@ export function createTapeAPI(opts = {}) {
     if (typeof target === 'string') return tapeName(target)?.chainId ?? null
     if (target && typeof target === 'object' && !('dev' in target) && target.chainId !== undefined) {
       const n = Number(target.chainId)
-      if (!Number.isSafeInteger(n) || n < 1) throw new TapeAPIError('MANIFEST_INVALID', 'target.chainId must be a chain id')
+      if (!Number.isSafeInteger(n) || n < 1) throw new TapeAPIError('INVALID_ARGUMENT', 'target.chainId must be a chain id')
       return n
     }
     return null
@@ -588,7 +607,7 @@ export function createTapeAPI(opts = {}) {
    * 没找到且某条链读取失败时抛出该错误："读不到"不等于"不是容器"。
    */
   async function chainOfContainer(container) {
-    if (!isAddress(container)) throw new TapeAPIError('MANIFEST_INVALID', 'chainOfContainer takes a container address')
+    if (!isAddress(container)) throw new TapeAPIError('INVALID_ARGUMENT', 'chainOfContainer takes a container address')
     const ids = [Number(chainId), ...CHAIN_IDS.filter((id) => id !== Number(chainId))]
     const settled = await Promise.allSettled(ids.map(async (id) => {
       try { await forChain(id).chain.tokenOf(container); return id } catch (e) {
@@ -642,8 +661,8 @@ export function createTapeAPI(opts = {}) {
       if ('dev' in target) src = await manifestFromDev(target.dev)
       else if (target.circuits && target.tokenId != null) src = await manifestFromContainer(await chain.accountOf(target.circuits, target.tokenId))
       else if (target.chainId !== undefined && isAddress(target.container)) src = await manifestFromContainer(target.container)
-      else throw new TapeAPIError('MANIFEST_INVALID', 'unsupported resolve target')
-    } else throw new TapeAPIError('MANIFEST_INVALID', 'unsupported resolve target')
+      else throw new TapeAPIError('INVALID_ARGUMENT', 'unsupported resolve target')
+    } else throw new TapeAPIError('INVALID_ARGUMENT', 'unsupported resolve target')
 
     // 只有 dev 来源的清单才放宽校验；dev: true 不影响链上来源清单（M-06）/ only dev-sourced manifests are relaxed
     const dev = !!src.dev
@@ -695,7 +714,7 @@ export function createTapeAPI(opts = {}) {
   async function refresh(svc) {
     const owner = ownerOf(svc)
     if (owner) return owner.refresh(svc)
-    if (svc?.target === undefined) throw new TapeAPIError('MANIFEST_INVALID', 'svc has no target to refresh from; it did not come from api.resolve()')
+    if (svc?.target === undefined) throw new TapeAPIError('INVALID_ARGUMENT', 'svc has no target to refresh from; it did not come from api.resolve()')
     // N concurrent calls on one stale service share one re-read instead of running N (runtime audit F-10).
     // 同一服务上的 N 个并发调用共用一次重读，而不是各跑一次。
     const inflight = REFRESHING.get(svc)
@@ -734,7 +753,7 @@ export function createTapeAPI(opts = {}) {
     const owner = ownerOf(svc)
     if (owner) return owner.call(svc, method, params, options)
     const { payer, id, signal, timeoutMs = 30000, manifestTtlMs = MANIFEST_TTL_MS, maxPrice } = options ?? {}
-    let m = svc?.manifest; if (!m) throw new TapeAPIError('MANIFEST_INVALID', 'svc.manifest missing')
+    let m = svc?.manifest; if (!m) throw new TapeAPIError('INVALID_ARGUMENT', 'svc.manifest missing')
     // 信封只对 manifest.signer 验签，而 signer 的可信度完全来自 resolve() 做过的委托校验。
     // 自己拼一个 { manifest, container } 直接 call，等于没有任何来源认证，所以必须拒绝（M-16）。
     // Envelopes are verified against manifest.signer, and that signer is only trustworthy because resolve() checked
@@ -840,7 +859,8 @@ export function createTapeAPI(opts = {}) {
     const body = { id: reqId, method, params }
     let lease = null
     if (price > 0n) { lease = await payer.reserve(svc, price); body.voucher = lease.voucher }
-    const ac = new AbortController(); const t = setTimeout(() => ac.abort(), timeoutMs)
+    let timedOut = false
+    const ac = new AbortController(); const t = setTimeout(() => { timedOut = true; ac.abort() }, timeoutMs)
     const onAbort = () => ac.abort()
     if (signal) { if (signal.aborted) ac.abort(); else signal.addEventListener('abort', onAbort, { once: true }) }
     let res, env
@@ -888,7 +908,9 @@ export function createTapeAPI(opts = {}) {
     if (lastErr) {
       lease?.release() // 传输失败：不知道提供者是否消费，释放预留 / released; the resync path fixes any drift
       if (lastErr instanceof TapeAPIError && lastErr.code === 'PROVIDER_UNAVAILABLE') throw lastErr
-      throw new TapeAPIError('PROVIDER_UNAVAILABLE', `provider request failed on all ${urls.length} endpoint(s): ${lastErr.message}`)
+      // The caller's own abort or timeout is told apart from an unreachable provider (review G1 S5). / 区分调用方的中止或超时。
+      const why = ac.signal.aborted ? (timedOut ? { timedOut: true } : { aborted: true }) : undefined
+      throw new TapeAPIError('PROVIDER_UNAVAILABLE', `provider request failed on all ${urls.length} endpoint(s): ${why?.timedOut ? `no answer within ${timeoutMs} ms` : why?.aborted ? 'aborted by the caller' : lastErr.message}`, why ? { data: why } : undefined)
     }
     // 信封校验：用自己发出的 method/params 与解析出的 container 重算摘要（TAP-21 v2）/ recompute with our own request
     // BAD_SIGNATURE re-reads the manifest first (SD-2); awaited at every call site, so it still ends the attempt.
@@ -990,14 +1012,14 @@ export function createTapeAPI(opts = {}) {
   function validateCompare(compare) {
     const { relTolBps, paths } = compare
     if (!Number.isInteger(relTolBps) || relTolBps < 0 || relTolBps > 10_000) {
-      throw new TapeAPIError('BAD_REQUEST', 'compare.relTolBps must be an integer in 0..10000')
+      throw new TapeAPIError('INVALID_ARGUMENT', 'compare.relTolBps must be an integer in 0..10000')
     }
     if (!Array.isArray(paths) || paths.length === 0) {
-      throw new TapeAPIError('BAD_REQUEST', 'compare.paths must be a non-empty array of dotted paths')
+      throw new TapeAPIError('INVALID_ARGUMENT', 'compare.paths must be a non-empty array of dotted paths')
     }
     for (const p of paths) {
       if (typeof p !== 'string' || !p || p.split('.').some((k) => !k)) {
-        throw new TapeAPIError('BAD_REQUEST', `compare.paths: ${JSON.stringify(p)} is not a dotted path`)
+        throw new TapeAPIError('INVALID_ARGUMENT', `compare.paths: ${JSON.stringify(p)} is not a dotted path`)
       }
     }
   }
@@ -1051,8 +1073,9 @@ export function createTapeAPI(opts = {}) {
   // "forgeable by quorum colluding providers", and is only safe when the caller picked the set itself.
   async function callQuorum(services, method, params = {}, { quorum = 2, payer, compare, onDissent = 'reject', allowSingleProvider = false, ...callOpts } = {}) {
     const fail = (msg, extra) => { throw new TapeAPIError('QUORUM_FAILED', `${method}: ${msg}`, extra) }
-    if (!Array.isArray(services) || services.length === 0) fail('services must be a non-empty array of resolved services')
-    if (!Number.isInteger(quorum) || quorum < 1) fail('quorum must be a positive integer')
+    const invalid = (msg) => { throw new TapeAPIError('INVALID_ARGUMENT', `${method}: ${msg}`) }   // the caller's own options / 调用方自己的选项
+    if (!Array.isArray(services) || services.length === 0) invalid('services must be a non-empty array of resolved services')
+    if (!Number.isInteger(quorum) || quorum < 1) invalid('quorum must be a positive integer')
     // TAP-23 §3.4(1): N ≥ 2. One provider is one opinion; the opt-out exists for tests and must be spelled out.
     // TAP-23 §3.4(1)：N ≥ 2。一个提供者只是一个意见；退出开关仅供测试，且必须显式写出。
     if (quorum < 2 && allowSingleProvider !== true) fail('quorum must be at least 2 (TAP-23 §3.4); pass allowSingleProvider: true to accept one provider')
@@ -1061,7 +1084,7 @@ export function createTapeAPI(opts = {}) {
     const seen = new Set(); const holders = new Map(); const origins = new Map()
     for (const s of services) {
       const c = s?.container && isAddress(s.container) ? s.container.toLowerCase() : null
-      if (!c) fail('each service needs a container (pass results of api.resolve)')
+      if (!c) invalid('each service needs a container (pass results of api.resolve)')
       if (seen.has(c)) fail(`duplicate provider ${s.container}; quorum requires independent providers`)
       seen.add(c)
       const h = typeof s.verified?.holder === 'string' ? s.verified.holder.toLowerCase() : null
@@ -1075,7 +1098,7 @@ export function createTapeAPI(opts = {}) {
     }
     if (services.length < quorum) fail(`quorum ${quorum} needs at least ${quorum} providers, got ${services.length}`)
     // 调用方自己的参数先校验，再花钱 / the caller's own options are validated before any paid request goes out
-    if (onDissent !== 'reject' && onDissent !== 'quorum') fail("onDissent must be 'reject' or 'quorum'")
+    if (onDissent !== 'reject' && onDissent !== 'quorum') invalid("onDissent must be 'reject' or 'quorum'")
     if (compare) validateCompare(compare)
     // Attested Read (TAP-23): a method whose descriptor carries `attestedRead` on any selected service.
     // 见证读取（TAP-23）：任一所选服务的方法描述符带有 `attestedRead`。
@@ -1199,13 +1222,13 @@ export function createTapeAPI(opts = {}) {
   // (consumer, provider) channel). Clamping expires to sessionExpiry would void every voucher at session
   // expiry and needlessly shorten the provider's settlement room. voucher.expires is bounded by ttl alone.
   function payer({ consumer, sessionKey, signTypedData, ttl = 3600, sessionExpiry, store } = {}) {
-    if (!isAddress(consumer)) throw new TapeAPIError('BAD_VOUCHER', 'payer.consumer must be address')
-    if (!sessionKey && typeof signTypedData !== 'function') throw new TapeAPIError('BAD_VOUCHER', 'payer needs sessionKey or signTypedData')
-    if (store && (typeof store.get !== 'function' || typeof store.set !== 'function')) throw new TapeAPIError('BAD_VOUCHER', 'payer.store needs get(key) and set(key, value)')
+    if (!isAddress(consumer)) throw new TapeAPIError('INVALID_ARGUMENT', 'payer.consumer must be address')
+    if (!sessionKey && typeof signTypedData !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'payer needs sessionKey or signTypedData')
+    if (store && (typeof store.get !== 'function' || typeof store.set !== 'function')) throw new TapeAPIError('INVALID_ARGUMENT', 'payer.store needs get(key) and set(key, value)')
     const signerAddr = sessionKey ? privateKeyToAddress(sessionKey) : checksumAddress(consumer)
     const consumerAddr = checksumAddress(consumer)
     const sessionEnd = sessionKey && sessionExpiry != null ? Number(sessionExpiry) : null
-    if (sessionEnd !== null && !Number.isSafeInteger(sessionEnd)) throw new TapeAPIError('BAD_VOUCHER', 'payer.sessionExpiry must be unix seconds')
+    if (sessionEnd !== null && !Number.isSafeInteger(sessionEnd)) throw new TapeAPIError('INVALID_ARGUMENT', 'payer.sessionExpiry must be unix seconds')
     const mem = new Map()
     const st = store || { get: (k) => mem.get(k) ?? null, set: (k, v) => { mem.set(k, v) } }
     const accounts = new Map() // chainId:escrow:provider -> { committed, loaded, inflight: Set<bigint>, chain }
@@ -1219,11 +1242,11 @@ export function createTapeAPI(opts = {}) {
     const escrowOf = (svc, required) => {
       const e = svc?.manifest?.payment?.escrow || escrow
       if (isAddress(e)) return checksumAddress(e)
-      if (required) throw new TapeAPIError('BAD_VOUCHER', 'escrow address unknown')
+      if (required) throw new TapeAPIError('INVALID_ARGUMENT', 'escrow address unknown')
       return null
     }
     const key = (svc) => {
-      if (!svc?.container || !isAddress(svc.container)) throw new TapeAPIError('BAD_VOUCHER', 'svc.container missing')
+      if (!svc?.container || !isAddress(svc.container)) throw new TapeAPIError('INVALID_ARGUMENT', 'svc.container missing')
       return `${chainId}:${(escrowOf(svc, false) || 'no-escrow').toLowerCase()}:${svc.container.toLowerCase()}`
     }
     const storeKey = (k) => `${consumerAddr.toLowerCase()}:${k}`
@@ -1323,7 +1346,7 @@ export function createTapeAPI(opts = {}) {
       reserve: (svc, price) => serial(acct(svc), async () => {
         const a = acct(svc); await load(a)
         const amount = BigInt(price)
-        if (amount <= 0n) throw new TapeAPIError('BAD_VOUCHER', 'price must be positive')
+        if (amount <= 0n) throw new TapeAPIError('INVALID_ARGUMENT', 'price must be positive')
         const next = floor(a) + amount
         const voucher = await sign(svc, next)
         a.inflight.add(next)
@@ -1342,7 +1365,7 @@ export function createTapeAPI(opts = {}) {
 
   // ---- tx 构造 / calldata builders ----
   const hex = (n) => '0x' + BigInt(n).toString(16)
-  const needEscrow = () => { if (!isAddress(escrow)) throw new TapeAPIError('MANIFEST_INVALID', 'escrow address not configured'); return escrow }
+  const needEscrow = () => { if (!isAddress(escrow)) throw new TapeAPIError('INVALID_ARGUMENT', 'escrow address not configured'); return escrow }
   // TAP-22 §3.4: a service names its escrow in its manifest, and clients MUST use that address. Every channel
   // builder therefore takes either a provider address (configured escrow) or a resolved service, whose own
   // payment.escrow wins -- otherwise a consumer could fund escrow A for a service that settles on escrow B (D15).
@@ -1351,10 +1374,10 @@ export function createTapeAPI(opts = {}) {
   const channelOf = (target) => {
     if (target && typeof target === 'object' && target.manifest) {
       const esc = target.manifest.payment?.escrow
-      if (!isAddress(esc) || /^0x0{40}$/i.test(esc)) throw new TapeAPIError('MANIFEST_INVALID', `${target.container} names no escrow: it takes no payment`)
+      if (!isAddress(esc) || /^0x0{40}$/i.test(esc)) throw new TapeAPIError('INVALID_ARGUMENT', `${target.container} names no escrow: it takes no payment`)
       return { to: esc, provider: target.container }
     }
-    if (!isAddress(target)) throw new TapeAPIError('ABI_INVALID', 'provider must be an address or a resolved service')
+    if (!isAddress(target)) throw new TapeAPIError('INVALID_ARGUMENT', 'provider must be an address or a resolved service')
     return { to: needEscrow(), provider: target }
   }
   const onChannel = (target, fn, args) => { const c = channelOf(target); return { to: c.to, data: encodeCall(fn, [c.provider, ...args]), value: '0x0' } }
@@ -1368,10 +1391,10 @@ export function createTapeAPI(opts = {}) {
     // unlimited approval would hand a hostile provider the consumer's whole balance (review H-1). Approve what you fund.
     // `amount` 必填：被授权方可能是服务方在清单里选定的托管合约，无限授权等于把消费者全部余额交给恶意服务方。授权多少就充值多少。
     approve: ({ amount, token = MAINNET.bem, spender } = {}) => {
-      if (!isAddress(token)) throw new TapeAPIError('ABI_INVALID', 'token must be an address')
-      if (amount === undefined || amount === null) throw new TapeAPIError('ABI_INVALID', 'approve needs an amount: approve exactly what you will fund, never an unlimited allowance')
+      if (!isAddress(token)) throw new TapeAPIError('INVALID_ARGUMENT', 'token must be an address')
+      if (amount === undefined || amount === null) throw new TapeAPIError('INVALID_ARGUMENT', 'approve needs an amount: approve exactly what you will fund, never an unlimited allowance')
       const a = BigInt(amount)
-      if (a <= 0n || a >= 2n ** 255n) throw new TapeAPIError('ABI_INVALID', 'approve amount must be positive and bounded')
+      if (a <= 0n || a >= 2n ** 255n) throw new TapeAPIError('INVALID_ARGUMENT', 'approve amount must be positive and bounded')
       return { to: token, data: encodeCall('approve', [spender ? channelOf(spender).to : needEscrow(), a]), value: '0x0' }
     },
     fund: (provider, amount) => onChannel(provider, 'fund', [BigInt(amount)]),
@@ -1388,7 +1411,7 @@ export function createTapeAPI(opts = {}) {
     // 持有人为自己的服务设置贡献比例（万分比，0..5000）/ holder opts a service in to a contribution (bps, 0..5000)
     setContribution: ({ circuits, tokenId, bps, escrow: esc }) => {
       const n = Number(bps)
-      if (!Number.isInteger(n) || n < 0 || n > MAX_CONTRIBUTION_BPS) throw new TapeAPIError('ABI_INVALID', `bps must be an integer 0..${MAX_CONTRIBUTION_BPS}`)
+      if (!Number.isInteger(n) || n < 0 || n > MAX_CONTRIBUTION_BPS) throw new TapeAPIError('INVALID_ARGUMENT', `bps must be an integer 0..${MAX_CONTRIBUTION_BPS}`)
       return { to: isAddress(esc) ? esc : needEscrow(), data: encodeCall('setContribution', [circuits, BigInt(tokenId), n]), value: '0x0' }
     },
     // `value` defaults to 0 on purpose. The directory keeps whatever is attached in every branch, and
@@ -1402,7 +1425,7 @@ export function createTapeAPI(opts = {}) {
     // 把清单写进容器的 DeWEB 站点：第一块 ≤ 24,000 字节走 putFile，其余逐块 appendChunk。返回必须按顺序发送的交易，
     // 由电路持有者（或 SiteRegistry 操作员）签名。键是裸的 `.well-known/tapeapi.json`。
     publishManifest: ({ container, manifest, contentType = 'application/json' }) => {
-      if (typeof container !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(container)) throw new TapeAPIError('MANIFEST_INVALID', 'publishManifest: container must be an address')
+      if (typeof container !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(container)) throw new TapeAPIError('INVALID_ARGUMENT', 'publishManifest: container must be an address')
       const text = typeof manifest === 'string' ? manifest : JSON.stringify(manifest)
       let parsed
       try { parsed = JSON.parse(text) } catch (e) { throw new TapeAPIError('MANIFEST_INVALID', `publishManifest: manifest is not JSON: ${e.message}`) }
@@ -1431,8 +1454,8 @@ export function createTapeAPI(opts = {}) {
      * 在容器站点发布通道身份记录，与清单走同一条 putFile 路径。删除该文件即可在到期前撤回身份。
      */
     publishChannelKeys: ({ container, record }) => {
-      if (!isAddress(container)) throw new TapeAPIError('CHANNEL_INVALID', 'publishChannelKeys: container must be an address')
-      if (!record || record.tapechannel !== '1' || !eqAddr(record.container, container)) throw new TapeAPIError('CHANNEL_INVALID', 'publishChannelKeys: record must be a tapechannel "1" record for this container')
+      if (!isAddress(container)) throw new TapeAPIError('INVALID_ARGUMENT', 'publishChannelKeys: container must be an address')
+      if (!record || record.tapechannel !== '1' || !eqAddr(record.container, container)) throw new TapeAPIError('INVALID_ARGUMENT', 'publishChannelKeys: record must be a tapechannel "1" record for this container')
       const bytes = new TextEncoder().encode(canonicalJSON(record))
       if (bytes.length > CHANNEL_KEYS_LIMIT) throw new TapeAPIError('CHANNEL_INVALID', `publishChannelKeys: ${bytes.length} bytes exceeds ${CHANNEL_KEYS_LIMIT}`)
       return { txs: [{ to: siteRegistry, data: encodeCall('putFile', [container, CHANNEL_KEYS_KEY, 'application/json', toHex(sha256(bytes)), toHex(bytes)]), value: '0x0' }], key: CHANNEL_KEYS_KEY, size: bytes.length, sha256Hash: toHex(sha256(bytes)) }
@@ -1480,6 +1503,6 @@ export function createTapeAPI(opts = {}) {
 
   // `forChain(id)`: the client for another TapeOut chain (this one for its own); `chainOfContainer(address)`: which chain a
   // container lives on. / `forChain(id)`：另一条 TapeOut 链的客户端；`chainOfContainer(address)`：容器在哪条链上。
-  const api = { resolve, refresh, acceptPrice, acceptedPrice, call, callQuorum, payer, tx, rpc, chain, chainId, groupVerifier, addresses: { hub, siteRegistry, directory, escrow }, randomPrivateKey, forChain, chainOfContainer }
+  const api = { resolve, refresh, acceptPrice, acceptedPrice, call, callQuorum, payer, tx, rpc, chain, chainId, groupVerifier, addresses: { hub, siteRegistry, factory, directory, escrow }, randomPrivateKey, forChain, chainOfContainer }
   return api
 }

@@ -16,7 +16,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 Or install just the SDK into your own project from the GitHub release (not the npm registry):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz
 ```
 
 Save the scripts below as `.mjs` files **inside the `tapeapi` directory** and run them with `node <file>.mjs`.
@@ -116,6 +116,7 @@ try {
 
 | Code | Meaning | What to do |
 |---|---|---|
+| `INVALID_ARGUMENT` | Your own options or arguments are wrong (a missing `rpcUrls`, an unsupported target, a bad option). Nothing was sent. | Fix the call; never retry it. |
 | `RPC_UNAVAILABLE` | Fewer RPC nodes answered than the quorum. | Retry; add a node. |
 | `RPC_DISAGREE` | Nodes returned different bytes. | Retry; if it persists, one node is lagging or lying. |
 | `MANIFEST_INVALID` | No manifest, a bad one, or its bytes do not match the chain. | The service is not (correctly) published. |
@@ -125,7 +126,7 @@ try {
 | `PRICE_CHANGED` | The price rose above what you accepted. | Ask your user, then `api.acceptPrice(svc, method)` or pass `{ maxPrice }`. |
 | `QUORUM_FAILED` | Providers in `callQuorum` did not agree. | Treat as no answer. |
 
-The full list is in [TAP-21](../../spec/TAP-21.md). Errors sent by the service are signed too (`e.signed`).
+The full list is in [Upgrading to 1.0](upgrade-1.0.md#error-codes) and [TAP-21](../../spec/TAP-21.md). Errors sent by the service are signed too (`e.signed`).
 
 ## 4. Require agreement between providers
 
@@ -145,6 +146,8 @@ random id, `latest` reads) differ by design. A protocol that consumes a single-s
 freshness checks and a circuit breaker.
 
 ## 5. Pay for calls
+
+> **Experimental.** Payments (TAP-22 payment channels and the escrow contract) are not deployed or audited and are not covered by the 1.0 stability promise: the names below may change in a 1.x minor release. See [Upgrading to 1.0](upgrade-1.0.md#what-10-promises).
 
 Free methods need nothing. Paid methods take a voucher signed by the consumer ([TAP-22](../../spec/TAP-22.md)):
 

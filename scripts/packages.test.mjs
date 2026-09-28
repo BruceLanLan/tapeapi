@@ -86,10 +86,18 @@ test('dependencies: exact @noble versions, server takes the sdk by a range its c
   assert.deepEqual([...new Set(bare('server'))], ['@tapeapi/sdk'])
   assert.deepEqual(Object.keys(PKGS.server.dependencies), ['@tapeapi/sdk'])
   const range = PKGS.server.dependencies['@tapeapi/sdk']
-  const m = /^\^(\d+)\.(\d+)\.(\d+)$/.exec(range)
+  const m = /^\^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.]+))?$/.exec(range)
   assert.ok(m, `server depends on @tapeapi/sdk by a caret range, got ${range}`)
-  const [maj, min, pat] = PKGS.sdk.version.split('.').map(Number)
-  const [rMaj, rMin, rPat] = m.slice(1).map(Number)
+  const v = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.]+))?$/.exec(PKGS.sdk.version)
+  assert.ok(v, `sdk version ${PKGS.sdk.version} is semver`)
+  const [maj, min, pat] = v.slice(1, 4).map(Number)
+  const [rMaj, rMin, rPat] = m.slice(1, 4).map(Number)
+  // A pre-release range (^1.0.0-rc.1) matches pre-releases of that same version only, as npm's semver does: the SDK must
+  // be that exact pre-release (we ship the two together). / 预发布范围只匹配同一版本的预发布（与 npm semver 一致）：两包同发，要求完全一致。
+  if (m[4] !== undefined || v[4] !== undefined) {
+    assert.equal(PKGS.sdk.version, range.slice(1), `@tapeapi/sdk ${PKGS.sdk.version} must be the server's pre-release ${range}`)
+    return
+  }
   // ^0.x.y pins the minor below 1.0.0 / 1.0.0 之前 ^0.x.y 锁定次版本
   const ok = rMaj > 0 ? maj === rMaj && (min > rMin || (min === rMin && pat >= rPat)) : maj === 0 && min === rMin && pat >= rPat
   assert.ok(ok, `@tapeapi/sdk ${PKGS.sdk.version} must satisfy the server's ${range}`)
@@ -110,14 +118,13 @@ function declaredValues(file) {
 test('declarations name every runtime export of every subpath', async () => {
   const cases = [
     ...Object.entries(PKGS.sdk.exports).filter(([s]) => s !== './package.json').map(([s, v]) => ['sdk', s, v]),
-    ['sdk', 'group', { default: './src/group.js', types: './types/group.d.ts' }],
+    ['sdk', 'group', { default: './src/group-public.js', types: './types/group.d.ts' }],
     ['sdk', 'group-delivery', { default: './src/group-delivery.js', types: './types/group-delivery.d.ts' }],
     ['sdk', 'tapesend', { default: './src/tapesend.js', types: './types/tapesend.d.ts' }],
     ['server', '.', PKGS.server.exports['.']],
     ['server', './mcp', PKGS.server.exports['./mcp']],
     ['server', './mcp-proxy', PKGS.server.exports['./mcp-proxy']],
     ['server', './ai-proxy', PKGS.server.exports['./ai-proxy']],
-    ['server', './openai-proxy', PKGS.server.exports['./openai-proxy']],
   ]
   for (const [dir, sub, value] of cases) {
     const runtime = Object.keys(await import(pathToFileURL(join(ROOT, dir, value.default)).href)).sort()
@@ -156,4 +163,24 @@ test('every documented @tapeapi/<pkg>/<subpath> import is in the exports map', (
   const bad = found.filter(({ pkg, sub }) => !(sub in PKGS[pkg].exports)).map(({ pkg, sub, where }) => `@tapeapi/${pkg}${sub.slice(1)} in ${where}`)
   assert.deepEqual([...new Set(bad)], [])
   assert.ok(found.some((x) => x.sub === './webmcp'), 'the scan sees the documented @tapeapi/sdk/webmcp import')
+})
+
+// FIXED RC-12 (review 2026-09-29, O P1-9 / F P1-3): `npm i @tapeapi/server` is a 404: neither package is on npm. Tried
+// in a scratch project (2026-09-29, npm 10.9.8): the server's tgz alone fails (npm looks up its dependency @tapeapi/sdk in
+// the registry: E404), while the SDK's tgz and then the server's tgz from the same release (or both in one command)
+// install and import, and `npm ci` from the resulting lock works. So each release carries both files, and the docs say
+// to install both, the SDK first. / 单独装 server 的 tgz 会失败（npm 去 registry 找 @tapeapi/sdk）；先装同一发布的 SDK tgz 再装
+// server tgz（或一条命令同时装）可行。所以每次发布两个文件都上传，文档写两行安装命令，SDK 在前。
+test('FIXED RC-12: the server is installed from the release, after the SDK from the same release, never `npm i @tapeapi/server`', () => {
+  const RELEASE = /https:\/\/github\.com\/BruceLanLan\/tapeapi\/releases\/download\/(v[^/]+)\/tapeapi-(sdk|server)-([^/\s]+)\.tgz/g
+  const readme = readFileSync(join(ROOT, 'server/README.md'), 'utf8')
+  assert.doesNotMatch(readme, /npm (i|install) @tapeapi\/server\b/)
+  const install = /## Install\n([\s\S]*?)\n## /.exec(readme)[1]
+  const urls = [...install.matchAll(RELEASE)].map((m) => ({ tag: m[1], pkg: m[2], version: m[3] }))
+  assert.deepEqual(urls.map((u) => u.pkg), ['sdk', 'server'], 'the SDK first, then the server')
+  assert.equal(new Set(urls.map((u) => `${u.tag}/${u.version}`)).size, 1, 'both from one release')
+  for (const f of ['docs/guides/mcp.md', 'docs/guides/zh-CN/mcp.md']) {
+    const t = readFileSync(join(ROOT, f), 'utf8')
+    assert.doesNotMatch(t, /server package has no release file|服务端包也还没有\s*发布文件/, f)
+  }
 })

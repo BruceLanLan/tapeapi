@@ -35,7 +35,7 @@ export function build(env, extra = {}) {
     manifestBase: manifestBaseOf(env),
     signerKey: env.SIGNER_KEY,
     toolsSha256: env.TOOLS_SHA256 || undefined,
-    identity: { name: env.TAPE_NAME || undefined },
+    name: env.TAPE_NAME || undefined,
     // LINK_CONTENT=1 puts params and results in the verify links, in clear; default: hashes only.
     // LINK_CONTENT=1 让核验链接带明文参数与结果；默认只带哈希。
     linkContent: env.LINK_CONTENT === '1',

@@ -60,7 +60,7 @@ async function readPair(pairAddr, block) {
 }
 
 const provider = createProvider({
-  manifest, signerKey: SIGNER_KEY, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID, allowSingleNode: !PROD, log, store,
+  manifest, signerKey: SIGNER_KEY, dev: !PROD, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID, allowSingleNode: !PROD, log, store,
   methods: {
     // 收费：任意 V2 pair 的价格；block 可选（默认 finalized）/ paid: price of any V2 pair; optional block (default finalized)
     pairPrice: async ({ pair, block } = {}) => readPair(pair ?? DEFAULT_PAIR, block),

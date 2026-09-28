@@ -95,7 +95,7 @@ test('dashboard: read-only: the wallet is asked for its address and nothing else
   const inner = [...js.matchAll(/innerHTML\s*=/g)]
   assert.equal(inner.length, 1)
   assert.match(js, /n\.innerHTML = t\(n\.getAttribute\('data-i18n'\)\)/)
-  assert.match(js, /createTapeAPI\(\{ rpcUrls: RPC_URLS, quorum: QUORUM, timeoutMs: 4000 \}\)/)
+  assert.match(js, /createTapeAPI\(\{ rpcUrls: RPC_URLS, quorum: QUORUM, rpcTimeoutMs: 4000 \}\)/)
   assert.match(js, /const QUORUM = 2\b/)
 })
 
@@ -188,4 +188,17 @@ test('lib: add, remove, dedupe, and same-address checks', () => {
   assert.equal(sameAddress(a, '0x' + '0'.repeat(40)), false)
   assert.equal(sameAddress(a, null), false)
   assert.equal(sameAddress('0x12', '0x12'), false)
+})
+
+// FIXED RC-1 (review 2026-09-29): S4 renamed createTapeAPI's per-node timeout to rpcTimeoutMs and refuses the old name,
+// but the dashboard still passed timeoutMs, so the page failed on load. Every page script is checked, not just this one.
+// FIXED RC-1：S4 把 createTapeAPI 的单节点超时改名为 rpcTimeoutMs 并拒绝旧名字，面板仍传 timeoutMs，页面一加载就失败。
+test('FIXED RC-1: no page script passes the removed createTapeAPI option timeoutMs', async () => {
+  const { readdirSync, statSync, readFileSync: rd } = await import('node:fs')
+  const { join: j } = await import('node:path')
+  const site = SITE
+  const bad = []
+  const walk = (d) => { for (const n of readdirSync(d)) { const p = j(d, n); if (statSync(p).isDirectory()) { if (n !== 'vendor') walk(p) } else if (n.endsWith('.js')) { const t = rd(p, 'utf8'); for (const m of t.matchAll(/createTapeAPI\(\s*\{[^}]*\btimeoutMs\s*:/g)) bad.push(`${p}: ${m[0].slice(0, 80)}`) } } }
+  walk(site)
+  assert.deepEqual(bad, [])
 })

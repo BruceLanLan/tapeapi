@@ -19,7 +19,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "
 
 ## 1. Abstract
 
-A TapeOut Proposal (TAP) is a design document that proposes a change to, or a standard built on, the TapeOut protocol. This document defines what a TAP is, the types of TAPs, their lifecycle, numbering, required contents, the criteria for reaching Final, and the roles of editors and maintainers. It is deliberately short; when this document is silent, editors SHOULD follow the spirit of EIP-1. It is offered to the TapeKit maintainers as a suggestion, not as a process they have adopted.
+A TapeOut Proposal (TAP) is a design document that proposes a change to, or a standard built on, the TapeOut protocol. This document defines what a TAP is, the types of TAPs, their lifecycle, numbering, required contents, the criteria for reaching Final, and the roles of editors and maintainers; it also defines the interim statuses, Stable (v1) among them, that the documents of this repository use until TapeKit adopts a process. It is deliberately short; when this document is silent, editors SHOULD follow the spirit of EIP-1. It is offered to the TapeKit maintainers as a suggestion, not as a process they have adopted.
 
 ## 2. Motivation
 
@@ -46,6 +46,33 @@ The goal of TAP-1 is to give ecosystem contributors a defined entrance. The proc
 
 Status transitions are recorded by editors in the front matter.
 
+### 4.1 Interim Statuses: Stable (v1)
+
+TapeKit has no numbered-proposal process yet (§5), so no document can reach Final under §4. Until it has one, the documents this repository publishes (TAP-20 to TAP-27) carry one of the four statuses below in their `Status` row. They are this repository's own labels for its own documents: they are not TapeKit statuses and claim no endorsement by the maintainers.
+
+- **Draft**: as in §4 item 2. Normative text can still change, including incompatibly.
+- **Stable (v1)**: version 1 of the document is frozen under the rules below. A document reaches it once its test vectors are complete and checked by independent implementations (§6 item 6).
+- **Experimental**: published for review and implementation experience, outside the stability promise. It can change incompatibly or be withdrawn at any time, without a new version.
+- **Withdrawn**: as in §4 item 7. The text is kept for the record; implementations SHOULD NOT implement it, and its number is not reused.
+
+A document that intends to become Stable (v1) MAY say so while still in Draft with the optional `Target` row (§6), for example `Target | Stable (v1) at TapeAPI 1.0`. The row is a plan, not a status: the document stays Draft, with everything that implies, until its `Status` row changes.
+
+**The freeze.** Once a document is Stable (v1):
+
+1. Every field, encoding, signature domain (digest prefixes and layouts, EIP-712 domains and type strings, key-derivation labels) and error code it defines MUST keep its meaning. None is removed, renamed, re-typed or given a new meaning.
+2. A revision MAY add only (a) OPTIONAL content, i.e. a new field, method, error code or behaviour that a v1 implementation ignoring it stays conformant without, and (b) non-normative text: clarifications, examples, test vectors and implementation status. A new requirement that would make a conformant v1 implementation non-conformant is not an addition and MUST NOT be made in v1.
+3. A section of a Stable (v1) document MAY be marked Experimental (for example a contract that is not deployed). That section is outside the freeze, and the rest of the document MUST NOT depend on it.
+4. Every revision is recorded, with its date, in the `Revision` row.
+
+**Breaking changes and coexistence.** A change the freeze does not allow MUST be made as a new version, v2, and never as an edit of v1:
+
+1. v2 is a new document (or a new number) with its own status, and wherever v1 carries a version marker on the wire (a digest prefix, the manifest's `tapeapi` version, an EIP-712 `version`, a key-derivation label), v2 carries its own, so that a v1 message and a v2 message can never be taken for each other.
+2. Publishing v2 does not change v1: v1 stays Stable (v1), and conformant v1 implementations stay conformant.
+3. A verifier MUST NOT accept a message under a version it does not implement, and MUST NOT interpret a message of one version under the rules of the other. An implementation MAY implement both versions side by side, and a provider MAY offer both at once.
+4. v1 MUST NOT be moved to Withdrawn earlier than 12 months after v2 becomes Stable, and the planned date MUST be written into the v1 document at least 3 months in advance.
+
+**Relationship to TapeKit.** These statuses exist only because TapeKit has no process yet. When the TapeKit maintainers assign a number or a status to one of these documents, or adopt a process of their own, TapeKit's assignment prevails: the document takes the number and status TapeKit gives it, and its front matter records how the status used here maps onto it (for example "Stable (v1), now TapeKit Final"). If TapeKit asks for an incompatible change to a Stable (v1) document, the change is made as v2 under the rules above, so the mapping never breaks a v1 implementation.
+
 ## 5. Numbering
 
 - `TAP-1` is reserved for this document.
@@ -57,7 +84,7 @@ Status transitions are recorded by editors in the front matter.
 
 ## 6. What Belongs in a TAP
 
-A TAP is a single Markdown file `spec/TAP-N.md`, English first, followed by a Chinese translation aligned section by section with identical numbering. The English text is authoritative. Front matter is a table with: TAP, Title, Author, Status, Type, Created, Requires, License (and `Last-Call-Deadline` when applicable). Two further rows are optional: `Revision`, which summarises a revision that replaced earlier normative text, and `Implementation`, which states, with a date, what is implemented and deployed (addresses and URLs) and what is not.
+A TAP is a single Markdown file `spec/TAP-N.md`, English first, followed by a Chinese translation aligned section by section with identical numbering. The English text is authoritative. Front matter is a table with: TAP, Title, Author, Status, Type, Created, Requires, License (and `Last-Call-Deadline` when applicable). Three further rows are optional: `Revision`, which summarises a revision that replaced earlier normative text; `Implementation`, which states, with a date, what is implemented and deployed (addresses and URLs) and what is not; and `Target`, which names the status a Draft intends to reach and when (§4.1).
 
 Required sections, in order:
 
@@ -113,7 +140,7 @@ Copyright and related rights waived via CC0-1.0. Code samples in TAPs are MIT un
 
 ## 1. 摘要
 
-TapeOut 提案（TAP）是一份设计文档，用于提出对 TapeOut 协议的修改，或基于该协议的标准。本文档定义 TAP 是什么、TAP 的类型、生命周期、编号规则、必需内容、进入 Final 的条件，以及编辑与维护者的角色。本文档刻意简短；本文档未涉及之处，编辑 SHOULD 遵循 EIP-1 的精神。本文档作为建议提交给 TapeKit 维护者，并非他们已采纳的流程。
+TapeOut 提案（TAP）是一份设计文档，用于提出对 TapeOut 协议的修改，或基于该协议的标准。本文档定义 TAP 是什么、TAP 的类型、生命周期、编号规则、必需内容、进入 Final 的条件，以及编辑与维护者的角色；并定义本仓库文档在 TapeKit 采纳流程之前使用的过渡状态，其中包括 Stable (v1)。本文档刻意简短；本文档未涉及之处，编辑 SHOULD 遵循 EIP-1 的精神。本文档作为建议提交给 TapeKit 维护者，并非他们已采纳的流程。
 
 ## 2. 动机
 
@@ -140,6 +167,33 @@ TAP-1 的目标是为生态贡献者提供一个明确的入口。该流程 MUST
 
 状态变更由编辑记录在头部表格中。
 
+### 4.1 过渡状态：Stable (v1)
+
+TapeKit 目前还没有编号提案流程（§5），因此任何文档都无法按 §4 进入 Final。在它有流程之前，本仓库发布的文档（TAP-20 至 TAP-27）在 `Status` 行使用下面四种状态之一。这些是本仓库给自己文档的标签：不是 TapeKit 的状态，也不代表维护者的认可。
+
+- **Draft（草案）**：同 §4 第 2 项。规范性文本仍会变化，包括不兼容的变化。
+- **Stable (v1)（稳定，第 1 版）**：文档的第 1 版按下列规则冻结。文档的测试向量齐全、并经独立实现核对之后（§6 第 6 项），即进入此状态。
+- **Experimental（实验性）**：为评审与积累实现经验而发布，不在稳定承诺之内。随时可能不兼容地修改或撤回，且不需要新版本。
+- **Withdrawn（撤回）**：同 §4 第 7 项。文本保留备查；实现方 SHOULD NOT 实现它，编号不复用。
+
+打算进入 Stable (v1) 的文档，在 Draft 阶段 MAY 用可选的 `Target` 行（§6）声明这一点，例如 `Target | Stable (v1) at TapeAPI 1.0`。该行是计划而非状态：在 `Status` 行改变之前，文档仍是 Draft，Draft 的一切含义照旧适用。
+
+**冻结。** 文档一旦进入 Stable (v1)：
+
+1. 其定义的每个字段、编码、签名域（摘要前缀与布局、EIP-712 域与类型字符串、密钥派生标签）与错误码 MUST 保持原有含义。任何一项都不删除、不改名、不改类型、不赋予新含义。
+2. 修订 MAY 只增加：(a) OPTIONAL 内容，即忽略它的 v1 实现仍然合规的新字段、方法、错误码或行为；(b) 非规范性文本：澄清、示例、测试向量与实现状态。会使合规的 v1 实现变得不合规的新要求不算增加，MUST NOT 在 v1 中做出。
+3. Stable (v1) 文档中的某一节 MAY 标为 Experimental（例如尚未部署的合约）。该节不在冻结范围内，文档其余部分 MUST NOT 依赖它。
+4. 每次修订连同日期记录在 `Revision` 行。
+
+**破坏性修改与版本并存。** 冻结规则不允许的修改 MUST 作为新版本 v2 做出，绝不以修改 v1 的方式做出：
+
+1. v2 是新文档（或新编号），有自己的状态；凡是 v1 在线上带有版本标记之处（摘要前缀、清单的 `tapeapi` 版本、EIP-712 的 `version`、密钥派生标签），v2 都带自己的标记，使 v1 消息与 v2 消息永远不会被相互误认。
+2. 发布 v2 不改变 v1：v1 仍为 Stable (v1)，合规的 v1 实现仍然合规。
+3. 验证方 MUST NOT 按自己未实现的版本接受消息，也 MUST NOT 按另一版本的规则解释某一版本的消息。实现 MAY 并行实现两个版本，提供者 MAY 同时提供两个版本。
+4. v2 进入 Stable 之后未满 12 个月，v1 MUST NOT 被改为 Withdrawn；计划日期 MUST 至少提前 3 个月写入 v1 文档。
+
+**与 TapeKit 的关系。** 这些状态只因 TapeKit 尚无流程而存在。TapeKit 维护者一旦为其中某份文档分配编号或状态，或采纳自己的流程，即以 TapeKit 为准：文档采用 TapeKit 给出的编号与状态，并在头部记录此处所用状态与之的对应关系（例如"Stable (v1)，现为 TapeKit Final"）。若 TapeKit 要求对某份 Stable (v1) 文档做不兼容的修改，按上述规则作为 v2 进行，因此这种映射永远不会破坏 v1 的实现。
+
 ## 5. 编号
 
 - `TAP-1` 保留给本文档。
@@ -151,7 +205,7 @@ TAP-1 的目标是为生态贡献者提供一个明确的入口。该流程 MUST
 
 ## 6. TAP 应包含的内容
 
-一个 TAP 是单个 Markdown 文件 `spec/TAP-N.md`，英文在前，其后为章节编号完全一致、逐节对应的中文译文。英文为权威文本。头部为表格，包含：TAP、Title、Author、Status、Type、Created、Requires、License（适用时还有 `Last-Call-Deadline`）。另有两行可选：`Revision`，概述一次替换了先前规范性文本的修订；`Implementation`，注明日期并说明哪些已实现、已部署（地址与 URL），哪些没有。
+一个 TAP 是单个 Markdown 文件 `spec/TAP-N.md`，英文在前，其后为章节编号完全一致、逐节对应的中文译文。英文为权威文本。头部为表格，包含：TAP、Title、Author、Status、Type、Created、Requires、License（适用时还有 `Last-Call-Deadline`）。另有三行可选：`Revision`，概述一次替换了先前规范性文本的修订；`Implementation`，注明日期并说明哪些已实现、已部署（地址与 URL），哪些没有；`Target`，说明 Draft 打算进入的状态及时间（§4.1）。
 
 必需章节，按顺序：
 

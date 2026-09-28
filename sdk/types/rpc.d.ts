@@ -5,7 +5,7 @@ export declare const RPC_BODY_LIMIT: number
 export interface RpcOptions {
   /** JSON-RPC node URLs; must be at least `quorum` distinct URLs, run by at least `quorum` distinct operators
    *  (see `operatorOf`), unless `allowSingleNode` is true. */
-  urls: string[]
+  urls: readonly string[]
   /** How many independent operators must answer, all with the same answer (default 2). URLs of one operator count once. */
   quorum?: number
   timeoutMs?: number
@@ -37,6 +37,3 @@ export interface Rpc {
 }
 
 export declare function createRpc(opts: RpcOptions): Rpc
-export declare function describeUrl(url: string, index: number): string
-export declare function readJsonBounded(res: { body?: unknown; text?: () => Promise<string>; [k: string]: any }, limit: number, opts?: { code?: string }): Promise<any>
-export declare function isNodeLimit(error: unknown): boolean

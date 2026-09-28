@@ -35,7 +35,7 @@ const manifest = {
 }
 const core = createRelayCore()
 const provider = createProvider({
-  manifest, signerKey: SIGNER_KEY,
+  manifest, signerKey: SIGNER_KEY, dev: !PROD,
   // 2-of-3 operators, the SDK's defaults: one down still leaves a quorum (arch A5) / 三家取二：一家宕机仍有法定数
   rpcUrls: process.env.RPC_URLS ? process.env.RPC_URLS.split(',') : rpcUrlsFor(56),
   quorum: 2, allowSingleNode: !PROD, log: (...a) => console.error('[relay]', ...a),

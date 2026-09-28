@@ -85,7 +85,7 @@ export function buildRelay(env) {
     manifest, signerKey: env.SIGNER_KEY,
     rpcUrls: (env.RPC_URLS || DEFAULT_RPC_URLS).split(','),
     // 3 s per node: a hung node must not hold every call for the 8 s default. / 每节点 3 秒：挂住的节点不能让每次调用都等 8 秒。
-    quorum: 2, chainId: 56, timeoutMs: Number(env.RPC_TIMEOUT_MS || 3000),
+    quorum: 2, chainId: 56, rpcTimeoutMs: Number(env.RPC_TIMEOUT_MS || 3000),
     store: env.DB ? d1Store(env.DB) : undefined,
     rateLimit: { windowMs: 60_000, free: Number(env.RATE_FREE || 600), paid: Number(env.RATE_PAID || 6000) },
     methods: {

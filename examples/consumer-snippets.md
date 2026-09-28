@@ -240,10 +240,10 @@ try {
 } catch (e) {
   if (e instanceof TapeAPIError && e.code === 'QUORUM_FAILED') {
     // 不投票、不取平均、不退化到单家。
-    // 注意：extra 字段被 `Object.assign` 摊平在错误对象**本身**上，不是 `e.data`。
-    // No vote, no average, no falling back to one provider. Note the extras are flattened onto the error
-    // itself by `Object.assign` — it is `e.groups`, not `e.data.groups`.
-    console.warn('disagreed:', e.disagreed, 'groups:', e.groups, 'failed:', e.failed)
+    // 细节在 e.data 里（1.0 起；顶层的 e.groups 等只是弃用别名，2.0 删除）。
+    // No vote, no average, no falling back to one provider. The details are in e.data (1.0; the top-level
+    // e.groups and friends are deprecated aliases, gone in 2.0).
+    console.warn('disagreed:', e.data.disagreed, 'groups:', e.data.groups, 'failed:', e.data.failed)
     render({ state: 'refused', reason: 'providers disagreed on the same block; nothing rendered' })
   } else if (e instanceof TapeAPIError) {
     render({ state: 'error', code: e.code })

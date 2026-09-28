@@ -104,8 +104,8 @@ test('priced methods are hidden by default; paid exposes them up to maxPriceBEM 
   assert.ok(!risen.tools.some((t) => t.method === 'circuitHolder'))
   assert.equal(risen.skipped.find((s) => s.method === 'circuitHolder').code, 'PRICE_CHANGED')
 
-  assert.throws(() => manifestToTools(MANIFEST, { paid: {} }), (e) => e.code === 'BAD_REQUEST' && /maxPriceBEM/.test(e.message))
-  assert.throws(() => manifestToTools(MANIFEST, { paid: { maxPriceBEM: '1e3' } }), (e) => e.code === 'BAD_REQUEST')
+  assert.throws(() => manifestToTools(MANIFEST, { paid: {} }), (e) => e.code === 'INVALID_ARGUMENT' && /maxPriceBEM/.test(e.message))
+  assert.throws(() => manifestToTools(MANIFEST, { paid: { maxPriceBEM: '1e3' } }), (e) => e.code === 'INVALID_ARGUMENT')
   assert.throws(() => manifestToTools({}), (e) => e.code === 'MANIFEST_INVALID')
 })
 
@@ -195,7 +195,7 @@ async function world({ providerMethods = METHODS(), chainMethods = METHODS(), ta
     const j = await r.json(); tamper(j)
     return new Response(JSON.stringify(j), { status: r.status, headers: { 'content-type': 'application/json' } })
   })
-  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, escrow: ADDR.escrow, allowHttp: true, fetch: fetchImpl, timeoutMs: 500 })
+  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, escrow: ADDR.escrow, allowHttp: true, fetch: fetchImpl, rpcTimeoutMs: 500 })
   const payer = api.payer({ consumer, sessionKey: SESSION_KEY })
   return { cc, api, payer, sent, publish, url, close: () => new Promise((r) => srv.close(r)) }
 }
@@ -244,14 +244,14 @@ test('agent call through the draft shape returns a verified, attributed result; 
     assert.deepEqual(h.skipped.map((s) => [s.method, s.code]), [['quote', 'PAYMENT_REQUIRED']])
     const [tool] = await mc.getTools()
     assert.deepEqual(tool.inputSchema.properties.echo, { type: 'string', description: 'string?' })
-    assert.match(tool.description, new RegExp(h.svc.container))
+    assert.match(tool.description, new RegExp(h.service.container))
 
     const p = payloadOf(await mc.executeTool('tapeapi_60606060_ping', { echo: 'hi' }))
     assert.deepEqual(p.result, { pong: 'hi' })
     assert.equal(p.verified, true)
     assert.equal(p.signer, signer)
     assert.equal(p.holder, holder)
-    assert.equal(p.container, h.svc.container)
+    assert.equal(p.container, h.service.container)
     assert.match(p.identity, /^on-chain/)
     assert.equal(typeof p.ts, 'number'); assert.match(p.sig, /^0x[0-9a-f]{130}$/i)
     assert.equal(p.priceBEM, '0')
@@ -314,18 +314,18 @@ test('paid exposure needs payer, per-call cap and budget; the budget is enforced
   const w = await world()
   try {
     const mc = draftContext()
-    await assert.rejects(exposeTapeAPI(w.api, ADDR.container, { modelContext: mc, paid: { maxPriceBEM: '1', budgetBEM: '1' } }), (e) => e.code === 'BAD_REQUEST' && /payer/.test(e.message))
+    await assert.rejects(exposeTapeAPI(w.api, ADDR.container, { modelContext: mc, paid: { maxPriceBEM: '1', budgetBEM: '1' } }), (e) => e.code === 'INVALID_ARGUMENT' && /payer/.test(e.message))
     await assert.rejects(exposeTapeAPI(w.api, ADDR.container, { modelContext: mc, paid: { payer: w.payer, maxPriceBEM: '1' } }), (e) => /budgetBEM/.test(e.message))
     const events = []
     const h = await exposeTapeAPI(w.api, ADDR.container, { modelContext: mc, prefix: 'b_', paid: { payer: w.payer, maxPriceBEM: '0.001', budgetBEM: '0.00015' }, onCall: (e) => events.push(e) })
     assert.deepEqual((await mc.getTools()).map((t) => t.name), ['b_ping', 'b_quote'])
     const p = payloadOf(await mc.executeTool('b_quote', {}))
     assert.equal(p.verified, true); assert.equal(p.priceBEM, '0.0001')
-    assert.equal(w.payer.cumulativeOf(h.svc), parseUnits('0.0001'))
+    assert.equal(w.payer.cumulativeOf(h.service), parseUnits('0.0001'))
     const before = w.sent.length
     await assert.rejects(mc.executeTool('b_quote', {}), (e) => e.code === 'BUDGET_EXCEEDED')
     assert.equal(w.sent.length, before, 'refused before any request left the page')
-    assert.equal(w.payer.cumulativeOf(h.svc), parseUnits('0.0001'))
+    assert.equal(w.payer.cumulativeOf(h.service), parseUnits('0.0001'))
     assert.equal(h.spentBEM(), '0.0001')
     // free methods still work once the budget is gone / 预算用完后免费方法照常可用
     assert.equal(payloadOf(await mc.executeTool('b_ping', {})).verified, true)
@@ -351,25 +351,25 @@ test('with a budget, a price rise is refused (PRICE_CHANGED), not paid; the huma
     const mc = draftContext()
     const h = await exposeTapeAPI(w.api, ADDR.container, { modelContext: mc, prefix: 'r_', paid: { payer: w.payer, maxPriceBEM: '10', budgetBEM: '10' } })
     w.publish(METHODS('0.0005'))            // the holder republishes at 5x / 持有人以 5 倍价格重新发布
-    h.svc.fetchedAt = 0                     // stale: the SDK re-reads before spending / 过期：SDK 付款前重读
+    h.service.fetchedAt = 0                     // stale: the SDK re-reads before spending / 过期：SDK 付款前重读
     await assert.rejects(mc.executeTool('r_quote', {}), (e) => e.code === 'PRICE_CHANGED' && e.data.price === parseUnits('0.0005').toString())
-    assert.equal(w.payer.cumulativeOf(h.svc), 0n, 'nothing was paid, although the cap (10 BEM) and budget would cover it')
+    assert.equal(w.payer.cumulativeOf(h.service), 0n, 'nothing was paid, although the cap (10 BEM) and budget would cover it')
     assert.ok(!w.sent.some((b) => b.voucher), 'no voucher left the page')
     assert.equal(h.spentBEM(), '0')
     // A second try is refused too: by our own gate, or because the background sync already withdrew the tool.
     // Either way nothing is paid. / 再试一次同样被拒：要么是自己的闸门，要么后台同步已撤下该工具；无论哪种都不付钱。
     await assert.rejects(mc.executeTool('r_quote', {}), (e) => e.code === 'PRICE_CHANGED' || /no tool r_quote/.test(e.message))
-    assert.equal(w.payer.cumulativeOf(h.svc), 0n)
+    assert.equal(w.payer.cumulativeOf(h.service), 0n)
     // the tool list follows the refreshed manifest: the risen method is withdrawn / 工具列表跟随刷新：涨价的方法被撤下
     await h.refresh()
     assert.deepEqual((await mc.getTools()).map((t) => t.name), ['r_ping'])
     assert.equal(h.skipped.find((s) => s.method === 'quote').code, 'PRICE_CHANGED')
     // explicit human consent / 人明确同意
-    w.api.acceptPrice(h.svc, 'quote'); await h.refresh()
+    w.api.acceptPrice(h.service, 'quote'); await h.refresh()
     assert.deepEqual((await mc.getTools()).map((t) => t.name), ['r_ping', 'r_quote'])
     assert.match((await mc.getTools())[1].description, /Costs 0\.0005 BEM/)
     assert.equal(payloadOf(await mc.executeTool('r_quote', {})).priceBEM, '0.0005')
-    assert.equal(w.payer.cumulativeOf(h.svc), parseUnits('0.0005'))
+    assert.equal(w.payer.cumulativeOf(h.service), parseUnits('0.0005'))
   } finally { await w.close() }
 })
 
@@ -379,9 +379,9 @@ test('a free method that becomes priced is refused for a free-only page, with no
     const mc = draftContext()
     const h = await exposeTapeAPI(w.api, ADDR.container, { modelContext: mc, prefix: 'f_' })
     assert.deepEqual((await mc.getTools()).map((t) => t.name), ['f_ping', 'f_quote'])
-    w.publish(METHODS('0.0001')); h.svc.fetchedAt = 0
+    w.publish(METHODS('0.0001')); h.service.fetchedAt = 0
     await assert.rejects(mc.executeTool('f_quote', {}), (e) => e.code === 'PRICE_CHANGED')
-    assert.equal(w.payer.cumulativeOf(h.svc), 0n)
+    assert.equal(w.payer.cumulativeOf(h.service), 0n)
     await new Promise((r) => setTimeout(r, 20))   // background tool sync after the SDK's re-read / SDK 重读后的后台同步
     assert.deepEqual((await mc.getTools()).map((t) => t.name), ['f_ping'], 'withdrawn from the agent')
   } finally { await w.close() }
@@ -394,7 +394,7 @@ test('confirm hook: the human can decline a paid call; nothing is paid or counte
     const h = await exposeTapeAPI(w.api, ADDR.container, { modelContext: mc, prefix: 'k_', paid: { payer: w.payer, maxPriceBEM: '1', budgetBEM: '1', confirm: (q) => { asked.push(q); return false } } })
     await assert.rejects(mc.executeTool('k_quote', { pair: ADDR.escrow }), (e) => e.code === 'USER_DECLINED')
     assert.deepEqual(asked, [{ tool: 'k_quote', method: 'quote', priceBEM: '0.0001', params: { pair: ADDR.escrow } }])
-    assert.equal(h.spentBEM(), '0'); assert.equal(w.payer.cumulativeOf(h.svc), 0n)
+    assert.equal(h.spentBEM(), '0'); assert.equal(w.payer.cumulativeOf(h.service), 0n)
     assert.equal(payloadOf(await mc.executeTool('k_ping', {})).verified, true, 'free calls are not asked about')
     assert.equal(asked.length, 1)
   } finally { await w.close() }
@@ -427,7 +427,7 @@ test('an already-resolved service can be exposed directly, and a stale tool refe
     const svc = await w.api.resolve(ADDR.container)
     const mc = previewContext()
     const h = await exposeTapeAPI(w.api, svc, { modelContext: mc, prefix: 's_', format: 'object' })
-    assert.equal(h.svc, svc)
+    assert.equal(h.service, svc)
     const exec = mc.tools.get('s_ping').execute
     h()
     await assert.rejects(exec({}, {}), (e) => e.code === 'BAD_REQUEST' && /unregistered/.test(e.message))

@@ -35,10 +35,13 @@ test('FIXED A1: a priced, non-dev provider on the default in-memory meter warns 
   assert.match(warned[0], /serves the same voucher again/)
   mk(manifest({ price: '0.001' }), { warn, store: memoryStore() })             // the operator chose a store / 运营者自己选了 store
   mk(manifest({ price: '0.001' }), { warn, allowMemoryStore: true })           // tests, single-process demos / 测试、单进程演示
-  mk(manifest({ price: '0.001', dev: true }), { warn })                        // a dev manifest is not production / dev 清单不是生产
-  mk(manifest({ price: '0.001' }), { warn, allowHttp: true })
+  mk(manifest({ price: '0.001' }), { warn, dev: true })                        // a dev provider is not production / dev 提供者不是生产
   mk(manifest(), { warn })                                                     // nothing to meter / 没有计量
   assert.equal(warned.length, 1, 'none of those warn')
+  // 1.0 (G1-S2): neither the manifest's dev field nor allowHttp silences it / 清单的 dev 字段与 allowHttp 都不再压下警告
+  mk(manifest({ price: '0.001', dev: true }), { warn }); mk(manifest({ price: '0.001' }), { warn, allowHttp: true })
+  assert.equal(warned.length, 3)
+  warned.length = 1
   // Without `warn` it goes to console.warn, not the silent default `log` / 没有 warn 时走 console.warn，而不是默认静默的 log
   const orig = console.warn; const seen = []
   console.warn = (...a) => seen.push(a.join(' '))

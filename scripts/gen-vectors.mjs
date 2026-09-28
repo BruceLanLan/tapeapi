@@ -133,11 +133,64 @@ write('tap-22-voucher.json', {
     return { ...c, digest: toHex(digest), sig: signature, recoversTo: sig.recoverAddress(digest, signature) }
   }),
 })
+
+// ---------- TAP-23 §6: two providers, one attested read ----------
+// Two TEST keys (public, never to hold anything) sign TAP-21 envelopes answering the §6 example request. The agreeing
+// values are real Ethereum state, read 2026-09-28 (read-only) and identical on dRPC, Tenderly, Alchemy (Blast) and MEV
+// Blocker: block 20000000's hash and state root, and USDT totalSupply() evaluated at that hash. The counterexamples change
+// one compared field on provider B, so a client MUST reject them with ATTEST_DISAGREE (§3.4).
+// 两把**测试密钥**（公开，绝不持有任何东西）对 §6 的示例请求签发 TAP-21 信封。一致的那组数值是真实的以太坊状态，2026-09-28
+// 只读读取，dRPC、Tenderly、Alchemy（Blast）与 MEV Blocker 四家一致：区块 20000000 的哈希与状态根，以及在该哈希上求值的
+// USDT totalSupply()。反例只改提供者 B 的一个比较字段，客户端 MUST 以 ATTEST_DISAGREE 拒绝（§3.4）。
+{
+  const PROVIDER_A_KEY = '0x' + '44'.repeat(32), PROVIDER_B_KEY = '0x' + '55'.repeat(32)
+  const providers = [
+    { tag: 'A', container: '0x00000000000000000000000000000000000a77e1', signerKey: PROVIDER_A_KEY, signerAddress: sig.privateKeyToAddress(PROVIDER_A_KEY), endpoint: 'https://attest-a.example/tapeapi/v1' },
+    { tag: 'B', container: '0x00000000000000000000000000000000000a77e2', signerKey: PROVIDER_B_KEY, signerAddress: sig.privateKeyToAddress(PROVIDER_B_KEY), endpoint: 'https://attest-b.example/tapeapi/v1' },
+  ]
+  const descriptor = {
+    name: 'read', priceBEM: '0',
+    params: { chainId: 'number', call: 'object', block: 'string|number' },
+    returns: { chainId: 'number', blockNumber: 'number', blockHash: 'bytes32', result: 'bytes' },
+    attestedRead: { kind: 'eth_call', chains: [1] },
+  }
+  const request = { id: 'tap23-vector-1', method: 'read', params: { chainId: 1, call: { to: '0xdAC17F958D2ee523a2206206994597C13D831ec7', data: '0x18160ddd' }, block: 20000000 } }
+  const ethereum = {
+    chainId: 1, blockNumber: 20000000,
+    blockHash: '0xd24fd73f794058a3807db926d8898c6481e902b7edb91ce0d479d6760f276183',
+    stateRoot: '0x68421c2c599dc31396a09772a073fb421c4bd25ef1462914ef13e5dfa2d31c23',
+    result: '0x00000000000000000000000000000000000000000000000000b8bc8118ccdd50',
+    readFrom: ['eth.drpc.org', 'mainnet.gateway.tenderly.co', 'eth-mainnet.public.blastapi.io', 'rpc.mevblocker.io'],
+    readOn: '2026-09-28',
+  }
+  const honest = { chainId: 1, blockNumber: 20000000, blockHash: ethereum.blockHash, result: ethereum.result }
+  const TS = 1789000000
+  const envelopeOf = (p, result, ts) => {
+    const digest = sig.responseDigest({ container: p.container, id: request.id, method: request.method, params: request.params, ok: true, body: result, ts })
+    const signature = sig.signResponse({ container: p.container, id: request.id, method: request.method, params: request.params, ok: true, body: result, ts }, p.signerKey)
+    return { envelope: { id: request.id, ok: true, result, container: p.container, ts, sig: signature }, digest: toHex(digest), personalDigest: toHex(sig.personalDigest(digest)), recoversTo: sig.recoverAddress(sig.personalDigest(digest), signature) }
+  }
+  const cases = [
+    { name: 'agree: both providers return the same block and bytes', expect: 'agree', a: honest, b: honest },
+    { name: 'agree: stateRoot is compared only when both carry it (§3.4 step 4)', expect: 'agree', a: { ...honest, stateRoot: ethereum.stateRoot }, b: honest },
+    { name: 'disagree: B signs a result one unit higher', expect: 'ATTEST_DISAGREE', a: honest, b: { ...honest, result: '0x00000000000000000000000000000000000000000000000000b8bc8118ccdd51' } },
+    { name: 'disagree: B names another hash for block 20000000 (made up, not a real block)', expect: 'ATTEST_DISAGREE', a: honest, b: { ...honest, blockHash: '0x' + 'ee'.repeat(32) } },
+    { name: 'disagree: both carry a stateRoot and they differ (made up for B)', expect: 'ATTEST_DISAGREE', a: { ...honest, stateRoot: ethereum.stateRoot }, b: { ...honest, stateRoot: '0x' + 'dd'.repeat(32) } },
+  ]
+  write('tap-23-attested.json', {
+    tap: 'TAP-23 §3.3, §3.4, §6', note,
+    testKeys: 'signerKey values are TEST KEYS: public, deterministic, and never to be used for anything real. / signerKey 是测试密钥：公开、确定，绝不用于任何真实用途。',
+    compared: 'Two envelopes agree iff chainId, blockNumber, blockHash and result are byte-identical; stateRoot is compared only when both carry it. Any disagreement among verified envelopes is ATTEST_DISAGREE, never a majority. / 两个信封一致当且仅当 chainId、blockNumber、blockHash、result 逐字节相同；stateRoot 仅在双方都有时比较。',
+    envelopeDigest: 'TAP-21 §3.3 v2 digest over the request below, the provider container, ok = true and the result; signed with EIP-191 personal_sign',
+    providers, descriptor, request, ethereum,
+    cases: cases.map((c) => ({ name: c.name, expect: c.expect, a: envelopeOf(providers[0], c.a, TS), b: envelopeOf(providers[1], c.b, TS + 1) })),
+  })
+}
 console.log('done')
 
 // ---------- TAP-26 channel ----------
 {
-  const { channel } = await import('../sdk/src/index.js')
+  const channel = await import('../sdk/src/channel.js')   // the implementation module: _keySchedule, toHex / 实现模块
   const { x25519, ed25519 } = await import('@noble/curves/ed25519')
   const seq = (label) => { let n = 0; return (len) => { const out = new Uint8Array(len); for (let i = 0; i < len; i++) out[i] = (label.charCodeAt(i % label.length) + 17 * i + 31 * n) & 0xff; n++; return out } }
   const sA = new Uint8Array(32).map((_, i) => (0xa1 + i) & 0xff), sB = new Uint8Array(32).map((_, i) => (0xb2 + 3 * i) & 0xff)
@@ -222,10 +275,10 @@ console.log('done')
   const people = ['owner', 'member-1', 'member-2'].map((tag, i) => ({ tag, container: '0x' + (0xa11 + i).toString(16).padStart(40, '0'), chainId: 56, identity: idOf(tag) }))
   const ent = (p) => ({ container: p.container, chainId: 56, x25519: toHex(p.identity.x25519.publicKey), ed25519: toHex(p.identity.ed25519.publicKey) })
   const groupRandom = seq('group')
-  const T0 = 1789000000_000      // fixed clock (ms): issued and seq derive from it / 固定时钟：issued 与 seq 由它导出
-  const { group: gOwner, epochWire } = await G.createGroup({ self: people[0], identity: people[0].identity, members: [ent(people[1]), ent(people[2])], relays: [{ url: 'https://relay.example/tapeapi/v1', container: '0x3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a' }], verifyMember: 'trust-roster', random: groupRandom, now: () => T0 })
+  const T0 = 1789000000          // fixed clock (Unix seconds): issued and seq derive from it / 固定时钟（Unix 秒）：issued 与 seq 由它导出
+  const { group: gOwner, epochWire } = await G.createGroup({ self: people[0], identity: people[0].identity, members: [ent(people[1]), ent(people[2])], relays: [{ url: 'https://relay.example/tapeapi/v1', container: '0x3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a' }], verifyMember: 'trust-roster', random: groupRandom, clock: () => T0 })
   const gr = seq('group'); const gidB = gr(16), Kb = gr(32), eb = gr(32), Nb = gr(24)          // the same draws, in order / 同样的抽取顺序
-  const g1 = G.joinGroup({ self: people[1], identity: people[1].identity, invite: { gid: gOwner.gid, owner: { container: people[0].container, chainId: 56 } }, ownerKeys: ent(people[0]), now: () => T0 })
+  const g1 = G.joinGroup({ self: people[1], identity: people[1].identity, invite: { gid: gOwner.gid, owner: { container: people[0].container, chainId: 56 } }, ownerKeys: ent(people[0]), clock: () => T0 })
   await g1.acceptEpoch(epochWire, { verifyMember: 'trust-roster' })
   const nonceOf = (tag) => { const r = seq(tag); return () => r(24) }
   const msgs = [
@@ -247,6 +300,6 @@ console.log('done')
     roster: gOwner.roster,
     epochWire: toHex(epochWire),
     senderKeys: [0, 1, 2].map((i) => toHex(G.senderKey(Kb, gidB, 0, i))),
-    messages: msgs.map((m) => ({ sender: m.sender, seq: (BigInt(T0) << 16n).toString(), nonce: toHex(m.nonce), plaintext: m.plaintext, wire: toHex(m.wire) })),
+    messages: msgs.map((m) => ({ sender: m.sender, seq: (BigInt(T0 * 1000) << 16n).toString(), nonce: toHex(m.nonce), plaintext: m.plaintext, wire: toHex(m.wire) })),
   })
 }

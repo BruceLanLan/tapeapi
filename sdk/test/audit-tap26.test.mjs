@@ -9,7 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { x25519 } from '@noble/curves/ed25519'
 import { chacha20poly1305 } from '@noble/ciphers/chacha'
 import { randomBytes } from '@noble/hashes/utils'
-import { channel, TapeAPIError, createTapeAPI } from '../src/index.js'
+import { TapeAPIError, createTapeAPI } from '../src/index.js'
+import * as channel from '../src/channel.js'   // the implementation module, test hooks included / 实现模块，含测试钩子
 import { createFakeChain, ADDR } from './helpers/fake-chain.mjs'
 import { createRelayCore } from '../../examples/relay-service/relay-core.mjs'
 import { RelayRoom } from '../../examples/cloudflare-worker/relay-room.js'
@@ -600,7 +601,7 @@ test('CONFIRMED tapeSendKey: a non-6551 contract returning a crafted token() can
   await assert.rejects(api97.chain.tapeSendKey({ circuits: ADDR.circuits, tokenId: 4246 }), (e) => e.code === 'CHANNEL_INVALID' && /endpoint/.test(e.message))
   await assert.rejects(api97.chain.tapeSendKey(ADDR.container), (e) => e.code === 'CHANNEL_INVALID' && /chain 56/.test(e.message))
   for (const bad of ['0x123', 'x'.repeat(42), 42, null, { circuits: 'nope', tokenId: 1 }, { circuits: ADDR.circuits }]) {
-    await assert.rejects(api.chain.tapeSendKey(bad), (e) => e.code === 'CHANNEL_INVALID')
+    await assert.rejects(api.chain.tapeSendKey(bad), (e) => e.code === 'INVALID_ARGUMENT')
   }
 })
 

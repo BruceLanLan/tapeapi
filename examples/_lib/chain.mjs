@@ -28,7 +28,7 @@ export const blockTag = (n) => '0x' + BigInt(n).toString(16)
 // 而在另一个块参数下重试一次。/ Did the node reject the EIP-1898 block object, rather than the contract
 // reverting? A revert must propagate: mistaking it for an unsupported block parameter would retry it.
 export const rejectsBlockObject = (e) =>
-  e instanceof TapeAPIError && e.code === 'RPC_ERROR' && e.rpcCode !== 3 && !/revert/i.test(e.message)
+  e instanceof TapeAPIError && e.code === 'RPC_ERROR' && e.data?.rpcCode !== 3 && !/revert/i.test(e.message)
 
 /** BSC 本链示例的区块字段（TAP-23 §3.4）/ the block fields the BSC-local examples return. */
 export const blockPinnedOf = (pinned, blockRef) => ({ blockNumber: pinned.blockNumber, blockHash: pinned.blockHash, blockRef })

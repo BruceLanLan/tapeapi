@@ -39,8 +39,8 @@ the [changelog](../CHANGELOG.md).
   (needs an index), and renew and manage them from the same page.
 - **Receipt-grounded reputation.** Reviews of a service that only a caller can write, and only with a signed receipt
   for its own request; the reviewer must itself be a container. A review then costs a real call and a real circuit.
-- **npm packages** `@tapeapi/sdk` and `@tapeapi/server`. Today the SDK installs from each GitHub release, and the
-  server package is used from a clone of this repository.
+- **npm packages** `@tapeapi/sdk` and `@tapeapi/server`. Today both install from each GitHub release (the SDK first,
+  then the server), or are used from a clone of this repository.
 - **TAP review with the TapeOut maintainers.** The TAP numbers are proposals until the maintainers assign them; the
   discussion is in [TapeKit#8](https://github.com/TapeOutProtocol/TapeKit/issues/8).
 

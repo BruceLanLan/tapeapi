@@ -31,6 +31,7 @@ import { createProvider } from '@tapeapi/server'
 const provider = createProvider({
   manifest: JSON.parse(await readFile('manifest.json', 'utf8')),
   signerKey: process.env.SIGNER_KEY,
+  dev: true,                                    // 本地运行：http 端点、还没有委托；正式上线时去掉这一行
   rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
   quorum: 2,
   methods: {
@@ -53,11 +54,15 @@ await provider.listen(8787)                     // Node
 - [`examples/cloudflare-worker/`](../../../examples/cloudflare-worker/)：同样的服务运行在 Cloudflare Workers 上，可以
   从手机部署。
 
-没有委托时，服务以开发模式运行：客户端使用 `createTapeAPI({ dev: true })` 连接。用黑盒一致性测试套件对照协议检查它：
+正是 `dev: true` 让它能在本地运行：http 端点、没有委托、有价方法没有托管合约。清单自己的 `dev` 字段不起任何作用；正式上线时去掉
+这个选项。客户端用 `createTapeAPI({ dev: true })` 连接开发模式的服务。用黑盒一致性测试套件对照协议检查它：
 
 ```bash
 node conformance/run.mjs --url http://127.0.0.1:8787
 ```
+
+开发模式的服务会得到 NOT CONFORMANT，这是预期的：它没有委托（这是一项 MUST），需要参数的方法也会被跳过，除非用 `--params`
+传入。服务带着持有人委托正式上线后再跑一次，那次的结果才算数。
 
 ## 2. 从手机上线（Cloudflare + 持有者控制台）
 
@@ -123,6 +128,8 @@ const svc = await createTapeAPI({ rpcUrls: [/* ... */], quorum: 2 }).resolve('0x
 并在第 5 步发布。
 
 ## 5. 付费方法
+
+> **实验性。** 付费功能（TAP-22 付费通道与托管合约）尚未部署、未经审计，不在 1.0 的稳定承诺之内：下面的名字可能在 1.x 的次版本里改变。见[升级到 1.0](upgrade-1.0.md#10-承诺什么)。
 
 在方法上设置 `priceBEM`，并在 `payment` 中指定一个托管合约。运行时会验证每张凭证、按消费者计量，并拒绝低于价格的
 任何凭证。同一个付费服务的所有端点必须共享同一个原子计量存储（在 Cloudflare 上为 D1，见

@@ -2,7 +2,8 @@
 // The cryptographic core of TAP-26: the handshake, frames, and every way each of them is supposed to fail.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { channel, TapeAPIError } from '../src/index.js'
+import { TapeAPIError } from '../src/index.js'
+import * as channel from '../src/channel.js'   // the implementation module, test hooks included / 实现模块，含测试钩子
 
 const { createInvite, acceptInvite, completeInvite, generateKeyPair, roomsFor, encodeWire, decodeWire, toBase64, fromBase64, _keySchedule, endpointBytes } = channel
 const A = { container: '0x86DDaEF00401E3F10418398D67D7189fc458eA95', chainId: 56 }

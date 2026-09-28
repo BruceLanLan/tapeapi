@@ -235,9 +235,9 @@ test('resolve: an X Layer name is read on X Layer only, with the delegation doma
   assert.equal(api.forChain(56), api)
   assert.equal(api.forChain('196'), api.forChain(196), 'one client per chain')
   assert.equal(api.forChain(196).chainId, 196)
-  assert.deepEqual(api.forChain(196).addresses, { hub: HUB, siteRegistry: CHAINS[196].siteRegistry, directory: undefined, escrow: undefined })
-  assert.throws(() => api.forChain(97), (e) => e.code === 'MANIFEST_INVALID' && /not a TapeOut chain/.test(e.message))
-  await assert.rejects(api.resolve({ chainId: 97, container: X_CONTAINER }), (e) => e.code === 'MANIFEST_INVALID')
+  assert.deepEqual(api.forChain(196).addresses, { hub: HUB, siteRegistry: CHAINS[196].siteRegistry, factory: CHAINS[196].factory, directory: undefined, escrow: undefined })
+  assert.throws(() => api.forChain(97), (e) => e.code === 'INVALID_ARGUMENT' && /not a TapeOut chain/.test(e.message))
+  await assert.rejects(api.resolve({ chainId: 97, container: X_CONTAINER }), (e) => e.code === 'INVALID_ARGUMENT')
   await assert.rejects(api.resolve('4246.4.7.tape'), (e) => e.code === 'MANIFEST_INVALID' && /area code 4/.test(e.message))
 })
 
@@ -274,7 +274,7 @@ test('the processor cache is per chain: a CPU on X Layer is not taken for one on
 test('a client whose own chain is X Layer resolves BNB names on BNB Smart Chain; its defaults are X Layer\'s', async () => {
   const w = world()
   const x = createTapeAPI({ chainId: 196, rpcUrls: ['http://rpc196-a', 'http://rpc196-b'], fetch: w.fetch, chains: { 56: { rpcUrls: ['http://rpc56-a', 'http://rpc56-b'], hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory } } })
-  assert.deepEqual(x.addresses, { hub: HUB, siteRegistry: CHAINS[196].siteRegistry, directory: undefined, escrow: undefined })
+  assert.deepEqual(x.addresses, { hub: HUB, siteRegistry: CHAINS[196].siteRegistry, factory: CHAINS[196].factory, directory: undefined, escrow: undefined })
   assert.equal((await x.resolve('4246.2.7.tape')).chainId, 196)
   assert.equal((await x.resolve(X_CONTAINER)).chainId, 196, 'a bare container is read on the client\'s own chain')
   // BNB: the mainnet-style manifest is on chain 56 / BNB 上的清单
@@ -311,7 +311,7 @@ test('chainOfContainer: the chain whose token() names itself; null when none; an
   for (const u of ['http://rpc8453-a', 'http://rpc8453-b']) w.chains[8453].setFault(u, 'timeout')
   await assert.rejects(w.api.chainOfContainer('0x' + '77'.repeat(20)), (e) => e.code === 'RPC_UNAVAILABLE')
   assert.equal(await w.api.chainOfContainer(X_CONTAINER), 196, 'found on one chain: an outage elsewhere does not matter')
-  await assert.rejects(w.api.chainOfContainer('nope'), (e) => e.code === 'MANIFEST_INVALID')
+  await assert.rejects(w.api.chainOfContainer('nope'), (e) => e.code === 'INVALID_ARGUMENT')
 })
 
 test('with no chains option, an L2 name is read through that chain\'s SDK defaults', async () => {
@@ -322,4 +322,36 @@ test('with no chains option, an L2 name is read through that chain\'s SDK defaul
   const api = createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2'], fetch: (url, init) => { seen.add(String(url)); return x.fetch(String(url), init) } })
   assert.equal((await api.resolve('4246.2.7.tape')).chainId, 196)
   assert.deepEqual([...seen].sort(), [...rpcUrlsFor(196)].sort())
+})
+
+test('FIXED G1-M7: the channel-record floor is shared with the other chains\' clients and keyed <chainId>:<container>', async () => {
+  const { channelKeysDigest } = await import('../src/sig.js')
+  const { canonicalJSON } = await import('../src/canon.js')
+  const { generateIdentity } = await import('../src/channel.js')
+  const { CHANNEL_KEYS_KEY } = await import('../src/index.js')
+  const w = world()
+  const nowS = Math.floor(Date.now() / 1000)
+  const publish = (issued) => {
+    const id = generateIdentity()
+    const keys = { container: X_CONTAINER, x25519: toHex(id.x25519.publicKey), ed25519: toHex(id.ed25519.publicKey), inbox: {}, issued, expires: nowS + 86400 }
+    const record = { tapechannel: '1', container: X_CONTAINER, chainId: 196, ...keys, sig: signDigest(channelKeysDigest(196, CHAINS[196].hub, keys), HOLDER_KEY) }
+    w.chains[196].writeFile(X_CONTAINER, CHANNEL_KEYS_KEY, canonicalJSON(record))
+    return record
+  }
+  const floor = new Map()
+  const old = publish(nowS - 3600)
+  const api = createTapeAPI(w.opts({ channelRecordFloor: floor }))
+  const rec = await api.forChain(196).chain.channelKeys(X_CONTAINER)
+  assert.equal(rec.chainId, 196)
+  assert.equal(floor.get(`196:${X_CONTAINER.toLowerCase()}`), old.issued, 'the X Layer client wrote to the store it was given')
+  publish(nowS - 60)
+  await api.forChain(196).chain.channelKeys(X_CONTAINER, { fresh: true })
+  // after a restart, the old record put back is refused on X Layer too / 重启后，放回的旧记录在 X Layer 上同样被拒绝
+  w.chains[196].writeFile(X_CONTAINER, CHANNEL_KEYS_KEY, canonicalJSON(old))
+  const restarted = createTapeAPI(w.opts({ channelRecordFloor: floor }))
+  await assert.rejects(restarted.forChain(196).chain.channelKeys(X_CONTAINER), /older than a record already seen/)
+  // a 0.x store (keyed by the container alone) is read once and moved under the new key / 0.x 的键读一次并迁移
+  const legacy = new Map([[X_CONTAINER.toLowerCase(), nowS - 60]])
+  await assert.rejects(createTapeAPI(w.opts({ channelRecordFloor: legacy })).forChain(196).chain.channelKeys(X_CONTAINER), /older than a record already seen/)
+  assert.equal(legacy.get(`196:${X_CONTAINER.toLowerCase()}`), nowS - 60)
 })

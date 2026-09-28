@@ -52,7 +52,7 @@ proxy = createMcpProxy({
   upstream, manifestBase: manifest, signerKey: env.SIGNER_KEY, log,
   // http only for a loopback endpoint (local testing); a real one must be https. / 只有回环地址允许 http。
   allowHttp: /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(live),
-  identity: { name: process.env.TAPE_NAME || undefined },
+  name: process.env.TAPE_NAME || undefined,
   toolsSha256: process.env.TOOLS_SHA256 || undefined,
 })
 let m

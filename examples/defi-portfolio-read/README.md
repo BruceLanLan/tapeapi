@@ -203,8 +203,8 @@ try {
   console.log('agreed:', r.result.tokens[0].formatted, 'by', r.agreed)
 } catch (e) {
   if (e.code === 'QUORUM_FAILED') {
-    // extra 字段直接挂在 error 上（TapeAPIError 用 Object.assign），不是 e.data.*
-    console.error(e.message, e.groups, e.disagreed, e.failed)
+    // 细节在 e.data 里（1.0 起；顶层的 e.groups 等只是弃用别名）/ the details are in e.data (1.0; e.groups etc. are deprecated aliases)
+    console.error(e.message, e.data.groups, e.data.disagreed, e.data.failed)
   } else throw e
 }
 ```
@@ -218,9 +218,8 @@ TAP-21-verified on its own; envelopes that fail verification or never arrive are
 byte-identical. The block is part of the comparison, so **the same value at a different block is still a
 disagreement**. **Step 5 reject**: accept only when at least two verified envelopes arrived and **all** of them
 agree. **Any two differing verified envelopes reject — no majority vote, no reputation, no retrying just the
-minority.** Two-out-of-three agreeing is still a rejection. On failure the extra fields are assigned directly
-onto the error (`TapeAPIError` uses `Object.assign`), so they are `e.groups` / `e.disagreed` / `e.failed`,
-never `e.data.*`.
+minority.** Two-out-of-three agreeing is still a rejection. On failure the details are in `e.data`:
+`e.data.groups` / `e.data.disagreed` / `e.data.failed` (the top-level names are deprecated aliases until 2.0).
 
 > `onDissent: 'quorum'` 是一个**明确的降级**，默认关闭：它让唯一达到法定人数的那一组获胜，把失败模式从
 > 「拒绝」换成「可被 `quorum` 家合谋伪造」。只有当你自己挑选并信任这批提供者时才用它。

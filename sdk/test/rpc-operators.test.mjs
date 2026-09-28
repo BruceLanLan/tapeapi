@@ -53,9 +53,9 @@ test('RPC_DEFAULTS[56] is three distinct operators, and rpcUrlsFor hands out a f
 })
 
 test('FIXED RPC-OP-1: three dataseed URLs with quorum 2 are refused: one operator', () => {
-  assert.throws(() => createRpc({ urls: DATASEEDS, quorum: 2, fetch: canned({}) }), (e) => e.code === 'RPC_UNAVAILABLE' && /at least 2 independent operators, got 1 \(nodereal\)/.test(e.message))
+  assert.throws(() => createRpc({ urls: DATASEEDS, quorum: 2, fetch: canned({}) }), (e) => e.code === 'INVALID_ARGUMENT' && /at least 2 independent operators, got 1 \(nodereal\)/.test(e.message))
   // ...through createTapeAPI too / 经 createTapeAPI 同样拒绝
-  assert.throws(() => createTapeAPI({ rpcUrls: DATASEEDS, quorum: 2, fetch: canned({}) }), (e) => e.code === 'RPC_UNAVAILABLE')
+  assert.throws(() => createTapeAPI({ rpcUrls: DATASEEDS, quorum: 2, fetch: canned({}) }), (e) => e.code === 'INVALID_ARGUMENT')
   // Two dataseeds and Alchemy: two operators, quorum 2 is allowed; quorum 3 is not / 两家：quorum 2 可以，3 不行
   assert.equal(createRpc({ urls: [NODEREAL, NODEREAL2, ALCHEMY], quorum: 2, fetch: canned({}), quiet: true }).quorum, 2)
   assert.throws(() => createRpc({ urls: [NODEREAL, NODEREAL2, ALCHEMY], quorum: 3, fetch: canned({}) }), /at least 3 independent operators, got 2/)

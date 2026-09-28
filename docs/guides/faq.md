@@ -2,6 +2,11 @@
 
 ## General
 
+**What does 1.0 promise?**
+That code written against the 1.0 documentation keeps working in every 1.x release. Everything is Stable except what
+is marked `@experimental` (payments and the ServiceDirectory, which are not deployed) or `@internal`. What changed from
+0.x, and every error code, is in [Upgrading to 1.0](upgrade-1.0.md).
+
 **Do I need to deploy a contract to run a free service?**
 No. Identity, the manifest and the delegation all use TapeOut's deployed contracts (DeWebHub, SiteRegistry, the
 processor factory). Only paid services need the escrow, and on-chain channels need ChannelBus.

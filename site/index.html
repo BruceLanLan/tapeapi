@@ -3,24 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>TapeAPI — signed APIs for TapeOut circuits</title>
-<meta name="description" content="Tape out a circuit, and its container is your API. Free signed BNB Chain reads at api.tapeapi.fun, an encrypted relay, and the protocol behind them. 流片一枚电路，它的容器就是你的 API。">
+<title>TapeAPI — a signed receipt for every AI call</title>
+<meta name="description" content="Put a signing sidecar in front of any OpenAI- or Anthropic-compatible API: an on-chain identity, a price table pinned on chain, and a signed receipt for every call, with no client code changes. Plus signed MCP tools, private channels and groups, on BNB Chain, X Layer and Base. 给 AI 接口加一个签名旁路，每次调用都附一张任何人都能核验的回执。">
 <link rel="canonical" href="https://tapeapi.fun/">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="TapeAPI">
-<meta property="og:title" content="TapeAPI — signed APIs for TapeOut circuits">
-<meta property="og:description" content="Signed, verifiable APIs for TapeOut circuits on BNB Chain: free signed reads at api.tapeapi.fun, an encrypted relay, and the open protocol behind them.">
+<meta property="og:title" content="TapeAPI — a signed receipt for every AI call">
+<meta property="og:description" content="The signed API layer of TapeOut. A signing sidecar gives any OpenAI- or Anthropic-compatible API an on-chain identity, a price table pinned on chain and a signed receipt for every call; clients change no code.">
 <meta property="og:url" content="https://tapeapi.fun/">
-<meta property="og:image" content="https://tapeapi.fun/og.png">
+<meta property="og:image" content="https://tapeapi.fun/og.png?v=2">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="TapeAPI: signed, verifiable APIs for TapeOut circuits on BNB Chain. tapeapi.fun">
+<meta property="og:image:alt" content="TapeAPI: a signed receipt for every AI call. Put a signing sidecar in front of any OpenAI- or Anthropic-compatible API; your users change only the base URL. tapeapi.fun">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="TapeAPI — signed APIs for TapeOut circuits">
-<meta name="twitter:description" content="Signed, verifiable APIs for TapeOut circuits on BNB Chain: free signed reads at api.tapeapi.fun, an encrypted relay, and the open protocol behind them.">
-<meta name="twitter:image" content="https://tapeapi.fun/og.png">
-<link rel="stylesheet" href="style.css?v=423a7b9eb4">
+<meta name="twitter:title" content="TapeAPI — a signed receipt for every AI call">
+<meta name="twitter:description" content="The signed API layer of TapeOut. A signing sidecar gives any OpenAI- or Anthropic-compatible API an on-chain identity, a price table pinned on chain and a signed receipt for every call; clients change no code.">
+<meta name="twitter:image" content="https://tapeapi.fun/og.png?v=2">
+<link rel="stylesheet" href="style.css?v=4134b2b9ee">
 </head>
 <body>
 <header class="hd-bar">
@@ -39,38 +39,84 @@
 <div class="sheet">
 
 <div class="plate">
-  <p class="docno"><span><span lang="zh">数据手册</span><span lang="en">Datasheet</span></span><span>v0.8.0</span><span>2026-09-28</span><span>BNB 56 · X Layer 196 · Base 8453</span></p>
+  <p class="docno"><span><span lang="zh">数据手册</span><span lang="en">Datasheet</span></span><span>v1.0.0-rc.1</span><span>2026-09-29</span><span>BNB 56 · X Layer 196 · Base 8453</span></p>
 
-  <h1 lang="zh">流片一枚电路，它的容器就是你的 API</h1>
-  <h1 lang="en">Tape out a circuit, and its container is your API</h1>
+  <h1 lang="zh">每次 AI 调用，都附一张签名回执</h1>
+  <h1 lang="en">A signed receipt for every AI call</h1>
 
-  <p class="lede" lang="zh">每个响应由它签名；服务收费时，每次调用可用一张链下凭证支付，进一条只属于这个 API 的通道。DeWEB 是网站，TapeSend 是通信，TapeAPI 是服务。</p>
-  <p class="lede" lang="en">Every response signed by it; when a service charges, every call is payable with an off-chain voucher into a channel that belongs to that API alone. DeWEB is websites, TapeSend is communication, TapeAPI is services.</p>
+  <p class="lede" lang="zh">在任何 OpenAI 或 Anthropic 兼容接口前面加一个签名旁路：服务有了链上身份，价目表钉在链上，每个回答都附一张任何人都能核验的回执。你的用户照旧用官方 SDK，只改 base URL，不改代码。</p>
+  <p class="lede" lang="en">Put a signing sidecar in front of any OpenAI- or Anthropic-compatible API. Your service gets an on-chain identity, its price table is pinned on chain, and every answer comes with a receipt anyone can verify. Your users keep their official SDKs and change only the base URL.</p>
+  <p class="lede sub" lang="zh">TapeAPI 是 TapeOut 的签名 API 层。同一套身份和签名还用于 MCP 工具、容器之间的私密通道与群聊，支持 BNB Chain、X Layer 和 Base。</p>
+  <p class="lede sub" lang="en">TapeAPI is the signed API layer of TapeOut. The same identity and signatures also cover MCP tools and private channels and groups between containers, on BNB Chain, X Layer and Base.</p>
 
   <div class="badges">
     <span class="stamp">PRELIMINARY</span>
-    <span class="meta" lang="zh">预发布 · 规范 CC0 · 代码 MIT · 公共服务已上线 · 未经第三方审计</span>
-    <span class="meta" lang="en">Pre-alpha · Spec CC0 · Code MIT · Public service live · No third-party audit</span>
+    <span class="meta" lang="zh">预发布 · 今天所有调用免费 · 代码 MIT · 规范 CC0 · 未经第三方审计</span>
+    <span class="meta" lang="en">Pre-release · Every call free today · Code MIT · Spec CC0 · No third-party audit</span>
   </div>
   <div class="cta">
-    <a class="btn pri" href="playground/"><span lang="zh">在线试用</span><span lang="en">Try it live</span><span class="ar" aria-hidden="true">→</span></a>
-    <a class="btn" href="docs/"><span lang="zh">阅读手册</span><span lang="en">Read the docs</span><span class="ar" aria-hidden="true">→</span></a>
+    <a class="btn pri" href="#start"><span lang="zh">从这里开始</span><span lang="en">Start here</span><span class="ar" aria-hidden="true">↓</span></a>
+    <a class="btn" href="playground/"><span lang="zh">在线试用</span><span lang="en">Try it live</span><span class="ar" aria-hidden="true">→</span></a>
     <a class="btn ghost" href="https://github.com/BruceLanLan/tapeapi">GitHub</a>
   </div>
 </div>
 
+<section id="start">
+  <div class="shead"><span class="idx">01</span><h2 lang="zh">从这里开始</h2><h2 lang="en">Start Here</h2><span class="line"></span></div>
+  <p class="tcap" lang="zh">按你的角色选一条路，每条大约 5 分钟</p>
+  <p class="tcap" lang="en">Pick the path for your role; each takes about five minutes</p>
+  <div class="apps readers">
+    <div class="app">
+      <div class="no">FOR 01</div>
+      <h3 lang="zh">AI 服务方与中转站</h3><h3 lang="en">AI providers and relays</h3>
+      <p lang="zh">你已经在跑 new-api、网关或自建模型。加一个旁路，让每个回答都带签名回执。</p>
+      <p lang="en">You already run new-api, a gateway or your own models. Add a sidecar and every answer carries a signed receipt.</p>
+      <ol class="path" lang="zh"><li>new-api 用户：<code>examples/new-api-sidecar</code> 里一条 <code>docker compose up</code></li><li>在持有人操作台签委托，发布价目表</li><li>把用户的 base URL 指向旁路</li></ol>
+      <ol class="path" lang="en"><li>On new-api: one <code>docker compose up</code> in <code>examples/new-api-sidecar</code></li><li>Sign the delegation and publish your price table in the holder console</li><li>Point your users' base URL at the sidecar</li></ol>
+      <div class="more"><a class="doclink" href="docs/zh/ai-providers.html" lang="zh">AI 服务方指南 →</a><a class="doclink" href="docs/en/ai-providers.html" lang="en">Guide for AI providers →</a></div>
+    </div>
+    <div class="app">
+      <div class="no">FOR 02</div>
+      <h3 lang="zh">MCP 服务器作者</h3><h3 lang="en">MCP server authors</h3>
+      <p lang="zh">服务器和域名还是你的。在前面放一个签名代理，工具定义钉在链上，每个结果都有签名。</p>
+      <p lang="en">Keep your server and your domain. A signing proxy in front of it pins your tool definitions on chain and signs every result.</p>
+      <ol class="path" lang="zh"><li>用 <code>examples/mcp-proxy</code> 在本地跑代理（Node 或 Cloudflare Worker）</li><li>用持有人操作台发布清单，工具定义的哈希随之上链</li><li>把代理的 <code>/mcp</code> 地址发给用户</li></ol>
+      <ol class="path" lang="en"><li>Run the proxy from <code>examples/mcp-proxy</code> (Node or a Cloudflare Worker)</li><li>Publish the manifest with the holder console; the hash of your tool definitions goes on chain</li><li>Give users the proxy's <code>/mcp</code> address</li></ol>
+      <div class="more"><a class="doclink" href="docs/zh/mcp.html#tape-out-你自己的-mcp-服务器" lang="zh">MCP 指南 →</a><a class="doclink" href="docs/en/mcp.html#tape-out-your-own-mcp-server" lang="en">MCP guide →</a></div>
+    </div>
+    <div class="app">
+      <div class="no">FOR 03</div>
+      <h3 lang="zh">应用开发者</h3><h3 lang="en">App developers</h3>
+      <p lang="zh">调用签名服务并在本地验签，核验 AI 回执，在容器之间开私密通道和群聊。</p>
+      <p lang="en">Call signed services and verify them locally, check AI receipts, and open private channels and groups between containers.</p>
+      <ol class="path" lang="zh"><li>跑下面的 30 秒示例</li><li>AI 接口：把 <code>createVerifyingFetch</code> 接进官方 SDK</li><li>通道与群聊：从 <code>examples/group-chat</code> 开始</li></ol>
+      <ol class="path" lang="en"><li>Run the 30-second example below</li><li>For an AI API, plug <code>createVerifyingFetch</code> into the official SDK</li><li>For channels and groups, start from <code>examples/group-chat</code></li></ol>
+      <div class="more"><a class="doclink" href="docs/zh/consume.html" lang="zh">调用服务 →</a><a class="doclink" href="docs/en/consume.html" lang="en">Call a service →</a><a class="doclink" href="docs/zh/channels.html" lang="zh">私密通道 →</a><a class="doclink" href="docs/en/channels.html" lang="en">Channels →</a><a class="doclink" href="docs/zh/groups.html" lang="zh">群聊 →</a><a class="doclink" href="docs/en/groups.html" lang="en">Groups →</a></div>
+    </div>
+    <div class="app">
+      <div class="no">FOR 04</div>
+      <h3 lang="zh">TapeOut 电路持有人</h3><h3 lang="en">TapeOut circuit holders</h3>
+      <p lang="zh">你的电路就是服务的身份。转让电路，服务跟着走。</p>
+      <p lang="en">Your circuit is the service's identity. Transfer the circuit and the service goes with it.</p>
+      <ol class="path" lang="zh"><li>在电路页面开通容器（0.012 BNB，付给 TapeOut）</li><li>用钱包浏览器打开持有人操作台：生成服务密钥，签委托（90 天）</li><li>发布清单；到期前 30 天内续期</li></ol>
+      <ol class="path" lang="en"><li>Open the container on the circuit's page (0.012 BNB, paid to TapeOut)</li><li>Open the holder console in a wallet browser: generate the service key, sign the delegation (90 days)</li><li>Publish the manifest; renew in the last 30 days</li></ol>
+      <div class="more"><a class="doclink" href="console/" lang="zh">持有人操作台 →</a><a class="doclink" href="console/" lang="en">Holder console →</a><a class="doclink" href="docs/zh/provide.html" lang="zh">运行服务 →</a><a class="doclink" href="docs/en/provide.html" lang="en">Run a service →</a></div>
+    </div>
+  </div>
+</section>
+
 <section id="live">
-  <div class="shead"><span class="idx">01</span><h2 lang="zh">现已上线</h2><h2 lang="en">Live Now</h2><span class="line"></span></div>
-  <p class="tcap" lang="zh">BNB Smart Chain 主网 · 免费 · 无需注册，无需密钥</p>
-  <p class="tcap" lang="en">BNB Smart Chain mainnet · free · no sign-up, no key</p>
+  <div class="shead"><span class="idx">02</span><h2 lang="zh">现已上线</h2><h2 lang="en">Live Now</h2><span class="line"></span></div>
+  <p class="tcap" lang="zh">我们运行的公共服务 · 免费 · 无需注册，无需密钥</p>
+  <p class="tcap" lang="en">Public services we run · free · no sign-up, no key</p>
   <div class="pins">
     <div class="pin">
       <span class="pno">SVC</span>
       <div class="pb">
         <h3><span lang="zh">公共服务</span><span lang="en">Public service</span></h3>
         <div class="where"><a href="https://api.tapeapi.fun/.well-known/tapeapi.json">api.tapeapi.fun</a> · 11.1013.tape</div>
-        <p lang="zh">8 个免费的签名方法，按区块钉定读取 BNB Chain 与 TapeOut：</p>
-      <p lang="en">Eight free, signed, block-pinned reads of BNB Chain and TapeOut:</p>
+        <p lang="zh">8 个免费的签名方法，按区块钉定读取 BNB Chain 与 TapeOut，多个节点一致才作答：</p>
+        <p lang="en">Eight free, signed reads of BNB Chain and TapeOut, each pinned to one block and answered only when several nodes agree:</p>
         <p class="meth"><span>blockNumber ·</span> <span>balance ·</span> <span>tokenInfo ·</span> <span>tokenBalance ·</span> <span>nftOwner ·</span> <span>pairPrice ·</span> <span>bnbUsd ·</span> <span>tapeName</span></p>
         <div class="more"><a class="doclink" href="docs/zh/public-api.html" lang="zh">公共 API 指南 →</a><a class="doclink" href="docs/en/public-api.html" lang="en">Public API guide →</a></div>
       </div>
@@ -79,10 +125,10 @@
     <div class="pin">
       <span class="pno">MCP</span>
       <div class="pb">
-        <h3><span lang="zh">MCP 服务器</span><span lang="en">MCP server</span></h3>
+        <h3><span lang="zh">公共 MCP 端点</span><span lang="en">Public MCP endpoint</span></h3>
         <div class="where">https://api.tapeapi.fun/mcp</div>
-        <p lang="zh">同样的 8 个方法，作为 Claude、Cursor 等 MCP 客户端的工具。按网址添加即可，无需安装。每个结果都有签名，并附带任何人都能对照链上核验的回执。</p>
-      <p lang="en">The same eight methods as tools for Claude, Cursor and any MCP client. Add it by URL, nothing to install. Every result is signed and carries a receipt anyone can verify against the chain.</p>
+        <p lang="zh">同样的 8 个方法，作为 Claude、Cursor 等 MCP 客户端的工具。按网址添加，无需安装。每个结果都有签名和一张回执；核验链接只带哈希，不带参数和结果。</p>
+        <p lang="en">The same eight methods as tools for Claude, Cursor and any MCP client. Add it by URL, nothing to install. Every result is signed and carries a receipt; the verification link carries hashes only, not the params or the result.</p>
         <div class="more"><a class="doclink" href="docs/zh/mcp.html" lang="zh">MCP 指南 →</a><a class="doclink" href="docs/en/mcp.html" lang="en">MCP guide →</a></div>
       </div>
       <span class="st on">Live</span>
@@ -92,8 +138,11 @@
       <div class="pb">
         <h3><span lang="zh">公共中继</span><span lang="en">Public relay</span></h3>
         <div class="where"><a href="https://relay.tapeapi.fun/.well-known/tapeapi.json">relay.tapeapi.fun</a> · 12.1013.tape</div>
-        <p lang="zh">容器之间的端到端加密通道（TAP-26）。中继只存密文，看不到内容与身份。</p>
-      <p lang="en">End-to-end encrypted channels between containers (TAP-26). The relay stores ciphertext and never sees content or identities.</p>
+        <p lang="zh">3 个方法，承载容器之间的加密通道（TAP-26）与群聊（TAP-27）：</p>
+        <p lang="en">Three methods that carry encrypted channels (TAP-26) and groups (TAP-27) between containers:</p>
+        <p class="meth"><span>relaySend ·</span> <span>relayHandshake ·</span> <span>relayRecv</span></p>
+        <p lang="zh">中继只存密文，看不到内容；房间、时间和帧的大小它看得到。</p>
+        <p lang="en">The relay stores ciphertext and never sees content; it does see rooms, timing and frame sizes.</p>
         <div class="more"><a class="doclink" href="docs/zh/channels.html" lang="zh">通道指南 →</a><a class="doclink" href="docs/en/channels.html" lang="en">Channels guide →</a></div>
       </div>
       <span class="st on">Live</span>
@@ -103,15 +152,58 @@
       <div class="pb">
         <h3>ChannelBus</h3>
         <div class="where"><a href="https://bscscan.com/address/0x486110c35d9b90a9d6D85c8063A065f9e7b6b707">0x486110c35d9b90a9d6D85c8063A065f9e7b6b707</a></div>
-        <p lang="zh">把通道帧直接写上链的合约。没有所有者，没有状态，不可升级。</p>
-      <p lang="en">Carries channel frames on chain. No owner, no state, not upgradeable.</p>
+        <p lang="zh">把通道帧直接写上 BNB Chain 的合约。没有所有者，没有状态，不可升级。用 SDK 的 <code>busPrivacyReader</code> 读取时，默认下载整个合约、在本地筛选，节点看不出你读的是哪些房间。</p>
+        <p lang="en">A contract that carries channel frames on BNB Chain. No owner, no state, not upgradeable. Read it with the SDK's <code>busPrivacyReader</code> and by default it downloads the whole contract and filters locally, so a node cannot tell which rooms you read.</p>
       </div>
       <span class="st on">Live</span>
     </div>
   </div>
-  <p class="tcap tools-cap" lang="zh">工具 · 在浏览器里运行，或由你自己部署</p>
-  <p class="tcap tools-cap" lang="en">Tools · in the browser, or yours to run</p>
+
+  <p class="tcap tools-cap" lang="zh">软件与工具 · 在浏览器里运行，或由你自己部署</p>
+  <p class="tcap tools-cap" lang="en">Software and tools · in the browser, or yours to run</p>
   <div class="tools">
+    <div class="tool">
+      <div class="tt"><span class="pno">SDC</span><span class="st"><span lang="zh">可用：自己部署</span><span lang="en">Available: self-host</span></span></div>
+      <h3><a href="docs/zh/ai-providers.html" lang="zh">AI 签名旁路与 new-api 一键包</a><a href="docs/en/ai-providers.html" lang="en">AI signing sidecar and new-api package</a></h3>
+      <p lang="zh">支持 OpenAI Chat、Responses、Anthropic Messages 和 Embeddings，流式也支持，字节原样透传。new-api 用户一条 <code>docker compose up</code>。旁路会经手用户的 API 密钥，所以只能由你自己部署，我们不托管。</p>
+      <p lang="en">OpenAI Chat, Responses, Anthropic Messages and Embeddings, streams included, passed through byte for byte. One <code>docker compose up</code> for new-api. The sidecar handles your users' API keys, so you run it yourself; we never host it.</p>
+    </div>
+    <div class="tool">
+      <div class="tt"><span class="pno">VFY</span><span class="st"><span lang="zh">可用</span><span lang="en">Available</span></span></div>
+      <h3><a href="docs/zh/ai-providers.html#你的用户要做什么" lang="zh"><code>tapeapi-verify</code> 本地核验代理</a><a href="docs/en/ai-providers.html#what-your-users-do" lang="en"><code>tapeapi-verify</code> local proxy</a></h3>
+      <p lang="zh">Claude Code 和 Codex 自己读不到回执。把它们的 base URL 指向这个本地代理，每个回答都对照链上清单核验；加 <code>--strict</code>，核验失败就报错。已用真实的 Claude Code 与 Codex 测过。</p>
+      <p lang="en">Claude Code and Codex cannot read receipts themselves. Point their base URL at this local proxy and every answer is checked against the on-chain manifest; with <code>--strict</code> a failed receipt becomes an error. Tested with the real Claude Code and Codex.</p>
+    </div>
+    <div class="tool">
+      <div class="tt"><span class="pno">CON</span><span class="st on">Live</span></div>
+      <h3><a href="console/"><span lang="zh">持有人操作台与 AI 价目表</span><span lang="en">Holder console and AI price tables</span></a></h3>
+      <p lang="zh">在钱包浏览器里把容器发布成服务。发布前把每个模型、每种币的价格列成表给你看，上链后再读回来逐字节核对。支持 BNB Chain、X Layer 和 Base。</p>
+      <p lang="en">Publish your container as a service from a wallet browser. Before the wallet asks, it shows every model's price in every currency; after the transaction, it reads the manifest back and compares the bytes. BNB Chain, X Layer and Base.</p>
+    </div>
+    <div class="tool">
+      <div class="tt"><span class="pno">GRP</span><span class="st"><span lang="zh">可用：SDK</span><span lang="en">Available: SDK</span></span></div>
+      <h3><a href="docs/zh/groups.html" lang="zh">群聊一步投递</a><a href="docs/en/groups.html" lang="en">One-call group delivery</a></h3>
+      <p lang="zh"><code>deliverGroupUpdate</code> 一次调用，把邀请送进每个新成员的收件房间，再把新纪元发到群房间；成员用 <code>checkGroupInvites</code> 收邀请。走中继或 ChannelBus。</p>
+      <p lang="en"><code>deliverGroupUpdate</code> posts the invites to every new member's inbox room and then the new epoch to the group room, in one call; members read theirs with <code>checkGroupInvites</code>. Over relays or ChannelBus.</p>
+    </div>
+    <div class="tool">
+      <div class="tt"><span class="pno">PRX</span><span class="st"><span lang="zh">可用：自己部署</span><span lang="en">Available: self-host</span></span></div>
+      <h3><a href="docs/zh/mcp.html#tape-out-你自己的-mcp-服务器" lang="zh">MCP 签名代理</a><a href="docs/en/mcp.html#tape-out-your-own-mcp-server" lang="en">MCP signing proxy</a></h3>
+      <p lang="zh">放在你的 MCP 服务器前面（Node 或 Cloudflare Worker）。工具定义的哈希写进链上清单，工具被改动，客户端就拒绝，代理也停止服务。还没有第三方服务器接入。</p>
+      <p lang="en">In front of your MCP server (Node or a Cloudflare Worker). The hash of your tool definitions goes into the on-chain manifest; if the tools change, clients refuse them and the proxy stops serving. No third-party server has been taped out yet.</p>
+    </div>
+    <div class="tool">
+      <div class="tt"><span class="pno">SPT</span><span class="st"><span lang="zh">可用</span><span lang="en">Available</span></span></div>
+      <h3><a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/spot-check"><span lang="zh">抽检探针</span><span lang="en">Spot-check probe</span></a></h3>
+      <p lang="zh">任何人都能向 AI 服务方发一组固定、带版本的测试请求，逐张核验回执，把原始数据写成 JSON 行，比如上报的 <code>prompt_tokens</code> 和本地分词器的计数并列。只给数据，不打分，不排名。</p>
+      <p lang="en">Anyone can send an AI service a fixed, versioned set of test requests, verify each receipt and write the raw data as JSON lines, such as the reported <code>prompt_tokens</code> next to local tokenizer counts. Data only: no scores, no rankings.</p>
+    </div>
+    <div class="tool">
+      <div class="tt"><span class="pno">VER</span><span class="st on">Live</span></div>
+      <h3><a href="verify/"><span lang="zh">回执核验页</span><span lang="en">Receipt checker</span></a></h3>
+      <p lang="zh">粘贴一张回执或打开核验链接，在浏览器里对照链上核验。页面写明回执不证明什么；也可以自己托管。</p>
+      <p lang="en">Paste a receipt or open a verification link and check it against the chain in your browser. The page says what a receipt does not prove, and you can host it yourself.</p>
+    </div>
     <div class="tool">
       <div class="tt"><span class="pno">PLY</span><span class="st on">Live</span></div>
       <h3><a href="playground/"><span lang="zh">调试台</span><span lang="en">Playground</span></a></h3>
@@ -119,225 +211,236 @@
       <p lang="en">Type a service name, call it from the browser and see every check the SDK makes. Nothing to install.</p>
     </div>
     <div class="tool">
-      <div class="tt"><span class="pno">DOC</span><span class="st on">Live</span></div>
-      <h3><a href="docs/"><span lang="zh">手册</span><span lang="en">Docs</span></a></h3>
-      <p lang="zh">调用服务、运行服务、私密通道、AI 代理、常见问题。</p>
-      <p lang="en">Calling a service, running one, private channels, AI agents, FAQ.</p>
-    </div>
-    <div class="tool">
-      <div class="tt"><span class="pno">STS</span><span class="st on">Live</span></div>
-      <h3><a href="status/"><span lang="zh">服务状态</span><span lang="en">Status</span></a></h3>
-      <p lang="zh">公共服务与中继的健康、延迟、签名密钥与委托到期时间。</p>
-      <p lang="en">Health, latency, signer and delegation expiry of the public service and relay.</p>
-    </div>
-    <div class="tool">
-      <div class="tt"><span class="pno">DSH</span><span class="st on">Live</span></div>
-      <h3><a href="dashboard/"><span lang="zh">我的服务</span><span lang="en">Dashboard</span></a></h3>
-      <p lang="zh">添加你的服务名，一览是否在线、委托还剩几天，一键去调试或续期。只读：不签名、不发交易。</p>
-      <p lang="en">Add your service names and see at a glance whether each is up and how many days its delegation has left, with links to try or renew it. Read-only: it never signs or sends.</p>
-    </div>
-    <div class="tool">
-      <div class="tt"><span class="pno">CON</span><span class="st on">Live</span></div>
-      <h3><a href="console/"><span lang="zh">持有人操作台</span><span lang="en">Holder console</span></a></h3>
-      <p lang="zh">给 TapeOut 电路持有人：在钱包浏览器里把自己的容器发布成 TapeAPI 服务。</p>
-      <p lang="en">For TapeOut circuit holders: publish your container as a TapeAPI service from a wallet browser.</p>
-    </div>
-    <div class="tool">
-      <div class="tt"><span class="pno">PRX</span><span class="st">Available</span></div>
-      <h3><a href="docs/zh/mcp.html#tape-out-你自己的-mcp-服务器" lang="zh">Tape out 你的 MCP 服务器</a><a href="docs/en/mcp.html#tape-out-your-own-mcp-server" lang="en">Tape out your MCP server</a></h3>
-      <p lang="zh">服务器和域名仍是你自己的。在前面放一个签名代理（Node 或 Cloudflare Worker），加上链上身份、钉在链上清单里的工具定义（改动要持有人重新发布），以及每个结果的签名。还没有第三方服务器接入。</p>
-      <p lang="en">Keep your own server and domain. Put a signing proxy in front of it (Node or a Cloudflare Worker) for an on-chain identity, tool definitions pinned in the on-chain manifest (a change needs the holder to republish), and a signature on every result. No third-party server has been taped out yet.</p>
-    </div>
-    <div class="tool">
       <div class="tt"><span class="pno">SRC</span><span class="st">Public</span></div>
       <h3><a href="https://github.com/BruceLanLan/tapeapi"><span lang="zh">源代码</span><span lang="en">Source</span></a></h3>
-      <p lang="zh">公开仓库。代码 MIT，规范 CC0。</p>
-      <p lang="en">Public repository. Code MIT, specs CC0.</p>
+      <p lang="zh">公开仓库。代码 MIT，规范 CC0。SDK 从 GitHub Release 安装，还没发到 npm。</p>
+      <p lang="en">Public repository. Code MIT, specs CC0. Install the SDK from the GitHub release; it is not on npm yet.</p>
     </div>
   </div>
 
   <div class="try">
-    <div class="subh"><span class="idx">01.1</span><h3 lang="zh">30 秒试用</h3><h3 lang="en">Try It in 30 Seconds</h3></div>
+    <div class="subh"><span class="idx">02.1</span><h3 lang="zh">30 秒试用</h3><h3 lang="en">Try It in 30 Seconds</h3></div>
     <p class="step"><span class="no">A · curl</span><span lang="zh">向公共服务要 BNB 价格。curl 只显示签名信封（<code>result</code>、<code>container</code>、<code>ts</code>、<code>block</code>、<code>sig</code>），不做任何核对；验签请用 SDK 或<a href="playground/">调试台</a>。</span><span lang="en">Ask the public service for the BNB price. curl shows the signed envelope (<code>result</code>, <code>container</code>, <code>ts</code>, <code>block</code>, <code>sig</code>) but checks nothing; the SDK or the <a href="playground/">playground</a> verifies it.</span></p>
 <div class="code"><div class="cap">shell</div><pre class="sys">curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{"id":"1","params":{}}'</pre></div>
-    <p class="step"><span class="no">B · SDK</span><span lang="zh">包还没发到 npm，先准备一次仓库（Node.js 20 或以上）：</span><span lang="en">The packages are not on npm yet, so set up the repository once (Node.js 20 or later):</span></p>
-<div class="code"><div class="cap">shell</div><pre>git clone https://github.com/BruceLanLan/tapeapi.git
-cd tapeapi
-npm install</pre></div>
-    <p class="step"><span lang="zh">把下面存为 <code>try.mjs</code>，<b>必须放在 tapeapi 目录里</b>（<code>@tapeapi/sdk</code> 通过仓库的 workspace 解析），然后运行 <code>node try.mjs</code>：</span><span lang="en">Save this as <code>try.mjs</code> <b>inside the tapeapi directory</b> (<code>@tapeapi/sdk</code> resolves through the repository's workspace), then run <code>node try.mjs</code>:</span></p>
-<div class="code"><div class="cap">try.mjs</div><pre><span class="k">import</span> { createTapeAPI } <span class="k">from</span> <span class="s">'@tapeapi/sdk'</span>
+    <p class="step"><span class="no">B · SDK</span><span lang="zh">SDK 还没发到 npm，从 GitHub Release 装进一个空目录（Node.js 20 或以上）：</span><span lang="en">The SDK is not on npm yet; install it from the GitHub release into an empty directory (Node.js 20 or later):</span></p>
+<div class="code"><div class="cap">shell</div><pre>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz</pre></div>
+    <p class="step"><span lang="zh">把下面存为 <code>try.mjs</code>，运行 <code>node try.mjs</code>。SDK 从链上解析服务、验签，通过了才返回结果：</span><span lang="en">Save this as <code>try.mjs</code> and run <code>node try.mjs</code>. The SDK resolves the service from the chain and verifies the answer before it returns:</span></p>
+<div class="code"><div class="cap">try.mjs</div><pre><span class="k">import</span> { createTapeAPI, rpcUrlsFor } <span class="k">from</span> <span class="s">'@tapeapi/sdk'</span>
 
-<span class="k">const</span> api = createTapeAPI({
-  rpcUrls: [<span class="s">'https://bsc-dataseed.bnbchain.org'</span>, <span class="s">'https://bsc-mainnet.public.blastapi.io'</span>, <span class="s">'https://rpc-bsc.48.club'</span>],
-  quorum: 2,
+<span class="k">const</span> api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })   <span class="c">// <span lang="zh">3 家不同运营方的节点，2 家一致才采信</span><span lang="en">nodes of 3 distinct operators; 2 must agree</span></span>
+<span class="k">const</span> service = <span class="k">await</span> api.resolve(<span class="s">'11.1013.tape'</span>)         <span class="c">// <span lang="zh">名字、容器、链上清单、持有人委托</span><span lang="en">name, container, on-chain manifest, delegation</span></span>
+<span class="k">const</span> { result, verified } = <span class="k">await</span> api.call(service, <span class="s">'bnbUsd'</span>, {})
+console.log(result.bnbUsd, verified)                      <span class="c">// <span lang="zh">验签通过才为 true</span><span lang="en">true only after the signature checked out</span></span></pre></div>
+    <p class="step"><span class="no">C · AI</span><span lang="zh">核验 AI 回执：把 <code>createVerifyingFetch</code> 接进官方 OpenAI SDK（Anthropic SDK 同样接受 <code>fetch</code>）。另装 <code>openai</code>，把 <code>42.1013.tape</code> 换成服务方的 TapeOut 名字：</span><span lang="en">Check AI receipts: plug <code>createVerifyingFetch</code> into the official OpenAI SDK (the Anthropic SDK takes a <code>fetch</code> too). Also install <code>openai</code>, and replace <code>42.1013.tape</code> with the provider's TapeOut name:</span></p>
+<div class="code"><div class="cap">ai.mjs</div><pre class="sys"><span class="k">import</span> OpenAI <span class="k">from</span> <span class="s">'openai'</span>
+<span class="k">import</span> { createTapeAPI, rpcUrlsFor, ai } <span class="k">from</span> <span class="s">'@tapeapi/sdk'</span>
+
+<span class="k">const</span> api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })
+<span class="k">const</span> service = <span class="k">await</span> api.resolve(<span class="s">'42.1013.tape'</span>)     <span class="c">// <span lang="zh">AI 服务方的名字（示例）</span><span lang="en">the AI provider's name (an example)</span></span>
+<span class="k">const</span> { baseUrl } = service.manifest.ai.endpoints.find((e) =&gt; e.format === <span class="s">'openai-chat'</span>)
+<span class="k">const</span> client = <span class="k">new</span> OpenAI({
+  baseURL: baseUrl,                                  <span class="c">// <span lang="zh">服务方发布在链上的地址</span><span lang="en">the address the provider published on chain</span></span>
+  apiKey: process.env.API_KEY,                       <span class="c">// <span lang="zh">你在该服务方的密钥，照旧</span><span lang="en">your key with that provider, as before</span></span>
+  fetch: ai.createVerifyingFetch({ api, service }),  <span class="c">// <span lang="zh">核验每张回执，不通过就抛错</span><span lang="en">checks every receipt; a bad one throws</span></span>
 })
-<span class="k">const</span> svc = <span class="k">await</span> api.resolve(<span class="s">'11.1013.tape'</span>)   <span class="c">// <span lang="zh">名字、容器、链上清单、持有人委托</span><span lang="en">name, container, on-chain manifest, delegation</span></span>
-<span class="k">const</span> { result, verified } = <span class="k">await</span> api.call(svc, <span class="s">'bnbUsd'</span>, {})
-console.log(result.bnbUsd, verified)            <span class="c">// <span lang="zh">验签通过才为 true</span><span lang="en">true only after the signature checked out</span></span></pre></div>
+<span class="k">const</span> r = <span class="k">await</span> client.chat.completions.create({ model: <span class="s">'gpt-4o-mini'</span>, messages: [{ role: <span class="s">'user'</span>, content: <span class="s">'Hello'</span> }] })
+console.log(r.choices[0].message.content)</pre></div>
+    <p class="step"><span lang="zh">Claude Code 和 Codex 自己读不到回执。用它们时，在本机开一个核验代理，再把 base URL 指向它：</span><span lang="en">Claude Code and Codex cannot read receipts themselves. For them, run a verifying proxy on your machine and point the base URL at it:</span></p>
+<div class="code"><div class="cap">shell</div><pre class="sys">npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz tapeapi-verify 42.1013.tape
+ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude     <span class="c"># <span lang="zh">Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1</span><span lang="en">Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1</span></span></pre></div>
+    <p class="note" lang="zh"><b>如实说明。</b>今天链上还没有发布 AI 价目表的外部服务方，所以 C 段的代码是对仓库里的参考旁路（<code>examples/ai-proxy</code>，本地开发模式）实际运行验证的；接真实服务方时只换名字。</p>
+    <p class="note" lang="en"><b>Plainly.</b> No outside provider has published an AI price table on chain yet, so the code in C was run against the reference sidecar in the repository (<code>examples/ai-proxy</code>, local dev mode); with a real provider only the name changes.</p>
   </div>
 </section>
 
-<section>
-  <div class="shead"><span class="idx">02</span><h2 lang="zh">特性与说明</h2><h2 lang="en">Features and Description</h2><span class="line"></span></div>
-  <div class="panel pad">
+<section id="ai">
+  <div class="shead"><span class="idx">03</span><h2 lang="zh">AI 服务的签名回执层</h2><h2 lang="en">The Receipt Layer for AI</h2><span class="line"></span></div>
+  <figure>
+    <div class="figbox">
+      <svg viewBox="0 0 760 250" width="760" height="250" aria-hidden="true" focusable="false">
+        <defs>
+          <style>
+            .lbl { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12.5px; fill: currentColor; letter-spacing: .06em; }
+            .tiny { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 9.5px; fill: currentColor; opacity: .6; letter-spacing: .08em; }
+          </style>
+          <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 z" fill="currentColor"/></marker>
+        </defs>
+        <g fill="none" stroke="currentColor" stroke-width="1" opacity=".6">
+          <rect x="30" y="40" width="180" height="84"/>
+          <rect x="550" y="40" width="180" height="84"/>
+        </g>
+        <rect x="290" y="40" width="180" height="84" fill="none" stroke="currentColor" stroke-width="2"/>
+        <circle cx="304" cy="54" r="4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+        <rect x="30" y="180" width="700" height="50" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="5 4" opacity=".7"/>
+
+        <g class="lbl" text-anchor="middle">
+          <text x="120" y="72" lang="zh">客户端</text><text x="120" y="72" lang="en">CLIENT</text>
+          <text x="380" y="72" lang="zh">TapeAPI 旁路</text><text x="380" y="72" lang="en">TAPEAPI SIDECAR</text>
+          <text x="640" y="72" lang="zh">你的接口</text><text x="640" y="72" lang="en">YOUR API</text>
+          <text x="380" y="203" lang="zh">链上 · BNB Chain · X Layer · Base</text><text x="380" y="203" lang="en">ON CHAIN · BNB CHAIN · X LAYER · BASE</text>
+        </g>
+        <g class="tiny" text-anchor="middle">
+          <text x="120" y="94" lang="zh">官方 SDK</text><text x="120" y="94" lang="en">OFFICIAL SDKS</text>
+          <text x="120" y="109">CLAUDE CODE · CODEX</text>
+          <text x="380" y="94" lang="zh">为每个回答签回执</text><text x="380" y="94" lang="en">SIGNS EVERY ANSWER</text>
+          <text x="380" y="109" lang="zh">由你自己部署</text><text x="380" y="109" lang="en">YOU RUN IT</text>
+          <text x="640" y="94">NEW-API · GATEWAY</text>
+          <text x="640" y="109" lang="zh">或自建模型</text><text x="640" y="109" lang="en">OR YOUR OWN MODELS</text>
+          <text x="380" y="220" lang="zh">身份 · 价目表 · 签名密钥的委托</text><text x="380" y="220" lang="en">IDENTITY · PRICE TABLE · SIGNER DELEGATION</text>
+          <text x="250" y="60" lang="zh">请求</text><text x="250" y="60" lang="en">REQUEST</text>
+          <text x="250" y="116" lang="zh">回答与回执</text><text x="250" y="116" lang="en">ANSWER · RECEIPT</text>
+          <text x="510" y="60" lang="zh">原样</text><text x="510" y="60" lang="en">SAME BYTES</text>
+        </g>
+        <g class="tiny" text-anchor="start">
+          <text x="128" y="158" lang="zh">核验</text><text x="128" y="158" lang="en">VERIFY</text>
+          <text x="388" y="158" lang="zh">发布一次</text><text x="388" y="158" lang="en">PUBLISHED ONCE</text>
+        </g>
+        <g fill="none" stroke="currentColor" stroke-width="1.2" opacity=".8">
+          <path d="M212 70 H286" marker-end="url(#ah)"/>
+          <path d="M288 96 H214" marker-end="url(#ah)"/>
+          <path d="M472 70 H546" marker-end="url(#ah)"/>
+          <path d="M548 96 H474" marker-end="url(#ah)"/>
+          <path d="M120 176 V128" marker-end="url(#ah)" stroke-dasharray="3 3"/>
+          <path d="M380 128 V176" marker-end="url(#ah)" stroke-dasharray="3 3"/>
+        </g>
+      </svg>
+    </div>
+    <figcaption lang="zh"><span class="fno">图 1</span>请求和回答原样穿过旁路，旁路为每个回答签一张用量回执：模型、token 数、按价目表算出的金额、请求与回答的哈希。签名密钥由电路持有人在链上委托，价目表写在链上清单里；客户端读链核验，不用信任旁路。</figcaption>
+    <figcaption lang="en"><span class="fno">Fig. 1</span>Requests and answers pass through the sidecar unchanged; it signs a usage receipt for each answer: the model, the token counts, the amount from the price table, and the hashes of the request and the answer. The signing key is delegated on chain by the circuit's holder and the price table is in the on-chain manifest, so a client checks against the chain, not against the sidecar.</figcaption>
+  </figure>
+
+  <div class="panel pad ai-panel">
+    <p class="tcap" lang="zh">一张回执证明什么（TAP-21 的 AI 用量回执）</p>
+    <p class="tcap" lang="en">What one receipt proves (TAP-21 AI usage receipts)</p>
+    <div class="tw">
+      <table>
+        <thead><tr>
+          <th><span lang="zh">问题</span><span lang="en">Question</span></th>
+          <th><span lang="zh">回执里的依据</span><span lang="en">Evidence in the receipt</span></th>
+          <th><span lang="zh">证明</span><span lang="en">Proven</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td class="dim"><span lang="zh">谁回答的</span><span lang="en">Who answered</span></td><td class="dim"><span lang="zh">持有人在链上委托的签名密钥</span><span lang="en">A signing key the holder delegated on chain</span></td><td class="val yes">1</td></tr>
+          <tr><td class="dim"><span lang="zh">回答的是哪个请求</span><span lang="en">To which exact request</span></td><td class="sym">requestSha256</td><td class="val yes">1</td></tr>
+          <tr><td class="dim"><span lang="zh">回答了哪些字节</span><span lang="en">With which exact bytes</span></td><td class="sym">responseSha256</td><td class="val yes">1</td></tr>
+          <tr><td class="dim"><span lang="zh">声称的用量与价格</span><span lang="en">Claimed usage and price</span></td><td class="dim"><span lang="zh">token 数，按链上价目表重算的金额</span><span lang="en">Token counts; an amount anyone recomputes from the on-chain table</span></td><td class="val yes">1</td></tr>
+          <tr><td class="dim"><span lang="zh">实际跑的是哪个模型</span><span lang="en">Which model actually ran</span></td><td class="dim"><span lang="zh"><code>model</code> 只是上游自己报的名字</span><span lang="en"><code>model</code> is only the name the upstream reported</span></td><td class="val nope">0</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note" lang="zh"><b>回执不证明实际跑的是哪个模型。</b>服务方可以把便宜模型的回答标成贵的。签名带来的是可追责：回执无法抵赖，任何人用抽检探针发测试请求、公开结果，都会留下证据。</p>
+    <p class="note" lang="en"><b>A receipt does not prove which model actually ran.</b> A provider could label a cheaper model's answer as a dearer one. What the signature adds is accountability: a receipt cannot be disowned, so anyone running spot checks and publishing the results leaves evidence.</p>
+  </div>
+
+  <div class="panel pad fd-panel">
     <div class="fd">
       <ul class="features">
-        <li lang="zh"><b>免费服务零部署</b><span class="d">不需要我们的任何合约</span></li>
-        <li lang="en"><b>Zero deployment</b><span class="d">A free service needs none of our contracts</span></li>
-        <li lang="zh"><b>身份不可自述</b><span class="d">由链上推导，客户端强制重算</span></li>
-        <li lang="en"><b>Identity cannot be self-asserted</b><span class="d">Derived on chain; clients re-derive it</span></li>
-        <li lang="zh"><b>答案带签名</b><span class="d">摘要覆盖方法与参数，签过名的错误无法被改标成成功</span></li>
-        <li lang="en"><b>Signed answers</b><span class="d">The digest covers method and params, so an error cannot be relabelled</span></li>
-        <li lang="zh"><b>一次调用零 gas</b><span class="d">累计凭证进只属于该 API 的通道，多次调用一笔结算</span></li>
-        <li lang="en"><b>No gas per call</b><span class="d">Cumulative vouchers into a channel that belongs to that API alone; many calls settle at once</span></li>
-        <li lang="zh"><b>无强制协议费</b><span class="d">默认 1% 维护贡献，提供者可设为 0</span></li>
-        <li lang="en"><b>No mandatory protocol fee</b><span class="d">Default 1% maintenance contribution; any provider can set it to 0</span></li>
-        <li lang="zh"><b>多方一致</b><span class="d">任意两份已验证答案不一致即拒绝，永不多数决</span></li>
-        <li lang="en"><b>Quorum</b><span class="d">Any disagreement rejects; never a majority vote</span></li>
+        <li lang="zh"><b>客户端不改代码</b><span class="d">官方 SDK、Claude Code、Codex 照旧，只换 base URL</span></li>
+        <li lang="en"><b>No client code changes</b><span class="d">Official SDKs, Claude Code and Codex work as before; only the base URL changes</span></li>
+        <li lang="zh"><b>四种格式，含流式</b><span class="d">OpenAI Chat、Responses、Anthropic Messages、Embeddings</span></li>
+        <li lang="en"><b>Four formats, streams included</b><span class="d">OpenAI Chat, Responses, Anthropic Messages, Embeddings</span></li>
+        <li lang="zh"><b>回执不打扰旧客户端</b><span class="d">放在响应头，或官方 SDK 会忽略的 SSE 注释里</span></li>
+        <li lang="en"><b>Receipts break no client</b><span class="d">In a response header, or an SSE comment the official SDKs ignore</span></li>
+        <li lang="zh"><b>价目表钉在链上</b><span class="d">每个模型、每种币一个价，改价要持有人重新发布</span></li>
+        <li lang="en"><b>Prices pinned on chain</b><span class="d">One price per model and currency; a change needs the holder to republish</span></li>
       </ul>
       <div class="desc">
-        <p lang="zh">今天的网站要调用服务，必须连上某家公司的服务器。TapeAPI 把服务本身变成一个链上身份：<b>一枚 TapeOut 电路、它的 ERC-6551 容器，以及存在容器站点里的一份服务清单。</b></p>
-      <p lang="en">A website that needs a service today must reach a company's server. TapeAPI turns the service itself into an on-chain identity: <b>one TapeOut circuit, its ERC-6551 container, and a manifest stored in that container's site.</b></p>
-        <p lang="zh">调用走普通 HTTPS，所以和现有 API 一样快。区别在于响应由容器绑定的密钥签名，调用方可以验签，也可以要求两家互不相干的提供者给出一致答案才采信。</p>
-      <p lang="en">Calls go over ordinary HTTPS, so they are as fast as any API. The difference is that the response is signed by a key bound to the container, and the caller can verify it, or require two unrelated providers to agree before believing it.</p>
-        <p lang="zh">付费用离线签发的累计凭证，提供者攒够了再上链结算一次。<b>调用本身不花 gas。</b>付费所需的托管合约尚未部署，要先通过独立审计；今天所有公共方法都免费。</p>
-      <p lang="en">Payment uses off-chain cumulative vouchers; the provider settles once on chain when it is worth doing. <b>The call itself costs no gas.</b> The escrow that paid calls need is not deployed yet and waits for an independent audit; today every public method is free.</p>
+        <p lang="zh">你照旧经营：接口、密钥、渠道和计费都不变。旁路放在你的网关<b>前面</b>，所以回执覆盖的正是你向用户收取的用量与价格。</p>
+        <p lang="en">Your business runs as before: your API, keys, channels and billing stay the same. The sidecar sits <b>in front of</b> your gateway, so a receipt covers exactly the usage and price you charge your users.</p>
+        <p lang="zh">价目表里的价格<b>只是公开的声明，不经过结算</b>：用户照旧向你付款，回执里的金额是一笔可以核对的声明。</p>
+        <p lang="en">Prices in the table are <b>published, not settled</b>: your users pay you as they do today, and the amount in a receipt is a claim anyone can check.</p>
+        <p lang="zh">TapeAPI 只面向在上游服务商条款范围内合规经营的服务方。身份、价目表在链上，换域名、换服务器，用户跟着链上记录走；协议不提供、也不帮助绕开上游的封禁或地区限制。</p>
+        <p lang="en">TapeAPI is for providers operating within their upstream providers' terms. Identity and prices live on chain, so users follow the on-chain record when you change domain or server; the protocol does not offer, or help with, getting around an upstream's bans or regional limits.</p>
       </div>
     </div>
   </div>
 </section>
 
-<section>
-  <div class="shead"><span class="idx">03</span><h2 lang="zh">功能框图</h2><h2 lang="en">Functional Block Diagram</h2><span class="line"></span></div>
-  <figure>
-    <div class="figbox">
-      <svg viewBox="0 0 760 300" width="760" height="300" role="img"
-           aria-label="Three layers connect to one circuit container; the holder signs a delegation once">
-        <defs>
-          <style>
-            .lbl { font-family: "IBM Plex Mono", monospace; font-size: 11px; fill: currentColor; }
-            .tiny { font-family: "IBM Plex Mono", monospace; font-size: 9.5px; fill: currentColor; opacity: .55; letter-spacing: .08em; }
-            .big { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; fill: currentColor; letter-spacing: .06em; }
-          </style>
-        </defs>
-
-        <g fill="none" stroke="currentColor" stroke-width="1" opacity=".55">
-          <rect x="40" y="38" width="168" height="44"/>
-          <rect x="40" y="128" width="168" height="44"/>
-          <rect x="40" y="218" width="168" height="44"/>
-        </g>
-        <g class="lbl" text-anchor="middle">
-          <text x="124" y="65">DeWEB</text>
-          <text x="124" y="155">TapeSend</text>
-          <text x="124" y="245">TapeAPI</text>
-        </g>
-        <g class="tiny">
-          <text x="40" y="30">PAGES</text>
-          <text x="40" y="120">MESSAGES</text>
-          <text x="40" y="210">SERVICES</text>
-        </g>
-
-        <!-- chip package -->
-        <rect x="360" y="88" width="230" height="124" fill="none" stroke="currentColor" stroke-width="2"/>
-        <circle cx="378" cy="106" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
-        <g class="big" text-anchor="middle">
-          <text x="475" y="138">CIRCUIT NFT</text>
-          <text x="475" y="160">ERC-6551</text>
-          <text x="475" y="182">CONTAINER</text>
-        </g>
-
-        <!-- pins -->
-        <g fill="none" stroke="currentColor" stroke-width="1.4">
-          <path d="M344 110 h16 M344 140 h16 M344 170 h16 M344 196 h16"/>
-          <path d="M590 110 h16 M590 150 h16 M590 190 h16"/>
-        </g>
-        <g class="tiny" text-anchor="end">
-          <text x="340" y="104">1</text><text x="340" y="134">2</text>
-          <text x="340" y="164">3</text><text x="340" y="190">4</text>
-        </g>
-
-        <!-- traces in -->
-        <g fill="none" stroke="currentColor" stroke-width="1.2" opacity=".75">
-          <path d="M208 60 H286 V110 H344"/>
-          <path d="M208 150 H262 V140 H344"/>
-          <path d="M208 240 H286 V170 H344"/>
-        </g>
-        <g fill="currentColor" opacity=".75">
-          <circle cx="286" cy="60" r="2.4"/><circle cx="262" cy="150" r="2.4"/><circle cx="286" cy="240" r="2.4"/>
-        </g>
-
-        <!-- traces out -->
-        <g fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55">
-          <path d="M606 110 h70"/><path d="M606 150 h70"/><path d="M606 190 h70"/>
-        </g>
-        <g class="tiny" text-anchor="start">
-          <text x="684" y="114">HOLDER</text>
-          <text x="684" y="154">SIGNER KEY</text>
-          <text x="684" y="194">MANIFEST</text>
-        </g>
-      </svg>
+<section id="more">
+  <div class="shead"><span class="idx">04</span><h2 lang="zh">同一套身份，还有三块</h2><h2 lang="en">One Identity, Three More Layers</h2><span class="line"></span></div>
+  <div class="apps">
+    <div class="app">
+      <div class="no">MCP</div>
+      <h3 lang="zh">签名的 MCP 工具</h3><h3 lang="en">Signed MCP tools</h3>
+      <p lang="zh">MCP 的工具结果是服务器随口给的，工具定义也可以在你批准之后被偷偷改掉。TapeAPI 让每个结果带签名和回执，把工具定义的哈希钉在链上。公共端点直接用；自己的服务器加签名代理；本地命令 <code>tapeapi-mcp</code> 在模型看到结果之前先核验。</p>
+      <p lang="en">In MCP a tool result is whatever the server sent, and a tool definition can change after you approved it. TapeAPI signs every result, attaches a receipt and pins the hash of the tool definitions on chain. Use the public endpoint, put the signing proxy in front of your own server, or run <code>tapeapi-mcp</code> locally to check every answer before the model sees it.</p>
     </div>
-    <figcaption lang="zh"><span class="fno">图 1</span>三层共用同一个身份：一枚电路的容器。持有人签一次委托，服务此后用自己的热密钥签名答案；转让电路即转让服务。</figcaption>
-    <figcaption lang="en"><span class="fno">Fig. 1</span>Three layers share one identity: a circuit's container. The holder signs a delegation once; the service then signs answers with its own key. Transferring the circuit transfers the service.</figcaption>
-  </figure>
-</section>
+    <div class="app">
+      <div class="no">TAP-26 · TAP-27</div>
+      <h3 lang="zh">私密通道与群聊</h3><h3 lang="en">Private channels and groups</h3>
+      <p lang="zh">两个容器之间的端到端加密通道：双向认证、前向保密、防重放和乱序。群聊最多 32 个容器，群主管理成员，每条消息单独签名。载体可以是公共中继、你自己的中继或链上的 ChannelBus，都只看到密文。</p>
+      <p lang="en">End-to-end encrypted channels between two containers: mutual authentication, forward secrecy, replay and reorder protection. Groups of up to 32 containers, with an owner who manages members and a signature on every message. Carried by the public relay, your own relay or ChannelBus on chain, each of which sees ciphertext only.</p>
+    </div>
+    <div class="app">
+      <div class="no">CHAINS</div>
+      <h3 lang="zh">多链：BNB Chain、X Layer、Base</h3><h3 lang="en">Multi-chain: BNB Chain, X Layer, Base</h3>
+      <p lang="zh">跟随 TapeOut 上了 X Layer 和 Base。名字带区号，比如 <code>1.2.230.tape</code> 是 X Layer 上处理器 230 的 1 号。身份、解析、回执和 MCP 核验都能用；支付只会在 BNB Chain。</p>
+      <p lang="en">TapeAPI follows TapeOut to X Layer and Base. Names carry an area code: <code>1.2.230.tape</code> is circuit 1 of processor 230 on X Layer. Identity, resolution, receipts and MCP checks all work there; payments will be on BNB Chain only.</p>
+    </div>
+  </div>
 
-<section>
-  <div class="shead"><span class="idx">04</span><h2 lang="zh">极限参数</h2><h2 lang="en">Absolute Maximum Ratings</h2><span class="line"></span></div>
-  <p class="tcap" lang="zh">超出这些值的行为由合约或规范直接拒绝</p>
-  <p class="tcap" lang="en">Beyond these values the contract or the spec refuses outright</p>
-  <div class="panel pad">
+  <div class="panel pad chains">
     <div class="tw">
       <table>
         <thead><tr>
-          <th><span lang="zh">符号</span><span lang="en">Symbol</span></th>
-          <th><span lang="zh">参数</span><span lang="en">Parameter</span></th>
-          <th><span lang="zh">值</span><span lang="en">Value</span></th>
-          <th><span lang="zh">依据</span><span lang="en">Source</span></th>
+          <th><span lang="zh">链</span><span lang="en">Chain</span></th>
+          <th>chainId</th>
+          <th><span lang="zh">名字</span><span lang="en">Name</span></th>
+          <th><span lang="zh">范围</span><span lang="en">Scope</span></th>
+          <th><span lang="zh">默认节点</span><span lang="en">Default nodes</span></th>
         </tr></thead>
         <tbody>
-          <tr><td class="sym">MAX_CONTRIBUTION</td><td class="dim"><span lang="zh">维护贡献比例上限</span><span lang="en">Maintenance contribution cap</span></td><td class="val">5000 <span class="u">bps</span></td><td class="sym">TAP-22</td></tr>
-          <tr><td class="sym">MAX_PAYLOAD</td><td class="dim"><span lang="zh">TapeSend 单条消息</span><span lang="en">TapeSend message</span></td><td class="val">16 000 <span class="u">B</span></td><td class="sym">TAP-10</td></tr>
-          <tr><td class="sym">CHUNK</td><td class="dim"><span lang="zh">DeWEB 单块写入</span><span lang="en">DeWEB chunk write</span></td><td class="val">24 000 <span class="u">B</span></td><td class="sym">SPEC B.5</td></tr>
-          <tr><td class="sym">FILE_MAX</td><td class="dim"><span lang="zh">DeWEB 单文件</span><span lang="en">DeWEB single file</span></td><td class="val">8.4 <span class="u">MB</span></td><td class="sym">SPEC B.5</td></tr>
-          <tr><td class="sym">EVAL_GAS</td><td class="dim"><span lang="zh">链上电路重算上限</span><span lang="en">On-chain circuit re-evaluation</span></td><td class="val">12 M <span class="u">≈ 4 800 gates</span></td><td class="sym">TAP-25</td></tr>
+          <tr><td class="dim">BNB Smart Chain</td><td class="val">56</td><td class="sym">11.1013.tape</td><td class="dim"><span lang="zh">全部；ChannelBus；支付只在这里（未部署）</span><span lang="en">Everything; ChannelBus; payments only here (not deployed)</span></td><td class="dim"><span lang="zh">3 家运营方，2 家一致</span><span lang="en">3 operators, 2 must agree</span></td></tr>
+          <tr><td class="dim">X Layer</td><td class="val">196</td><td class="sym">1.2.230.tape</td><td class="dim"><span lang="zh">只读：身份、解析、回执、MCP 核验</span><span lang="en">Read-only: identity, resolution, receipts, MCP checks</span></td><td class="dim"><span lang="zh">只有 2 家运营方，2 家都要一致，没有备份</span><span lang="en">Only 2 operators, both must agree, no spare</span></td></tr>
+          <tr><td class="dim">Base</td><td class="val">8453</td><td class="sym"><span lang="zh">区号 3</span><span lang="en">area code 3</span></td><td class="dim"><span lang="zh">只读：同上</span><span lang="en">Read-only: as above</span></td><td class="dim"><span lang="zh">4 家运营方</span><span lang="en">4 operators</span></td></tr>
         </tbody>
       </table>
+    </div>
+    <p class="note" lang="zh">身份不跨链：同一个 DeWebHub 地址在三条链上都一样，委托签名按链 ID 区分，给一条链的委托在另一条链上无效。</p>
+    <p class="note" lang="en">Identity does not carry across chains: the DeWebHub has one address on all three, and the delegation is bound to the chain ID, so a delegation for one chain is refused on another.</p>
+  </div>
+</section>
+
+<section id="privacy">
+  <div class="shead"><span class="idx">05</span><h2 lang="zh">隐私：能保护什么，不能保护什么</h2><h2 lang="en">Privacy: What Is Protected and What Is Not</h2><span class="line"></span></div>
+  <div class="panel pad">
+    <div class="fd even">
+      <div>
+        <h3 class="colh" lang="zh">受保护的</h3><h3 class="colh" lang="en">Protected</h3>
+        <ul class="features">
+          <li lang="zh"><b>通道与群聊的内容</b><span class="d">端到端加密，中继和链上只有密文</span></li>
+          <li lang="en"><b>Channel and group content</b><span class="d">End-to-end encrypted; relays and the chain hold ciphertext only</span></li>
+          <li lang="zh"><b>AI 回执只带哈希</b><span class="d">不含提示词和回答；经 SDK 或 tapeapi-verify 发出的请求默认追加 128 位随机空白，短提示词没法靠猜哈希对上</span></li>
+          <li lang="en"><b>AI receipts carry hashes only</b><span class="d">No prompt, no answer; requests sent through the SDK or tapeapi-verify get 128 random bits of whitespace by default, so a short prompt cannot be confirmed by hashing guesses</span></li>
+          <li lang="zh"><b>MCP 核验链接只带哈希</b><span class="d">不带参数和结果；参数很短时（一个地址、一个编号）仍可能被猜出</span></li>
+          <li lang="en"><b>MCP links carry hashes only</b><span class="d">Not the params or the result; very short params (an address, a token ID) can still be guessed</span></li>
+          <li lang="zh"><b>链上通道读取</b><span class="d">SDK 的 busPrivacyReader 默认读整个 ChannelBus、在本地筛选，节点看不出你的房间</span></li>
+          <li lang="en"><b>Reading channels on chain</b><span class="d">The SDK's busPrivacyReader reads all of ChannelBus by default and filters locally, so nodes cannot see your rooms</span></li>
+          <li lang="zh"><b>日志最小化</b><span class="d">我们的公共服务在配置里关闭了逐请求调用日志；Cloudflare 自己的请求记录是否含 IP 仍待核实</span></li>
+          <li lang="en"><b>Minimal logs</b><span class="d">Our public services' configuration turns per-request invocation logs off; whether Cloudflare's own records include the IP is still to be verified</span></li>
+        </ul>
+      </div>
+      <div>
+        <h3 class="colh" lang="zh">公开或可见的</h3><h3 class="colh" lang="en">Public or visible</h3>
+        <ul class="features">
+          <li lang="zh"><b>服务方看得到一切它处理的东西</b><span class="d">请求内容、你的 IP、你的 API 密钥。加密挡不住处理请求的那一方</span></li>
+          <li lang="en"><b>A service sees what it processes</b><span class="d">Your request, your IP, your API key. Encryption cannot hide them from whoever processes the request</span></li>
+          <li lang="zh"><b>公共 RPC 节点</b><span class="d">看得到你的 IP 和你在核验哪个服务</span></li>
+          <li lang="en"><b>Public RPC nodes</b><span class="d">See your IP and which service you are checking</span></li>
+          <li lang="zh"><b>通道的元数据</b><span class="d">中继或链看得到房间、时间和大小</span></li>
+          <li lang="en"><b>Channel metadata</b><span class="d">Relays and the chain see rooms, timing and sizes</span></li>
+          <li lang="zh"><b>链上的一切</b><span class="d">身份、清单、价目表、委托；将来的付款金额和双方地址</span></li>
+          <li lang="en"><b>Everything on chain</b><span class="d">Identities, manifests, price tables, delegations; future payments, their amounts and both parties</span></li>
+        </ul>
+      </div>
     </div>
   </div>
 </section>
 
-<section>
-  <div class="shead"><span class="idx">05</span><h2 lang="zh">时序与运行特性</h2><h2 lang="en">Timing and Operating Characteristics</h2><span class="line"></span></div>
-  <p class="tcap" lang="zh">gas 为本地实测；法币按 BNB 753 美元、BSC 0.05 gwei 换算；付费托管合约尚未部署</p>
-  <p class="tcap" lang="en">Gas measured locally; fiat at BNB $753 and BSC 0.05 gwei; the paid-call escrow is not deployed yet</p>
-  <div class="panel pad">
-    <div class="tw">
-      <table>
-        <thead><tr>
-          <th><span lang="zh">符号</span><span lang="en">Symbol</span></th>
-          <th><span lang="zh">参数</span><span lang="en">Parameter</span></th>
-          <th><span lang="zh">典型值</span><span lang="en">Typical</span></th>
-          <th><span lang="zh">条件</span><span lang="en">Condition</span></th>
-        </tr></thead>
-        <tbody>
-          <tr><td class="sym">t_WD</td><td class="dim"><span lang="zh">提现冷静期 / 执行窗口</span><span lang="en">Withdraw cooldown / window</span></td><td class="val">48 <span class="u">h</span> / 7 <span class="u">d</span></td><td class="dim"><span lang="zh">窗口外须重新申请</span><span lang="en">Re-request outside the window</span></td></tr>
-          <tr><td class="sym">t_SES</td><td class="dim"><span lang="zh">会话密钥最长有效期</span><span lang="en">Session key maximum lifetime</span></td><td class="val">30 <span class="u">d</span></td><td class="dim"><span lang="zh">按通道授权，无撤销，泄露损失以一个通道为上限</span><span lang="en">Per channel, no revoke; a leak is bounded by one channel</span></td></tr>
-          <tr><td class="sym">G_SET</td><td class="dim"><span lang="zh">一次链上结算</span><span lang="en">One on-chain settlement</span></td><td class="val">88 998 <span class="u">gas ≈ $0.0034</span></td><td class="dim"><span lang="zh">覆盖此前任意多次调用</span><span lang="en">Covers any number of prior calls</span></td></tr>
-          <tr><td class="sym">G_CALL</td><td class="dim"><span lang="zh">单次调用 gas</span><span lang="en">Gas per call</span></td><td class="val yes">0</td><td class="dim"><span lang="zh">凭证在链下签发</span><span lang="en">Vouchers are signed off chain</span></td></tr>
-          <tr><td class="sym">N_Q</td><td class="dim"><span lang="zh">采信所需一致提供者数</span><span lang="en">Providers required to agree</span></td><td class="val">≥ 2</td><td class="dim"><span lang="zh">须互相独立</span><span lang="en">Mutually independent</span></td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="note" lang="zh"><b>关于摊销。</b>一次结算 0.0034 美元。若每 1000 次调用结算一次，单价 0.001 BEM 时 gas 占收入 3.35%，0.01 BEM 时占 0.34%。<b>gas 不是定价的约束，提供者的边际成本才是。</b></p>
-    <p class="note" lang="en"><b>On amortisation.</b> One settlement costs $0.0034. Settling every 1000 calls, gas is 3.35% of revenue at 0.001 BEM per call and 0.34% at 0.01 BEM. <b>Gas does not constrain the price; the provider's marginal cost does.</b></p>
-  </div>
-</section>
-
-<section>
+<section id="quorum">
   <div class="shead"><span class="idx">06</span><h2 lang="zh">一致性真值表</h2><h2 lang="en">Agreement Truth Table</h2><span class="line"></span></div>
-  <p class="tcap" lang="zh">两份已验证信封的比较结果。这是 TapeAPI 最重要的一条规则。</p>
-  <p class="tcap" lang="en">Comparing two verified envelopes. This is the most important rule in TapeAPI.</p>
+  <p class="tcap" lang="zh">两份已验证信封的比较结果，读链时节点之间也是同一条规则</p>
+  <p class="tcap" lang="en">Comparing two verified envelopes; chain reads apply the same rule between nodes</p>
   <div class="panel pad">
     <div class="tw">
       <table>
@@ -356,67 +459,52 @@ console.log(result.bnbUsd, verified)            <span class="c">// <span lang="z
         </tbody>
       </table>
     </div>
-    <p class="note" lang="zh"><b>没有多数决。</b>三家里两家一致、一家不同，默认结果是拒绝。理由：多数决在三取二时可被合谋伪造，而拒绝只会让调用失败。调用方可以显式降级，但那是它自己的选择。</p>
-    <p class="note" lang="en"><b>There is no majority vote.</b> Two of three agreeing with one dissenting is a rejection by default. A majority rule is forgeable by two colluding providers out of three; rejection only denies. A caller may opt into the weaker mode explicitly, but that is its own decision.</p>
+    <p class="note" lang="zh"><b>没有多数决。</b>三家里两家一致、一家不同，默认结果是拒绝。多数决在三取二时可被两家合谋伪造，而拒绝只会让调用失败。调用方可以显式降级，但那是它自己的选择。</p>
+    <p class="note" lang="en"><b>There is no majority vote.</b> Two of three agreeing with one dissenting is a rejection by default. A majority rule can be forged by two colluding providers out of three; a rejection only denies. A caller may opt into the weaker mode explicitly, but that is its own decision.</p>
   </div>
-</section>
-
-<section>
-  <div class="shead"><span class="idx">07</span><h2 lang="zh">典型应用</h2><h2 lang="en">Typical Applications</h2><span class="line"></span></div>
-  <div class="apps">
-    <div class="app">
-      <div class="no">APP 01</div>
-      <h3 lang="zh">Web2 企业</h3><h3 lang="en">Web2 company</h3>
-      <p lang="zh">一份配置把现有 REST 端点变成按次计费的服务，收入直接进你的链上身份，无需开户系统。</p>
-      <p lang="en">One config turns an existing REST endpoint into a pay-per-call service. Revenue lands on your on-chain identity; no accounts to manage.</p>
-    </div>
-    <div class="app">
-      <div class="no">APP 02</div>
-      <h3 lang="zh">DeFi 协议</h3><h3 lang="en">DeFi protocol</h3>
-      <p lang="zh">不需要委员会的可验证数据源，以及不锁资金池的跨链询价。价格按容差比较，因为跨源价格永远不会字节相同。</p>
-      <p lang="en">A verifiable data source without a committee, and cross-chain quoting without a pooled bridge. Prices compare within a tolerance, since cross-source prices are never byte-identical.</p>
-    </div>
-    <div class="app">
-      <div class="no">APP 03</div>
-      <h3 lang="zh">游戏</h3><h3 lang="en">Games</h3>
-      <p lang="zh">存档与排行榜跟着玩家的容器走。回合结算规则可以是一枚电路，任何人都能在链上重算。</p>
-      <p lang="en">Saves and leaderboards follow the player's container. A round's settlement rule can be a circuit anyone re-evaluates on chain.</p>
-    </div>
-    <div class="app">
-      <div class="no">APP 04</div>
-      <h3 lang="zh">公链与 L2</h3><h3 lang="en">Chains and L2s</h3>
-      <p lang="zh">发布一个带签名的读取服务，TapeOut 生态的应用无需跨链桥即可读你的链，结果锚定在具体区块哈希上。</p>
-      <p lang="en">Publish a signed read service and every TapeOut app can read your chain with no bridge, anchored to a specific block hash.</p>
-    </div>
-  </div>
-</section>
-
-<section>
-  <div class="shead"><span class="idx">08</span><h2 lang="zh">典型应用电路</h2><h2 lang="en">Typical Application Circuit</h2><span class="line"></span></div>
-  <figure>
-<div class="code"><div class="cap">js</div><pre><span class="c">// <span lang="zh">解析身份，验签，要求两家独立提供者一致</span><span lang="en">Resolve, verify, require two independent providers to agree</span></span>
-<span class="k">import</span> { createTapeAPI } <span class="k">from</span> <span class="s">'@tapeapi/sdk'</span>
-
-<span class="k">const</span> api = createTapeAPI({ rpcUrls: RPC_URLS, quorum: 2 })
-
-<span class="c">// <span lang="zh">按名字或容器地址解析，不需要任何目录合约</span><span lang="en">Resolve by name or by container address; no directory contract needed</span></span>
+  <figure class="quorum-fig">
+<div class="code"><div class="cap">js</div><pre><span class="c">// <span lang="zh">钉同一个区块，要求两家独立提供者给出逐字节相同的答案</span><span lang="en">Pin one block and require two independent providers to return the same bytes</span></span>
 <span class="k">const</span> a = <span class="k">await</span> api.resolve(<span class="s">'11.1013.tape'</span>)
-<span class="k">const</span> b = <span class="k">await</span> api.resolve(<span class="s">'0x…'</span>)   <span class="c">// <span lang="zh">第二家独立提供者</span><span lang="en">a second, independent provider</span></span>
-
-<span class="c">// <span lang="zh">钉同一个区块，两家的答案才可比较</span><span lang="en">Pin one block so the answers are comparable</span></span>
+<span class="k">const</span> b = <span class="k">await</span> api.resolve(<span class="s">'0x…'</span>)                  <span class="c">// <span lang="zh">第二家独立提供者</span><span lang="en">a second, independent provider</span></span>
 <span class="k">const</span> first = <span class="k">await</span> api.call(a, <span class="s">'bnbUsd'</span>, {})
 <span class="k">const</span> block = first.result.blockPinned.blockNumber
 <span class="k">const</span> r = <span class="k">await</span> api.callQuorum([a, b], <span class="s">'bnbUsd'</span>, { block }, { quorum: 2 })
-
-<span class="c">// <span lang="zh">两份信封各自验签通过，且结果逐字节相同，才会返回</span><span lang="en">Returns only if both envelopes verified and the results matched byte for byte</span></span>
 console.log(r.result.bnbUsd, r.agreed)</pre></div>
-    <figcaption lang="zh"><span class="fno">图 2</span>最小调用回路。今天 api.tapeapi.fun 是这些方法唯一的公共提供者，第二家要由你或别人运行（示例在 examples/public-api/）。付费方法再加一个 payer，凭证在本地签发，不产生链上交易；它要等托管合约审计并部署之后。</figcaption>
-    <figcaption lang="en"><span class="fno">Fig. 2</span>Minimum call loop. Today api.tapeapi.fun is the only public provider of these methods, so the second one is yours or someone else's to run (examples/public-api/). A paid method adds a payer that signs vouchers locally, with no on-chain transaction; that waits for the escrow to be audited and deployed.</figcaption>
+    <figcaption lang="zh"><span class="fno">图 2</span>今天 api.tapeapi.fun 是这些方法唯一的公共提供者，第二家要由你或别人运行（<code>examples/public-api/</code>）。</figcaption>
+    <figcaption lang="en"><span class="fno">Fig. 2</span>Today api.tapeapi.fun is the only public provider of these methods, so the second one is yours or someone else's to run (<code>examples/public-api/</code>).</figcaption>
   </figure>
 </section>
 
-<section>
-  <div class="shead"><span class="idx">09</span><h2 lang="zh">费用</h2><h2 lang="en">Cost of Operation</h2><span class="line"></span></div>
+<section id="limits">
+  <div class="shead"><span class="idx">07</span><h2 lang="zh">极限参数</h2><h2 lang="en">Absolute Maximum Ratings</h2><span class="line"></span></div>
+  <p class="tcap" lang="zh">超出这些值，规范或 SDK 直接拒绝</p>
+  <p class="tcap" lang="en">Beyond these values the spec or the SDK refuses outright</p>
+  <div class="panel pad">
+    <div class="tw">
+      <table>
+        <thead><tr>
+          <th><span lang="zh">符号</span><span lang="en">Symbol</span></th>
+          <th><span lang="zh">参数</span><span lang="en">Parameter</span></th>
+          <th><span lang="zh">值</span><span lang="en">Value</span></th>
+          <th><span lang="zh">依据</span><span lang="en">Source</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td class="sym">MANIFEST_LIMIT</td><td class="dim"><span lang="zh">服务清单，含 AI 价目表</span><span lang="en">Service manifest, AI price table included</span></td><td class="val">64 <span class="u">KiB</span></td><td class="sym">TAP-20</td></tr>
+          <tr><td class="sym">CHUNK</td><td class="dim"><span lang="zh">一次上链写入（操作台一笔交易）</span><span lang="en">One on-chain write (one console transaction)</span></td><td class="val">24 000 <span class="u">B</span></td><td class="sym">SPEC B.5</td></tr>
+          <tr><td class="sym">ENVELOPE_LIMIT</td><td class="dim"><span lang="zh">签名响应信封</span><span lang="en">Signed response envelope</span></td><td class="val">1 <span class="u">MiB</span></td><td class="sym">TAP-21</td></tr>
+          <tr><td class="sym">DEFAULT_MAX_SKEW_S</td><td class="dim"><span lang="zh">签名时间与本地时钟之差</span><span lang="en">Signature time against the local clock</span></td><td class="val">≤ 300 <span class="u">s</span></td><td class="sym">TAP-21</td></tr>
+          <tr><td class="sym">MAX_MEMBERS</td><td class="dim"><span lang="zh">群成员</span><span lang="en">Group members</span></td><td class="val">32</td><td class="sym">TAP-27</td></tr>
+          <tr><td class="sym">CHANNEL_KEYS_LIMIT</td><td class="dim"><span lang="zh">通道密钥记录</span><span lang="en">Channel key record</span></td><td class="val">4 <span class="u">KiB</span></td><td class="sym">TAP-26</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="fees">
+  <div class="shead"><span class="idx">08</span><h2 lang="zh">费用</h2><h2 lang="en">Cost of Operation</h2><span class="line"></span></div>
+  <p class="tcap" lang="zh">今天所有调用都不收费</p>
+  <p class="tcap" lang="en">No call is charged today</p>
   <div class="panel pad">
     <div class="tw">
       <table>
@@ -426,16 +514,51 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
           <th><span lang="zh">金额</span><span lang="en">Amount</span></th>
         </tr></thead>
         <tbody>
-          <tr><td class="dim"><span lang="zh">解析身份、读清单、验签</span><span lang="en">Resolve, read manifest, verify</span></td><td class="dim"><span lang="zh">无</span><span lang="en">Nobody</span></td><td class="val yes">0</td></tr>
+          <tr><td class="dim"><span lang="zh">解析身份、读清单、验签、核验回执</span><span lang="en">Resolve, read the manifest, verify, check receipts</span></td><td class="dim"><span lang="zh">无</span><span lang="en">Nobody</span></td><td class="val yes">0</td></tr>
           <tr><td class="dim"><span lang="zh">TapeAPI 强制协议费</span><span lang="en">Mandatory TapeAPI protocol fee</span></td><td class="dim"><span lang="zh">无</span><span lang="en">Nobody</span></td><td class="val yes">0</td></tr>
-          <tr><td class="dim"><span lang="zh">维护贡献（从提供者所得中划出）</span><span lang="en">Maintenance contribution (out of the provider's share)</span></td><td class="dim"><span lang="zh">提供者自设</span><span lang="en">Provider sets it</span></td><td class="val"><span lang="zh">默认 1%，可设为 0</span><span lang="en">Default 1%, can be 0</span></td></tr>
-          <tr><td class="dim"><span lang="zh">服务调用价</span><span lang="en">Service call price</span></td><td class="dim"><span lang="zh">提供者</span><span lang="en">Provider</span></td><td class="val"><span lang="zh">自定</span><span lang="en">Provider's choice</span></td></tr>
+          <tr><td class="dim"><span lang="zh">AI 调用</span><span lang="en">AI calls</span></td><td class="dim"><span lang="zh">服务方，照旧在链下收费</span><span lang="en">The provider, off chain as today</span></td><td class="val"><span lang="zh">服务方自定</span><span lang="en">Provider's choice</span></td></tr>
+          <tr><td class="dim"><span lang="zh">维护贡献（仅付费通道，未部署）</span><span lang="en">Maintenance contribution (paid channels only, not deployed)</span></td><td class="dim"><span lang="zh">服务方自设</span><span lang="en">Provider sets it</span></td><td class="val"><span lang="zh">默认 1%，可关闭</span><span lang="en">Default 1%, can be 0</span></td></tr>
           <tr><td class="dim"><span lang="zh">开通一个容器</span><span lang="en">Opening a container</span></td><td class="dim">TapeOut</td><td class="val">0.012 <span class="u">BNB</span></td></tr>
         </tbody>
       </table>
     </div>
-    <p class="note" lang="zh">合约里<b>没有任何我们能调的费率开关</b>，也不能暂停。1% 的默认值是合约常量，消费者的价格不变；每个提供者都可以把它设为 0（或最高 50%），设为 0 功能完全一样。TAP-22 明写其它托管部署同样合规。<b>今天没有任何调用收费</b>：托管合约尚未部署，要先通过独立审计。</p>
-    <p class="note" lang="en">There is <b>no operator fee switch anywhere in the contracts</b>, and no pause. The 1% default is a contract constant and the consumer's price does not change; any provider can set it to 0 (or up to 50%), and a provider at 0 gets exactly the same functionality. TAP-22 states that alternative escrow deployments are equally conforming. <b>No call is charged today</b>: the escrow is not deployed and waits for an independent audit.</p>
+    <p class="note" lang="zh"><b>无强制协议费；默认 1% 维护贡献，任何服务方都可以关闭；运营方没有费率开关。</b>这 1% 只在付费通道结算时从服务方所得中扣，用户的价格不变；付费托管合约尚未部署，所以今天所有调用都不收费。TapeAPI 不发币。</p>
+    <p class="note" lang="en"><b>No mandatory protocol fee; a default 1% maintenance contribution that any provider can turn off; the operator has no fee switch.</b> The 1% comes out of the provider's share only when a paid channel settles, and the user's price does not change. The paid-call escrow is not deployed, so no call is charged today. TapeAPI has no token.</p>
+  </div>
+</section>
+
+<section id="paid">
+  <div class="shead"><span class="idx">09</span><h2 lang="zh">实验性：付费通道</h2><h2 lang="en">Experimental: Paid Channels</h2><span class="line"></span></div>
+  <div class="badges exp">
+    <span class="stamp">EXPERIMENTAL · NOT DEPLOYED</span>
+    <span class="meta" lang="zh">TAP-22 · 不在 1.0 的稳定承诺内 · 部署前须经独立审计</span>
+    <span class="meta" lang="en">TAP-22 · outside the 1.0 stability promise · audited before any deployment</span>
+  </div>
+  <p class="plain" lang="zh">付费调用的设计：调用方离线签发累计凭证，钱进一条只属于这个服务的托管通道，服务方攒够了再上链结算一次，调用本身不花 gas。合约代码和测试在仓库里，但<b>没有部署</b>；下面的数字是本地实测，只说明这个设计的成本。</p>
+  <p class="plain" lang="en">The design for paid calls: the caller signs cumulative vouchers off chain into an escrow channel that belongs to that service alone, and the provider settles once on chain when it is worth doing, so a call itself costs no gas. The contracts and their tests are in the repository but <b>not deployed</b>; the figures below are local measurements that only show what the design costs.</p>
+  <div class="more"><a class="doclink" href="docs/zh/upgrade-1.0.html" lang="zh">1.0 承诺什么（稳定、实验性、内部），以及从 0.x 升级 →</a><a class="doclink" href="docs/en/upgrade-1.0.html" lang="en">What 1.0 promises (Stable, Experimental, Internal), and upgrading from 0.x →</a></div>
+  <div class="panel pad">
+    <p class="tcap" lang="zh">gas 为本地实测；法币按 BNB 753 美元、BSC 0.05 gwei 换算</p>
+    <p class="tcap" lang="en">Gas measured locally; fiat at BNB $753 and BSC 0.05 gwei</p>
+    <div class="tw">
+      <table>
+        <thead><tr>
+          <th><span lang="zh">符号</span><span lang="en">Symbol</span></th>
+          <th><span lang="zh">参数</span><span lang="en">Parameter</span></th>
+          <th><span lang="zh">典型值</span><span lang="en">Typical</span></th>
+          <th><span lang="zh">条件</span><span lang="en">Condition</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td class="sym">t_WD</td><td class="dim"><span lang="zh">提现冷静期 / 执行窗口</span><span lang="en">Withdraw cooldown / window</span></td><td class="val">48 <span class="u">h</span> / 7 <span class="u">d</span></td><td class="dim"><span lang="zh">窗口外须重新申请</span><span lang="en">Re-request outside the window</span></td></tr>
+          <tr><td class="sym">t_SES</td><td class="dim"><span lang="zh">会话密钥最长有效期</span><span lang="en">Session key maximum lifetime</span></td><td class="val">30 <span class="u">d</span></td><td class="dim"><span lang="zh">按通道授权，无撤销，泄露损失以一个通道为上限</span><span lang="en">Per channel, no revoke; a leak is bounded by one channel</span></td></tr>
+          <tr><td class="sym">G_SET</td><td class="dim"><span lang="zh">一次链上结算</span><span lang="en">One on-chain settlement</span></td><td class="val">88 998 <span class="u">gas ≈ $0.0034</span></td><td class="dim"><span lang="zh">覆盖此前任意多次调用</span><span lang="en">Covers any number of prior calls</span></td></tr>
+          <tr><td class="sym">G_CALL</td><td class="dim"><span lang="zh">单次调用 gas</span><span lang="en">Gas per call</span></td><td class="val yes">0</td><td class="dim"><span lang="zh">凭证在链下签发</span><span lang="en">Vouchers are signed off chain</span></td></tr>
+          <tr><td class="sym">MAX_CONTRIBUTION</td><td class="dim"><span lang="zh">维护贡献比例上限</span><span lang="en">Maintenance contribution cap</span></td><td class="val">5000 <span class="u">bps</span></td><td class="dim"><span lang="zh">默认 100 bps，服务方可设 0</span><span lang="en">Default 100 bps; a provider can set 0</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note" lang="zh"><b>关于摊销。</b>一次结算 0.0034 美元。若每 1000 次调用结算一次，单价 0.001 BEM 时 gas 占收入 3.35%，0.01 BEM 时占 0.34%。gas 不是定价的约束，服务方的边际成本才是。</p>
+    <p class="note" lang="en"><b>On amortisation.</b> One settlement costs $0.0034. Settling every 1000 calls, gas is 3.35% of revenue at 0.001 BEM per call and 0.34% at 0.01 BEM. Gas does not constrain the price; the provider's marginal cost does.</p>
   </div>
 </section>
 
@@ -445,47 +568,59 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
   <p class="tcap" lang="en">None of this is live yet, and no dates are promised</p>
   <div class="apps road">
     <div class="app">
-      <div class="no">NEXT 01</div>
-      <h3 lang="zh">开发者控制台（完整版）</h3><h3 lang="en">Developer dashboard, full</h3>
-      <p lang="zh">只读版“我的服务”已上线。接下来：自动列出你名下的服务，并在同一页面完成续期与管理。</p>
-      <p lang="en">A read-only My services page is live. Next: list the services you hold automatically, and renew and manage them on the same page.</p>
+      <div class="no">NEXT</div>
+      <h3 lang="zh">1.0：接口稳定</h3><h3 lang="en">1.0: stable interfaces</h3>
+      <p lang="zh">冻结 SDK 与规范的接口，补齐测试数据和一致性测试套件。1.0 之后，按文档写的代码不会因为我们升级而坏掉。</p>
+      <p lang="en">Freeze the SDK and spec interfaces and complete the test vectors and the conformance suite. After 1.0, code written to the docs will not break when we upgrade.</p>
+    </div>
+    <div class="app">
+      <div class="no">NEXT</div>
+      <h3 lang="zh">LiteLLM 插件</h3><h3 lang="en">LiteLLM plugin</h3>
+      <p lang="zh">在此之前，把 Node 或 Worker 版旁路放在 LiteLLM 前面即可。</p>
+      <p lang="en">Until then, put the Node or Worker sidecar in front of LiteLLM.</p>
+    </div>
+    <div class="app">
+      <div class="no">LATER</div>
+      <h3 lang="zh">凭回执的信誉</h3><h3 lang="en">Reputation from receipts</h3>
+      <p lang="zh">只有设计稿。等外部服务方多起来再做。</p>
+      <p lang="en">A design only, to be built once there are enough outside providers.</p>
     </div>
     <div class="app">
       <div class="no nope">AFTER AUDIT</div>
       <h3 lang="zh">付费调用</h3><h3 lang="en">Paid calls</h3>
-      <p lang="zh">按次计费的凭证支付（TAP-22）需要托管合约，而托管合约要先通过独立审计才会部署。在此之前，所有公共方法都免费。</p>
-      <p lang="en">Metered voucher payment (TAP-22) needs the escrow contract, and the escrow is deployed only after an independent audit. Until then every public method is free.</p>
+      <p lang="zh">按次计费的凭证支付（TAP-22）需要托管合约，托管合约要先通过独立审计才会部署。在此之前所有调用都免费。</p>
+      <p lang="en">Metered voucher payment (TAP-22) needs the escrow contract, which is deployed only after an independent audit. Until then every call is free.</p>
     </div>
   </div>
 </section>
 
-<section>
+<section id="specs">
   <div class="shead"><span class="idx">11</span><h2 lang="zh">规范索引</h2><h2 lang="en">Specification Index</h2><span class="line"></span></div>
   <div class="specs">
     <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-1.md">TAP-1</a></span><span><span lang="zh">TAP 流程与编号</span><span lang="en">TAP purpose and process</span></span><span class="st">Draft</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-20.md">TAP-20</a></span><span><span lang="zh">服务身份与清单</span><span lang="en">Service identity and manifest</span></span><span class="st">Draft</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md">TAP-21</a></span><span><span lang="zh">签名响应信封</span><span lang="en">Signed response envelope</span></span><span class="st">Draft</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-22.md">TAP-22</a></span><span><span lang="zh">计量支付凭证与托管</span><span lang="en">Metered vouchers and escrow</span></span><span class="st">Draft</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-23.md">TAP-23</a></span><span><span lang="zh">带证明的跨链读取</span><span lang="en">Attested read</span></span><span class="st">Draft</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-24.md">TAP-24</a></span><span><span lang="zh">跨链意图询价</span><span lang="en">Intent RFQ</span></span><span class="st">Draft · Frozen</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-25.md">TAP-25</a></span><span><span lang="zh">可由电路验证的方法</span><span lang="en">Circuit-verified methods</span></span><span class="st">Draft</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-26.md">TAP-26</a></span><span><span lang="zh">容器间的私密通道</span><span lang="en">Private channels between containers</span></span><span class="st">Draft</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-27.md">TAP-27</a></span><span><span lang="zh">容器间的私密群聊</span><span lang="en">Private groups between containers</span></span><span class="st">Draft</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-20.md">TAP-20</a></span><span><span lang="zh">服务身份与清单，含 AI 价目表（ai 字段）与多链</span><span lang="en">Service identity and manifest, with the AI price table (the ai field) and multi-chain</span></span><span class="st">Draft · target Stable (v1)</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md">TAP-21</a></span><span><span lang="zh">签名响应信封，含 AI 用量回执</span><span lang="en">Signed response envelope, with AI usage receipts</span></span><span class="st">Draft · target Stable (v1)</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-22.md">TAP-22</a></span><span><span lang="zh">计量支付凭证与托管</span><span lang="en">Metered vouchers and escrow</span></span><span class="st">Experimental</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-23.md">TAP-23</a></span><span><span lang="zh">多家交叉验证的读取</span><span lang="en">Attested read, cross-checked by independent providers</span></span><span class="st">Draft · target Stable (v1)</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-24.md">TAP-24</a></span><span><span lang="zh">跨链意图询价</span><span lang="en">Intent RFQ</span></span><span class="st">Withdrawn</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-25.md">TAP-25</a></span><span><span lang="zh">可由电路验证的方法</span><span lang="en">Circuit-verified methods</span></span><span class="st">Experimental</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-26.md">TAP-26</a></span><span><span lang="zh">容器间的私密通道</span><span lang="en">Private channels between containers</span></span><span class="st">Draft · target Stable (v1)</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-27.md">TAP-27</a></span><span><span lang="zh">容器间的私密群聊</span><span lang="en">Private groups between containers</span></span><span class="st">Draft · target Stable (v1)</span></div>
   </div>
-  <p class="note" lang="zh"><b>TAP 编号是提案。</b>它们已<a href="https://github.com/TapeOutProtocol/TapeKit/issues/8">提交给 TapeOut 维护者</a>，尚未正式分配。</p>
-  <p class="note" lang="en"><b>TAP numbers are proposals.</b> They are <a href="https://github.com/TapeOutProtocol/TapeKit/issues/8">proposed to the TapeOut maintainers</a> and not yet assigned.</p>
+  <p class="note" lang="zh"><b>TAP 编号是提案。</b>它们已<a href="https://github.com/TapeOutProtocol/TapeKit/issues/8">提交给 TapeOut 维护者</a>，尚未正式分配。规范中英双语，以英文为准。</p>
+  <p class="note" lang="en"><b>TAP numbers are proposals.</b> They are <a href="https://github.com/TapeOutProtocol/TapeKit/issues/8">proposed to the TapeOut maintainers</a> and not yet assigned. The specs are bilingual; English is authoritative.</p>
 </section>
 
 <footer>
   <div class="fbrand">
     <a class="fb-brand" href="./" aria-label="TapeAPI"><svg class="hd-mark" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" width="99" height="11" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a>
-    <p lang="zh">TapeOut 电路的签名 API · BNB Smart Chain</p>
-    <p lang="en">Signed APIs for TapeOut circuits · BNB Smart Chain</p>
+    <p lang="zh">TapeOut 的签名 API 层 · BNB Chain · X Layer · Base</p>
+    <p lang="en">The signed API layer of TapeOut · BNB Chain · X Layer · Base</p>
   </div>
   <div>
     <h4 lang="zh">状态</h4><h4 lang="en">Status</h4>
-    <p lang="zh">预发布。公共服务 api.tapeapi.fun 与公共中继 relay.tapeapi.fun 已上线，ChannelBus 已部署；付费托管合约尚未部署，要先通过独立审计；目前没有第三方审计。测试：JS 约 710 项（npm test）、合约 169 项（forge）、Python 验证器 102 项，全部通过。</p>
-    <p lang="en">Pre-alpha. The public service api.tapeapi.fun and the public relay relay.tapeapi.fun are live and ChannelBus is deployed; the paid-call escrow is not deployed and waits for an independent audit; there is no third-party audit yet. Tests: about 710 JS (npm test), 169 contract (forge) and 102 in the Python verifier, all passing.</p>
+    <p lang="zh">预发布，接口在 1.0 之前仍可能变化。公共服务、MCP 端点与公共中继已上线，ChannelBus 已部署；付费托管合约是实验性的，尚未部署；没有经过第三方审计。测试：JS 约 1,140 项（npm test）、合约 169 项（forge）、Python 独立验证器 249 项，全部通过。</p>
+    <p lang="en">Pre-release; interfaces may still change before 1.0. The public service, the MCP endpoint and the public relay are live and ChannelBus is deployed; the paid-call escrow is experimental and not deployed; there is no third-party audit. Tests: about 1,140 JS (npm test), 169 contract (forge) and 249 in the independent Python verifier, all passing.</p>
   </div>
   <div>
     <h4 lang="zh">想法来源</h4><h4 lang="en">Idea by</h4>
@@ -494,8 +629,8 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
   </div>
   <div>
     <h4 lang="zh">许可与仓库</h4><h4 lang="en">Licence and repository</h4>
-    <p lang="zh">规范 CC0-1.0，代码 MIT。<br><a href="https://github.com/BruceLanLan/tapeapi"><code>github.com/BruceLanLan/tapeapi</code></a><br><a href="docs/">手册</a> · <a href="playground/">调试台</a> · <a href="dashboard/">我的服务</a> · <a href="status/">服务状态</a> · <a href="console/">持有人操作台</a> · <a href="https://github.com/TapeOutProtocol/TapeKit/issues/8">TAP 提案</a></p>
-    <p lang="en">Specs CC0-1.0, code MIT.<br><a href="https://github.com/BruceLanLan/tapeapi"><code>github.com/BruceLanLan/tapeapi</code></a><br><a href="docs/">Docs</a> · <a href="playground/">Playground</a> · <a href="dashboard/">Dashboard</a> · <a href="status/">Status</a> · <a href="console/">Holder console</a> · <a href="https://github.com/TapeOutProtocol/TapeKit/issues/8">TAP proposal</a></p>
+    <p lang="zh">规范 CC0-1.0，代码 MIT。<br><a href="https://github.com/BruceLanLan/tapeapi"><code>github.com/BruceLanLan/tapeapi</code></a><br><a href="docs/">手册</a> · <a href="playground/">调试台</a> · <a href="verify/">回执核验</a> · <a href="dashboard/">我的服务</a> · <a href="status/">服务状态</a> · <a href="console/">持有人操作台</a> · <a href="https://github.com/TapeOutProtocol/TapeKit/issues/8">TAP 提案</a></p>
+    <p lang="en">Specs CC0-1.0, code MIT.<br><a href="https://github.com/BruceLanLan/tapeapi"><code>github.com/BruceLanLan/tapeapi</code></a><br><a href="docs/">Docs</a> · <a href="playground/">Playground</a> · <a href="verify/">Receipt checker</a> · <a href="dashboard/">Dashboard</a> · <a href="status/">Status</a> · <a href="console/">Holder console</a> · <a href="https://github.com/TapeOutProtocol/TapeKit/issues/8">TAP proposal</a></p>
   </div>
 </footer>
 

@@ -23,7 +23,8 @@ export interface ManifestToToolsOptions {
   prefix?: string
   container?: string
   dev?: boolean
-  paid?: { maxPriceBEM: string | number; methods?: string[]; [key: string]: unknown }
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
+  paid?: { maxPriceBEM: string | number; methods?: string[] }
   accepted?: Record<string, bigint | string | number>
   taken?: Set<string>
   /** Replaces the sentence saying who checks the signature (a remote MCP server signs, the client checks). */
@@ -37,7 +38,7 @@ export interface ExposeOptions {
   /** Explicit model context (tests, polyfills); default document.modelContext ?? navigator.modelContext. */
   modelContext?: unknown
   prefix?: string
-  /** Absent: priced methods are NOT exposed. */
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. Absent: priced methods are NOT exposed. */
   paid?: {
     payer: Payer
     maxPriceBEM: string | number
@@ -56,9 +57,10 @@ export interface ExposeHandle {
   (): void
   supported: boolean
   reason: string | null
-  svc: ResolvedService | null
+  service: ResolvedService | null
   tools: ToolDescriptor[]
   skipped: SkippedMethod[]
+  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   spentBEM(): string
   refresh(): Promise<ExposeHandle>
   dispose(): void

@@ -59,7 +59,7 @@ if (PROD && !process.env.PUBLIC_URL) {
 }
 
 const provider = createProvider({
-  manifest, signerKey: SIGNER_KEY, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID,
+  manifest, signerKey: SIGNER_KEY, dev: !PROD, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID,
   allowSingleNode: !PROD, // 生产环境 urls 少于 quorum 拒绝启动（M-11）/ production refuses fewer urls than quorum
   log: (...a) => console.error('[reader]', ...a),
   methods: {

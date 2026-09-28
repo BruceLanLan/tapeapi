@@ -43,7 +43,7 @@ async function world({ providerPrice, chainPrice, handler = async () => ({ v: 1 
   const rpcCount = { n: 0 }
   const fetchImpl = cc.fetchWith(async (u, init) => { try { sent.push(JSON.parse(init.body)) } catch { /* */ } return fetch(u, init) })
   const counted = (u, init) => { if (String(u).startsWith('http://rpc')) rpcCount.n++; return fetchImpl(u, init) }
-  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true, fetch: counted, timeoutMs: 300 })
+  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true, fetch: counted, rpcTimeoutMs: 300 })
   const payer = api.payer({ consumer, sessionKey: SESSION_KEY })
   return { cc, pc, provider, srv, url, api, payer, sent, rpcCount, close: () => new Promise((r) => srv.close(r)) }
 }

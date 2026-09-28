@@ -1,10 +1,11 @@
 # TapeAPI
 
-**Tape out a circuit, and its container is your API.** Every response is signed by it, anyone can verify it against the
-chain, and containers can talk to each other over end-to-end encrypted channels.
+**A signed receipt for every AI call.** Put a sidecar in front of your OpenAI- or Anthropic-compatible API, and every
+answer comes with a receipt anyone can check: who answered, to which request, with which bytes, and what usage and price
+were claimed. Your users keep their official SDKs and change only the base URL.
 
-TapeAPI is the service and communication layer of the [TapeOut](https://tapeout.net) ecosystem on BNB Chain. In that
-ecosystem, DeWEB is websites, TapeSend is messaging, and **TapeAPI is services**.
+TapeAPI is the signed API layer of [TapeOut](https://tapeout.net). The same on-chain identity and signatures also cover
+MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer and Base.
 
 [![CI](https://github.com/BruceLanLan/tapeapi/actions/workflows/ci.yml/badge.svg)](https://github.com/BruceLanLan/tapeapi/actions/workflows/ci.yml)
 [![Code: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
@@ -13,256 +14,180 @@ ecosystem, DeWEB is websites, TapeSend is messaging, and **TapeAPI is services**
 [![Playground](https://img.shields.io/badge/try-playground-orange.svg)](https://tapeapi.fun/playground/)
 [![Status](https://img.shields.io/badge/status-tapeapi.fun%2Fstatus-green.svg)](https://tapeapi.fun/status/)
 
-[中文说明](README.zh-CN.md) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Docs](https://tapeapi.fun/docs/) · [Website](https://tapeapi.fun) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md) · [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md)
+[中文说明](README.zh-CN.md) · [Website](https://tapeapi.fun) · [Docs](https://tapeapi.fun/docs/) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md)
 
-> **Status: pre-alpha (v0.8.0).** The free tier needs no contract of ours and runs on TapeOut's deployed contracts.
-> Our own contracts (the paid-call escrow, the service directory, ChannelBus) are **not audited by a third party**;
-> ChannelBus is deployed (address below). Interfaces may still change. The TAP
-> numbers below are **proposed** to the TapeKit maintainers and not yet assigned.
+> **Status: pre-release (v1.0.0-rc.1).** Everything live today is free. Interfaces may still change before 1.0. Paid
+> channels (TAP-22) are experimental and not deployed. Nothing here has had a third-party audit.
 
-## Try the live service in 30 seconds
+## Start here
 
-A free public service runs at `https://api.tapeapi.fun` under the TapeOut name `11.1013.tape`. Ask it for the BNB price:
+| You are | Your first five minutes | Guide |
+|---|---|---|
+| **An AI provider or relay** (new-api, a gateway, your own models) | `docker compose up` in [`examples/new-api-sidecar`](examples/new-api-sidecar/), publish your price table in the [holder console](https://tapeapi.fun/console/), point your users' base URL at the sidecar | [For AI providers](docs/guides/ai-providers.md) |
+| **An MCP server author** | Run the [signing proxy](examples/mcp-proxy/) in front of your server, then publish the manifest with the console | [Tape out your MCP server](docs/guides/mcp.md#tape-out-your-own-mcp-server) |
+| **An app developer** | Run the examples below; check AI receipts with `createVerifyingFetch`; start channels and groups from [`examples/group-chat`](examples/group-chat/) | [Call a service](docs/guides/consume.md) · [Channels](docs/guides/channels.md) · [Groups](docs/guides/groups.md) |
+| **A TapeOut circuit holder** | Open your circuit's container, then generate a service key, sign the delegation and publish the manifest in the console | [Run a service](docs/guides/provide.md) |
+| **A Claude, Cursor or other MCP user** | Add `https://api.tapeapi.fun/mcp` as a connector | [MCP](docs/guides/mcp.md) |
+
+## Try it
+
+**A signed answer.** The public service `11.1013.tape` answers eight free, block-pinned reads of BNB Chain:
 
 ```bash
 curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{"id":"1","params":{}}'
 ```
 
-curl shows you the signed envelope (`result`, `container`, `ts`, `block`, `sig`) but does not check it. The SDK does.
-The packages are not on npm yet, so set up the repository once (Node.js 20 or later):
+curl shows the signed envelope but checks nothing. The SDK checks it. It is not on npm yet; install it from the GitHub
+release (Node.js 20 or later):
 
 ```bash
-git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm install
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz
 ```
-
-Or install just the SDK into your own project from the GitHub release (not the npm registry):
-
-```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz
-```
-
-Save this as `try.mjs` **inside the `tapeapi` directory** (`@tapeapi/sdk` resolves through the repository's workspace;
-a script saved anywhere else fails with `ERR_MODULE_NOT_FOUND`) and run `node try.mjs`:
 
 ```js
-import { createTapeAPI } from '@tapeapi/sdk'
+// try.mjs: node try.mjs
+import { createTapeAPI, rpcUrlsFor } from '@tapeapi/sdk'
 
-const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
-  quorum: 2,
+const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })   // nodes of 3 distinct operators; 2 must agree
+const service = await api.resolve('11.1013.tape')         // name, container, on-chain manifest, delegation
+const { result, verified } = await api.call(service, 'bnbUsd', {})
+console.log(result.bnbUsd, verified)                      // true only after the signature checked out
+```
+
+**AI receipts.** Plug `createVerifyingFetch` into the official OpenAI SDK (`npm install openai`; the Anthropic SDK
+takes a `fetch` too). Replace `42.1013.tape` with the provider's TapeOut name:
+
+```js
+import OpenAI from 'openai'
+import { createTapeAPI, rpcUrlsFor, ai } from '@tapeapi/sdk'
+
+const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })
+const service = await api.resolve('42.1013.tape')        // the AI provider's name (an example)
+const { baseUrl } = service.manifest.ai.endpoints.find((e) => e.format === 'openai-chat')
+const client = new OpenAI({
+  baseURL: baseUrl,                                      // the address the provider published on chain
+  apiKey: process.env.API_KEY,                           // your key with that provider, as before
+  fetch: ai.createVerifyingFetch({ api, service }),      // checks every receipt; a bad one throws
 })
-const svc = await api.resolve('11.1013.tape')             // name -> container -> on-chain manifest -> holder's delegation
-const { result, verified } = await api.call(svc, 'bnbUsd', {})
-console.log(result, verified)                              // verified is true only after the signature checked out
+const r = await client.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'Hello' }] })
+console.log(r.choices[0].message.content)
 ```
 
-No install at all: the [playground](https://tapeapi.fun/playground/) runs the same SDK in the browser. Every method of
-the public service is listed in [Public API](docs/guides/public-api.md).
+No outside provider has published a price table on chain yet, so this was run against the reference sidecar in
+[`examples/ai-proxy`](examples/ai-proxy/) (local dev mode); with a real provider only the name changes.
 
-## Use it from Claude, Cursor or any MCP client
+**Claude Code and Codex** cannot read receipts themselves. Run the local verifying proxy and point them at it:
 
-The same eight methods are [MCP](https://modelcontextprotocol.io) tools at `https://api.tapeapi.fun/mcp` (Streamable
-HTTP, no key). In Claude, add it under **Settings > Connectors > Add custom connector**; in Cursor, add it to
-`mcp.json`:
-
-```json
-{ "mcpServers": { "tapeapi": { "url": "https://api.tapeapi.fun/mcp" } } }
+```bash
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz tapeapi-verify 42.1013.tape
+ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1
 ```
 
-Every result is signed by the service's on-chain delegated key and carries a receipt with a verification link that
-anyone can check against the chain. The remote server signs its answers; the local command `tapeapi-mcp`, in the SDK's
-release package, checks every answer itself before the model sees it. Setup for each client, receipts and limits:
-[MCP guide](docs/guides/mcp.md).
+**MCP.** The same eight reads are tools at `https://api.tapeapi.fun/mcp`, with a signed receipt on every result:
 
----
+```bash
+claude mcp add --transport http tapeapi https://api.tapeapi.fun/mcp
+```
 
-## Why TapeAPI
+No install at all: the [playground](https://tapeapi.fun/playground/) runs the SDK in your browser.
 
-An API today is a URL plus an account plus trust. You sign up with the vendor, you trust whatever its server says,
-and the vendor can change the answer, the price or the rules at any time.
-
-TapeAPI makes the identity of a service an on-chain object and every answer a signed statement:
-
-- **The service is a circuit.** Whoever holds the circuit NFT owns the service. Transfer the NFT and the service moves
-  with it; nobody can take the name away.
-- **Every answer is signed and bound to your request.** A client checks the signature against a key the circuit's
-  holder authorised on chain. A tampered, replayed or unsigned answer is an error, never a result.
-- **No sign-up, no API keys.** Free methods are just called. Paid methods are paid with off-chain vouchers that settle
-  on chain in batches. There is **no mandatory protocol fee**: once the escrow is live, a default 1% maintenance
-  contribution comes out of the provider's share (the consumer's price does not change), and any provider can set it to
-  0. Today no call is charged: the escrow is not deployed yet.
-- **Private channels between containers.** Two services, two agents or two apps can open an end-to-end encrypted
-  channel, carried by a relay or by the chain itself, where the carrier only ever sees ciphertext.
-
-## How it works
+## How it fits together
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    participant C as Client (SDK)
-    participant B as BNB Chain
-    participant S as Service
-    C->>B: resolve: circuit -> container (DeWebHub), holder (ownerOf)
-    C->>B: read the manifest from the container's site (SiteRegistry, SHA-256 checked)
-    Note over C: check the holder's EIP-712 delegation of the service's signing key
-    C->>S: POST /tapeapi/v1/{method} { id, params, voucher? }
-    S-->>C: { result, container, ts, block, sig }
-    Note over C: verify the signature over the request and the answer; only then return the result
+flowchart LR
+    client["Client<br/>official SDK, Claude Code, Codex"]
+    sidecar["Signing sidecar or MCP proxy<br/>(you run it)"]
+    upstream["Your API or MCP server"]
+    chain[("On chain: BNB Chain, X Layer, Base<br/>identity, manifest, price table, signer delegation")]
+    client -- "request" --> sidecar
+    sidecar -- "same bytes" --> upstream
+    sidecar -- "answer + signed receipt" --> client
+    sidecar -. "published once by the holder" .-> chain
+    client -. "verify against" .-> chain
 ```
 
-1. **Identity (TAP-20).** A circuit's ERC-6551 container is the service identity. Its site holds
-   `.well-known/tapeapi.json`, the manifest: endpoints, methods, prices and the service's signing key.
-2. **Delegation.** The circuit's holder signs an EIP-712 delegation that names that signing key and an expiry. The
-   domain is anchored on TapeOut's deployed DeWebHub, so a service works before any contract of ours exists.
-3. **Signed envelope (TAP-21).** Every answer, success or error, is signed over a digest that binds the container,
-   the request id, the method and parameters, the result and a timestamp.
-4. **Payment (TAP-22).** Paid methods take cumulative vouchers, settled from a per-provider escrow channel. The spec
-   settles in BEM; the next escrow version plans BEM (primary), BNB (wrapped as WBNB by the contract), USDT, USDC, ETH
-   and USD1 on BNB Smart Chain. It is deployed only after an independent audit.
-5. **Channels (TAP-26, TAP-27).** Holder-authorised channel keys, an X3DH-style handshake and ChaCha20-Poly1305
-   frames, over a relay or over ChannelBus, a stateless event-only contract.
+| Layer | What it is | Spec |
+|---|---|---|
+| **Identity** | A TapeOut circuit's ERC-6551 container. Whoever holds the circuit owns the service; transfer the circuit and the service moves with it. | [TAP-20](spec/TAP-20.md) |
+| **Manifest** | `.well-known/tapeapi.json` in the container's on-chain site: endpoints, methods, the AI price table, the hash of MCP tool definitions, the signing key and the holder's delegation of it. | [TAP-20](spec/TAP-20.md) |
+| **Signed answers and receipts** | Every answer is signed and bound to its request; AI calls get a usage receipt. | [TAP-21](spec/TAP-21.md) |
+| **Channels and groups** | End-to-end encrypted, over a relay or ChannelBus; the carrier sees ciphertext only. | [TAP-26](spec/TAP-26.md), [TAP-27](spec/TAP-27.md) |
 
-## Quick start
+## What a receipt proves, and what it does not
 
-Requirements: Node.js 20 or later. The packages are not on npm yet; use the repository.
+A receipt proves **who answered** (a key the circuit's holder delegated on chain), **to exactly which request bytes**,
+**with exactly which response bytes**, and **what usage and price were claimed**, priced from the table on chain.
 
-```bash
-git clone https://github.com/BruceLanLan/tapeapi.git
-cd tapeapi
-npm install
-```
+It does **not prove which model actually ran**: a provider could label a cheaper model's answer as a dearer one. What
+the signature adds is accountability. A receipt cannot be disowned, so anyone running the
+[spot-check probe](examples/spot-check/) and publishing the results leaves evidence.
 
-### Call a service
+## Status and commitments
 
-Run the minimal example service locally (it reads BNB Chain through public nodes):
+- **Live, free, no sign-up:** the public service `api.tapeapi.fun` (8 methods), its MCP endpoint, the public relay
+  `relay.tapeapi.fun` (`relaySend`, `relayHandshake`, `relayRecv`),
+  [ChannelBus](https://bscscan.com/address/0x486110c35d9b90a9d6D85c8063A065f9e7b6b707), and the website's
+  [console](https://tapeapi.fun/console/), [receipt checker](https://tapeapi.fun/verify/),
+  [playground](https://tapeapi.fun/playground/) and [status page](https://tapeapi.fun/status/).
+- **Available, you run it:** the AI signing sidecar and the new-api package, the MCP signing proxy, `tapeapi-verify`,
+  `tapeapi-mcp`, the spot-check probe, and one-call group delivery (`deliverGroupUpdate`) in the SDK.
+- **Experimental, not deployed:** paid channels and the escrow ([TAP-22](spec/TAP-22.md)), the service directory, and
+  circuit-verified methods ([TAP-25](spec/TAP-25.md)). None of them is part of the 1.0 stability promise.
+- **What 1.0 promises:** code written against the 1.0 docs keeps working in every 1.x release; everything is Stable
+  except what is marked `@experimental` or `@internal`. Coming from 0.x: [Upgrading to 1.0](docs/guides/upgrade-1.0.md).
+- **What we do not do:** host the sidecar for anyone (it sees your users' API keys, so you run it); issue a token;
+  help anyone get around an upstream provider's bans or regional limits (TapeAPI is for providers working within their
+  upstream's terms).
+- **Chains:** BNB Chain (chainId 56) for everything, and the only chain where payments will run. X Layer (196) and Base
+  (8453) are read-only: identity, resolution, receipts and MCP checks. X Layer has only two independent RPC operators.
+- **No third-party audit.** Tests: about 1,140 JavaScript tests (`npm test`), 169 contract tests (`forge test`) and an
+  independent Python implementation of every signature, hash and encoding (`python3 spec/vectors/verify.py`).
 
-```bash
-node examples/reader-service/index.mjs        # listens on :8787 with a throwaway signing key
-```
+## Privacy, plainly
 
-Call it from code. The SDK resolves the manifest, calls the method and verifies the signature before it returns:
+- **Protected:** channel and group content (end-to-end encrypted); AI receipts carry hashes only, and requests sent
+  through the SDK or `tapeapi-verify` get 128 random bits of whitespace, so a short prompt cannot be confirmed from its
+  hash; MCP verification links carry hashes only by default; the SDK's `busPrivacyReader` reads all of ChannelBus and
+  filters locally, so nodes cannot see your rooms.
+- **Not hidden:** a service sees what it processes (your request, your IP, your API key); public RPC nodes see your IP
+  and which service you check; relays and the chain see channel rooms, timing and sizes; everything on chain is public,
+  including future payments.
 
-```js
-import { createTapeAPI } from '@tapeapi/sdk'
+## Fees
 
-const api = createTapeAPI({ dev: true })                           // dev: allow a local http:// service
-const svc = await api.resolve({ dev: 'http://127.0.0.1:8787' })
-const { result, verified } = await api.call(svc, 'blockNumber', {})
-console.log(result.blockNumber, verified)
-```
-
-On mainnet, resolve by TapeOut name, container address or circuit, with at least two RPC nodes that must agree:
-
-```js
-const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
-  quorum: 2,
-})
-const svc = await api.resolve('0x<container>')                     // or '11.1013.tape', or { circuits: '0x…', tokenId: '11' }
-const { result } = await api.call(svc, 'blockNumber', {})
-```
-
-Or with curl, and verify by hand later ([how](docs/guides/consume.md#verify-without-the-sdk)):
-
-```bash
-curl -s -X POST http://127.0.0.1:8787/tapeapi/v1/blockNumber \
-  -H 'content-type: application/json' -d '{"id":"1","params":{}}'
-```
-
-### Run a service
-
-Wrap any function, or any existing REST API, as a signed method:
-
-```js
-import { createProvider } from '@tapeapi/server'
-
-const provider = createProvider({
-  manifest,                                  // your tapeapi.json
-  signerKey: process.env.SIGNER_KEY,         // the key the circuit's holder delegates to
-  rpcUrls: [/* >= 2 BNB Chain nodes */], quorum: 2,
-  methods: {
-    blockNumber: async (_params, ctx) => ({ blockNumber: ctx.block }),
-    quote: async ({ symbol }) => fetch(`https://your.api/quote/${symbol}`).then((r) => r.json()),
-  },
-})
-await provider.listen(8787)                  // Node; on Cloudflare Workers use provider.handleRequest(request)
-```
-
-Going live takes a circuit with an opened container, a delegation signed by its holder, and the manifest written to
-the container's site. The [holder console](https://tapeapi.fun/console/) does all three from a phone wallet. See
-[Run a service](docs/guides/provide.md).
-
-## Features
-
-| | |
-|---|---|
-| **Verifiable answers** | Signed envelopes bound to the exact request; signer checked against the on-chain holder; freshness window; an independent Python implementation checks the test vectors. |
-| **Quorum reads** | Chain reads need agreement from every answering node, never a majority. `callQuorum` accepts a result only when independent providers return the same bytes. |
-| **Pay per call** | Cumulative EIP-712 vouchers, session keys, an escrow with a withdrawal cooldown, no mandatory protocol fee and no operator fee switch; a default 1% maintenance contribution from the provider's share that each provider can set to 0 (or up to 50%). Not deployed yet. |
-| **Private channels** | TAP-26: mutual authentication, forward secrecy, per-direction keys, replay and reorder protection; relay or on-chain transport. |
-| **Private groups** | TAP-27: up to 32 containers, owner-managed epochs, encrypted roster, per-sender signatures. |
-| **On-chain transport that does not lose messages** | The ChannelBus reader holds rather than skips: it works with public nodes' history limits, result caps and failures, and warns about anything it cannot read. Tested with thousands of randomised adversarial runs. |
-| **AI agents** | `exposeTapeAPI` turns any service into WebMCP tools for in-browser agents; every answer is signature-checked, paid methods need an explicit budget. |
-| **Runs anywhere** | Node, Cloudflare Workers (Fetch API), browsers and DeWEB sites; three small audited dependencies (`@noble/curves`, `@noble/hashes`, `@noble/ciphers`). |
-
-## Packages and repository layout
-
-| Path | What it is |
-|---|---|
-| [`sdk/`](sdk/) | `@tapeapi/sdk`: resolve, call, pay, verify, channels, groups, WebMCP bridge. |
-| [`server/`](server/) | `@tapeapi/server`: the provider runtime (Node `listen` and Fetch `handleRequest`), metering, rate limits. |
-| [`contracts/`](contracts/) | Solidity with Foundry tests: `TapeAPIEscrow`, `ServiceDirectory`, `ChannelBus`. |
-| [`spec/`](spec/) | The TAPs, bilingual (English authoritative), with test vectors and an independent Python verifier. |
-| [`examples/`](examples/) | Runnable services: minimal reader, Web2 adapter, DeFi reads, attested cross-chain reads, a relay, a Cloudflare Worker, a WebMCP demo. |
-| [`conformance/`](conformance/) | A black-box suite any provider or relay implementation can run against a URL. |
-| [`site/`](site/) | The website and the holder console (`site/console/`), plain static files. |
-| [`docs/`](docs/) | Guides and design notes; start at [`docs/README.md`](docs/README.md). |
+No mandatory protocol fee; a default 1% maintenance contribution that any provider can turn off; the operator has no fee
+switch. The contribution applies only when a paid channel settles, out of the provider's share, and the user's price does
+not change. The paid-call escrow is not deployed, so **no call is charged today**. AI providers bill their users off
+chain as they do now; the prices in their manifest are published, not settled. See [docs/FEES.md](docs/FEES.md).
 
 ## Specifications
 
-| TAP | Title | In one line |
+| TAP | Title | Status |
 |---|---|---|
-| [TAP-1](spec/TAP-1.md) | TAP process | Types, statuses, numbering and required sections. |
-| [TAP-20](spec/TAP-20.md) | Service identity and manifest | A service is a circuit; `.well-known/tapeapi.json`; the holder's EIP-712 delegation; the resolution algorithm. |
-| [TAP-21](spec/TAP-21.md) | Signed response envelope | `POST {live}/{method}`; the `TAPI-1/resp/v2` digest; canonical JSON; error codes. |
-| [TAP-22](spec/TAP-22.md) | Metered payment | Cumulative vouchers, per-provider escrow channels, no mandatory protocol fee (default 1% contribution, provider can set 0). |
-| [TAP-23](spec/TAP-23.md) | Attested Read | Signed, block-pinned reads of other chains, agreed by independent providers. |
-| [TAP-24](spec/TAP-24.md) | Intent RFQ | Signed quotes for bridge-free cross-chain swaps (frozen until staking exists). |
-| [TAP-25](spec/TAP-25.md) | Circuit-Verified Methods | Methods bound to a circuit whose on-chain `eval()` settles disputes. |
-| [TAP-26](spec/TAP-26.md) | Tape Channel | End-to-end encrypted channels between containers; relays and ChannelBus. |
-| [TAP-27](spec/TAP-27.md) | Tape Group | Private groups of up to 32 containers. |
+| [TAP-1](spec/TAP-1.md) | TAP process and statuses | Draft |
+| [TAP-20](spec/TAP-20.md) | Service identity and manifest, with the AI price table and multi-chain names | Draft, target Stable (v1) |
+| [TAP-21](spec/TAP-21.md) | Signed response envelope, with AI usage receipts | Draft, target Stable (v1) |
+| [TAP-22](spec/TAP-22.md) | Metered payment: vouchers and escrow | Experimental |
+| [TAP-23](spec/TAP-23.md) | Attested read, cross-checked by independent providers | Draft, target Stable (v1) |
+| [TAP-24](spec/TAP-24.md) | Intent RFQ | Withdrawn |
+| [TAP-25](spec/TAP-25.md) | Circuit-verified methods | Experimental |
+| [TAP-26](spec/TAP-26.md) | Private channels between containers | Draft, target Stable (v1) |
+| [TAP-27](spec/TAP-27.md) | Private groups of up to 32 containers | Draft, target Stable (v1) |
 
-## On-chain addresses (BNB Chain, chainId 56)
+The specs are bilingual; English is authoritative. The TAP numbers are
+[proposed](https://github.com/TapeOutProtocol/TapeKit/issues/8) to the TapeKit maintainers and not yet assigned.
 
-| Contract | Address | Owner |
-|---|---|---|
-| DeWebHub | `0xe61A9C7213a6Aa616C246a2B569e555B417b25ee` | TapeOut (deployed) |
-| SiteRegistry | `0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6` | TapeOut (deployed) |
-| Processor factory | `0x68224F668083c29e9800Be2a646d42d18cedF7e2` | TapeOut (deployed) |
-| BEM token | `0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a` | TapeOut (deployed) |
-| ChannelBus | [`0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`](https://bscscan.com/address/0x486110c35d9b90a9d6D85c8063A065f9e7b6b707) | TapeAPI (no owner, no state, no upgrade path) |
-| TapeAPIEscrow, ServiceDirectory | *not deployed* | TapeAPI |
+## Repository
 
-## Quality
+[`sdk/`](sdk/) `@tapeapi/sdk` (resolve, call, verify, AI receipts, channels, groups, MCP) ·
+[`server/`](server/) `@tapeapi/server` (providers, the AI sidecar, the MCP proxy) ·
+[`contracts/`](contracts/) (ChannelBus, and the experimental escrow and directory) ·
+[`spec/`](spec/) (the TAPs, test vectors, the Python verifier) · [`examples/`](examples/) ·
+[`conformance/`](conformance/) · [`site/`](site/) (the website) · [`docs/`](docs/README.md).
+Contract addresses are in the [introduction](docs/guides/introduction.md#on-chain-addresses).
 
-- **Tests:** about 710 JavaScript tests (`npm test`), 169 Foundry tests (`cd contracts && forge test`), and 102
-  checks by an independent Python implementation of the signatures, hashes and encodings
-  (`python3 spec/vectors/verify.py`).
-- **Adversarial review:** twelve rounds of review with a written finding, a failing test and a fix for each; the
-  on-chain reader is covered by a randomised test of faulty, lying and noisy nodes, reorgs and room changes.
-- **Recorded reality:** what real BNB Chain nodes answer (history refusals, result caps, lagging backends) is recorded
-  from mainnet and replayed in tests.
-- **Not yet:** an external audit of the contracts. Do not hold funds you cannot afford to lose in the escrow.
-
-## Security
-
-Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md). Please do not open public issues for
-security problems.
-
-## Contributing
-
-Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Specification changes go through the
-TAP process in [TAP-1](spec/TAP-1.md). All three test suites must pass.
+Report security issues privately as described in [SECURITY.md](SECURITY.md). Issues and pull requests are welcome; see
+[CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

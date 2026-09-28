@@ -4,7 +4,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { createTapeAPI, channel, TapeAPIError } from '../src/index.js'
+import { createTapeAPI, TapeAPIError } from '../src/index.js'
+import * as channel from '../src/channel.js'   // the implementation module (toHex, fromHex) / 实现模块
 import { createFakeChain, ADDR } from './helpers/fake-chain.mjs'
 
 const fx = JSON.parse(readFileSync(new URL('./fixtures/mainnet-4246-tapesend-key.json', import.meta.url), 'utf8'))

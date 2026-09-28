@@ -4,11 +4,12 @@ import { bytesToHex } from '@noble/hashes/utils'
 import { secp256k1 } from '@noble/curves/secp256k1'
 import { TapeAPIError } from '../src/errors.js'
 import {
-  keccak256, personalDigest, signDigest, recoverAddress, privateKeyToAddress, domainSeparator, typedDigest,
+  personalDigest, signDigest, recoverAddress, privateKeyToAddress, domainSeparator, typedDigest,
   hashDelegation, hashVoucher, delegationDigest, voucherDigest, responseDigest, signResponse, recoverResponseSigner,
   DELEGATION_TYPEHASH, VOUCHER_TYPEHASH, RESPONSE_DIGEST_PREFIX,
 } from '../src/sig.js'
 import { canonicalJSON } from '../src/canon.js'
+import { keccak256 } from '../src/abi.js'
 
 const PK1 = '0x' + '1'.padStart(64, '0')
 const PK2 = '0x' + '2'.padStart(64, '0')

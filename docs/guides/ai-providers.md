@@ -143,11 +143,23 @@ const baseURL = svc.manifest.ai.endpoints.find((e) => e.format === 'openai-chat'
 const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
 ```
 
+Use the `baseUrl` from the manifest exactly. A request to a metered path on any other host (`localhost` for
+`127.0.0.1`, another port) is refused with `INVALID_ARGUMENT` before it is sent, naming the endpoint it expected; with
+`strict: false` it goes through and `onReport` says `not verified: endpoint mismatch`. Streams are verified too. A
+stream ends at its final event, at `[DONE]` or when the connection closes, whichever comes first; with the default
+`strict: true` the part in which it ends is passed on only once a receipt that came before it verifies, so a stream
+that fails makes the SDK's iterator throw `RECEIPT_INVALID`. With `strict: false` nothing is held back, and the
+verdict goes to `onReport`. A whole (not streamed) answer whose receipt fails comes back, in strict mode, as an HTTP
+502 in the API's error shape with code `RECEIPT_INVALID` and the headers `x-should-retry: false` and
+`x-tapeapi-verify-error: RECEIPT_INVALID`: the official SDKs throw an `APIError` and do not retry it; code that calls
+the fetch itself checks `res.ok`. Whether a paid call is retried after other 5xx errors is up to you (the SDKs'
+`maxRetries`).
+
 **Claude Code and Codex users** cannot read receipts themselves. They run the local verifying proxy `tapeapi-verify`
 and point the client at it:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
 
