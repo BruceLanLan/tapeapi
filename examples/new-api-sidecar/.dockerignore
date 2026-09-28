@@ -1,0 +1,5 @@
+# The build context is this directory; only server.mjs goes into the image. Above all, .env (SIGNER_KEY) and new-api's
+# data/ and logs/ never reach the builder. / 构建上下文是本目录，只有 server.mjs 进入镜像；.env（含 SIGNER_KEY）以及 new-api 的
+# data/、logs/ 绝不发给构建器。
+*
+!server.mjs

@@ -6,6 +6,41 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-28
+
+### Added
+
+- **X Layer and Base, read-only.** TapeAPI follows TapeOut to X Layer (chainId 196, area code 2) and Base (chainId 8453,
+  area code 3). `@tapeapi/sdk/chains` holds the chain registry (processor factory, DeWebHub, SiteRegistry, binding,
+  ERC-6551 registry and account implementation per chain, each read on chain; the recorded answers are in
+  `sdk/test/fixtures/chains-onchain.json`). Names follow TapeKit `kernel/src/name.js`: `<#ID>.<processor>.tape` on BNB
+  Chain, `<#ID>.<area>.<processor>.tape` elsewhere (`1.2.230.tape` is #1 of processor 230 on X Layer); new exports
+  `parseTapeName`, `formatTapeName`, `isNameShaped`, `CHAINS`, `chainById`, `chainByArea`, `chainByKey`.
+- `resolve()` takes names on any supported chain, `{ chainId, circuits, tokenId }` and `{ chainId, container }`, and
+  every resolved service carries its `chainId`. `createTapeAPI({ chains })` configures nodes per chain;
+  `api.forChain(id)` and `api.chainOfContainer(address)` are new. Paid methods of an X Layer or Base service are refused
+  with `PAYMENT_REQUIRED` ("payments are on BNB Smart Chain only"): payments stay on BNB Chain for now.
+- Default nodes per chain, measured 2026-09-28 and counted by operator: X Layer = OKX (two domains) + dRPC, **only two
+  independent operators, so 2-of-2 with no spare** (the client warns once); Base = Coinbase, Allnodes, dRPC, Tenderly.
+- `tapeapi-mcp` and `tapeapi-verify` accept area-coded names (`--rpc-xlayer`, `--rpc-base`); the verification page,
+  playground, "my services" and the console pick the chain from the name (the console has a chain selector and switches
+  the wallet; ChannelBus stays on BNB Chain).
+- **`examples/new-api-sidecar/`**: one `docker compose up` puts the AI signing sidecar in front of an unchanged new-api
+  relay (smoke test and tests included). Guide for AI providers: `docs/guides/ai-providers.md` (and Chinese).
+- **`examples/spot-check/`**: a versioned probe set anyone can run against an AI service; it verifies each receipt and
+  writes raw data only (reported `prompt_tokens` next to local tokenizer counts), no scores and no rankings.
+
+### Changed
+
+- **TAP-20 multi-chain text** (§3.1, §3.2, §3.4, §3.6 step 1 and step 3, §5, §6.2): a service lives on the chain of its
+  circuit; the container, manifest, `isCPU` and delegation are all read on that chain; the delegation domain is
+  (that chain's chainId, that chain's DeWebHub). The DeWebHub has one address on all three chains, so the chainId alone
+  separates the domains and a delegation for one chain MUST NOT be accepted on another. Identity does not carry across
+  chains. §6.2 adds the digests for chainId 196 and 8453, computed by the SDK and by `verify.py` independently.
+- **Behaviour change:** a dotted all-digit string such as `1.2.3` is now an X Layer name, not a directory label. A name
+  with a reserved or unassigned area code is refused. BNB Chain behaviour is otherwise unchanged; receipts are unchanged
+  (the chain follows from the service name, and a wrong chain derives a different container, which fails the check).
+
 ## [0.5.0] — 2026-09-28
 
 ### Changed
@@ -200,7 +235,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.2.0...v0.3.0

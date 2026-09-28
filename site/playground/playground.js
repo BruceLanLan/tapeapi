@@ -3,12 +3,15 @@
 // Everything the manifest or a provider says is untrusted text: it reaches the page through textContent only.
 // 调试台：用真实的 SDK 解析并调用 TapeOut 服务，展示 SDK 核对了什么。手写；SDK 由 scripts/build-playground.mjs 放入 vendor/。
 // 清单与提供者给出的一切都是不可信文本，只经 textContent 进入页面。
-import { createTapeAPI, TapeAPIError, MAINNET, parseUnits, sig, abi, rpcUrlsFor, operatorOf } from './vendor/tapeapi-sdk/index.js'
+import { createTapeAPI, TapeAPIError, parseUnits, sig, abi, rpcUrlsFor, operatorOf, CHAINS, chainByArea } from './vendor/tapeapi-sdk/index.js'
 
 // The SDK's default nodes: three distinct operators (NodeReal, Alchemy, 48 Club); the SDK counts agreement by operator.
 // SDK 的默认节点：三家不同运营方；SDK 按运营方计票。
+// A name with an area code (1.2.344.tape on X Layer, 1.3.5.tape on Base) is read on that chain through the SDK's default
+// nodes for it, with the same operator quorum. / 带区号的名字在那条链上读取，用 SDK 对该链的默认节点，法定数相同。
 const RPC_URLS = rpcUrlsFor(56)
 const QUORUM = 2
+const operatorsOn = (chainId) => new Set(rpcUrlsFor(chainId).map(operatorOf)).size
 const PUBLIC_EXAMPLES = {   // prefilled params for the public service's methods / 公共服务各方法的示例参数
   balance: { address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c' },   // WBNB contract: holds a lot of BNB
   tokenInfo: { token: '0x55d398326f99059fF775485246999027B3197955' },   // USDT (BSC)
@@ -26,7 +29,7 @@ const T = {
     lede: '输入一个 TapeOut 服务名，在浏览器里解析并调用它。每一项核对都由 @tapeapi/sdk 在本页完成，与仓库中的 SDK 是同一份代码；没有中间服务器替你判断。',
     'h.service': '解析服务', 'h.methods': '选择方法', 'h.call': '调用', 'h.code': '在你的代码里',
     'target.label': '服务', resolve: '解析',
-    'target.hint': '可以填名称 <code>11.1013.tape</code>（#ID.处理器编号.tape）、容器地址 <code>0x…</code>，或处理器合约加编号 <code>0x… #11</code>。',
+    'target.hint': '可以填名称 <code>11.1013.tape</code>（#ID.处理器编号.tape；X Layer 与 Base 上的名字带区号，如 <code>1.2.344.tape</code>）、BNB Chain 上的容器地址 <code>0x…</code>，或处理器合约加编号 <code>0x… #11</code>。',
     'manifest.raw': '清单 JSON（SDK 校验后）',
     'params.json': '参数 JSON', call: '调用',
     'code.sdk': 'JavaScript（@tapeapi/sdk，会做上面的全部核对）',
@@ -35,6 +38,7 @@ const T = {
     resolving: '正在读链：定位容器、读取清单、核对委托……',
     resolved: (ms, n) => `已解析并核对，用时 ${ms} ms，向节点发出 ${n} 个 RPC 请求。`,
     failed: '失败', calling: '正在调用……',
+    'c.chain': '链', 'c.chain.how': '服务的身份、清单与委托都在这条链上读取；委托的签名域是 (该链 chainId, 该链的 DeWebHub)',
     'c.name': '名称', 'c.name.how': (p) => `工厂 cpuAt(${p}) 给出处理器合约`,
     'c.cpu': '处理器', 'c.cpu.how': '工厂 isCPU 为真：确实是 TapeOut 处理器，不是仿冒的 ERC-721',
     'c.container': '容器', 'c.container.how': '由中枢 accountOf(处理器, #ID) 推导，与清单里的 container 一致',
@@ -66,6 +70,7 @@ const T = {
       BAD_REQUEST: '参数不被接受：检查上面的参数。',
     },
     badTarget: '看不懂这个输入：请填 11.1013.tape、容器地址，或“处理器合约 #编号”。',
+    badArea: (a) => `区号 ${a} 没有对应的链：X Layer 是 2，Base 是 3；BNB Chain 的名字不带区号。`,
     noProcessor: (p) => `处理器 ${p} 不存在（工厂 cpuAt 回滚）。`,
     sdkComment: (n) => `// ${n}：容器、持有人、清单哈希、委托、每个回答的签名都在本地核对`,
     curlNote: '# 注意：curl 不核对签名，也不核对链上身份',
@@ -76,7 +81,7 @@ const T = {
     lede: 'Type a TapeOut service name, then resolve and call it from your browser. Every check is made on this page by @tapeapi/sdk, the same SDK code as in the repository; no server in the middle decides for you.',
     'h.service': 'Resolve a service', 'h.methods': 'Pick a method', 'h.call': 'Call', 'h.code': 'In your code',
     'target.label': 'Service', resolve: 'Resolve',
-    'target.hint': 'A name such as <code>11.1013.tape</code> (#ID.processor.tape), a container address <code>0x…</code>, or a processor contract and number <code>0x… #11</code>.',
+    'target.hint': 'A name such as <code>11.1013.tape</code> (#ID.processor.tape; names on X Layer and Base carry their area code, e.g. <code>1.2.344.tape</code>), a container address on BNB Chain <code>0x…</code>, or a processor contract and number <code>0x… #11</code>.',
     'manifest.raw': 'Manifest JSON (as validated by the SDK)',
     'params.json': 'Params JSON', call: 'Call',
     'code.sdk': 'JavaScript (@tapeapi/sdk, which makes every check above)',
@@ -85,6 +90,7 @@ const T = {
     resolving: 'Reading the chain: locating the container, reading the manifest, checking the delegation…',
     resolved: (ms, n) => `Resolved and checked in ${ms} ms, with ${n} RPC requests to the nodes.`,
     failed: 'Failed', calling: 'Calling…',
+    'c.chain': 'Chain', 'c.chain.how': 'identity, manifest and delegation are read on this chain; the delegation is signed for (its chainId, its DeWebHub)',
     'c.name': 'Name', 'c.name.how': (p) => `factory cpuAt(${p}) gives the processor contract`,
     'c.cpu': 'Processor', 'c.cpu.how': 'factory isCPU is true: a real TapeOut processor, not a look-alike ERC-721',
     'c.container': 'Container', 'c.container.how': 'derived by the hub, accountOf(processor, #ID), and equal to the manifest\'s container',
@@ -116,6 +122,7 @@ const T = {
       BAD_REQUEST: 'The parameters were refused: check them above.',
     },
     badTarget: 'Cannot read this: enter 11.1013.tape, a container address, or "processor contract #number".',
+    badArea: (a) => `Area code ${a} names no chain: X Layer is 2, Base is 3; a BNB Chain name carries none.`,
     noProcessor: (p) => `Processor ${p} does not exist (factory cpuAt reverted).`,
     sdkComment: (n) => `// ${n}: container, holder, manifest hash, delegation and every answer's signature are checked locally`,
     curlNote: '# note: curl checks neither the signature nor the on-chain identity',
@@ -162,21 +169,26 @@ async function tracedFetch(url, init) {
 const api = createTapeAPI({ rpcUrls: RPC_URLS, quorum: QUORUM, timeoutMs: 4000, fetch: tracedFetch })
 
 // ── locate: name, container, or processor contract + number / 定位：名称、容器，或处理器合约加编号 ─────────────
-const NAME_RE = /^(\d{1,15})\.(\d{1,15})\.tape$/i
+// <#ID>.<processor>.tape on BNB Smart Chain, <#ID>.<area>.<processor>.tape on X Layer (2) and Base (3)
+const NAME_RE = /^(\d{1,15})\.(?:(\d{1,7})\.)?(\d{1,15})\.tape$/i
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/
 const PAIR_RE = /^(0x[0-9a-fA-F]{40})\s*(?:[#:,/\s]\s*)#?\s*(\d{1,78})$/
 async function locate(input) {
   const s = input.trim()
   let m
   if ((m = NAME_RE.exec(s))) {
-    const id = BigInt(m[1]), proc = BigInt(m[2])
+    const id = BigInt(m[1]), proc = BigInt(m[3])
     if (id < 1n) throw new Error(lang === 'zh' ? '#ID 从 1 开始' : '#ID starts at 1')
+    // no area code: BNB Smart Chain; 0 and 1 are reserved; an unassigned code names no chain / 无区号为 BNB；0、1 保留
+    const chain = m[2] === undefined ? CHAINS[56] : Number(m[2]) > 1 ? chainByArea(Number(m[2])) : null
+    if (!chain) throw new Error(t('badArea', m[2]))
     let raw
     const data = abi.selector('cpuAt(uint256)') + abi.bytesToHex(abi.encodeParams(['uint256'], [proc]))
-    try { raw = await api.rpc.ethCall(MAINNET.factory, data) }
+    try { raw = await api.forChain(chain.chainId).rpc.ethCall(chain.factory, data) }
     catch (e) { if (e instanceof TapeAPIError && e.code === 'RPC_ERROR') throw new TapeAPIError('NOT_FOUND', t('noProcessor', proc)); throw e }
     const circuits = abi.checksumAddress(abi.decodeParams(['address'], raw)[0])
-    return { kind: 'name', name: `${id}.${proc}.tape`, processor: proc.toString(), target: { circuits, tokenId: id.toString() } }
+    const name = `${id}.${chain.area === null ? '' : `${chain.area}.`}${proc}.tape`
+    return { kind: 'name', name, processor: proc.toString(), chainId: chain.chainId, target: { ...(chain.chainId !== 56 ? { chainId: chain.chainId } : {}), circuits, tokenId: id.toString() } }
   }
   if (ADDR_RE.test(s)) return { kind: 'container', target: abi.checksumAddress(s) }
   if ((m = PAIR_RE.exec(s))) return { kind: 'pair', target: { circuits: abi.checksumAddress(m[1]), tokenId: BigInt(m[2]).toString() } }
@@ -205,15 +217,18 @@ function renderChecks() {
   const box = $('checks')
   if (!svc) { box.hidden = true; return }
   const m = svc.manifest
-  const digest = sig.delegationDigest(api.chainId, MAINNET.hub, { container: m.container, signer: m.signer, expires: m.delegation.expires })
+  // the delegation domain of the service's own chain: (chainId, that chain's DeWebHub) / 服务所在链的委托域
+  const chainId = svc.chainId ?? 56
+  const digest = sig.delegationDigest(chainId, CHAINS[chainId].delegation.verifyingContract, { container: m.container, signer: m.signer, expires: m.delegation.expires })
   const signedBy = abi.checksumAddress(sig.recoverAddress(digest, m.delegation.sig))
   const days = Math.floor((m.delegation.expires * 1000 - Date.now()) / 86400000)
   const locale = lang === 'zh' ? 'zh-CN' : 'en'
   const rows = []
+  rows.push(checkRow('•', t('c.chain'), `${CHAINS[chainId].name} (chainId ${chainId})`, t('c.chain.how')))
   if (located?.kind === 'name') rows.push(checkRow('✓', t('c.name'), code(located.name), t('c.name.how', located.processor)))
   rows.push(checkRow('✓', t('c.cpu'), el('span', null, code(abi.checksumAddress(m.circuits)), ` #${m.tokenId}`), t('c.cpu.how')))
   rows.push(checkRow('✓', t('c.container'), code(svc.container), t('c.container.how')))
-  rows.push(checkRow('✓', t('c.holder'), code(svc.verified.holder), t('c.holder.how', QUORUM, new Set(RPC_URLS.map(operatorOf)).size)))
+  rows.push(checkRow('✓', t('c.holder'), code(svc.verified.holder), t('c.holder.how', QUORUM, operatorsOn(chainId))))
   if (svc.file) rows.push(checkRow('✓', t('c.manifest'), el('span', null, t('bytes', svc.file.size), ', sha256 ', code(svc.file.sha256Hash)), t('c.manifest.how')))
   rows.push(checkRow('✓', t('c.delegation'), code(signedBy), t('c.delegation.how')))
   rows.push(checkRow('•', t('c.expires'), new Date(m.delegation.expires * 1000).toLocaleString(locale) + t('days', days)))
@@ -336,9 +351,10 @@ function renderSnippets() {
   if (!svc || !def) return
   let params
   try { params = paramsNow() } catch { params = {} }
+  const chainId = svc.chainId ?? 56
   const target = located?.kind === 'container' || !located
-    ? `'${svc.container}'`
-    : `{ circuits: '${abi.checksumAddress(svc.manifest.circuits)}', tokenId: '${svc.manifest.tokenId}' }`
+    ? (chainId === 56 ? `'${svc.container}'` : `{ chainId: ${chainId}, container: '${svc.container}' }`)
+    : `{ ${chainId === 56 ? '' : `chainId: ${chainId}, `}circuits: '${abi.checksumAddress(svc.manifest.circuits)}', tokenId: '${svc.manifest.tokenId}' }`
   const label = located?.kind === 'name' ? located.name : svc.manifest.name || svc.container
   const p = JSON.stringify(params)
   $('code-sdk').textContent = [
@@ -347,6 +363,7 @@ function renderSnippets() {
     'const api = createTapeAPI({',
     '  rpcUrls: rpcUrlsFor(56),   // ' + RPC_URLS.map((u) => new URL(u).host).join(', '),
     `  quorum: ${QUORUM},`,
+    ...(chainId === 56 ? [] : [`  // ${CHAINS[chainId].name}: rpcUrlsFor(${chainId}) unless you pass chains: { ${chainId}: { rpcUrls } }`]),
     '})',
     t('sdkComment', label),
     `const svc = await api.resolve(${target})`,

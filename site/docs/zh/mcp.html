@@ -19,7 +19,7 @@
   <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="en">English</button><button class="hd-btn" id="theme-btn" type="button">主题</button></div>
 </div></header>
 <div class="layout">
-<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="public-api.html">公共 API</a></li><li><a href="mcp.html" aria-current="page">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume.html">调用服务</a></li><li><a href="provide.html">运行服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="public-api.html">公共 API</a></li><li><a href="mcp.html" aria-current="page">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume.html">调用服务</a></li><li><a href="provide.html">运行服务</a></li><li><a href="ai-providers.html">接入 AI 服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
 <main class="doc">
 <article>
 <h1 id="在-claudecursor-等-mcp-客户端中使用-tapeapi">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</h1>
@@ -66,7 +66,7 @@ Signed by TapeAPI service 11.1013.tape (container 0x1b2A657BcBa9D3229f57aC2f4Fcb
 the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2aWNl...</code></pre></div>
 <h2 id="本地核验命令"><a class="anchor" href="#本地核验命令" aria-hidden="true">#</a>本地核验命令</h2>
 <p><code>tapeapi-mcp</code> 是 SDK 发布包里的一个本地 MCP 服务器（stdio），需要 Node.js 20 或以上。<code>npx</code> 从 GitHub Release 取得它，不经过 npm 注册表：</p>
-<div class="code"><pre data-lang="bash"><code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz tapeapi-mcp 11.1013.tape</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 11.1013.tape</code></pre></div>
 <p>它和远程服务器的不同之处：</p>
 <ul><li><strong>它自己核验每个回答。</strong> 它按 SDK 的方式从链上解析服务（每一步见<a href="consume.html">调用服务</a>），然后对照持有者委托的密钥核验每个回答的签名，之后才把结果交给模型。</li><li><strong>它钉住服务的工具定义。</strong> 第一次使用时，它把每个服务的方法（名称、说明、参数、价格）和签名密钥记在 <code>~/.tapeapi/mcp-pins.json</code>。如果持有者之后发布的清单里这些有变化，命令会拒绝对该服务的所有调用，什么都不发送，并说明改了什么。改动可能是正常更新，也可能是 rug pull；命令不做猜测。要接受改动，用 <code>--allow-changed</code> 重启一次命令，它会重新钉住新的定义。续签委托或更换端点不算改动。</li><li><strong>它接受任何服务。</strong> 把 <code>11.1013.tape</code> 换成另一个 TapeAPI 服务的 TapeOut 名称或容器地址，也可以同时列出多个。只有免费方法会成为工具。</li></ul>
 <p><code>tapeapi-mcp --help</code> 列出其他选项：<code>--rpc</code> 指定你自己的 BNB Chain 节点，<code>--pin</code> 换一个钉住文件，<code>--no-pin</code> 只在本次会话内钉住。</p>
@@ -78,7 +78,7 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2a
       &quot;command&quot;: &quot;npx&quot;,
       &quot;args&quot;: [
         &quot;-y&quot;,
-        &quot;--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz&quot;,
+        &quot;--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz&quot;,
         &quot;tapeapi-mcp&quot;,
         &quot;11.1013.tape&quot;
       ]
@@ -93,7 +93,7 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2a
       &quot;command&quot;: &quot;npx&quot;,
       &quot;args&quot;: [
         &quot;-y&quot;,
-        &quot;--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz&quot;,
+        &quot;--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz&quot;,
         &quot;tapeapi-mcp&quot;,
         &quot;11.1013.tape&quot;
       ]
@@ -101,7 +101,7 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2a
   }
 }</code></pre></div>
 <h3 id="claude-code-2"><a class="anchor" href="#claude-code-2" aria-hidden="true">#</a>Claude Code</h3>
-<div class="code"><pre data-lang="bash"><code>claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz tapeapi-mcp 11.1013.tape</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 11.1013.tape</code></pre></div>
 <h3 id="远程还是本地"><a class="anchor" href="#远程还是本地" aria-hidden="true">#</a>远程还是本地</h3>
 <div class="table"><table><thead><tr><th></th><th>远程服务器</th><th>本地命令</th></tr></thead><tbody><tr><td>安装</td><td>无</td><td>Node.js 20 或以上</td></tr><tr><td>谁核验签名</td><td>任何人，事后用链接核验</td><td>命令本身，在模型看到结果之前</td></tr><tr><td>工具列表</td><td>以服务器列出的为准</td><td>从链上清单读取并钉住；有变化时拒绝调用，直到你接受</td></tr><tr><td>服务</td><td><code>11.1013.tape</code></td><td>任何 TapeAPI 服务，按名称或容器地址指定</td></tr><tr><td>限流</td><td>按 IP 地址，同一地址后面的所有人共享</td><td>你自己的 IP 地址</td></tr></tbody></table></div>
 <h2 id="读懂并核验回执"><a class="anchor" href="#读懂并核验回执" aria-hidden="true">#</a>读懂并核验回执</h2>
@@ -111,7 +111,7 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2a
 <p>打开核验链接。回执放在网址 <code>#</code> 之后的部分，浏览器从不把这部分发给服务器。<code>https://tapeapi.fun/verify/</code> 页面在你的浏览器里从链上解析服务，从签名恢复签名者，对照持有者的委托核对，并显示结果。</p>
 <h3 id="离线用-sdk-核验"><a class="anchor" href="#离线用-sdk-核验" aria-hidden="true">#</a>离线用 SDK 核验</h3>
 <p>把回执（<code>_meta[&quot;fun.tapeapi/receipt&quot;]</code> 对象）存为 <code>receipt.json</code>。从 GitHub Release 安装 SDK，或者像 <a href="consume.html">调用服务</a>里那样在仓库的克隆目录里操作：</p>
-<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz</code></pre></div>
 <div class="code"><pre data-lang="js"><code>import { readFile } from 'node:fs/promises'
 import { createTapeAPI, sig } from '@tapeapi/sdk'
 
@@ -171,7 +171,7 @@ curl -s -X POST http://127.0.0.1:8796/mcp -H 'content-type: application/json' -H
 <p>然后把 <code>TOOLS_SHA256</code>（Worker 变量，或 Node 的环境变量）设为你发布的 <code>mcp.toolsSha256</code>。不设它，代理重启时会把启动时读到的工具当作已发布的工具，而 Worker 的隔离实例随时可能被重启。设了它，重启之后被改过的工具同样会被拒绝。</p>
 <h3 id="3-让用户接入"><a class="anchor" href="#3-让用户接入" aria-hidden="true">#</a>3. 让用户接入</h3>
 <ul><li><strong>按网址接入。</strong> 用户在 Claude、Cursor 或任何 MCP 客户端里添加 <code>https://&lt;你的主机名&gt;/mcp</code>，和本指南开头的公共服务一样。每个结果都带回执和核验链接。</li><li><p><strong>用本地命令接入。</strong> <code>tapeapi-mcp</code> 接受你的 TapeOut 名称（或容器地址），从链上解析你的服务，先把工具与链上的摘要核对，再按你的服务器定义的样子展示它们（v0.5.0 及以后）：</p>
-<div class="code"><pre data-lang="bash"><code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz tapeapi-mcp 42.1013.tape</code></pre></div></li></ul>
+<div class="code"><pre data-lang="bash"><code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 42.1013.tape</code></pre></div></li></ul>
 <h3 id="客户端核对什么"><a class="anchor" href="#客户端核对什么" aria-hidden="true">#</a>客户端核对什么</h3>
 <ul><li><strong><code>tapeapi-mcp</code></strong> 在链上解析服务和持有者的委托。它从 <code>mcp.endpoint</code> 读取 <code>tools/list</code> 并计算摘要，与链上的 <code>mcp.toolsSha256</code> 不同时，拒绝该服务的所有工具，什么都不发送。它把这个摘要连同方法和签名密钥一起钉在 <code>~/.tapeapi/mcp-pins.json</code>。每次调用都走 <code>/tapeapi/v1/&lt;工具名&gt;</code>，信封的签名在模型看到结果之前按委托的密钥核验，并且绑定本次请求。</li><li><strong>按网址连接 <code>/mcp</code> 的客户端自己什么都不核对。</strong> 它依靠代理（工具与已发布的摘要不符时，代理拒绝服务），以及任何人事后都能在 <code>https://tapeapi.fun/verify/</code> 核验的回执。</li><li><strong>工具报错也作为回答签名。</strong> 你的服务器返回 <code>isError: true</code> 时，信封是 <code>ok: true</code>：签名证明的是你的服务器这样回答了。只有代理自己的拒绝才是 <code>ok: false</code>。</li></ul>
 <h3 id="改了工具之后"><a class="anchor" href="#改了工具之后" aria-hidden="true">#</a>改了工具之后</h3>

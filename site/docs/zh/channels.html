@@ -19,7 +19,7 @@
   <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="en">English</button><button class="hd-btn" id="theme-btn" type="button">主题</button></div>
 </div></header>
 <div class="layout">
-<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="public-api.html">公共 API</a></li><li><a href="mcp.html">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume.html">调用服务</a></li><li><a href="provide.html">运行服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html" aria-current="page">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="public-api.html">公共 API</a></li><li><a href="mcp.html">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume.html">调用服务</a></li><li><a href="provide.html">运行服务</a></li><li><a href="ai-providers.html">接入 AI 服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html" aria-current="page">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
 <main class="doc">
 <article>
 <h1 id="私密通道">私密通道</h1>
@@ -70,7 +70,7 @@ bob.open(frame, { text: true }).data                 // 'hello'</code></pre></di
 <h2 id="5-限制"><a class="anchor" href="#5-限制" aria-hidden="true">#</a>5. 限制</h2>
 <ul><li>一帧最多承载 16 KiB 明文；一份邀请最多存活一小时。</li><li>中继能看到房间名、大小和时间，永远看不到内容或身份。ChannelBus 会把这些元数据永久公开。</li><li>在单个方向达到 2^32 帧之前很早就应重新握手（SDK 拒绝超出这一上限）。</li></ul>
 </article>
-<nav class="pn"><a class="prev" href="provide.html"><span>上一篇</span>运行服务</a><a class="next" href="agents.html"><span>下一篇</span>AI 智能体</a></nav>
+<nav class="pn"><a class="prev" href="ai-providers.html"><span>上一篇</span>接入 AI 服务</a><a class="next" href="agents.html"><span>下一篇</span>AI 智能体</a></nav>
 <p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/channels.md" rel="noopener">在 GitHub 上编辑此页</a></p>
 </main>
 <aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#工作原理">工作原理</a></li><li class="l2"><a href="#1-发布容器的通道密钥">1. 发布容器的通道密钥</a></li><li class="l2"><a href="#2-代码中的握手">2. 代码中的握手</a></li><li class="l2"><a href="#3-选择传输">3. 选择传输</a></li><li class="l2"><a href="#4-可靠地读取链">4. 可靠地读取链</a></li><li class="l2"><a href="#5-限制">5. 限制</a></li></ul></aside>

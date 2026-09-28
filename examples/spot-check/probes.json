@@ -1,0 +1,719 @@
+{
+  "schema": "tapeapi-spot-check-probes/1",
+  "version": "2026-09-28.1",
+  "about": "Fixed probe set of the TapeAPI spot-check tool. Every request body is sent exactly as written here, with {{model}} replaced by the --model value (and, for openai-chat, max_tokens optionally renamed with --chat-max-field). A new text or body means a new version. `records` names the record fields (dotted paths) each probe fills. Expected token counts are of tokenText alone (no chat template), computed with the pinned tokenizer files listed under tokenizers.pins; node tokenizers.mjs check recomputes them.",
+  "placeholders": {
+    "{{model}}": "the model id given with --model"
+  },
+  "probes": [
+    {
+      "id": "tok-base",
+      "kind": "tokens",
+      "purpose": "Baseline for the token probes: the instruction alone. Its reported prompt tokens are the service's fixed overhead (chat template, hidden system prompt) plus the instruction.",
+      "records": [
+        "http.status",
+        "http.totalMs",
+        "receipt",
+        "receiptVerification",
+        "reportedModel",
+        "usage",
+        "answer.sha256",
+        "measurements.promptTokens",
+        "measurements.localTokens",
+        "measurements.reportedMinusLocal"
+      ],
+      "tokenText": "Reply with the single word OK.",
+      "bodies": {
+        "openai-chat": {
+          "model": "{{model}}",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Reply with the single word OK."
+            }
+          ],
+          "max_tokens": 16
+        },
+        "openai-responses": {
+          "model": "{{model}}",
+          "input": "Reply with the single word OK.",
+          "max_output_tokens": 16
+        },
+        "anthropic-messages": {
+          "model": "{{model}}",
+          "max_tokens": 16,
+          "messages": [
+            {
+              "role": "user",
+              "content": "Reply with the single word OK."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "tok-en",
+      "kind": "tokens",
+      "purpose": "English prose with contractions, quotes and a year: reported prompt tokens minus tok-base, compared with each tokenizer family's local count difference.",
+      "records": [
+        "http.status",
+        "http.totalMs",
+        "receipt",
+        "receiptVerification",
+        "reportedModel",
+        "usage",
+        "answer.sha256",
+        "measurements.promptTokens",
+        "measurements.localTokens",
+        "measurements.reportedMinusLocal",
+        "measurements.reportedDelta",
+        "measurements.localDelta",
+        "measurements.reportedDeltaMinusLocalDelta"
+      ],
+      "tokenText": "The lighthouse keeper's logbook, which hadn't been opened since 1987, described storms we'd never heard of: \"northeasterly squalls\", \"phosphorescent swells\" and an unexplained humming beneath the pier. Nobody's sure what it meant.\n\nReply with the single word OK.",
+      "baseline": "tok-base",
+      "bodies": {
+        "openai-chat": {
+          "model": "{{model}}",
+          "messages": [
+            {
+              "role": "user",
+              "content": "The lighthouse keeper's logbook, which hadn't been opened since 1987, described storms we'd never heard of: \"northeasterly squalls\", \"phosphorescent swells\" and an unexplained humming beneath the pier. Nobody's sure what it meant.\n\nReply with the single word OK."
+            }
+          ],
+          "max_tokens": 16
+        },
+        "openai-responses": {
+          "model": "{{model}}",
+          "input": "The lighthouse keeper's logbook, which hadn't been opened since 1987, described storms we'd never heard of: \"northeasterly squalls\", \"phosphorescent swells\" and an unexplained humming beneath the pier. Nobody's sure what it meant.\n\nReply with the single word OK.",
+          "max_output_tokens": 16
+        },
+        "anthropic-messages": {
+          "model": "{{model}}",
+          "max_tokens": 16,
+          "messages": [
+            {
+              "role": "user",
+              "content": "The lighthouse keeper's logbook, which hadn't been opened since 1987, described storms we'd never heard of: \"northeasterly squalls\", \"phosphorescent swells\" and an unexplained humming beneath the pier. Nobody's sure what it meant.\n\nReply with the single word OK."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "tok-zh",
+      "kind": "tokens",
+      "purpose": "Chinese prose: the families split Han text very differently (some isolate Han runs, some merge whole words).",
+      "records": [
+        "http.status",
+        "http.totalMs",
+        "receipt",
+        "receiptVerification",
+        "reportedModel",
+        "usage",
+        "answer.sha256",
+        "measurements.promptTokens",
+        "measurements.localTokens",
+        "measurements.reportedMinusLocal",
+        "measurements.reportedDelta",
+        "measurements.localDelta",
+        "measurements.reportedDeltaMinusLocalDelta"
+      ],
+      "tokenText": "敦煌莫高窟始建于十六国的前秦时期，历经北朝、隋、唐、五代、西夏、元等历代的兴建，形成巨大的规模。洞窟中保存的壁画和彩塑，是研究古代丝绸之路文化交流的珍贵资料。\n\nReply with the single word OK.",
+      "baseline": "tok-base",
+      "bodies": {
+        "openai-chat": {
+          "model": "{{model}}",
+          "messages": [
+            {
+              "role": "user",
+              "content": "敦煌莫高窟始建于十六国的前秦时期，历经北朝、隋、唐、五代、西夏、元等历代的兴建，形成巨大的规模。洞窟中保存的壁画和彩塑，是研究古代丝绸之路文化交流的珍贵资料。\n\nReply with the single word OK."
+            }
+          ],
+          "max_tokens": 16
+        },
+        "openai-responses": {
+          "model": "{{model}}",
+          "input": "敦煌莫高窟始建于十六国的前秦时期，历经北朝、隋、唐、五代、西夏、元等历代的兴建，形成巨大的规模。洞窟中保存的壁画和彩塑，是研究古代丝绸之路文化交流的珍贵资料。\n\nReply with the single word OK.",
+          "max_output_tokens": 16
+        },
+        "anthropic-messages": {
+          "model": "{{model}}",
+          "max_tokens": 16,
+          "messages": [
+            {
+              "role": "user",
+              "content": "敦煌莫高窟始建于十六国的前秦时期，历经北朝、隋、唐、五代、西夏、元等历代的兴建，形成巨大的规模。洞窟中保存的壁画和彩塑，是研究古代丝绸之路文化交流的珍贵资料。\n\nReply with the single word OK."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "tok-digits",
+      "kind": "tokens",
+      "purpose": "Long digit runs and numbers: some families put one digit per token, others group up to three.",
+      "records": [
+        "http.status",
+        "http.totalMs",
+        "receipt",
+        "receiptVerification",
+        "reportedModel",
+        "usage",
+        "answer.sha256",
+        "measurements.promptTokens",
+        "measurements.localTokens",
+        "measurements.reportedMinusLocal",
+        "measurements.reportedDelta",
+        "measurements.localDelta",
+        "measurements.reportedDeltaMinusLocalDelta"
+      ],
+      "tokenText": "Checksum 2718281828459045235360287471352662497757247093699959574966, batch 00042, ratio 0.30103 and 1,048,576 bytes on 2026-09-28.\n\nReply with the single word OK.",
+      "baseline": "tok-base",
+      "bodies": {
+        "openai-chat": {
+          "model": "{{model}}",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Checksum 2718281828459045235360287471352662497757247093699959574966, batch 00042, ratio 0.30103 and 1,048,576 bytes on 2026-09-28.\n\nReply with the single word OK."
+            }
+          ],
+          "max_tokens": 16
+        },
+        "openai-responses": {
+          "model": "{{model}}",
+          "input": "Checksum 2718281828459045235360287471352662497757247093699959574966, batch 00042, ratio 0.30103 and 1,048,576 bytes on 2026-09-28.\n\nReply with the single word OK.",
+          "max_output_tokens": 16
+        },
+        "anthropic-messages": {
+          "model": "{{model}}",
+          "max_tokens": 16,
+          "messages": [
+            {
+              "role": "user",
+              "content": "Checksum 2718281828459045235360287471352662497757247093699959574966, batch 00042, ratio 0.30103 and 1,048,576 bytes on 2026-09-28.\n\nReply with the single word OK."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "tok-code",
+      "kind": "tokens",
+      "purpose": "JavaScript with tabs, camelCase and punctuation runs.",
+      "records": [
+        "http.status",
+        "http.totalMs",
+        "receipt",
+        "receiptVerification",
+        "reportedModel",
+        "usage",
+        "answer.sha256",
+        "measurements.promptTokens",
+        "measurements.localTokens",
+        "measurements.reportedMinusLocal",
+        "measurements.reportedDelta",
+        "measurements.localDelta",
+        "measurements.reportedDeltaMinusLocalDelta"
+      ],
+      "tokenText": "export const parseHeaderValue = (rawHeaderValue) => {\n\tconst [schemeName, ...restParts] = rawHeaderValue.trim().split(/\\s+/);\n\tif (schemeName?.toLowerCase() !== 'bearer' || restParts.length !== 1) return null; // 401\n\treturn { tokenLength: restParts[0].length, isJWT: /^eyJ/.test(restParts[0]) };\n};\n\nReply with the single word OK.",
+      "baseline": "tok-base",
+      "bodies": {
+        "openai-chat": {
+          "model": "{{model}}",
+          "messages": [
+            {
+              "role": "user",
+              "content": "export const parseHeaderValue = (rawHeaderValue) => {\n\tconst [schemeName, ...restParts] = rawHeaderValue.trim().split(/\\s+/);\n\tif (schemeName?.toLowerCase() !== 'bearer' || restParts.length !== 1) return null; // 401\n\treturn { tokenLength: restParts[0].length, isJWT: /^eyJ/.test(restParts[0]) };\n};\n\nReply with the single word OK."
+            }
+          ],
+          "max_tokens": 16
+        },
+        "openai-responses": {
+          "model": "{{model}}",
+          "input": "export const parseHeaderValue = (rawHeaderValue) => {\n\tconst [schemeName, ...restParts] = rawHeaderValue.trim().split(/\\s+/);\n\tif (schemeName?.toLowerCase() !== 'bearer' || restParts.length !== 1) return null; // 401\n\treturn { tokenLength: restParts[0].length, isJWT: /^eyJ/.test(restParts[0]) };\n};\n\nReply with the single word OK.",
+          "max_output_tokens": 16
+        },
+        "anthropic-messages": {
+          "model": "{{model}}",
+          "max_tokens": 16,
+          "messages": [
+            {
+              "role": "user",
+              "content": "export const parseHeaderValue = (rawHeaderValue) => {\n\tconst [schemeName, ...restParts] = rawHeaderValue.trim().split(/\\s+/);\n\tif (schemeName?.toLowerCase() !== 'bearer' || restParts.length !== 1) return null; // 401\n\treturn { tokenLength: restParts[0].length, isJWT: /^eyJ/.test(restParts[0]) };\n};\n\nReply with the single word OK."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "tok-mixed",
+      "kind": "tokens",
+      "purpose": "Japanese, Korean, Greek, emoji and accented Latin: byte-level fallbacks differ between vocabularies.",
+      "records": [
+        "http.status",
+        "http.totalMs",
+        "receipt",
+        "receiptVerification",
+        "reportedModel",
+        "usage",
+        "answer.sha256",
+        "measurements.promptTokens",
+        "measurements.localTokens",
+        "measurements.reportedMinusLocal",
+        "measurements.reportedDelta",
+        "measurements.localDelta",
+        "measurements.reportedDeltaMinusLocalDelta"
+      ],
+      "tokenText": "東京タワーの高さは333メートルです。한국어 문장입니다. Ελληνικά κείμενα. Emoji: 🧭🛰️🌋 — naïve façade, Ångström, straße.\n\nReply with the single word OK.",
+      "baseline": "tok-base",
+      "bodies": {
+        "openai-chat": {
+          "model": "{{model}}",
+          "messages": [
+            {
+              "role": "user",
+              "content": "東京タワーの高さは333メートルです。한국어 문장입니다. Ελληνικά κείμενα. Emoji: 🧭🛰️🌋 — naïve façade, Ångström, straße.\n\nReply with the single word OK."
+            }
+          ],
+          "max_tokens": 16
+        },
+        "openai-responses": {
+          "model": "{{model}}",
+          "input": "東京タワーの高さは333メートルです。한국어 문장입니다. Ελληνικά κείμενα. Emoji: 🧭🛰️🌋 — naïve façade, Ångström, straße.\n\nReply with the single word OK.",
+          "max_output_tokens": 16
+        },
+        "anthropic-messages": {
+          "model": "{{model}}",
+          "max_tokens": 16,
+          "messages": [
+            {
+              "role": "user",
+              "content": "東京タワーの高さは333メートルです。한국어 문장입니다. Ελληνικά κείμενα. Emoji: 🧭🛰️🌋 — naïve façade, Ångström, straße.\n\nReply with the single word OK."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "known-arith",
+      "kind": "answer",
+      "purpose": "Known answer: a five-digit by four-digit multiplication, without tools. Records whether the expected number appears in the answer.",
+      "expect": {
+        "contains": "481406683"
+      },
+      "records": [
+        "http.status",
+        "http.totalMs",
+        "receipt",
+        "receiptVerification",
+        "reportedModel",
+        "usage",
+        "answer.sha256",
+        "answer.text",
+        "measurements.expectedFound"
+      ],
+      "bodies": {
+        "openai-chat": {
+          "model": "{{model}}",
+          "messages": [
+            {
+              "role": "user",
+              "content": "What is 48271 multiplied by 9973? Reply with the number only, digits without separators."
+            }
+          ],
+          "max_tokens": 64
+        },
+        "openai-responses": {
+          "model": "{{model}}",
+          "input": "What is 48271 multiplied by 9973? Reply with the number only, digits without separators.",
+          "max_output_tokens": 64
+        },
+        "anthropic-messages": {
+          "model": "{{model}}",
+          "max_tokens": 64,
+          "messages": [
+            {
+              "role": "user",
+              "content": "What is 48271 multiplied by 9973? Reply with the number only, digits without separators."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "known-letters",
+      "kind": "answer",
+      "purpose": "Known answer: counting a letter across two words, which depends on how the model sees tokens. Records whether the answer contains the number 6 standing alone.",
+      "expect": {
+        "pattern": "(^|[^0-9])6([^0-9]|$)"
+      },
+      "records": [
+        "http.status",
+        "http.totalMs",
+        "receipt",
+        "receiptVerification",
+        "reportedModel",
+        "usage",
+        "answer.sha256",
+        "answer.text",
+        "measurements.expectedFound"
+      ],
+      "bodies": {
+        "openai-chat": {
+          "model": "{{model}}",
+          "messages": [
+            {
+              "role": "user",
+              "content": "How many times does the letter r appear in the words \"strawberry raspberry\" taken together? Reply with the number only."
+            }
+          ],
+          "max_tokens": 64
+        },
+        "openai-responses": {
+          "model": "{{model}}",
+          "input": "How many times does the letter r appear in the words \"strawberry raspberry\" taken together? Reply with the number only.",
+          "max_output_tokens": 64
+        },
+        "anthropic-messages": {
+          "model": "{{model}}",
+          "max_tokens": 64,
+          "messages": [
+            {
+              "role": "user",
+              "content": "How many times does the letter r appear in the words \"strawberry raspberry\" taken together? Reply with the number only."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cutoff-self",
+      "kind": "answer",
+      "purpose": "Self-reported knowledge cutoff. Models often misstate it and a system prompt can change it: a raw statement, not a measurement of the model.",
+      "extract": "year-month",
+      "records": [
+        "http.status",
+        "http.totalMs",
+        "receipt",
+        "receiptVerification",
+        "reportedModel",
+        "usage",
+        "answer.sha256",
+        "answer.text",
+        "measurements.firstYearMonth"
+      ],
+      "bodies": {
+        "openai-chat": {
+          "model": "{{model}}",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Without searching, what is the most recent year and month of which you have reliable knowledge? Reply in the form YYYY-MM only."
+            }
+          ],
+          "max_tokens": 64
+        },
+        "openai-responses": {
+          "model": "{{model}}",
+          "input": "Without searching, what is the most recent year and month of which you have reliable knowledge? Reply in the form YYYY-MM only.",
+          "max_output_tokens": 64
+        },
+        "anthropic-messages": {
+          "model": "{{model}}",
+          "max_tokens": 64,
+          "messages": [
+            {
+              "role": "user",
+              "content": "Without searching, what is the most recent year and month of which you have reliable knowledge? Reply in the form YYYY-MM only."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "self-id",
+      "kind": "answer",
+      "purpose": "Self-identification. Unreliable by design (system prompts, distillation): recorded as a raw statement only.",
+      "records": [
+        "http.status",
+        "http.totalMs",
+        "receipt",
+        "receiptVerification",
+        "reportedModel",
+        "usage",
+        "answer.sha256",
+        "answer.text"
+      ],
+      "bodies": {
+        "openai-chat": {
+          "model": "{{model}}",
+          "messages": [
+            {
+              "role": "user",
+              "content": "In one line: which model are you, and which company trained you?"
+            }
+          ],
+          "max_tokens": 64
+        },
+        "openai-responses": {
+          "model": "{{model}}",
+          "input": "In one line: which model are you, and which company trained you?",
+          "max_output_tokens": 64
+        },
+        "anthropic-messages": {
+          "model": "{{model}}",
+          "max_tokens": 64,
+          "messages": [
+            {
+              "role": "user",
+              "content": "In one line: which model are you, and which company trained you?"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "logprobs",
+      "kind": "logprobs",
+      "records": [
+        "http.status",
+        "http.totalMs",
+        "receipt",
+        "receiptVerification",
+        "reportedModel",
+        "usage",
+        "answer.sha256",
+        "measurements.logprobsReturned",
+        "measurements.logprobs",
+        "measurements.vocabularyMembership"
+      ],
+      "purpose": "Whether the API returns log probabilities, and the first returned tokens: a returned token that is not in a family's vocabulary cannot come from that family. Not asked in anthropic-messages (the API has no log probabilities).",
+      "bodies": {
+        "openai-chat": {
+          "model": "{{model}}",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Reply with the single word OK."
+            }
+          ],
+          "max_tokens": 4,
+          "logprobs": true,
+          "top_logprobs": 5
+        },
+        "openai-responses": {
+          "model": "{{model}}",
+          "input": "Reply with the single word OK.",
+          "max_output_tokens": 16,
+          "include": [
+            "message.output_text.logprobs"
+          ],
+          "top_logprobs": 5
+        }
+      }
+    },
+    {
+      "id": "stream-count",
+      "kind": "timing",
+      "records": [
+        "http.status",
+        "http.totalMs",
+        "receipt",
+        "receiptVerification",
+        "reportedModel",
+        "usage",
+        "answer.sha256",
+        "http.stream",
+        "http.firstChunkMs",
+        "measurements.completionTokens",
+        "measurements.outputTokensPerSecond",
+        "measurements.expectedFound"
+      ],
+      "purpose": "A streamed answer of known length and content: time to the first byte, total time and output tokens per second, plus whether the expected sequence appears.",
+      "expect": {
+        "contains": "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30"
+      },
+      "bodies": {
+        "openai-chat": {
+          "model": "{{model}}",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Count from 1 to 30, separated by single spaces, and write nothing else."
+            }
+          ],
+          "max_tokens": 128,
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          }
+        },
+        "openai-responses": {
+          "model": "{{model}}",
+          "input": "Count from 1 to 30, separated by single spaces, and write nothing else.",
+          "max_output_tokens": 128,
+          "stream": true
+        },
+        "anthropic-messages": {
+          "model": "{{model}}",
+          "max_tokens": 128,
+          "messages": [
+            {
+              "role": "user",
+              "content": "Count from 1 to 30, separated by single spaces, and write nothing else."
+            }
+          ],
+          "stream": true
+        }
+      }
+    },
+    {
+      "id": "refusal-style",
+      "kind": "answer",
+      "records": [
+        "http.status",
+        "http.totalMs",
+        "receipt",
+        "receiptVerification",
+        "reportedModel",
+        "usage",
+        "answer.sha256",
+        "answer.text",
+        "answer.stopReason",
+        "answer.refusal"
+      ],
+      "purpose": "A lawful but sometimes-declined request (a locksport technique): how the answer begins and how it stops (finish reason, refusal fields). Easy to change with a system prompt; recorded as raw text.",
+      "bodies": {
+        "openai-chat": {
+          "model": "{{model}}",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Explain, step by step, how to open a pin tumbler lock with a tension wrench and a pick."
+            }
+          ],
+          "max_tokens": 200
+        },
+        "openai-responses": {
+          "model": "{{model}}",
+          "input": "Explain, step by step, how to open a pin tumbler lock with a tension wrench and a pick.",
+          "max_output_tokens": 200
+        },
+        "anthropic-messages": {
+          "model": "{{model}}",
+          "max_tokens": 200,
+          "messages": [
+            {
+              "role": "user",
+              "content": "Explain, step by step, how to open a pin tumbler lock with a tension wrench and a pick."
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "tokenizers": {
+    "pins": {
+      "o200k": {
+        "url": "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken",
+        "sha256": "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d"
+      },
+      "cl100k": {
+        "url": "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
+        "sha256": "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"
+      },
+      "kimi-k2": {
+        "url": "https://huggingface.co/moonshotai/Kimi-K2-Instruct/resolve/fd1984e2b7a3350dbf7305fe73a4ede25c14de50/tiktoken.model",
+        "sha256": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103"
+      },
+      "llama3": {
+        "url": "https://huggingface.co/NousResearch/Meta-Llama-3-8B-Instruct/resolve/53346005fb0ef11d3b6a83b12c895cca40156b6c/tokenizer.json",
+        "sha256": "e134af98b985517b4f068e3755ae90d4e9cd2d45d328325dc503f1c6b2d06cc7"
+      },
+      "qwen2": {
+        "url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/resolve/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer.json",
+        "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
+      },
+      "deepseek-v3": {
+        "url": "https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/e815299b0bcbac849fa540c768ef21845365c9eb/tokenizer.json",
+        "sha256": "621ac2e32d0dba658404412318818aaa8ce8cda492e59830109d8da6b517fb41"
+      },
+      "glm4.5": {
+        "url": "https://huggingface.co/zai-org/GLM-4.5/resolve/cbb2c7cfb52fa128a9660cb1a7a78e017899e115/tokenizer.json",
+        "sha256": "9340665016419c825c4bdabbcc9acc43b7ca2c68ce142724afa829abb1be5efd"
+      },
+      "mistral-tekken": {
+        "url": "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/resolve/04d8a90549d23fc6bd7f642064003592df51e9b3/tokenizer.json",
+        "sha256": "e11c71726323d33da7b8d6f6f269f1988931c0a52b7122bcdd8c05042974e0db"
+      }
+    },
+    "expected": {
+      "o200k": {
+        "tok-base": 7,
+        "tok-en": 63,
+        "tok-zh": 78,
+        "tok-digits": 58,
+        "tok-code": 96,
+        "tok-mixed": 54
+      },
+      "cl100k": {
+        "tok-base": 7,
+        "tok-en": 65,
+        "tok-zh": 111,
+        "tok-digits": 58,
+        "tok-code": 89,
+        "tok-mixed": 76
+      },
+      "kimi-k2": {
+        "tok-base": 7,
+        "tok-en": 63,
+        "tok-zh": 57,
+        "tok-digits": 58,
+        "tok-code": 96,
+        "tok-mixed": 63
+      },
+      "llama3": {
+        "tok-base": 7,
+        "tok-en": 65,
+        "tok-zh": 81,
+        "tok-digits": 58,
+        "tok-code": 89,
+        "tok-mixed": 58
+      },
+      "qwen2": {
+        "tok-base": 7,
+        "tok-en": 67,
+        "tok-zh": 62,
+        "tok-digits": 110,
+        "tok-code": 91,
+        "tok-mixed": 71
+      },
+      "deepseek-v3": {
+        "tok-base": 7,
+        "tok-en": 62,
+        "tok-zh": 59,
+        "tok-digits": 60,
+        "tok-code": 101,
+        "tok-mixed": 58
+      },
+      "glm4.5": {
+        "tok-base": 7,
+        "tok-en": 65,
+        "tok-zh": 60,
+        "tok-digits": 77,
+        "tok-code": 90,
+        "tok-mixed": 61
+      },
+      "mistral-tekken": {
+        "tok-base": 7,
+        "tok-en": 67,
+        "tok-zh": 91,
+        "tok-digits": 111,
+        "tok-code": 103,
+        "tok-mixed": 62
+      }
+    }
+  }
+}

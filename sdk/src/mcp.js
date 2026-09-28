@@ -9,6 +9,7 @@
 // 只引用叶子模块、不引用 node:，可在 Workers、浏览器与 Node 中运行。
 import { TapeAPIError } from './errors.js'
 import { canonicalJSON } from './canon.js'
+import { parseTapeName, CHAINS } from './chains.js'
 import { sha256 } from '@noble/hashes/sha256'
 import { bytesToHex } from '@noble/hashes/utils'
 
@@ -139,7 +140,11 @@ export const verifyLink = (receipt, base = VERIFY_BASE) => `${base}#r=${toBase64
 export function toolResultOf({ receipt, checkedBy, signer, link = verifyLink(receipt) }) {
   const who = receipt.service.name || `circuit #${receipt.service.tokenId} of ${receipt.service.circuits}`
   // block is unsigned and informative; 0 means the service ran without chain nodes. / block 未签名、仅供参考；0 表示没有链节点。
-  const where = Number.isInteger(receipt.block) && receipt.block > 0 ? ` at BNB Chain block ${receipt.block}` : ''
+  // The block is on the service's chain: the chain its name names (an area code), BNB Chain otherwise.
+  // 区块在服务所在的链上：名字的区号所指的链，否则为 BNB Chain。
+  const named = typeof receipt.service.name === 'string' ? parseTapeName(receipt.service.name) : null
+  const chainName = named && !named.error && named.chainId !== 56 ? CHAINS[named.chainId].name : 'BNB Chain'
+  const where = Number.isInteger(receipt.block) && receipt.block > 0 ? ` at ${chainName} block ${receipt.block}` : ''
   const check = checkedBy === 'client'
     ? 'The signature was verified against the on-chain delegation before this result was returned.'
     : 'Anyone can verify this signature against the chain with the link.'

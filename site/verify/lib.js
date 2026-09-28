@@ -15,6 +15,7 @@
 import { fromBase64Url, RECEIPT_META_KEY } from '../playground/vendor/tapeapi-sdk/mcp.js'
 import { findDuplicateKey, FORBIDDEN_KEYS } from '../playground/vendor/tapeapi-sdk/canon.js'
 import { envelopeProblems, priceProblems, formatOfMethod, validateAIField, MANIFEST_FIELD, sha256Hex, scanSse } from '../playground/vendor/tapeapi-sdk/ai.js'
+import { parseTapeName } from '../playground/vendor/tapeapi-sdk/chains.js'
 
 export { RECEIPT_META_KEY }
 export const MAX_INPUT = 64 * 1024   // bytes of pasted text or link / 粘贴文本或链接的字节上限
@@ -222,13 +223,25 @@ export function signedBlock(r) {
   return Number.isSafeInteger(n) && n >= 0 ? n : null
 }
 
-/** '11.1013.tape' -> { tokenId: '11', processor: '1013' }; null when absent; 'malformed' when not canonical.
- *  回执里声称的 TapeOut 名字。 */
+/** '11.1013.tape' -> { tokenId: '11', processor: '1013' }; an X Layer or Base name ('1.2.344.tape', area code 2 or 3)
+ *  adds the chainId it names ({ tokenId: '1', processor: '344', chainId: 196 }); null when absent; 'malformed' when
+ *  not a canonical name with its suffix on a supported chain.
+ *  回执里声称的 TapeOut 名字；X Layer 或 Base 的名字（区号 2 或 3）另带它所指的 chainId。 */
 export function nameClaim(r) {
   const n = r.service.name
   if (n === undefined) return null
-  const m = /^([1-9]\d{0,77})\.(0|[1-9]\d{0,77})\.tape$/.exec(n)
-  return m ? { tokenId: m[1], processor: m[2] } : 'malformed'
+  const p = parseTapeName(n)
+  if (!p || p.error || p.name !== n) return 'malformed'
+  return p.chainId === 56 ? { tokenId: p.tokenId, processor: p.processor } : { tokenId: p.tokenId, processor: p.processor, chainId: p.chainId }
+}
+
+/** The chain a receipt's service is on: the one its name names (56 without a name). The name is not signed, but the
+ *  container is, and an ERC-6551 container address commits to its chain: a name that points at the wrong chain derives
+ *  another container there and fails the container check. / 回执服务所在的链：名字所指的链（无名字则为 56）。名字不在签名里，
+ *  但容器在，而 ERC-6551 容器地址包含链号：指错链的名字在那条链上推导出别的容器，过不了容器核对。 */
+export function chainOfReceipt(r) {
+  const c = nameClaim(r)
+  return c && c !== 'malformed' && c.chainId ? c.chainId : 56
 }
 
 // Resolve failures that say something about the service; anything else (RPC down, nodes disagree, timeouts, a
@@ -240,7 +253,8 @@ export const isDefinite = (e) => !!e && DEFINITE_CODES.includes(e.code)
 /**
  * Is the receipt's name this service's name? The name is not signed, so it is checked on chain: the factory's
  * processor `processor` must be the receipt's circuit contract and #ID its tokenId.
- * @param {(processor: string) => Promise<string>} cpuAt  factory lookup (api.chain.cpuAt)
+ * @param {(processor: string, chainId?: number) => Promise<string>} cpuAt  factory lookup on the name's chain (api.chain.cpuAt;
+ *   called with a chainId only for an X Layer or Base name)
  * @returns {Promise<{ state: 'pass'|'fail'|'unknown'|'skip', error?: any }>}
  * 回执里的名字是不是这个服务的名字？名字不在签名里，所以上链核对。
  */
@@ -248,7 +262,9 @@ export async function checkName(r, cpuAt) {
   const c = nameClaim(r)
   if (c === null) return { state: 'skip' }
   if (c === 'malformed' || c.tokenId !== r.service.tokenId) return { state: 'fail' }
-  try { return { state: sameAddress(await cpuAt(c.processor), r.service.circuits) ? 'pass' : 'fail' } } catch (e) {
+  // on the chain the name names: cpuAt(processor, chainId); BNB names call cpuAt(processor) as before
+  // 在名字所指的链上查：cpuAt(processor, chainId)；BNB 名字照旧调用 cpuAt(processor)
+  try { return { state: sameAddress(await (c.chainId ? cpuAt(c.processor, c.chainId) : cpuAt(c.processor)), r.service.circuits) ? 'pass' : 'fail' } } catch (e) {
     return isDefinite(e) ? { state: 'fail', error: e } : { state: 'unknown', error: e }
   }
 }
@@ -293,14 +309,15 @@ export function verdictOf({ receipt, recovered, recoverError, svc, resolveError,
 /**
  * The whole check with the network and crypto injected, so the page and the tests run the same steps.
  * @param {object} r  from parseReceipt
- * @param {{ recover: (env, sig) => string, resolve: (target) => Promise<object>, cpuAt: (p: string) => Promise<string>, now?: number }} io
+ * @param {{ recover: (env, sig) => string, resolve: (target) => Promise<object>, cpuAt: (p: string, chainId?: number) => Promise<string>, now?: number }} io
  * 完整核对流程，网络与密码学由调用方注入：页面与测试走同样的步骤。
  */
 export async function verifyReceipt(r, { recover, resolve, cpuAt, now }) {
   let recovered = null, recoverError = null
   try { recovered = recover(envelopeOf(r), r.sig) } catch (e) { recoverError = e }
   let svc = null, resolveError = null
-  try { svc = await resolve({ circuits: r.service.circuits, tokenId: r.service.tokenId }) } catch (e) { resolveError = e }
+  const chainId = chainOfReceipt(r)
+  try { svc = await resolve({ ...(chainId !== 56 ? { chainId } : {}), circuits: r.service.circuits, tokenId: r.service.tokenId }) } catch (e) { resolveError = e }
   const name = await checkName(r, cpuAt)
   return { recovered, recoverError, svc, resolveError, name, ...verdictOf({ receipt: r, recovered, recoverError, svc, resolveError, name, now }) }
 }

@@ -97,7 +97,7 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2a
 不经过 npm 注册表：
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 它和远程服务器的不同之处：
@@ -126,7 +126,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -146,7 +146,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -158,7 +158,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### 远程还是本地
@@ -195,7 +195,7 @@ claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeap
 [调用服务](consume.md)里那样在仓库的克隆目录里操作：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz
 ```
 
 ```js
@@ -340,7 +340,7 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
   再按你的服务器定义的样子展示它们（v0.5.0 及以后）：
 
   ```bash
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### 客户端核对什么

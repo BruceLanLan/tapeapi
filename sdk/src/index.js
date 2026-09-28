@@ -13,9 +13,13 @@ import {
 import { validateManifest, findMethod, methodPrice, parseUnits, formatUnits, METHOD_NAME_RE, BEM_DECIMALS, MAX_DELEGATION_S } from './manifest.js'
 import { canonicalJSON, safeParseJSON } from './canon.js'
 import { validateAIField, MANIFEST_FIELD as AI_FIELD } from './ai.js'
+import { CHAIN_IDS, chainById, parseTapeName } from './chains.js'
+import { rpcUrlsFor } from './rpc-defaults.js'
 
 // Default nodes per chain and who operates them (quorums count operators, not URLs) / 各链默认节点及其运营方
 export { RPC_DEFAULTS, rpcUrlsFor, operatorOf } from './rpc-defaults.js'
+// The TapeOut chains (BNB Smart Chain, X Layer, Base) and names with area codes / TapeOut 各链与带区号的名字
+export { CHAINS, CHAIN_IDS, HOME_CHAIN_ID, IMPL_SLOT, chainById, chainByArea, chainByKey, parseTapeName, formatTapeName, isNameShaped } from './chains.js'
 export { TapeAPIError, createRpc, canonicalJSON, safeParseJSON, validateManifest, parseUnits, formatUnits, labelToBytes32, METHOD_NAME_RE, BEM_DECIMALS }
 export * as abi from './abi.js'
 export * as sig from './sig.js'
@@ -73,25 +77,20 @@ export function registryKey(path) {
   if (typeof path !== 'string') throw new TapeAPIError('MANIFEST_INVALID', 'registry path must be a string')
   return path.replace(/^\/+/, '')
 }
-// TapeOut names (TapeKit SPEC §2.2 / §2.4, TAP-20 §3.6 step 1; spec review SD-12). The canonical form is
-// `<#ID>.<processor>.tape`: decimal, no leading zeros (except `0`), all lowercase, #ID >= 1. The suffix-less `<#ID>.<processor>`
-// is TapeKit's tolerated input for the same name. Anything else that looks like a name (leading zeros, `.TAPE`, #ID 0,
-// `#4246@0`, `tape://...`) is refused rather than guessed at, and never looked up as a directory label, so a label
-// cannot squat a spelling of someone's name. Returns { tokenId, processor, name } or null (not name-shaped).
-// TapeOut 名字。规范形式为 `<#ID>.<processor>.tape`：十进制、无前导零（`0` 除外）、全小写、#ID >= 1。不带后缀的
-// `<#ID>.<processor>` 是 TapeKit 容许的同一名字的输入形式。其它看起来像名字的（前导零、`.TAPE`、#ID 为 0、`#4246@0`、
-// `tape://...`）一律拒绝而不猜，也绝不当作目录标签查找，标签因此无法抢注某个名字的写法。不像名字时返回 null。
-const NAME_SHAPED = /^(?:(?:web\+)?tape:\/\/)?#?\d+(?:[.@]\d+)(?:\.tape)?(?:\/.*)?$/i
-const CANONICAL_NAME = /^([1-9]\d{0,77})\.(0|[1-9]\d{0,77})(\.tape)?$/
+// TapeOut names (TapeKit SPEC §2.2 / §2.4 and kernel/src/name.js, TAP-20 §3.6 step 1; spec review SD-12). The canonical
+// form is `<#ID>.<processor>.tape` on BNB Smart Chain and `<#ID>.<area>.<processor>.tape` on another chain (X Layer area
+// 2, Base area 3): decimal, no leading zeros (except a processor `0`), all lowercase, #ID >= 1; the suffix-less form is
+// the same name (chains.js). Anything else that looks like a name (leading zeros, `.TAPE`, #ID 0, `#4246@0`, `tape://...`,
+// a reserved or unassigned area code) is refused rather than guessed at, and never looked up as a directory label, so a
+// label cannot squat a spelling of someone's name. Returns { tokenId, processor, area, chainId, name } or null (not
+// name-shaped). / TapeOut 名字。BNB 上为 `<#ID>.<processor>.tape`，其它链为 `<#ID>.<区号>.<processor>.tape`（X Layer 2，
+// Base 3）；十进制、无前导零、全小写、#ID >= 1；不带后缀是同一名字。其它看起来像名字的写法（含保留或未分配的区号）一律拒绝
+// 而不猜，也绝不当作目录标签查找。不像名字时返回 null。
 function tapeName(str) {
-  if (typeof str !== 'string') return null
-  const t = str.trim()
-  if (!NAME_SHAPED.test(t)) return null
-  const m = CANONICAL_NAME.exec(t)
-  if (!m || BigInt(m[1]) >= 2n ** 256n || BigInt(m[2]) >= 2n ** 256n) {
-    throw new TapeAPIError('MANIFEST_INVALID', `"${t.slice(0, 80)}" is not a TapeOut name in canonical form: write <#ID>.<processor>.tape, decimal without leading zeros, lowercase, #ID >= 1 (TapeKit SPEC §2.2)`)
-  }
-  return { tokenId: m[1], processor: m[2], name: `${m[1]}.${m[2]}.tape` }
+  const p = parseTapeName(str)
+  if (p === null) return null
+  if (p.error) throw new TapeAPIError('MANIFEST_INVALID', p.error)
+  return p
 }
 const ZERO_HASH = '0x' + '00'.repeat(32)                    // TapeKit "no-hash" state: file exists but was never hashed
 export const MANIFEST_LIMIT = 64 * 1024        // TAP-20: manifest ≤ 64 KiB
@@ -116,7 +115,14 @@ const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : toHex(
 //   maxSkewS (默认 300)  信封 ts 与本地时钟的最大偏差（TAP-21 §3.2）/ envelope ts freshness window
 //   identityCacheS (默认 300，上限 300；0 = 不缓存), identityCacheSize (默认 1024)：通道身份缓存（arch B7）
 //                        channel-identity cache for chain.channelKeys and groupVerifier (0 disables; never above 300 s)
-//   chainId (默认 56), hub, siteRegistry, factory：合约地址，默认为主网（MAINNET）。directory 与 escrow 没有默认值：
+//   chains              其它链的节点：{ [chainId]: { rpcUrls, quorum (默认 2), timeoutMs, allowSingleNode } }。解析别的链上的
+//                        名字或 { chainId, ... } 时，本客户端为那条链建一个子客户端（api.forChain(chainId)），节点取这里的
+//                        rpcUrls，没给就取 SDK 的默认节点 rpcUrlsFor(chainId)（chains.js 与 rpc-defaults.js）。
+//                        nodes for the other TapeOut chains. Resolving a name on another chain (1.2.344.tape is X Layer) or a
+//                        { chainId, ... } target goes through a client for that chain (api.forChain(chainId)) whose nodes
+//                        are chains[chainId].rpcUrls or else the SDK's defaults for it (rpcUrlsFor). Payments stay on BNB
+//                        Smart Chain: a priced method of a service on another chain is refused (PAYMENT_REQUIRED).
+//   chainId (默认 56), hub, siteRegistry, factory：合约地址，默认为该链在 chains.js 里的地址（56 即 MAINNET）。directory 与 escrow 没有默认值：
 //                        不传就没有（主网尚无部署的目录与托管）；付费服务用它自己清单里的 escrow（TAP-22 §3.4）。
 //                        contract addresses, mainnet (MAINNET) by default. `directory` and `escrow` have NO default (MAINNET
 //                        names neither): without them there is no directory cross-check and no configured escrow; a priced
@@ -127,9 +133,12 @@ const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : toHex(
 //                        每次身份与清单读取都会以 BAD_KEY 失败。
 export function createTapeAPI(opts = {}) {
   const chainId = opts.chainId ?? MAINNET.chainId
-  const hub = opts.hub ?? MAINNET.hub
-  const factory = opts.factory ?? MAINNET.factory
-  const siteRegistry = opts.siteRegistry ?? MAINNET.siteRegistry
+  // A chain chains.js knows brings its own addresses; any other chain falls back to MAINNET's (and then needs opts.factory,
+  // review R2-6). / chains.js 认识的链用它自己的地址；其它链退回 MAINNET 的地址（此时须传 opts.factory）。
+  const known = chainById(chainId)
+  const hub = opts.hub ?? known?.hub ?? MAINNET.hub
+  const factory = opts.factory ?? known?.factory ?? MAINNET.factory
+  const siteRegistry = opts.siteRegistry ?? known?.siteRegistry ?? MAINNET.siteRegistry
   const { directory, escrow } = opts
   const fetchImpl = opts.fetch || globalThis.fetch?.bind(globalThis)
   const devMode = opts.dev === true
@@ -224,6 +233,9 @@ export function createTapeAPI(opts = {}) {
       }
     },
     ownerOf: (circuits, tokenId) => view(circuits, 'ownerOf', [BigInt(tokenId)]),
+    /** ERC-6551 token() of a container on this chain: { circuits, tokenId }. NOT_FOUND when it is no container here,
+     *  CHANNEL_INVALID when it names another chain. / 容器在本链上的 token()；不是本链容器时为 NOT_FOUND 或 CHANNEL_INVALID。 */
+    tokenOf: (container) => tokenOf(container),
     resolve: (label) => view(needDirectory(), 'resolve', [labelToBytes32(label)]),
     serviceOf: (container) => view(needDirectory(), 'serviceOf', [container]),
     readFile: (container, path) => view(siteRegistry, 'read', [container, registryKey(path)]),
@@ -525,6 +537,69 @@ export function createTapeAPI(opts = {}) {
     return out.length >= 66 && out.slice(0, 66) === EIP1271_MAGIC + '0'.repeat(56)
   }
 
+  // ---- other chains / 其它链 ----
+  // One client per TapeOut chain, made on first use. A sub-client routes every other chain back through the client that
+  // made it (`_router`), so one createTapeAPI() instance has at most one client per chain. Each keeps its own caches
+  // (processor list, identities, accepted prices): the same processor address exists on X Layer and on Base
+  // (0x839bdD6f… is processor 0 on both), so nothing keyed by an address may be shared across chains.
+  // 每条 TapeOut 链一个客户端，首次用到时创建；子客户端把其它链交回创建它的客户端，所以一个实例每条链至多一个客户端。
+  // 各自保留缓存（处理器列表、身份、已同意的价格）：同一个处理器地址在 X Layer 与 Base 上都存在，按地址的缓存绝不能跨链共用。
+  const subClients = new Map()
+  function forChain(id) {
+    const n = Number(id)
+    if (n === Number(chainId)) return api
+    if (typeof opts._router === 'function') return opts._router(n)
+    if (!chainById(n)) throw new TapeAPIError('MANIFEST_INVALID', `chain ${id} is not a TapeOut chain this SDK supports (${CHAIN_IDS.join(', ')})`)
+    let sub = subClients.get(n)
+    if (!sub) {
+      const conf = opts.chains?.[n] ?? {}
+      sub = createTapeAPI({
+        chainId: n, rpcUrls: conf.rpcUrls ?? rpcUrlsFor(n), quorum: conf.quorum ?? 2, timeoutMs: conf.timeoutMs ?? opts.timeoutMs,
+        allowSingleNode: conf.allowSingleNode === true, hub: conf.hub, factory: conf.factory, siteRegistry: conf.siteRegistry,
+        fetch: opts.fetch, dev: opts.dev, allowHttp: opts.allowHttp, maxSkewS: opts.maxSkewS,
+        identityCacheS: opts.identityCacheS, identityCacheSize: opts.identityCacheSize, _router: forChain,
+      })
+      subClients.set(n, sub)
+    }
+    return sub
+  }
+  // The chain a resolve target names, or null for "this client's chain". A name carries its chain in its area code;
+  // an object may carry `chainId`. / 解析目标所指的链：名字由区号决定，对象可带 chainId；null 表示本客户端的链。
+  function chainOfTarget(target) {
+    if (typeof target === 'string') return tapeName(target)?.chainId ?? null
+    if (target && typeof target === 'object' && !('dev' in target) && target.chainId !== undefined) {
+      const n = Number(target.chainId)
+      if (!Number.isSafeInteger(n) || n < 1) throw new TapeAPIError('MANIFEST_INVALID', 'target.chainId must be a chain id')
+      return n
+    }
+    return null
+  }
+  // The client that owns a resolved service: its own chain's. / 已解析服务所属的客户端：它那条链的。
+  const ownerOf = (svc) => (svc && typeof svc === 'object' && svc.chainId !== undefined && Number(svc.chainId) !== Number(chainId)) ? forChain(svc.chainId) : null
+
+  /**
+   * Which supported chain a container address lives on: the chain on which it answers ERC-6551 token() with that very
+   * chainId (an ERC-6551 address commits to its chainId, so at most one does). null when none does. An RPC failure on a
+   * chain where no answer was found propagates: "could not read" is not "not a container".
+   * 容器地址在哪条链上：在该链上 token() 回答的正是该链号的那条（ERC-6551 地址包含链号，至多一条）。都不是则为 null。
+   * 没找到且某条链读取失败时抛出该错误："读不到"不等于"不是容器"。
+   */
+  async function chainOfContainer(container) {
+    if (!isAddress(container)) throw new TapeAPIError('MANIFEST_INVALID', 'chainOfContainer takes a container address')
+    const ids = [Number(chainId), ...CHAIN_IDS.filter((id) => id !== Number(chainId))]
+    const settled = await Promise.allSettled(ids.map(async (id) => {
+      try { await forChain(id).chain.tokenOf(container); return id } catch (e) {
+        if (e instanceof TapeAPIError && (e.code === 'NOT_FOUND' || e.code === 'CHANNEL_INVALID')) return null
+        throw e
+      }
+    }))
+    const found = settled.filter((r) => r.status === 'fulfilled' && r.value !== null).map((r) => r.value)
+    if (found.length) return found[0]
+    const failed = settled.find((r) => r.status === 'rejected')
+    if (failed) throw failed.reason
+    return null
+  }
+
   // ---- resolve ----
   // The prices the caller has consented to, per resolved service. resolve() records what the caller saw; an
   // AUTOMATIC re-read (TTL, or a provider's price hint) updates the manifest but never raises these. Paying more
@@ -543,6 +618,10 @@ export function createTapeAPI(opts = {}) {
   const HINT_MIN_INTERVAL_S = 30
 
   async function resolve(target) {
+    // A name or { chainId, ... } on another chain is resolved by that chain's client (TAP-20 §3.1: identity, manifest and
+    // delegation all live on the chain the circuit is on). / 别的链上的名字或 { chainId, ... } 交给那条链的客户端解析。
+    const where = chainOfTarget(target)
+    if (where !== null && where !== Number(chainId)) return forChain(where).resolve(target)
     let src
     if (typeof target === 'string') {
       const name = tapeName(target)
@@ -559,6 +638,7 @@ export function createTapeAPI(opts = {}) {
     } else if (target && typeof target === 'object') {
       if ('dev' in target) src = await manifestFromDev(target.dev)
       else if (target.circuits && target.tokenId != null) src = await manifestFromContainer(await chain.accountOf(target.circuits, target.tokenId))
+      else if (target.chainId !== undefined && isAddress(target.container)) src = await manifestFromContainer(target.container)
       else throw new TapeAPIError('MANIFEST_INVALID', 'unsupported resolve target')
     } else throw new TapeAPIError('MANIFEST_INVALID', 'unsupported resolve target')
 
@@ -594,7 +674,9 @@ export function createTapeAPI(opts = {}) {
     // changes its price deadlocks every consumer holding the old manifest for ever.
     // 记住来源与取回时间，清单才能重读。TAP-20 §3.6 要求客户端定期复查；没有回到来源的路径这句话就无法实现，
     // 而提供者一旦改价，所有持旧清单的消费者会被永久卡死。
-    const svc = { manifest, container: checksumAddress(manifest.container), verified, contribution, file: src.file ?? null, target, fetchedAt: now() }
+    // `chainId`: the chain this service lives on; call, refresh and price consent go through that chain's client.
+    // `chainId`：服务所在的链；call、refresh 与价格同意都经由那条链的客户端。
+    const svc = { manifest, container: checksumAddress(manifest.container), chainId, verified, contribution, file: src.file ?? null, target, fetchedAt: now() }
     if (aiProblems) svc.aiProblems = aiProblems
     ACCEPTED.set(svc, pricesOf(manifest))
     return svc
@@ -608,6 +690,8 @@ export function createTapeAPI(opts = {}) {
   // 换了容器就是换了服务，不是刷新。走完整 resolve 路径，刷新后的清单与第一次一样经过验证 ——
   // 提供者永远无法让客户端接受一个它没有发布到链上的价格。
   async function refresh(svc) {
+    const owner = ownerOf(svc)
+    if (owner) return owner.refresh(svc)
     if (svc?.target === undefined) throw new TapeAPIError('MANIFEST_INVALID', 'svc has no target to refresh from; it did not come from api.resolve()')
     // N concurrent calls on one stale service share one re-read instead of running N (runtime audit F-10).
     // 同一服务上的 N 个并发调用共用一次重读，而不是各跑一次。
@@ -643,7 +727,10 @@ export function createTapeAPI(opts = {}) {
   // ---- call ----
   // 一次调用 = 一次尝试；BAD_VOUCHER 且错误负载带 lastCumulative 时 payer 重新同步后再试一次（H-05）。
   // One call = one attempt; on BAD_VOUCHER carrying lastCumulative the payer resyncs and retries once (review H-05).
-  async function call(svc, method, params = {}, { payer, id, signal, timeoutMs = 30000, manifestTtlMs = MANIFEST_TTL_MS, maxPrice } = {}) {
+  async function call(svc, method, params = {}, options = {}) {
+    const owner = ownerOf(svc)
+    if (owner) return owner.call(svc, method, params, options)
+    const { payer, id, signal, timeoutMs = 30000, manifestTtlMs = MANIFEST_TTL_MS, maxPrice } = options ?? {}
     let m = svc?.manifest; if (!m) throw new TapeAPIError('MANIFEST_INVALID', 'svc.manifest missing')
     // 信封只对 manifest.signer 验签，而 signer 的可信度完全来自 resolve() 做过的委托校验。
     // 自己拼一个 { manifest, container } 直接 call，等于没有任何来源认证，所以必须拒绝（M-16）。
@@ -684,6 +771,9 @@ export function createTapeAPI(opts = {}) {
     // say that plainly instead of failing somewhere inside the request loop. / 本客户端只走 HTTP，明说而不是在请求循环里出错。
     if (!m.endpoints.live.length) throw new TapeAPIError('PROVIDER_UNAVAILABLE', `${svc.container} publishes no live endpoint (async: true only); this client cannot reach it`)
     let price = gatePrice(svc, method, methodPrice(def), maxPrice)
+    // Payments run on BNB Smart Chain only (docs/PLAN-2026Q4.md, 2026-09-28): no escrow, no BEM on the L2s.
+    // 支付只在 BNB Smart Chain：L2 上没有托管合约，也没有 BEM。
+    if (price > 0n && known && known.payments === false) throw new TapeAPIError('PAYMENT_REQUIRED', `${method} costs ${def.priceBEM} BEM, but ${svc.container} is on ${known.name}: TapeAPI payments run on BNB Smart Chain only`, { data: { method, chainId } })
     if (price > 0n && !payer) throw new TapeAPIError('PAYMENT_REQUIRED', `${method} costs ${def.priceBEM} BEM; pass { payer }`)
     // 提供者只接受 1..128 字符的 id；本地先挡住，否则拿回来的是一个 id='' 的错误信封，永远验不过签。
     // Providers only accept ids of 1..128 chars: reject locally, or the answer is an id='' error envelope that can
@@ -1354,13 +1444,15 @@ export function createTapeAPI(opts = {}) {
 
   // Consent to the service's CURRENT prices (all methods, or one). / 同意该服务当前的价格（全部方法或其中一个）。
   function acceptPrice(svc, method) {
+    const owner = ownerOf(svc)
+    if (owner) return owner.acceptPrice(svc, method)
     const cur = pricesOf(svc.manifest)
     const acc = ACCEPTED.get(svc) || {}
     if (method === undefined) ACCEPTED.set(svc, cur)
     else { if (!(method in cur)) throw new TapeAPIError('METHOD_NOT_FOUND', `method ${method} not in manifest`); ACCEPTED.set(svc, { ...acc, [method]: cur[method] }) }
     return ACCEPTED.get(svc)
   }
-  const acceptedPrice = (svc, method) => ACCEPTED.get(svc)?.[method]
+  const acceptedPrice = (svc, method) => { const owner = ownerOf(svc); return owner ? owner.acceptedPrice(svc, method) : ACCEPTED.get(svc)?.[method] }
 
   /**
    * TAP-27 §3.3 step 6: a verifier for group rosters. Each member's keys must equal the channel record its circuit's
@@ -1383,5 +1475,8 @@ export function createTapeAPI(opts = {}) {
     }
   }
 
-  return { resolve, refresh, acceptPrice, acceptedPrice, call, callQuorum, payer, tx, rpc, chain, chainId, groupVerifier, addresses: { hub, siteRegistry, directory, escrow }, randomPrivateKey }
+  // `forChain(id)`: the client for another TapeOut chain (this one for its own); `chainOfContainer(address)`: which chain a
+  // container lives on. / `forChain(id)`：另一条 TapeOut 链的客户端；`chainOfContainer(address)`：容器在哪条链上。
+  const api = { resolve, refresh, acceptPrice, acceptedPrice, call, callQuorum, payer, tx, rpc, chain, chainId, groupVerifier, addresses: { hub, siteRegistry, directory, escrow }, randomPrivateKey, forChain, chainOfContainer }
+  return api
 }

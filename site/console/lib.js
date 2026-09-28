@@ -8,6 +8,29 @@ export const CHAIN_ID = 56
 export const FACTORY = '0x68224F668083c29e9800Be2a646d42d18cedF7e2'        // TapeOut processor factory / 处理器工厂
 export const HUB = '0xe61A9C7213a6Aa616C246a2B569e555B417b25ee'            // DeWebHub
 export const SITE_REGISTRY = '0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6'
+// The chains this page publishes on (a copy of sdk/src/chains.js, which console.test.mjs checks it against). X Layer and
+// Base carry the same TapeOut contracts at the same addresses; the DeWebHub proxy address is the same on all three, and
+// a delegation names its chain in the EIP-712 domain (chainId), so a signature for one chain is not valid on another.
+// 本页可以发布的链（sdk/src/chains.js 的副本，console.test.mjs 逐项对照）。X Layer 与 Base 上 TapeOut 合约地址相同；
+// DeWebHub 代理地址三条链都相同，委托在 EIP-712 域里写明链号，一条链的签名在另一条链上无效。
+const L2 = { factory: '0x1f09DAeFA827f02CBb40967cc91b259763760761', hub: HUB, siteRegistry: '0xd6EFb7adCc9c83dC4924Ad56f6a8E4e969b9ADB6' }
+export const CHAINS = Object.freeze({
+  56: Object.freeze({ chainId: 56, hex: '0x38', key: 'bnb', name: 'BNB Chain', currency: 'BNB', factory: FACTORY, hub: HUB, siteRegistry: SITE_REGISTRY, explorer: 'https://bscscan.com', explorerName: 'BscScan' }),
+  196: Object.freeze({ chainId: 196, hex: '0xc4', key: 'xlayer', name: 'X Layer', currency: 'OKB', ...L2, explorer: 'https://www.oklink.com/xlayer', explorerName: 'OKLink' }),
+  8453: Object.freeze({ chainId: 8453, hex: '0x2105', key: 'base', name: 'Base', currency: 'ETH', ...L2, explorer: 'https://basescan.org', explorerName: 'BaseScan' }),
+})
+/** The chain with this id (a number or its decimal string); anything else is an error. / 该链号的链；其它一律报错。 */
+export function chainOf(chainId = CHAIN_ID) {
+  const c = Object.prototype.hasOwnProperty.call(CHAINS, String(chainId)) ? CHAINS[String(chainId)] : null
+  if (!c) throw new Error(`chain ${chainId} is not one this page publishes on (56, 196, 8453)`)
+  return c
+}
+// The page's chain, set once by the page before any read (console.js: C.useChain). Every function below defaults to it
+// and takes `chainId` to override; nothing sets it but the page, so it is BNB Chain (56) everywhere else.
+// 页面所在的链，由页面在任何读取之前设置一次（console.js：C.useChain）。下面的函数默认用它，也可传 chainId 覆盖。
+let pageChain = CHAIN_ID
+/** Set the page's chain; returns it. / 设置页面所在的链。 */
+export function useChain(chainId) { pageChain = chainOf(chainId).chainId; return chainOf(pageChain) }
 export const MANIFEST_KEY = '.well-known/tapeapi.json'                       // no leading slash (TapeKit SPEC §6) / 不带前导斜杠
 export const MANIFEST_LIMIT = 24_000                                         // one putFile / 一笔 putFile
 export const READ_LIMIT = 64 * 1024                                         // TAP-20: a manifest read is at most 64 KiB / 读取上限
@@ -24,15 +47,16 @@ const dyn = (bytes) => word(bytes.length) + pad32(hex(bytes))
 
 /** Read a TapeOut circuit: processor contract, container, current holder. `call(to, data)` returns the hex result.
  *  读一个 TapeOut 电路：处理器合约、容器、当前持有人。 */
-export async function readCircuit(call, { processor, tokenId }) {
+export async function readCircuit(call, { processor, tokenId, chainId = pageChain }) {
+  const { factory, hub } = chainOf(chainId)
   processor = String(processor).trim(); tokenId = String(tokenId).trim()
   if (/^0x[0-9a-fA-F]{40}$/.test(processor)) throw new Error('这里填处理器编号（一个数字，例如 11.1013.tape 里的 1013），不是合约地址 / enter the processor number, not a contract address')
   if (!/^\d{1,15}$/.test(processor)) throw new Error('处理器编号必须是整数 / processor number must be a whole number')
   if (!/^\d{1,15}$/.test(tokenId) || BigInt(tokenId) < 1n) throw new Error('circuit number (#ID) must be 1 or more')
   tokenId = String(BigInt(tokenId))   // "01" -> "1": the manifest's tokenId has no leading zeros (TAP-20) / 去掉前导零
-  const circuits = addrOf(await call(FACTORY, SEL.cpuAt + word(processor)))
-  if (BigInt(await call(FACTORY, SEL.isCPU + addrWord(circuits))) !== 1n) throw new Error(`${circuits} is not a TapeOut processor`)
-  const container = addrOf(await call(HUB, SEL.accountOf + addrWord(circuits) + word(tokenId)))
+  const circuits = addrOf(await call(factory, SEL.cpuAt + word(processor)))
+  if (BigInt(await call(factory, SEL.isCPU + addrWord(circuits))) !== 1n) throw new Error(`${circuits} is not a TapeOut processor`)
+  const container = addrOf(await call(hub, SEL.accountOf + addrWord(circuits) + word(tokenId)))
   const holder = addrOf(await call(circuits, SEL.ownerOf + word(tokenId)))
   return { circuits, tokenId, container, holder }
 }
@@ -47,10 +71,11 @@ export function newSignerKey(getRandomValues = (b) => globalThis.crypto.getRando
 
 /** The EIP-712 delegation the holder signs (eth_signTypedData_v4), exactly as sdk sig.delegationTypedData builds it.
  *  持有人签的 EIP-712 委托，与 SDK 构造的完全一致。 */
-export function delegationTypedData({ container, signer, expires }) {
+export function delegationTypedData({ container, signer, expires, chainId = pageChain }) {
   if (!isAddr(container) || !isAddr(signer)) throw new Error('container and signer must be addresses')
+  const c = chainOf(chainId)
   return {
-    domain: { name: 'TapeAPI', version: '1', chainId: CHAIN_ID, verifyingContract: HUB },
+    domain: { name: 'TapeAPI', version: '1', chainId: c.chainId, verifyingContract: c.hub },
     types: {
       EIP712Domain: [
         { name: 'name', type: 'string' }, { name: 'version', type: 'string' },
@@ -123,9 +148,11 @@ const bytes = (h) => Uint8Array.from(h.replace(/^0x/, '').match(/../g) || [], (x
 const kec = (...parts) => keccak256(bytes(parts.map((p) => (typeof p === 'string' ? p.replace(/^0x/, '') : hex(p))).join('')))
 const utf8 = (t) => new TextEncoder().encode(t)
 
-/** The EIP-712 digest of a Delegation, exactly as the SDK's sig.delegationDigest(56, HUB, …). / 委托的 EIP-712 摘要。 */
-export function delegationDigest({ container, signer, expires }) {
-  const domain = kec(kec(utf8('EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)')), kec(utf8('TapeAPI')), kec(utf8('1')), word(CHAIN_ID), addrWord(HUB))
+/** The EIP-712 digest of a Delegation, exactly as the SDK's sig.delegationDigest(chainId, HUB, …) (chainId 56 unless
+ *  given). / 委托的 EIP-712 摘要（未给 chainId 时为 56）。 */
+export function delegationDigest({ container, signer, expires, chainId = pageChain }) {
+  const c = chainOf(chainId)
+  const domain = kec(kec(utf8('EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)')), kec(utf8('TapeAPI')), kec(utf8('1')), word(c.chainId), addrWord(c.hub))
   const struct = kec(kec(utf8('Delegation(address container,address signer,uint64 expires)')), addrWord(container), addrWord(signer), word(expires))
   return kec('1901', domain, struct)
 }
@@ -177,6 +204,9 @@ export function prefillFromQuery(search) {
   const q = new URLSearchParams(typeof search === 'string' ? search : '')
   const num = (v) => (typeof v === 'string' && /^\d{1,78}$/.test(v) ? v : null)
   const out = {}
+  // ?chain=196 or 8453 (a name with an area code, from the dashboard); anything else is ignored / 只认本页支持的链
+  const chain = q.get('chain')
+  if (typeof chain === 'string' && /^(56|196|8453)$/.test(chain)) out.chainId = Number(chain)
   const processor = num(q.get('processor')), circuit = num(q.get('circuit'))
   if (processor) out.processor = processor
   if (circuit) out.circuit = circuit
@@ -541,14 +571,15 @@ const small = (w) => { const n = BigInt('0x' + w); if (n > BigInt(Number.MAX_SAF
  *  null when there is none (fileInfo.size = 0). A file that fails the checks throws with code UNVERIFIABLE; a failing
  *  call throws as it is. `sha256(bytes)` returns hex.
  *  容器链上的清单文本，按 SiteRegistry 自己记录的长度和 SHA-256 核对；没有清单时为 null；核对不过抛 UNVERIFIABLE，调用失败原样抛出。 */
-export async function readManifestFile(call, container, sha256, { limit = READ_LIMIT } = {}) {
+export async function readManifestFile(call, container, sha256, { limit = READ_LIMIT, chainId = pageChain } = {}) {
+  const registry = chainOf(chainId).siteRegistry
   const args = addrWord(container) + word(64) + dyn(utf8(MANIFEST_KEY))
-  const info = abiWords(await call(SITE_REGISTRY, SEL.fileInfo + args))
+  const info = abiWords(await call(registry, SEL.fileInfo + args))
   const size = small(wordAt(info, 0)), declared = wordAt(info, 2).toLowerCase()
   if (size === 0) return null
   if (size > limit) throw unverifiable(`the on-chain manifest declares ${size} bytes; the limit is ${limit}`)
   if (declared === ZERO32) throw unverifiable('the on-chain manifest has no SHA-256 (fileInfo.sha256Hash is zero): it cannot be verified')
-  const r = abiWords(await call(SITE_REGISTRY, SEL.read + args))
+  const r = abiWords(await call(registry, SEL.read + args))
   const off = small(wordAt(r, 0))
   if (off % 32) throw unverifiable('not an ABI answer')
   const len = small(wordAt(r, off / 32)), body = r.slice(off * 2 + 64, off * 2 + 64 + len * 2)
@@ -565,7 +596,7 @@ const eqAddr = (a, b) => isAddr(a) && isAddr(b) && a.toLowerCase() === b.toLower
  *  { ok: true, signer, endpoints, expires }, or { ok: false, code, detail? } with code NO_MANIFEST, INVALID,
  *  WRONG_CIRCUIT, BAD_SIGNATURE or NOT_HOLDER. An expired delegation still counts: renewing it is the point.
  *  链上清单授权了什么，对照第 2 步读到的电路及其**当前**持有人。已过期的委托照样算：续期正是为此。 */
-export function onChainAuthorisation(text, { circuits, tokenId, container, holder }) {
+export function onChainAuthorisation(text, { circuits, tokenId, container, holder, chainId = pageChain }) {
   if (text == null) return { ok: false, code: 'NO_MANIFEST' }
   const bad = (detail) => ({ ok: false, code: 'INVALID', detail })
   let m
@@ -580,7 +611,8 @@ export function onChainAuthorisation(text, { circuits, tokenId, container, holde
   if (!isPlain(d) || !Number.isSafeInteger(d.expires) || d.expires <= 0 || typeof d.sig !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(d.sig)) return bad('delegation must be { expires, sig }')
   const live = isPlain(m.endpoints) ? m.endpoints.live : null
   if (!Array.isArray(live) || live.length < 1 || live.length > 8 || !live.every((e) => typeof e === 'string' && e.length <= 200 && !CONTROL.test(e))) return bad('endpoints.live must list 1 to 8 URLs')
-  const by = recoverAddress(delegationDigest({ container: m.container, signer: m.signer, expires: d.expires }), d.sig)
+  // under the domain of the circuit's own chain / 按电路所在链的域
+  const by = recoverAddress(delegationDigest({ container: m.container, signer: m.signer, expires: d.expires, chainId }), d.sig)
   if (!by) return { ok: false, code: 'BAD_SIGNATURE' }
   if (!eqAddr(by, holder)) return { ok: false, code: 'NOT_HOLDER', detail: by }
   return { ok: true, signer: checksum(m.signer), endpoints: live.slice(), expires: d.expires }
@@ -634,7 +666,7 @@ export function probeTx({ bus, text }) {
 /** SiteRegistry.putFile(container, ".well-known/tapeapi.json", "application/json", sha256, bytes) as a transaction.
  *  `sha256Hex` is the SHA-256 of `text`'s UTF-8 bytes (the page computes it with SubtleCrypto).
  *  发布清单的 putFile 交易。 */
-export function putFileTx({ container, text, sha256Hex, contentType = 'application/json' }) {
+export function putFileTx({ container, text, sha256Hex, contentType = 'application/json', chainId = pageChain }) {
   const bytes = new TextEncoder().encode(text)
   if (bytes.length > MANIFEST_LIMIT) throw new Error(`manifest is ${bytes.length} bytes; one putFile carries ${MANIFEST_LIMIT}`)
   if (!/^0x[0-9a-f]{64}$/i.test(sha256Hex)) throw new Error('sha256 must be 32 bytes of hex')
@@ -642,5 +674,5 @@ export function putFileTx({ container, text, sha256Hex, contentType = 'applicati
   const k = dyn(key), t = dyn(type)
   const head = 5 * 32
   const data = SEL.putFile + addrWord(container) + word(head) + word(head + k.length / 2) + sha256Hex.slice(2).toLowerCase() + word(head + k.length / 2 + t.length / 2) + k + t + dyn(bytes)
-  return { to: SITE_REGISTRY, data: data.toLowerCase(), value: '0x0' }
+  return { to: chainOf(chainId).siteRegistry, data: data.toLowerCase(), value: '0x0' }
 }

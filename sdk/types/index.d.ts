@@ -12,6 +12,8 @@ export { TapeAPIError } from './errors.js'
 export { createRpc } from './rpc.js'
 export { RPC_DEFAULTS, rpcUrlsFor, operatorOf } from './rpc-defaults.js'
 export type { RpcNode } from './rpc-defaults.js'
+export { CHAINS, CHAIN_IDS, HOME_CHAIN_ID, IMPL_SLOT, chainById, chainByArea, chainByKey, parseTapeName, formatTapeName, isNameShaped } from './chains.js'
+export type { TapeOutChain, ParsedTapeName } from './chains.js'
 export { canonicalJSON, safeParseJSON } from './canon.js'
 export { validateManifest, parseUnits, formatUnits, METHOD_NAME_RE, BEM_DECIMALS } from './manifest.js'
 export { labelToBytes32 } from './abi.js'
@@ -71,26 +73,34 @@ export interface CreateTapeAPIOptions {
   identityCacheSize?: number
   /** Persist the highest channel-record `issued` seen per container across restarts. */
   channelRecordFloor?: { get(key: string): unknown; set(key: string, value: unknown): unknown }
+  /** This client's chain (default 56). A chain in CHAINS brings its own hub, factory and siteRegistry. */
   chainId?: number
+  /** Nodes for the other TapeOut chains, used when a target names one (a name with an area code, or { chainId }).
+   *  Without an entry, that chain's SDK defaults (rpcUrlsFor) are used. */
+  chains?: Record<number, { rpcUrls?: string[]; quorum?: number; timeoutMs?: number; allowSingleNode?: boolean; hub?: Address; factory?: Address; siteRegistry?: Address }>
   hub?: Address
   siteRegistry?: Address
-  /** TapeOut processor factory; required with hub and siteRegistry on any chain other than BNB mainnet. */
+  /** TapeOut processor factory; required with hub and siteRegistry on a chain not in CHAINS. */
   factory?: Address
   directory?: Address
   escrow?: Address
 }
 
-/** What api.resolve() accepts: a TapeOut name ('11.1013.tape'), a container address, a directory label,
- *  a { circuits, tokenId } pair, or (with dev: true) { dev: url | manifest }. */
+/** What api.resolve() accepts: a TapeOut name ('11.1013.tape' on BNB Smart Chain, '1.2.344.tape' on X Layer), a
+ *  container address (this client's chain), a directory label, a { circuits, tokenId } pair (optionally with the chainId
+ *  it is on), { chainId, container }, or (with dev: true) { dev: url | manifest }. */
 export type ResolveTarget =
   | string
-  | { circuits: Address; tokenId: BigNumberish }
+  | { circuits: Address; tokenId: BigNumberish; chainId?: number }
+  | { chainId: number; container: Address }
   | { dev: string | Record<string, unknown> }
 
 /** A service returned by api.resolve(): manifest verified against the chain and the holder's delegation. */
 export interface ResolvedService {
   manifest: Manifest
   container: Address
+  /** The chain the service lives on (its identity, manifest and delegation are read there). */
+  chainId: number
   verified: { delegation: boolean; holder: Address | null; dev?: boolean; [key: string]: unknown }
   /** Contribution in basis points (0 for a free service). */
   contribution: number
@@ -211,6 +221,8 @@ export interface ChainReads {
   channelKeys(container: Address, opts?: { fresh?: boolean }): Promise<ChannelKeysRecord>
   tapeSendKey(target: Address | { circuits: Address; tokenId: BigNumberish }): Promise<Record<string, unknown>>
   ownerOf(circuits: Address, tokenId: BigNumberish): Promise<Address>
+  /** ERC-6551 token() of a container on this chain. */
+  tokenOf(container: Address): Promise<{ circuits: Address; tokenId: bigint }>
   resolve(label: string): Promise<Address>
   serviceOf(container: Address): Promise<any>
   readFile(container: Address, path: string): Promise<any>
@@ -247,6 +259,10 @@ export interface TapeAPI {
   groupVerifier(): (member: Record<string, unknown>, opts?: { fresh?: boolean }) => Promise<boolean>
   addresses: { hub: Address; siteRegistry: Address; directory: Address | undefined; escrow: Address | undefined }
   randomPrivateKey(): Hex
+  /** The client for another TapeOut chain (this client for its own chain). */
+  forChain(chainId: number): TapeAPI
+  /** Which supported chain a container address lives on, or null. */
+  chainOfContainer(container: Address): Promise<number | null>
 }
 
 export declare function createTapeAPI(opts?: CreateTapeAPIOptions): TapeAPI

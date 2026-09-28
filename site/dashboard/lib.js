@@ -1,5 +1,6 @@
 // "My services" dashboard: pure helpers, no DOM and no storage at module scope, so Node can test them offline
 // (scripts/dashboard.test.mjs). / “我的服务”面板的纯函数：模块顶层不碰 DOM 与存储，Node 可离线测试。
+import { chainByArea } from '../playground/vendor/tapeapi-sdk/chains.js'
 
 export const STORAGE_KEY = 'tapeapi.dashboard'
 export const PUBLIC_EXAMPLES = Object.freeze(['11.1013.tape', '12.1013.tape'])
@@ -7,13 +8,14 @@ export const WARN_DAYS = 14          // same rule as site/status/ / 与状态页
 export const MAX_SERVICES = 50       // a list is for people, not a crawler / 列表给人用，不是爬虫
 export const HEALTH_PATH = '/tapeapi/v1/health'
 
-// The SDK's own spellings: <#ID>.<processor>.tape, or a container address. / 与 SDK 的写法一致。
-const NAME_RE = /^(\d{1,15})\.(\d{1,15})\.tape$/i
+// The SDK's own spellings: <#ID>.<processor>.tape (BNB Smart Chain), <#ID>.<area>.<processor>.tape (X Layer area 2,
+// Base area 3), or a container address. / 与 SDK 的写法一致：BNB 名字不带区号，X Layer（2）与 Base（3）带区号。
+const NAME_RE = /^(\d{1,15})\.(?:(\d{1,7})\.)?(\d{1,15})\.tape$/i
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/
 
 /**
- * Read one entry typed by the user. Returns { kind: 'name', key, id, processor } or { kind: 'container', key }, or
- * null when it is neither. `key` is the normalised form stored in the list (names without leading zeros and in
+ * Read one entry typed by the user. Returns { kind: 'name', key, id, processor } (plus `area` and `chainId` for a name
+ * on X Layer or Base) or { kind: 'container', key }, or null when it is neither (an unassigned area code included). `key` is the normalised form stored in the list (names without leading zeros and in
  * lower case, addresses in lower case) so the same service is never listed twice.
  * 读取用户输入的一项。返回名称或容器；都不是则为 null。key 是存进列表的规范形式，同一服务不会重复。
  */
@@ -23,9 +25,13 @@ export function parseInput(input) {
   if (s.length > 100) return null
   let m
   if ((m = NAME_RE.exec(s))) {
-    const id = BigInt(m[1]), processor = BigInt(m[2])
+    const id = BigInt(m[1]), processor = BigInt(m[3])
     if (id < 1n) return null   // #ID starts at 1 / #ID 从 1 开始
-    return { kind: 'name', key: `${id}.${processor}.tape`, id: id.toString(), processor: processor.toString() }
+    if (m[2] === undefined) return { kind: 'name', key: `${id}.${processor}.tape`, id: id.toString(), processor: processor.toString() }
+    // area codes 0 and 1 are reserved and a BNB name carries none: only an assigned code names a chain / 只认已分配的区号
+    const area = Number(m[2]), chain = area > 1 ? chainByArea(area) : null
+    if (!chain) return null
+    return { kind: 'name', key: `${id}.${area}.${processor}.tape`, id: id.toString(), processor: processor.toString(), area, chainId: chain.chainId }
   }
   if (ADDR_RE.test(s)) return { kind: 'container', key: s.toLowerCase() }
   return null

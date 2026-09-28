@@ -3,7 +3,7 @@
 | Title | TapeAPI: Service Identity and Manifest |
 | Author | Bruce (@BruceLanLan) |
 | Status | Draft |
-| Implementation | Live without a directory (2026-09-27): on BNB Chain, `api.tapeapi.fun` (`11.1013.tape`, source `examples/public-api/`) and `relay.tapeapi.fun` (`12.1013.tape`) publish TAP-20 manifests with holder delegations, and the SDK resolves containers, `(circuits, tokenId)` pairs and names `<#ID>.<processor>.tape`. ServiceDirectory (§3.5) is not deployed, so labels do not resolve on mainnet. No third-party audit. |
+| Implementation | Live without a directory (2026-09-27): on BNB Chain, `api.tapeapi.fun` (`11.1013.tape`, source `examples/public-api/`) and `relay.tapeapi.fun` (`12.1013.tape`) publish TAP-20 manifests with holder delegations, and the SDK resolves containers, `(circuits, tokenId)` pairs and names `<#ID>.<processor>.tape`; read-only resolution on X Layer and Base (area-coded names) since 2026-09-28. ServiceDirectory (§3.5) is not deployed, so labels do not resolve on mainnet. No third-party audit. |
 | Type | Standards |
 | Created | 2026-09-20 |
 | Requires | TAP-1 |
@@ -32,16 +32,25 @@ TapeAPI closes this gap without changing the protocol: identity is the existing 
 ### 3.1 Identity
 
 - A **service** is a circuit: the pair `(circuits, tokenId)` where `circuits` is an ERC-721 processor contract.
-- The **container** of a service is `DeWebHub.accountOf(circuits, tokenId)` (DeWebHub proxy `0xe61A9C7213a6Aa616C246a2B569e555B417b25ee` on chainId 56). Clients MUST derive the container and MUST NOT accept a self-reported container.
+- A service lives on exactly one chain: the chain its circuit is on. TapeAPI follows TapeOut to these chains (addresses read on chain 2026-09-28; source TapeKit `kernel/src/config.js`):
+
+| Chain | chainId | Area code | Processor factory | DeWebHub (proxy) | SiteRegistry (proxy) |
+|---|---|---|---|---|---|
+| BNB Smart Chain | 56 | none | `0x68224F668083c29e9800Be2a646d42d18cedF7e2` | `0xe61A9C7213a6Aa616C246a2B569e555B417b25ee` | `0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6` |
+| X Layer | 196 | 2 | `0x1f09DAeFA827f02CBb40967cc91b259763760761` | `0xe61A9C7213a6Aa616C246a2B569e555B417b25ee` | `0xd6EFb7adCc9c83dC4924Ad56f6a8E4e969b9ADB6` |
+| Base | 8453 | 3 | `0x1f09DAeFA827f02CBb40967cc91b259763760761` | `0xe61A9C7213a6Aa616C246a2B569e555B417b25ee` | `0xd6EFb7adCc9c83dC4924Ad56f6a8E4e969b9ADB6` |
+
+- The **container** of a service is `DeWebHub.accountOf(circuits, tokenId)` on the service's chain. Clients MUST derive the container on that chain and MUST NOT accept a self-reported container.
 - The **holder** is `IERC721(circuits).ownerOf(tokenId)` at the time of verification.
-- The service's on-chain name is the SPEC name `<#ID>.<processor>.tape`, where `#ID` is `tokenId` and `processor` is the number under which the TapeOut processor factory lists `circuits` (TapeKit SPEC §2.2, §3.2). This TAP defines no new name syntax.
+- The service's on-chain name is the SPEC name `<#ID>.<processor>.tape` on BNB Smart Chain and `<#ID>.<area>.<processor>.tape` on any other chain, where `#ID` is `tokenId`, `processor` is the number under which that chain's TapeOut processor factory lists `circuits` (TapeKit SPEC §2.2, §3.2), and `area` is the chain's area code in the table above (TapeKit `kernel/src/name.js`; `1.2.344.tape` is #1 of processor 344 on X Layer). Area codes are assigned once and never reused; `0` and `1` are reserved. This TAP defines no new name syntax.
+- Identity does not carry across chains. The same `(circuits, tokenId)` on two chains names two services with two containers (processor 0 is one contract address on both X Layer and Base). A client MUST NOT treat a service on one chain as the same service on another chain.
 - A **label** is a `bytes32` alias registered in a ServiceDirectory contract (§3.5). A label is a lookup convenience only; it carries no authority.
 
 ### 3.2 Manifest Location
 
 - The manifest MUST be stored in the container's DeWEB site at URL path `/.well-known/tapeapi.json`, content type `application/json`, UTF-8.
 - SiteRegistry keys carry **no leading slash** (TapeKit SPEC §6 step 3 strips it before lookup; on mainnet `4246.0.tape` stores `index.html`, and `fileInfo(container, "/index.html")` answers size 0). The registry key of the manifest is therefore `.well-known/tapeapi.json`. Clients MUST strip leading slashes before every `read` / `fileInfo` call.
-- Clients MUST read it with `SiteRegistry.read(container, ".well-known/tapeapi.json")` (SiteRegistry proxy `0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6`) and MUST verify the returned bytes against `SiteRegistry.fileInfo(container, path)`: byte length MUST equal `size` and `sha256(bytes)` MUST equal `sha256Hash`.
+- Clients MUST read it with `SiteRegistry.read(container, ".well-known/tapeapi.json")` on the SiteRegistry of the service's chain (§3.1) and MUST verify the returned bytes against `SiteRegistry.fileInfo(container, path)` of the same registry: byte length MUST equal `size` and `sha256(bytes)` MUST equal `sha256Hash`.
 - All `eth_call`s in this TAP MUST be issued to at least `quorum` independently configured RPC nodes (RECOMMENDED `quorum ≥ 2`) and accepted only if all results are byte-identical. Disagreement MUST be treated as failure (`RPC_DISAGREE`), never resolved by majority. A node that fails in transport (timeout, HTTP error, oversize body) has not answered and is not a disagreement, but at least `quorum` nodes MUST answer. A revert on one node and a value on another is a disagreement. A JSON-RPC error in which the node describes ITSELF -- rate limiting (`-32005`), a method it does not implement (`-32601`), or a refusal to scan the range asked for -- is a node failure, exactly like a timeout: the node has not answered. Concretely, `-32005` and `-32601` are node failures, and a `-32000` whose message describes a range, result or size limit, a timeout or an unsupported method is a node failure unless the message mentions a revert, gas or an allowance (those are answers about the chain). Any other JSON-RPC error, a revert in particular, is an answer about the chain: it is a result, compared across nodes by its `code` and by whether it reports a revert (code `3`, or a message that mentions a revert; message texts otherwise differ between node implementations and are not compared), so that a revert and a `-32000` "header not found" never count as the same answer, and an error agreed by every answering node surfaces as `RPC_ERROR`. A client MAY re-ask all nodes once to absorb a race across a block boundary on `latest`; the re-ask MUST itself be unanimous. `eth_blockNumber` is not an `eth_call`: honest nodes differ by a block or two, so clients use the lowest head among at least `quorum` answers and SHOULD refuse (`RPC_DISAGREE`) a spread wider than a configured bound (reference: 64 blocks). Clients MUST NOT fetch node lists from a server at runtime.
 - The manifest MUST NOT exceed 65 536 bytes.
 - A development mode that accepts a manifest object or URL directly MAY exist in SDKs; it MUST be opt-in (`dev: true`) and MUST NOT be reachable from a default configuration.
@@ -99,7 +108,8 @@ Clients MUST ignore unknown fields. A manifest violating any MUST above is `MANI
 
 The holder authorises `signer` with an EIP-712 signature.
 
-- Domain: `EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)` with `name = "TapeAPI"`, `version = "1"`, `chainId = 56`, `verifyingContract = <DeWebHub address>`.
+- Domain: `EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)` with `name = "TapeAPI"`, `version = "1"`, `chainId` = the chainId of the service's chain, `verifyingContract` = the DeWebHub proxy of that chain (§3.1).
+- The DeWebHub proxy has one address on every chain, so the chainId alone separates the domains: a delegation signed for one chain is a different digest on every other chain, and a verifier MUST NOT accept it there. A chain added to §3.1 without a DeWebHub needs its own verifyingContract, which the TAP adding that chain names.
 - Primary type: `Delegation(address container,address signer,uint64 expires)`.
 - `DELEGATION_TYPEHASH = keccak256("Delegation(address container,address signer,uint64 expires)") = 0xc5081f9dc7e79dfbe7f3b3220ed9e7a29d0bc53239ee74dc184e4ac1f810948c`.
 - `structHash = keccak256(abi.encode(DELEGATION_TYPEHASH, container, signer, expires))`.
@@ -127,13 +137,15 @@ The full interface is in `contracts/src/ServiceDirectory.sol`. The directory is 
 
 ### 3.6 Resolution Algorithm
 
-Input: a label, a TapeOut name `<#ID>.<processor>.tape`, a container address, or a `(circuits, tokenId)` pair. Output: `{ manifest, container, verified: { delegation, holder } }` or an error.
+Input: a label, a TapeOut name `<#ID>.<processor>.tape` or `<#ID>.<area>.<processor>.tape`, a container address, or a `(circuits, tokenId)` pair. Output: `{ manifest, container, verified: { delegation, holder } }` or an error.
 
 1. **Locate.** If input is a label, `container = ServiceDirectory.resolve(label)`; zero address → `NOT_FOUND`. If input is `(circuits, tokenId)`, `container = DeWebHub.accountOf(circuits, tokenId)`. If input is a TapeOut name `<#ID>.<processor>.tape` (canonical form per TapeKit SPEC §2.2: both parts decimal without leading zeros except `0` itself, all lowercase, `#ID ≥ 1`; a client MAY also accept the suffix-less `<#ID>.<processor>`, which TapeKit SPEC §2.4 lets an address bar accept for the same name), it is resolved exactly as TapeKit SPEC §3.2 resolves it: `circuits = factory.cpuAt(processor)` on the TapeOut processor factory (step 3), then `container = DeWebHub.accountOf(circuits, #ID)`; a processor number past the last one (`cpuAt` reverts) → `NOT_FOUND`. A string of this form is a name, never a label, and is not looked up in any directory. A string that looks like a name but is not in that form (leading zeros, an upper-case `.TAPE`, `#ID` 0) MUST be refused rather than guessed at, and is not looked up as a label either, so that no label can squat a spelling of a name. TapeKit's other address-bar forms (`#4246@0`, `tape://4246.0.tape/`) are not inputs to this algorithm: a shell converts them to the canonical name first, and the reference SDK refuses them like a non-canonical spelling. If input is a container, use it as given.
 
+   **Chain.** A `(circuits, tokenId)` pair or a container names no chain by itself; a client resolves it on the chain given with it, or else on its own configured chain. A TapeOut name selects its chain by its area code: no area code is BNB Smart Chain. A name whose area code is reserved or not in §3.1 MUST be refused like any other non-canonical spelling and is not looked up as a label. Every later step (manifest, `accountOf`, `isCPU` on that chain's factory, `ownerOf`, delegation) runs on the selected chain, and `eth_call`s go to nodes of that chain. A client SHOULD tell its user which chain a service is on.
+
    The name form adds no trust beyond the `(circuits, tokenId)` path: it only computes that pair from on-chain reads made under §3.2, and steps 2–5 run unchanged, so step 3 still re-derives the container from the manifest's own `(circuits, tokenId)` and checks `isCPU`.
 2. **Read manifest.** `fileInfo(container, path)` then `read(container, path)`, both with quorum agreement (§3.2). Verify length and SHA-256. Parse JSON; validate against §3.3. Failure → `MANIFEST_INVALID`.
-3. **Derive.** `derived = DeWebHub.accountOf(manifest.circuits, manifest.tokenId)`. Clients MUST reject unless `derived == manifest.container == container`, and MUST reject unless the TapeOut processor factory (`0x68224F668083c29e9800Be2a646d42d18cedF7e2` on chainId 56) answers `isCPU(manifest.circuits) == true`: `accountOf` derives an address for any ERC-721, so without this check anyone could deploy a counterfeit token contract and present its account as a TapeOut container (TapeKit SPEC §3.3 step 2). Failure → `MANIFEST_INVALID`.
+3. **Derive.** `derived = DeWebHub.accountOf(manifest.circuits, manifest.tokenId)`. Clients MUST reject unless `derived == manifest.container == container`, and MUST reject unless the TapeOut processor factory of the service's chain (§3.1; `0x68224F668083c29e9800Be2a646d42d18cedF7e2` on chainId 56) answers `isCPU(manifest.circuits) == true`: `accountOf` derives an address for any ERC-721, so without this check anyone could deploy a counterfeit token contract and present its account as a TapeOut container (TapeKit SPEC §3.3 step 2). Failure → `MANIFEST_INVALID`.
 4. **Holder.** `holder = IERC721(manifest.circuits).ownerOf(manifest.tokenId)`. Reverts → `MANIFEST_INVALID`.
 5. **Delegation.** `manifest.delegation` MUST be present (§3.3). Verify per §3.4 with `signer = manifest.signer`; the recovered address MUST equal `holder` (or `holder` accepts the signature under EIP-1271, §3.4) and `expires` MUST be in the future. Failure → `DELEGATION_INVALID`.
 6. **Return** with `verified.delegation = true` and `verified.holder = holder`.
@@ -295,7 +307,7 @@ amount = sum / 1 000 000, rounded up to 8 decimals
 
 ## 5. Backwards Compatibility
 
-This TAP adds nothing to `SPEC.md`. It does not alter the name grammar `<#ID>.<processor>.tape`, the container derivation, the file verification rules, or the multi-node agreement rule. Sites that do not use `tape.api` are unaffected. Manifests whose `tapeapi` is not `"0.N"` (N ≥ 1) are rejected by this version.
+This TAP adds nothing to `SPEC.md`. It does not alter the name grammar `<#ID>.<processor>.tape` or TapeKit's area-coded names for other chains, the container derivation, the file verification rules, or the multi-node agreement rule. Sites that do not use `tape.api` are unaffected. Manifests whose `tapeapi` is not `"0.N"` (N ≥ 1) are rejected by this version.
 
 ## 6. Test Vectors
 
@@ -330,6 +342,14 @@ Inputs: `chainId = 56`, `verifyingContract = 0xe61A9C7213a6Aa616C246a2B569e555B4
 | `DELEGATION_TYPEHASH` | `0xc5081f9dc7e79dfbe7f3b3220ed9e7a29d0bc53239ee74dc184e4ac1f810948c` |
 | `structHash` | `0x525ae7f6670fd36175882a96c6f8491af6c83c3ebb4ab51437a9733ecc7dd6da` |
 | `digest` | `0xf0ef7315ef455303fb4a7d8a301ca84f25e9fbd0641e931cdb01e7f7e8bcaa9a` |
+
+The same inputs on the other chains (only `chainId` differs; the DeWebHub address is the same on all three):
+
+| chainId | `DOMAIN_SEPARATOR` | `digest` |
+|---|---|---|
+| 56 | `0xa73ee348b5672f12dbc174f66a7d162c69e0d64befdba88475d9d7e3c0fd3ac7` | `0xf0ef7315ef455303fb4a7d8a301ca84f25e9fbd0641e931cdb01e7f7e8bcaa9a` |
+| 196 | `0xf9c5be6dcd7d4cfdf9c57717c7d6a7e04bccd499d2a7f3fcfdc603cc7f1f3ad6` | `0xf4f57ad38c3efd363cbd271e3fc9fa7a54a1302db7f6adcc202a53f8a7cd529a` |
+| 8453 | `0xab3b0c6f3cecceb9d441893c56616889d71cf893f74296dc2229a6f241238516` | `0x741c7e6412012f5134d127404641a4eb294c77e30a7b19104aece30efe1be9b9` |
 
 ### 6.3 AI price table and amounts (§3.9)
 
@@ -394,16 +414,25 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 ### 3.1 身份
 
 - **服务**是一个电路：二元组 `(circuits, tokenId)`，其中 `circuits` 为 ERC-721 处理器合约。
-- 服务的**容器**为 `DeWebHub.accountOf(circuits, tokenId)`（chainId 56 上 DeWebHub 代理 `0xe61A9C7213a6Aa616C246a2B569e555B417b25ee`）。客户端 MUST 自行推导容器，MUST NOT 接受自报的容器。
+- 一个服务只在一条链上：它的电路所在的链。TapeAPI 跟随 TapeOut 到下列各链（地址于 2026-09-28 在链上核对；来源 TapeKit `kernel/src/config.js`）：
+
+| 链 | chainId | 区号 | 处理器工厂 | DeWebHub（代理） | SiteRegistry（代理） |
+|---|---|---|---|---|---|
+| BNB Smart Chain | 56 | 无 | `0x68224F668083c29e9800Be2a646d42d18cedF7e2` | `0xe61A9C7213a6Aa616C246a2B569e555B417b25ee` | `0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6` |
+| X Layer | 196 | 2 | `0x1f09DAeFA827f02CBb40967cc91b259763760761` | `0xe61A9C7213a6Aa616C246a2B569e555B417b25ee` | `0xd6EFb7adCc9c83dC4924Ad56f6a8E4e969b9ADB6` |
+| Base | 8453 | 3 | `0x1f09DAeFA827f02CBb40967cc91b259763760761` | `0xe61A9C7213a6Aa616C246a2B569e555B417b25ee` | `0xd6EFb7adCc9c83dC4924Ad56f6a8E4e969b9ADB6` |
+
+- 服务的**容器**为服务所在链上的 `DeWebHub.accountOf(circuits, tokenId)`。客户端 MUST 在该链上自行推导容器，MUST NOT 接受自报的容器。
 - **持有者**为验证时刻的 `IERC721(circuits).ownerOf(tokenId)`。
-- 服务的链上名称即 SPEC 名称 `<#ID>.<processor>.tape`，其中 `#ID` 即 `tokenId`，`processor` 是 TapeOut 处理器工厂列出 `circuits` 所用的编号（TapeKit SPEC §2.2、§3.2）。本 TAP 不定义新的名称语法。
+- 服务的链上名称：BNB Smart Chain 上即 SPEC 名称 `<#ID>.<processor>.tape`，其它链上为 `<#ID>.<area>.<processor>.tape`。其中 `#ID` 即 `tokenId`，`processor` 是该链的 TapeOut 处理器工厂列出 `circuits` 所用的编号（TapeKit SPEC §2.2、§3.2），`area` 是该链在上表中的区号（TapeKit `kernel/src/name.js`；`1.2.344.tape` 是 X Layer 上 344 号处理器的 #1）。区号一经分配永不更改、不复用；`0` 与 `1` 保留。本 TAP 不定义新的名称语法。
+- 身份不跨链互认。同一个 `(circuits, tokenId)` 在两条链上是两个服务、两个容器（0 号处理器在 X Layer 与 Base 上是同一个合约地址）。客户端 MUST NOT 把一条链上的服务当作另一条链上的同一个服务。
 - **标签**是在 ServiceDirectory 合约（§3.5）中注册的 `bytes32` 别名。标签仅为查找便利，不承载任何权威。
 
 ### 3.2 清单位置
 
 - 清单 MUST 存于容器 DeWEB 站点的 URL 路径 `/.well-known/tapeapi.json`，内容类型 `application/json`，UTF-8 编码。
 - SiteRegistry 的键**不带前导斜杠**（TapeKit SPEC §6 第 3 步在查找前去掉它；主网 `4246.0.tape` 存的是 `index.html`，`fileInfo(container, "/index.html")` 返回 size 0）。因此清单的注册表键是 `.well-known/tapeapi.json`。客户端 MUST 在每次 `read` / `fileInfo` 前去掉前导斜杠。
-- 客户端 MUST 通过 `SiteRegistry.read(container, ".well-known/tapeapi.json")`（SiteRegistry 代理 `0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6`）读取，并 MUST 依据 `SiteRegistry.fileInfo(container, path)` 校验返回字节：字节长度 MUST 等于 `size`，`sha256(bytes)` MUST 等于 `sha256Hash`。
+- 客户端 MUST 通过服务所在链（§3.1）的 SiteRegistry 调用 `SiteRegistry.read(container, ".well-known/tapeapi.json")` 读取，并 MUST 依据同一注册表的 `SiteRegistry.fileInfo(container, path)` 校验返回字节：字节长度 MUST 等于 `size`，`sha256(bytes)` MUST 等于 `sha256Hash`。
 - 本 TAP 中所有 `eth_call` MUST 发往至少 `quorum` 个独立配置的 RPC 节点（RECOMMENDED `quorum ≥ 2`），且仅当所有结果逐字节一致时才接受。不一致 MUST 视为失败（`RPC_DISAGREE`），永不以多数决解决。传输失败的节点（超时、HTTP 错误、响应体超限）视为未作答，不算不一致，但 MUST 至少有 `quorum` 个节点作答。一个节点回滚而另一个节点返回值，属于不一致。节点在描述**它自己**的 JSON-RPC 错误——限流（`-32005`）、不支持该方法（`-32601`）、拒绝扫描所要求的区间——属于节点故障，与超时完全一样：该节点没有作答。具体而言，`-32005` 与 `-32601` 是节点故障；`-32000` 的消息若描述区间、结果或大小限制、超时或不支持的方法，也是节点故障，除非消息提到 revert、gas 或 allowance（这些是关于链的回答）。其它 JSON-RPC 错误（尤其是回滚）说的是链，属于结果，节点之间按其 `code` 以及它是否报告回滚（code `3`，或消息提到 revert；除此之外不同节点实现的消息文本各不相同，不参与比较）来比较，使回滚与 `-32000` "header not found" 绝不被当作同一个回答，所有作答节点一致的错误以 `RPC_ERROR` 呈现。为吸收 `latest` 跨区块边界的竞态，客户端 MAY 向全部节点重问一次；重问本身 MUST 全体一致。`eth_blockNumber` 不是 `eth_call`：诚实节点之间会相差一两个区块，因此客户端取至少 `quorum` 个答案中最低的链头，且 SHOULD 拒绝（`RPC_DISAGREE`）超过配置上限的分散（参考实现：64 个区块）。客户端 MUST NOT 在运行时从服务器获取节点列表。
 - 清单 MUST NOT 超过 65 536 字节。
 - SDK MAY 提供直接接受清单对象或 URL 的开发模式；该模式 MUST 为显式开启（`dev: true`），且 MUST NOT 能从默认配置到达。
@@ -461,7 +490,8 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 
 持有者以 EIP-712 签名授权 `signer`。
 
-- 域：`EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)`，其中 `name = "TapeAPI"`、`version = "1"`、`chainId = 56`、`verifyingContract = <DeWebHub 地址>`。
+- 域：`EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)`，其中 `name = "TapeAPI"`、`version = "1"`、`chainId` 为服务所在链的 chainId、`verifyingContract` 为该链的 DeWebHub 代理（§3.1）。
+- DeWebHub 代理在每条链上地址相同，因此只靠 chainId 区分各链的域：为一条链签的委托在其它每条链上都是另一个摘要，验证方在那里 MUST NOT 接受它。将来加入 §3.1 而没有 DeWebHub 的链需要自己的 verifyingContract，由加入该链的 TAP 指定。
 - 主类型：`Delegation(address container,address signer,uint64 expires)`。
 - `DELEGATION_TYPEHASH = keccak256("Delegation(address container,address signer,uint64 expires)") = 0xc5081f9dc7e79dfbe7f3b3220ed9e7a29d0bc53239ee74dc184e4ac1f810948c`。
 - `structHash = keccak256(abi.encode(DELEGATION_TYPEHASH, container, signer, expires))`。
@@ -488,13 +518,15 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 
 ### 3.6 解析算法
 
-输入：标签、TapeOut 名称 `<#ID>.<processor>.tape`、容器地址或 `(circuits, tokenId)` 二元组。输出：`{ manifest, container, verified: { delegation, holder } }` 或错误。
+输入：标签、TapeOut 名称 `<#ID>.<processor>.tape` 或 `<#ID>.<area>.<processor>.tape`、容器地址或 `(circuits, tokenId)` 二元组。输出：`{ manifest, container, verified: { delegation, holder } }` 或错误。
 
 1. **定位。** 若输入为标签，`container = ServiceDirectory.resolve(label)`；零地址 → `NOT_FOUND`。若输入为 `(circuits, tokenId)`，`container = DeWebHub.accountOf(circuits, tokenId)`。若输入为 TapeOut 名称 `<#ID>.<processor>.tape`（规范形式见 TapeKit SPEC §2.2：两部分均为十进制、除 `0` 本身外无前导零、全小写、`#ID ≥ 1`；客户端 MAY 另外接受不带后缀的 `<#ID>.<processor>`，TapeKit SPEC §2.4 允许地址栏把它当作同一名称接受），则完全按 TapeKit SPEC §3.2 的方式解析：先在 TapeOut 处理器工厂（见步骤 3）上取 `circuits = factory.cpuAt(processor)`，再取 `container = DeWebHub.accountOf(circuits, #ID)`；处理器编号超出最后一个（`cpuAt` 回滚）→ `NOT_FOUND`。这种形式的字符串是名称，永远不是标签，也不在任何目录中查找。看起来像名称但不符合该形式的字符串（前导零、大写的 `.TAPE`、`#ID` 为 0）MUST 被拒绝而不是猜测，也不作为标签查找，使任何标签都无法抢注某个名称的写法。TapeKit 的其它地址栏形式（`#4246@0`、`tape://4246.0.tape/`）不是本算法的输入：外壳先把它们转换成规范名称，参考 SDK 则像对待非规范写法一样拒绝它们。若输入为容器，按原样使用。
 
+   **链。** `(circuits, tokenId)` 二元组或容器本身不指明链；客户端在随它给出的链上解析，否则在客户端自己配置的链上解析。TapeOut 名称由区号选择链：不带区号的是 BNB Smart Chain。区号为保留值或不在 §3.1 中的名称 MUST 像其它非规范写法一样被拒绝，也不作为标签查找。之后每一步（清单、`accountOf`、该链工厂上的 `isCPU`、`ownerOf`、委托）都在选定的链上进行，`eth_call` 发往该链的节点。客户端 SHOULD 告诉用户服务在哪条链上。
+
    名称形式在 `(circuits, tokenId)` 路径之外不增加任何信任：它只是用按 §3.2 进行的链上读取算出这一二元组，步骤 2–5 照常执行，因此步骤 3 仍会用清单自己的 `(circuits, tokenId)` 重新推导容器并检查 `isCPU`。
 2. **读取清单。** 先 `fileInfo(container, path)` 再 `read(container, path)`，二者均需法定人数一致（§3.2）。校验长度与 SHA-256。解析 JSON；按 §3.3 校验。失败 → `MANIFEST_INVALID`。
-3. **推导。** `derived = DeWebHub.accountOf(manifest.circuits, manifest.tokenId)`。除非 `derived == manifest.container == container`，客户端 MUST 拒绝；且除非 TapeOut 处理器工厂（chainId 56 上的 `0x68224F668083c29e9800Be2a646d42d18cedF7e2`）对 `isCPU(manifest.circuits)` 回答 `true`，客户端 MUST 拒绝：`accountOf` 对任何 ERC-721 都能推导出地址，没有这一检查，任何人都能部署一个仿冒的代币合约，把它的账户当作 TapeOut 容器出示（TapeKit SPEC §3.3 第 2 步）。失败 → `MANIFEST_INVALID`。
+3. **推导。** `derived = DeWebHub.accountOf(manifest.circuits, manifest.tokenId)`。除非 `derived == manifest.container == container`，客户端 MUST 拒绝；且除非 服务所在链的 TapeOut 处理器工厂（§3.1；chainId 56 上为 `0x68224F668083c29e9800Be2a646d42d18cedF7e2`）对 `isCPU(manifest.circuits)` 回答 `true`，客户端 MUST 拒绝：`accountOf` 对任何 ERC-721 都能推导出地址，没有这一检查，任何人都能部署一个仿冒的代币合约，把它的账户当作 TapeOut 容器出示（TapeKit SPEC §3.3 第 2 步）。失败 → `MANIFEST_INVALID`。
 4. **持有者。** `holder = IERC721(manifest.circuits).ownerOf(manifest.tokenId)`。回滚 → `MANIFEST_INVALID`。
 5. **委托。** `manifest.delegation` MUST 存在（§3.3）。以 `signer = manifest.signer` 按 §3.4 验证；恢复出的地址 MUST 等于 `holder`（或 `holder` 按 EIP-1271 认可该签名，§3.4），且 `expires` MUST 尚未过期。失败 → `DELEGATION_INVALID`。
 6. **返回**，`verified.delegation = true`，`verified.holder = holder`。
@@ -656,7 +688,7 @@ amount = sum / 1 000 000，向上取整到 8 位小数
 
 ## 5. 向后兼容
 
-本 TAP 不向 `SPEC.md` 添加任何内容。不改变名称语法 `<#ID>.<processor>.tape`、容器推导、文件校验规则或多节点一致规则。不使用 `tape.api` 的站点不受影响。`tapeapi` 不是 `"0.N"`（N ≥ 1）的清单会被本版本拒绝。
+本 TAP 不向 `SPEC.md` 添加任何内容。不改变名称语法 `<#ID>.<processor>.tape` 与 TapeKit 为其它链定义的带区号名称、容器推导、文件校验规则或多节点一致规则。不使用 `tape.api` 的站点不受影响。`tapeapi` 不是 `"0.N"`（N ≥ 1）的清单会被本版本拒绝。
 
 ## 6. 测试向量
 
@@ -691,6 +723,14 @@ amount = sum / 1 000 000，向上取整到 8 位小数
 | `DELEGATION_TYPEHASH` | `0xc5081f9dc7e79dfbe7f3b3220ed9e7a29d0bc53239ee74dc184e4ac1f810948c` |
 | `structHash` | `0x525ae7f6670fd36175882a96c6f8491af6c83c3ebb4ab51437a9733ecc7dd6da` |
 | `digest` | `0xf0ef7315ef455303fb4a7d8a301ca84f25e9fbd0641e931cdb01e7f7e8bcaa9a` |
+
+同一输入在其它链上（只有 `chainId` 与 `verifyingContract` 所在链不同；三条链的 DeWebHub 地址相同）：
+
+| chainId | `DOMAIN_SEPARATOR` | `digest` |
+|---|---|---|
+| 56 | `0xa73ee348b5672f12dbc174f66a7d162c69e0d64befdba88475d9d7e3c0fd3ac7` | `0xf0ef7315ef455303fb4a7d8a301ca84f25e9fbd0641e931cdb01e7f7e8bcaa9a` |
+| 196 | `0xf9c5be6dcd7d4cfdf9c57717c7d6a7e04bccd499d2a7f3fcfdc603cc7f1f3ad6` | `0xf4f57ad38c3efd363cbd271e3fc9fa7a54a1302db7f6adcc202a53f8a7cd529a` |
+| 8453 | `0xab3b0c6f3cecceb9d441893c56616889d71cf893f74296dc2229a6f241238516` | `0x741c7e6412012f5134d127404641a4eb294c77e30a7b19104aece30efe1be9b9` |
 
 ### 6.3 AI 价目表与金额（§3.9）
 

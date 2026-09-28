@@ -1,0 +1,19 @@
+[
+  { "id": "gpt-5-mini", "aliases": ["gpt-5-mini-2025-08-07"], "prices": [
+    { "currency": "USDT", "unit": "1M tokens", "input": "0.25", "output": "2", "cacheRead": "0.025" },
+    { "currency": "USD", "unit": "1M tokens", "input": "0.25", "output": "2", "cacheRead": "0.025" }
+  ] },
+  { "id": "claude-sonnet-4-5", "aliases": ["claude-sonnet-4-5-20250929"], "prices": [
+    { "currency": "USDT", "unit": "1M tokens", "input": "3", "output": "15", "cacheRead": "0.3", "cacheWrite": "3.75", "cacheWrite1h": "6" },
+    { "currency": "USD", "unit": "1M tokens", "input": "3", "output": "15", "cacheRead": "0.3", "cacheWrite": "3.75", "cacheWrite1h": "6" }
+  ] },
+  { "id": "deepseek-chat", "prices": [
+    { "currency": "USDT", "unit": "1M tokens", "input": "0.28", "output": "0.42", "cacheRead": "0.028" }
+  ] },
+  { "id": "deepseek-reasoner", "prices": [
+    { "currency": "USDT", "unit": "1M tokens", "input": "0.28", "output": "0.42", "cacheRead": "0.028", "reasoning": "0.42" }
+  ] },
+  { "id": "text-embedding-3-small", "formats": ["openai-embeddings"], "prices": [
+    { "currency": "USDT", "unit": "1M tokens", "input": "0.02", "output": "0" }
+  ] }
+]

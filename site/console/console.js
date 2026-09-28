@@ -6,7 +6,14 @@
 import * as C from './lib.js'
 
 const $ = (id) => document.getElementById(id)
+// ChannelBus (Advanced) runs on BNB Chain only (TapeAPI does not follow it to L2s). / ChannelBus（高级）只在 BNB Chain。
 const BSC = '0x38'
+// The chain steps 1-5 read and publish on: ?chain=56|196|8453 (the selector in step 1 sets it), BNB Chain by default.
+// The page reloads when it changes, so everything below runs for one chain.
+// 第 1–5 步读取与发布所在的链：?chain=56|196|8453（第 1 步的选择框设置它），默认 BNB Chain。切换时页面重新加载。
+const pre = C.prefillFromQuery(location.search)
+const CHAIN = C.useChain(pre.chainId ?? 56)   // lib reads, signs and builds for this chain from here on / 此后 lib 按这条链读、签、构造
+const CHAIN_HEX = CHAIN.hex
 const store = { get: (k) => { try { return JSON.parse(localStorage.getItem(k)) } catch { return null } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch { /* private mode */ } } }
 // Text in the current language (for strings: errors, button labels). / 当前语言的文本（用于字符串：错误、按钮文字）。
 const t = (zh, en) => (document.documentElement.getAttribute('data-lang') === 'zh' ? zh : en)
@@ -14,10 +21,11 @@ const t = (zh, en) => (document.documentElement.getAttribute('data-lang') === 'z
 const bi = (zh, en) => { const f = document.createDocumentFragment(); for (const [l, s] of [['zh', zh], ['en', en]]) { const sp = document.createElement('span'); sp.lang = l; sp.textContent = s; f.append(sp) } return f }
 const nodes = (content) => [].concat(content)
 const say = (el, content, cls = '') => { el.className = `status ${cls}`; el.replaceChildren(...nodes(content)) }
-// A transaction hash as a BscScan link; anything that is not a hash stays plain text. / 交易哈希显示为 BscScan 链接；不是哈希的保持纯文本。
+// A transaction hash as a link to the chain's explorer (BscScan, OKLink, BaseScan); anything that is not a hash stays
+// plain text. / 交易哈希显示为该链浏览器的链接；不是哈希的保持纯文本。
 const txLink = (hash) => {
   if (!/^0x[0-9a-fA-F]{64}$/.test(String(hash))) return document.createTextNode(String(hash))
-  const a = document.createElement('a'); a.href = `https://bscscan.com/tx/${hash}`; a.target = '_blank'; a.rel = 'noopener'; a.className = 'mono'; a.textContent = hash; return a
+  const a = document.createElement('a'); a.href = CHAIN_HEX === BSC ? `https://bscscan.com/tx/${hash}` : `${CHAIN.explorer}/tx/${hash}`; a.target = '_blank'; a.rel = 'noopener'; a.className = 'mono'; a.textContent = hash; return a
 }
 const eth = window.ethereum
 let cfg = null, account = null
@@ -38,17 +46,18 @@ eth?.on?.('chainChanged', () => location.reload())
 async function ensureSame() {
   const [a] = await rpc('eth_accounts')
   if (!a || a.toLowerCase() !== account.toLowerCase()) throw new Error(t(`钱包当前账户（${a || '无'}）不是连接时的 ${account}，请刷新页面重新连接`, `the wallet's current account (${a || 'none'}) is not ${account}, which was connected; reload the page and connect again`))
-  if ((await rpc('eth_chainId')) !== BSC) throw new Error(t('钱包已不在 BNB Chain', 'the wallet is no longer on BNB Chain'))
+  if ((await rpc('eth_chainId')) !== CHAIN_HEX) throw new Error(t(`钱包已不在 ${CHAIN.name}`, `the wallet is no longer on ${CHAIN.name}`))
 }
 const hexToBig = (h) => BigInt(h)
-const fmtBNB = (wei) => { const s = (Number(wei) / 1e18).toFixed(8).replace(/0+$/, '').replace(/\.$/, ''); return `${s} BNB` }
+const fmtBNB = (wei, cur = 'BNB') => { const s = (Number(wei) / 1e18).toFixed(8).replace(/0+$/, '').replace(/\.$/, ''); return `${s} ${cur}` }
 const isAddr = (a) => /^0x[0-9a-fA-F]{40}$/.test(a)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const notMined = (hash) => t(`6 分钟内没有上链，稍后用交易哈希 ${hash} 在 BscScan 查看`, `not mined within 6 minutes; look up ${hash} on BscScan later`)
+const notMined = (hash) => t(`6 分钟内没有上链，稍后用交易哈希 ${hash} 在 ${CHAIN.explorerName} 查看`, `not mined within 6 minutes; look up ${hash} on ${CHAIN.explorerName} later`)
 const failed = (rc) => t(`交易失败（status ${rc.status}）`, `the transaction failed (status ${rc.status})`)
 
 const svcState = () => store.get('svc') || {}
 const saveSvc = (patch) => store.set('svc', { ...svcState(), ...patch })
+// Reads go through the wallet, on the chain it was switched to in step 1. / 读取经过钱包，在第 1 步切换到的链上进行。
 const call = async (to, data) => rpc('eth_call', [{ to, data }, 'latest'])
 const copyBtn = (label, value) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ghost'; b.textContent = label; b.onclick = async () => { try { await navigator.clipboard.writeText(value); b.textContent = t('已复制', 'Copied') } catch { b.textContent = t('复制失败，请长按上面的文字', 'Copy failed; long-press the text above') } }; return b }
 const kv = (host, rows) => { const dl = document.createElement('dl'); for (const [k, v] of rows) { const dt = document.createElement('dt'); dt.replaceChildren(...nodes(k)); const dd = document.createElement('dd'); dd.className = 'mono'; dd.textContent = v; dl.append(dt, dd) } host.append(dl) }
@@ -72,14 +81,16 @@ $('btn-connect').onclick = async () => {
   try {
     const accs = await rpc('eth_requestAccounts')
     let cid = await rpc('eth_chainId')
-    if (cid !== BSC) {
-      try { await rpc('wallet_switchEthereumChain', [{ chainId: BSC }]); cid = await rpc('eth_chainId') } catch { /* the user refused */ }
+    if (cid !== CHAIN_HEX) {
+      // A wallet without this chain answers 4902: it has to be added in the wallet first. / 钱包没有这条链时答 4902：须先在钱包里添加。
+      try { await rpc('wallet_switchEthereumChain', [{ chainId: CHAIN_HEX }]); cid = await rpc('eth_chainId') } catch { /* the user refused, or the wallet lacks the chain */ }
     }
-    if (cid !== BSC) { say($('wallet-status'), bi(`钱包当前不在 BNB Chain（chainId ${parseInt(cid, 16)}），请切换到 BNB Smart Chain 再连接。`, `The wallet is not on BNB Chain (chainId ${parseInt(cid, 16)}). Switch to BNB Smart Chain and connect again.`), 'bad'); return }
+    if (cid !== CHAIN_HEX) { say($('wallet-status'), bi(`钱包当前不在 ${CHAIN.name}（chainId ${parseInt(cid, 16)}），请在钱包里切换到 ${CHAIN.name}（chainId ${CHAIN.chainId}；钱包里没有这条链就先添加）再连接。`, `The wallet is not on ${CHAIN.name} (chainId ${parseInt(cid, 16)}). Switch the wallet to ${CHAIN.name} (chainId ${CHAIN.chainId}; add the network first if the wallet lacks it) and connect again.`), 'bad'); return }
     account = accs[0]   // only once the chain is right, so steps 2-5 stay off on another chain / 链正确之后才记下账户
     const bal = await rpc('eth_getBalance', [account, 'latest'])
-    say($('wallet-status'), bi(`已连接 ${account}（BNB Chain，余额 ${fmtBNB(hexToBig(bal))}）`, `Connected ${account} (BNB Chain, balance ${fmtBNB(hexToBig(bal))})`), 'ok')
-    $('btn-estimate').disabled = !cfg; $('btn-verify').disabled = false
+    say($('wallet-status'), bi(`已连接 ${account}（${CHAIN.name}，余额 ${fmtBNB(hexToBig(bal), CHAIN.currency)}）`, `Connected ${account} (${CHAIN.name}, balance ${fmtBNB(hexToBig(bal), CHAIN.currency)})`), 'ok')
+    // ChannelBus (Advanced) is BNB Chain only / ChannelBus（高级）只在 BNB Chain
+    $('btn-estimate').disabled = !cfg || CHAIN_HEX !== BSC; $('btn-verify').disabled = CHAIN_HEX !== BSC
     await checkPending()
     refreshDeployButton()
   } catch (e) { say($('wallet-status'), bi(`连接失败：${e.message}`, `Could not connect: ${e.message}`), 'bad') }
@@ -105,7 +116,7 @@ async function checkPending() {
 function refreshDeployButton() {
   const prev = store.get('channelbus.deployed')
   const waiting = store.get('channelbus.pending')?.hash && !prev?.address
-  $('btn-deploy').disabled = !account || !cfg || ((prev?.address || waiting) && !$('again').checked)
+  $('btn-deploy').disabled = !account || !cfg || CHAIN_HEX !== BSC || ((prev?.address || waiting) && !$('again').checked)
 }
 $('again').onchange = refreshDeployButton
 
@@ -195,8 +206,16 @@ load()
 // lib prefillFromQuery fill the step 2 and step 4 fields; nothing is read, signed or sent until you tap a button.
 // 面板“去操作台续期”这类链接可带 ?processor=&circuit=&url=。只有通过 lib prefillFromQuery 检查的值会填进第 2 步和第 4 步的
 // 输入框；在你点按钮之前，本页不读取、不签名、不发送任何东西。
+// The chain selector (step 1): a change reloads the page on that chain, keeping the other prefilled values.
+// 选链（第 1 步）：切换后在那条链上重新加载页面，其它预填值保留。
+$('chain').value = String(CHAIN.chainId)
+$('chain').addEventListener('change', () => {
+  const u = new URL(location.href)
+  if ($('chain').value === '56') u.searchParams.delete('chain'); else u.searchParams.set('chain', $('chain').value)
+  location.replace(u.toString())
+})
+$('chain-note').hidden = CHAIN_HEX === BSC
 {
-  const pre = C.prefillFromQuery(location.search)
   if (pre.processor) $('c-proc').value = pre.processor
   if (pre.circuit) $('c-id').value = pre.circuit
   if (pre.url) $('svc-url').value = pre.url
@@ -204,7 +223,7 @@ load()
 
 // ---------------------------------------------------------------- steps 2-5: publish a service ----
 function showVars() {
-  const s = svcState(), out = $('vars-out'); out.replaceChildren()
+  const s = hereSvc(), out = $('vars-out'); out.replaceChildren()
   if (!s.container) return
   note(out, null, bi('在同一个 Cloudflare 页面再添加这几个变量（类型 Text）：', 'On the same Cloudflare page, also add these variables (type Text):'))
   for (const [k, v] of [['CIRCUITS', s.circuits], ['TOKEN_ID', s.tokenId], ['CONTAINER', s.container], ...(s.sig ? [['DELEGATION_EXPIRES', String(s.expires)], ['DELEGATION_SIG', s.sig]] : [])]) {
@@ -234,8 +253,10 @@ function showOnChain(out, a) {
   note(out, true, bi('✓ 链上清单的委托是你（当前持有人）签的，授权的就是上面这个签名地址。续期不必换密钥：在第 4 步点「续期」。', '✓ The delegation on chain was signed by you, the current holder, and authorises the signing address above. Renewing needs no new key: use "Renew" in step 4.'))
 }
 
+// A circuit read on another chain (the selector changed since) is not this page's circuit. / 在别的链上读到的电路不算。
+const hereSvc = () => { const s = svcState(); return (s.chainId ?? 56) === CHAIN.chainId ? s : {} }
 const enableSvc = () => {
-  const s = svcState(), again = s.published || s.publishPending
+  const s = hereSvc(), again = s.published || s.publishPending
   $('btn-circuit').disabled = !account; $('btn-deleg').disabled = !account || !s.container
   $('renew-box').hidden = !onChain?.ok
   $('btn-renew').disabled = !account || !s.container || !onChain?.ok || $('moved').checked
@@ -244,7 +265,7 @@ const enableSvc = () => {
     $('republish-wrap').hidden = false; $('publish-prev').hidden = false
     $('publish-prev').replaceChildren(...(s.published
       ? [bi('这台设备上已发布过（', 'Already published from this device ('), txLink(s.published), bi('）。只有在第 4 步续期委托后才需要再发布。', '). Publish again only after renewing the delegation in step 4.')]
-      : [bi('有一笔发布交易还在等待：', 'A publish transaction is still waiting: '), txLink(s.publishPending), bi('。先在 BscScan 查看，不要重复发送。', '. Check it on BscScan first; do not send it twice.')]))
+      : [bi('有一笔发布交易还在等待：', 'A publish transaction is still waiting: '), txLink(s.publishPending), bi(`。先在 ${CHAIN.explorerName} 查看，不要重复发送。`, `. Check it on ${CHAIN.explorerName} first; do not send it twice.`)]))
   }
 }
 new MutationObserver(enableSvc).observe($('wallet-status'), { childList: true, characterData: true, subtree: true })
@@ -263,7 +284,7 @@ $('btn-circuit').onclick = async () => {
     note(out, true, bi('✓ 容器已开通', '✓ The container is open'))
     // A circuit read here starts a new publication: the previous one's "already published" guard does not carry over.
     // 在这里读到的电路是一次新的发布：上一个的“已发布过”标记不沿用。
-    saveSvc({ circuits: c.circuits, tokenId: c.tokenId, container: c.container, holder: c.holder, sig: undefined, expires: undefined, published: undefined, publishPending: undefined })
+    saveSvc({ chainId: CHAIN.chainId, circuits: c.circuits, tokenId: c.tokenId, container: c.container, holder: c.holder, sig: undefined, expires: undefined, published: undefined, publishPending: undefined })
     showVars(); enableSvc()
     // A manifest already on chain whose delegation you signed can be renewed for the same key (step 4).
     // 链上已有、委托由你签的清单，可以为同一把密钥续期（第 4 步）。
@@ -299,7 +320,7 @@ $('moved').onchange = enableSvc
 async function signDelegation(renew) {
   const out = $('deleg-out'); out.replaceChildren()
   try {
-    const s = svcState(), base = $('svc-url').value.trim().replace(/\/+$/, '')
+    const s = hereSvc(), base = $('svc-url').value.trim().replace(/\/+$/, '')
     if (!C.isServiceBase(base)) { note(out, false, bi(`服务网址必须是 https://主机名，不带路径（现在是 ${base}）。`, `The service URL must be https://hostname with no path (it is ${base}).`)); return }
     if (!renew && !s.keyAddress) { note(out, false, bi('本页没有记录你生成的服务密钥。请回到第 3 步重新生成，并把新的 SIGNER_KEY 设到 Cloudflare。', 'This page has no record of a generated service key. Go back to step 3, generate one, and set the new SIGNER_KEY in Cloudflare.')); return }
     const h = await (await fetch(`${base}/tapeapi/v1/health`, { cache: 'no-store' })).json()
@@ -336,6 +357,7 @@ async function signDelegation(renew) {
       return
     }
     const expires = Math.floor(Date.now() / 1000) + 90 * 86400
+    // signed for the page's chain (C.useChain): EIP-712 domain (chainId, DeWebHub) / 为本页的链签：EIP-712 域 (chainId, DeWebHub)
     const typed = renew ? C.delegationTypedData({ container: s.container, signer: d.signer, expires }) : C.delegationTypedData({ container: s.container, signer: s.keyAddress, expires })
     kv(out, [[renew ? bi('授权的签名地址（链上清单里你已授权的密钥）', 'Signing address authorised (the key you already authorised on chain)') : bi('授权的签名地址（第 3 步生成的密钥）', 'Signing address authorised (the key from step 3)'), d.signer], [bi('代表的容器', 'For the container'), s.container], [bi('服务网址', 'Service URL'), `${base}/tapeapi/v1`], [bi('到期', 'Expires'), new Date(expires * 1000).toLocaleString()]])
     if (renew) note(out, null, bi(`续期：链上委托（到期 ${fmtDate(d.onChain.expires)}）是你签给这个地址的，服务也报出同一个地址。新委托只把它的期限延长到上面的日期，不授权任何新密钥。`, `Renewal: the delegation on chain (expires ${fmtDate(d.onChain.expires)}) is yours, for this address, and the service reports the same address. The new delegation only extends it to the date above; it authorises no new key.`))
@@ -385,7 +407,7 @@ $('btn-publish').onclick = async () => {
   $('btn-publish').disabled = true   // one tap, one transaction (review F5) / 一次点击一笔交易
   let sent = false
   try {
-    const s = svcState(), base = s.endpoint.replace(/\/tapeapi\/v1$/, '')
+    const s = hereSvc(), base = s.endpoint.replace(/\/tapeapi\/v1$/, '')
     const served = await (await fetch(`${base}/.well-known/tapeapi.json`, { cache: 'no-store' })).text()
     const problems = C.manifestProblems(served, s)
     if (problems.length) { note(out, false, bi(`服务提供的清单与你签的不一致，暂不上链：${problems.join('；')}。通常是变量还没生效，等一两分钟再试。`, `The manifest the service serves does not match what you signed, so nothing is published: ${problems.join('; ')}. Usually the variables have not taken effect yet; retry in a minute or two.`)); return }
@@ -423,7 +445,7 @@ $('btn-publish').onclick = async () => {
     // the container and the manifest's SHA-256 (both without 0x). / 确认前可对照钱包显示的内容：发往 SiteRegistry，数据里有容器和清单的 SHA-256（都不带 0x）。
     kv(out, [[bi('容器', 'Container'), s.container], [bi('清单 SHA-256', 'Manifest SHA-256'), sha], [bi('交易发往（SiteRegistry）', 'Transaction to (SiteRegistry)'), tx.to]])
     note(out, null, bi('请在钱包里确认写入交易（SiteRegistry.putFile）。确认前请对照：交易发往上面的 SiteRegistry 地址，交易数据里包含上面的容器地址和 SHA-256（不带 0x）。', 'Confirm the write (SiteRegistry.putFile) in your wallet. Before confirming, compare: the transaction goes to the SiteRegistry address above, and its data contains the container address and the SHA-256 above (without 0x).'))
-    const hash = await rpc('eth_sendTransaction', [{ from: account, chainId: BSC, to: tx.to, data: tx.data, value: tx.value }])
+    const hash = await rpc('eth_sendTransaction', [{ from: account, chainId: CHAIN_HEX, to: tx.to, data: tx.data, value: tx.value }])
     sent = true; saveSvc({ publishPending: hash })
     note(out, null, [bi('已发出 ', 'Sent '), txLink(hash), bi('，等待上链…', ', waiting for it to be mined…')])
     let rc = null

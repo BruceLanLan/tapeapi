@@ -4,7 +4,7 @@ export interface RpcNode {
   readonly operator: string
 }
 
-/** Default JSON-RPC nodes per chain id, each of a distinct operator (chain 56: NodeReal, Alchemy, 48 Club). */
+/** Default JSON-RPC nodes per chain id (56: NodeReal, Alchemy, 48 Club; 196: OKX x2, dRPC -- two operators, no spare; 8453: Coinbase, Allnodes, dRPC, Tenderly). */
 export declare const RPC_DEFAULTS: Readonly<Record<number, readonly RpcNode[]>>
 
 /** The default node URLs for a chain, as a fresh array; [] for a chain without defaults. */

@@ -17,7 +17,7 @@ TapeAPI 是 BNB Chain 上 [TapeOut](https://tapeout.net) 生态的服务与通�
 
 [English](README.md) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [手册](https://tapeapi.fun/docs/zh/) · [网站](https://tapeapi.fun) · [更新日志](CHANGELOG.md) · [路线图](docs/ROADMAP.md) · [参与贡献](CONTRIBUTING.md) · [行为准则](CODE_OF_CONDUCT.md)
 
-> **状态：pre-alpha（v0.5.0）。** 免费层不需要我们的任何合约，运行在 TapeOut 已部署的合约之上。
+> **状态：pre-alpha（v0.6.0）。** 免费层不需要我们的任何合约，运行在 TapeOut 已部署的合约之上。
 > 我们自己的合约（付费调用托管合约、服务目录、ChannelBus）**未经第三方审计**；ChannelBus 已部署（地址见下文）。
 > 接口仍可能变化。下文的 TAP 编号是向 TapeKit 维护者**提议**的编号，尚未正式分配。
 
@@ -39,7 +39,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz
 ```
 
 把下面的代码保存为 `try.mjs`，**放在 `tapeapi` 目录之内**（`@tapeapi/sdk` 通过仓库的 workspace 解析；保存在其它任何位置

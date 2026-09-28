@@ -9,7 +9,7 @@ EIP-712 vouchers against an escrow; nothing is signed or sent without you.
 ## Install
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz
 ```
 
 Not on the npm registry yet: each GitHub release carries the package file. Built from https://github.com/BruceLanLan/tapeapi
@@ -32,6 +32,14 @@ console.log(result.bnbUsd, verified)                // price of BNB in USDT, sig
 
 `api.callQuorum([svcA, svcB], method, params)` asks independent providers and accepts only an answer they agree on.
 
+**X Layer and Base.** TapeOut names on other chains carry an area code: `1.2.344.tape` is circuit 1 of processor 344
+on X Layer (chainId 196, area 2), `1.3.5.tape` is on Base (chainId 8453, area 3). `api.resolve()` reads such a name on its
+own chain (identity, manifest and a delegation signed for that chain's EIP-712 domain), through `chains: { 196: { rpcUrls } }`
+or else that chain's defaults (`rpcUrlsFor(196)`: OKX and dRPC, two operators, so no spare). `{ chainId, circuits, tokenId }`
+works too, and every resolved service carries its `chainId`. Payments stay on BNB Smart Chain: a priced method of an L2
+service is refused. `CHAINS`, `parseTapeName` and `formatTapeName` (also `@tapeapi/sdk/chains`) hold the addresses and the
+naming rules.
+
 ## Subpaths
 
 | Import | What |
@@ -39,6 +47,7 @@ console.log(result.bnbUsd, verified)                // price of BNB in USDT, sig
 | `@tapeapi/sdk` | `createTapeAPI`, `createRpc`, `TapeAPIError`, `MAINNET`, `BUS_RPC_URLS`, `RPC_DEFAULTS` / `rpcUrlsFor` / `operatorOf` (default nodes per chain and who runs them; quorums count operators, not URLs), and the `abi`, `sig`, `channel`, `group`, `tapesend`, `webmcp` namespaces |
 | `@tapeapi/sdk/webmcp` | `exposeTapeAPI`, `manifestToTools`: a service's methods as WebMCP tools for in-browser agents |
 | `@tapeapi/sdk/channel` | TAP-26 private channels (invites, relay and ChannelBus transports) |
+| `@tapeapi/sdk/chains` | `CHAINS` (BNB Smart Chain, X Layer, Base: factory, opener, DeWebHub, SiteRegistry, area code), `parseTapeName`, `formatTapeName` |
 | `@tapeapi/sdk/rpc`, `/abi`, `/sig`, `/canon`, `/manifest` | the building blocks |
 
 ## Local MCP server: `tapeapi-mcp`
@@ -47,11 +56,11 @@ The package ships a command that exposes any TapeAPI service's free methods as M
 Cursor, any MCP client), and verifies every answer in your own process before the model sees it:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ```json
-{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
+{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
 ```
 
 - **Identity from the chain.** Each service (a TapeOut name like `11.1013.tape` or a container address) is resolved

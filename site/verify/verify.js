@@ -4,15 +4,20 @@
 // Everything in a receipt is untrusted text: it reaches the page through textContent only, never as HTML.
 // 回执核验页：从链接的 #r= 片段或用户粘贴的内容读出回执，恢复签名者，用真实 SDK 在链上解析服务，并用平实的话说明结论。
 // 手写；SDK 用调试台 vendor/ 里的同一份，纯逻辑在 lib.js（离线测试）。回执里的一切都是不可信文本，只经 textContent 进入页面。
-import { createTapeAPI, sig, abi, rpcUrlsFor, operatorOf } from '../playground/vendor/tapeapi-sdk/index.js'
-import { readAny, verifyReceipt, verifyUsage, signedBlock, utc, ReceiptError } from './lib.js'
+import { createTapeAPI, sig, abi, rpcUrlsFor, operatorOf, CHAINS, parseTapeName } from '../playground/vendor/tapeapi-sdk/index.js'
+import { readAny, verifyReceipt, verifyUsage, signedBlock, utc, ReceiptError, chainOfReceipt } from './lib.js'
 import { modelEntryOf, validateAIField, formatOfMethod, MANIFEST_FIELD } from '../playground/vendor/tapeapi-sdk/ai.js'
 import { T } from './strings.js'
 
 // The SDK's default nodes: three distinct operators (NodeReal, Alchemy, 48 Club); the SDK counts agreement by operator.
-// SDK 的默认节点：三家不同运营方；SDK 按运营方计票。
+// A receipt of a service on X Layer or Base (its name carries area code 2 or 3; an AI receipt's container answers token()
+// there) is read on that chain through the SDK's defaults for it, with the same operator quorum.
+// SDK 的默认节点：三家不同运营方；SDK 按运营方计票。X Layer 或 Base 上服务的回执（名字带区号 2 或 3；AI 回执的容器在那条链上
+// 回答 token()）在那条链上读取，用 SDK 对该链的默认节点，法定数相同。
 const RPC_URLS = rpcUrlsFor(56)
 const QUORUM = 2
+const operatorsOn = (chainId) => new Set(rpcUrlsFor(chainId).map(operatorOf)).size
+const chainName = (chainId) => CHAINS[chainId]?.name ?? `chain ${chainId}`
 
 // ── language / 语言 ──────────────────────────────────────────────────────────────────────────────────────────────
 const root = document.documentElement
@@ -61,9 +66,12 @@ async function run(text, fromLink) {
   try {
     // An AI usage receipt names only its container: the service is resolved from it. Its hashes are checked against
     // the request and response bytes only when they were pasted. / AI 用量回执只给出容器，按容器解析；哈希只在粘贴了字节时核对。
+    // An AI receipt's container: the chain on which it answers ERC-6551 token() (BNB Smart Chain first); an outage there is
+    // "could not check", never a verdict. / AI 回执的容器：在哪条链上回答 token()（先看 BNB）；读不到只是"没能核对"。
+    const resolveContainer = async (c) => { const id = await api.chainOfContainer(c); return api.resolve(id && id !== 56 ? { chainId: id, container: c } : c) }
     outcome = kind === 'usage'
-      ? await verifyUsage(receipt, { recover: sig.recoverResponseSigner, resolve: (c) => api.resolve(c), request: $('request-input').value, response: $('response-input').value })
-      : await verifyReceipt(receipt, { recover: sig.recoverResponseSigner, resolve: api.resolve, cpuAt: api.chain.cpuAt })
+      ? await verifyUsage(receipt, { recover: sig.recoverResponseSigner, resolve: resolveContainer, request: $('request-input').value, response: $('response-input').value })
+      : await verifyReceipt(receipt, { recover: sig.recoverResponseSigner, resolve: api.resolve, cpuAt: (p, id) => api.forChain(id ?? 56).chain.cpuAt(p) })
   } finally { if (seq === runSeq) $('check-btn').disabled = false }
   if (seq !== runSeq) return   // a newer receipt was submitted meanwhile / 期间提交了新的回执
   state.outcome = outcome
@@ -157,7 +165,7 @@ function renderChecks(r, o) {
     else if (id === 'sig') {
       if (state === 'pass') { value = code(o.recovered); how = t('c.sig.how') } else value = errText(o.recoverError)
     } else if (id === 'resolve') {
-      if (state === 'pass') { value = el('span', null, m.name ? `${m.name} · ` : '', code(checksum(m.circuits)), ` #${m.tokenId}`); how = t('c.resolve.how', QUORUM, new Set(RPC_URLS.map(operatorOf)).size) } else {
+      if (state === 'pass') { value = el('span', null, m.name ? `${m.name} · ` : '', code(checksum(m.circuits)), ` #${m.tokenId}`); how = `${chainName(o.svc.chainId ?? 56)} · ${t('c.resolve.how', QUORUM, operatorsOn(o.svc.chainId ?? 56))}` } else {
         value = errText(o.resolveError); if (state === 'unknown') how = t('c.network')
       }
     } else if (id === 'container') {
@@ -168,7 +176,7 @@ function renderChecks(r, o) {
       if (m?.delegation?.expires) how = t('c.delegation.how', utc(m.delegation.expires))
     } else if (id === 'name') {
       value = code(r.service.name)
-      if (state === 'pass') how = t('c.name.how', r.service.name.split('.')[1], checksum(r.service.circuits))
+      if (state === 'pass') how = t('c.name.how', parseTapeName(r.service.name).processor, checksum(r.service.circuits))
       else if (state === 'fail') how = o.name?.error ? errText(o.name.error) : t('c.name.bad')
       else how = `${t('c.network')} · ${errText(o.name?.error)}`
     } else if (id === 'signer') {
@@ -197,6 +205,7 @@ function renderDetails(r, o) {
   const service = o?.svc?.manifest?.name ?? (o && !o.svc ? t('d.notResolved') : t('d.none'))
   kv.push([t('d.service'), service])
   if (r.service.name !== undefined) kv.push([t('d.name'), [code(r.service.name), aside('d.name.aside')]])
+  kv.push([t('d.chain'), chainName(o?.svc?.chainId ?? chainOfReceipt(r))])
   kv.push([t('d.container'), code(checksum(r.service.container))])
   kv.push([t('d.circuit'), [code(checksum(r.service.circuits)), ` #${r.service.tokenId}`]])
   kv.push([t('d.method'), code(r.method)])
@@ -220,6 +229,7 @@ function renderUsageDetails(r, o) {
   try { entry = m ? modelEntryOf(validateAIField(m[MANIFEST_FIELD], { allowHttp: true }).models, r.result.model, formatOfMethod(r.method)?.name) : null } catch { entry = null }
   const kv = []
   kv.push([t('d.service'), m?.name ?? (o && !o.svc ? t('d.notResolved') : t('d.none'))])
+  if (o?.svc) kv.push([t('d.chain'), chainName(o.svc.chainId ?? 56)])
   kv.push([t('d.container'), code(checksum(r.container))])
   if (m) kv.push([t('d.circuit'), [code(checksum(m.circuits)), ` #${m.tokenId}`]])
   kv.push([t('d.method'), code(r.method)])

@@ -23,7 +23,7 @@
 import http from 'node:http'
 import { appendFileSync, readFileSync, realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { createTapeAPI, rpcUrlsFor, operatorOf } from '../src/index.js'
+import { createTapeAPI, rpcUrlsFor, operatorOf, parseTapeName, CHAINS, chainByKey } from '../src/index.js'
 import * as ai from '../src/ai.js'
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
@@ -31,7 +31,8 @@ const DEFAULT_RPC = rpcUrlsFor(56)
 const DEFAULT_PORT = 8790
 const REQUEST_LIMIT = 64 * 1024 * 1024
 const RESPONSE_LIMIT = 64 * 1024 * 1024
-const TAPE_NAME_RE = /^(\d+)\.(\d+)\.tape$/
+// A TapeOut name on any supported chain, canonical form (11.1013.tape; 1.2.344.tape on X Layer) / 任一已支持链上的规范名字
+const isTapeName = (s) => { const p = parseTapeName(s); return !!p && !p.error }
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
 // Request headers are forwarded by the same rule as the sidecar's (ai.forwardsHeader): content-type, accept, the client's
 // identity and session headers and each format's own; never cookies, forwarding headers, hop-by-hop headers or
@@ -47,7 +48,8 @@ const USAGE = `tapeapi-verify ${VERSION}: a local proxy that verifies the signed
 
 Usage: tapeapi-verify [options] <service>
 
-  <service>            the AI service: a TapeOut name (11.1013.tape) or a container address (0x...)
+  <service>            the AI service: a TapeOut name (11.1013.tape; on X Layer or Base with its area code, 1.2.344.tape)
+                       or a container address on BNB Smart Chain (0x...)
   --port <n>           local port (default ${DEFAULT_PORT}; 0 = any free port)
   --host <addr>        local address (default 127.0.0.1)
   --log <file>         append one JSON line per verified call (verdict and signed receipt; no prompts, no keys)
@@ -55,6 +57,8 @@ Usage: tapeapi-verify [options] <service>
                        event in place of a stream's final event)
   --max-skew <s>       a receipt's time must be within this many seconds of now (default 300)
   --rpc <url,url,...>  BNB Chain nodes; each chain read needs 2 to agree (default: ${DEFAULT_RPC.length} public nodes of distinct operators)
+  --rpc-xlayer <urls>  X Layer nodes, for a name with area code 2 (default: ${rpcUrlsFor(196).length} public nodes of 2 operators, no spare)
+  --rpc-base <urls>    Base nodes, for a name with area code 3 (default: ${rpcUrlsFor(8453).length} public nodes of distinct operators)
   --dev <url>          TESTING ONLY: read the manifest from a local sidecar, no on-chain identity check
   --quiet              no line for calls that carry no receipt (models, count_tokens, ...)
   --version, --help
@@ -70,7 +74,7 @@ model actually ran.
 `
 
 function parseArgs(argv) {
-  const o = { target: null, dev: null, rpc: null, port: DEFAULT_PORT, host: '127.0.0.1', log: null, strict: false, maxSkew: 300, quiet: false }
+  const o = { target: null, dev: null, rpc: null, chainRpc: {}, port: DEFAULT_PORT, host: '127.0.0.1', log: null, strict: false, maxSkew: 300, quiet: false }
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i], v
     const eq = a.startsWith('--') ? a.indexOf('=') : -1
@@ -90,6 +94,7 @@ function parseArgs(argv) {
       case '--quiet': o.quiet = true; break
       case '--max-skew': o.maxSkew = Number(value()); if (!Number.isFinite(o.maxSkew) || o.maxSkew <= 0) throw new Error('--max-skew must be a positive number of seconds'); break
       case '--rpc': o.rpc = value().split(',').map((s) => s.trim()).filter(Boolean); break
+      case '--rpc-xlayer': case '--rpc-base': o.chainRpc[chainByKey(a.slice(6)).chainId] = value().split(',').map((s) => s.trim()).filter(Boolean); break
       // TESTING ONLY: a local sidecar's manifest over http, no on-chain identity check. / 仅供测试。
       case '--dev': o.dev = value(); break
       default:
@@ -99,7 +104,7 @@ function parseArgs(argv) {
     }
   }
   if (o.target && o.dev) throw new Error('name a service or --dev, not both')
-  if (o.target && !TAPE_NAME_RE.test(o.target) && !ADDRESS_RE.test(o.target)) throw new Error(`${o.target} is not a TapeOut name (11.1013.tape) or a container address`)
+  if (o.target && !isTapeName(o.target) && !ADDRESS_RE.test(o.target)) throw new Error(`${o.target} is not a TapeOut name (11.1013.tape, 1.2.344.tape) or a container address`)
   return o
 }
 
@@ -183,7 +188,13 @@ async function main() {
   }
   const rpcUrls = opts.rpc ?? (opts.target ? DEFAULT_RPC : null)
   if (rpcUrls && new Set(rpcUrls.map(operatorOf)).size < 2) { process.stderr.write('tapeapi-verify: --rpc needs nodes of at least 2 independent operators (every chain read must be agreed by 2)\n'); process.exit(2) }
-  const api = createTapeAPI({ ...(rpcUrls ? { rpcUrls, quorum: 2 } : {}), ...(opts.dev ? { dev: true } : {}) })
+  for (const [id, urls] of Object.entries(opts.chainRpc)) {
+    if (new Set(urls.map(operatorOf)).size < 2) { process.stderr.write(`tapeapi-verify: --rpc-${CHAINS[id].key} needs nodes of at least 2 independent operators\n`); process.exit(2) }
+  }
+  // A name on X Layer or Base is read there (--rpc-xlayer / --rpc-base, or the SDK's defaults for that chain).
+  // X Layer 或 Base 上的名字在那条链上读取。
+  const chains = Object.fromEntries(Object.entries(opts.chainRpc).map(([id, urls]) => [id, { rpcUrls: urls }]))
+  const api = createTapeAPI({ ...(rpcUrls ? { rpcUrls, quorum: 2 } : {}), ...(opts.dev ? { dev: true } : {}), chains })
   let svc, routes
   try {
     svc = await api.resolve(opts.dev ? { dev: opts.dev } : opts.target)
@@ -334,7 +345,7 @@ async function main() {
   const { port } = server.address()
   const local = `http://${opts.host.includes(':') ? `[${opts.host}]` : opts.host}:${port}`
   const m = svc.manifest
-  log(`service ${short(m.name, 80)}  container ${svc.container}  signer ${m.signer}${svc.verified.dev ? '  (DEV: not checked on chain)' : `  holder ${svc.verified.holder}`}`)
+  log(`service ${short(m.name, 80)}  ${svc.chainId && svc.chainId !== 56 ? `on ${CHAINS[svc.chainId]?.name ?? `chain ${svc.chainId}`}  ` : ''}container ${svc.container}  signer ${m.signer}${svc.verified.dev ? '  (DEV: not checked on chain)' : `  holder ${svc.verified.holder}`}`)
   for (const r of routes) log(`  ${r.format.name.padEnd(18)} -> ${r.root}${r.format.baseSuffix}`)
   log(`models priced: ${m[ai.MANIFEST_FIELD].models.map((x) => x.id).slice(0, 12).join(', ')}${m[ai.MANIFEST_FIELD].models.length > 12 ? ', ...' : ''}`)
   log(`listening on ${local}${opts.strict ? '  (strict)' : ''}${opts.log ? `  log ${opts.log}` : ''}`)

@@ -163,9 +163,11 @@ test('FIXED console-F4/F5/F3: the page re-checks the wallet, the container and t
   assert.match(html, /eth\?\.on\?\.\('accountsChanged', \(\) => location\.reload\(\)\)/)
   assert.match(html, /eth\?\.on\?\.\('chainChanged', \(\) => location\.reload\(\)\)/)
   assert.equal((html.match(/await ensureSame\(\)/g) || []).length, 4, 'before the deploy, the test message, the signature and the putFile')
-  assert.equal((html.match(/chainId: BSC,/g) || []).length, 3, 'every transaction names the chain')
+  // Multi-chain (2026-09-28): the manifest goes to the page's chain (CHAIN_HEX); ChannelBus stays on BNB Chain (BSC).
+  // 多链：清单发往本页所在的链（CHAIN_HEX）；ChannelBus 仍在 BNB Chain（BSC）。
+  assert.equal((html.match(/chainId: (?:BSC|CHAIN_HEX),/g) || []).length, 3, 'every transaction names the chain')
   assert.match(html, /C\.recoverAddress\(C\.delegationDigest\(/)
-  assert.ok(html.indexOf("if (cid !== BSC)") < html.indexOf('account = accs[0]'), 'the account is kept only once the chain is right')
+  assert.ok(html.indexOf("if (cid !== CHAIN_HEX)") > 0 && html.indexOf("if (cid !== CHAIN_HEX)") < html.indexOf('account = accs[0]'), 'the account is kept only once the chain is right')
   assert.match(html, /eth_getCode', \[c\.container/, 'step 2 refuses an unopened container')
   assert.match(html, /30cd7471/, 'step 5 translates NotOwner from the pre-flight estimate')
   assert.match(html, /\$\('btn-publish'\)\.disabled = true/, 'one tap, one transaction')

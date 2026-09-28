@@ -19,7 +19,7 @@
   <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="zh-CN">中文</button><button class="hd-btn" id="theme-btn" type="button">Theme</button></div>
 </div></header>
 <div class="layout">
-<nav class="side" id="side" aria-label="Docs"><div class="group"><p class="gtitle">Getting started</p><ul><li><a href="index.html">Introduction</a></li><li><a href="public-api.html">Public API</a></li><li><a href="mcp.html" aria-current="page">Use TapeAPI from Claude, Cursor and other MCP clients</a></li><li><a href="consume.html">Call a service</a></li><li><a href="provide.html">Run a service</a></li></ul></div><div class="group"><p class="gtitle">Features</p><ul><li><a href="channels.html">Private channels</a></li><li><a href="agents.html">AI agents</a></li></ul></div><div class="group"><p class="gtitle">Help</p><ul><li><a href="faq.html">FAQ and troubleshooting</a></li><li><a href="changelog.html">Changelog</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">Home</a></li><li><a href="https://tapeapi.fun/playground/">Playground</a></li><li><a href="https://tapeapi.fun/dashboard/">Dashboard</a></li><li><a href="https://tapeapi.fun/status/">Status</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
+<nav class="side" id="side" aria-label="Docs"><div class="group"><p class="gtitle">Getting started</p><ul><li><a href="index.html">Introduction</a></li><li><a href="public-api.html">Public API</a></li><li><a href="mcp.html" aria-current="page">Use TapeAPI from Claude, Cursor and other MCP clients</a></li><li><a href="consume.html">Call a service</a></li><li><a href="provide.html">Run a service</a></li><li><a href="ai-providers.html">For AI API providers</a></li></ul></div><div class="group"><p class="gtitle">Features</p><ul><li><a href="channels.html">Private channels</a></li><li><a href="agents.html">AI agents</a></li></ul></div><div class="group"><p class="gtitle">Help</p><ul><li><a href="faq.html">FAQ and troubleshooting</a></li><li><a href="changelog.html">Changelog</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">Home</a></li><li><a href="https://tapeapi.fun/playground/">Playground</a></li><li><a href="https://tapeapi.fun/dashboard/">Dashboard</a></li><li><a href="https://tapeapi.fun/status/">Status</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
 <main class="doc">
 <article>
 <h1 id="use-tapeapi-from-claude-cursor-and-other-mcp-clients">Use TapeAPI from Claude, Cursor and other MCP clients</h1>
@@ -66,7 +66,7 @@ Signed by TapeAPI service 11.1013.tape (container 0x1b2A657BcBa9D3229f57aC2f4Fcb
 the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2aWNl...</code></pre></div>
 <h2 id="the-local-verifying-command"><a class="anchor" href="#the-local-verifying-command" aria-hidden="true">#</a>The local verifying command</h2>
 <p><code>tapeapi-mcp</code> is a local MCP server (stdio) in the SDK's release package. It needs Node.js 20 or later. <code>npx</code> fetches it from the GitHub release, not from the npm registry:</p>
-<div class="code"><pre data-lang="bash"><code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz tapeapi-mcp 11.1013.tape</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 11.1013.tape</code></pre></div>
 <p>What it does differently from the remote server:</p>
 <ul><li><strong>It checks every answer itself.</strong> It resolves the service from the chain the way the SDK does (<a href="consume.html">Call a service</a> explains each step), then checks each answer's signature against the key the holder delegated, before the result reaches the model.</li><li><strong>It pins the service's tool definitions.</strong> On first use it records each service's methods (names, descriptions, parameters, prices) and its signing key in <code>~/.tapeapi/mcp-pins.json</code>. If the holder later publishes a manifest where these differ, the command refuses every call to that service, sends nothing, and says what changed. A change can be a legitimate update or a rug pull; the command does not guess. To accept it, restart the command once with <code>--allow-changed</code>, which re-pins the new definitions. A renewed delegation or a new endpoint is not a change.</li><li><strong>It takes any service.</strong> Replace <code>11.1013.tape</code> with the TapeOut name or container address of another TapeAPI service, or list several. Only free methods become tools.</li></ul>
 <p><code>tapeapi-mcp --help</code> lists the other options: <code>--rpc</code> for your own BNB Chain nodes, <code>--pin</code> for another pin file, <code>--no-pin</code> to pin for one session only.</p>
@@ -78,7 +78,7 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2a
       &quot;command&quot;: &quot;npx&quot;,
       &quot;args&quot;: [
         &quot;-y&quot;,
-        &quot;--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz&quot;,
+        &quot;--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz&quot;,
         &quot;tapeapi-mcp&quot;,
         &quot;11.1013.tape&quot;
       ]
@@ -93,7 +93,7 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2a
       &quot;command&quot;: &quot;npx&quot;,
       &quot;args&quot;: [
         &quot;-y&quot;,
-        &quot;--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz&quot;,
+        &quot;--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz&quot;,
         &quot;tapeapi-mcp&quot;,
         &quot;11.1013.tape&quot;
       ]
@@ -101,7 +101,7 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2a
   }
 }</code></pre></div>
 <h3 id="claude-code-2"><a class="anchor" href="#claude-code-2" aria-hidden="true">#</a>Claude Code</h3>
-<div class="code"><pre data-lang="bash"><code>claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz tapeapi-mcp 11.1013.tape</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 11.1013.tape</code></pre></div>
 <h3 id="remote-or-local"><a class="anchor" href="#remote-or-local" aria-hidden="true">#</a>Remote or local</h3>
 <div class="table"><table><thead><tr><th></th><th>Remote server</th><th>Local command</th></tr></thead><tbody><tr><td>Install</td><td>Nothing</td><td>Node.js 20 or later</td></tr><tr><td>Who checks the signature</td><td>Anyone, afterwards, with the link</td><td>The command, before the model sees the result</td></tr><tr><td>Tool list</td><td>As the server lists it</td><td>Read from the on-chain manifest and pinned; a change is refused until you accept it</td></tr><tr><td>Services</td><td><code>11.1013.tape</code></td><td>Any TapeAPI service, by name or container address</td></tr><tr><td>Rate limit</td><td>Per IP address, shared by everyone behind it</td><td>Your own IP address</td></tr></tbody></table></div>
 <h2 id="read-and-verify-a-receipt"><a class="anchor" href="#read-and-verify-a-receipt" aria-hidden="true">#</a>Read and verify a receipt</h2>
@@ -111,7 +111,7 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2a
 <p>Open the verification link. The receipt travels in the part of the URL after <code>#</code>, which browsers never send to a server. The page at <code>https://tapeapi.fun/verify/</code> resolves the service from the chain in your browser, recovers the signer from the signature, checks it against the holder's delegation, and shows the result.</p>
 <h3 id="offline-with-the-sdk"><a class="anchor" href="#offline-with-the-sdk" aria-hidden="true">#</a>Offline, with the SDK</h3>
 <p>Save the receipt (the <code>_meta[&quot;fun.tapeapi/receipt&quot;]</code> object) as <code>receipt.json</code>. Install the SDK from the GitHub release, or work inside a clone of the repository as in <a href="consume.html">Call a service</a>:</p>
-<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz</code></pre></div>
 <div class="code"><pre data-lang="js"><code>import { readFile } from 'node:fs/promises'
 import { createTapeAPI, sig } from '@tapeapi/sdk'
 
@@ -171,7 +171,7 @@ curl -s -X POST http://127.0.0.1:8796/mcp -H 'content-type: application/json' -H
 <p>Then set <code>TOOLS_SHA256</code> (a Worker variable, or the environment for Node) to the <code>mcp.toolsSha256</code> you published. Without it, a proxy that restarts takes whatever tools it reads at start-up as the published ones, and a Worker isolate can be restarted at any time. With it, changed tools are refused after a restart too.</p>
 <h3 id="3-let-people-connect"><a class="anchor" href="#3-let-people-connect" aria-hidden="true">#</a>3. Let people connect</h3>
 <ul><li><strong>By URL.</strong> Users add <code>https://&lt;your host&gt;/mcp</code> to Claude, Cursor or any MCP client, as for the public service at the top of this guide. Every result carries a receipt and a verification link.</li><li><p><strong>With the local command.</strong> <code>tapeapi-mcp</code> takes your TapeOut name (or container address), resolves your service on chain, and shows your tools as your server defines them, after checking them against the digest on chain (v0.5.0 or later):</p>
-<div class="code"><pre data-lang="bash"><code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.5.0/tapeapi-sdk-0.5.0.tgz tapeapi-mcp 42.1013.tape</code></pre></div></li></ul>
+<div class="code"><pre data-lang="bash"><code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 42.1013.tape</code></pre></div></li></ul>
 <h3 id="what-clients-check"><a class="anchor" href="#what-clients-check" aria-hidden="true">#</a>What clients check</h3>
 <ul><li><strong><code>tapeapi-mcp</code></strong> resolves the service and the holder's delegation on chain. It fetches <code>tools/list</code> from <code>mcp.endpoint</code>, computes the digest, and refuses every tool of the service, sending nothing, if it differs from the <code>mcp.toolsSha256</code> on chain. It pins that digest in <code>~/.tapeapi/mcp-pins.json</code> together with the methods and the signing key. Each call goes to <code>/tapeapi/v1/&lt;tool&gt;</code>, and the envelope's signature is checked against the delegated key, bound to this request, before the model sees the result.</li><li><strong>A client connected to <code>/mcp</code> by URL checks nothing itself.</strong> It relies on the proxy, which refuses to serve tools that no longer match the published digest, and on the receipts, which anyone can check afterwards at <code>https://tapeapi.fun/verify/</code>.</li><li><strong>A tool error is still signed as an answer.</strong> When your server returns <code>isError: true</code>, the envelope is <code>ok: true</code>: the signature says what your server answered. Only the proxy's own refusals are <code>ok: false</code>.</li></ul>
 <h3 id="when-you-change-your-tools"><a class="anchor" href="#when-you-change-your-tools" aria-hidden="true">#</a>When you change your tools</h3>

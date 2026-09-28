@@ -4,7 +4,7 @@
 // Everything a manifest, a node or a provider says is untrusted text: it reaches the page through textContent only.
 // “我的服务”面板：只读查看自己运行的 TapeAPI 服务。每一项用真实 SDK（调试台 vendor/ 里的同一份）解析，再从浏览器
 // 直接请求它的健康检查。本页只向钱包发 eth_requestAccounts 取地址。清单、节点、提供者给出的一切只经 textContent 进入页面。
-import { createTapeAPI, TapeAPIError, abi, rpcUrlsFor } from '../playground/vendor/tapeapi-sdk/index.js'
+import { createTapeAPI, TapeAPIError, abi, rpcUrlsFor, CHAINS } from '../playground/vendor/tapeapi-sdk/index.js'
 import { parseInput, classifyExpiry, healthUrl, sameAddress, loadList, saveList, addTo, removeFrom, PUBLIC_EXAMPLES, STORAGE_KEY, HEALTH_PATH } from './lib.js'
 
 // The SDK's default nodes: three distinct operators (NodeReal, Alchemy, 48 Club); the SDK counts agreement by operator.
@@ -28,7 +28,7 @@ const T = {
     walletRefused: (m) => `钱包没有给出地址：${m}`,
     'h.services': '服务', refresh: '刷新全部',
     'add.label': 'TapeOut 名称或容器地址', add: '添加',
-    'add.hint': '填 TapeOut 名称 <code>11.1013.tape</code>（#ID.处理器编号.tape）或容器地址 <code>0x…</code>。列表只存在这台设备的浏览器里。',
+    'add.hint': '填 TapeOut 名称 <code>11.1013.tape</code>（#ID.处理器编号.tape；X Layer 与 Base 上的名字带区号，如 <code>1.2.344.tape</code>）或 BNB Chain 上的容器地址 <code>0x…</code>。列表只存在这台设备的浏览器里。',
     empty: '还没有服务。先添加两个公共示例看看效果：公共 API（11.1013.tape）与公共中继（12.1013.tape）。',
     examples: '添加公共示例',
     'add.bad': '看不懂这个输入：请填 11.1013.tape 这样的名称，或 0x 开头的 40 位十六进制容器地址。',
@@ -48,7 +48,7 @@ const T = {
     'discover.nocircuit': (id, p) => `处理器 ${p} 上没有电路 #${id}（ownerOf 回滚）。`,
     'discover.note': '加入后，卡片会告诉你这个容器有没有发布 TapeAPI 清单；没有清单的名称会显示 MANIFEST_INVALID。',
     foot: '只读：本页不请钱包签名或发送任何东西，也不需要任何密钥。链上读取经 3 家不同运营方的公共 BSC 节点、至少 2 家一致（quorum 2）；健康检查直接从你的浏览器请求服务端点。',
-    'k.name': '名称', 'k.container': '容器', 'k.holder': '当前持有人', 'k.endpoint': '端点', 'k.methods': '方法数',
+    'k.name': '名称', 'k.chain': '链', 'k.container': '容器', 'k.holder': '当前持有人', 'k.endpoint': '端点', 'k.methods': '方法数',
     'k.signer': '服务签名密钥', 'k.expires': '委托到期', 'k.health': '在线检查', 'k.circuits': '处理器合约',
     you: '你持有这个', resolving: '正在读链：定位容器、读取清单、核对委托……', retrying: '节点没有及时回应，正在重试……',
     days: (d) => d >= 0 ? `（还有 ${d} 天）` : '（已过期）',
@@ -80,7 +80,7 @@ const T = {
     walletRefused: (m) => `The wallet gave no address: ${m}`,
     'h.services': 'Services', refresh: 'Refresh all',
     'add.label': 'TapeOut name or container address', add: 'Add',
-    'add.hint': 'A TapeOut name such as <code>11.1013.tape</code> (#ID.processor.tape) or a container address <code>0x…</code>. The list is kept in this browser on this device only.',
+    'add.hint': 'A TapeOut name such as <code>11.1013.tape</code> (#ID.processor.tape; names on X Layer and Base carry their area code, e.g. <code>1.2.344.tape</code>) or a container address on BNB Chain <code>0x…</code>. The list is kept in this browser on this device only.',
     empty: 'No services yet. Start with the two public examples: the public API (11.1013.tape) and the public relay (12.1013.tape).',
     examples: 'Add the public examples',
     'add.bad': 'Cannot read this: enter a name such as 11.1013.tape, or a container address (0x and 40 hex digits).',
@@ -100,7 +100,7 @@ const T = {
     'discover.nocircuit': (id, p) => `Processor ${p} has no circuit #${id} (ownerOf reverted).`,
     'discover.note': 'Once added, the card says whether this container publishes a TapeAPI manifest; a name without one shows MANIFEST_INVALID.',
     foot: 'Read-only: this page never asks a wallet to sign or send anything, and needs no key. Chain reads go to public BSC nodes of 3 different operators, at least 2 of which must agree (quorum 2); health checks go from your browser straight to each endpoint.',
-    'k.name': 'Name', 'k.container': 'Container', 'k.holder': 'Current holder', 'k.endpoint': 'Endpoint', 'k.methods': 'Methods',
+    'k.name': 'Name', 'k.chain': 'Chain', 'k.container': 'Container', 'k.holder': 'Current holder', 'k.endpoint': 'Endpoint', 'k.methods': 'Methods',
     'k.signer': 'Service signing key', 'k.expires': 'Delegation expires', 'k.health': 'Health', 'k.circuits': 'Processor contract',
     you: 'you hold this', resolving: 'Reading the chain: locating the container, reading the manifest, checking the delegation…', retrying: 'The nodes did not answer in time; trying again…',
     days: (d) => d >= 0 ? ` (in ${d} days)` : ' (expired)',
@@ -167,7 +167,10 @@ function persist(next) {
 }
 
 // 4 s per node, as in the playground: a node that drops the connection must not hold every read. / 每节点 4 秒。
+// A name with an area code (1.2.344.tape on X Layer, 1.3.5.tape on Base) is resolved on its chain, through the SDK's
+// default nodes for that chain with the same operator quorum. / 带区号的名字在它的链上解析，用 SDK 对该链的默认节点，法定数相同。
 const api = createTapeAPI({ rpcUrls: RPC_URLS, quorum: QUORUM, timeoutMs: 4000 })
+const chainName = (id) => CHAINS[id]?.name ?? `chain ${id}`
 
 // ── resolving, a few at a time / 解析，限制并发 ──────────────────────────────────────────────────────────────────
 let gen = 0
@@ -206,6 +209,7 @@ async function check(key, g) {
   if (!svc) { results.set(key, { gen: g, phase: 'done', error }); renderCard(key); return }
   const m = svc.manifest
   const info = {
+    chainId: svc.chainId ?? 56,
     container: svc.container,
     holder: svc.verified.holder,
     circuits: cs(m.circuits), tokenId: String(m.tokenId),
@@ -267,7 +271,7 @@ function stateOf(r) {
 function consoleLink(key, info) {
   const q = new URLSearchParams()
   const p = parseInput(key)
-  if (p?.kind === 'name') { q.set('processor', p.processor); q.set('circuit', p.id) }
+  if (p?.kind === 'name') { q.set('processor', p.processor); q.set('circuit', p.id); if (p.chainId) q.set('chain', String(p.chainId)) }
   else if (info?.tokenId && /^\d+$/.test(info.tokenId)) q.set('circuit', info.tokenId)
   const health = healthUrl(info?.endpoint)
   if (health) q.set('url', health.slice(0, -HEALTH_PATH.length))
@@ -301,6 +305,7 @@ function cardFor(key) {
     else if (h.up) { healthRow = t('h.ok', h.ms); healthCls = 'ok' }
     else { healthRow = t('h.down', h.why ?? t(h.whyKey, h.whyKey === 'h.timeout' ? HEALTH_TIMEOUT_MS / 1000 : h.ms)); healthCls = 'bad' }
     kids.push(kv([
+      ...(info.chainId !== 56 ? [[t('k.chain'), chainName(info.chainId)]] : []),
       [t('k.container'), code(info.container)],
       [t('k.holder'), [code(info.holder), holds ? el('span', { class: 'you' }, ` · ${t('you')}`) : null]],
       [t('k.endpoint'), info.endpoint ? (h.url ? el('a', { href: h.url, target: '_blank', rel: 'noopener noreferrer' }, code(info.endpoint)) : code(info.endpoint)) : '—'],
@@ -397,14 +402,16 @@ async function doDiscover(ev) {
   renderDiscover()
   $('discover-btn').disabled = true
   try {
-    const circuits = cs(await api.chain.cpuAt(p.processor))
+    // on the name's own chain / 在名字所在的链上读
+    const on = api.forChain(p.chainId ?? 56).chain
+    const circuits = cs(await on.cpuAt(p.processor))
     let holder
-    try { holder = cs(await api.chain.ownerOf(circuits, p.id)) } catch (e) {
+    try { holder = cs(await on.ownerOf(circuits, p.id)) } catch (e) {
       if (e instanceof TapeAPIError && e.code === 'RPC_ERROR' && /revert/i.test(e.message)) throw new TapeAPIError('NOT_FOUND', t('discover.nocircuit', p.id, p.processor))
       throw e
     }
-    const container = cs(await api.chain.accountOf(circuits, p.id))
-    if (g === discoverGen) discover = { phase: 'done', key: p.key, info: { circuits, holder, container } }
+    const container = cs(await on.accountOf(circuits, p.id))
+    if (g === discoverGen) discover = { phase: 'done', key: p.key, info: { circuits, holder, container, chainId: p.chainId ?? 56 } }
   } catch (e) {
     if (g === discoverGen) discover = { phase: 'done', key: p.key, error: e }
   } finally {
@@ -417,14 +424,14 @@ function renderDiscover() {
   if (discover.phase === 'bad') { out.replaceChildren(el('p', { class: 'status bad' }, t('discover.bad'))); return }
   if (discover.phase === 'checking') { out.replaceChildren(el('p', { class: 'status' }, t('discover.checking'))); return }
   if (discover.error) { out.replaceChildren(errorBox(discover.error)); return }
-  const { circuits, holder, container } = discover.info
+  const { circuits, holder, container, chainId } = discover.info
   const mine = account && sameAddress(holder, account)
   const verdict = !account ? el('p', { class: 'verdict' }, t('discover.nowallet'))
     : mine ? el('p', { class: 'verdict ok' }, t('discover.yours'))
       : el('p', { class: 'verdict bad' }, t('discover.notyours'))
   const inList = list.includes(discover.key)
   out.replaceChildren(
-    kv([[t('k.name'), code(discover.key)], [t('k.circuits'), code(circuits)], [t('k.container'), code(container)], [t('k.holder'), code(holder)]]),
+    kv([[t('k.name'), code(discover.key)], [t('k.chain'), chainName(chainId)], [t('k.circuits'), code(circuits)], [t('k.container'), code(container)], [t('k.holder'), code(holder)]]),
     verdict,
     el('div', { class: 'row' },
       el('button', { class: 'btn', type: 'button', disabled: inList, onclick: () => doAdd(discover.key) }, t(inList ? 'discover.added' : 'discover.add')),

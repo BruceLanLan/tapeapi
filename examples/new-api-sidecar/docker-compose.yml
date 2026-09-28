@@ -1,0 +1,90 @@
+# new-api + the TapeAPI signing sidecar in front of it. / new-api 加上放在它前面的 TapeAPI 签名旁路。
+#
+#   cp env.example .env && cp models.example.json models.json   # then edit both / 然后编辑这两个文件
+#   docker compose up -d
+#
+# Traffic / 流量:  your users -> your HTTPS reverse proxy -> tapeapi-sidecar:8080 -> new-api:3000/v1
+# Both services publish on the host's loopback only. Your reverse proxy (Nginx, Caddy, 1Panel, ...) terminates TLS and
+# serves PUBLIC_URL -> 127.0.0.1:8080 (the API) and, on a hostname of its own, new-api's web console -> 127.0.0.1:3000.
+# 两个服务都只发布在宿主机回环地址上。你的反向代理终结 TLS：PUBLIC_URL -> 127.0.0.1:8080（接口）；new-api 的网页控制台用单独的
+# 主机名 -> 127.0.0.1:3000。
+#
+# Build: the sidecar image is built from this repository (sdk/ and server/ at this checkout), so run compose from
+# examples/new-api-sidecar/ inside a tapeapi checkout. Needs Docker Compose 2.17+ (build.additional_contexts).
+# 构建：旁路镜像由本仓库构建（本次检出的 sdk/ 与 server/），请在 tapeapi 检出目录的 examples/new-api-sidecar/ 下运行。
+# 需要 Docker Compose 2.17 或更高版本。
+name: tapeapi-new-api
+
+services:
+  new-api:
+    # Pinned: v1.0.0-rc.40 is new-api's latest GitHub release (2026-09-21), multi-arch (amd64, arm64). Upgrade on purpose.
+    # 固定版本：v1.0.0-rc.40 是 new-api 在 GitHub 上最新的发布（2026-09-21），多架构。升级请有意为之。
+    image: calciumion/new-api:v1.0.0-rc.40
+    restart: unless-stopped
+    command: --log-dir /app/logs
+    # Loopback only: the API goes through the sidecar; the web console goes through your reverse proxy.
+    # 只在回环地址：接口经过旁路；网页控制台经过你的反向代理。
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./data:/data          # SQLite (SQL_DSN unset) and new-api's files / SQLite 数据库（未设 SQL_DSN）与 new-api 的文件
+      - ./logs:/app/logs
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env (openssl rand -hex 32)}
+      ERROR_LOG_ENABLED: "true"
+      # Already running new-api on MySQL or PostgreSQL? Set SQL_DSN (and REDIS_CONN_STRING) as you do today.
+      # 已经用 MySQL 或 PostgreSQL 跑 new-api？照你现在的配置设 SQL_DSN（以及 REDIS_CONN_STRING）。
+      # SQL_DSN: ${SQL_DSN}
+    healthcheck:
+      # The official compose file's check. / 官方 compose 文件里的健康检查。
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/status | grep -o '\"success\":\\s*true' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  tapeapi-sidecar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      additional_contexts:
+        sdk: ../../sdk
+        server: ../../server
+    image: tapeapi-new-api-sidecar:0.6.0
+    restart: unless-stopped
+    depends_on:
+      new-api:
+        condition: service_healthy
+    environment:
+      UPSTREAM_BASE_URL: http://new-api:3000/v1
+      MODELS_FILE: /config/models.json
+      HOST: 0.0.0.0
+      PORT: "8080"
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      CIRCUITS: ${CIRCUITS:-}
+      TOKEN_ID: ${TOKEN_ID:-}
+      CONTAINER: ${CONTAINER:-}
+      DELEGATION_EXPIRES: ${DELEGATION_EXPIRES:-}
+      DELEGATION_SIG: ${DELEGATION_SIG:-}
+      # Secret: only in .env, which is never committed. `docker compose config` prints it; do not paste that output.
+      # 机密：只放在不提交的 .env 里。`docker compose config` 会把它打印出来，不要外传那段输出。
+      SIGNER_KEY: ${SIGNER_KEY:-}
+      TAPE_NAME: ${TAPE_NAME:-}
+      SERVICE_NAME: ${SERVICE_NAME:-}
+      RATE_IP: ${RATE_IP:-600}
+      CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
+    volumes:
+      - ./models.json:/config/models.json:ro
+    # The only way in for API traffic; point your HTTPS reverse proxy (PUBLIC_URL) here. / 接口流量的唯一入口。
+    ports:
+      - "${SIDECAR_BIND:-127.0.0.1}:${SIDECAR_PORT:-8080}:8080"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      # 200 in setup mode too; `docker compose logs tapeapi-sidecar` says what is missing. / 设置模式下也是 200，缺什么看日志。
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/tapeapi/v1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

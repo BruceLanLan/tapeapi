@@ -1,0 +1,197 @@
+{
+  "recordedAt": "2026-09-28",
+  "chains": {
+    "56": {
+      "chainId": 56,
+      "block": 124514491,
+      "operators": [
+        "nodereal",
+        "alchemy",
+        "48club"
+      ],
+      "contracts": {
+        "factory": {
+          "address": "0x68224F668083c29e9800Be2a646d42d18cedF7e2",
+          "codeBytes": 130,
+          "codeKeccak": "ed6b710a769987f50494d713f278817992e3266e45898a990be878efc2fcbbce",
+          "implementation": "0xa68ccf4931d98ad0a4be15ee40542edc0dec6422"
+        },
+        "opener": {
+          "address": "0x021745DE2f42A7839d96f2d3634d0294487D81F1",
+          "codeBytes": 2600,
+          "codeKeccak": "6674e7ebd042dbd08c92076fec8425853790c7d3bb961bfbed1c0d30468b407e",
+          "implementation": null
+        },
+        "hub": {
+          "address": "0xe61A9C7213a6Aa616C246a2B569e555B417b25ee",
+          "codeBytes": 78,
+          "codeKeccak": "cd75f98719e56feb6f178560dab068f0828e8dafd0e9e753b2f6242ab4a05e1a",
+          "implementation": "0x80afe7b77f2dfd08e9feab7675780bac34a7ee85"
+        },
+        "siteRegistry": {
+          "address": "0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6",
+          "codeBytes": 176,
+          "codeKeccak": "c28ddcf0de9fb6ab9f44cb4810cc0c46ad5a97e4a6d3f5cc9a7082b60c720e43",
+          "implementation": "0x1d279d138a4d803378a7d4557c056f1bed53c261"
+        },
+        "binding": {
+          "address": "0x861EE183de2BBE4a6ecf9D15812C123b566a3DB7",
+          "codeBytes": 176,
+          "codeKeccak": "c28ddcf0de9fb6ab9f44cb4810cc0c46ad5a97e4a6d3f5cc9a7082b60c720e43",
+          "implementation": "0xaa226181a6588d3f9ac0035e5f3dbaf311039bce"
+        },
+        "erc6551Registry": {
+          "address": "0x000000006551c19487814612e58FE06813775758",
+          "codeBytes": 571,
+          "codeKeccak": "da1d5b06e579f9e42e59b00fbc22939896ecb38dc8830d40de0a2508fecd6735",
+          "implementation": null
+        },
+        "accountImplementation": {
+          "address": "0xAf4E78a2257C9c5480c2F8310E3b00437260751d",
+          "codeBytes": 601,
+          "codeKeccak": "88c3e56b713660b62f2e19f63b83665b8c9fdeff09836a9225cee25d15ff8455",
+          "implementation": null
+        }
+      },
+      "processor0": "0x50a994e71615474b55559ff4f500928fbc339dd9",
+      "isCPU0": true,
+      "hubAccountOf": "0xe853748aef806b82b1eccbd87699d206fd3ac227",
+      "openerAccountOf": "0xe853748aef806b82b1eccbd87699d206fd3ac227",
+      "hubFactory": "0x68224f668083c29e9800be2a646d42d18cedf7e2",
+      "hubRegistry": "0x000000006551c19487814612e58fe06813775758",
+      "hubAccountImplementation": "0xaf4e78a2257c9c5480c2f8310e3b00437260751d",
+      "hubOwner": "0x571d447f4f24688ec35ccf07f1d6993655f6af15"
+    },
+    "196": {
+      "chainId": 196,
+      "block": 71824851,
+      "operators": [
+        "okx",
+        "drpc"
+      ],
+      "contracts": {
+        "factory": {
+          "address": "0x1f09DAeFA827f02CBb40967cc91b259763760761",
+          "codeBytes": 130,
+          "codeKeccak": "5cddc08137fc81eb8ba1d37902e77553152c2f639b6bf6f601ecb094e2cae5c8",
+          "implementation": "0x74956236ab64ed143933040b4137e8a352e4d17b"
+        },
+        "opener": {
+          "address": "0x536adD8F30f03b69f6fbF29d425A816A0dC50106",
+          "codeBytes": 2604,
+          "codeKeccak": "f0c334d8d72983af1c38694dac7a1c83348c0c000cbb987467d2aedee06999fd",
+          "implementation": null
+        },
+        "hub": {
+          "address": "0xe61A9C7213a6Aa616C246a2B569e555B417b25ee",
+          "codeBytes": 78,
+          "codeKeccak": "cd75f98719e56feb6f178560dab068f0828e8dafd0e9e753b2f6242ab4a05e1a",
+          "implementation": "0xdcc57797089ebd9f26e686379a4323f353a3f9c6"
+        },
+        "siteRegistry": {
+          "address": "0xd6EFb7adCc9c83dC4924Ad56f6a8E4e969b9ADB6",
+          "codeBytes": 176,
+          "codeKeccak": "5e41d8905a1e7ccfc8c297c3a33d08d1712e4876f9c6eefc0e5991409dd38c1d",
+          "implementation": "0xa85c4143d1d4a77f54b8e4ecc9e6d1418afea45f"
+        },
+        "binding": {
+          "address": "0x68809Fd2fb343aA57D0aeB7f33Defe477c9666f9",
+          "codeBytes": 176,
+          "codeKeccak": "5e41d8905a1e7ccfc8c297c3a33d08d1712e4876f9c6eefc0e5991409dd38c1d",
+          "implementation": "0x5ebf29b80789e548907c707530c3c7607c4347df"
+        },
+        "erc6551Registry": {
+          "address": "0x000000006551c19487814612e58FE06813775758",
+          "codeBytes": 571,
+          "codeKeccak": "da1d5b06e579f9e42e59b00fbc22939896ecb38dc8830d40de0a2508fecd6735",
+          "implementation": null
+        },
+        "accountImplementation": {
+          "address": "0xAC4F791353eE9F06e2C50Ae4C34680D28Ea52a57",
+          "codeBytes": 601,
+          "codeKeccak": "0d49365f294d31947d1714d936e78c49ad6ddb7107f47e48c9b887909fc0ceb1",
+          "implementation": null
+        }
+      },
+      "processor0": "0x839bdd6fa7a66416a609a735e11de5411b98574e",
+      "isCPU0": true,
+      "hubAccountOf": "0xe2e5ffd861c8a0b50ce21a7bcbdd6bb5aac250ab",
+      "openerAccountOf": "0xe2e5ffd861c8a0b50ce21a7bcbdd6bb5aac250ab",
+      "hubFactory": "0x1f09daefa827f02cbb40967cc91b259763760761",
+      "hubRegistry": "0x000000006551c19487814612e58fe06813775758",
+      "hubAccountImplementation": "0xac4f791353ee9f06e2c50ae4c34680d28ea52a57",
+      "hubOwner": "0x571d447f4f24688ec35ccf07f1d6993655f6af15",
+      "site": {
+        "name": "1.2.230.tape",
+        "circuits": "0x8a60b4a4bcf4066f5e5f9a406fe09c5e4f52a58e",
+        "container": "0x550046eb68f9c5cf9d41f56ed5893b0307f4ce54",
+        "path": "index.html",
+        "size": 13614,
+        "sha256Hash": "0xe1b68f30ffce15655916c59f52b4313398d79a1bdaf075bae81639c92f9279a3",
+        "manifestSize": 0
+      }
+    },
+    "8453": {
+      "chainId": 8453,
+      "block": 51902274,
+      "operators": [
+        "coinbase",
+        "allnodes",
+        "drpc",
+        "tenderly"
+      ],
+      "contracts": {
+        "factory": {
+          "address": "0x1f09DAeFA827f02CBb40967cc91b259763760761",
+          "codeBytes": 130,
+          "codeKeccak": "5cddc08137fc81eb8ba1d37902e77553152c2f639b6bf6f601ecb094e2cae5c8",
+          "implementation": "0x74956236ab64ed143933040b4137e8a352e4d17b"
+        },
+        "opener": {
+          "address": "0x536adD8F30f03b69f6fbF29d425A816A0dC50106",
+          "codeBytes": 2600,
+          "codeKeccak": "9827ac75384d556248205d60c2df7c2d9e5df57f6c8b3ac0291b150b4a506d08",
+          "implementation": null
+        },
+        "hub": {
+          "address": "0xe61A9C7213a6Aa616C246a2B569e555B417b25ee",
+          "codeBytes": 78,
+          "codeKeccak": "cd75f98719e56feb6f178560dab068f0828e8dafd0e9e753b2f6242ab4a05e1a",
+          "implementation": "0x38a2d320b8984bbac9b0a2691b6c0fd829a23867"
+        },
+        "siteRegistry": {
+          "address": "0xd6EFb7adCc9c83dC4924Ad56f6a8E4e969b9ADB6",
+          "codeBytes": 176,
+          "codeKeccak": "5e41d8905a1e7ccfc8c297c3a33d08d1712e4876f9c6eefc0e5991409dd38c1d",
+          "implementation": "0xa85c4143d1d4a77f54b8e4ecc9e6d1418afea45f"
+        },
+        "binding": {
+          "address": "0x68809Fd2fb343aA57D0aeB7f33Defe477c9666f9",
+          "codeBytes": 176,
+          "codeKeccak": "5e41d8905a1e7ccfc8c297c3a33d08d1712e4876f9c6eefc0e5991409dd38c1d",
+          "implementation": "0x5ebf29b80789e548907c707530c3c7607c4347df"
+        },
+        "erc6551Registry": {
+          "address": "0x000000006551c19487814612e58FE06813775758",
+          "codeBytes": 571,
+          "codeKeccak": "da1d5b06e579f9e42e59b00fbc22939896ecb38dc8830d40de0a2508fecd6735",
+          "implementation": null
+        },
+        "accountImplementation": {
+          "address": "0xAC4F791353eE9F06e2C50Ae4C34680D28Ea52a57",
+          "codeBytes": 601,
+          "codeKeccak": "0d49365f294d31947d1714d936e78c49ad6ddb7107f47e48c9b887909fc0ceb1",
+          "implementation": null
+        }
+      },
+      "processor0": "0x839bdd6fa7a66416a609a735e11de5411b98574e",
+      "isCPU0": true,
+      "hubAccountOf": "0x5c1f84a79ae2bf03adb7d7761299b9979e08fd57",
+      "openerAccountOf": "0x5c1f84a79ae2bf03adb7d7761299b9979e08fd57",
+      "hubFactory": "0x1f09daefa827f02cbb40967cc91b259763760761",
+      "hubRegistry": "0x000000006551c19487814612e58fe06813775758",
+      "hubAccountImplementation": "0xac4f791353ee9f06e2c50ae4c34680d28ea52a57",
+      "hubOwner": "0x571d447f4f24688ec35ccf07f1d6993655f6af15"
+    }
+  }
+}
