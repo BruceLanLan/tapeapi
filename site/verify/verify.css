@@ -9,6 +9,10 @@
 .note { margin: 0 0 12px; font-size: 14px; color: var(--ink-2); background: var(--amber-well); border-left: 3px solid var(--amber); padding: 8px 12px; }
 #input-form .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; }
 #receipt-input { min-height: 110px; word-break: break-all; }
+.ai-bytes { margin-top: 10px; font-size: 14px; }
+.ai-bytes summary { cursor: pointer; color: var(--ink-2); }
+.ai-bytes textarea { min-height: 64px; word-break: break-all; }
+.ai-bytes .lbl { margin-top: 10px; }
 #input-error { margin: 12px 0 0; }
 .sub { font-size: 16px; margin: 22px 0 8px; }
 .how-list { margin: 0 0 12px; padding-left: 22px; font-size: 14.5px; color: var(--ink-2); }

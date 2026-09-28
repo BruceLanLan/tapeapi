@@ -38,7 +38,7 @@
 <div class="code"><pre data-lang="js"><code>import { createTapeAPI } from '@tapeapi/sdk'
 
 const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
   quorum: 2,
 })
 const svc = await api.resolve('11.1013.tape')
@@ -58,7 +58,7 @@ console.log(result.blockNumber, block, verified)</code></pre></div>
 <h2 id="2-resolve-a-real-service-on-bnb-chain"><a class="anchor" href="#2-resolve-a-real-service-on-bnb-chain" aria-hidden="true">#</a>2. Resolve a real service on BNB Chain</h2>
 <p>On mainnet the SDK reads everything it trusts from the chain, through several RPC nodes that must agree:</p>
 <div class="code"><pre data-lang="js"><code>const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
   quorum: 2,
 })
 

@@ -22,8 +22,8 @@ Cloudflare Workers and Deno. TypeScript declarations are included.
 import { createTapeAPI } from '@tapeapi/sdk'
 
 const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
-  quorum: 2,                                        // every chain read must be agreed by 2 nodes
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
+  quorum: 2,                                        // every chain read must be agreed by 2 node operators
 })
 const svc = await api.resolve('11.1013.tape')       // the public service: <#ID>.<processor>.tape
 const { result, verified } = await api.call(svc, 'bnbUsd', {})
@@ -36,7 +36,7 @@ console.log(result.bnbUsd, verified)                // price of BNB in USDT, sig
 
 | Import | What |
 | --- | --- |
-| `@tapeapi/sdk` | `createTapeAPI`, `createRpc`, `TapeAPIError`, `MAINNET`, `BUS_RPC_URLS`, and the `abi`, `sig`, `channel`, `group`, `tapesend`, `webmcp` namespaces |
+| `@tapeapi/sdk` | `createTapeAPI`, `createRpc`, `TapeAPIError`, `MAINNET`, `BUS_RPC_URLS`, `RPC_DEFAULTS` / `rpcUrlsFor` / `operatorOf` (default nodes per chain and who runs them; quorums count operators, not URLs), and the `abi`, `sig`, `channel`, `group`, `tapesend`, `webmcp` namespaces |
 | `@tapeapi/sdk/webmcp` | `exposeTapeAPI`, `manifestToTools`: a service's methods as WebMCP tools for in-browser agents |
 | `@tapeapi/sdk/channel` | TAP-26 private channels (invites, relay and ChannelBus transports) |
 | `@tapeapi/sdk/rpc`, `/abi`, `/sig`, `/canon`, `/manifest` | the building blocks |

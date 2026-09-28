@@ -6,6 +6,25 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+### Security
+
+- **RPC quorum counts operators, not URLs.** The default BNB Chain nodes were three dataseeds that all belong to one
+  operator (NodeReal), so "2 of 3 agree" was one operator agreeing with itself. `createRpc` now counts distinct operators
+  (`operatorOf`) and refuses a configuration with fewer operators than its quorum; the defaults (`RPC_DEFAULTS`,
+  `rpcUrlsFor(56)`) are NodeReal, Alchemy and 48 Club, each checked to serve block-hash-pinned reads.
+
+### Added
+
+- **AI signing sidecar** `@tapeapi/server/ai-proxy` (`createAIProxy`): put it in front of any OpenAI- or
+  Anthropic-compatible API and every call gets a signed usage receipt (service, model, tokens, price, request and
+  response hashes), with the bytes passed through unchanged and no change for clients. Formats: OpenAI Chat
+  Completions, OpenAI Responses, Anthropic Messages, OpenAI Embeddings; streams keep the receipt in an SSE comment the
+  official SDKs ignore, placed before the final event. Example: `examples/ai-proxy/`.
+- `@tapeapi/sdk/ai`: `verifyUsageReceipt`, `createVerifyingFetch` (plug into the official OpenAI or Anthropic SDK),
+  receipt readers and the price arithmetic (exact, BigInt). The manifest's `ai` field lists the endpoints and the price
+  table (BEM, BNB, USDT, USDC, ETH or USD).
+- The verification page reads AI usage receipts.
+
 ## [0.4.0] — 2026-09-28
 
 ### Added

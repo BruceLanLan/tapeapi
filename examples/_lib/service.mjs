@@ -7,16 +7,15 @@
 // `examples/reader-service` deliberately does NOT use this module: it is the first example a newcomer reads,
 // and its shell has to be visible on the page rather than three calls into a library. The other eight carry
 // an identical shell, which lives here.
-import { sig } from '@tapeapi/sdk'
+import { sig, rpcUrlsFor } from '@tapeapi/sdk'
 import { fileStore } from './store.mjs'
 import { createSender, createSettler } from './sendtx.mjs'
 
 const list = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean)
-// 2-of-3 (QUORUM defaults to 2): one node down, rate limiting or refusing a method still leaves a quorum (arch A5).
-// Three operators; no example needs eth_getLogs (which the dataseed nodes refuse). publicnode left the set on
-// 2026-09-27 after timing out on every request.
-// 三取二（QUORUM 默认 2）：一个节点宕机、限流或拒绝某方法时仍有法定数。三家运营方；没有示例需要 eth_getLogs。publicnode 因持续超时于 2026-09-27 移出。
-const DEFAULT_RPC_URLS = 'https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io'
+// 2-of-3 operators (QUORUM defaults to 2): one down, rate limiting or refusing a method still leaves a quorum (arch A5).
+// The SDK's defaults, three distinct operators; quorums count operators, not URLs.
+// 三家取二（QUORUM 默认 2）：一家宕机、限流或拒绝某方法时仍有法定数。SDK 默认节点，三家不同运营方；法定数按运营方计。
+const DEFAULT_RPC_URLS = rpcUrlsFor(56).join(',')
 
 /**
  * 读取所有示例共用的环境变量，并决定用哪把 signer 私钥。
@@ -103,7 +102,7 @@ export async function startProvider(provider, { tag, PORT, HOST, env = process.e
   let settler = null
   const priced = (provider.manifest.methods || []).some((m) => (m.priceBEM ?? '0') !== '0')
   if (env.SETTLER_KEY) {
-    const sender = createSender({ rpcUrl: env.SETTLE_RPC_URL || (env.RPC_URLS || '').split(',')[0] || 'https://bsc-dataseed.bnbchain.org', privateKey: env.SETTLER_KEY, chainId: Number(env.CHAIN_ID || 56) })
+    const sender = createSender({ rpcUrl: env.SETTLE_RPC_URL || (env.RPC_URLS || '').split(',')[0] || rpcUrlsFor(56)[0], privateKey: env.SETTLER_KEY, chainId: Number(env.CHAIN_ID || 56) })
     settler = createSettler({ provider, sender, intervalMs: Number(env.SETTLE_INTERVAL_MS || 60_000), log: (l) => console.error(`[${tag}] settler:`, l) }).start()
     lines = [...lines, `settler  on, from ${sender.from} every ${Math.round(Number(env.SETTLE_INTERVAL_MS || 60_000) / 1000)} s`]
   } else if (priced && !provider.manifest.dev) {

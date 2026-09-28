@@ -4,6 +4,7 @@
 //     --lib es2022,dom --skipLibCheck false scripts/types-sample.ts
 import {
   createTapeAPI, TapeAPIError, MAINNET, BUS_RPC_URLS, createRpc, channel, webmcp, sig, abi, parseUnits, formatUnits,
+  RPC_DEFAULTS, rpcUrlsFor, operatorOf, type RpcNode,
   type ResolvedService, type CallResult, type TapeAPI, type Rpc,
 } from '@tapeapi/sdk'
 import { exposeTapeAPI, manifestToTools } from '@tapeapi/sdk/webmcp'
@@ -14,12 +15,20 @@ import { voucherDigest } from '@tapeapi/sdk/sig'
 import { encodeCall } from '@tapeapi/sdk/abi'
 import { createRpc as createRpc2 } from '@tapeapi/sdk/rpc'
 import { createProvider, memoryStore, VERSION, type Provider } from '@tapeapi/server'
+import { ai } from '@tapeapi/sdk'
+import { createVerifyingFetch, verifyUsageReceipt, FORMATS, type AIFormat, type UsageReceipt } from '@tapeapi/sdk/ai'
+import { createAIProxy, type AIProxy } from '@tapeapi/server/ai-proxy'
+import { createOpenAIProxy } from '@tapeapi/server/openai-proxy'
 
 async function consumer(): Promise<void> {
   const api: TapeAPI = createTapeAPI({
-    rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+    rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
     quorum: 2,
   })
+  const defaults: string[] = rpcUrlsFor(56)
+  const nodes: readonly RpcNode[] = RPC_DEFAULTS[56]
+  const who: string = operatorOf(nodes[0].url)
+  const operators: string[] = createRpc({ urls: defaults, quorum: 2 }).operators
   const svc: ResolvedService = await api.resolve('11.1013.tape')
   const r: CallResult<{ bnbUsd: string }> = await api.call(svc, 'bnbUsd', {})
   const s: string = r.result.bnbUsd
@@ -69,7 +78,7 @@ async function provider(): Promise<void> {
     manifest: {},
     signerKey: '0x' + '11'.repeat(32),
     methods: { bnbUsd: async (_params, ctx) => ({ block: ctx.block, free: ctx.price === 0n }) },
-    rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io'],
+    rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io'],
     store: memoryStore(),
   })
   const server = await p.listen(8787)
@@ -79,4 +88,17 @@ async function provider(): Promise<void> {
   void [res.status, due[0]?.reason, p.settleTx(due[0]!), VERSION, p.container]
 }
 
-void consumer; void provider
+// AI usage receipts: the sidecar and client-side verification. / AI 用量回执：旁路与客户端核验。
+async function aiSidecar(): Promise<void> {
+  const px: AIProxy = createAIProxy({
+    upstream: { baseUrl: 'https://upstream.example/v1' }, manifestBase: { circuits: '0x', tokenId: '1', container: '0x', endpoints: { live: ['https://ai.example/tapeapi/v1'], async: false } },
+    signerKey: '0x' + '11'.repeat(32), models: [{ id: 'm', formats: ['openai-chat'], price: { currency: 'BEM', unit: '1M tokens', input: '1', output: '2', cacheRead: '0.5' } }],
+  })
+  const chat: AIFormat = FORMATS[0]
+  const base: string = px.manifest().ai.endpoints[0].baseUrl
+  const fetch = createVerifyingFetch({ service: {}, api: createTapeAPI({}), onReport: (r) => void r.receipt?.result.usage?.cache_read_tokens })
+  const receipt: UsageReceipt | null = verifyUsageReceipt({ envelope: null, manifest: { container: '0x', signer: '0x' } }).receipt
+  void [chat.method, base, fetch, receipt?.result.price?.unpriced, ai.MANIFEST_FIELD, createOpenAIProxy]
+}
+
+void consumer; void provider; void aiSidecar

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Read-only monitor for the live TapeAPI services. Sends no transactions, holds no keys.
-// For each service: GET health, resolve it from the chain exactly as a client would (SDK, 3 public BSC nodes, quorum 2),
+// For each service: GET health, resolve it from the chain exactly as a client would (SDK, 3 public BSC nodes of distinct operators, quorum 2),
 // check that the on-chain manifest's signer is the one the service answers with, count the days until its delegation
 // expires, and make one real call whose signed envelope the SDK verifies. Also GET the website and the docs.
 // Exit 0 when everything is healthy, 1 when anything is down or a delegation expires in fewer than 14 days.
@@ -8,12 +8,14 @@
 //   node scripts/monitor.mjs          Markdown report on stdout (used as the GitHub issue body)
 //   node scripts/monitor.mjs --json   the raw results and the evaluation as JSON
 //
-// 只读监控：不发交易、不持有任何密钥。对每个服务：取健康检查；像客户端一样用 SDK 从链上解析它（3 个公共节点、quorum 2）；
+// 只读监控：不发交易、不持有任何密钥。对每个服务：取健康检查；像客户端一样用 SDK 从链上解析它（3 家不同运营方的公共节点、quorum 2）；
 // 核对链上清单的 signer 与服务实际使用的一致；计算委托到期天数；做一次真实调用并由 SDK 验签。另外检查官网与文档。
 // 全部健康退出码 0；任何服务不可用、或委托不足 14 天到期，退出码 1。
 import { fileURLToPath } from 'node:url'
+import { rpcUrlsFor } from '../sdk/src/rpc-defaults.js'
 
-export const RPC_URLS = ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io']
+// The SDK's defaults: three distinct operators (NodeReal, Alchemy, 48 Club) / SDK 默认：三家运营方
+export const RPC_URLS = rpcUrlsFor(56)
 export const PROCESSOR = '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414'   // processor 1013
 export const HEALTH_PATH = '/tapeapi/v1/health'
 export const WARN_DAYS = 14

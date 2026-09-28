@@ -20,6 +20,9 @@ import { T } from '../site/verify/strings.js'
 import { signResponse, recoverResponseSigner, randomPrivateKey, privateKeyToAddress } from '../sdk/src/sig.js'
 import { receiptOf, toolResultOf, verifyLink, toBase64Url } from '../sdk/src/mcp.js'
 import { TapeAPIError } from '../sdk/src/errors.js'
+import { readAny, parseUsageReceipt, usageEnvelopeOf, verifyUsage, isUsageShape } from '../site/verify/lib.js'
+import { encodeReceipt, receiptComment } from '../sdk/src/ai.js'
+import { createAIProxy } from '../server/src/ai-proxy.js'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SITE = join(ROOT, 'site')
@@ -364,8 +367,9 @@ test('verify page: Chinese and English go in pairs, in the page and in the scrip
   const families = {
     'err.': ['empty', 'too-large', 'unreadable', 'bad-base64', 'bad-json', 'duplicate-key', 'no-receipt', 'shape'],
     'v.': ['valid', 'other-key', 'invalid', 'unchecked'],
-    'x.invalid.': ['sig', 'resolve', 'container', 'delegation', 'name'],
-    'c.': ['sig', 'resolve', 'container', 'delegation', 'name', 'signer'],
+    'x.invalid.': ['sig', 'resolve', 'container', 'delegation', 'name', 'method', 'amount', 'request', 'response'],
+    'c.': ['sig', 'resolve', 'container', 'delegation', 'name', 'signer', 'method', 'amount', 'request', 'response'],
+    'c.method.': ['pass', 'fail', 'unknown', 'skip'],
     's.': ['pass', 'fail', 'unknown', 'skip'],
   }
   for (const [prefix, names] of Object.entries(families)) {
@@ -400,7 +404,10 @@ test('verify page: nothing is loaded from elsewhere; links go to this site or th
   // 页面文字中的绝对 URL 只能是 tapeapi.fun（元数据、示例）或仓库。
   for (const m of html.matchAll(/https?:\/\/[^\s"'<)]+/g)) assert.match(m[0], /^https:\/\/((api\.)?tapeapi\.fun\/|github\.com\/BruceLanLan\/tapeapi$)/, m[0])
   const jsUrls = [...new Set([...js.matchAll(/https?:\/\/[^\s'"`)]+/g)].map((m) => m[0]))].sort()
-  assert.deepEqual(jsUrls, ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'], 'the script reaches only the public BSC nodes')
+  // The nodes are the vendored SDK's rpcUrlsFor(56) (three operators): the script names no URL itself.
+  // 节点取自 vendor 的 SDK 的 rpcUrlsFor(56)（三家运营方）：脚本自己不写任何 URL。
+  assert.deepEqual(jsUrls, [], 'the script reaches only the SDK\'s public BSC nodes')
+  assert.match(js, /const RPC_URLS = rpcUrlsFor\(56\)/)
   for (const m of strings.matchAll(/https?:\/\/[^\s'"`)]+/g)) assert.match(m[0], /^https:\/\/tapeapi\.fun\/verify\//, 'placeholders only')
   assert.doesNotMatch(lib + boot, /https?:\/\//)
   for (const [name, text] of [['index.html', html], ['verify.js', js], ['lib.js', lib], ['strings.js', strings], ['verify.css', css], ['boot.js', boot]]) {
@@ -421,4 +428,101 @@ test('verify page: served with one frame-forbidding policy, listed in the sitema
   // 页头导航与其他页面一致。
   const nav = (page) => /<nav class="hd-nav"[^]*?<\/nav>/.exec(page)[0].replace(/ aria-current="page"/g, '').replace(/href="\.\/"/g, 'href="../status/"')
   assert.equal(nav(html), nav(read('status/index.html')))
+})
+
+// ── AI usage receipts / AI 用量回执 ─────────────────────────────────────────────────────────────────────────────
+// Made by the real sidecar, then read in every form a client holds and judged on facts. / 由真实旁路签发，再以各种形式读出并判断。
+const AI_MODELS = [{ id: 'demo-chat', price: { currency: 'BEM', unit: '1M tokens', input: '0.15', output: '0.6' } }]
+const AI_REQ = '{"model":"demo-chat","messages":[{"role":"user","content":"hi"}]}'
+const AI_JSON = '{"id":"chatcmpl-7","model":"demo-chat","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30}}'
+const AI_SSE = 'data: {"id":"chatcmpl-8","model":"demo-chat","choices":[]}\n\ndata: {"id":"chatcmpl-8","model":"demo-chat","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}\n\ndata: [DONE]\n\n'
+async function aiReceipts(key = KEY) {
+  const p = createAIProxy({
+    upstream: { baseUrl: 'https://up.example/v1' }, signerKey: key, models: AI_MODELS, log: () => {},
+    manifestBase: { name: 'AI', circuits: CIRCUITS, tokenId: '11', container: CONTAINER, delegation: null, endpoints: { live: ['https://ai.example/tapeapi/v1'], async: false } },
+    fetch: async (url, init) => (JSON.parse(new TextDecoder().decode(init.body)).stream
+      ? new Response(AI_SSE, { headers: { 'content-type': 'text/event-stream' } })
+      : new Response(AI_JSON, { headers: { 'content-type': 'application/json' } })),
+  })
+  const call = (body) => p.handleRequest(new Request('https://ai.example/v1/chat/completions', { method: 'POST', body }), { clientIp: '1.1.1.1' })
+  const res = await call(AI_REQ)
+  const header = res.headers.get('x-tapeapi-receipt')
+  const streamReq = AI_REQ.replace('{', '{"stream":true,"stream_options":{"include_usage":true},')
+  const streamText = await (await call(streamReq)).text()
+  const outer = await (await p.handleRequest(new Request('https://ai.example/tapeapi/v1/receipt', { method: 'POST', body: JSON.stringify({ id: 'q', params: { id: 'chatcmpl-7' } }) }), { clientIp: '1.1.1.1' })).json()
+  return { p, header, streamReq, streamText, outer, manifest: p.manifest() }
+}
+const aiService = (m, over = {}) => ({ container: CONTAINER, manifest: { ...m, delegation: { expires: NOW + 86_400, sig: '0x' } }, verified: { delegation: true, holder: HOLDER }, ...over })
+const aiIo = (m, over = {}) => ({ recover: recoverResponseSigner, resolve: async (c) => { assert.equal(c, CONTAINER, 'resolved from the receipt\'s container'); return aiService(m) }, now: NOW, ...over })
+
+test('verify: an AI usage receipt reads from the header value or line, the SSE comment or whole stream, the receipt method, or JSON', async () => {
+  const { header, streamText, outer } = await aiReceipts()
+  const env = JSON.parse(Buffer.from(header, 'base64url').toString())
+  assert.ok(isUsageShape(env))
+  const want = parseUsageReceipt(env)
+  for (const [name, text] of Object.entries({
+    headerValue: header, headerLine: `x-tapeapi-receipt: ${header}`, headerInDump: `HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nx-tapeapi-receipt: ${header}\r\n\r\n{}`,
+    json: JSON.stringify(env), receiptMethod: JSON.stringify(outer), comment: receiptComment(env),
+  })) {
+    const got = readAny(text)
+    assert.equal(got.kind, 'usage', name); assert.deepEqual(got.receipt, want, name)
+  }
+  const s = readAny(streamText)
+  assert.equal(s.kind, 'usage'); assert.equal(s.receipt.id, 'chatcmpl-8'); assert.equal(s.receipt.result.stream, true)
+  // Still a TAP-21 receipt when it is one. / TAP-21 回执照旧。
+  assert.equal(readAny(verifyLink(makeReceipt())).kind, 'receipt')
+  const shape = (mut) => { const x = structuredClone(env); mut(x); try { parseUsageReceipt(x); return 'ok' } catch (e) { return e.field } }
+  assert.equal(shape((x) => { x.params.requestSha256 = 'xyz' }), 'params')
+  assert.equal(shape((x) => { x.result.usage = { prompt_tokens: -1 } }), 'result.usage')
+  assert.equal(shape((x) => { x.result.price.amount = '1.5' }), 'result.price')
+  assert.equal(shape((x) => { x.ok = false }), 'ok')
+  assert.equal(shape((x) => { x.sig = '0x12' }), 'sig')
+  assert.equal(recoverResponseSigner(usageEnvelopeOf(want), want.sig), SIGNER, 'the page\'s envelope is exactly what was signed')
+})
+
+test('verify: AI receipt verdicts: valid; other key when altered; invalid amount signed by the right key; hashes checked only when pasted', async () => {
+  const { header, streamReq, streamText, manifest } = await aiReceipts()
+  const env = JSON.parse(Buffer.from(header, 'base64url').toString())
+  const r = parseUsageReceipt(env)
+  const state = (out, id) => out.checks.find((c) => c.id === id).state
+  let out = await verifyUsage(r, aiIo(manifest))
+  assert.equal(out.verdict, 'valid', JSON.stringify(out.checks))
+  assert.deepEqual(out.checks.map((c) => c.id), ['sig', 'resolve', 'container', 'delegation', 'signer', 'method', 'amount', 'request', 'response'])
+  assert.equal(state(out, 'request'), 'skip'); assert.equal(state(out, 'response'), 'skip')
+  out = await verifyUsage(r, { ...aiIo(manifest), request: AI_REQ, response: AI_JSON })
+  assert.equal(out.verdict, 'valid'); assert.equal(state(out, 'request'), 'pass'); assert.equal(state(out, 'response'), 'pass')
+  out = await verifyUsage(r, { ...aiIo(manifest), request: AI_REQ + ' ', response: AI_JSON })
+  assert.deepEqual([out.verdict, out.failed], ['invalid', 'request'])
+  out = await verifyUsage(r, { ...aiIo(manifest), response: AI_JSON.replace('20', '21') })
+  assert.deepEqual([out.verdict, out.failed], ['invalid', 'response'])
+  const sr = readAny(streamText).receipt
+  out = await verifyUsage(sr, { ...aiIo(manifest), request: streamReq, response: streamText })
+  assert.equal(out.verdict, 'valid', 'a stream: its data payloads are hashed, the receipt comment is ignored')
+  // Altered after signing: another key. / 签名后被改：别的密钥。
+  const altered = structuredClone(r); altered.result.usage.completion_tokens = 2
+  assert.equal((await verifyUsage(altered, aiIo(manifest))).verdict, 'other-key')
+  // The right key, a price the table does not give. / 密钥正确，价格与价目表不符。
+  const priced = { ...manifest, ai: { ...manifest.ai, models: [{ ...AI_MODELS[0], price: { ...AI_MODELS[0].price, output: '0.5' } }] } }
+  out = await verifyUsage(r, aiIo(priced))
+  assert.deepEqual([out.verdict, out.failed], ['invalid', 'amount'])
+  assert.match(out.amountProblems[0], /manifest gives 0\.00001150/)
+  out = await verifyUsage(r, aiIo({ ...manifest, ai: undefined }))
+  assert.deepEqual([out.verdict, out.failed], ['invalid', 'amount'], 'a service with no price table cannot vouch for an amount')
+  // Identity: another container, the chain down, a key rotated since. / 身份：别的容器、读不到链、此后换了钥。
+  out = await verifyUsage(r, aiIo(manifest, { resolve: async () => aiService(manifest, { container: OTHER_CONTAINER }) }))
+  assert.deepEqual([out.verdict, out.failed], ['invalid', 'container'])
+  out = await verifyUsage(r, aiIo(manifest, { resolve: async () => { throw new TapeAPIError('RPC_UNAVAILABLE', 'down') } }))
+  assert.equal(out.verdict, 'unchecked')
+  const { header: h2 } = await aiReceipts(OLD_KEY)
+  out = await verifyUsage(parseUsageReceipt(JSON.parse(Buffer.from(h2, 'base64url').toString())), aiIo(manifest))
+  assert.equal(out.verdict, 'other-key')
+  // A format this page does not know: the path is not checked, the rest is. / 本页不认识的格式：不核对路径，其余照常。
+  const unknown = { ...env, method: 'future_format' }
+  unknown.sig = signResponse(usageEnvelopeOf(unknown), KEY)
+  out = await verifyUsage(parseUsageReceipt(unknown), aiIo(manifest))
+  assert.equal(out.verdict, 'valid'); assert.equal(state(out, 'method'), 'unknown')
+  const wrongPath = { ...env, method: 'openai_embeddings' }
+  wrongPath.sig = signResponse(usageEnvelopeOf(wrongPath), KEY)
+  assert.equal((await verifyUsage(parseUsageReceipt(wrongPath), aiIo(manifest))).failed, 'method')
+  assert.ok(encodeReceipt(env).length < MAX_INPUT)
 })

@@ -131,8 +131,8 @@ steps below map to real code.
 2. **来源不同**：实际使用的 `endpoints.live` URL 的 scheme/host/port 不同 → `new URL(svc.manifest.endpoints.live[0]).origin`。
 
 ```js
-import { createTapeAPI, TapeAPIError } from '@tapeapi/sdk'
-const api = createTapeAPI({ rpcUrls: ['https://bsc-dataseed.bnbchain.org'], chainId: 56 })
+import { createTapeAPI, TapeAPIError, rpcUrlsFor } from '@tapeapi/sdk'
+const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), chainId: 56 })
 
 const [a, b] = await Promise.all([api.resolve('<#123>.4.tape'), api.resolve('<#987>.2.tape')])
 

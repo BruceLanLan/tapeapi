@@ -28,16 +28,16 @@ import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, join, resolve as resolvePath } from 'node:path'
 import { createInterface } from 'node:readline'
-import { createTapeAPI, TapeAPIError, canonicalJSON } from '../src/index.js'
+import { createTapeAPI, TapeAPIError, canonicalJSON, rpcUrlsFor, operatorOf } from '../src/index.js'
 import { createMcpServer, receiptOf, toolResultOf, toolsDigest, normalizeTools, invisibleProblems, quoteProvenance, JSONRPC, MCP_PROTOCOL_VERSIONS, RECEIPT_META_KEY } from '../src/mcp.js'
 import { manifestToTools, sanitizePrefix } from '../src/webmcp.js'
 import { recoverResponseSigner } from '../src/sig.js'
 import { safeParseJSON } from '../src/canon.js'
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
-// The same three public BNB Chain nodes the SDK README uses; every chain read must be agreed by two of them.
-// 与 SDK README 相同的三个公共节点；每次链上读取须有两个一致。
-const DEFAULT_RPC = ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io']
+// The SDK's default BNB Chain nodes (three operators); every chain read must be agreed by two operators.
+// SDK 的默认 BNB Chain 节点（三家运营方）；每次链上读取须有两家一致。
+const DEFAULT_RPC = rpcUrlsFor(56)
 const DEFAULT_PIN = join(homedir(), '.tapeapi', 'mcp-pins.json')
 const RESOLVE_RETRY_S = 30
 const LINE_LIMIT = 4 * 1024 * 1024
@@ -57,7 +57,7 @@ const USAGE = `tapeapi-mcp ${VERSION}: TapeAPI services as MCP tools (stdio), ev
 Usage: tapeapi-mcp [options] <service> [<service> ...]
 
   <service>            a TapeOut name (11.1013.tape) or a container address (0x...)
-  --rpc <url,url,...>  BNB Chain nodes; each chain read needs 2 to agree (default: ${DEFAULT_RPC.length} public dataseed nodes)
+  --rpc <url,url,...>  BNB Chain nodes; each chain read needs 2 to agree (default: ${DEFAULT_RPC.length} public nodes of distinct operators)
   --pin <file>         where tool definitions are pinned (default: ~/.tapeapi/mcp-pins.json)
   --no-pin             do not read or write the pin file (definitions are still pinned for this session)
   --allow-changed      accept tool definitions that changed on chain since they were pinned, once, and re-pin them
@@ -342,7 +342,8 @@ async function main() {
   }
   // A dev-only run reads no chain unless --rpc is given; any on-chain target needs nodes. / 纯 dev 运行不读链，除非给了 --rpc。
   const rpcUrls = opts.rpc ?? (opts.targets.length ? DEFAULT_RPC : null)
-  if (rpcUrls && rpcUrls.length < 2) { process.stderr.write('tapeapi-mcp: --rpc needs at least 2 nodes (every chain read must be agreed by 2)\n'); process.exit(2) }
+  // Counted in operators, as the SDK counts them: every bsc-dataseed host is NodeReal's / 按运营方计，与 SDK 相同
+  if (rpcUrls && new Set(rpcUrls.map(operatorOf)).size < 2) { process.stderr.write('tapeapi-mcp: --rpc needs nodes of at least 2 independent operators (every chain read must be agreed by 2; URLs of one operator, such as the bsc-dataseed hosts, count once)\n'); process.exit(2) }
   const api = createTapeAPI({ ...(rpcUrls ? { rpcUrls, quorum: 2 } : {}), ...(devMode ? { dev: true } : {}) })
 
   let pins

@@ -5,7 +5,7 @@
 // 任何人都可以架一个。
 import { readFile } from 'node:fs/promises'
 import { createProvider } from '@tapeapi/server'
-import { sig } from '@tapeapi/sdk'
+import { sig, rpcUrlsFor } from '@tapeapi/sdk'
 import { startProvider } from '../_lib/service.mjs'
 import { fileStore } from '../_lib/store.mjs'
 import { createRelayCore, relayMethods, relayManifestMethods } from './relay-core.mjs'
@@ -36,8 +36,8 @@ const manifest = {
 const core = createRelayCore()
 const provider = createProvider({
   manifest, signerKey: SIGNER_KEY,
-  // 2-of-3: one node down still leaves a quorum (arch A5) / 三取二：一个节点宕机仍有法定数
-  rpcUrls: (process.env.RPC_URLS || 'https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io').split(','),
+  // 2-of-3 operators, the SDK's defaults: one down still leaves a quorum (arch A5) / 三家取二：一家宕机仍有法定数
+  rpcUrls: process.env.RPC_URLS ? process.env.RPC_URLS.split(',') : rpcUrlsFor(56),
   quorum: 2, allowSingleNode: !PROD, log: (...a) => console.error('[relay]', ...a),
   store: process.env.METER_FILE ? fileStore(process.env.METER_FILE) : undefined,
   methods: relayMethods(core),

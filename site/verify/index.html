@@ -30,7 +30,7 @@
 <meta name="twitter:description" content="Check a TapeAPI receipt against BNB Chain in your browser: who signed it, and whether that is the service's key today.">
 <meta name="twitter:image" content="https://tapeapi.fun/og.png">
 <link rel="stylesheet" href="../playground/playground.css?v=645ac28c4b">
-<link rel="stylesheet" href="verify.css?v=f3d6e0507f">
+<link rel="stylesheet" href="verify.css?v=d76cbd11a5">
 <script type="importmap">
 {
   "imports": {
@@ -49,7 +49,7 @@
   }
 }
 </script>
-<script type="module" src="verify.js?v=e020f71c24"></script>
+<script type="module" src="verify.js?v=b10f963515"></script>
 </head>
 <body>
 <header class="hd-bar">
@@ -78,18 +78,28 @@
     <form id="input-form" autocomplete="off">
       <label for="receipt-input" class="lbl"><span class="t" lang="zh">粘贴回执</span><span class="t" lang="en">Paste a receipt</span></label>
       <textarea id="receipt-input" rows="5" spellcheck="false" autocapitalize="off"></textarea>
+      <details class="ai-bytes">
+        <summary><span class="t" lang="zh">AI 用量回执：可选，粘贴请求与回应以核对两个哈希</span><span class="t" lang="en">AI usage receipt: optionally paste the request and response to check both hashes</span></summary>
+        <label for="request-input" class="lbl"><span class="t" lang="zh">请求体（发出的原始 JSON）</span><span class="t" lang="en">Request body (the raw JSON that was sent)</span></label>
+        <textarea id="request-input" rows="3" spellcheck="false" autocapitalize="off"></textarea>
+        <label for="response-input" class="lbl"><span class="t" lang="zh">回应体（非流式为 JSON；流式为整段事件流文本）</span><span class="t" lang="en">Response body (JSON; for a stream, the whole event-stream text)</span></label>
+        <textarea id="response-input" rows="4" spellcheck="false" autocapitalize="off"></textarea>
+        <p class="hint"><span class="t" lang="zh">哈希覆盖确切字节：多一个空格、换行不同（本页按 LF 读取）都会不一致。不粘贴也能核对签名、身份与金额。</span><span class="t" lang="en">The hashes cover the exact bytes: one extra space or different line ends (this page reads LF) will not match. Without them the signature, the identity and the amount are still checked.</span></p>
+      </details>
       <div class="actions">
         <button class="btn" id="check-btn" type="submit"><span class="t" lang="zh">核验</span><span class="t" lang="en">Verify</span></button>
         <span class="muted" id="status" role="status" aria-live="polite"></span>
       </div>
     </form>
     <p class="hint"><span class="t" lang="zh">可以粘贴：核验链接（<code>https://tapeapi.fun/verify/#r=…</code>）、它的 <code>#r=</code> 部分、回执 JSON，或整个 MCP 工具结果（含 <code>_meta["fun.tapeapi/receipt"]</code>，也可以是外层的 JSON-RPC 回应）。最多 64 KiB。</span><span class="t" lang="en">Paste the verify link (<code>https://tapeapi.fun/verify/#r=…</code>), its <code>#r=</code> part, the receipt JSON, or a whole MCP tool result (with <code>_meta["fun.tapeapi/receipt"]</code>, or the JSON-RPC response around it). Up to 64 KiB.</span></p>
+    <p class="hint"><span class="t" lang="zh">AI 用量回执也可以：<code>x-tapeapi-receipt</code> 响应头的值（或整行）、流里的 <code>: tapeapi-receipt …</code> 注释行（或整段流），或 <code>receipt</code> 方法的回答。</span><span class="t" lang="en">AI usage receipts too: the value (or the whole line) of the <code>x-tapeapi-receipt</code> header, the <code>: tapeapi-receipt …</code> comment line of a stream (or the whole stream), or the answer of the <code>receipt</code> method.</span></p>
     <div id="input-error" class="errbox" role="alert" hidden></div>
   </section>
 
   <section class="panel" id="s-result" aria-labelledby="h-result" hidden>
     <h2 id="h-result"><span class="num">2</span><span class="t" lang="zh">结论</span><span class="t" lang="en">Verdict</span></h2>
     <div id="verdict" class="vd"></div>
+    <p class="note" id="ai-note" hidden><span class="t" lang="zh">这是一份 AI 用量回执。它的两个哈希绑定确切的请求与回应字节，本页没有这些字节（除非你在上面粘贴），所以默认只核对签名、服务身份与金额。签名证明的是谁回答的、声称了什么，不证明实际运行的是哪个模型；这类替换靠回执与抽检变得可追责。</span><span class="t" lang="en">This is an AI usage receipt. Its two hashes bind the exact request and response bytes, which this page does not have (unless you paste them above), so by default it checks the signature, the service's identity and the amount only. A signature proves who answered and what was claimed, not which model actually ran; receipts and spot checks make such a substitution attributable.</span></p>
     <p><button class="ctl" id="retry-btn" type="button" hidden><span class="t" lang="zh">重新读链</span><span class="t" lang="en">Read the chain again</span></button></p>
     <ul class="checks" id="checks"></ul>
     <h3 class="sub"><span class="t" lang="zh">回执内容</span><span class="t" lang="en">What the receipt says</span></h3>
@@ -105,7 +115,8 @@
     <h2 id="h-how"><span class="t" lang="zh">本页核对什么</span><span class="t" lang="en">What this page checks</span></h2>
     <ol class="how-list">
       <li><span class="t" lang="zh">从签名恢复签名者：签名覆盖容器、请求 id、方法与参数、成功或拒绝、结果、时间。改动其中任何一项，恢复出的就是另一个地址。</span><span class="t" lang="en">Recover the signer from the signature, which covers the container, request id, method and params, success or refusal, the result, and the time. Change any of them and a different address comes out.</span></li>
-      <li><span class="t" lang="zh">用回执里的电路合约和 #ID 在链上解析服务（3 个公共 BSC 节点，至少 2 个一致）：容器由中枢推导，清单字节与 SiteRegistry 的哈希一致，委托由当前持有人签署且未过期。</span><span class="t" lang="en">Resolve the service on chain from the receipt's circuit contract and #ID (3 public BSC nodes, at least 2 agreeing): the hub derives the container, the manifest bytes match the SiteRegistry hash, and the delegation is signed by the current holder and not expired.</span></li>
+      <li><span class="t" lang="zh">用回执里的电路合约和 #ID 在链上解析服务（3 家不同运营方的公共 BSC 节点，至少 2 家一致）：容器由中枢推导，清单字节与 SiteRegistry 的哈希一致，委托由当前持有人签署且未过期。</span><span class="t" lang="en">Resolve the service on chain from the receipt's circuit contract and #ID (public BSC nodes of 3 different operators, at least 2 agreeing): the hub derives the container, the manifest bytes match the SiteRegistry hash, and the delegation is signed by the current holder and not expired.</span></li>
+      <li><span class="t" lang="zh">AI 用量回执不带电路与 #ID：本页按回执里的容器解析服务，再核对金额（按回执里的模型在清单价目表中精确匹配，用回执里的 token 数重算，向上取整到 8 位小数）。</span><span class="t" lang="en">An AI usage receipt carries no circuit or #ID: the page resolves the service from the receipt's container, then checks the amount (the receipt's model matched exactly in the manifest's price table, recomputed from the receipt's token counts, rounded up to 8 decimals).</span></li>
       <li><span class="t" lang="zh">比对：链上推导的容器等于回执里的容器；回执里的名字属于这个服务；恢复出的签名者等于清单今天指定的签名密钥。</span><span class="t" lang="en">Compare: the container the chain derives equals the receipt's; the receipt's name belongs to this service; the recovered signer equals the signing key the manifest names today.</span></li>
     </ol>
     <p class="muted"><span class="t" lang="zh">手上没有回执？在<a href="../playground/">调试台</a>里调用一个方法，或者用 MCP 端点 <code>https://api.tapeapi.fun/mcp</code>：每个工具结果都带核验链接。</span><span class="t" lang="en">No receipt at hand? Call a method in the <a href="../playground/">Playground</a>, or use the MCP endpoint <code>https://api.tapeapi.fun/mcp</code>: every tool result carries a verify link.</span></p>

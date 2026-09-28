@@ -41,6 +41,14 @@
       "types": "./types/mcp-proxy.d.ts",
       "default": "./src/mcp-proxy.js"
     },
+    "./ai-proxy": {
+      "types": "./types/ai-proxy.d.ts",
+      "default": "./src/ai-proxy.js"
+    },
+    "./openai-proxy": {
+      "types": "./types/openai-proxy.d.ts",
+      "default": "./src/openai-proxy.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

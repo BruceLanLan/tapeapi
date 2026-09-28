@@ -4,10 +4,12 @@
 // Everything a manifest, a node or a provider says is untrusted text: it reaches the page through textContent only.
 // “我的服务”面板：只读查看自己运行的 TapeAPI 服务。每一项用真实 SDK（调试台 vendor/ 里的同一份）解析，再从浏览器
 // 直接请求它的健康检查。本页只向钱包发 eth_requestAccounts 取地址。清单、节点、提供者给出的一切只经 textContent 进入页面。
-import { createTapeAPI, TapeAPIError, abi } from '../playground/vendor/tapeapi-sdk/index.js'
+import { createTapeAPI, TapeAPIError, abi, rpcUrlsFor } from '../playground/vendor/tapeapi-sdk/index.js'
 import { parseInput, classifyExpiry, healthUrl, sameAddress, loadList, saveList, addTo, removeFrom, PUBLIC_EXAMPLES, STORAGE_KEY, HEALTH_PATH } from './lib.js'
 
-const RPC_URLS = ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io']
+// The SDK's default nodes: three distinct operators (NodeReal, Alchemy, 48 Club); the SDK counts agreement by operator.
+// SDK 的默认节点：三家不同运营方；SDK 按运营方计票。
+const RPC_URLS = rpcUrlsFor(56)
 const QUORUM = 2
 const HEALTH_TIMEOUT_MS = 8000
 const PARALLEL = 2   // resolves at once: quorum reads on three public nodes rate-limit quickly / 同时解析数：公共节点容易限流
@@ -45,7 +47,7 @@ const T = {
     'discover.add': '加入我的服务', 'discover.added': '已在列表里',
     'discover.nocircuit': (id, p) => `处理器 ${p} 上没有电路 #${id}（ownerOf 回滚）。`,
     'discover.note': '加入后，卡片会告诉你这个容器有没有发布 TapeAPI 清单；没有清单的名称会显示 MANIFEST_INVALID。',
-    foot: '只读：本页不请钱包签名或发送任何东西，也不需要任何密钥。链上读取经 3 个公共 BSC 节点、至少 2 个一致（quorum 2）；健康检查直接从你的浏览器请求服务端点。',
+    foot: '只读：本页不请钱包签名或发送任何东西，也不需要任何密钥。链上读取经 3 家不同运营方的公共 BSC 节点、至少 2 家一致（quorum 2）；健康检查直接从你的浏览器请求服务端点。',
     'k.name': '名称', 'k.container': '容器', 'k.holder': '当前持有人', 'k.endpoint': '端点', 'k.methods': '方法数',
     'k.signer': '服务签名密钥', 'k.expires': '委托到期', 'k.health': '在线检查', 'k.circuits': '处理器合约',
     you: '你持有这个', resolving: '正在读链：定位容器、读取清单、核对委托……', retrying: '节点没有及时回应，正在重试……',
@@ -97,7 +99,7 @@ const T = {
     'discover.add': 'Add to my services', 'discover.added': 'Already in the list',
     'discover.nocircuit': (id, p) => `Processor ${p} has no circuit #${id} (ownerOf reverted).`,
     'discover.note': 'Once added, the card says whether this container publishes a TapeAPI manifest; a name without one shows MANIFEST_INVALID.',
-    foot: 'Read-only: this page never asks a wallet to sign or send anything, and needs no key. Chain reads go to 3 public BSC nodes, at least 2 of which must agree (quorum 2); health checks go from your browser straight to each endpoint.',
+    foot: 'Read-only: this page never asks a wallet to sign or send anything, and needs no key. Chain reads go to public BSC nodes of 3 different operators, at least 2 of which must agree (quorum 2); health checks go from your browser straight to each endpoint.',
     'k.name': 'Name', 'k.container': 'Container', 'k.holder': 'Current holder', 'k.endpoint': 'Endpoint', 'k.methods': 'Methods',
     'k.signer': 'Service signing key', 'k.expires': 'Delegation expires', 'k.health': 'Health', 'k.circuits': 'Processor contract',
     you: 'you hold this', resolving: 'Reading the chain: locating the container, reading the manifest, checking the delegation…', retrying: 'The nodes did not answer in time; trying again…',

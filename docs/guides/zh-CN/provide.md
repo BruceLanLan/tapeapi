@@ -31,7 +31,7 @@ import { createProvider } from '@tapeapi/server'
 const provider = createProvider({
   manifest: JSON.parse(await readFile('manifest.json', 'utf8')),
   signerKey: process.env.SIGNER_KEY,
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
   quorum: 2,
   methods: {
     blockNumber: async (_params, ctx) => ({ blockNumber: ctx.block }),

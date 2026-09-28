@@ -35,7 +35,7 @@ const envFor = (extra = {}) => ({
   ROOMS: durableNamespace(RelayRoom), SIGNER_KEY, SIGNER_ADDRESS: signer, CIRCUITS: ADDR.circuits, TOKEN_ID: '4246', CONTAINER: ADDR.container,
   DELEGATION_EXPIRES: String(EXPIRES),
   DELEGATION_SIG: signDigest(delegationDigest(56, ADDR.hub, { container: ADDR.container, signer, expires: EXPIRES }), HOLDER_KEY),
-  PUBLIC_URL: 'https://relay.example', RPC_URLS: 'http://127.0.0.1:9,http://127.0.0.1:10', ...extra,
+  PUBLIC_URL: 'https://relay.example', RPC_URLS: 'http://127.0.0.1:9,http://localhost:10', ...extra,
 })
 const call = async (iso, method, params, ip = '1.2.3.4') => (await iso.handleRequest(new Request(`https://relay.example/tapeapi/v1/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: `r${Math.random()}`, params }) }), { clientIp: ip })).json()
 

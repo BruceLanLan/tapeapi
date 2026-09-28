@@ -43,9 +43,11 @@ test('dashboard: the page references only local files', () => {
     assert.doesNotMatch(text, /@import|url\(\s*['"]?(?:https?:)?\/\//i, `${name}: remote stylesheet or asset`)
     assert.doesNotMatch(text, /claude/i, `${name}: the page is for outside developers`)
   }
-  // The only absolute URLs in the script are the three public BSC nodes. / 脚本里唯一的绝对 URL 是三个公共 BSC 节点。
+  // No absolute URL in the script: its nodes are the SDK's rpcUrlsFor(56) (three operators), from the vendored SDK.
+  // 脚本里没有绝对 URL：节点取自 vendor 的 SDK 的 rpcUrlsFor(56)（三家运营方）。
   const urls = [...js.matchAll(/https?:\/\/[^\s'"`)]+/g)].map((m) => m[0])
-  assert.deepEqual([...new Set(urls)].sort(), ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'])
+  assert.deepEqual(urls, [])
+  assert.match(js, /const RPC_URLS = rpcUrlsFor\(56\)/)
 })
 
 test('dashboard: the import map is the playground\'s, read from ../playground/vendor/, and every entry exists', () => {

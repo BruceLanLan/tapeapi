@@ -4,11 +4,13 @@
 // Everything in a receipt is untrusted text: it reaches the page through textContent only, never as HTML.
 // 回执核验页：从链接的 #r= 片段或用户粘贴的内容读出回执，恢复签名者，用真实 SDK 在链上解析服务，并用平实的话说明结论。
 // 手写；SDK 用调试台 vendor/ 里的同一份，纯逻辑在 lib.js（离线测试）。回执里的一切都是不可信文本，只经 textContent 进入页面。
-import { createTapeAPI, sig, abi } from '../playground/vendor/tapeapi-sdk/index.js'
-import { extractReceipt, parseReceipt, verifyReceipt, signedBlock, utc, ReceiptError } from './lib.js'
+import { createTapeAPI, sig, abi, rpcUrlsFor, operatorOf } from '../playground/vendor/tapeapi-sdk/index.js'
+import { readAny, verifyReceipt, verifyUsage, signedBlock, utc, ReceiptError } from './lib.js'
 import { T } from './strings.js'
 
-const RPC_URLS = ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io']
+// The SDK's default nodes: three distinct operators (NodeReal, Alchemy, 48 Club); the SDK counts agreement by operator.
+// SDK 的默认节点：三家不同运营方；SDK 按运营方计票。
+const RPC_URLS = rpcUrlsFor(56)
 const QUORUM = 2
 
 // ── language / 语言 ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -35,19 +37,19 @@ const checksum = (a) => { try { return abi.checksumAddress(a) } catch { return a
 
 // ── state and the check / 状态与核对 ─────────────────────────────────────────────────────────────────────────────
 // Kept as data so a language switch re-renders it. / 以数据保存，切换语言时重绘。
-let state = null   // { error } | { raw, receipt, outcome, ms }
+let state = null   // { error } | { raw, kind: 'receipt' | 'usage', receipt, outcome, ms }
 let runSeq = 0
 
 async function run(text, fromLink) {
   const seq = ++runSeq
   $('from-link').hidden = !fromLink
-  let raw, receipt
-  try { raw = extractReceipt(text); receipt = parseReceipt(raw) } catch (e) {
+  let raw, receipt, kind
+  try { ({ raw, receipt, kind } = readAny(text)) } catch (e) {
     state = { error: e }
     render()
     return
   }
-  state = { raw, receipt, outcome: null, ms: 0 }
+  state = { raw, kind, receipt, outcome: null, ms: 0 }
   render()
   $('check-btn').disabled = true
   const t0 = performance.now()
@@ -56,7 +58,11 @@ async function run(text, fromLink) {
   const api = createTapeAPI({ rpcUrls: RPC_URLS, quorum: QUORUM, timeoutMs: 4000 })
   let outcome
   try {
-    outcome = await verifyReceipt(receipt, { recover: sig.recoverResponseSigner, resolve: api.resolve, cpuAt: api.chain.cpuAt })
+    // An AI usage receipt names only its container: the service is resolved from it. Its hashes are checked against
+    // the request and response bytes only when they were pasted. / AI 用量回执只给出容器，按容器解析；哈希只在粘贴了字节时核对。
+    outcome = kind === 'usage'
+      ? await verifyUsage(receipt, { recover: sig.recoverResponseSigner, resolve: (c) => api.resolve(c), request: $('request-input').value, response: $('response-input').value })
+      : await verifyReceipt(receipt, { recover: sig.recoverResponseSigner, resolve: api.resolve, cpuAt: api.chain.cpuAt })
   } finally { if (seq === runSeq) $('check-btn').disabled = false }
   if (seq !== runSeq) return   // a newer receipt was submitted meanwhile / 期间提交了新的回执
   state.outcome = outcome
@@ -79,11 +85,13 @@ function render() {
   err.hidden = true
   const { receipt: r, outcome: o } = state
   $('status').textContent = o ? t('done', state.ms) : t('checking')
+  const usage = state.kind === 'usage'
   renderVerdict(r, o)
   renderChecks(r, o)
-  renderDetails(r, o)
+  if (usage) renderUsageDetails(r, o); else renderDetails(r, o)
+  $('ai-note').hidden = !usage
   $('params-json').textContent = json(r.params)
-  $('body-label').textContent = r.ok ? t('body.result') : t('body.error')
+  $('body-label').textContent = usage ? t('body.usage') : r.ok ? t('body.result') : t('body.error')
   $('body-json').textContent = json(r.ok ? r.result : r.error)
   $('receipt-json').textContent = json(state.raw)
   $('s-result').hidden = false
@@ -101,10 +109,11 @@ function renderVerdict(r, o) {
   }
   // Only names the chain vouched for: the manifest's (its bytes are hashed on chain) and the receipt's once checked.
   // 只用链上担保过的名字：清单里的（字节哈希在链上）与核对通过的回执名字。
-  const id = o.name?.state === 'pass' ? r.service.name : `#${r.service.tokenId} · ${checksum(r.service.circuits)}`
+  const usage = state.kind === 'usage'
+  const id = usage ? checksum(r.container) : o.name?.state === 'pass' ? r.service.name : `#${r.service.tokenId} · ${checksum(r.service.circuits)}`
   const who = o.svc?.manifest?.name ? `“${o.svc.manifest.name}” (${id})` : id
   const text = []
-  if (o.verdict === 'valid') text.push(t(r.ok ? 'x.valid' : 'x.valid.refusal', who))
+  if (o.verdict === 'valid') text.push(t(usage ? 'x.valid.usage' : r.ok ? 'x.valid' : 'x.valid.refusal', who))
   else if (o.verdict === 'other-key') {
     text.push(t('x.other-key'))
     text.push(t('x.other-key.why'))
@@ -112,6 +121,7 @@ function renderVerdict(r, o) {
     let msg = t(`x.invalid.${o.failed}`)
     if (o.failed === 'resolve' && o.resolveError) msg += `${o.resolveError.code ? `${o.resolveError.code}: ` : ''}${o.resolveError.message || ''}`
     text.push(msg)
+    if (o.failed === 'amount') text.push(...o.amountProblems)
   } else {
     text.push(t('x.unchecked'))
     const e = o.resolveError || o.name?.error
@@ -141,16 +151,17 @@ function renderChecks(r, o) {
   for (const { id, state } of o.checks) {
     if (id === 'name' && state === 'skip') continue   // the receipt names no name / 回执没有名字
     let value = null, how = null
-    if (state === 'skip') value = t('c.notRun')
+    if ((id === 'request' || id === 'response') && state === 'skip') value = t('c.notPasted')
+    else if (state === 'skip') value = t('c.notRun')
     else if (id === 'sig') {
       if (state === 'pass') { value = code(o.recovered); how = t('c.sig.how') } else value = errText(o.recoverError)
     } else if (id === 'resolve') {
-      if (state === 'pass') { value = el('span', null, m.name ? `${m.name} · ` : '', code(checksum(m.circuits)), ` #${m.tokenId}`); how = t('c.resolve.how', QUORUM, RPC_URLS.length) } else {
+      if (state === 'pass') { value = el('span', null, m.name ? `${m.name} · ` : '', code(checksum(m.circuits)), ` #${m.tokenId}`); how = t('c.resolve.how', QUORUM, new Set(RPC_URLS.map(operatorOf)).size) } else {
         value = errText(o.resolveError); if (state === 'unknown') how = t('c.network')
       }
     } else if (id === 'container') {
       value = code(o.svc.container)
-      how = state === 'pass' ? t('c.container.how') : t('c.container.bad', o.svc.container, r.service.container)
+      how = state === 'pass' ? t('c.container.how') : t('c.container.bad', o.svc.container, r.service?.container ?? r.container)
     } else if (id === 'delegation') {
       value = o.svc.verified?.holder ? code(o.svc.verified.holder) : '—'
       if (m?.delegation?.expires) how = t('c.delegation.how', utc(m.delegation.expires))
@@ -162,6 +173,16 @@ function renderChecks(r, o) {
     } else if (id === 'signer') {
       value = code(checksum(m.signer))
       how = state === 'pass' ? t('c.signer.how') : t('c.signer.bad', o.recovered, checksum(m.signer))
+    } else if (id === 'method') {
+      value = code(`${r.method} · ${r.params.path}`)
+      how = t(`c.method.${state}`)
+    } else if (id === 'amount') {
+      const p = r.result.price
+      value = p ? `${p.amount} ${p.currency}` : t('d.noPrice')
+      how = state === 'pass' ? t('c.amount.how') : o.amountProblems.join('; ')
+    } else if (id === 'request' || id === 'response') {
+      value = code(id === 'request' ? r.params.requestSha256 : r.result.responseSha256)
+      how = t(state === 'pass' ? 'c.hash.how' : 'c.hash.bad')
     }
     rows.push(checkRow(state, t(`c.${id}`), value, how))
   }
@@ -184,6 +205,32 @@ function renderDetails(r, o) {
   const sb = signedBlock(r)
   if (sb !== null) kv.push([t('d.signedBlock'), [code(String(sb)), aside('d.signedBlock.aside')]])
   if (r.block !== undefined) kv.push([t('d.block'), [code(String(r.block)), aside('d.block.aside')]])
+  kv.push([t('d.signer'), o?.recovered ? code(o.recovered) : t('d.none')])
+  $('details').replaceChildren(...kv.flatMap(([k, v]) => [el('dt', null, k), el('dd', null, v)]))
+}
+
+// What an AI usage receipt says: the call, the model, the tokens, the price and the amount. Every value here is signed.
+// AI 用量回执的内容：调用、模型、token、价格与金额。这里的每个值都在签名范围内。
+function renderUsageDetails(r, o) {
+  const aside = (k) => el('span', { class: 'aside' }, t(k))
+  const u = r.result.usage, p = r.result.price, m = o?.svc?.manifest
+  const kv = []
+  kv.push([t('d.service'), m?.name ?? (o && !o.svc ? t('d.notResolved') : t('d.none'))])
+  kv.push([t('d.container'), code(checksum(r.container))])
+  if (m) kv.push([t('d.circuit'), [code(checksum(m.circuits)), ` #${m.tokenId}`]])
+  kv.push([t('d.method'), code(r.method)])
+  kv.push([t('d.path'), code(r.params.path)])
+  kv.push([t('d.id'), code(r.id)])
+  kv.push([t('d.model'), r.result.model === null ? t('d.none') : code(r.result.model)])
+  kv.push([t('d.tokens'), u ? t('d.tokens.v', u) : t('d.noUsage')])
+  if (r.result.usageInjected) kv.push([t('d.injected'), t('d.injected.v')])
+  kv.push([t('d.price'), p ? t('d.price.v', p) : t('d.noPrice')])
+  kv.push([t('d.amount'), p ? [code(`${p.amount} ${p.currency}`), p.unpriced ? el('span', { class: 'aside' }, t('d.unpriced', p.unpriced.join(', '))) : null] : t('d.none')])
+  if (r.result.status !== undefined) kv.push([t('d.status'), code(String(r.result.status))])
+  kv.push([t('d.stream'), r.result.stream ? t('d.stream.yes') : t('d.stream.no')])
+  kv.push([t('d.ts'), `${utc(r.ts)} (${r.ts})`])
+  kv.push([t('d.requestSha256'), [code(r.params.requestSha256), aside('d.hash.aside')]])
+  kv.push([t('d.responseSha256'), [code(r.result.responseSha256), aside('d.hash.aside')]])
   kv.push([t('d.signer'), o?.recovered ? code(o.recovered) : t('d.none')])
   $('details').replaceChildren(...kv.flatMap(([k, v]) => [el('dt', null, k), el('dd', null, v)]))
 }

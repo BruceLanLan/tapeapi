@@ -69,6 +69,10 @@
       "types": "./types/mcp.d.ts",
       "default": "./src/mcp.js"
     },
+    "./ai": {
+      "types": "./types/ai.d.ts",
+      "default": "./src/ai.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

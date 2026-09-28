@@ -10,6 +10,8 @@ export type { Rpc, RpcOptions } from './rpc.js'
 export type { Manifest, ManifestMethod } from './manifest.js'
 export { TapeAPIError } from './errors.js'
 export { createRpc } from './rpc.js'
+export { RPC_DEFAULTS, rpcUrlsFor, operatorOf } from './rpc-defaults.js'
+export type { RpcNode } from './rpc-defaults.js'
 export { canonicalJSON, safeParseJSON } from './canon.js'
 export { validateManifest, parseUnits, formatUnits, METHOD_NAME_RE, BEM_DECIMALS } from './manifest.js'
 export { labelToBytes32 } from './abi.js'
@@ -20,6 +22,7 @@ export * as group from './group.js'
 export * as tapesend from './tapesend.js'
 export * as webmcp from './webmcp.js'
 export * as mcp from './mcp.js'
+export * as ai from './ai.js'
 
 export declare const MAX_CONTRIBUTION_BPS: number
 export declare const RECOMMENDED_CONTRIBUTION_BPS: number
@@ -49,9 +52,10 @@ export declare const DEFAULT_MAX_SKEW_S: number
 export declare function registryKey(path: string): string
 
 export interface CreateTapeAPIOptions {
-  /** JSON-RPC nodes; at least `quorum` distinct URLs. Without them every chain read throws RPC_UNAVAILABLE. */
+  /** JSON-RPC nodes of at least `quorum` distinct operators (see `operatorOf`; `rpcUrlsFor(56)` gives three).
+   *  Without them every chain read throws RPC_UNAVAILABLE. */
   rpcUrls?: string[]
-  /** How many nodes must agree on every read (default 2). */
+  /** How many node operators must agree on every read (default 2); URLs of one operator count once. */
   quorum?: number
   /** Development only: accept fewer nodes than `quorum`. */
   allowSingleNode?: boolean

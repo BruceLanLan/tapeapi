@@ -92,6 +92,20 @@ test('too few answering nodes is INTERNAL, never a silently degraded answer', as
   await assert.rejects(() => r.pinBlock(), (e) => e.code === 'INTERNAL' && /1\/2 nodes/.test(e.message))
 })
 
+test('FIXED RPC-OP-4: pinning counts operators: two NodeReal nodes answering with Alchemy down is not a quorum', async () => {
+  const urls = ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-mainnet.public.blastapi.io']
+  const one = readerWith([fakeNode(), fakeNode(), fakeNode({ down: true })], { urls })
+  for (const b of [undefined, 'latest', 'finalized', 42]) {
+    await assert.rejects(() => one.pinBlock(b), (e) => e.code === 'INTERNAL' && /1\/2 operators answered/.test(e.message), `block ${b}`)
+  }
+  // One NodeReal node down instead: NodeReal and Alchemy answer, two operators / 换成一个 NodeReal 宕机：两家作答
+  const two = readerWith([fakeNode(), fakeNode({ down: true }), fakeNode()], { urls })
+  assert.equal((await two.pinBlock(42)).blockNumber, 42)
+  // ...and the NodeReal nodes cannot outvote Alchemy on the hash / 两个 NodeReal 节点也不能在 hash 上压过 Alchemy
+  const split = readerWith([fakeNode({ hash: H(1) }), fakeNode({ hash: H(1) }), fakeNode({ hash: H(2) })], { urls })
+  await assert.rejects(() => split.pinBlock(42), (e) => e.code === 'INTERNAL' && /disagree on the hash/.test(e.message))
+})
+
 test('quorum comes from the rpc client, so allowSingleNode reaches the pinning path too', async () => {
   // createRpc({ urls: [one], quorum: 2, allowSingleNode: true }) settles on quorum 1; the reader must follow.
   const r = createChainReader({ name: 'dev', rpc: { quorum: 1 }, singles: [fakeNode({ finalized: 90 })] })

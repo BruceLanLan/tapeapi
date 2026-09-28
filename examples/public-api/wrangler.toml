@@ -21,5 +21,7 @@ SERVICE_NAME = "TapeAPI Public"
 # The TapeOut name the MCP endpoint shows in its receipts. / MCP 端点在回执里展示的 TapeOut 名称。
 TAPE_NAME = "11.1013.tape"
 PUBLIC_URL = "https://api.tapeapi.fun"
-RPC_URLS = "https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io"
+# Three operators (NodeReal, Alchemy, 48 Club), the SDK's rpcUrlsFor(56); quorum 2 counts operators, not URLs.
+# 三家运营方（SDK 的 rpcUrlsFor(56)）；quorum 2 按运营方计，不按 URL。
+RPC_URLS = "https://bsc-dataseed.bnbchain.org,https://bsc-mainnet.public.blastapi.io,https://rpc-bsc.48.club"
 RPC_TIMEOUT_MS = "3000"

@@ -3,17 +3,16 @@
 // Cloudflare Workers 上的 relay.tape：TapeAPI 那一面（身份、签名回答、计费、限流）跑在 Worker 里；
 // 每个房间是一个 Durable Object，所有隔离实例看到的是同一个房间。
 import { createProvider } from '@tapeapi/server'
-import { sig } from '@tapeapi/sdk'
+import { sig, rpcUrlsFor } from '@tapeapi/sdk'
 import { setupAnswer } from './worker.js'
 import { relayManifestMethods, sourceOf } from '../relay-service/relay-core.mjs'
 import { d1Store } from './d1-store.js'
 export { RelayRoom } from './relay-room.js'
 
 const ROOM_RE = /^[0-9a-f]{64}$/
-// 2-of-3: one node down, rate limiting or refusing a method still leaves a quorum (arch A5).
-// 三取二：一个节点宕机、限流或拒绝某方法时仍有法定数。
-// publicnode left the default list on 2026-09-27 (it timed out on every request). / publicnode 因持续超时移出默认列表。
-const DEFAULT_RPC_URLS = 'https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io'
+// 2-of-3 operators (the SDK's defaults): one down, rate limiting or refusing a method still leaves a quorum (arch A5).
+// 三家取二（SDK 默认节点）：一家宕机、限流或拒绝某方法时仍有法定数。
+const DEFAULT_RPC_URLS = rpcUrlsFor(56).join(',')
 let provider = null
 
 // New rooms per client IP per minute (arch A2). Every new room name is a new Durable Object, so without this one

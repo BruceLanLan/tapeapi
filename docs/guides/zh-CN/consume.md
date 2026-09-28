@@ -39,7 +39,7 @@ curl 会显示签名信封（`result`、`container`、`ts`、`block`、`sig`）�
 import { createTapeAPI } from '@tapeapi/sdk'
 
 const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
   quorum: 2,
 })
 const svc = await api.resolve('11.1013.tape')
@@ -76,7 +76,7 @@ console.log(result.blockNumber, block, verified)
 
 ```js
 const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
   quorum: 2,
 })
 

@@ -79,7 +79,7 @@ test('FIXED MCP-R5: the logged caller tag is a keyed HMAC of IP|day that brute f
   const env = {
     SIGNER_KEY: key, CIRCUITS, TOKEN_ID: '11', CONTAINER, DELEGATION_EXPIRES: String(expires),
     DELEGATION_SIG: signDigest(delegationDigest(56, MAINNET.hub, { container: CONTAINER, signer: privateKeyToAddress(key), expires }), holder),
-    PUBLIC_URL: 'https://api.tapeapi.fun', TAPE_NAME: '11.1013.tape', RPC_URLS: 'http://127.0.0.1:9,http://127.0.0.1:10',
+    PUBLIC_URL: 'https://api.tapeapi.fun', TAPE_NAME: '11.1013.tape', RPC_URLS: 'http://127.0.0.1:9,http://localhost:10',
   }
   const IP = '203.0.113.77'
   const lines = []

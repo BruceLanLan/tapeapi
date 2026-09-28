@@ -1,5 +1,6 @@
 import { TapeAPIError } from './errors.js'
 import { canonicalJSON, safeParseJSON } from './canon.js'
+import { operatorOf } from './rpc-defaults.js'
 
 export const RPC_BODY_LIMIT = 4 * 1024 * 1024 // 4 MiB per JSON-RPC response / 单个 RPC 响应上限
 
@@ -44,6 +45,11 @@ export async function readJsonBounded(res, limit, { code = 'CANON_INVALID' } = {
 // urls.length < quorum 默认直接拒绝（M-11）；只有 allowSingleNode: true 才把 quorum 下调到节点数（开发用）。
 // Fewer urls than quorum is an error by default (review M-11); only allowSingleNode: true clamps quorum to the
 // node count (development setups). Duplicate urls are removed so one node cannot count twice.
+// Agreement is counted by OPERATOR, not by URL (operatorOf): two URLs of one operator that answer count once, and a
+// node set with fewer distinct operators than quorum is refused like one with too few URLs (the old default, three
+// NodeReal dataseeds, was one operator). Every URL is still asked, and every answer must still agree.
+// 按**运营方**而不是 URL 计票：同一运营方的两个 URL 作答只算一次；不同运营方少于 quorum 的节点组合与 URL 太少一样被拒绝
+// （旧默认的三个 NodeReal dataseed 只是一家）。每个 URL 仍然都问，所有回答仍须一致。
 // -32005 rate limited, -32601 method not found, and the range/limit refusals nodes return as -32000.
 // -32005 限流、-32601 方法不存在，以及节点以 -32000 返回的区间/限额拒绝。
 export function isNodeLimit(error) {
@@ -74,22 +80,33 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
   if (!Number.isInteger(quorum) || quorum < 1) throw new TapeAPIError('RPC_UNAVAILABLE', 'quorum must be a positive integer')
   const f = fetchImpl || globalThis.fetch
   if (typeof f !== 'function') throw new TapeAPIError('RPC_UNAVAILABLE', 'no fetch implementation')
+  // opOf[i]: who runs urls[i] / urls[i] 的运营方
+  const opOf = urls.map(operatorOf)
+  const operators = [...new Set(opOf)]
   let need = quorum
   if (urls.length < quorum) {
     if (allowSingleNode !== true) throw new TapeAPIError('RPC_UNAVAILABLE', `quorum ${quorum} needs at least ${quorum} distinct rpc urls, got ${urls.length} (pass allowSingleNode: true for a dev setup)`)
     need = urls.length
   }
+  if (operators.length < need) {
+    if (allowSingleNode !== true) throw new TapeAPIError('RPC_UNAVAILABLE', `quorum ${quorum} needs nodes of at least ${quorum} independent operators, got ${operators.length} (${operators.join(', ')}); URLs of one operator count once (pass allowSingleNode: true for a dev setup)`)
+    need = operators.length
+  }
+  // Distinct operators among the nodes that answered (indexes into urls) / 作答节点中不同运营方的数目
+  const operatorsOf = (idx) => new Set(idx.map((i) => opOf[i])).size
   const degraded = need < quorum
   // A quorum equal to the node count has no spare: one node down, rate limiting or refusing a method stops every
   // read (arch A5). Said once per node set, and only for a set that could be a deployment (some `deployable` URL);
   // plain-http and reserved-name sets are local or test setups. `quiet: true` silences it.
   // quorum 等于节点数就没有余量：一个节点宕机、限流或拒绝某方法，所有读取都会停下（arch A5）。每个节点集合只说一次，
   // 且只对可能是正式部署的集合说；纯 http 与保留名集合是本地或测试环境。
-  if (!quiet && !degraded && need > 1 && urls.length === need && urls.some(deployable)) {
+  // Counted in operators: a second URL of the same operator is no spare when that operator is down.
+  // 按运营方计：同一运营方的第二个 URL 在该运营方宕机时不是余量。
+  if (!quiet && !degraded && need > 1 && operators.length === need && urls.some(deployable)) {
     const key = [...urls].sort().join(',')
     if (!warnedSets.has(key)) {
       warnedSets.add(key)
-      ;(warn || console.warn)(`[tapeapi] rpc: quorum ${need} of ${urls.length} nodes leaves no spare; any single node failure stops reads. Add a node (e.g. 2-of-3) or pass quiet: true.`)
+      ;(warn || console.warn)(`[tapeapi] rpc: quorum ${need} of ${operators.length === urls.length ? `${urls.length} nodes` : `${operators.length} operators`} leaves no spare; any single node failure stops reads. Add a node (e.g. 2-of-3) or pass quiet: true.`)
     }
   }
   let nextId = 1
@@ -149,7 +166,7 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
   // 诚实竞态；重问也必须一致。
   async function round(method, params, project) {
     const settled = await Promise.allSettled(urls.map(u => one(u, method, params)))
-    const buckets = new Map(); const failures = []; const refusals = []; let tooLarge = 0
+    const buckets = new Map(); const failures = []; const refusals = []; const answeredIdx = []; let tooLarge = 0
     settled.forEach((s, i) => {
       if (s.status === 'rejected') { failures.push(`${describeUrl(urls[i], i)}: ${s.reason?.message || s.reason}`); if (s.reason?.refusal) refusals.push(s.reason.refusal); if (s.reason?.tooLarge) tooLarge++; return }
       // 错误按 code 与是否回滚形态分桶，不按原文（各实现 revert 文本不同，M-12；R3-4）/ errors bucket by code and revert
@@ -165,14 +182,17 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
       // ……并按是否为回滚形态分桶：一个节点 "execution reverted"、另一个 "header not found" 同为 -32000，但只有前者是关于链的回答。
       const key = s.value.kind === 'error' ? `error:${s.value.value.code}:${revertShaped(s.value.value) ? 'revert' : ''}` : 'ok:' + canonicalJSON(s.value.value)
       const b = buckets.get(key) || { n: 0, r: s.value }; b.n++; buckets.set(key, b)
+      answeredIdx.push(i)
     })
-    const answered = settled.length - failures.length
+    // Counted in operators: a second URL of an operator that already answered adds no independent answer.
+    // 按运营方计：已作答运营方的第二个 URL 不增加独立回答。
+    const answered = operatorsOf(answeredIdx)
     // `refusals`: set only when every node that failed answered with a node-limit error (none unreachable)
     // `refusals`：仅当每个失败的节点都以节点限制错误作答（没有连不上的）时给出
     // `tooLarge`: every node that failed sent an answer over bodyLimit -- set by this client, never read from a node's words
     // `tooLarge`：每个失败的节点发来的回答都超过 bodyLimit——由本客户端标记，绝不从节点的话里推断
-    if (answered < need) throw new TapeAPIError('RPC_UNAVAILABLE', `${method}: only ${answered}/${need} nodes answered (${failures.join('; ')})`, { ...(refusals.length && refusals.length === failures.length ? { refusals } : {}), ...(tooLarge && tooLarge === failures.length ? { tooLarge: true } : {}) })
-    if (buckets.size > 1) throw new TapeAPIError('RPC_DISAGREE', `${method}: ${answered} nodes answered with ${buckets.size} different results`)
+    if (answered < need) throw new TapeAPIError('RPC_UNAVAILABLE', `${method}: only ${answered}/${need} ${answeredIdx.length > answered ? 'operators' : 'nodes'} answered (${failures.join('; ')})`, { ...(refusals.length && refusals.length === failures.length ? { refusals } : {}), ...(tooLarge && tooLarge === failures.length ? { tooLarge: true } : {}) })
+    if (buckets.size > 1) throw new TapeAPIError('RPC_DISAGREE', `${method}: ${answeredIdx.length} nodes answered with ${buckets.size} different results`)
     const [b] = buckets.values()
     if (b.r.kind === 'error') {
       // Errors bucket by code (messages differ per client), but revert DATA is chain state: surface it only when
@@ -200,14 +220,15 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
   // （每个作答节点都已到达），块高差超过 maxHeadSpread 视为节点落后或撒谎而拒绝。
   async function blockNumber() {
     const settled = await Promise.allSettled(urls.map(u => one(u, 'eth_blockNumber', [])))
-    const heads = []; const failures = []
+    const heads = []; const failures = []; const answeredIdx = []
     settled.forEach((s, i) => {
       if (s.status === 'fulfilled' && s.value.kind === 'ok') {
-        try { heads.push(Number(BigInt(s.value.value))); return } catch { /* fall through */ }
+        try { heads.push(Number(BigInt(s.value.value))); answeredIdx.push(i); return } catch { /* fall through */ }
       }
       failures.push(`${describeUrl(urls[i], i)}: ${s.status === 'rejected' ? (s.reason?.message || s.reason) : 'bad eth_blockNumber answer'}`)
     })
-    if (heads.length < need) throw new TapeAPIError('RPC_UNAVAILABLE', `eth_blockNumber: only ${heads.length}/${need} nodes answered (${failures.join('; ')})`)
+    const answered = operatorsOf(answeredIdx)
+    if (answered < need) throw new TapeAPIError('RPC_UNAVAILABLE', `eth_blockNumber: only ${answered}/${need} ${heads.length > answered ? 'operators' : 'nodes'} answered (${failures.join('; ')})`)
     const lo = Math.min(...heads); const hi = Math.max(...heads)
     if (hi - lo > maxHeadSpread) throw new TapeAPIError('RPC_DISAGREE', `eth_blockNumber: heads span ${lo}..${hi}, more than ${maxHeadSpread} blocks apart`)
     return lo
@@ -225,5 +246,6 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     if (!urls.includes(url)) throw new TapeAPIError('RPC_UNAVAILABLE', `${describeUrl(url, 0)} is not one of this client's nodes`)
     return createRpc({ urls: [url], quorum: 1, timeoutMs, fetch: fetchImpl, bodyLimit: o.bodyLimit ?? bodyLimit, disagreeRetryMs, maxHeadSpread })
   }
-  return { call, ethCall, blockNumber, chainId, urls, quorum: need, degraded, single, bodyLimit }
+  // `operators`: the distinct operators behind `urls`, in first-seen order / `urls` 背后的不同运营方
+  return { call, ethCall, blockNumber, chainId, urls, operators, quorum: need, degraded, single, bodyLimit }
 }

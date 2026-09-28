@@ -7,8 +7,14 @@
 // 回执核验页的纯函数部分：从用户手里的任何形式（核验链接、它的片段、base64url、回执 JSON、整个 MCP 工具结果或 JSON-RPC 回应）
 // 取出回执，严格检查结构，再把页面收集到的事实（恢复出的签名者、链上解析出的服务）变成结论。不碰 DOM、网络与存储。
 // 回执是不可信输入：它对自己的任何说法都不采信。签名者从签名恢复，服务密钥从链上读取，两者一起才构成结论。
+// AI usage receipts (a TAP-21 envelope with its method and params; x-tapeapi-receipt header, `: tapeapi-receipt` SSE
+// comment, or the `receipt` method's answer) are read too. They carry no circuit and #ID, so the service is resolved from
+// the container; their hashes bind the exact request and response bytes, checked only when those are pasted as well.
+// 也读 AI 用量回执（带 method 与 params 的 TAP-21 信封；来自响应头、SSE 注释或 receipt 方法的回答）。它不带电路与 #ID，
+// 所以按容器解析服务；它的两个哈希绑定确切的请求与回应字节，只有一并粘贴了这些字节才核对。
 import { fromBase64Url, RECEIPT_META_KEY } from '../playground/vendor/tapeapi-sdk/mcp.js'
 import { findDuplicateKey, FORBIDDEN_KEYS } from '../playground/vendor/tapeapi-sdk/canon.js'
+import { envelopeProblems, priceProblems, formatOfMethod, validateAIField, MANIFEST_FIELD, sha256Hex, scanSse } from '../playground/vendor/tapeapi-sdk/ai.js'
 
 export { RECEIPT_META_KEY }
 export const MAX_INPUT = 64 * 1024   // bytes of pasted text or link / 粘贴文本或链接的字节上限
@@ -24,6 +30,9 @@ const SIG_RE = /^0x[0-9a-fA-F]{130}$/
 const TOKEN_ID_RE = /^(0|[1-9]\d{0,77})$/
 const B64URL_RE = /^[A-Za-z0-9_-]+$/
 const LINK_RE = /(?:^|[#&?\s])r=([A-Za-z0-9_-]+)(?=$|[\s&"'<>).,;\]])/   // the whole run, not a prefix of garbage / 整段，不取乱码的前缀
+// An AI receipt as a header line (`x-tapeapi-receipt: …`) or SSE comment (`: tapeapi-receipt …`); the last one wins,
+// as in a stream that passed two sidecars. / 响应头行或 SSE 注释形式的 AI 回执；取最后一个（经过两层旁路的流里外层在后）。
+const AI_LINE_RE = /(?:^|[\s:])(?:x-)?tapeapi-receipt\s*:?\s+([A-Za-z0-9_-]+)(?=$|\s)/gim
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
 export const sameAddress = (a, b) => typeof a === 'string' && typeof b === 'string' && ADDR_RE.test(a) && ADDR_RE.test(b) && a.toLowerCase() === b.toLowerCase()
 const byteLength = (s) => new TextEncoder().encode(s).length
@@ -64,10 +73,16 @@ export function extractReceipt(input) {
   if (!s) throw new ReceiptError('empty')
   if (s.startsWith('{')) {
     const v = parseJson(s)
-    const found = [v?._meta?.[RECEIPT_META_KEY], v?.result?._meta?.[RECEIPT_META_KEY], isObj(v) && 'sig' in v && 'service' in v ? v : undefined].find(isObj)
+    const found = [
+      v?._meta?.[RECEIPT_META_KEY], v?.result?._meta?.[RECEIPT_META_KEY], isObj(v) && 'sig' in v && 'service' in v ? v : undefined,
+      isUsageShape(v?.result) ? v.result : undefined,   // the `receipt` method's answer around it / 外面包着 receipt 方法的回答
+      isUsageShape(v) ? v : undefined,
+    ].find(isObj)
     if (!found) throw new ReceiptError('no-receipt')
     return found
   }
+  const lines = [...s.matchAll(AI_LINE_RE)]
+  if (lines.length) return decodeB64(lines[lines.length - 1][1])
   const m = LINK_RE.exec(s)
   if (m) return decodeB64(m[1])
   if (B64URL_RE.test(s)) return decodeB64(s)
@@ -111,6 +126,90 @@ export function parseReceipt(r) {
 
 /** Text -> checked receipt. / 文本 -> 检查过的回执。 */
 export const readReceipt = (input) => parseReceipt(extractReceipt(input))
+
+// ── AI usage receipts / AI 用量回执 ─────────────────────────────────────────────────────────────────────────────
+/** Does this look like an AI usage receipt (an envelope with method and params, no `service`)? / 是否像 AI 用量回执。 */
+export function isUsageShape(v) {
+  return isObj(v) && !('service' in v) && typeof v.method === 'string' && isObj(v.params) && 'requestSha256' in v.params && 'container' in v && 'sig' in v
+}
+
+/**
+ * Strict shape check of an AI usage receipt. The signed parts (params, result) are kept exactly as they came: the
+ * signature covers them whole. Throws ReceiptError('shape', field).
+ * AI 用量回执的严格结构检查。签名覆盖的部分（params、result）原样保留：签名覆盖的是它们整体。
+ */
+export function parseUsageReceipt(r) {
+  const bad = (field) => { throw new ReceiptError('shape', field) }
+  if (!isObj(r)) bad('receipt')
+  if (typeof r.id !== 'string' || !r.id || r.id.length > 256) bad('id')
+  if (r.ok !== true) bad('ok')
+  if (typeof r.method !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(r.method)) bad('method')
+  if (!isObj(r.params) || typeof r.params.path !== 'string' || r.params.path.length > 1024 || typeof r.params.requestSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(r.params.requestSha256)) bad('params')
+  if (typeof r.container !== 'string' || !ADDR_RE.test(r.container)) bad('container')
+  if (!Number.isSafeInteger(r.ts) || r.ts < 0) bad('ts')
+  if (typeof r.sig !== 'string' || !SIG_RE.test(r.sig)) bad('sig')
+  const p = envelopeProblems(r).find((x) => x.startsWith('result'))
+  if (p) bad(p.split(' ')[0])
+  return { id: r.id, ok: true, result: r.result, container: r.container, ts: r.ts, method: r.method, params: r.params, sig: r.sig }
+}
+
+/** Text -> { kind: 'receipt' | 'usage', receipt }. / 文本 -> 回执种类与检查过的回执。 */
+export function readAny(input) {
+  const raw = extractReceipt(input)
+  return isUsageShape(raw) ? { kind: 'usage', raw, receipt: parseUsageReceipt(raw) } : { kind: 'receipt', raw, receipt: parseReceipt(raw) }
+}
+
+/** The TAP-21 fields an AI receipt's signature covers. / AI 回执签名覆盖的 TAP-21 字段。 */
+export const usageEnvelopeOf = (r) => ({ container: r.container, id: r.id, method: r.method, params: r.params, ok: true, body: r.result, ts: r.ts })
+
+/**
+ * The verdict for an AI usage receipt, from facts only. Checks, in order: sig, resolve, container, delegation, signer,
+ * then method (the path belongs to the method), amount (the manifest's price table), request and response (only when
+ * the bytes were given). A receipt that does not recover to today's key is "other-key" whatever else it says; one signed
+ * by today's key that contradicts the price table or the pasted bytes is invalid, naming the check.
+ * AI 用量回执的结论，只来自事实。签名不是今天的密钥即"无法确认"；由今天的密钥签名却与价目表或粘贴的字节不符，则为无效并指出哪一项。
+ * @param {object} f  { receipt, recovered, recoverError, svc, resolveError, now, request?, response? }
+ */
+export function usageVerdictOf({ receipt: r, recovered, recoverError, svc, resolveError, now = Math.floor(Date.now() / 1000), request, response }) {
+  const sigOk = !recoverError && typeof recovered === 'string' && ADDR_RE.test(recovered)
+  const m = svc?.manifest
+  const format = formatOfMethod(r.method)
+  const fname = format?.name ?? null
+  let field = null
+  try { field = svc ? validateAIField(m?.[MANIFEST_FIELD], { allowHttp: true }) : null } catch { field = null }
+  const hash = (text) => (typeof text === 'string' && text.length ? text : null)
+  const req = hash(request), res = hash(response)
+  const checks = {
+    sig: sigOk ? 'pass' : 'fail',
+    resolve: svc ? 'pass' : resolveError ? (isDefinite(resolveError) ? 'fail' : 'unknown') : 'skip',
+    container: svc ? (sameAddress(svc.container, r.container) ? 'pass' : 'fail') : 'skip',
+    delegation: svc ? (svc.verified?.delegation === true && Number.isSafeInteger(m?.delegation?.expires) && m.delegation.expires > now ? 'pass' : 'fail') : 'skip',
+    signer: sigOk && svc ? (sameAddress(recovered, m?.signer) ? 'pass' : 'fail') : 'skip',
+    method: !format ? 'unknown' : format.match({ verb: 'POST', path: r.params.path }) ? 'pass' : 'fail',
+    amount: svc ? (field && priceProblems(field, r.result, fname).length === 0 ? 'pass' : 'fail') : 'skip',
+    request: req === null ? 'skip' : sha256Hex(req) === r.params.requestSha256 ? 'pass' : 'fail',
+    response: res === null ? 'skip' : (r.result.stream ? scanSse(res, format ? { format } : {}).responseSha256 : sha256Hex(res)) === r.result.responseSha256 ? 'pass' : 'fail',
+  }
+  const list = Object.entries(checks).map(([id, state]) => ({ id, state }))
+  const out = (verdict, failed = null) => ({ verdict, failed, checks: list, amountProblems: field ? priceProblems(field, r.result, fname) : svc ? [`the manifest has no valid ${MANIFEST_FIELD} field`] : [] })
+  for (const id of ['sig', 'resolve', 'container', 'delegation']) if (checks[id] === 'fail') return out('invalid', id)
+  if (checks.resolve === 'unknown' || !svc) return out('unchecked')
+  if (checks.signer !== 'pass') return out('other-key')
+  for (const id of ['method', 'amount', 'request', 'response']) if (checks[id] === 'fail') return out('invalid', id)
+  return out('valid')
+}
+
+/**
+ * The whole check of an AI usage receipt, network and crypto injected. `resolve` takes the container address.
+ * AI 用量回执的完整核对流程，网络与密码学由调用方注入；resolve 接收容器地址。
+ */
+export async function verifyUsage(r, { recover, resolve, now, request, response }) {
+  let recovered = null, recoverError = null
+  try { recovered = recover(usageEnvelopeOf(r), r.sig) } catch (e) { recoverError = e }
+  let svc = null, resolveError = null
+  try { svc = await resolve(r.container) } catch (e) { resolveError = e }
+  return { recovered, recoverError, svc, resolveError, ...usageVerdictOf({ receipt: r, recovered, recoverError, svc, resolveError, now, request, response }) }
+}
 
 /** The TAP-21 envelope fields the signature covers (sdk sig.responseDigest). block and service.name are NOT among them.
  *  签名覆盖的信封字段；block 与 service.name 不在其中。 */

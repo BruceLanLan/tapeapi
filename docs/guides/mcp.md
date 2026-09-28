@@ -212,7 +212,7 @@ import { createTapeAPI, sig } from '@tapeapi/sdk'
 
 const r = JSON.parse(await readFile('receipt.json', 'utf8'))
 const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
   quorum: 2,
 })
 // The service as the chain has it now: container, on-chain manifest, the holder's delegation of the signing key.

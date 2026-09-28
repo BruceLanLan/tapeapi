@@ -39,7 +39,7 @@ curl -s -X POST http://127.0.0.1:8791/tapeapi/v1/nftOwner -H 'content-type: appl
 
 ```js
 import { createTapeAPI } from '../../sdk/src/index.js'          // DeWEB 站点：相对路径
-const api = createTapeAPI({ rpcUrls: ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io'], quorum: 2, directory, escrow }) // ≥ 2 urls
+const api = createTapeAPI({ rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'], quorum: 2, directory, escrow }) // nodes of ≥ 2 operators / ≥ 2 家运营方
 const providers = await Promise.all([api.resolve('attest-eth-a'), api.resolve('attest-eth-b')]) // 两个不同 holder 的服务
 const probe = await api.call(providers[0], 'nftOwner', { chainId: 1, contract: BAYC, tokenId })  // 免费；钉 finalized，只为拿一个块号
 const params = { chainId: 1, contract: BAYC, tokenId, block: probe.result.blockNumber }        // 两家读同一个块
@@ -106,4 +106,4 @@ Trust model: one service is one signer; two independent agreeing signers are acc
 3. **Publish the manifest** served at `/.well-known/tapeapi.json` to the container's DeWEB site.
 4. **Register the label**: `api.tx.register({ circuits, tokenId, label: 'attest-eth-a', manifestPath })`.
 
-Env: `PORT`, `SIGNER_KEY` (required once `DELEGATION_SIG` is set; the ephemeral key is never printed), `RPC_URLS` (BSC, for identity/settlement; ≥ `QUORUM` distinct urls in production), `QUORUM`, `CHAINS_FILE`, `RPC_<chainId>`, `PUBLIC_URL`, `FREE_ALL` (dev).
+Env: `PORT`, `SIGNER_KEY` (required once `DELEGATION_SIG` is set; the ephemeral key is never printed), `RPC_URLS` (BSC, for identity/settlement; urls of ≥ `QUORUM` distinct operators in production; default: the SDK's `rpcUrlsFor(56)`), `QUORUM`, `CHAINS_FILE`, `RPC_<chainId>`, `PUBLIC_URL`, `FREE_ALL` (dev).

@@ -2,11 +2,11 @@
 // Read-only live probe of the TAP-20 resolve path on BNB Chain (chainId 56). Sends no transactions.
 // Usage: node scripts/probe-mainnet.mjs [circuits tokenId]   (default: TapeKit SPEC vector 4246 on processor #0)
 // 只读主网探针：走 SDK 的真实解析路径。不发送任何交易。
-import { createTapeAPI, createRpc, MANIFEST_PATH, MANIFEST_KEY } from '../sdk/src/index.js'
+import { createTapeAPI, createRpc, MANIFEST_PATH, MANIFEST_KEY, rpcUrlsFor } from '../sdk/src/index.js'
 import { keccak256 } from '../sdk/src/sig.js'
 import { createHash } from 'node:crypto'
 
-const urls = (process.env.RPC_URLS || 'https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io').split(',')
+const urls = process.env.RPC_URLS ? process.env.RPC_URLS.split(',') : rpcUrlsFor(56)
 const api = createTapeAPI({ rpcUrls: urls, quorum: 2, timeoutMs: 25000 })
 const rpc = createRpc({ urls, quorum: 2, timeoutMs: 25000 })
 const FACTORY = '0x68224F668083c29e9800Be2a646d42d18cedF7e2'

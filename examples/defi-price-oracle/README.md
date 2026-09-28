@@ -39,7 +39,7 @@ curl -s -X POST http://127.0.0.1:8789/tapeapi/v1/bnbUsd -H 'content-type: applic
 
 ```js
 import { createTapeAPI } from '@tapeapi/sdk'
-const api = createTapeAPI({ rpcUrls: ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io'], quorum: 2, directory, escrow }) // ≥ 2 urls，否则抛错
+const api = createTapeAPI({ rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'], quorum: 2, directory, escrow }) // ≥ 2 家运营方，否则抛错 / nodes of ≥ 2 operators, or it throws
 const [a, b] = await Promise.all([api.resolve('price-a'), api.resolve('price-b')])
 const probe = await api.call(a, 'bnbUsd', {})            // 免费；只为拿一个 finalized 块号 / free; just to get a finalized block
 const block = probe.result.blockPinned.blockNumber       // 两家都读这个块 / both providers read this block
@@ -110,4 +110,4 @@ results that agree are accepted, anything else is rejected — the same rule the
 3. **Publish the manifest** served at `/.well-known/tapeapi.json` to the container's DeWEB site.
 4. **Register the label**: `api.tx.register({ circuits, tokenId, label: 'price-a', manifestPath })`.
 
-Env: `PORT`, `SIGNER_KEY` (required once `DELEGATION_SIG` is set; the ephemeral key is never printed), `RPC_URLS` (≥ `QUORUM` distinct urls in production), `QUORUM`, `BLOCK_LAG` (fallback lag when `finalized` is unsupported), `PAIR`, `WBNB`, `USDT`, `PUBLIC_URL`, `FREE_ALL` (dev).
+Env: `PORT`, `SIGNER_KEY` (required once `DELEGATION_SIG` is set; the ephemeral key is never printed), `RPC_URLS` (urls of ≥ `QUORUM` distinct operators in production; default: the SDK's `rpcUrlsFor(56)`), `QUORUM`, `BLOCK_LAG` (fallback lag when `finalized` is unsupported), `PAIR`, `WBNB`, `USDT`, `PUBLIC_URL`, `FREE_ALL` (dev).

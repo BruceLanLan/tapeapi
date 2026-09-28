@@ -40,9 +40,13 @@
 
 ## 4. RPC 节点 / RPC nodes
 
-- 读取要求**参与回答的节点全部一致**（不是多数）。节点数等于一致要求时，任何一个节点故障都会让读取失败，运行时会警告。
-- 示例与 Worker 默认 3 选 2，三家运营方：`https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io`。
-  `bsc-rpc.publicnode.com` 在 2026-09-27 对每个请求都超时，已移出默认列表。
+- 读取要求**参与回答的节点全部一致**（不是多数），且作答的**不同运营方**数至少为 quorum：同一运营方的多个 URL 只算一家（`operatorOf`）。
+  运营方数等于一致要求时，任何一家故障都会让读取失败，运行时会警告；运营方少于 quorum 的节点组合直接拒绝启动。
+  Agreement is counted by operator, not URL: URLs of one operator count once, and a node set with fewer operators than the quorum is refused.
+- 示例与 Worker 默认三家取二，来自 SDK 的 `rpcUrlsFor(56)`（唯一来源 `sdk/src/rpc-defaults.js`）：
+  `https://bsc-dataseed.bnbchain.org,https://bsc-mainnet.public.blastapi.io,https://rpc-bsc.48.club`（NodeReal、Alchemy、48 Club，2026-09-28 实测三者都支持按 EIP-1898 blockHash 钉块的 `eth_call`）。
+  旧默认的三个 dataseed（bnbchain.org、defibit.io、ninicoin.io）全是 NodeReal 一家（TapeKit 审计，2026-09-19），不能再一起充当法定数。
+  `bsc-rpc.publicnode.com` 在 2026-09-27 对每个请求都超时；`bsc.drpc.org` 拒绝 blockHash 对象；thirdweb 转发 dRPC；1rpc.io 上游不明。
 - `bsc-dataseed*` 不支持 `eth_getLogs`，默认列表因此读不了 ChannelBus。读 ChannelBus 用 SDK 的 `BUS_RPC_URLS`（48 Club `rpc-bsc.48.club` 与 1RPC `1rpc.io/bnb` 提供日志，2026-09-27 实测至少保留 500,000 个区块；再加一个 dataseed 提供回执），单独建客户端，`timeoutMs` 15000。
   Reading ChannelBus: use the SDK's `BUS_RPC_URLS` (48 Club and 1RPC serve logs, at least 500,000 blocks back, measured 2026-09-27) in a client of its own. publicnode keeps only 5,000 to 10,000 blocks of logs when it is up.SDK 会在读取范围超出节点保留期时警告一次。中继传输不依赖 `eth_getLogs`。
 

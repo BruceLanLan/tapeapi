@@ -1,0 +1,5 @@
+[
+  { "id": "demo-chat", "price": { "currency": "BEM", "unit": "1M tokens", "input": "0.15", "output": "0.60", "cacheRead": "0.075" } },
+  { "id": "demo-claude", "formats": ["anthropic-messages"], "price": { "currency": "BEM", "unit": "1M tokens", "input": "3", "output": "15", "cacheRead": "0.30", "cacheWrite": "3.75" } },
+  { "id": "demo-embed", "formats": ["openai-embeddings"], "price": { "currency": "BEM", "unit": "1M tokens", "input": "0.02", "output": "0" } }
+]

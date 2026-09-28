@@ -12,7 +12,7 @@
 // 密钥：SIGNER_KEY。变量（wrangler.toml 或 Cloudflare 后台，keep_vars 让它们在部署之间保留）：CIRCUITS、TOKEN_ID、
 // CONTAINER、DELEGATION_EXPIRES、DELEGATION_SIG、PUBLIC_URL、ESCROW。签名地址由 SIGNER_KEY 推导；若设置了 SIGNER_ADDRESS 须一致。
 import { createProvider } from '@tapeapi/server'
-import { sig } from '@tapeapi/sdk'
+import { sig, rpcUrlsFor } from '@tapeapi/sdk'
 import { d1Store } from './d1-store.js'
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type' }
@@ -61,9 +61,9 @@ function build(env) {
     // http only for a loopback PUBLIC_URL (local testing); a real endpoint must be https (TAP-20)
     // 只有回环地址的 PUBLIC_URL 允许 http（本地测试）；真实端点必须是 https
     allowHttp: /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(env.PUBLIC_URL),
-    // 2-of-3: one node down, rate limiting or refusing a method still leaves a quorum (arch A5).
-    // 三取二：一个节点宕机、限流或拒绝某方法时仍有法定数。
-    rpcUrls: (env.RPC_URLS || 'https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io').split(','),
+    // 2-of-3 operators (the SDK's defaults): one down, rate limiting or refusing a method still leaves a quorum (arch A5).
+    // 三家取二（SDK 默认节点）：一家宕机、限流或拒绝某方法时仍有法定数。
+    rpcUrls: env.RPC_URLS ? env.RPC_URLS.split(',') : rpcUrlsFor(56),
     // 3 s per node: a hung node must not hold every call for the 8 s default. / 每节点 3 秒。
     timeoutMs: Number(env.RPC_TIMEOUT_MS || 3000),
     quorum: 2,

@@ -153,7 +153,7 @@ test('/mcp: once configured, the Worker answers MCP with the eight public method
   const env = {
     SIGNER_KEY: key, CIRCUITS: CIRCUITS, TOKEN_ID: '11', CONTAINER: CONTAINER, DELEGATION_EXPIRES: String(expires),
     DELEGATION_SIG: signDigest(delegationDigest(56, MAINNET.hub, { container: CONTAINER, signer: privateKeyToAddress(key), expires }), holder),
-    PUBLIC_URL: 'https://api.tapeapi.fun', TAPE_NAME: '11.1013.tape', RPC_URLS: 'http://127.0.0.1:9,http://127.0.0.1:10',
+    PUBLIC_URL: 'https://api.tapeapi.fun', TAPE_NAME: '11.1013.tape', RPC_URLS: 'http://127.0.0.1:9,http://localhost:10',
   }
   const rpc = (body, e = env) => worker.fetch(new Request('https://api.tapeapi.fun/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }), e)
   const init = await (await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } })).json()

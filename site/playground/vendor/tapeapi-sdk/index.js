@@ -13,6 +13,8 @@ import {
 import { validateManifest, findMethod, methodPrice, parseUnits, formatUnits, METHOD_NAME_RE, BEM_DECIMALS, MAX_DELEGATION_S } from './manifest.js'
 import { canonicalJSON, safeParseJSON } from './canon.js'
 
+// Default nodes per chain and who operates them (quorums count operators, not URLs) / 各链默认节点及其运营方
+export { RPC_DEFAULTS, rpcUrlsFor, operatorOf } from './rpc-defaults.js'
 export { TapeAPIError, createRpc, canonicalJSON, safeParseJSON, validateManifest, parseUnits, formatUnits, labelToBytes32, METHOD_NAME_RE, BEM_DECIMALS }
 export * as abi from './abi.js'
 export * as sig from './sig.js'
@@ -22,6 +24,7 @@ export * as group from './group.js'        // TAP-27 private group channels / �
 export * as tapesend from './tapesend.js' // TAP-10 sealed messages, byte-compatible with @tapekit/send / TapeSend 密封消息
 export * as webmcp from './webmcp.js'      // expose a service's methods as WebMCP agent tools / 把服务的方法注册为 WebMCP 代理工具
 export * as mcp from './mcp.js'            // MCP server core: tools with signed results and receipts / MCP 服务器核心：带签名结果与回执的工具
+export * as ai from './ai.js'              // AI usage receipts: format adapters, hashing, prices, verification / AI 用量回执：格式适配器、哈希、价格、核验
 
 // TAP-22 §3.4 贡献比例常量 / contribution constants (basis points).
 export const MAX_CONTRIBUTION_BPS = 5000          // contract hard cap / 合约硬上限
@@ -36,6 +39,11 @@ export const MAINNET = {
   bem: '0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a',
   channelBus: '0x486110c35d9b90a9d6D85c8063A065f9e7b6b707',   // TAP-26 §3.7, deployed 2026-09-26, code checked against the tested build / 已部署，代码与测试构建逐字节一致
 }
+// Operators (operatorOf): 48 Club, 1RPC (a relay whose upstream is not published), NodeReal (the dataseed). Three by
+// name; since 1RPC's upstream is unknown, count on two independent ones. Frames authenticate themselves, so the bus
+// reader takes the union of what each node serves; only eth_blockNumber goes through the operator quorum.
+// 运营方：48 Club、1RPC（上游未公开的转发）、NodeReal（dataseed）。名义上三家；1RPC 上游不明，按两家独立计。帧自带认证，
+// 总线读取取各节点的并集；只有 eth_blockNumber 走按运营方的法定数。
 // Nodes for reading ChannelBus (TAP-26 §3.7), which needs eth_getLogs: the dataseed nodes refuse it. Measured
 // 2026-09-27: 48 Club and 1RPC serve logs with long history (≥ 500k blocks), the dataseed serves receipts; with these
 // three the reader read a real frame 73,700 blocks back. Use a dedicated client: createRpc({ urls: BUS_RPC_URLS,
@@ -100,7 +108,8 @@ const isRevert = (e) => e instanceof TapeAPIError && e.code === 'RPC_ERROR' && (
 const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : toHex(crypto.getRandomValues(new Uint8Array(16))).slice(2))
 
 // 选项 / options:
-//   rpcUrls, quorum (默认 2)：urls 少于 quorum 直接抛 RPC_UNAVAILABLE；只有 allowSingleNode: true 才允许下调（开发用，M-11）
+//   rpcUrls, quorum (默认 2)：urls 或其不同运营方（operatorOf）少于 quorum 直接抛 RPC_UNAVAILABLE；只有 allowSingleNode: true
+//                        才允许下调（开发用，M-11）。quorum counts operators: URLs of one operator count once.
 //   dev: true            允许 resolve({ dev }) 与 http:// 端点；不改变链上来源清单的 holder 校验（M-06）
 //   allowHttp: true      非 dev 下也接受 http:// 端点（仅测试）/ accept http endpoints outside dev (tests only)
 //   maxSkewS (默认 300)  信封 ts 与本地时钟的最大偏差（TAP-21 §3.2）/ envelope ts freshness window

@@ -7,7 +7,7 @@
 // with the holder console, step 7.
 // 密钥 SIGNER_KEY；变量同上。增改方法会改变清单：用持有人操作台第 7 步重新上链。
 import { createProvider } from '@tapeapi/server'
-import { sig } from '@tapeapi/sdk'
+import { sig, rpcUrlsFor } from '@tapeapi/sdk'
 import { setupAnswer } from '../cloudflare-worker/worker.js'
 import { createChainReader } from '../_lib/chain.mjs'
 import { MANIFEST_METHODS, publicMethods } from './methods.js'
@@ -15,8 +15,9 @@ import { createMcpEndpoint, MCP_PATH } from '@tapeapi/server/mcp'
 import { VERSION } from '@tapeapi/server'
 
 const REQUIRED = ['CIRCUITS', 'TOKEN_ID', 'CONTAINER', 'DELEGATION_EXPIRES', 'DELEGATION_SIG', 'PUBLIC_URL']
-// Three operators. publicnode left the list on 2026-09-27 after timing out on every request. / 三家运营方；publicnode 因持续超时移出。
-const DEFAULT_RPC_URLS = 'https://bsc-dataseed.bnbchain.org,https://bsc-dataseed1.defibit.io,https://bsc-dataseed1.ninicoin.io'
+// The SDK's defaults: three distinct operators (NodeReal, Alchemy, 48 Club). wrangler.toml's RPC_URLS is what deploys.
+// SDK 默认节点：三家不同运营方。实际部署用 wrangler.toml 的 RPC_URLS。
+const DEFAULT_RPC_URLS = rpcUrlsFor(56).join(',')
 const configured = (env) => REQUIRED.every((k) => env[k]) && !!env.SIGNER_KEY
 
 export function manifestOf(env) {

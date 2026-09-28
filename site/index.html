@@ -168,7 +168,7 @@ npm install</pre></div>
 <div class="code"><div class="cap">try.mjs</div><pre><span class="k">import</span> { createTapeAPI } <span class="k">from</span> <span class="s">'@tapeapi/sdk'</span>
 
 <span class="k">const</span> api = createTapeAPI({
-  rpcUrls: [<span class="s">'https://bsc-dataseed.bnbchain.org'</span>, <span class="s">'https://bsc-dataseed1.defibit.io'</span>, <span class="s">'https://bsc-dataseed1.ninicoin.io'</span>],
+  rpcUrls: [<span class="s">'https://bsc-dataseed.bnbchain.org'</span>, <span class="s">'https://bsc-mainnet.public.blastapi.io'</span>, <span class="s">'https://rpc-bsc.48.club'</span>],
   quorum: 2,
 })
 <span class="k">const</span> svc = <span class="k">await</span> api.resolve(<span class="s">'11.1013.tape'</span>)   <span class="c">// <span lang="zh">名字、容器、链上清单、持有人委托</span><span lang="en">name, container, on-chain manifest, delegation</span></span>

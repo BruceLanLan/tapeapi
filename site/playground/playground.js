@@ -3,9 +3,11 @@
 // Everything the manifest or a provider says is untrusted text: it reaches the page through textContent only.
 // 调试台：用真实的 SDK 解析并调用 TapeOut 服务，展示 SDK 核对了什么。手写；SDK 由 scripts/build-playground.mjs 放入 vendor/。
 // 清单与提供者给出的一切都是不可信文本，只经 textContent 进入页面。
-import { createTapeAPI, TapeAPIError, MAINNET, parseUnits, sig, abi } from './vendor/tapeapi-sdk/index.js'
+import { createTapeAPI, TapeAPIError, MAINNET, parseUnits, sig, abi, rpcUrlsFor, operatorOf } from './vendor/tapeapi-sdk/index.js'
 
-const RPC_URLS = ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io']
+// The SDK's default nodes: three distinct operators (NodeReal, Alchemy, 48 Club); the SDK counts agreement by operator.
+// SDK 的默认节点：三家不同运营方；SDK 按运营方计票。
+const RPC_URLS = rpcUrlsFor(56)
 const QUORUM = 2
 const PUBLIC_EXAMPLES = {   // prefilled params for the public service's methods / 公共服务各方法的示例参数
   balance: { address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c' },   // WBNB contract: holds a lot of BNB
@@ -29,14 +31,14 @@ const T = {
     'params.json': '参数 JSON', call: '调用',
     'code.sdk': 'JavaScript（@tapeapi/sdk，会做上面的全部核对）',
     'code.curl': 'curl（只发请求，不核对签名与链上身份）',
-    foot: '只读：本页不连接钱包，也不需要任何密钥。链上读取经 3 个公共 BSC 节点、至少 2 个一致（quorum 2）。',
+    foot: '只读：本页不连接钱包，也不需要任何密钥。链上读取经 3 家不同运营方的公共 BSC 节点、至少 2 家一致（quorum 2）。',
     resolving: '正在读链：定位容器、读取清单、核对委托……',
     resolved: (ms, n) => `已解析并核对，用时 ${ms} ms，向节点发出 ${n} 个 RPC 请求。`,
     failed: '失败', calling: '正在调用……',
     'c.name': '名称', 'c.name.how': (p) => `工厂 cpuAt(${p}) 给出处理器合约`,
     'c.cpu': '处理器', 'c.cpu.how': '工厂 isCPU 为真：确实是 TapeOut 处理器，不是仿冒的 ERC-721',
     'c.container': '容器', 'c.container.how': '由中枢 accountOf(处理器, #ID) 推导，与清单里的 container 一致',
-    'c.holder': '当前持有人', 'c.holder.how': (q, n) => `ownerOf，${n} 个节点中至少 ${q} 个一致`,
+    'c.holder': '当前持有人', 'c.holder.how': (q, n) => `ownerOf，${n} 家运营方中至少 ${q} 家一致`,
     'c.manifest': '清单', 'c.manifest.how': '.well-known/tapeapi.json：字节的 SHA-256 与 SiteRegistry 链上记录一致',
     'c.delegation': '委托签名者', 'c.delegation.how': '由 EIP-712 委托签名恢复，等于当前持有人',
     'c.expires': '委托到期', 'c.endpoint': '端点', 'c.signer': '服务签名密钥', 'c.signer.how': '每个回答都必须由它签名',
@@ -79,14 +81,14 @@ const T = {
     'params.json': 'Params JSON', call: 'Call',
     'code.sdk': 'JavaScript (@tapeapi/sdk, which makes every check above)',
     'code.curl': 'curl (sends the request; checks neither signature nor on-chain identity)',
-    foot: 'Read-only: this page connects no wallet and needs no key. Chain reads go to 3 public BSC nodes, at least 2 of which must agree (quorum 2).',
+    foot: 'Read-only: this page connects no wallet and needs no key. Chain reads go to public BSC nodes of 3 different operators, at least 2 of which must agree (quorum 2).',
     resolving: 'Reading the chain: locating the container, reading the manifest, checking the delegation…',
     resolved: (ms, n) => `Resolved and checked in ${ms} ms, with ${n} RPC requests to the nodes.`,
     failed: 'Failed', calling: 'Calling…',
     'c.name': 'Name', 'c.name.how': (p) => `factory cpuAt(${p}) gives the processor contract`,
     'c.cpu': 'Processor', 'c.cpu.how': 'factory isCPU is true: a real TapeOut processor, not a look-alike ERC-721',
     'c.container': 'Container', 'c.container.how': 'derived by the hub, accountOf(processor, #ID), and equal to the manifest\'s container',
-    'c.holder': 'Current holder', 'c.holder.how': (q, n) => `ownerOf, at least ${q} of ${n} nodes agree`,
+    'c.holder': 'Current holder', 'c.holder.how': (q, n) => `ownerOf, at least ${q} of ${n} node operators agree`,
     'c.manifest': 'Manifest', 'c.manifest.how': '.well-known/tapeapi.json: SHA-256 of the bytes equals the SiteRegistry record on chain',
     'c.delegation': 'Delegation signer', 'c.delegation.how': 'recovered from the EIP-712 delegation; equals the current holder',
     'c.expires': 'Delegation expires', 'c.endpoint': 'Endpoint', 'c.signer': 'Service signing key', 'c.signer.how': 'every answer must be signed by it',
@@ -211,7 +213,7 @@ function renderChecks() {
   if (located?.kind === 'name') rows.push(checkRow('✓', t('c.name'), code(located.name), t('c.name.how', located.processor)))
   rows.push(checkRow('✓', t('c.cpu'), el('span', null, code(abi.checksumAddress(m.circuits)), ` #${m.tokenId}`), t('c.cpu.how')))
   rows.push(checkRow('✓', t('c.container'), code(svc.container), t('c.container.how')))
-  rows.push(checkRow('✓', t('c.holder'), code(svc.verified.holder), t('c.holder.how', QUORUM, RPC_URLS.length)))
+  rows.push(checkRow('✓', t('c.holder'), code(svc.verified.holder), t('c.holder.how', QUORUM, new Set(RPC_URLS.map(operatorOf)).size)))
   if (svc.file) rows.push(checkRow('✓', t('c.manifest'), el('span', null, t('bytes', svc.file.size), ', sha256 ', code(svc.file.sha256Hash)), t('c.manifest.how')))
   rows.push(checkRow('✓', t('c.delegation'), code(signedBy), t('c.delegation.how')))
   rows.push(checkRow('•', t('c.expires'), new Date(m.delegation.expires * 1000).toLocaleString(locale) + t('days', days)))
@@ -340,12 +342,10 @@ function renderSnippets() {
   const label = located?.kind === 'name' ? located.name : svc.manifest.name || svc.container
   const p = JSON.stringify(params)
   $('code-sdk').textContent = [
-    "import { createTapeAPI } from '@tapeapi/sdk'",
+    "import { createTapeAPI, rpcUrlsFor } from '@tapeapi/sdk'",
     '',
     'const api = createTapeAPI({',
-    '  rpcUrls: [',
-    ...RPC_URLS.map((u) => `    '${u}',`),
-    '  ],',
+    '  rpcUrls: rpcUrlsFor(56),   // ' + RPC_URLS.map((u) => new URL(u).host).join(', '),
     `  quorum: ${QUORUM},`,
     '})',
     t('sdkComment', label),

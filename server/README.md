@@ -24,7 +24,7 @@ import { createProvider } from '@tapeapi/server'
 const provider = createProvider({
   manifest: JSON.parse(await readFile('manifest.json', 'utf8')),   // your TAP-20 manifest
   signerKey: process.env.SIGNER_KEY,                               // the key your holder delegated
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
   quorum: 2,
   methods: { blockNumber: async (_params, ctx) => ({ blockNumber: ctx.block }) },
 })
@@ -38,7 +38,7 @@ await provider.listen(8787)
 import { createTapeAPI } from '@tapeapi/sdk'
 
 const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
   quorum: 2,
 })
 const svc = await api.resolve('11.1013.tape')

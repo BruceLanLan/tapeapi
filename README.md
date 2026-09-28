@@ -48,7 +48,7 @@ a script saved anywhere else fails with `ERR_MODULE_NOT_FOUND`) and run `node tr
 import { createTapeAPI } from '@tapeapi/sdk'
 
 const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
   quorum: 2,
 })
 const svc = await api.resolve('11.1013.tape')             // name -> container -> on-chain manifest -> holder's delegation
@@ -151,7 +151,7 @@ On mainnet, resolve by TapeOut name, container address or circuit, with at least
 
 ```js
 const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
   quorum: 2,
 })
 const svc = await api.resolve('0x<container>')                     // or '11.1013.tape', or { circuits: '0x…', tokenId: '11' }

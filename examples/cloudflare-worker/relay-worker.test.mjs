@@ -30,7 +30,7 @@ const env = {
   ROOMS, SIGNER_KEY, SIGNER_ADDRESS: signer, CIRCUITS: ADDR.circuits, TOKEN_ID: '4246', CONTAINER: ADDR.container,
   DELEGATION_EXPIRES: String(EXPIRES),
   DELEGATION_SIG: signDigest(delegationDigest(56, ADDR.hub, { container: ADDR.container, signer, expires: EXPIRES }), HOLDER_KEY),
-  PUBLIC_URL: 'https://relay.example', RPC_URLS: 'http://127.0.0.1:9,http://127.0.0.1:10',
+  PUBLIC_URL: 'https://relay.example', RPC_URLS: 'http://127.0.0.1:9,http://localhost:10',
 }
 // Two isolates: separately built providers, no shared memory, one shared namespace. / 两个隔离实例
 const isolate1 = buildRelay(env), isolate2 = buildRelay(env)

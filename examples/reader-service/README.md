@@ -25,8 +25,8 @@ Environment variables:
 | var                 | default                                       | meaning                                                   |
 |---------------------|-----------------------------------------------|-----------------------------------------------------------|
 | `SIGNER_KEY`        | a random key for this run (never printed; only its `signer` address is) | 32-byte hex private key that signs response envelopes; required once `DELEGATION_SIG` is set |
-| `RPC_URLS`          | `bsc-dataseed.bnbchain.org`, `bsc-dataseed1.defibit.io`, `bsc-dataseed1.ninicoin.io` | comma-separated JSON-RPC urls (three operators, 2-of-3) |
-| `QUORUM`            | `min(2, RPC_URLS.length)`                     | how many nodes must agree on every `eth_call`             |
+| `RPC_URLS`          | `bsc-dataseed.bnbchain.org`, `bsc-mainnet.public.blastapi.io`, `rpc-bsc.48.club` (the SDK's `rpcUrlsFor(56)`) | comma-separated JSON-RPC urls (three operators, 2-of-3; URLs of one operator count once) |
+| `QUORUM`            | `min(2, RPC_URLS.length)`                     | how many node operators must agree on every `eth_call`    |
 | `PORT` / `HOST`     | `8787` / `127.0.0.1`                          | listen address; loopback only by default, set `HOST=0.0.0.0` to accept connections from your network |
 | `PUBLIC_URL`        | `http://127.0.0.1:$PORT`                      | base url advertised in `manifest.endpoints.live`; must be `https://` once `DELEGATION_SIG` is set, or the service refuses to start |
 | `CONTAINER`         | placeholder `0x000…`                          | ERC-6551 container = `DeWebHub.accountOf(circuits, tokenId)` |

@@ -3,9 +3,10 @@
 // 架构审查中提供者运行时与 RPC 部分。每个 `FIXED <id>` 测试重放原场景并断言正确行为。中继部分见 examples 下两个目录。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { createProvider, memoryStore } from '../src/index.js'
 import { createRpc } from '../../sdk/src/rpc.js'
+import { rpcUrlsFor, operatorOf } from '../../sdk/src/rpc-defaults.js'
 import { privateKeyToAddress, signDigest, delegationDigest } from '../../sdk/src/sig.js'
 import { ADDR } from '../../sdk/test/helpers/fake-chain.mjs'
 import { exampleEnv } from '../../examples/_lib/service.mjs'
@@ -113,16 +114,26 @@ test('FIXED A5: createRpc warns once when quorum equals the node count (no spare
   assert.equal(warned.length, 1, 'none of those warn')
 })
 
-// Amended 2026-09-27: publicnode timed out on every request, so the set is three dataseed operators; the rule is still
-// one 2-of-3 set everywhere. / 修订：publicnode 持续超时，改为三家 dataseed；规则仍是所有示例同一套三取二。
+// Amended 2026-09-28: the three dataseeds were ONE operator (NodeReal; TapeKit audit 2026-09-19), so the set is the
+// SDK's rpcUrlsFor(56), three distinct operators, taken from one place. The rule is still one 2-of-3 set everywhere.
+// 修订：三个 dataseed 其实是 NodeReal 一家，改为 SDK 的 rpcUrlsFor(56)（三家不同运营方），只从一处取；规则仍是同一套三取二。
 test('FIXED A5: every example default is the same 2-of-3 set of three operators', () => {
-  const DEFAULT = ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io']
+  const DEFAULT = rpcUrlsFor(56)
+  assert.equal(new Set(DEFAULT.map(operatorOf)).size, 3, 'three distinct operators')
   const e = exampleEnv('x', { port: 1, env: { SIGNER_KEY } })
   assert.deepEqual(e.RPC_URLS, DEFAULT); assert.equal(e.QUORUM, 2)
-  for (const f of ['../../examples/relay-service/index.mjs', '../../examples/cloudflare-worker/relay-worker.js', '../../examples/cloudflare-worker/worker.js', '../../examples/cloudflare-worker/wrangler.toml']) {
+  // Code takes the list from the SDK; a config file (read by the deploy, not by code) spells it out exactly.
+  // 代码从 SDK 取列表；配置文件（由部署读取，而不是代码）逐字写出。
+  for (const f of ['../../examples/relay-service/index.mjs', '../../examples/cloudflare-worker/relay-worker.js', '../../examples/cloudflare-worker/worker.js',
+    '../../examples/public-api/worker.js', '../../examples/reader-service/index.mjs', '../../hosting/worker.js']) {
+    if (!existsSync(new URL(f, import.meta.url))) continue   // hosting/ is only in the internal repository / hosting/ 只在内部仓库
     const src = readFileSync(new URL(f, import.meta.url), 'utf8')
-    assert.ok(src.includes(DEFAULT.join(',')), `${f} defaults to the 2-of-3 set`)
-    assert.ok(!/publicnode\.com/.test(src), `${f} adds no other URL`)
+    assert.match(src, /rpcUrlsFor\(56\)/, `${f} defaults to the SDK's set`)
+    assert.ok(!/defibit|ninicoin|publicnode\.com|bsc-dataseed/.test(src), `${f} spells out no node of its own`)
+  }
+  for (const f of ['../../examples/cloudflare-worker/wrangler.toml', '../../examples/public-api/wrangler.toml']) {
+    const src = readFileSync(new URL(f, import.meta.url), 'utf8')
+    assert.equal(/^RPC_URLS = "([^"]*)"$/m.exec(src)?.[1], DEFAULT.join(','), `${f}: RPC_URLS is the SDK's set`)
   }
 })
 

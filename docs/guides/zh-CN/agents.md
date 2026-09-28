@@ -11,7 +11,7 @@ import { createTapeAPI } from '@tapeapi/sdk'
 import { exposeTapeAPI } from '@tapeapi/sdk/webmcp'
 
 const api = createTapeAPI({
-  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed1.defibit.io', 'https://bsc-dataseed1.ninicoin.io'],
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
   quorum: 2,
 })
 const handle = await exposeTapeAPI(api, '0x<container>')     // 默认只暴露免费方法

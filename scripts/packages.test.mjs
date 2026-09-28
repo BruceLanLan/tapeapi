@@ -115,6 +115,8 @@ test('declarations name every runtime export of every subpath', async () => {
     ['server', '.', PKGS.server.exports['.']],
     ['server', './mcp', PKGS.server.exports['./mcp']],
     ['server', './mcp-proxy', PKGS.server.exports['./mcp-proxy']],
+    ['server', './ai-proxy', PKGS.server.exports['./ai-proxy']],
+    ['server', './openai-proxy', PKGS.server.exports['./openai-proxy']],
   ]
   for (const [dir, sub, value] of cases) {
     const runtime = Object.keys(await import(pathToFileURL(join(ROOT, dir, value.default)).href)).sort()

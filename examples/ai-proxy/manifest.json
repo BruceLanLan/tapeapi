@@ -1,0 +1,11 @@
+{
+  "tapeapi": "0.1",
+  "name": "Demo AI service (TapeAPI sidecar)",
+  "circuits": "0x0000000000000000000000000000000000000000",
+  "tokenId": "0",
+  "container": "0x0000000000000000000000000000000000000000",
+  "delegation": null,
+  "endpoints": { "live": ["http://127.0.0.1:8798/tapeapi/v1"], "async": false },
+  "methods": [],
+  "dev": true
+}

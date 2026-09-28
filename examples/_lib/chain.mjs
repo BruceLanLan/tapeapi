@@ -16,7 +16,7 @@
 //   Two providers can only produce byte-identical answers if they evaluate at the same block. `latest` moves
 //   every second, so the default is `finalized`; `quorum` nodes must then agree on that block's hash and every
 //   later eth_call is evaluated at that hash (EIP-1898), so a reorg cannot silently change what was read.
-import { createRpc, abi, TapeAPIError } from '@tapeapi/sdk'
+import { createRpc, abi, TapeAPIError, operatorOf } from '@tapeapi/sdk'
 
 /** 调用方的输入错误 / the caller's input is wrong (TAP-21 BAD_REQUEST). */
 export const bad = (msg) => { throw new TapeAPIError('BAD_REQUEST', msg) }
@@ -36,7 +36,7 @@ export const blockPinnedOf = (pinned, blockRef) => ({ blockNumber: pinned.blockN
 /**
  * 一条链的读取器。
  *   name            错误消息里的链名 / the chain name used in error messages
- *   urls, quorum    RPC 端点与法定节点数 / RPC endpoints and how many must agree
+ *   urls, quorum    RPC 端点与法定数（按运营方计）/ RPC endpoints and how many operators must agree
  *   lag             节点不支持 `finalized` 标签、以及 `block: 'latest'` 时的滞后块数 / head lag used when a
  *                   node lacks the `finalized` tag and for `block: 'latest'`
  *   allowSingleNode 开发用：URL 少于 quorum 时把 quorum 下调到 URL 数 / dev only: clamp quorum to the url count
@@ -54,12 +54,21 @@ export function createChainReader({ name = 'chain', urls = [], quorum = 2, lag =
   const nodes = singles || urls.map((u) => createRpc({ urls: [u], quorum: 1, timeoutMs }))
   const need = multi.quorum
   const lagBlocks = Number(lag)
+  // Who runs each node: answers are counted by OPERATOR, as createRpc counts them, so two URLs of one operator (every
+  // bsc-dataseed host is NodeReal's) are one answer. An injected node without a URL counts as its own operator.
+  // 每个节点的运营方：与 createRpc 一样按运营方计票，同一运营方的两个 URL 只算一个回答。注入的无 URL 节点各算一家。
+  const opOf = nodes.map((r, i) => { const u = r?.urls?.[0] ?? urls[i]; return u == null ? `node#${i}` : operatorOf(u) })
+  const operatorsOf = (answers) => new Set(answers.map((a) => opOf[a.i])).size
+  const unit = (answers, n) => (answers.length > n ? 'operators' : 'nodes')
 
-  const perNode = async (fn) => (await Promise.allSettled(nodes.map(fn))).filter((s) => s.status === 'fulfilled').map((s) => s.value)
+  // Each node's own answer, with its index / 每个节点各自的回答，带下标
+  const perNodeAt = async (fn) => (await Promise.allSettled(nodes.map(fn))).flatMap((s, i) => (s.status === 'fulfilled' ? [{ i, value: s.value }] : []))
+  const perNode = async (fn) => (await perNodeAt(fn)).map((a) => a.value)
   const laggedHead = async () => {
-    const heads = await perNode((r) => r.blockNumber())
-    if (heads.length < need) throw new TapeAPIError('INTERNAL', `${name}: only ${heads.length}/${need} nodes answered eth_blockNumber`)
-    return Math.min(...heads) - lagBlocks
+    const heads = await perNodeAt((r) => r.blockNumber())
+    const n = operatorsOf(heads)
+    if (n < need) throw new TapeAPIError('INTERNAL', `${name}: only ${n}/${need} ${unit(heads, n)} answered eth_blockNumber`)
+    return Math.min(...heads.map((a) => a.value)) - lagBlocks
   }
 
   /**
@@ -75,22 +84,25 @@ export function createChainReader({ name = 'chain', urls = [], quorum = 2, lag =
     let blockNumber
     if (block == null || block === 'safe' || block === 'finalized') {
       const tag = block ?? 'finalized'
-      const nums = (await perNode((r) => r.call('eth_getBlockByNumber', [tag, false]))).filter((b) => b?.number).map((b) => Number(BigInt(b.number)))
-      if (nums.length >= need) blockNumber = Math.min(...nums)
+      const nums = (await perNodeAt((r) => r.call('eth_getBlockByNumber', [tag, false]))).filter((a) => a.value?.number)
+      const n = operatorsOf(nums)
+      if (n >= need) blockNumber = Math.min(...nums.map((a) => Number(BigInt(a.value.number))))
       else if (block == null) blockNumber = await laggedHead() // 仅默认情况降级 / the default degrades, an explicit tag does not
-      else throw new TapeAPIError('INTERNAL', `${name}: only ${nums.length}/${need} nodes answered for tag ${tag}`)
+      else throw new TapeAPIError('INTERNAL', `${name}: only ${n}/${need} ${unit(nums, n)} answered for tag ${tag}`)
     } else if (block === 'latest') blockNumber = await laggedHead()
     else if (Number.isInteger(block) && block >= 0) blockNumber = block
     else if (typeof block === 'string' && /^(0x[0-9a-fA-F]+|\d+)$/.test(block)) blockNumber = Number(BigInt(block))
     else bad("block must be a block number, hex string, 'latest', 'safe' or 'finalized'")
 
     const tag = blockTag(blockNumber)
-    const blocks = (await perNode((r) => r.call('eth_getBlockByNumber', [tag, false]))).filter((b) => b?.hash)
+    const answers = (await perNodeAt((r) => r.call('eth_getBlockByNumber', [tag, false]))).filter((a) => a.value?.hash)
+    const blocks = answers.map((a) => a.value)
     // Every node that answered must report the same hash (TAP-20 §3.2 / TAP-23 §3.4: never a majority). At a pinned
     // height a split means a reorg in flight or a lying node; either way nothing should be attested.
     // 所有作答节点的 hash 必须一致（绝不少数服从多数）。钉定高度上出现分歧意味着正在重组或有节点撒谎，都不该出证明。
     const hashes = new Set(blocks.map((b) => b.hash))
-    if (blocks.length < need) throw new TapeAPIError('INTERNAL', `${name}: only ${blocks.length}/${need} nodes answered for block ${blockNumber}`)
+    const answered = operatorsOf(answers)
+    if (answered < need) throw new TapeAPIError('INTERNAL', `${name}: only ${answered}/${need} ${unit(answers, answered)} answered for block ${blockNumber}`)
     if (hashes.size > 1) throw new TapeAPIError('INTERNAL', `${name}: nodes disagree on the hash of block ${blockNumber} (${hashes.size} different hashes)`)
     const [blockHash] = hashes
     // timestamp 已经在上面那次 eth_getBlockByNumber 的返回体里，白拿；TWAP 的可用窗口检查需要它。
