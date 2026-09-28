@@ -18,7 +18,8 @@ import {
 } from '../site/verify/lib.js'
 import { T } from '../site/verify/strings.js'
 import { signResponse, recoverResponseSigner, randomPrivateKey, privateKeyToAddress } from '../sdk/src/sig.js'
-import { receiptOf, toolResultOf, verifyLink, toBase64Url } from '../sdk/src/mcp.js'
+import { receiptOf, toolResultOf, verifyLink, toBase64Url, hashReceipt } from '../sdk/src/mcp.js'
+import { recoverResponseSignerFromHashes } from '../sdk/src/sig.js'
 import { TapeAPIError } from '../sdk/src/errors.js'
 import { readAny, parseUsageReceipt, usageEnvelopeOf, verifyUsage, isUsageShape } from '../site/verify/lib.js'
 import { encodeReceipt, receiptComment } from '../sdk/src/ai.js'
@@ -76,7 +77,7 @@ test('verify: every form of the same receipt reads to the same thing', () => {
   const tool = toolResultOf({ receipt: r, checkedBy: 'service', signer: SIGNER })
   const rpc = { jsonrpc: '2.0', id: 1, result: tool }
   const forms = {
-    link: verifyLink(r),
+    link: verifyLink(r, undefined, { content: true }),
     localLink: `http://localhost:8765/verify/#r=${b64}`,
     fragment: `#r=${b64}`,
     bare: `r=${b64}`,
@@ -85,12 +86,48 @@ test('verify: every form of the same receipt reads to the same thing', () => {
     receiptJson: JSON.stringify(r, null, 2),
     toolResult: JSON.stringify(tool),
     jsonRpc: JSON.stringify(rpc),
-    note: tool.content[1].text,                     // the provenance line the model quotes / 模型引用的那行说明
-    noteWithDot: `See ${verifyLink(r)}.`,
+    noteWithDot: `See ${verifyLink(r, undefined, { content: true })}.`,
   }
   const want = parseReceipt(r)
   for (const [name, text] of Object.entries(forms)) assert.deepEqual(readReceipt(text), want, name)
-  assert.deepEqual(readReceipt(verifyLink(LIVE)), LIVE, 'the live link reads to the live receipt')
+  assert.deepEqual(readReceipt(verifyLink(LIVE, undefined, { content: true })), LIVE, 'the live content link reads to the live receipt')
+  // The default link, and the note the model quotes, carry the hash-only form. / 默认链接与模型引用的说明行带只有哈希的形态。
+  const hashed = parseReceipt(hashReceipt(r))
+  for (const [name, text] of Object.entries({ link: verifyLink(r), note: tool.content[1].text, noteWithDot: `See ${verifyLink(r)}.` })) assert.deepEqual(readReceipt(text), hashed, name)
+  assert.deepEqual(readReceipt(verifyLink(LIVE)), hashReceipt(LIVE), 'the live default link reads to its hash-only form')
+})
+
+test('verify: a hash-only receipt (v 2, the default link) carries no params or result, and the live one still recovers to the public service\'s key', async () => {
+  const h = readReceipt(verifyLink(LIVE))
+  assert.equal(h.v, 2)
+  assert.deepEqual(Object.keys(h), ['v', 'service', 'method', 'requestHash', 'id', 'ts', 'ok', 'bodyHash', 'block', 'sig'])
+  const text = JSON.stringify(h)
+  assert.ok(!text.includes('776.211275170221302263') && !text.includes('blockPinned'), 'the result is not in it')
+  assert.equal(recoverResponseSignerFromHashes({ container: h.service.container, id: h.id, requestHash: h.requestHash, ok: h.ok, bodyHash: h.bodyHash, ts: h.ts }, h.sig), LIVE_SIGNER)
+  const refusal = readReceipt(verifyLink(LIVE_REFUSAL))
+  assert.ok(!JSON.stringify(refusal).includes('0xnotanaddress') && !JSON.stringify(refusal).includes('must be a 0x address'), 'params and refusal hidden too')
+  assert.equal(recoverResponseSignerFromHashes({ container: refusal.service.container, id: refusal.id, requestHash: refusal.requestHash, ok: refusal.ok, bodyHash: refusal.bodyHash, ts: refusal.ts }, refusal.sig), LIVE_SIGNER)
+  // The whole check, as the page runs it. / 页面上的完整核对。
+  const r = makeReceipt()
+  const out = await verifyReceipt(parseReceipt(hashReceipt(r)), io({ recoverHashed: recoverResponseSignerFromHashes }))
+  assert.equal(out.verdict, 'valid'); assert.equal(out.recovered, SIGNER)
+  assert.equal(signedBlock(parseReceipt(hashReceipt(r))), null, 'the signed block is inside the result, which is not there')
+  // Tampering with either hash, the id or the time recovers another key. / 改动任何一个哈希、id 或时间，恢复出的都是别的密钥。
+  for (const k of ['requestHash', 'bodyHash']) {
+    const bad = { ...hashReceipt(r), [k]: '0x' + '00'.repeat(32) }
+    assert.equal((await verifyReceipt(parseReceipt(bad), io({ recoverHashed: recoverResponseSignerFromHashes }))).verdict, 'other-key', k)
+  }
+  assert.equal((await verifyReceipt(parseReceipt({ ...hashReceipt(r), ts: r.ts + 1 }), io({ recoverHashed: recoverResponseSignerFromHashes }))).verdict, 'other-key')
+  // Without the hash recovery the page cannot check it, and says the signature failed rather than guessing.
+  // 没有按哈希恢复的函数就无法核对，结论是签名不成立而不是猜测。
+  assert.equal((await verifyReceipt(parseReceipt(hashReceipt(r)), io())).failed, 'sig')
+  // Shape: both hashes are required, lowercase 0x-hex; a v 2 receipt carrying params is read without them.
+  // 结构：两个哈希都必须有，且为小写 0x 十六进制；带 params 的 v 2 回执读出时不含它。
+  const code = (x) => { try { parseReceipt(x); return 'ok' } catch (e) { return e.field } }
+  assert.equal(code({ ...hashReceipt(r), requestHash: undefined }), 'requestHash')
+  assert.equal(code({ ...hashReceipt(r), bodyHash: hashReceipt(r).bodyHash.toUpperCase() }), 'bodyHash')
+  assert.equal(parseReceipt({ ...hashReceipt(r), params: { secret: 1 }, result: { secret: 2 } }).params, undefined)
+  assert.equal(code({ ...hashReceipt(r), v: 3 }), 'v')
 })
 
 test('verify: JSON is read as JSON first, so a tool result\'s _meta wins over the link in its text', () => {
@@ -129,7 +166,8 @@ test('verify: the shape check names the bad field', () => {
   const r = makeReceipt()
   const field = (mut) => { const x = structuredClone(r); mut(x); try { parseReceipt(x); return 'accepted' } catch (e) { assert.equal(e.code, 'shape'); return e.field } }
   assert.equal(field(() => {}), 'accepted')
-  assert.equal(field((x) => { x.v = 2 }), 'v')
+  assert.equal(field((x) => { x.v = 3 }), 'v')
+  assert.equal(field((x) => { x.v = 2 }), 'requestHash', 'v 2 is the hash-only form, which needs its hashes')
   assert.equal(field((x) => { delete x.service }), 'service')
   assert.equal(field((x) => { x.service.circuits = '0x1234' }), 'service.circuits')
   assert.equal(field((x) => { x.service.tokenId = 11 }), 'service.tokenId')

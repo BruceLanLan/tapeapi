@@ -19,6 +19,13 @@
 // receipt is appended after its end (no final event) can only be failed after it has been delivered.
 // 严格模式与流：流的回执紧挨在最终事件之前并覆盖它，所以严格模式下从回执起的内容一直扣到流结束、核验后才放出；核验失败则
 // 最终事件永不送达，改发一个该格式的错误事件。回执追加在末尾的流（没有最终事件）只能在送达之后判定失败。
+//
+// Salt: on a metered path, a JSON request body gets 64 random whitespace characters appended before it is forwarded
+// (ai.saltRequestBody), so the request hash in the receipt cannot be confirmed by hashing guessed prompts. The upstream
+// parses the same request (no field changes, no extra token, prompt caching unaffected); compressed bodies are sent as
+// they are; --no-salt turns it off. The receipt is checked against the bytes actually sent.
+// 加盐：在计量路径上，JSON 请求正文转发前在末尾追加 64 个随机空白字符，回执里的请求哈希因此无法靠对猜测的提示词取哈希来确认。
+// 上游解析出的请求不变（不改字段、不增加 token、不影响提示词缓存）；压缩过的正文原样发送；--no-salt 关闭。回执按实际发出的字节核验。
 
 import http from 'node:http'
 import { appendFileSync, readFileSync, realpathSync } from 'node:fs'
@@ -56,6 +63,11 @@ Usage: tapeapi-verify [options] <service>
   --strict             a receipt that does not verify becomes an error to the client (HTTP 502, or an error
                        event in place of a stream's final event)
   --max-skew <s>       a receipt's time must be within this many seconds of now (default 300)
+  --no-salt            send request bodies exactly as the client wrote them (default: 64 random whitespace
+                       characters are appended to a JSON body, so the request hash cannot be guessed)
+  --strip-session-headers
+                       do not pass the client's session headers (x-claude-code-session-id, session-id,
+                       thread-id) to the service; they let it tie your requests into one session
   --rpc <url,url,...>  BNB Chain nodes; each chain read needs 2 to agree (default: ${DEFAULT_RPC.length} public nodes of distinct operators)
   --rpc-xlayer <urls>  X Layer nodes, for a name with area code 2 (default: ${rpcUrlsFor(196).length} public nodes of 2 operators, no spare)
   --rpc-base <urls>    Base nodes, for a name with area code 3 (default: ${rpcUrlsFor(8453).length} public nodes of distinct operators)
@@ -70,11 +82,13 @@ Then point your client at it:
 
 Your API key goes to the service as it would without this proxy; nothing else sees it. A receipt proves who answered,
 to exactly which request, with exactly which response, and what usage and price were claimed; it does not prove which
-model actually ran.
+model actually ran. A receipt carries hashes of the request and the answer, not their text, and so does the --log
+file; a receipt passed on together with the request or answer bytes (to check the hashes on the verification page),
+or a verification link made with its content, contains that conversation.
 `
 
 function parseArgs(argv) {
-  const o = { target: null, dev: null, rpc: null, chainRpc: {}, port: DEFAULT_PORT, host: '127.0.0.1', log: null, strict: false, maxSkew: 300, quiet: false }
+  const o = { target: null, dev: null, rpc: null, chainRpc: {}, port: DEFAULT_PORT, host: '127.0.0.1', log: null, strict: false, maxSkew: 300, quiet: false, salt: true, stripSession: false }
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i], v
     const eq = a.startsWith('--') ? a.indexOf('=') : -1
@@ -92,6 +106,8 @@ function parseArgs(argv) {
       case '--log': o.log = value(); break
       case '--strict': o.strict = true; break
       case '--quiet': o.quiet = true; break
+      case '--no-salt': o.salt = false; break
+      case '--strip-session-headers': o.stripSession = true; break
       case '--max-skew': o.maxSkew = Number(value()); if (!Number.isFinite(o.maxSkew) || o.maxSkew <= 0) throw new Error('--max-skew must be a positive number of seconds'); break
       case '--rpc': o.rpc = value().split(',').map((s) => s.trim()).filter(Boolean); break
       case '--rpc-xlayer': case '--rpc-base': o.chainRpc[chainByKey(a.slice(6)).chainId] = value().split(',').map((s) => s.trim()).filter(Boolean); break
@@ -239,7 +255,7 @@ async function main() {
     const headers = new Headers()
     for (let i = 0; i + 1 < req.rawHeaders.length; i += 2) {
       const k = req.rawHeaders[i].toLowerCase()
-      if (!ai.forwardsHeader(k)) continue
+      if (!ai.forwardsHeader(k) || (opts.stripSession && ai.isSessionHeader(k))) continue
       try { headers.append(k, req.rawHeaders[i + 1]) } catch { /* not a fetch header */ }
     }
     const verb = req.method.toUpperCase()
@@ -250,6 +266,8 @@ async function main() {
     try { body = verb === 'GET' || verb === 'HEAD' ? null : await readAll(req, REQUEST_LIMIT) } catch (e) {
       return sendError(e.tooLarge ? 413 : 400, anthropic, 'bad_request', e.tooLarge ? `the request is larger than ${REQUEST_LIMIT} bytes` : 'the request body could not be read')
     }
+    // The salt goes on the bytes forwarded, and the receipt is checked over exactly those. / 盐加在转发的字节上，回执按这些字节核验。
+    if (r.metered && opts.salt && body && body.length) { const more = ai.saltRequestBody(body, headers); if (more) body = more }
     const target = r.root + url.pathname + url.search
     let up
     try { up = await fetch(target, { method: verb, headers, body: body && body.length ? body : verb === 'POST' ? body : undefined, redirect: 'manual', signal: ac.signal }) } catch (e) {
@@ -348,7 +366,7 @@ async function main() {
   log(`service ${short(m.name, 80)}  ${svc.chainId && svc.chainId !== 56 ? `on ${CHAINS[svc.chainId]?.name ?? `chain ${svc.chainId}`}  ` : ''}container ${svc.container}  signer ${m.signer}${svc.verified.dev ? '  (DEV: not checked on chain)' : `  holder ${svc.verified.holder}`}`)
   for (const r of routes) log(`  ${r.format.name.padEnd(18)} -> ${r.root}${r.format.baseSuffix}`)
   log(`models priced: ${m[ai.MANIFEST_FIELD].models.map((x) => x.id).slice(0, 12).join(', ')}${m[ai.MANIFEST_FIELD].models.length > 12 ? ', ...' : ''}`)
-  log(`listening on ${local}${opts.strict ? '  (strict)' : ''}${opts.log ? `  log ${opts.log}` : ''}`)
+  log(`listening on ${local}${opts.strict ? '  (strict)' : ''}${opts.salt ? '' : '  (no salt)'}${opts.stripSession ? '  (session headers stripped)' : ''}${opts.log ? `  log ${opts.log}` : ''}`)
   log(`  ANTHROPIC_BASE_URL=${local}    OPENAI_BASE_URL=${local}/v1`)
   const stop = (sig) => { log(`${sig}: ${stats.ok} verified, ${stats.failed} failed, ${stats.sidecarErrors} sidecar errors, ${stats.passThrough} passed through; exiting`); process.exit(0) }
   process.on('SIGTERM', () => stop('SIGTERM'))

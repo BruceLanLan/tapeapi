@@ -26,6 +26,8 @@ export * as sig from './sig.js'
 export * as channel from './channel.js'   // TAP-26 real-time private channel / 实时私密通道
 import * as channelLib from './channel.js'
 export * as group from './group.js'        // TAP-27 private group channels / 私密群聊
+// TAP-27 delivery in one call: epoch message to the group room AND invites to each member's inbox room / 一步投递
+export { deliverGroupUpdate, checkGroupInvites } from './group-delivery.js'
 export * as tapesend from './tapesend.js' // TAP-10 sealed messages, byte-compatible with @tapekit/send / TapeSend 密封消息
 export * as webmcp from './webmcp.js'      // expose a service's methods as WebMCP agent tools / 把服务的方法注册为 WebMCP 代理工具
 export * as mcp from './mcp.js'            // MCP server core: tools with signed results and receipts / MCP 服务器核心：带签名结果与回执的工具

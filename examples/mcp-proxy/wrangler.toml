@@ -17,8 +17,21 @@ keep_vars = true
 # pattern = "mcp.example.com"
 # custom_domain = true
 
+# Logs: Cloudflare's per-request invocation logs and traces are OFF by default here, query strings redacted; the
+# Worker's own console output (errors, setup notes) is kept. While debugging, set invocation_logs = true for a while:
+# those records describe every request, and whether they include the client IP is to be verified.
+# 日志：这里默认关闭 Cloudflare 的逐请求调用日志与追踪，隐去查询串；保留 Worker 自己的 console 输出（错误、设置提示）。
+# 排查问题时可临时把 invocation_logs 设为 true：那些记录描述每个请求，是否含客户端 IP 待核实。
 [observability]
 enabled = true
+redact_query_string = true
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+
+[observability.traces]
+enabled = false
 
 [vars]
 SERVICE_NAME = "My MCP server"

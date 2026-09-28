@@ -6,6 +6,92 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-09-28
+
+### Privacy hardening
+
+- **Guessable receipt ids.** The AI signing sidecar keeps the upstream's answer id (TAP-21 §3.5), and some upstreams'
+  ids can be guessed: Ollama's OpenAI-compatible API numbers chat ids `chatcmpl-0` to `chatcmpl-998`, so anyone could
+  walk through the free `receipt` method and read every receipt kept. The sidecar now estimates the randomness of the
+  ids it sees (`idEntropyBits`, threshold `ID_ENTROPY_MIN_BITS` = 64) and warns once in its log when they look
+  guessable (a low estimate, or one id seen twice while kept); keeps receipts per (`id`, `requestSha256`), so answers
+  that share an id no longer overwrite each other (an id-only lookup still serves the later one); gives the `receipt`
+  method a budget of its own (`receiptRateLimit`, default 10 lookups per client IP per minute, refused with the unsigned
+  429 of TAP-21 §3.4); states the configurable lifetime (`receiptTtlMs`) in the method description (unchanged at the
+  default); and, with `requireRequestHash` (off by default), answers only lookups that also name `requestSha256`.
+  Worker variables `RECEIPT_TTL_S`, `RECEIPT_LOOKUPS_PER_MIN`, `RECEIPT_REQUIRE_HASH`; the new-api sidecar takes
+  `RECEIPT_TTL_S` and `RECEIPT_REQUIRE_HASH`. **TAP-21 §3.5** (both languages): the `receipt` method MAY take an optional
+  `requestSha256` parameter that picks the receipt of that request among answers sharing an id, and a provider whose
+  upstream's ids can be guessed MAY refuse a lookup without it; the manifest entry stays `params: { id: "string" }`.
+  §8 describes the risk. The receipt shape and the frozen vectors are unchanged.
+- **Request salt.** `createVerifyingFetch` (new option `salt`, default on) and `tapeapi-verify` (`--no-salt` to turn it
+  off) append 64 random JSON whitespace characters (128 random bits) after the JSON text of each request body on a
+  receipt path, so the receipt's `requestSha256` can no longer be confirmed by hashing guessed short prompts. The
+  parsed request is unchanged: no field is added or changed (`user` and `metadata.user_id` stay as written, since
+  gateways route caches by them), no token is added, and prompt caches keyed on the parsed prompt are unaffected.
+  Compressed bodies (`Content-Encoding` other than identity) and non-JSON bodies are sent as they are; an explicit
+  `Content-Length` is dropped when the body grows; the receipt is checked over the bytes actually sent; reports carry
+  `salted`. New exports `ai.saltRequestBody` and `ai.SALT_LENGTH`. TAP-21 §8 and the AI provider guide explain why the
+  cache is unaffected. Acceptance by the live OpenAI and Anthropic APIs is not yet measured (the tests use the
+  reference sidecar).
+- **Hash-only MCP receipts and verify links.** `verifyLink` used to put the whole receipt, params and result in clear,
+  into the link, so sharing a link shared the call. It now carries the hash-only form by default (`mcp.hashReceipt`,
+  receipt `v: 2`: `params` and `result`/`error` replaced by `requestHash` = keccak256(canonicalJSON({ method, params }))
+  and `bodyHash` = keccak256(canonicalJSON(result or error)), the two hashes the TAP-21 digest is built from, so the
+  signature still verifies). The whole receipt goes into the link only when asked: `verifyLink(r, base, { content: true
+  })`, `toolResultOf({ linkContent: true })`, `linkContent` on `createMcpEndpoint` and `createMcpProxy` (`LINK_CONTENT=1`
+  in the MCP proxy Worker), `tapeapi-mcp --link-content`. The provenance note says which form its link carries. The
+  receipt in `_meta` stays whole. New `sig.responseRequestHash`, `sig.responseBodyHash`,
+  `sig.responseDigestFromHashes`, `sig.recoverResponseSignerFromHashes` (the same digest, checked against every
+  published TAP-21 envelope vector). The verification page reads both forms, shows the hashes and says that
+  low-entropy params (an address, a token id, a price pair) can still be guessed from their hash. The reputation design
+  now attaches hash-only receipts. The TAP-21 envelope and digest are
+  unchanged.
+- **Honest labels.** The verification page has a "What a receipt does not prove" list in both languages: a receipt
+  does not prove which model or program actually ran; a link with content (MCP receipt v 1) contains the conversation;
+  metadata (the service sees the request and IP, public BSC nodes see the reader's IP and which service is checked) is
+  not hidden. A receipt with content is shown with a note saying so, and the footer says the page can be self-hosted.
+  The help of `tapeapi-verify` and `tapeapi-mcp` and the SDK README say the same. A new test
+  (`scripts/privacy-copy.test.mjs`) keeps this copy free of the words the plan rules out.
+- **Log minimisation.** All seven `wrangler*.toml` (the two public services api.tapeapi.fun and relay.tapeapi.fun, the
+  four templates and one more) turn Cloudflare's per-request invocation logs and traces off and redact query strings
+  (`[observability.logs] invocation_logs = false`, `[observability.traces] enabled = false`,
+  `redact_query_string = true`, keys checked against the pinned wrangler 4.141.0); the Workers' own console output
+  stays (on api.tapeapi.fun one line per MCP message with an HMAC caller tag, never the IP). Takes effect on the next
+  deploy. Whether Cloudflare's own request records include the client IP is to be verified.
+- **Privacy page (draft).** `site/privacy/` (Chinese and English) says what the services we run record and what they
+  do not, what Cloudflare, service providers, public RPC nodes and the chain see, and what is still to be verified
+  (client IP in Workers logs, Pages access logs, our plan's retention). Not in the sitemap, not linked, `noindex`, and
+  not added to any publishing list. `scripts/privacy-logs.test.mjs` checks the configuration and the page;
+  `scripts/privacy-words.mjs` holds the ruled-out words both privacy tests use.
+- **Session-header switch.** The AI signing sidecar takes `forwardSessionHeaders` (default `true`: unchanged
+  behaviour); `false` (`FORWARD_SESSION_HEADERS=0` in the Worker and the new-api sidecar) leaves out the clients'
+  session headers (`ai.SESSION_HEADERS`: `x-claude-code-session-id`, `session-id`, `thread-id`), which let the upstream
+  tie a caller's requests into one session. `tapeapi-verify --strip-session-headers` does the same on the client side.
+  TAP-21 §8 (both languages, no new keywords) and the AI provider guide say so. New `ai.isSessionHeader`.
+
+### Group delivery (TAP-27)
+
+- **One call delivers a group update.** A group uses two kinds of room: the epoch message goes to the group room, and
+  each new member's invite to that member's own inbox room. An application that posted only `epochWire` set up a group
+  nobody could join, and the relay rightly returned 0 frames to the members. New in `@tapeapi/sdk`:
+  `deliverGroupUpdate({ group, update, relay, bus })` posts the invites to every new (or named) member's inbox room and
+  then the epoch message to the group room, over relays (`relaySend`, optional `payer`) and / or ChannelBus (the
+  caller's `sendTx`), and returns every post with its room and the relay's `{ i, epoch }` or its error; any failure
+  throws `GROUP_DELIVERY` after all posts were tried (or returns `ok: false` with `throwOnError: false`), and a relay's
+  per-source limit is marked `rateLimited` with `retryAfterS`. `checkGroupInvites({ self, identity, relay, cursors })`
+  reads the member's inbox room with one cursor per relay and room that keeps the relay's room epoch (first read
+  `after: -1, epoch: null`; a stored cursor without an epoch starts over), opens the group invites, and counts what it
+  skips; `holder` and `checkSelf` refuse a wallet address or a wrong chainId given for the container.
+- `createGroup`, `addMembers`, `removeMembers`, `rotate` and `resumeGroup` now also return `epoch` and `added` (the
+  members that need an invite); the owner's handle has `epochWire`, the latest epoch message, for reposts. Nothing
+  existing changed shape. The JSDoc and types of `createGroup`, `addMembers` and `inviteFor` say which room each part goes to.
+- **TAP-27 §3.5** (both languages): a non-normative note on the two rooms and on cursors. No requirement changed.
+- New guide **Group chat** (`docs/guides/groups.md`, `docs/guides/zh-CN/groups.md`): prerequisites, the owner and member
+  flows, relay or ChannelBus, saving state, a troubleshooting checklist and the limits. New example
+  `examples/group-chat/`: two throwaway identities over the public relay, with an end-to-end test against a local
+  verified relay.
+
 ## [0.6.0] — 2026-09-28
 
 ### Added
@@ -235,7 +321,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.3.0...v0.4.0

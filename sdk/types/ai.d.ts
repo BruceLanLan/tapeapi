@@ -210,6 +210,18 @@ export declare function verifyUsageReceipt(o: {
   formats?: readonly AIFormat[]
 }): VerifyReport
 
+/** The clients' session headers among the forwarded ones: x-claude-code-session-id, session-id, thread-id. */
+export declare const SESSION_HEADERS: readonly string[]
+export declare function isSessionHeader(name: string): boolean
+/** 64: the whitespace characters saltRequestBody appends (128 random bits). */
+export declare const SALT_LENGTH: number
+/**
+ * A JSON request body with SALT_LENGTH random JSON whitespace characters appended (the parsed request is unchanged, so
+ * no field, token or prompt cache changes; the SHA-256 of the bytes becomes unguessable), or null when it is left alone:
+ * empty, compressed (Content-Encoding other than identity), a non-JSON Content-Type, or not a UTF-8 JSON object or array.
+ */
+export declare function saltRequestBody(bytes: Uint8Array, headers?: Headers | Record<string, string>): Uint8Array | null
+
 /** A fetch for an official SDK (`new OpenAI({ baseURL, fetch })`) that verifies every usage receipt (streams when they end). */
 export declare function createVerifyingFetch(o: {
   /** From api.resolve() (or a target api.resolve accepts, resolved on first use). */
@@ -217,7 +229,9 @@ export declare function createVerifyingFetch(o: {
   api?: { resolve(target: any): Promise<any>; refresh?(svc: any): Promise<any> }
   fetch?: FetchLike
   /** sidecarError: an answer the sidecar made itself (code PROVIDER_UNAVAILABLE, or RATE_LIMITED for 429), never verified. */
-  onReport?: (report: VerifyReport & { url: string; stream: boolean; status: number; incomplete?: boolean; sidecarError?: true; code?: 'PROVIDER_UNAVAILABLE' | 'RATE_LIMITED' }) => void
+  onReport?: (report: VerifyReport & { url: string; stream: boolean; status: number; salted: boolean; incomplete?: boolean; sidecarError?: true; code?: 'PROVIDER_UNAVAILABLE' | 'RATE_LIMITED' }) => void
+  /** Append random whitespace to a JSON request body on a receipt path (saltRequestBody); default true. */
+  salt?: boolean
   /** Throw (or error the stream) on a problem; default true. */
   strict?: boolean
   /** Default 300. */

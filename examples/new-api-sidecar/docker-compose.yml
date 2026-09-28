@@ -51,7 +51,7 @@ services:
       additional_contexts:
         sdk: ../../sdk
         server: ../../server
-    image: tapeapi-new-api-sidecar:0.6.0
+    image: tapeapi-new-api-sidecar:0.7.0
     restart: unless-stopped
     depends_on:
       new-api:
@@ -74,6 +74,9 @@ services:
       SERVICE_NAME: ${SERVICE_NAME:-}
       RATE_IP: ${RATE_IP:-600}
       CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
+      RECEIPT_TTL_S: ${RECEIPT_TTL_S:-}
+      RECEIPT_REQUIRE_HASH: ${RECEIPT_REQUIRE_HASH:-}
+      FORWARD_SESSION_HEADERS: ${FORWARD_SESSION_HEADERS:-}
     volumes:
       - ./models.json:/config/models.json:ro
     # The only way in for API traffic; point your HTTPS reverse proxy (PUBLIC_URL) here. / 接口流量的唯一入口。

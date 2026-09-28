@@ -38,7 +38,7 @@ export const LANGS = {
 }
 export const GROUPS = [
   { en: 'Getting started', zh: '开始', pages: ['index', 'public-api', 'mcp', 'consume', 'provide', 'ai-providers'] },
-  { en: 'Features', zh: '功能', pages: ['channels', 'agents'] },
+  { en: 'Features', zh: '功能', pages: ['channels', 'groups', 'agents'] },
   { en: 'Help', zh: '帮助', pages: ['faq', 'changelog'] },
 ]
 const SOURCES = {
@@ -49,6 +49,7 @@ const SOURCES = {
   provide: { en: 'docs/guides/provide.md', zh: 'docs/guides/zh-CN/provide.md' },
   'ai-providers': { en: 'docs/guides/ai-providers.md', zh: 'docs/guides/zh-CN/ai-providers.md' },
   channels: { en: 'docs/guides/channels.md', zh: 'docs/guides/zh-CN/channels.md' },
+  groups: { en: 'docs/guides/groups.md', zh: 'docs/guides/zh-CN/groups.md' },
   agents: { en: 'docs/guides/agents.md', zh: 'docs/guides/zh-CN/agents.md' },
   faq: { en: 'docs/guides/faq.md', zh: 'docs/guides/zh-CN/faq.md' },
   changelog: { en: 'CHANGELOG.md', zh: 'CHANGELOG.md' },

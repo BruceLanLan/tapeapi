@@ -76,6 +76,8 @@ export declare function createMcpProxy(o: {
   toolsSha256?: string
   /** The TapeOut name shown in receipts, e.g. '11.1013.tape'. */
   identity?: { name?: string }
+  /** Verify links carry the params and result in clear; default false: hashes only. */
+  linkContent?: boolean
   /** Default: endpoints.live[0] with /tapeapi/v1 replaced by /mcp. */
   mcpEndpoint?: string
   allowHttp?: boolean

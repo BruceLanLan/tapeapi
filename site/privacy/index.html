@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>TapeAPI 隐私说明 · Privacy (draft)</title>
+<meta name="description" content="What the services TapeAPI runs record and what they do not: tapeapi.fun, api.tapeapi.fun and relay.tapeapi.fun. Draft. 我们运营的服务记什么、不记什么。草稿。">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<!-- Hand-written page, a DRAFT (2026-09-28, docs/PLAN-2026Q4.md privacy item 5): not in the sitemap, not linked from
+     other pages, not published until Bruce decides. Every statement comes from the code in this repository; what could
+     not be checked says "to be verified". scripts/privacy-logs.test.mjs keeps the facts and the wording in step.
+     手写页面，草稿：不进站点地图、不从其它页面链接，发布由 Bruce 决定。每条说法都来自本仓库的代码；查不到的写"待核实"。 -->
+<link rel="stylesheet" href="../status/status.css?v=910df8bfcf">
+<link rel="stylesheet" href="privacy.css?v=b6d62f9f53">
+<!-- In <head> so the theme and language apply before the first paint. / 放在 head 里，主题与语言在首次绘制前生效。 -->
+<script src="privacy.js?v=d6b014f45b"></script>
+</head>
+<body>
+<header class="hd-bar">
+  <div class="hd">
+    <a class="hd-brand" href="../" aria-label="TapeAPI"><svg class="hd-mark" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" width="99" height="11" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a>
+    <nav class="hd-nav" aria-label="TapeAPI">
+      <a href="../docs/"><span lang="zh">手册</span><span lang="en">Docs</span></a>
+      <a href="../playground/"><span lang="zh">调试台</span><span lang="en">Playground</span></a>
+      <a href="../dashboard/"><span lang="zh">我的服务</span><span lang="en">Dashboard</span></a>
+      <a href="../status/"><span lang="zh">状态</span><span lang="en">Status</span></a>
+      <a href="https://github.com/BruceLanLan/tapeapi">GitHub</a>
+    </nav>
+    <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button">中文</button><button class="hd-btn" id="theme-btn" type="button">Theme</button></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="eyebrow"><span lang="zh">隐私说明</span><span lang="en">Privacy</span></p>
+  <h1 class="plain"><span lang="zh">我们运营的服务记什么、不记什么</span><span lang="en">What the services we run record, and what they do not</span></h1>
+  <p class="status"><span lang="zh">草稿，2026-09-28。本页只说我们自己运营的三样东西：网站 tapeapi.fun、公共服务 api.tapeapi.fun（含 /mcp）、公共中继 relay.tapeapi.fun。下面的日志设置写在仓库的配置文件里，要在这两个 Worker 下次部署后才生效。标"待核实"的地方，我们还没有查到确切答案。</span><span lang="en">Draft, 2026-09-28. This page covers only the three things we run ourselves: the website tapeapi.fun, the public service api.tapeapi.fun (with /mcp) and the public relay relay.tapeapi.fun. The log settings below are in the repository's configuration files and take effect the next time these two Workers are deployed. Where it says "to be verified", we do not yet have a definite answer.</span></p>
+
+  <section class="notes">
+    <h2><span lang="zh">先说结论</span><span lang="en">In short</span></h2>
+    <ul>
+      <li><span lang="zh">内容受保护：通道消息端到端加密，中继只见密文；AI 用量回执只带请求与回答的哈希；核验链接默认只带哈希。</span><span lang="en">Content is protected: channel messages are end-to-end encrypted and the relay sees only ciphertext; AI usage receipts carry hashes of the request and the answer; verify links carry hashes by default.</span></li>
+      <li><span lang="zh">元数据不隐藏：谁在什么时候、从哪个 IP 调用了哪个服务，Cloudflare、公共 RPC 节点和服务方都看得到；写到链上的内容永久公开，包括付款记录。</span><span lang="en">Metadata is not hidden: who called which service, when and from which IP address is visible to Cloudflare, to public RPC nodes and to the service provider; what is written on chain is public for good, payments included.</span></li>
+    </ul>
+  </section>
+
+  <section class="notes">
+    <h2><span lang="zh">我们记什么</span><span lang="en">What we record</span></h2>
+    <h3>api.tapeapi.fun</h3>
+    <ul>
+      <li><span lang="zh">每条 MCP 消息一行日志：消息类型、工具名、调用方标签。调用方标签是 HMAC-SHA256（密钥，IP 与 UTC 日期）的前 12 个十六进制字符：不含 IP 本身，跨天无法关联，没有密钥也无法从标签反推 IP。我们用它统计有多少不同的调用方。</span><span lang="en">One log line per MCP message: the message type, the tool name and a caller tag. The caller tag is the first 12 hex characters of HMAC-SHA256(key, IP and UTC day): it does not contain the IP address, cannot be linked across days, and cannot be turned back into an IP address without the key. We use it to count distinct callers.</span></li>
+      <li><span lang="zh">限流计数：按 IP 计，放在 Worker 实例的内存里，60 秒一个窗口，不写入任何存储。</span><span lang="en">Rate-limit counters: keyed by IP address, held in the Worker instance's memory in 60-second windows, never written to storage.</span></li>
+      <li><span lang="zh">内部错误的错误信息。</span><span lang="en">The messages of internal errors.</span></li>
+    </ul>
+    <h3>relay.tapeapi.fun</h3>
+    <ul>
+      <li><span lang="zh">每个房间是 Cloudflare 的一个 Durable Object，帧只在它的内存里，而且是密文：中继没有解密的密钥。房间空闲 15 分钟（握手房间 10 分钟）后，连同帧一起清除。</span><span lang="en">Each room is a Cloudflare Durable Object; its frames are held in its memory only, and they are ciphertext: the relay has no key to decrypt them. A room idle for 15 minutes (10 for a handshake room) is cleared together with its frames.</span></li>
+      <li><span lang="zh">每条投递的来源（IP 地址，付费投递则是付款地址）与房间一起留在内存里，用于按来源限额（10 分钟窗口），随房间一起清除。</span><span lang="en">The source of each post (its IP address, or the paying address for a paid post) is held in memory with the room, for the per-source limit (10-minute window), and cleared with the room.</span></li>
+      <li><span lang="zh">新建房间的计数按 IP，放在 Worker 实例的内存里，每分钟一个窗口。日志只有错误信息。</span><span lang="en">New-room counters are keyed by IP address and held in the Worker instance's memory, per minute. The logs hold error messages only.</span></li>
+    </ul>
+    <h3><span lang="zh">日志存在哪里、留多久</span><span lang="en">Where the logs are kept, and for how long</span></h3>
+    <ul>
+      <li><span lang="zh">以上日志行存在 Cloudflare 的 Workers Logs 里，按套餐保留（免费版 3 天、付费版 7 天；我们用的是哪一档：待核实）。</span><span lang="en">The log lines above are kept in Cloudflare's Workers Logs for the plan's retention (3 days on the free plan, 7 on the paid plan; which plan we are on: to be verified).</span></li>
+      <li><span lang="zh">两个 Worker 的配置已关闭 Cloudflare 的逐请求调用日志（invocation logs）与追踪（traces），并隐去网址里的查询串。</span><span lang="en">Both Workers' configuration turns off Cloudflare's per-request invocation logs and traces, and redacts query strings from URLs.</span></li>
+    </ul>
+  </section>
+
+  <section class="notes">
+    <h2><span lang="zh">我们不记什么</span><span lang="en">What we do not record</span></h2>
+    <ul>
+      <li><span lang="zh">api.tapeapi.fun 的日志不写请求参数、回答内容，也不写 IP 本身；签名的回答发出后不另存。</span><span lang="en">api.tapeapi.fun writes neither request params nor answers nor the IP address itself into its logs; a signed answer is not stored once sent.</span></li>
+      <li><span lang="zh">中继不解密帧，也不把帧写进持久存储。</span><span lang="en">The relay does not decrypt frames and does not write them to persistent storage.</span></li>
+      <li><span lang="zh">核验页的回执放在网址的 <code>#r=</code> 片段里，浏览器不会把片段发给任何服务器；核验在你的浏览器里完成。</span><span lang="en">On the verification page the receipt rides in the <code>#r=</code> fragment of the URL, which browsers never send to a server; the check runs in your browser.</span></li>
+      <li><span lang="zh">网站没有第三方统计或广告脚本。浏览器本地存储（localStorage）里只放：语言与主题；"我的服务"页上你添加的服务列表；持有人操作台里填写中的服务设置与 ChannelBus 部署记录。这些只在你自己的浏览器里。</span><span lang="en">The website runs no third-party analytics or advertising scripts. Browser storage (localStorage) holds only: the language and theme; the list of services you add on the Dashboard; the service settings you are filling in and the ChannelBus deployment record in the holder console. These stay in your own browser.</span></li>
+      <li><span lang="zh">我们不运行 AI 签名旁路（每个服务方运行自己的），所以看不到任何服务方的提示词、回答或 API 密钥。</span><span lang="en">We run no AI signing sidecar (each service provider runs its own), so we see no provider's prompts, answers or API keys.</span></li>
+    </ul>
+  </section>
+
+  <section class="notes">
+    <h2><span lang="zh">别人看得到什么</span><span lang="en">What others see</span></h2>
+    <ul>
+      <li><span lang="zh">Cloudflare：三样东西都跑在 Cloudflare 上（网站在 Cloudflare Pages，另外两个在 Workers），它看得到每个请求的 IP、时间与网址。Cloudflare 自己对请求的记录是否含客户端 IP：待核实。Cloudflare Pages 是否为网站保留访问日志、保留多久：待核实。</span><span lang="en">Cloudflare: all three run on Cloudflare (the website on Cloudflare Pages, the other two on Workers), and it sees each request's IP address, time and URL. Whether Cloudflare's own records of a request include the client IP address: to be verified. Whether Cloudflare Pages keeps access logs for the website, and for how long: to be verified.</span></li>
+      <li><span lang="zh">服务方：你调用的第三方服务看得到请求内容、IP 与 API 密钥，付费调用时还有你的钱包地址。它们的日志由它们自己决定，本页无法代表它们。</span><span lang="en">Service providers: a third-party service you call sees the content of your requests, your IP address and your API key, and your wallet address on paid calls. Their logs are their own; this page cannot speak for them.</span></li>
+      <li><span lang="zh">公共 RPC 节点：网站、调试台、核验页和 SDK 读链时直连公共节点（BNB Chain 默认是 bsc-dataseed.bnbchain.org、bsc-mainnet.public.blastapi.io、rpc-bsc.48.club；X Layer 与 Base 各有自己的默认节点）。节点运营方看得到你的 IP 和你在查哪个服务。为了防止单个节点给出错误数据，SDK 默认同时询问两到三家；你可以换成自己的节点。</span><span lang="en">Public RPC nodes: the website, the playground, the verification page and the SDK read the chain from public nodes directly (on BNB Chain by default bsc-dataseed.bnbchain.org, bsc-mainnet.public.blastapi.io and rpc-bsc.48.club; X Layer and Base have their own defaults). Their operators see your IP address and which service you are looking up. So that no single node can feed wrong data, the SDK asks two or three of them by default; you can use your own node instead.</span></li>
+      <li><span lang="zh">链上：TapeOut 身份、服务清单、委托、ChannelBus 上的帖子和付款记录，写上去就永久公开。</span><span lang="en">On chain: TapeOut identities, service manifests, delegations, ChannelBus posts and payment records are public for good once written.</span></li>
+    </ul>
+  </section>
+
+  <section class="notes">
+    <h2><span lang="zh">回执与链接</span><span lang="en">Receipts and links</span></h2>
+    <ul>
+      <li><span lang="zh">AI 用量回执只带请求与回答的哈希；SDK 与 tapeapi-verify 默认给请求加一段随机空白，短提示词因此无法从哈希猜出。</span><span lang="en">AI usage receipts carry hashes of the request and the answer; the SDK and tapeapi-verify add random whitespace to each request by default, so a short prompt cannot be guessed from its hash.</span></li>
+      <li><span lang="zh">MCP 核验链接默认只带哈希；显式开启的带原文链接里含对话内容。取自小集合的参数（地址、token id、交易对）仍可能从哈希猜出。</span><span lang="en">MCP verify links carry hashes by default; a link with content, which must be asked for, contains the conversation. Params from a small set (an address, a token id, a price pair) can still be guessed from their hash.</span></li>
+      <li><span lang="zh">回执不证明实际跑的是哪个模型：它证明谁的密钥签了什么、在什么时间。</span><span lang="en">A receipt does not prove which model actually ran: it proves whose key signed what, and when.</span></li>
+    </ul>
+  </section>
+
+  <section class="notes">
+    <h2><span lang="zh">待核实</span><span lang="en">To be verified</span></h2>
+    <ul>
+      <li><span lang="zh">Cloudflare Workers 的日志（Workers Logs，以及平台自己对请求的记录）是否含客户端 IP：待核实。</span><span lang="en">Whether Cloudflare Workers' logs (Workers Logs, and the platform's own records of requests) include the client IP address: to be verified.</span></li>
+      <li><span lang="zh">Cloudflare Pages 是否为 tapeapi.fun 保留访问日志、保留多久。</span><span lang="en">Whether Cloudflare Pages keeps access logs for tapeapi.fun, and for how long.</span></li>
+      <li><span lang="zh">我们的 Cloudflare 套餐对应的日志保留期。</span><span lang="en">The log retention of our Cloudflare plan.</span></li>
+    </ul>
+  </section>
+
+  <footer class="foot">
+    <a href="../"><span lang="zh">首页</span><span lang="en">Home</span></a>
+    <a href="../docs/"><span lang="zh">文档</span><span lang="en">Docs</span></a>
+    <a href="../verify/"><span lang="zh">核验回执</span><span lang="en">Verify a receipt</span></a>
+    <a href="https://github.com/BruceLanLan/tapeapi">GitHub</a>
+  </footer>
+</main>
+</body>
+</html>

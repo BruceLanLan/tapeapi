@@ -391,7 +391,11 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
 
 function ownerApi({ group, install, gid, owner, id, verifyMember, random, transports, startList }) {
   let list = startList
-  const next = async (newList, { verify = verifyMember } = {}) => {
+  let lastWire = null                // the latest epoch message this owner built, for reposts (§3.5) / 最近一条纪元消息，供重发
+  // `added`: the members this epoch brings in, who still need an invite in their OWN inbox room (§3.5). The epoch
+  // message alone reaches nobody new: it goes to the group room, which a new member does not know yet.
+  // `added`：本纪元新加入、仍需在各自收件房间收到邀请的成员。纪元消息只发到群房间，新成员还不知道这个房间。
+  const next = async (newList, { verify = verifyMember, added = [] } = {}) => {
     // Re-check EVERY member, not only additions: a circuit that changed hands drops out here, instead of freezing
     // the group for everyone else (audit G-15). A transient failure aborts; a definitive mismatch drops.
     // 重新核验**全部**成员，而不只是新加入者：转手的电路在此退出，而不是让整个群卡住。暂时故障则中止，确定不符则移除。
@@ -408,16 +412,28 @@ function ownerApi({ group, install, gid, owner, id, verifyMember, random, transp
     const built = buildEpoch({ gid, epoch, issued, prev, owner, members: keep, relays: transports.relays, bus: transports.bus, ownerEdSecret: id.edSecret, random })
     install(epoch, { ...built.roster }, built.rosterBytes, built.K)
     list = built.roster.members
-    return { epochWire: built.wire, epoch, dropped: dropped.map((m) => m.container) }
+    lastWire = built.wire
+    const inRoster = added.filter((m) => list.some((x) => sameContainer(x, m))).map((m) => list.find((x) => sameContainer(x, m)))
+    return { epochWire: built.wire, epoch, dropped: dropped.map((m) => m.container), added: inRoster.map((m) => ({ ...m })) }
   }
+  // Read-only: the epoch message to repost (§3.5 SHOULD: on each invite, and as often as the transport forgets).
+  // 只读：要重发的纪元消息（§3.5：每次邀请时，以及按传输层遗忘数据的频率）。
+  Object.defineProperty(group, 'epochWire', { get: () => lastWire, enumerable: false })
   Object.assign(group, {
-    /** Add members (checked with verifyMember) and start a new epoch / 加人并开启新纪元 */
+    /**
+     * Add members (checked with verifyMember) and start a new epoch. Returns { epochWire, epoch, dropped, added }.
+     * TWO ROOMS: `epochWire` goes to the GROUP room (group.room); each member in `added` also needs an invite,
+     * inviteFor(member), in ITS OWN inbox room (channel.inboxRoom(container, chainId)). Posting only the epoch message
+     * leaves the new members waiting for ever. deliverGroupUpdate({ group, update }) does both and reports every post.
+     * 加人并开启新纪元。**两个房间**：`epochWire` 发到**群房间**；`added` 中每个成员还需要一份邀请（inviteFor）发到
+     * **它自己的收件房间**。只发纪元消息，新成员会一直等下去。推荐直接用 deliverGroupUpdate({ group, update })。
+     */
     async addMembers(entries, opts = {}) {
       const add = entries.map(normMember)
       for (const m of add) if (list.some((x) => sameContainer(x, m))) fail(`${m.container} is already a member`)
       if (list.length + add.length > MAX_MEMBERS) fail(`a group has at most ${MAX_MEMBERS} members`)
       await verifyAll(add, opts.verifyMember ?? verifyMember)
-      return next([...list, ...add], { verify: opts.verifyMember ?? verifyMember })
+      return next([...list, ...add], { verify: opts.verifyMember ?? verifyMember, added: add })
     },
     /** Remove members and start a new epoch they cannot read (§3.6) / 移除成员并开启他们读不到的新纪元 */
     async removeMembers(targets, opts = {}) {
@@ -429,7 +445,13 @@ function ownerApi({ group, install, gid, owner, id, verifyMember, random, transp
     },
     /** A fresh key for the same members (§3.6: at least every 30 days) / 同样的成员换一把新密钥（至少每 30 天一次） */
     rotate(opts = {}) { return next(list, { verify: opts.verifyMember ?? verifyMember }) },
-    /** The sealed invite for a member's inbox room (§3.5) / 发往成员收件房间的密封入群邀请 */
+    /**
+     * The sealed invite (wire type 0x03) for a member's INBOX room (§3.5): post it to
+     * channel.inboxRoom(member.container, member.chainId) -- the CONTAINER address, never the holder's wallet, and the
+     * member's own chainId -- not to the group room, where the epoch message goes. deliverGroupUpdate() posts both.
+     * 发往成员**收件房间**的密封入群邀请（线路类型 0x03）：投到 channel.inboxRoom(成员容器地址, chainId)——必须是容器
+     * 地址而不是持有人钱包，chainId 用成员自己的——而不是纪元消息所去的群房间。deliverGroupUpdate() 两者都投。
+     */
     inviteFor(member, { random: r = random } = {}) {
       const m = normMember(member)
       return sealToInbox({ v: 1, kind: GROUP_INVITE_KIND, gid: toHex(gid), owner, relays: transports.relays.map((x) => ({ url: x.url, container: x.container })), ...(transports.bus ? { bus: transports.bus } : {}) },
@@ -441,8 +463,13 @@ function ownerApi({ group, install, gid, owner, id, verifyMember, random, transp
 
 /**
  * Owner: create a group. `members` are OTHER members as api.chain.channelKeys returns them (or { container, chainId,
- * x25519, ed25519 }); each is checked with `verifyMember`. Returns the group and the first epoch message to post.
+ * x25519, ed25519 }); each is checked with `verifyMember`. Returns { group, epochWire, epoch, added }.
+ * TWO ROOMS: `epochWire` goes to the GROUP room (group.room); every member in `added` also needs
+ * group.inviteFor(member) posted to ITS OWN inbox room (channel.inboxRoom(container, chainId)), or it never learns
+ * the group exists. deliverGroupUpdate({ group, update }) posts both and reports each post.
  * 群主：建群。`members` 为其他成员（形如 api.chain.channelKeys 的返回值），每个都经 `verifyMember` 核验。
+ * **两个房间**：`epochWire` 发到**群房间**；`added` 中每个成员还需要 group.inviteFor(member) 发到**它自己的收件房间**，
+ * 否则它永远不知道这个群。推荐直接用 deliverGroupUpdate({ group, update })，两者都投并逐条报告结果。
  */
 // `now` (ms) exists for vectors and tests / `now`（毫秒）用于向量与测试
 export async function createGroup({ self, identity, members = [], relays = [], bus, verifyMember, random = randomBytes, now }) {
@@ -455,8 +482,8 @@ export async function createGroup({ self, identity, members = [], relays = [], b
   const gid = random(16)
   const { group, install } = makeGroup({ gid, self: owner, id, ownerRef: owner, ownerEd: id.edPub, isOwner: true, random, ...(now ? { now } : {}) })
   const next = ownerApi({ group, install, gid, owner, id, verifyMember, random, transports: { relays, bus }, startList: [ownerEntry, ...others] })
-  const first = await next([ownerEntry, ...others], { verify: 'trust-roster' })   // just verified above / 刚刚核验过
-  return { group, epochWire: first.epochWire }
+  const first = await next([ownerEntry, ...others], { verify: 'trust-roster', added: others })   // just verified above / 刚刚核验过
+  return { group, epochWire: first.epochWire, epoch: first.epoch, added: first.added }
 }
 
 /**
@@ -478,7 +505,7 @@ export async function resumeGroup({ self, identity, snapshot, relays, bus, verif
   install(roster.epoch, roster, te.encode(snapshot.roster), new Uint8Array(32))
   const next = ownerApi({ group, install, gid, owner, id, verifyMember, random, transports: { relays: relays ?? roster.relays ?? [], bus: bus ?? roster.bus }, startList: roster.members.map(normMember) })
   const r = await next(roster.members.map(normMember))
-  return { group, epochWire: r.epochWire, dropped: r.dropped }
+  return { group, epochWire: r.epochWire, epoch: r.epoch, dropped: r.dropped, added: r.added }
 }
 
 // snapshot().lastSeq: a decimal string (a seq is clock ms << 16, beyond 2^53), a bigint, or absent

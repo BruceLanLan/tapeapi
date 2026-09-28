@@ -10,6 +10,7 @@
 import { TapeAPIError } from './errors.js'
 import { canonicalJSON } from './canon.js'
 import { parseTapeName, CHAINS } from './chains.js'
+import { responseRequestHash, responseBodyHash } from './sig.js'
 import { sha256 } from '@noble/hashes/sha256'
 import { bytesToHex } from '@noble/hashes/utils'
 
@@ -112,6 +113,34 @@ export function receiptOf({ envelope, method, params, circuits, tokenId, name })
   return r
 }
 
+/**
+ * The hash-only form of a receipt (v 2): the request's params and the result (or error) are replaced by the two hashes
+ * the signature is computed over, so it still verifies (sig.recoverResponseSignerFromHashes) and can be shared without
+ * the content of the call. It keeps the service, the method name, the id, the time, success or refusal, and the block.
+ *   { v: 2, service, method, requestHash, id, ts, ok, bodyHash, block?, sig }
+ *   requestHash = keccak256(canonicalJSON({ method, params })), bodyHash = keccak256(canonicalJSON(result or error))
+ * `method` is shown as the receipt states it; only requestHash is bound by the signature, and it covers the method and
+ * the params together. Hashes hide only what cannot be guessed: params from a small set (an address, a token id, a
+ * price pair) can be confirmed by hashing candidates, and so can a short result. A v 2 receipt is returned as it is.
+ * 回执的只带哈希形态（v 2）：请求参数与结果（或错误）换成签名所依据的两个哈希，签名仍可核验，分享时不带调用内容。保留服务、
+ * 方法名、id、时间、成功或拒绝、区块。method 按回执所写展示；签名绑定的只有 requestHash，它把方法与参数一起覆盖。哈希只能藏住
+ * 猜不到的内容：取自小集合的参数（地址、token id、交易对）可以通过对候选取哈希来确认，简短的结果也一样。v 2 回执原样返回。
+ * @param {object} receipt  from receiptOf / 来自 receiptOf
+ */
+export function hashReceipt(receipt) {
+  if (!isObj(receipt)) throw new TapeAPIError('BAD_REQUEST', 'receipt must be an object')
+  if (receipt.v === 2) return receipt
+  const r = {
+    v: 2, service: { ...receipt.service }, method: receipt.method,
+    requestHash: responseRequestHash({ method: receipt.method, params: receipt.params }),
+    id: receipt.id, ts: receipt.ts, ok: receipt.ok,
+    bodyHash: responseBodyHash(receipt.ok ? receipt.result : receipt.error),
+  }
+  if (receipt.block !== undefined) r.block = receipt.block
+  r.sig = receipt.sig
+  return r
+}
+
 // base64url of UTF-8, without padding; works in Workers, browsers and Node. / UTF-8 的 base64url，无填充。
 export function toBase64Url(text) {
   const bytes = new TextEncoder().encode(text)
@@ -125,8 +154,22 @@ export function fromBase64Url(s) {
   return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)))
 }
 
-// The receipt rides in the URL fragment, which browsers never send to a server. / 回执放在 URL 片段里，浏览器不会发给服务器。
-export const verifyLink = (receipt, base = VERIFY_BASE) => `${base}#r=${toBase64Url(JSON.stringify(receipt))}`
+/**
+ * A link to the verify page with the receipt in the URL fragment, which browsers never send to a server. By default the
+ * link carries the hash-only form (hashReceipt): whoever the link reaches can check who signed what and when, but does
+ * not see the call's params or result. `{ content: true }` puts the whole receipt in the link instead, params and result
+ * in clear: the page then shows what was asked and answered, and anyone the link is passed to reads the conversation.
+ * 指向核验页的链接，回执放在 URL 片段里，浏览器不会发给服务器。默认放只带哈希的形态：拿到链接的人能核对谁在何时签了什么，但看
+ * 不到调用的参数与结果。{ content: true } 改放完整回执（参数与结果为明文）：核验页能显示问了什么、答了什么，链接转给谁，谁就读到
+ * 这段对话。
+ * @param {object} receipt
+ * @param {string} [base]
+ * @param {{ content?: boolean }} [o]
+ */
+export function verifyLink(receipt, base = VERIFY_BASE, { content = false } = {}) {
+  const r = content && receipt?.v !== 2 ? receipt : hashReceipt(receipt)
+  return `${base}#r=${toBase64Url(JSON.stringify(r))}`
+}
 
 /**
  * A signed envelope -> an MCP CallToolResult: the data as text and structuredContent, a one-line provenance note the
@@ -136,8 +179,10 @@ export const verifyLink = (receipt, base = VERIFY_BASE) => `${base}#r=${toBase64
  * @param {object} o.receipt   from receiptOf / 来自 receiptOf
  * @param {string} o.checkedBy  who verified the signature before returning: 'client' (this process checked it) or
  *        'service' (the remote service is speaking for itself; the link lets anyone check) / 返回前谁核验过签名
+ * @param {boolean} [o.linkContent=false]  a verify link with the params and result in clear (verifyLink `content`);
+ *        default: hashes only. The note says which. / 核验链接是否带明文参数与结果；默认只带哈希。说明行会写明是哪一种。
  */
-export function toolResultOf({ receipt, checkedBy, signer, link = verifyLink(receipt) }) {
+export function toolResultOf({ receipt, checkedBy, signer, linkContent = false, link = verifyLink(receipt, VERIFY_BASE, { content: linkContent }) }) {
   const who = receipt.service.name || `circuit #${receipt.service.tokenId} of ${receipt.service.circuits}`
   // block is unsigned and informative; 0 means the service ran without chain nodes. / block 未签名、仅供参考；0 表示没有链节点。
   // The block is on the service's chain: the chain its name names (an area code), BNB Chain otherwise.
@@ -148,7 +193,10 @@ export function toolResultOf({ receipt, checkedBy, signer, link = verifyLink(rec
   const check = checkedBy === 'client'
     ? 'The signature was verified against the on-chain delegation before this result was returned.'
     : 'Anyone can verify this signature against the chain with the link.'
-  const note = `Signed by TapeAPI service ${who} (container ${receipt.service.container}${signer ? `, signer ${signer}` : ''})${where}. ${check} Verify: ${link}`
+  // Say what the link carries: whoever it is passed to sees the call's content only in the content form.
+  // 写明链接里带什么：只有带原文的形态，拿到链接的人才看得到调用内容。
+  const carries = linkContent ? 'The link contains this call\'s params and result.' : 'The link carries hashes only, not the params or result.'
+  const note = `Signed by TapeAPI service ${who} (container ${receipt.service.container}${signer ? `, signer ${signer}` : ''})${where}. ${check} Verify: ${link} (${carries})`
   if (!receipt.ok) {
     const e = receipt.error || {}
     return { content: [{ type: 'text', text: `The service refused: ${e.code || 'ERROR'}: ${e.message || ''}` }, { type: 'text', text: note }], isError: true, _meta: { [RECEIPT_META_KEY]: receipt } }

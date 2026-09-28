@@ -36,6 +36,9 @@ export function build(env, extra = {}) {
     signerKey: env.SIGNER_KEY,
     toolsSha256: env.TOOLS_SHA256 || undefined,
     identity: { name: env.TAPE_NAME || undefined },
+    // LINK_CONTENT=1 puts params and results in the verify links, in clear; default: hashes only.
+    // LINK_CONTENT=1 让核验链接带明文参数与结果；默认只带哈希。
+    linkContent: env.LINK_CONTENT === '1',
     // http only for a loopback PUBLIC_URL (local testing) / 只有回环地址的 PUBLIC_URL 允许 http
     allowHttp: /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(env.PUBLIC_URL),
     // Per isolate; the edge sets cf-connecting-ip and a client cannot forge it. / 按隔离实例计；该头由边缘设置，客户端无法伪造。

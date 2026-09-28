@@ -40,6 +40,13 @@ export declare function voucherTypedData(chainId: number, escrow: Address, v: Vo
 export declare function responseDigest(env: Record<string, unknown>): Uint8Array
 export declare function signResponse(env: Record<string, unknown>, pk: string): Hex
 export declare function recoverResponseSigner(env: Record<string, unknown>, sig: string): Address
+/** keccak256(canonicalJSON({ method, params })) as 0x hex: the request hash inside the TAP-21 digest. */
+export declare function responseRequestHash(req: { method: string; params?: unknown }): string
+/** keccak256(canonicalJSON(body)) as 0x hex: the result (or error) hash inside the TAP-21 digest. */
+export declare function responseBodyHash(body: unknown): string
+/** The TAP-21 digest rebuilt from the two inner hashes (a hash-only receipt); the same 32 bytes as responseDigest. */
+export declare function responseDigestFromHashes(env: { container: string; id: string; requestHash: string; ok: boolean; bodyHash: string; ts: number }): Uint8Array
+export declare function recoverResponseSignerFromHashes(env: { container: string; id: string; requestHash: string; ok: boolean; bodyHash: string; ts: number }, sig: string): Address
 export declare function bytesToHex(bytes: Uint8Array): string
 export declare function toHex(bytes: Uint8Array): Hex
 export declare function hexToBytes(h: string): Uint8Array

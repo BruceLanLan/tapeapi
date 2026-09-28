@@ -111,6 +111,7 @@ test('declarations name every runtime export of every subpath', async () => {
   const cases = [
     ...Object.entries(PKGS.sdk.exports).filter(([s]) => s !== './package.json').map(([s, v]) => ['sdk', s, v]),
     ['sdk', 'group', { default: './src/group.js', types: './types/group.d.ts' }],
+    ['sdk', 'group-delivery', { default: './src/group-delivery.js', types: './types/group-delivery.d.ts' }],
     ['sdk', 'tapesend', { default: './src/tapesend.js', types: './types/tapesend.d.ts' }],
     ['server', '.', PKGS.server.exports['.']],
     ['server', './mcp', PKGS.server.exports['./mcp']],

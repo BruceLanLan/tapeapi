@@ -12,6 +12,10 @@
 // the container; their hashes bind the exact request and response bytes, checked only when those are pasted as well.
 // 也读 AI 用量回执（带 method 与 params 的 TAP-21 信封；来自响应头、SSE 注释或 receipt 方法的回答）。它不带电路与 #ID，
 // 所以按容器解析服务；它的两个哈希绑定确切的请求与回应字节，只有一并粘贴了这些字节才核对。
+// Two forms of MCP / TAP-21 receipt (sdk mcp.js): v 1 carries the params and the result in clear; v 2, what verify links
+// carry by default, carries only the two hashes the signature is computed over (requestHash, bodyHash), and is checked
+// by rebuilding the digest from them. / MCP / TAP-21 回执有两种形态：v 1 带明文参数与结果；v 2（核验链接默认的形态）只带签名
+// 所依据的两个哈希，按它们重建摘要来核对。
 import { fromBase64Url, RECEIPT_META_KEY } from '../playground/vendor/tapeapi-sdk/mcp.js'
 import { findDuplicateKey, FORBIDDEN_KEYS } from '../playground/vendor/tapeapi-sdk/canon.js'
 import { envelopeProblems, priceProblems, formatOfMethod, validateAIField, MANIFEST_FIELD, sha256Hex, scanSse } from '../playground/vendor/tapeapi-sdk/ai.js'
@@ -27,6 +31,7 @@ export class ReceiptError extends Error {
 }
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/
+const HASH32_RE = /^0x[0-9a-f]{64}$/
 const SIG_RE = /^0x[0-9a-fA-F]{130}$/
 const TOKEN_ID_RE = /^(0|[1-9]\d{0,77})$/
 const B64URL_RE = /^[A-Za-z0-9_-]+$/
@@ -91,14 +96,16 @@ export function extractReceipt(input) {
 }
 
 /**
- * Strict shape check. Returns a fresh object with only the fields a v1 receipt has (anything else is ignored: it is
- * neither signed nor shown). Throws ReceiptError('shape', field).
- * 严格的结构检查。返回只含 v1 回执字段的新对象（其它字段忽略：既不在签名里，也不显示）。
+ * Strict shape check. Returns a fresh object with only the fields its form has (anything else is ignored: it is
+ * neither signed nor shown): v 1 (params and result or error in clear) or v 2 (hash-only: requestHash and bodyHash in
+ * their place). Throws ReceiptError('shape', field).
+ * 严格的结构检查。返回只含该形态字段的新对象（其它字段忽略：既不在签名里，也不显示）：v 1（明文参数与结果或错误）或 v 2
+ * （只带哈希：以 requestHash 与 bodyHash 代替）。
  */
 export function parseReceipt(r) {
   const bad = (field) => { throw new ReceiptError('shape', field) }
   if (!isObj(r)) bad('receipt')
-  if (r.v !== 1) bad('v')
+  if (r.v !== 1 && r.v !== 2) bad('v')
   const s = r.service
   if (!isObj(s)) bad('service')
   if (typeof s.circuits !== 'string' || !ADDR_RE.test(s.circuits)) bad('service.circuits')
@@ -106,6 +113,23 @@ export function parseReceipt(r) {
   if (typeof s.container !== 'string' || !ADDR_RE.test(s.container)) bad('service.container')
   if (s.name !== undefined && (typeof s.name !== 'string' || s.name.length > 200)) bad('service.name')
   if (typeof r.method !== 'string' || !r.method || r.method.length > 256) bad('method')
+  if (r.v === 2) {
+    if (typeof r.requestHash !== 'string' || !HASH32_RE.test(r.requestHash)) bad('requestHash')
+    if (typeof r.id !== 'string' || r.id.length > 1024) bad('id')
+    if (!Number.isSafeInteger(r.ts) || r.ts < 0) bad('ts')
+    if (typeof r.ok !== 'boolean') bad('ok')
+    if (typeof r.bodyHash !== 'string' || !HASH32_RE.test(r.bodyHash)) bad('bodyHash')
+    if (r.block !== undefined && (!Number.isSafeInteger(r.block) || r.block < 0)) bad('block')
+    if (typeof r.sig !== 'string' || !SIG_RE.test(r.sig)) bad('sig')
+    const out = {
+      v: 2,
+      service: { circuits: s.circuits, tokenId: s.tokenId, container: s.container, ...(s.name !== undefined ? { name: s.name } : {}) },
+      method: r.method, requestHash: r.requestHash, id: r.id, ts: r.ts, ok: r.ok, bodyHash: r.bodyHash,
+    }
+    if (r.block !== undefined) out.block = r.block
+    out.sig = r.sig
+    return out
+  }
   if (r.params !== undefined && r.params !== null && !isObj(r.params)) bad('params')
   if (typeof r.id !== 'string' || r.id.length > 1024) bad('id')
   if (!Number.isSafeInteger(r.ts) || r.ts < 0) bad('ts')
@@ -215,11 +239,14 @@ export async function verifyUsage(r, { recover, resolve, now, request, response 
 /** The TAP-21 envelope fields the signature covers (sdk sig.responseDigest). block and service.name are NOT among them.
  *  签名覆盖的信封字段；block 与 service.name 不在其中。 */
 export const envelopeOf = (r) => ({ container: r.service.container, id: r.id, method: r.method, params: r.params, ok: r.ok, body: r.ok ? r.result : r.error, ts: r.ts })
+/** The same for a hash-only (v 2) receipt, for sdk sig.recoverResponseSignerFromHashes: the two inner hashes of the
+ *  digest in place of { method, params } and the body. / 只带哈希（v 2）回执的对应字段：以摘要里的两个内层哈希代替。 */
+export const hashedEnvelopeOf = (r) => ({ container: r.service.container, id: r.id, requestHash: r.requestHash, ok: r.ok, bodyHash: r.bodyHash, ts: r.ts })
 
 /** The block number inside the signed result (the public service pins its reads to one), or null.
  *  签名结果里的区块号（公共服务把读取固定在某个区块），没有则为 null。 */
 export function signedBlock(r) {
-  const n = r.ok && isObj(r.result) && isObj(r.result.blockPinned) ? r.result.blockPinned.blockNumber : undefined
+  const n = r.v !== 2 && r.ok && isObj(r.result) && isObj(r.result.blockPinned) ? r.result.blockPinned.blockNumber : undefined
   return Number.isSafeInteger(n) && n >= 0 ? n : null
 }
 
@@ -309,12 +336,15 @@ export function verdictOf({ receipt, recovered, recoverError, svc, resolveError,
 /**
  * The whole check with the network and crypto injected, so the page and the tests run the same steps.
  * @param {object} r  from parseReceipt
- * @param {{ recover: (env, sig) => string, resolve: (target) => Promise<object>, cpuAt: (p: string, chainId?: number) => Promise<string>, now?: number }} io
+ * @param {{ recover: (env, sig) => string, recoverHashed?: (env, sig) => string, resolve: (target) => Promise<object>, cpuAt: (p: string, chainId?: number) => Promise<string>, now?: number }} io
+ *   recover: sdk sig.recoverResponseSigner (v 1); recoverHashed: sdk sig.recoverResponseSignerFromHashes (v 2)
  * 完整核对流程，网络与密码学由调用方注入：页面与测试走同样的步骤。
  */
-export async function verifyReceipt(r, { recover, resolve, cpuAt, now }) {
+export async function verifyReceipt(r, { recover, recoverHashed, resolve, cpuAt, now }) {
   let recovered = null, recoverError = null
-  try { recovered = recover(envelopeOf(r), r.sig) } catch (e) { recoverError = e }
+  try {
+    if (r.v === 2) { if (typeof recoverHashed !== 'function') throw new Error('no recoverHashed for a hash-only receipt'); recovered = recoverHashed(hashedEnvelopeOf(r), r.sig) } else recovered = recover(envelopeOf(r), r.sig)
+  } catch (e) { recoverError = e }
   let svc = null, resolveError = null
   const chainId = chainOfReceipt(r)
   try { svc = await resolve({ ...(chainId !== 56 ? { chainId } : {}), circuits: r.service.circuits, tokenId: r.service.tokenId }) } catch (e) { resolveError = e }

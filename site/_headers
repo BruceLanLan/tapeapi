@@ -35,5 +35,9 @@
 /verify/*
   Content-Security-Policy: frame-ancestors 'none'
 
+# The privacy page (a draft) also sets its script policy with a <meta> in the page. / 隐私页（草稿）同样在页面内用 <meta> 设脚本策略。
+/privacy/*
+  Content-Security-Policy: frame-ancestors 'none'
+
 /console/*
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'

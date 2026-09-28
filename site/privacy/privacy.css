@@ -1,0 +1,7 @@
+/* The privacy page: the status page's styles (../status/status.css), plus a plain heading and lists.
+   隐私页：沿用状态页的样式，另加普通标题与列表。 */
+h1.plain::before { display: none; }
+.status { color: var(--ink-2); font-size: 14.5px; max-width: 72ch; margin: 8px 0 0; }
+.notes h3 { font-size: 15px; color: var(--ink); margin: 16px 0 6px; }
+.notes ul { margin: 0 0 12px; padding-left: 20px; }
+.notes li { margin: 0 0 8px; }

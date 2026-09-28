@@ -6,7 +6,9 @@ import assert from 'node:assert/strict'
 import { createProvider } from '../src/index.js'
 import { createMcpEndpoint } from '../src/mcp.js'
 import { mcp } from '@tapeapi/sdk'
-import { privateKeyToAddress, recoverResponseSigner } from '../../sdk/src/sig.js'
+import { privateKeyToAddress, recoverResponseSigner, recoverResponseSignerFromHashes, responseRequestHash, responseBodyHash } from '../../sdk/src/sig.js'
+
+const recoverable = { requestHash: (r) => responseRequestHash({ method: r.method, params: r.params }), bodyHash: (r) => responseBodyHash(r.ok ? r.result : r.error) }
 
 const KEY = '0x' + '42'.repeat(32)
 const SIGNER = privateKeyToAddress(KEY)
@@ -67,7 +69,21 @@ test('tools/call: the result is the provider\'s signed envelope, and its receipt
   assert.equal(who.toLowerCase(), SIGNER.toLowerCase())
   const link = result.content[1].text.match(/Verify: (\S+)/)[1]
   assert.ok(link.startsWith(mcp.VERIFY_BASE + '#r='))
-  assert.deepEqual(JSON.parse(mcp.fromBase64Url(link.split('#r=')[1])), receipt)
+  // Hashes only by default: the link does not carry the call (privacy item 4). / 默认只带哈希：链接不带调用内容。
+  const inLink = JSON.parse(mcp.fromBase64Url(link.split('#r=')[1]))
+  assert.deepEqual(inLink, mcp.hashReceipt(receipt))
+  assert.ok(!JSON.stringify(inLink).includes('héllo'))
+  assert.equal(inLink.requestHash, recoverable.requestHash(receipt)); assert.equal(inLink.bodyHash, recoverable.bodyHash(receipt))
+  assert.equal(recoverResponseSignerFromHashes({ container: inLink.service.container, id: inLink.id, requestHash: inLink.requestHash, ok: inLink.ok, bodyHash: inLink.bodyHash, ts: inLink.ts }, inLink.sig).toLowerCase(), SIGNER.toLowerCase())
+})
+
+test('linkContent: true puts the whole receipt in the verify link, params and result in clear, and says so', async () => {
+  const ep2 = createMcpEndpoint({ provider, manifest, identity: { name: '11.1013.tape' }, version: '0.3.0', linkContent: true })
+  const res = await ep2.handle(new Request('https://echo.example/mcp', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'echo', arguments: { text: 'in clear' } } }) }), { clientIp: '4.4.4.4' })
+  const { result } = await res.json()
+  const link = result.content[1].text.match(/Verify: (\S+)/)[1]
+  assert.deepEqual(JSON.parse(mcp.fromBase64Url(link.split('#r=')[1])), result._meta[mcp.RECEIPT_META_KEY])
+  assert.match(result.content[1].text, /The link contains this call's params and result\./)
 })
 
 test('tools/call: a signed refusal is a tool error with a receipt; an unknown tool or bad arguments is a protocol error', async () => {

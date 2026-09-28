@@ -88,7 +88,8 @@ curl -s https://api.tapeapi.fun/mcp \
 
 Signed by TapeAPI service 11.1013.tape (container 0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8, signer
 0xaB70dEe8e1CEabb1D10eDFeBcbe0c313c53cf154) at BNB Chain block 124374251. Anyone can verify this signature against
-the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2aWNl...
+the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoyLCJzZXJ2aWNl... (The link carries hashes only,
+not the params or result.)
 ```
 
 ## 本地核验命令
@@ -97,7 +98,7 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2a
 不经过 npm 注册表：
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 它和远程服务器的不同之处：
@@ -126,7 +127,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -146,7 +147,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -158,7 +159,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### 远程还是本地
@@ -189,13 +190,25 @@ claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeap
 打开核验链接。回执放在网址 `#` 之后的部分，浏览器从不把这部分发给服务器。`https://tapeapi.fun/verify/` 页面在你的
 浏览器里从链上解析服务，从签名恢复签名者，对照持有者的委托核对，并显示结果。
 
+### 链接的两种形态
+
+- **只带哈希（默认）。** 链接里的回执把 `params` 与 `result`（或 `error`）换成签名所依据的两个哈希：`requestHash` 是规范化
+  `{ method, params }` 的 keccak256，`bodyHash` 是规范化结果的 keccak256。核验页由它们重建 TAP-21 摘要，所以能核对谁签的、
+  哪个服务、什么时间，但拿到链接的人看不到问了什么、答了什么。`method` 按回执所写展示：它只经 `requestHash` 与参数一起绑定。
+- **带原文**（`verifyLink(receipt, base, { content: true })`、服务端 `linkContent: true`、`tapeapi-mcp --link-content`）。
+  整份回执都在链接里：核验页显示参数与结果，链接转给谁，谁也看得到。
+- **哈希只能藏住猜不到的内容。** 取自小集合的参数（地址、token id、交易对）和简短的结果，可以通过对候选取哈希确认出来。
+  这类调用的只带哈希链接，应当视同公开了调用内容。
+- `_meta["fun.tapeapi/receipt"]` 里的回执始终是完整的：它交给发起调用的 MCP 客户端。
+- 核验页是纯静态文件（`site/verify/`）；`verifyLink(receipt, base)` 的 `base` 可以填你自己部署的副本地址，在自己托管的页面上核验。
+
 ### 离线用 SDK 核验
 
 把回执（`_meta["fun.tapeapi/receipt"]` 对象）存为 `receipt.json`。从 GitHub Release 安装 SDK，或者像
 [调用服务](consume.md)里那样在仓库的克隆目录里操作：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz
 ```
 
 ```js
@@ -260,6 +273,7 @@ export default {
 - 每次工具调用都像普通调用一样经过 `provider.handleRequest`，所以结果是同样签名的信封，受同样的限流，并附带回执和核验链接。
 - `/mcp` 是你服务器上的一条路由，不属于清单，所以加上它不改变链上任何东西，也不需要重新发布清单。
 - `identity.name` 是结果和回执里显示的 TapeOut 名称。
+- 核验链接只带哈希；`linkContent: true` 让链接带上明文参数与结果。
 
 ## Tape out 你自己的 MCP 服务器
 
@@ -340,7 +354,7 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
   再按你的服务器定义的样子展示它们（v0.5.0 及以后）：
 
   ```bash
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### 客户端核对什么

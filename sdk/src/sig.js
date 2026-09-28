@@ -206,4 +206,33 @@ export function responseDigest({ container, id, method, params, ok, body, ts }) 
 export function signResponse(env, pk) { return signDigest(personalDigest(responseDigest(env)), pk) }
 export function recoverResponseSigner(env, sig) { return recoverAddress(personalDigest(responseDigest(env)), sig) }
 
+// The two inner hashes of the digest, as 0x-prefixed hex: what a hash-only receipt carries in place of the request's
+// params and the result (sdk mcp.hashReceipt). The digest is rebuilt from them byte for byte, so the signature still
+// verifies without the content. / 摘要里的两个内层哈希（0x 十六进制）：只带哈希的回执用它们代替请求参数与结果。
+// 摘要可以逐字节由它们重建，签名因此不需要原文也能核验。
+const HASH32_RE = /^0x[0-9a-f]{64}$/
+export function responseRequestHash({ method, params }) {
+  if (typeof method !== 'string') throw new TapeAPIError('ABI_INVALID', 'method must be string')
+  return toHex(keccak_256(utf8ToBytes(canonicalJSON({ method, params: params == null ? {} : params }))))
+}
+export function responseBodyHash(body) { return toHex(keccak_256(utf8ToBytes(canonicalJSON(body)))) }
+/** responseDigest from { container, id, requestHash, ok, bodyHash, ts }; the same 32 bytes. / 由两个哈希重建的同一摘要。 */
+export function responseDigestFromHashes({ container, id, requestHash, ok, bodyHash, ts }) {
+  if (!isAddress(container)) throw new TapeAPIError('ABI_INVALID', 'container must be address')
+  if (typeof id !== 'string') throw new TapeAPIError('ABI_INVALID', 'id must be string')
+  if (typeof ok !== 'boolean') throw new TapeAPIError('ABI_INVALID', 'ok must be boolean')
+  if (typeof requestHash !== 'string' || !HASH32_RE.test(requestHash)) throw new TapeAPIError('ABI_INVALID', 'requestHash must be 0x and 64 lowercase hex digits')
+  if (typeof bodyHash !== 'string' || !HASH32_RE.test(bodyHash)) throw new TapeAPIError('ABI_INVALID', 'bodyHash must be 0x and 64 lowercase hex digits')
+  return keccak_256(concatBytes(
+    utf8ToBytes(RESPONSE_DIGEST_PREFIX),
+    hexToBytes(container),
+    keccak_256(utf8ToBytes(id)),
+    hexToBytes(requestHash),
+    new Uint8Array([ok ? 1 : 0]),
+    hexToBytes(bodyHash),
+    uint64BE(ts),
+  ))
+}
+export function recoverResponseSignerFromHashes(env, sig) { return recoverAddress(personalDigest(responseDigestFromHashes(env)), sig) }
+
 export { bytesToHex, toHex, hexToBytes }

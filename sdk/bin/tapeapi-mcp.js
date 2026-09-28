@@ -71,11 +71,17 @@ Usage: tapeapi-mcp [options] <service> [<service> ...]
   --pin <file>         where tool definitions are pinned (default: ~/.tapeapi/mcp-pins.json)
   --no-pin             do not read or write the pin file (definitions are still pinned for this session)
   --allow-changed      accept tool definitions that changed on chain since they were pinned, once, and re-pin them
+  --link-content       put each call's params and result in its verify link, in clear (default: hashes only)
   --version            print the version
   --help               print this help
 
 Tools are named after the methods (one service) or <prefix>_<method> (several, e.g. t11_1013_bnbUsd). Only free
-methods are exposed. Each result carries a signed receipt and a link anyone can use to verify it again.
+methods are exposed. Each result carries a signed receipt and a link anyone can use to verify it again. By default
+the link carries the receipt's hashes only, not the params or result; params from a small set (an address, a token
+id, a price pair) can still be guessed from their hash. A link made with --link-content contains the call's params
+and result in clear, that is the conversation: share it only where you would share what was asked and answered.
+A receipt proves which service's key signed which request and answer, and when; it does not prove which program or
+model produced the answer.
 
 A service whose manifest has an "mcp" field (a taped-out MCP server) is shown with its upstream MCP tools: they are
 read from mcp.endpoint and used only if they hash to the manifest's mcp.toolsSha256, which is pinned like the methods.
@@ -88,7 +94,7 @@ Claude Desktop / Cursor config:
 // Arguments / 参数
 // ---------------------------------------------------------------------------------------------------------------
 function parseArgs(argv) {
-  const o = { targets: [], rpc: null, chainRpc: {}, pin: DEFAULT_PIN, noPin: false, allowChanged: false, dev: [] }
+  const o = { targets: [], rpc: null, chainRpc: {}, pin: DEFAULT_PIN, noPin: false, allowChanged: false, dev: [], linkContent: false }
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i], v
     const eq = a.startsWith('--') ? a.indexOf('=') : -1
@@ -106,6 +112,7 @@ function parseArgs(argv) {
       case '--rpc-xlayer': case '--rpc-base': o.chainRpc[chainByKey(a.slice(6)).chainId] = value().split(',').map((s) => s.trim()).filter(Boolean); break
       case '--no-pin': o.noPin = true; break
       case '--allow-changed': o.allowChanged = true; break
+      case '--link-content': o.linkContent = true; break
       // TESTING ONLY: resolve a local provider's manifest over http, without any on-chain identity check.
       // 仅供测试：通过 http 读取本地 provider 的清单，不做任何链上身份核对。
       case '--dev': o.dev.push(value()); break
@@ -653,7 +660,7 @@ async function main() {
           const envelope = { id: err.id, ok: false, container: svc.container, ts: err.ts, error: err.error, sig: err.sig }
           if (Number.isInteger(err.block)) envelope.block = err.block
           const receipt = receiptOf({ envelope, method: t.method, params: args, circuits: svc.manifest.circuits, tokenId: svc.manifest.tokenId, name: e.name })
-          const out = toolResultOf({ receipt, checkedBy: 'client', signer: svc.manifest.signer })
+          const out = toolResultOf({ receipt, checkedBy: 'client', linkContent: opts.linkContent, signer: svc.manifest.signer })
           // The proxy of a taped-out MCP server refuses every call, signed, while its upstream tools differ from the
           // published ones. / 上游工具与已发布的不一致时，已 tape out 的 MCP 服务器的代理以签名拒绝一切调用。
           if (err.code === 'TOOLS_CHANGED') {
@@ -688,7 +695,7 @@ async function main() {
       return failure(`DISCARDED: the answer from ${e.label} for ${t.method} was thrown away because its signature did not verify against the delegated signer ${signer}. Do not rely on any value for this call.`)
     }
     const receipt = receiptOf({ envelope, method: t.method, params: args, circuits: svc.manifest.circuits, tokenId: svc.manifest.tokenId, name: e.name })
-    const out = svc.manifest.mcp !== undefined ? upstreamResultOf(e, t, receipt, signer) : toolResultOf({ receipt, checkedBy: 'client', signer })
+    const out = svc.manifest.mcp !== undefined ? upstreamResultOf(e, t, receipt, signer) : toolResultOf({ receipt, checkedBy: 'client', linkContent: opts.linkContent, signer })
     if (svc.verified?.dev) out.content.push({ type: 'text', text: 'DEV MODE (testing only): the service identity was NOT checked on chain; the signature was checked against the local manifest signer only.' })
     return out
   }
@@ -700,7 +707,7 @@ async function main() {
   // 已 tape out 的 MCP 服务器回答的是签过名的上游 CallToolResult。模型先看到来源说明，再看到原样的 content（不转成 JSON 字符串），
   // 只是冒充来源说明的文本会标注为工具自己的输出（审查 MCP-R4）；_meta 里的回执保留签名时的内容。上游的 isError 仍是签名回答。
   function upstreamResultOf(e, t, receipt, signer) {
-    const note = toolResultOf({ receipt, checkedBy: 'client', signer }).content.at(-1)
+    const note = toolResultOf({ receipt, checkedBy: 'client', linkContent: opts.linkContent, signer }).content.at(-1)
     const res = receipt.result
     if (!isObj(res) || !Array.isArray(res.content) || !res.content.every((c) => isObj(c) && typeof c.type === 'string')) {
       log(`${e.label}: ${t.method}: the signed answer is not an MCP tool result`)

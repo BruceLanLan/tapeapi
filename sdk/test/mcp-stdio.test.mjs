@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { privateKeyToAddress, recoverResponseSigner, signResponse } from '../src/sig.js'
-import { RECEIPT_META_KEY, fromBase64Url, createMcpServer, toolsDigest, normalizeTools } from '../src/mcp.js'
+import { RECEIPT_META_KEY, fromBase64Url, createMcpServer, toolsDigest, normalizeTools, hashReceipt } from '../src/mcp.js'
 import { createProvider } from '../../server/src/index.js'
 
 const BIN = fileURLToPath(new URL('../bin/tapeapi-mcp.js', import.meta.url))
@@ -247,8 +247,11 @@ test('initialize, tools/list and a verified tools/call over stdio; pin file crea
   assert.equal(signer, privateKeyToAddress(KEY_A))
   assert.match(textOf(r), /verified against the on-chain delegation before this result was returned/)
   assert.match(textOf(r), /DEV MODE/)
+  // The link carries the hash-only form by default (privacy item 4); --link-content puts the receipt in clear.
+  // 链接默认只带哈希；--link-content 放明文回执。
   const link = /Verify: (\S+)/.exec(textOf(r))[1]
-  assert.deepEqual(JSON.parse(fromBase64Url(link.split('#r=')[1])), receipt)
+  assert.deepEqual(JSON.parse(fromBase64Url(link.split('#r=')[1])), hashReceipt(receipt))
+  assert.match(textOf(r), /The link carries hashes only, not the params or result\./)
 
   const echo = await s.request('tools/call', { name: 'echo', arguments: { text: 'hi' } })
   assert.deepEqual(echo.result.structuredContent, { echo: { text: 'hi' } })
@@ -366,6 +369,23 @@ test('several services: prefixed tool names; --no-pin writes nothing', async () 
   assert.match(textOf(await s.request('tools/call', { name: 'dev2_bnbUsd', arguments: {} })), /DISCARDED/)
   await s.close()
   assert.equal(existsSync(pins), false)
+})
+
+test('--link-content: the verify link carries the whole receipt, params and result in clear, and the note says so', async () => {
+  const s = await session(['--dev', A.url, '--no-pin', '--link-content'])
+  const r = await s.request('tools/call', { name: 'echo', arguments: { text: 'my private words' } })
+  const receipt = r.result._meta[RECEIPT_META_KEY]
+  const link = /Verify: (\S+)/.exec(textOf(r))[1]
+  const inLink = JSON.parse(fromBase64Url(link.split('#r=')[1]))
+  assert.deepEqual(inLink, receipt)
+  assert.equal(inLink.params.text, 'my private words', 'whoever gets the link reads the call')
+  assert.match(textOf(r), /The link contains this call's params and result\./)
+  await s.close()
+  const d = await session(['--dev', A.url, '--no-pin'])
+  const plain = await d.request('tools/call', { name: 'echo', arguments: { text: 'my private words' } })
+  const dl = /Verify: (\S+)/.exec(textOf(plain))[1]
+  assert.ok(!fromBase64Url(dl.split('#r=')[1]).includes('my private words'), 'by default the link does not carry them')
+  await d.close()
 })
 
 test('SIGTERM exits cleanly', async () => {

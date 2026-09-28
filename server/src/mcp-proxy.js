@@ -245,6 +245,8 @@ function methodOf(tool) {
  * @param {{ name?: string }} [o.identity]  the TapeOut name shown in receipts, e.g. '11.1013.tape'
  * @param {string} [o.mcpEndpoint]  default: endpoints.live[0] with /tapeapi/v1 replaced by /mcp
  * @param {boolean} [o.allowHttp]  http endpoints (local testing)
+ * @param {boolean} [o.linkContent=false]  verify links carry the params and result in clear; default: hashes only
+ *        / 核验链接带明文参数与结果；默认只带哈希
  * @param {number} [o.upstreamTimeoutMs=20000]
  */
 export function createMcpProxy(opts = {}) {
@@ -407,7 +409,7 @@ export function createMcpProxy(opts = {}) {
     // covered by the signature). / 代理不读链，provider 的块号是 0：不写，免得声称"第 0 块"（块号不在签名范围内）。
     const { block, ...unblocked } = env
     const receipt = mcp.receiptOf({ envelope: block ? env : unblocked, method: name, params: args, circuits: manifest.circuits, tokenId: manifest.tokenId, name: identity.name })
-    const signed = mcp.toolResultOf({ receipt, checkedBy: 'service', signer })
+    const signed = mcp.toolResultOf({ receipt, checkedBy: 'service', signer, linkContent: opts.linkContent === true })
     const note = signed.content[signed.content.length - 1]
     // The provenance line first, then the upstream's own content with any imitation of that line labelled as the tool's
     // (review MCP-R4); the receipt in _meta keeps the content as signed. A refusal's message may quote the upstream too.

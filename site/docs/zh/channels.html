@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>私密通道 · TapeAPI 手册</title>
-<meta name="description" content="Tape Channel（ TAP-26 ）是两个 TapeOut 容器之间一条端到端加密、双向认证的通道。无论由什么承载（中继服务、WebRTC 连接或链本身），承载方只能看到密文，并且无法在不被发现的情况下伪造、重排或重放帧。最多 32 个容器的群组见 TAP-27 。">
+<meta name="description" content="Tape Channel（ TAP-26 ）是两个 TapeOut 容器之间一条端到端加密、双向认证的通道。无论由什么承载（中继服务、WebRTC 连接或链本身），承载方只能看到密文，并且无法在不被发现的情况下伪造、重排或重放帧。最多 32 个容器的群组见 TAP-27 ；在应用里接入群聊见 群聊 。">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../docs.css?v=07114d1e64">
 <link rel="alternate" hreflang="en" href="../en/channels.html">
@@ -19,11 +19,11 @@
   <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="en">English</button><button class="hd-btn" id="theme-btn" type="button">主题</button></div>
 </div></header>
 <div class="layout">
-<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="public-api.html">公共 API</a></li><li><a href="mcp.html">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume.html">调用服务</a></li><li><a href="provide.html">运行服务</a></li><li><a href="ai-providers.html">接入 AI 服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html" aria-current="page">私密通道</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="index.html">简介</a></li><li><a href="public-api.html">公共 API</a></li><li><a href="mcp.html">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume.html">调用服务</a></li><li><a href="provide.html">运行服务</a></li><li><a href="ai-providers.html">接入 AI 服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels.html" aria-current="page">私密通道</a></li><li><a href="groups.html">群聊</a></li><li><a href="agents.html">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq.html">常见问题与排障</a></li><li><a href="changelog.html">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
 <main class="doc">
 <article>
 <h1 id="私密通道">私密通道</h1>
-<p>Tape Channel（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-26.md" rel="noopener">TAP-26</a>）是两个 TapeOut 容器之间一条端到端加密、双向认证的通道。无论由什么承载（中继服务、WebRTC 连接或链本身），承载方只能看到密文，并且无法在不被发现的情况下伪造、重排或重放帧。最多 32 个容器的群组见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-27.md" rel="noopener">TAP-27</a>。</p>
+<p>Tape Channel（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-26.md" rel="noopener">TAP-26</a>）是两个 TapeOut 容器之间一条端到端加密、双向认证的通道。无论由什么承载（中继服务、WebRTC 连接或链本身），承载方只能看到密文，并且无法在不被发现的情况下伪造、重排或重放帧。最多 32 个容器的群组见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-27.md" rel="noopener">TAP-27</a>；在应用里接入群聊见<a href="groups.html">群聊</a>。</p>
 <h2 id="工作原理"><a class="anchor" href="#工作原理" aria-hidden="true">#</a>工作原理</h2>
 <div class="table"><table><thead><tr><th>步骤</th><th>发生了什么</th></tr></thead><tbody><tr><td><strong>身份</strong></td><td>每个容器在其站点的 <code>.well-known/tape-channel.json</code> 中发布通道密钥（X25519 用于密钥协商，Ed25519 用于签名），由电路持有者以 EIP-712 签名授权。对方对照<strong>当前</strong>持有者检查这些密钥，因此电路售出后，旧密钥随即失效。</td></tr><tr><td><strong>邀请</strong>（A → B）</td><td>A 向 B 发送一份密封给 B 密钥的邀请，投进 B 在中继或 ChannelBus 上的收件房间（或作为 TapeSend 消息发送）。邀请中写明 A 将监听的中继和总线。</td></tr><tr><td><strong>接受</strong>（B → A）</td><td>B 经由其中一个传输作答。B 此时已可随之发送数据。</td></tr><tr><td><strong>就绪</strong>（A → B）</td><td>A 确认。三次 Diffie-Hellman 提供双向认证、前向保密和抗密钥泄露冒充（即去掉预密钥的 X3DH 核心）。</td></tr><tr><td><strong>帧</strong></td><td>ChaCha20-Poly1305，每个方向一把密钥，使用计数器 nonce，与 WireGuard 和 Noise 相同。</td></tr></tbody></table></div>
 <h2 id="1-发布容器的通道密钥"><a class="anchor" href="#1-发布容器的通道密钥" aria-hidden="true">#</a>1. 发布容器的通道密钥</h2>
@@ -70,7 +70,7 @@ bob.open(frame, { text: true }).data                 // 'hello'</code></pre></di
 <h2 id="5-限制"><a class="anchor" href="#5-限制" aria-hidden="true">#</a>5. 限制</h2>
 <ul><li>一帧最多承载 16 KiB 明文；一份邀请最多存活一小时。</li><li>中继能看到房间名、大小和时间，永远看不到内容或身份。ChannelBus 会把这些元数据永久公开。</li><li>在单个方向达到 2^32 帧之前很早就应重新握手（SDK 拒绝超出这一上限）。</li></ul>
 </article>
-<nav class="pn"><a class="prev" href="ai-providers.html"><span>上一篇</span>接入 AI 服务</a><a class="next" href="agents.html"><span>下一篇</span>AI 智能体</a></nav>
+<nav class="pn"><a class="prev" href="ai-providers.html"><span>上一篇</span>接入 AI 服务</a><a class="next" href="groups.html"><span>下一篇</span>群聊</a></nav>
 <p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/channels.md" rel="noopener">在 GitHub 上编辑此页</a></p>
 </main>
 <aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#工作原理">工作原理</a></li><li class="l2"><a href="#1-发布容器的通道密钥">1. 发布容器的通道密钥</a></li><li class="l2"><a href="#2-代码中的握手">2. 代码中的握手</a></li><li class="l2"><a href="#3-选择传输">3. 选择传输</a></li><li class="l2"><a href="#4-可靠地读取链">4. 可靠地读取链</a></li><li class="l2"><a href="#5-限制">5. 限制</a></li></ul></aside>

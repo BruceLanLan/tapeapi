@@ -108,7 +108,7 @@ compose 文件，放在同一个网络里，`UPSTREAM_BASE_URL` 指向你的 new
 把客户端指向它：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
 
@@ -142,7 +142,9 @@ SSE 注释 `: tapeapi-receipt …`（官方 SDK、Claude Code、Codex 都忽略�
 - new-api 看到的所有请求都来自旁路的地址（旁路不转发 `X-Forwarded-For` 之类的头），按 IP 的日志与限流会看到同一个地址；按令牌的
   额度与限流不受影响。旁路自己按客户端 IP 限流（`RATE_IP`，默认每分钟 600 次；设 `0` 则交给 new-api），反向代理后面要设
   `CLIENT_IP_HEADER`，否则所有用户共用一个限流桶。
-- 回执在旁路内存里保留 1 小时（重启即丢），随回答送达的那一份才是主要的。
+- 回执在旁路内存里按 (id, requestSha256) 保留 1 小时（`RECEIPT_TTL_S` 可改，重启即丢），随回答送达的那一份才是主要的。免费的
+  `receipt` 取回方法单独限流（每个客户端 IP 每分钟 10 次）。有些渠道的回答 id 可以猜（Ollama 的是 `chatcmpl-` 加一个小于 999 的数），
+  旁路看到这种 id 会在日志里提示；这时设 `RECEIPT_REQUIRE_HASH=1`，取回执必须同时给出请求哈希 `requestSha256`，只猜中 id 的人拿不到。
 - 上限：请求体 32 MiB，非流式回答 16 MiB，非流式回答须在 600 秒内完成，流静默 300 秒即结束。
 
 ### 合规
@@ -292,8 +294,11 @@ steps 3 to 5.
   like): per-IP logs and limits in new-api see one address; per-token quotas and limits are unaffected. The sidecar
   limits per client IP itself (`RATE_IP`, default 600 per minute; `0` leaves it to new-api); behind a reverse proxy set
   `CLIENT_IP_HEADER`, or every user shares one bucket.
-- Receipts are kept in the sidecar's memory for 1 hour (a restart loses them); the copy delivered with the answer is
-  the primary one.
+- Receipts are kept in the sidecar's memory per (id, requestSha256) for 1 hour (`RECEIPT_TTL_S` changes it; a restart
+  loses them); the copy delivered with the answer is the primary one. The free `receipt` lookup method has a budget of
+  its own (10 per client IP per minute). Some channels' answer ids can be guessed (Ollama's are `chatcmpl-` and a
+  number below 999); the sidecar's log says so when it sees such ids. Then set `RECEIPT_REQUIRE_HASH=1`: a lookup must
+  also name the request hash `requestSha256`, which someone who only guessed an id does not have.
 - Caps: request body 32 MiB, non-stream answer 16 MiB, a non-stream answer must complete within 600 s, a stream silent
   for 300 s is ended.
 

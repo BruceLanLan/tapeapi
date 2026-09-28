@@ -71,7 +71,7 @@ async function run(text, fromLink) {
     const resolveContainer = async (c) => { const id = await api.chainOfContainer(c); return api.resolve(id && id !== 56 ? { chainId: id, container: c } : c) }
     outcome = kind === 'usage'
       ? await verifyUsage(receipt, { recover: sig.recoverResponseSigner, resolve: resolveContainer, request: $('request-input').value, response: $('response-input').value })
-      : await verifyReceipt(receipt, { recover: sig.recoverResponseSigner, resolve: api.resolve, cpuAt: (p, id) => api.forChain(id ?? 56).chain.cpuAt(p) })
+      : await verifyReceipt(receipt, { recover: sig.recoverResponseSigner, recoverHashed: sig.recoverResponseSignerFromHashes, resolve: api.resolve, cpuAt: (p, id) => api.forChain(id ?? 56).chain.cpuAt(p) })
   } finally { if (seq === runSeq) $('check-btn').disabled = false }
   if (seq !== runSeq) return   // a newer receipt was submitted meanwhile / 期间提交了新的回执
   state.outcome = outcome
@@ -95,13 +95,21 @@ function render() {
   const { receipt: r, outcome: o } = state
   $('status').textContent = o ? t('done', state.ms) : t('checking')
   const usage = state.kind === 'usage'
+  // A hash-only receipt (v 2) shows the two hashes where a v 1 receipt shows the params and the result.
+  // 只带哈希的回执（v 2）在 v 1 显示参数与结果的位置显示两个哈希。
+  const hashed = !usage && r.v === 2
   renderVerdict(r, o)
   renderChecks(r, o)
   if (usage) renderUsageDetails(r, o); else renderDetails(r, o)
   $('ai-note').hidden = !usage
-  $('params-json').textContent = json(r.params)
-  $('body-label').textContent = usage ? t('body.usage') : r.ok ? t('body.result') : t('body.error')
-  $('body-json').textContent = json(r.ok ? r.result : r.error)
+  $('hashed-note').hidden = !hashed
+  // A v 1 receipt carries the call in clear, and so does its link: say so where the content is shown.
+  // v 1 回执带明文调用内容，它的链接也一样：在显示内容的地方说明。
+  $('content-note').hidden = usage || hashed
+  $('params-label').textContent = hashed ? t('params.hashed') : t('params.label')
+  $('params-json').textContent = hashed ? r.requestHash : json(r.params)
+  $('body-label').textContent = usage ? t('body.usage') : hashed ? t('body.hashed') : r.ok ? t('body.result') : t('body.error')
+  $('body-json').textContent = hashed ? r.bodyHash : json(r.ok ? r.result : r.error)
   $('receipt-json').textContent = json(state.raw)
   $('s-result').hidden = false
 }
@@ -122,7 +130,8 @@ function renderVerdict(r, o) {
   const id = usage ? checksum(r.container) : o.name?.state === 'pass' ? r.service.name : `#${r.service.tokenId} · ${checksum(r.service.circuits)}`
   const who = o.svc?.manifest?.name ? `“${o.svc.manifest.name}” (${id})` : id
   const text = []
-  if (o.verdict === 'valid') text.push(t(usage ? 'x.valid.usage' : r.ok ? 'x.valid' : 'x.valid.refusal', who))
+  const hashed = !usage && r.v === 2
+  if (o.verdict === 'valid') text.push(t(usage ? 'x.valid.usage' : hashed ? (r.ok ? 'x.valid.hashed' : 'x.valid.hashed.refusal') : r.ok ? 'x.valid' : 'x.valid.refusal', who))
   else if (o.verdict === 'other-key') {
     text.push(t('x.other-key'))
     text.push(t('x.other-key.why'))
@@ -208,7 +217,10 @@ function renderDetails(r, o) {
   kv.push([t('d.chain'), chainName(o?.svc?.chainId ?? chainOfReceipt(r))])
   kv.push([t('d.container'), code(checksum(r.service.container))])
   kv.push([t('d.circuit'), [code(checksum(r.service.circuits)), ` #${r.service.tokenId}`]])
-  kv.push([t('d.method'), code(r.method)])
+  // In a hash-only receipt the method is bound only through requestHash, together with the params: shown as stated.
+  // 只带哈希的回执里，方法只经 requestHash 与参数一起绑定：按回执所写展示。
+  kv.push([t('d.method'), r.v === 2 ? [code(r.method), aside('d.method.hashed')] : code(r.method)])
+  kv.push([t('d.form'), r.v === 2 ? t('d.form.hashed') : t('d.form.content')])
   kv.push([t('d.id'), code(r.id)])
   kv.push([t('d.outcome'), r.ok ? t('d.ok') : t('d.refusal')])
   kv.push([t('d.ts'), `${utc(r.ts)} (${r.ts})`])

@@ -32,13 +32,15 @@ test.after(async () => { for (const c of closers.reverse()) await c(); rmSync(TM
 
 // The sidecar on a real port, with knobs: `tamper` changes "Hi!" after signing; `chunk` writes the answer in pieces of
 // that many bytes, a millisecond apart. / 真实端口上的旁路：tamper 在签名后改动 "Hi!"；chunk 把回答切成这么多字节一块写出。
-const knobs = { tamper: false, chunk: 0, down: false }
+const knobs = { tamper: false, chunk: 0, down: false, bodies: [] }
 async function startSidecar() {
   const fake = createFakeUpstream({ keys: ['sk-demo'], models: MODELS.map((m) => m.id) })
   let proxy
   const srv = http.createServer(async (req, res) => {
     const parts = []
     for await (const c of req) parts.push(c)
+    knobs.bodies.push(Buffer.concat(parts))   // what reached the sidecar / 到达旁路的字节
+    knobs.headers = Object.fromEntries(Object.entries(req.headers))
     const headers = new Headers()
     for (let i = 0; i + 1 < req.rawHeaders.length; i += 2) headers.append(req.rawHeaders[i], req.rawHeaders[i + 1])
     const r = await proxy.handleRequest(new Request(new URL(req.url, 'http://127.0.0.1'), { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(parts) }), { clientIp: '127.0.0.1' })
@@ -105,9 +107,10 @@ test('routing: metered paths to their format\'s endpoint; other paths to Anthrop
   assert.throws(() => routesOf({ ai: { endpoints: [{ format: 'gemini', baseUrl: 'https://g.example' }] } }), /no format this version knows|has a format/)
 })
 
-test('tapeapi-verify passes Claude Code and Codex calls through unchanged, verifies every receipt, logs a verdict and a JSONL line', async () => {
+test('tapeapi-verify (--no-salt) passes Claude Code and Codex calls through unchanged, verifies every receipt, logs a verdict and a JSONL line', async () => {
   const side = await startSidecar()
-  const v = await startVerify(side.url)
+  const v = await startVerify(side.url, ['--no-salt'])
+  assert.match(v.stderr(), /\(no salt\)/)
   assert.match(v.stderr(), /--dev is for TESTING ONLY/)
   // free paths / 免费路径
   const models = await fetch(`${v.url}/v1/models?limit=1000`, { headers: { 'x-api-key': 'sk-demo', 'anthropic-version': '2023-06-01' } })
@@ -137,6 +140,48 @@ test('tapeapi-verify passes Claude Code and Codex calls through unchanged, verif
   assert.deepEqual(log.map((l) => [l.ok, l.format, l.stream]), [[true, 'anthropic-messages', true], [true, 'anthropic-messages', false], [true, 'openai-responses', true]])
   assert.ok(log.every((l) => l.receipt?.sig && l.receipt.result.prices), 'the signed receipts are in the log')
   assert.ok(!JSON.stringify(log).includes('sk-demo'), 'no key in the log')
+})
+
+test('salt (the default): a metered JSON body reaches the sidecar with 64 random whitespace characters appended, parses to the same request, and its receipt verifies over the salted bytes; free paths are not salted', async () => {
+  const side = await startSidecar()
+  const v = await startVerify(side.url)
+  assert.doesNotMatch(v.stderr(), /no salt/)
+  knobs.bodies = []
+  const body = claudeBody(false, 'yes')
+  const j = await fetch(`${v.url}/v1/messages?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body })
+  const env = ai.decodeReceiptHeader(j.headers.get(ai.RECEIPT_HEADER))
+  const sent = knobs.bodies.at(-1)
+  assert.equal(sent.length, Buffer.byteLength(body) + ai.SALT_LENGTH)
+  assert.equal(sent.subarray(0, Buffer.byteLength(body)).toString('utf8'), body, 'the client\'s bytes, then the salt')
+  assert.match(sent.subarray(Buffer.byteLength(body)).toString('latin1'), /^[ \t\n\r]{64}$/)
+  assert.deepEqual(JSON.parse(sent.toString('utf8')), JSON.parse(body), 'the same request once parsed')
+  assert.equal(env.params.requestSha256, ai.sha256Hex(sent), 'the receipt hashes the bytes actually sent')
+  assert.notEqual(env.params.requestSha256, ai.sha256Hex(body), 'so hashing the guessed prompt no longer confirms it')
+  await j.arrayBuffer()
+  const s = await (await fetch(`${v.url}/v1/messages?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(true, 'yes') })).text()
+  assert.equal(events(s).at(-1).event, 'message_stop')
+  const second = knobs.bodies.at(-1)
+  assert.notEqual(ai.sha256Hex(second.subarray(second.length - 64)), ai.sha256Hex(sent.subarray(sent.length - 64)), 'a fresh salt per request')
+  await waitFor(() => v.log().length === 2, 'two metered calls logged')
+  assert.deepEqual(v.log().map((l) => l.ok), [true, true], v.stderr())
+  // count_tokens is not a receipt path: sent as written. / count_tokens 不是回执路径：原样发送。
+  await (await fetch(`${v.url}/v1/messages/count_tokens?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body })).arrayBuffer()
+  assert.equal(knobs.bodies.at(-1).toString('utf8'), body)
+})
+
+test('--strip-session-headers: the client\'s session headers do not reach the service; without it they do (the default)', async () => {
+  const side = await startSidecar()
+  const withSession = { ...CODEX_HEADERS, 'x-claude-code-session-id': 'cc-1', 'thread-id': 't-1' }
+  const strip = await startVerify(side.url, ['--strip-session-headers'])
+  assert.match(strip.stderr(), /\(session headers stripped\)/)
+  await (await fetch(`${strip.url}/v1/responses`, { method: 'POST', headers: withSession, body: codexBody() })).text()
+  for (const h of ['session-id', 'x-claude-code-session-id', 'thread-id']) assert.equal(knobs.headers[h], undefined, h)
+  assert.equal(knobs.headers.originator, 'codex_exec', 'other client headers still go through')
+  assert.equal(knobs.headers.authorization, 'Bearer sk-demo')
+  await waitFor(() => strip.log().length === 1, 'logged'); assert.equal(strip.log()[0].ok, true)
+  const keep = await startVerify(side.url)
+  await (await fetch(`${keep.url}/v1/responses`, { method: 'POST', headers: withSession, body: codexBody() })).text()
+  assert.deepEqual([knobs.headers['session-id'], knobs.headers['x-claude-code-session-id'], knobs.headers['thread-id']], ['s-1', 'cc-1', 't-1'])
 })
 
 test('--strict: a tampered JSON answer becomes HTTP 502 (not retried), a tampered stream ends in an error event instead of its final event, even when the receipt comment arrives in pieces', async () => {

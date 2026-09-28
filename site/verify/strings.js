@@ -46,6 +46,13 @@ export const T = {
     'd.signedBlock.aside': '在签名的结果里（blockPinned）', 'd.block': 'BNB 区块（服务报告）',
     'd.block.aside': '随回执附带，不在签名里', 'd.signer': '签名者（恢复出的）', 'd.none': '—', 'd.notResolved': '（未能解析）',
     'body.result': '结果（已签名）', 'body.error': '拒绝内容（已签名）',
+    // Hash-only receipts (v 2) / 只带哈希的回执
+    'params.label': '请求参数（已签名）', 'params.hashed': '请求哈希 requestHash（已签名：方法与参数一起的 keccak256）',
+    'body.hashed': '结果哈希 bodyHash（已签名：结果或拒绝内容的 keccak256）',
+    'x.valid.hashed': (who) => `这个结果由 ${who} 今天在链上指定的签名密钥签署，签名恰好覆盖这次请求与结果的哈希和这个时间。这是只带哈希的回执：本页看不到请求参数与结果本身。`,
+    'x.valid.hashed.refusal': (who) => `这是一次拒绝，由 ${who} 今天在链上指定的签名密钥签署，签名恰好覆盖这次请求与拒绝内容的哈希和这个时间。这是只带哈希的回执：本页看不到请求参数与拒绝内容本身。`,
+    'd.method.hashed': '按回执所写；只带哈希时方法与参数一起由请求哈希绑定，本页无法单独核对方法',
+    'd.form': '回执形态', 'd.form.hashed': '只带哈希（参数与结果不在回执里）', 'd.form.content': '带原文（参数与结果都在回执里）',
     // AI usage receipts / AI 用量回执
     'x.valid.usage': (who) => `这份用量回执由 ${who} 今天在链上指定的签名密钥签署；金额与链上清单的价目表一致。签名覆盖请求与回应字节的哈希、模型、用量与价格。`,
     'x.invalid.method': '回执的方法与它声称的接口路径不对应。',
@@ -117,6 +124,13 @@ export const T = {
     'd.signedBlock.aside': 'inside the signed result (blockPinned)', 'd.block': 'BNB block (reported)',
     'd.block.aside': 'sent with the receipt, not covered by the signature', 'd.signer': 'Signer (recovered)', 'd.none': '—', 'd.notResolved': '(not resolved)',
     'body.result': 'Result (signed)', 'body.error': 'Refusal (signed)',
+    // Hash-only receipts (v 2) / 只带哈希的回执
+    'params.label': 'Request params (signed)', 'params.hashed': 'Request hash, requestHash (signed: keccak256 of the method and params together)',
+    'body.hashed': 'Result hash, bodyHash (signed: keccak256 of the result or refusal)',
+    'x.valid.hashed': (who) => `This result was signed by the key that ${who} names on chain today, and the signature covers exactly the hashes of this request and this result, and this time. This is a hash-only receipt: the page does not see the request params or the result themselves.`,
+    'x.valid.hashed.refusal': (who) => `This is a refusal, signed by the key that ${who} names on chain today; the signature covers exactly the hashes of this request and this refusal, and this time. This is a hash-only receipt: the page does not see the request params or the refusal themselves.`,
+    'd.method.hashed': 'as the receipt states it; in a hash-only receipt the method is bound only through the request hash, together with the params, so this page cannot check it on its own',
+    'd.form': 'Receipt form', 'd.form.hashed': 'hashes only (the params and result are not in the receipt)', 'd.form.content': 'with content (the params and result are in the receipt)',
     // AI usage receipts / AI 用量回执
     'x.valid.usage': (who) => `This usage receipt was signed by the key that ${who} names on chain today, and its amount follows the price table in the on-chain manifest. The signature covers the hashes of the request and response bytes, the model, the usage and the price.`,
     'x.invalid.method': 'The receipt\'s method does not belong to the API path it names.',

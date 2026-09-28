@@ -110,12 +110,28 @@ const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
 **Claude Code 与 Codex 用户**自己读不到回执。他们在本机运行核验代理 `tapeapi-verify`，把客户端指向它：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
 
-它在链上解析你的服务，字节原样透传，每次调用打印一行结论；加 `--strict` 时，核验失败会变成客户端看得到的错误。单份回执也可以贴到
+它在链上解析你的服务，回答原样透传，每次调用打印一行结论；加 `--strict` 时，核验失败会变成客户端看得到的错误。单份回执也可以贴到
 [核验页](https://tapeapi.fun/verify/)。这些都需要你的清单已经上链（见上面的现状）。
+
+**请求加盐（两者默认开启）。** 回执带 `requestSha256`，即确切请求字节的 SHA-256，而官方 SDK 每次都用同样的方式序列化请求。于是
+短提示词（"是"、一个要做嵌入的词、已知问题清单里的一问）可以通过对猜测取哈希，从别人分享的回执上确认出来。所以 `createVerifyingFetch`
+与 `tapeapi-verify` 会在回执路径上每个请求正文的 JSON 文本之后追加 64 个随机空白字符（空格、制表、换行、回车，共 128 个随机比特），
+回执按实际发出的字节核验。
+
+- **为什么不影响提示词缓存：** JSON 允许值之后出现空白（RFC 8259 §2），上游解析出的请求完全相同。这些空白在所有字符串之外，
+  不属于任何消息，也不会变成 token；缓存（OpenAI 的自动前缀缓存、Anthropic 的 `cache_control` 断点）按解析后提示词的 token 取键，
+  而 token 完全一样。
+- **不增加、也不修改任何字段。** 尤其是 `user`（OpenAI）和 `metadata.user_id`（Anthropic，Claude Code 本来就会设置）保持客户端
+  写的样子：网关靠它们把同一段对话路由到同一个账号，缓存才能命中。
+- **不处理的：** 压缩过的正文（`Content-Encoding` 不是 `identity`，追加会破坏它）、非 JSON 正文，以及所有不出回执的路径。
+  `salt: false` / `--no-salt` 完全按客户端写的字节发送。
+- 如果客户端与旁路之间有代理重新序列化请求，字节本来就会变；这时回执核验会在 `requestSha256` 上失败，这样的代理因此会暴露出来。
+- **尚未实测：** 按 JSON 语法，所有上游都必须接受尾随空白，测试也对参考旁路验证过；对 OpenAI Chat、OpenAI Responses、
+  Anthropic Messages 线上接口的实测还没有做。
 
 ## 费用
 
@@ -128,8 +144,13 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex：OPENAI_BASE_U
 - 回执证明谁回答的、声称了什么，不证明运行的是哪个模型（见上）。
 - 带回执的格式：OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、OpenAI Embeddings。`/v1` 下的其它路径原样透传、不带回执。
   暂不支持：Gemini 原生接口、WebSocket 模式（Realtime、Responses WebSocket）、Batch。
-- 回执在旁路内存里保留一小时；随回答送达的那一份才是主要的。
+- 回执在旁路内存里保留一小时（可配置）；随回答送达的那一份才是主要的。免费的 `receipt` 方法按 IP 单独限流。如果你的上游回答 id
+  可以猜（Ollama 的是 `chatcmpl-` 加一个小于 999 的数，旁路日志会提示），请打开 `requireRequestHash`（`RECEIPT_REQUIRE_HASH=1`），
+  让取回执必须同时给出请求哈希。
 - 旁路自己不做鉴权：用户的密钥原样交给你的网关，由网关决定。
+- 旁路会把客户端的会话头（`x-claude-code-session-id`、`session-id`、`thread-id`）转发给你的网关（客户端期望如此）；拿到它们的
+  一方能把同一用户的请求串成一段会话。设 `FORWARD_SESSION_HEADERS=0`（`forwardSessionHeaders: false`）即不转发；用户也可以在
+  自己这一侧用 `tapeapi-verify --strip-session-headers` 做到同样的事。
 
 ## 合规
 

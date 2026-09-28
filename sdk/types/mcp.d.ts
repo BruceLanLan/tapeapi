@@ -49,8 +49,27 @@ export interface Receipt {
 export declare function receiptOf(o: { envelope: Record<string, any>; method: string; params: unknown; circuits: string; tokenId: string | number; name?: string }): Receipt
 export declare function toBase64Url(text: string): string
 export declare function fromBase64Url(s: string): string
-export declare function verifyLink(receipt: Receipt, base?: string): string
-export declare function toolResultOf(o: { receipt: Receipt; checkedBy: 'client' | 'service'; signer?: string; link?: string }): CallToolResult
+/** The hash-only form of a receipt: params and result replaced by the two hashes the signature covers. */
+export interface HashedReceipt {
+  v: 2
+  service: { circuits: string; tokenId: string; container: string; name?: string }
+  /** As stated; bound only through requestHash, which covers method and params together. */
+  method: string
+  /** keccak256(canonicalJSON({ method, params })), 0x hex */
+  requestHash: string
+  id: string
+  ts: number
+  ok: boolean
+  /** keccak256(canonicalJSON(result or error)), 0x hex */
+  bodyHash: string
+  block?: number
+  sig: string
+}
+/** The hash-only form (a v 2 receipt is returned as it is). Params from a small set can still be guessed from requestHash. */
+export declare function hashReceipt(receipt: Receipt | HashedReceipt): HashedReceipt
+/** A verify-page link; the hash-only form unless { content: true } (then params and result are in the link, in clear). */
+export declare function verifyLink(receipt: Receipt | HashedReceipt, base?: string, o?: { content?: boolean }): string
+export declare function toolResultOf(o: { receipt: Receipt; checkedBy: 'client' | 'service'; signer?: string; linkContent?: boolean; link?: string }): CallToolResult
 
 /** The MCP tool fields that are hashed. */
 export declare const TOOL_DIGEST_FIELDS: readonly string[]

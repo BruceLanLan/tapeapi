@@ -31,6 +31,8 @@ const rpcFail = (status, code, message) => reply(status, { jsonrpc: '2.0', id: n
  * @param {object} o.manifest   the manifest the provider serves / provider 提供的清单
  * @param {{ name?: string }} [o.identity]  the TapeOut name to show, e.g. '11.1013.tape' / 展示用的 TapeOut 名称
  * @param {string} [o.version]  serverInfo.version
+ * @param {boolean} [o.linkContent=false]  verify links carry the params and result in clear (sdk mcp.verifyLink
+ *        `content`); default: hashes only / 核验链接带明文参数与结果；默认只带哈希
  * @param {(m: { method: string, tool?: string, clientIp?: string }) => void} [o.onMessage]  called once for every
  *        JSON-RPC message the endpoint handles (never for a request refused as too large, unparsable or an oversized
  *        batch), for usage counting; method and tool are cut to 64 characters; errors in it are ignored
@@ -38,7 +40,7 @@ const rpcFail = (status, code, message) => reply(status, { jsonrpc: '2.0', id: n
  *        64 个字符；其中的错误被忽略
  * @returns {{ handle(request: Request, ctx?: { clientIp?: string }): Promise<Response>, tools: object[] }}
  */
-export function createMcpEndpoint({ provider, manifest, identity = {}, version = '0', onMessage }) {
+export function createMcpEndpoint({ provider, manifest, identity = {}, version = '0', onMessage, linkContent = false }) {
   // This server signs its answers; it does not check them for the caller. The tool text says so.
   // 本服务器只签名，不替调用方核验。工具说明如实这么写。
   const trust = "The result is signed by the service's on-chain delegated key and carries a receipt; anyone can verify it against the chain (link in the result)."
@@ -68,7 +70,7 @@ export function createMcpEndpoint({ provider, manifest, identity = {}, version =
       return { content: [{ type: 'text', text: `The service did not answer: ${e.code || `HTTP ${res.status}`}${e.message ? `: ${e.message}` : ''}` }], isError: true }
     }
     const receipt = mcp.receiptOf({ envelope: env, method: t.method, params: args, circuits: manifest.circuits, tokenId: manifest.tokenId, name: identity.name })
-    return mcp.toolResultOf({ receipt, checkedBy: 'service', signer: manifest.signer })
+    return mcp.toolResultOf({ receipt, checkedBy: 'service', signer: manifest.signer, linkContent: linkContent === true })
   }
 
   // One small server per request, so the caller's IP reaches the provider's limiter. / 每个请求一个小服务器，调用方 IP 才能到达限流器。

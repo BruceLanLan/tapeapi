@@ -9,8 +9,14 @@
 //
 // Secret: SIGNER_KEY (and UPSTREAM_AUTHORIZATION only if the upstream needs a key of yours rather than your callers').
 // Variables: UPSTREAM_BASE_URL, MODELS_JSON (the price table), CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES,
-// DELEGATION_SIG, PUBLIC_URL; optional SERVICE_NAME, RATE_IP (requests per minute per IP, default 600).
-// 密钥：SIGNER_KEY（只有上游需要你自己的而不是调用方的密钥时，再加 UPSTREAM_AUTHORIZATION）。变量见上。
+// DELEGATION_SIG, PUBLIC_URL; optional SERVICE_NAME, RATE_IP (requests per minute per IP, default 600), RECEIPT_TTL_S
+// (how long receipts stay retrievable, default 3600), RECEIPT_LOOKUPS_PER_MIN (the receipt method's budget per IP,
+// default 10), RECEIPT_REQUIRE_HASH ("1": a receipt lookup must name requestSha256 too; for an upstream whose answer
+// ids are guessable, such as Ollama's), FORWARD_SESSION_HEADERS ("0": do not pass the clients' session headers
+// x-claude-code-session-id, session-id and thread-id upstream; default: pass them).
+// 密钥：SIGNER_KEY（只有上游需要你自己的而不是调用方的密钥时，再加 UPSTREAM_AUTHORIZATION）。变量见上；RECEIPT_TTL_S 为回执
+// 可取回的秒数，RECEIPT_LOOKUPS_PER_MIN 为 receipt 方法每 IP 每分钟的次数，RECEIPT_REQUIRE_HASH 为 "1" 时取回执须同时给出
+// requestSha256（上游 id 可猜时用，例如 Ollama）；FORWARD_SESSION_HEADERS 为 "0" 时不把客户端的会话头转发给上游（默认转发）。
 import { createAIProxy } from '@tapeapi/server/ai-proxy'
 import { sig } from '@tapeapi/sdk'
 import { setupAnswer } from '../cloudflare-worker/worker.js'
@@ -44,6 +50,10 @@ export function build(env, extra = {}) {
     // Per isolate; the edge sets cf-connecting-ip and a client cannot forge it. Receipts live in the isolate too: the
     // `receipt` method finds only those this isolate signed. / 按隔离实例计；回执也存在隔离实例内，receipt 方法只能找到本实例签的。
     rateLimit: { windowMs: 60_000, free: 600, paid: 0, ip: Number(env.RATE_IP || 600) },
+    ...(env.RECEIPT_TTL_S ? { receiptTtlMs: Number(env.RECEIPT_TTL_S) * 1000 } : {}),
+    ...(env.RECEIPT_LOOKUPS_PER_MIN !== undefined && env.RECEIPT_LOOKUPS_PER_MIN !== '' ? { receiptRateLimit: { ip: Number(env.RECEIPT_LOOKUPS_PER_MIN), windowMs: 60_000 } } : {}),
+    ...(env.RECEIPT_REQUIRE_HASH === '1' || env.RECEIPT_REQUIRE_HASH === 'true' ? { requireRequestHash: true } : {}),
+    ...(env.FORWARD_SESSION_HEADERS === '0' || env.FORWARD_SESSION_HEADERS === 'false' ? { forwardSessionHeaders: false } : {}),
     ...extra,
   })
 }

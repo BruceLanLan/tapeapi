@@ -5,6 +5,7 @@
 import {
   createTapeAPI, TapeAPIError, MAINNET, BUS_RPC_URLS, createRpc, channel, webmcp, sig, abi, parseUnits, formatUnits,
   RPC_DEFAULTS, rpcUrlsFor, operatorOf, type RpcNode,
+  group, deliverGroupUpdate, checkGroupInvites, type GroupDelivery, type GroupDeliveryResult, type GroupInviteCheck,
   type ResolvedService, type CallResult, type TapeAPI, type Rpc,
 } from '@tapeapi/sdk'
 import { exposeTapeAPI, manifestToTools } from '@tapeapi/sdk/webmcp'
@@ -101,4 +102,19 @@ async function aiSidecar(): Promise<void> {
   void [chat.method, base, fetch, receipt?.result.prices?.[0]?.amount, receipt?.result.unpriced, receipt?.result.complete, receipt?.result.modelMatchedBy, receipt?.result.usage?.cache_write_1h_tokens, ai.MANIFEST_FIELD, createOpenAIProxy]
 }
 
-void consumer; void provider; void aiSidecar
+// TAP-27 groups: the owner delivers epoch message and invites in one call; the member checks its inbox.
+// TAP-27 群聊：群主一步投递纪元消息与邀请；成员检查收件房间。
+async function groups(): Promise<void> {
+  const api = createTapeAPI({})
+  const relay = await api.resolve('12.1013.tape')
+  const me = generateIdentity()
+  const created = await group.createGroup({ self: { container: MAINNET.hub }, identity: me, members: [], verifyMember: api.groupVerifier() })
+  const added: number = created.added.length
+  const sent: GroupDeliveryResult = await deliverGroupUpdate({ group: created.group, update: created, relay: { api, svc: relay } })
+  const d: GroupDelivery | undefined = sent.deliveries[0]
+  await deliverGroupUpdate({ group: created.group, invite: 'all', bus: { address: MAINNET.channelBus, sendTx: async (tx) => tx.data }, throwOnError: false })
+  const found: GroupInviteCheck = await checkGroupInvites({ self: { container: MAINNET.factory, chainId: 56 }, identity: me, relay: { api, svc: relay }, cursors: new Map(), checkSelf: true })
+  void [added, d?.room, d?.i, d?.error?.rateLimited, found.invites[0]?.invite.gid, found.skipped, found.room]
+}
+
+void consumer; void provider; void aiSidecar; void groups

@@ -97,11 +97,20 @@ export function readConfig(rawEnv = process.env) {
   if (clientIpHeader && !HEADER_NAME.test(clientIpHeader)) return out(`CLIENT_IP_HEADER must be a header name such as x-real-ip, not ${JSON.stringify(env.CLIENT_IP_HEADER)}`, { signer })
   const name = env.SERVICE_NAME || 'AI relay (TapeAPI sidecar)'
   if ([...name].length > 64) return out('SERVICE_NAME must be at most 64 characters', { signer })
+  // The receipt method: lifetime and whether a lookup must name the request hash (for channels whose answer ids are
+  // guessable, such as Ollama's). / receipt 方法：保留时长，以及取回是否必须给出请求哈希（渠道的回答 id 可猜时用，例如 Ollama）。
+  const receiptTtlS = env.RECEIPT_TTL_S === undefined || env.RECEIPT_TTL_S === '' ? 3600 : Number(env.RECEIPT_TTL_S)
+  if (!Number.isInteger(receiptTtlS) || receiptTtlS <= 0) return out('RECEIPT_TTL_S must be a whole number of seconds above 0 (default 3600)', { signer })
+  if (![undefined, '', '0', '1'].includes(env.RECEIPT_REQUIRE_HASH)) return out('RECEIPT_REQUIRE_HASH must be 1 (a receipt lookup must name requestSha256 too) or 0', { signer })
+  const requireRequestHash = env.RECEIPT_REQUIRE_HASH === '1'
+  // 0: the clients' session headers (x-claude-code-session-id, session-id, thread-id) do not reach new-api. / 0：不转发会话头。
+  if (![undefined, '', '0', '1'].includes(env.FORWARD_SESSION_HEADERS)) return out('FORWARD_SESSION_HEADERS must be 1 (pass the clients\' session headers upstream, the default) or 0', { signer })
+  const forwardSessionHeaders = env.FORWARD_SESSION_HEADERS !== '0'
 
   return {
     ok: true, missing: [], problem: null, signer,
     config: {
-      publicUrl, loopback, upstreamBaseUrl, modelsFile, models, signerKey, signer, rateIp, clientIpHeader,
+      publicUrl, loopback, upstreamBaseUrl, modelsFile, models, signerKey, signer, rateIp, clientIpHeader, receiptTtlS, requireRequestHash, forwardSessionHeaders,
       tapeName: env.TAPE_NAME || null,
       manifestBase: {
         tapeapi: '0.1', name, circuits: env.CIRCUITS, tokenId: String(BigInt(env.TOKEN_ID)), container: env.CONTAINER,
@@ -137,6 +146,9 @@ export function buildProxy(config, { fetch, log } = {}) {
     models: config.models,
     allowHttp: config.loopback,
     rateLimit: config.rateIp === 0 ? false : { windowMs: 60_000, free: config.rateIp, paid: 0, ip: config.rateIp },
+    ...(config.receiptTtlS ? { receiptTtlMs: config.receiptTtlS * 1000 } : {}),
+    ...(config.requireRequestHash ? { requireRequestHash: true } : {}),
+    ...(config.forwardSessionHeaders === false ? { forwardSessionHeaders: false } : {}),
     ...(fetch ? { fetch } : {}),
     ...(log ? { log } : {}),
   })

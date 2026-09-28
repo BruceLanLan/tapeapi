@@ -13,8 +13,23 @@ keep_vars = true
 pattern = "api.tapeapi.fun"
 custom_domain = true
 
+# Logs, api.tapeapi.fun (a public service we run; privacy plan 2026-09-28, site/privacy/): Cloudflare's per-request
+# invocation logs and traces are OFF, query strings are redacted. What stays is the Worker's own console output
+# (one line per MCP message: method, tool and a caller tag that is an HMAC of the IP and the UTC day, never the IP), kept by Workers Logs for the plan's retention. Whether Cloudflare's own
+# records of a request include the client IP is to be verified. Takes effect on the next deploy.
+# 日志（api.tapeapi.fun，我们运营的公共服务；隐私计划 2026-09-28，见 site/privacy/）：关闭 Cloudflare 的逐请求调用日志与追踪，
+# 隐去查询串。保留的只有 Worker 自己的 console 输出（每条 MCP 消息一行：方法、工具，以及由 IP 与 UTC 日期做 HMAC 得到的调用方标签，从不记录 IP 本身），按套餐的保留期存在 Workers Logs。
+# Cloudflare 自己对请求的记录是否含客户端 IP：待核实。下次部署后生效。
 [observability]
 enabled = true
+redact_query_string = true
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+
+[observability.traces]
+enabled = false
 
 [vars]
 SERVICE_NAME = "TapeAPI Public"

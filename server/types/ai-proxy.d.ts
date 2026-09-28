@@ -13,6 +13,12 @@ export declare const UPSTREAM_TIMEOUT_MS: number
 export declare const STREAM_IDLE_MS: number
 export declare const RECEIPT_TTL_MS: number
 export declare const MAX_RECEIPTS: number
+/** The `receipt` method's own budget per client IP per minute (10). */
+export declare const RECEIPT_LOOKUPS_PER_MIN: number
+/** Upstream answer ids estimated below this many bits (64) count as guessable. */
+export declare const ID_ENTROPY_MIN_BITS: number
+/** A rough upper-bound estimate of the random bits in an answer id, from its shape ("chatcmpl-417": 9). */
+export declare function idEntropyBits(id: string): number
 /** At most this many bytes of one event are held back (4 MiB); past it the event streams and the receipt is appended. */
 export declare const HOLD_LIMIT: number
 
@@ -51,7 +57,20 @@ export interface AIProxyStats {
   tooLarge: number
   redirects: number
   rateLimited: number
+  /** Answers whose id was shared with another kept receipt (kept apart by requestSha256). */
   duplicateIds: number
+  /** `receipt` lookups refused by the method's own per-IP budget (unsigned 429). */
+  receiptRateLimited: number
+  /** Upstream ids estimated below ID_ENTROPY_MIN_BITS. */
+  guessableIds: number
+  /** The fewest estimated bits an upstream id has shown; null before the first. */
+  idEntropyMinBits: number | null
+  /** Whether the upstream's ids have looked guessable (low estimate, or one id seen twice while kept). */
+  guessableIdsSeen: boolean
+  /** Whether a lookup must name requestSha256 too. */
+  requireRequestHash: boolean
+  /** Whether the clients' session headers are passed upstream. */
+  forwardSessionHeaders: boolean
   lookups: number
   misses: number
   /** Streamed requests the sidecar asked upstream usage for. */
@@ -88,8 +107,14 @@ export declare function createAIProxy(o: {
   log?: (...args: unknown[]) => void
   /** Passed to createProvider; its `ip` budget (default free + paid) also bounds /v1/* per IP. false: off. */
   rateLimit?: CreateProviderOptions['rateLimit']
-  /** How long receipts stay retrievable (default 3 600 000). */
+  /** How long receipts stay retrievable (default 3 600 000; TAP-21 §3.5 recommends at least an hour). */
   receiptTtlMs?: number
+  /** The `receipt` method's own budget per client IP (default { ip: 10, windowMs: 60 000 }); false: off. */
+  receiptRateLimit?: { ip?: number; windowMs?: number } | false
+  /** Answer a `receipt` lookup only when it names requestSha256 too (TAP-21 §3.5 MAY); default false. */
+  requireRequestHash?: boolean
+  /** Pass the clients' session headers (x-claude-code-session-id, session-id, thread-id) upstream; default true. */
+  forwardSessionHeaders?: boolean
   /** At most this many receipts are kept (default 50 000). */
   maxReceipts?: number
   /** The service root the endpoints are built on; default endpoints.live[0] without /tapeapi/v1. */

@@ -126,13 +126,34 @@ const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
 and point the client at it:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
 
-It resolves your service on chain, passes the bytes through unchanged, prints one verdict per call, and with `--strict`
-turns a failed receipt into an error the client sees. A single receipt can also be pasted into the
+It resolves your service on chain, passes the answers through unchanged, prints one verdict per call, and with
+`--strict` turns a failed receipt into an error the client sees. A single receipt can also be pasted into the
 [verification page](https://tapeapi.fun/verify/). All of these need your manifest on chain (see the current state above).
+
+**Request salt (on by default in both).** A receipt carries `requestSha256`, the SHA-256 of the exact request bytes,
+and the official SDKs serialise a request the same way every time. A short prompt ("yes", one word to embed, a question
+from a known list) could then be confirmed from a shared receipt by hashing guesses. So `createVerifyingFetch` and
+`tapeapi-verify` append 64 random whitespace characters (space, tab, line feed, carriage return: 128 random bits) after
+the JSON text of each request body on a receipt path, and the receipt is checked over the bytes actually sent.
+
+- **Why prompt caching is unaffected:** JSON allows whitespace after the value (RFC 8259 §2), so the upstream parses
+  exactly the same request. The whitespace is outside every string, so it is in no message and becomes no token; the
+  caches (OpenAI's automatic prefix cache, Anthropic's `cache_control` breakpoints) are keyed on the parsed prompt's
+  tokens, which are identical.
+- **No field is added or changed.** In particular `user` (OpenAI) and `metadata.user_id` (Anthropic, which Claude Code
+  already sets) stay as the client wrote them: gateways use them to route a conversation to the same account, which is
+  what makes its cache hit.
+- **Left alone:** compressed bodies (`Content-Encoding` other than `identity`: appending would corrupt them), non-JSON
+  bodies, and every path without a receipt. `salt: false` / `--no-salt` sends the bytes exactly as written.
+- A proxy that re-serialises the request between the client and the sidecar changes the bytes either way; the receipt
+  check then fails on `requestSha256`, which is how such a proxy shows itself.
+- **Not yet measured:** the JSON grammar says every upstream must accept the trailing whitespace, and the tests check it
+  against the reference sidecar; a check against the live OpenAI Chat, OpenAI Responses and Anthropic Messages APIs is
+  still to be done.
 
 ## Fees
 
@@ -148,8 +169,15 @@ See [`docs/FEES.md`](../FEES.md).
 - Formats with receipts: OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, OpenAI Embeddings. Other paths
   under `/v1` pass through without a receipt. Not yet: Gemini's native API, WebSocket modes (Realtime, Responses
   WebSocket), Batch.
-- Receipts are kept in the sidecar's memory for one hour; the copy delivered with the answer is the primary one.
+- Receipts are kept in the sidecar's memory for one hour (configurable); the copy delivered with the answer is the
+  primary one. The free `receipt` method has its own per-IP budget. If your upstream's answer ids are guessable
+  (Ollama's are `chatcmpl-` and a number below 999; the sidecar's log says so), turn on `requireRequestHash`
+  (`RECEIPT_REQUIRE_HASH=1`) so that a lookup must name the request hash as well.
 - The sidecar authenticates no one itself: your users' keys go to your gateway as they are, and your gateway decides.
+- The sidecar passes the clients' session headers (`x-claude-code-session-id`, `session-id`, `thread-id`) to your
+  gateway, as the clients expect; they let whoever receives them tie a user's requests into one session. Set
+  `FORWARD_SESSION_HEADERS=0` (`forwardSessionHeaders: false`) to leave them out; a user can do the same on their side
+  with `tapeapi-verify --strip-session-headers`.
 
 ## Compliance
 

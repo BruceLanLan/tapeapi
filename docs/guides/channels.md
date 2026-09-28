@@ -3,7 +3,7 @@
 A Tape Channel ([TAP-26](../../spec/TAP-26.md)) is an end-to-end encrypted, mutually authenticated channel between two
 TapeOut containers. Whatever carries it (a relay service, a WebRTC connection or the chain itself) only ever sees
 ciphertext and cannot forge, reorder or replay frames without being caught. Groups of up to 32 containers are
-[TAP-27](../../spec/TAP-27.md).
+[TAP-27](../../spec/TAP-27.md); to add them to an application, see [Group chat](groups.md).
 
 ## How it works
 

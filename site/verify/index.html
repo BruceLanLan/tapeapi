@@ -49,7 +49,7 @@
   }
 }
 </script>
-<script type="module" src="verify.js?v=7fe8220870"></script>
+<script type="module" src="verify.js?v=f03b6fe0ec"></script>
 </head>
 <body>
 <header class="hd-bar">
@@ -100,11 +100,13 @@
     <h2 id="h-result"><span class="num">2</span><span class="t" lang="zh">结论</span><span class="t" lang="en">Verdict</span></h2>
     <div id="verdict" class="vd"></div>
     <p class="note" id="ai-note" hidden><span class="t" lang="zh">这是一份 AI 用量回执。它的两个哈希绑定确切的请求与回应字节，本页没有这些字节（除非你在上面粘贴），所以默认只核对签名、服务身份与金额。签名证明的是谁回答的、声称了什么，不证明实际运行的是哪个模型；这类替换靠回执与抽检变得可追责。</span><span class="t" lang="en">This is an AI usage receipt. Its two hashes bind the exact request and response bytes, which this page does not have (unless you paste them above), so by default it checks the signature, the service's identity and the amount only. A signature proves who answered and what was claimed, not which model actually ran; receipts and spot checks make such a substitution attributable.</span></p>
+    <p class="note" id="content-note" hidden><span class="t" lang="zh">这份回执带原文：请求参数与结果（或拒绝内容）就在回执里，也就在它的核验链接里，也就是这段对话本身。链接转给谁，谁就看得到问了什么、答了什么；只在愿意分享这些内容的场合分享它。</span><span class="t" lang="en">This receipt carries the content: the request params and the result (or refusal) are in the receipt, and so in its verify link; that is the conversation itself. Whoever the link is passed to sees what was asked and answered; share it only where you would share those.</span></p>
+    <p class="note" id="hashed-note" hidden><span class="t" lang="zh">这是只带哈希的回执：它用签名所依据的两个哈希代替请求参数与结果，所以能核对谁在何时签了什么，但本页看不到问了什么、答了什么。哈希只能藏住猜不到的内容：取自小集合的参数（地址、token id、交易对）或简短的结果，别人可以通过对候选取哈希确认出来。</span><span class="t" lang="en">This is a hash-only receipt: the two hashes the signature is computed over stand in for the request params and the result, so it shows who signed what and when, but this page does not see what was asked or answered. Hashes hide only what cannot be guessed: params from a small set (an address, a token id, a price pair) or a short result can be confirmed by anyone who hashes the candidates.</span></p>
     <p><button class="ctl" id="retry-btn" type="button" hidden><span class="t" lang="zh">重新读链</span><span class="t" lang="en">Read the chain again</span></button></p>
     <ul class="checks" id="checks"></ul>
     <h3 class="sub"><span class="t" lang="zh">回执内容</span><span class="t" lang="en">What the receipt says</span></h3>
     <dl class="kv" id="details"></dl>
-    <p class="lbl"><span class="t" lang="zh">请求参数（已签名）</span><span class="t" lang="en">Request params (signed)</span></p>
+    <p class="lbl" id="params-label"></p>
     <div class="code"><pre id="params-json"></pre></div>
     <p class="lbl" id="body-label"></p>
     <div class="code"><pre id="body-json"></pre></div>
@@ -119,11 +121,17 @@
       <li><span class="t" lang="zh">AI 用量回执不带电路与 #ID：本页按回执里的容器解析服务，再核对金额（按回执里的模型在清单价目表中精确匹配，用回执里的 token 数重算，向上取整到 8 位小数）。</span><span class="t" lang="en">An AI usage receipt carries no circuit or #ID: the page resolves the service from the receipt's container, then checks the amount (the receipt's model matched exactly in the manifest's price table, recomputed from the receipt's token counts, rounded up to 8 decimals).</span></li>
       <li><span class="t" lang="zh">比对：链上推导的容器等于回执里的容器；回执里的名字属于这个服务；恢复出的签名者等于清单今天指定的签名密钥。</span><span class="t" lang="en">Compare: the container the chain derives equals the receipt's; the receipt's name belongs to this service; the recovered signer equals the signing key the manifest names today.</span></li>
     </ol>
+    <h3 class="sub"><span class="t" lang="zh">回执不证明什么</span><span class="t" lang="en">What a receipt does not prove</span></h3>
+    <ul class="how-list" id="limits">
+      <li><span class="t" lang="zh">回执不证明实际跑的是哪个模型或哪段程序：它证明谁的密钥、对哪个请求与回答、在什么时间签了名，以及服务声称的用量与价格。AI 回执里的 <code>model</code> 是上游报告的名字。</span><span class="t" lang="en">A receipt does not prove which model or which program actually ran. It proves whose key signed which request and answer, and when, and the usage and price the service claimed. The <code>model</code> in an AI receipt is the name the upstream reported.</span></li>
+      <li><span class="t" lang="zh">带原文的链接（MCP 回执 v 1）里含对话内容：请求参数与结果都在链接里，拿到链接的人都看得到。默认的链接只带哈希，但取自小集合的参数（地址、token id、交易对）或简短的结果仍可能从哈希猜出。</span><span class="t" lang="en">A link with content (an MCP receipt v 1) contains the conversation: the request params and the result are in the link, for anyone who gets it. Default links carry hashes only, but params from a small set (an address, a token id, a price pair) or a short result can still be guessed from their hash.</span></li>
+      <li><span class="t" lang="zh">元数据不隐藏：服务方看得到你的请求与 IP；本页读链时，公共 BSC 节点看得到你的 IP 和你在查哪个服务。</span><span class="t" lang="en">Metadata is not hidden: the service sees your request and IP address; while this page reads the chain, the public BSC nodes see your IP address and which service you are checking.</span></li>
+    </ul>
     <p class="muted"><span class="t" lang="zh">手上没有回执？在<a href="../playground/">调试台</a>里调用一个方法，或者用 MCP 端点 <code>https://api.tapeapi.fun/mcp</code>：每个工具结果都带核验链接。</span><span class="t" lang="en">No receipt at hand? Call a method in the <a href="../playground/">Playground</a>, or use the MCP endpoint <code>https://api.tapeapi.fun/mcp</code>: every tool result carries a verify link.</span></p>
   </section>
 
   <footer class="foot">
-    <p><span class="t" lang="zh">只读：本页不连接钱包，也不需要任何密钥。回执不会发给任何服务器，本页只向公共 BSC 节点读取链上数据。</span><span class="t" lang="en">Read-only: this page connects no wallet and needs no key. The receipt is sent to no server; the page only reads the chain from public BSC nodes.</span></p>
+    <p><span class="t" lang="zh">只读：本页不连接钱包，也不需要任何密钥。回执不会发给任何服务器，本页只向公共 BSC 节点读取链上数据。本页是纯静态文件（仓库里的 <code>site/verify/</code>），可以自己托管；SDK 的 <code>verifyLink(receipt, base)</code> 可以把链接指向你自己的副本。</span><span class="t" lang="en">Read-only: this page connects no wallet and needs no key. The receipt is sent to no server; the page only reads the chain from public BSC nodes. The page is static files (<code>site/verify/</code> in the repository) that you can host yourself; the SDK's <code>verifyLink(receipt, base)</code> points links at your own copy.</span></p>
   </footer>
 </main>
 </body>

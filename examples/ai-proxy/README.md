@@ -252,8 +252,17 @@ not have unless you paste them too.
   cheaper model's answer as a dearer one. The signature makes such a substitution **attributable**: receipts cannot be
   disowned, and with spot checks (anyone sending test prompts on a schedule and publishing the results, A9) watering
   down leaves evidence.
-- Receipts are kept for 1 hour, at most 50,000, in the process (or Worker isolate) that signed them; the one delivered
-  with the answer is the primary copy.
+- Receipts are kept for 1 hour (`receiptTtlMs`, `RECEIPT_TTL_S` in the Worker), at most 50,000, per (id,
+  requestSha256), in the process (or Worker isolate) that signed them; the one delivered with the answer is the primary
+  copy. The free `receipt` method has a budget of its own (`receiptRateLimit`, default 10 lookups per client IP per
+  minute, `RECEIPT_LOOKUPS_PER_MIN`), answered past it with the unsigned 429 of TAP-21 §3.4.
+- **Guessable answer ids.** The sidecar keeps the upstream's answer id (TAP-21 §3.5), and some upstreams' ids can be
+  guessed: Ollama's OpenAI-compatible API numbers chat ids `chatcmpl-0` to `chatcmpl-998`. Anyone could then walk
+  through the ids with the free `receipt` method and read the receipts (model, usage, time and the two hashes). The
+  sidecar estimates the ids' randomness and says in its log when they look guessable. Then turn on
+  `requireRequestHash` (`RECEIPT_REQUIRE_HASH=1`): a lookup must also name `requestSha256`, the SHA-256 of the request
+  body the caller sent, which a stranger who guessed an id does not have. Answers that share an id keep a receipt each;
+  a lookup with `requestSha256` picks the right one.
 - A Responses stream without `event:` lines cannot be recognised at its first line: its receipt is appended at the end
   (a client that stops at `response.completed` does not see it; it can be fetched by id).
 - The only change the sidecar makes to what goes upstream is `include_usage` in a Chat stream request that did not ask

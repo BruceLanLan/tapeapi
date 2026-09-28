@@ -39,6 +39,41 @@ export const UPSTREAM_TIMEOUT_MS = 600_000
 export const STREAM_IDLE_MS = 300_000
 export const RECEIPT_TTL_MS = 3_600_000
 export const MAX_RECEIPTS = 50_000
+/** The free `receipt` method has a budget of its own: this many lookups per client IP per minute. An answer id is all a
+ *  lookup needs, and some upstreams' ids are guessable (below), so the generous free budget of createProvider would let
+ *  one IP walk through every id. / 免费的 receipt 方法有自己的预算：每个客户端 IP 每分钟这么多次。取回只需要回答 id，而有些上游
+ *  的 id 可以猜（见下），createProvider 宽松的免费预算会让一个 IP 把所有 id 走一遍。 */
+export const RECEIPT_LOOKUPS_PER_MIN = 10
+/** Upstream answer ids estimated below this many bits of randomness are called guessable (idEntropyBits). / 估计随机性
+ *  低于这么多比特的上游回答 id 视为可猜。 */
+export const ID_ENTROPY_MIN_BITS = 64
+const HEX64_RE = /^[0-9a-f]{64}$/
+
+/**
+ * A rough estimate of the random bits in one answer id, from its shape: a leading word and its separator ("chatcmpl-",
+ * "msg_", "resp_") are taken off, as are the separators "-" and "_"; the rest counts log2 of its alphabet per character
+ * (digits 10, hex 16, else the letter cases, digits and other characters it uses). An upper bound: a counter or a
+ * timestamp looks as random as its digits. Ollama's OpenAI-compatible ids ("chatcmpl-" and a number below 999,
+ * ollama/ollama#18655) come out at about 10 bits; OpenAI's, Anthropic's and this sidecar's own ids at well over 100.
+ * 按形状粗估一个回答 id 的随机比特：去掉开头的单词与分隔符（"chatcmpl-"、"msg_"、"resp_"）以及分隔符 "-"、"_"，其余每个字符计
+ * log2(字母表大小)（纯数字 10、十六进制 16，否则按用到的大小写字母、数字与其它字符）。这是上界：计数器或时间戳看上去和同样
+ * 位数的随机数一样随机。Ollama 的 OpenAI 兼容 id（"chatcmpl-" 加一个小于 999 的数）约 10 比特；OpenAI、Anthropic 与本旁路自己的
+ * id 都在 100 比特以上。
+ * @param {string} id
+ * @returns {number}  whole bits, 0 for an empty or non-string id / 整数比特数
+ */
+export function idEntropyBits(id) {
+  if (typeof id !== 'string') return 0
+  const rest = id.replace(/^[A-Za-z]+[-_]/, '').replace(/[-_]/g, '')
+  if (!rest) return 0
+  let size
+  if (/^[0-9]+$/.test(rest)) size = 10
+  else if (/^[0-9a-f]+$/.test(rest) || /^[0-9A-F]+$/.test(rest)) size = 16
+  else size = (/[a-z]/.test(rest) ? 26 : 0) + (/[A-Z]/.test(rest) ? 26 : 0) + (/[0-9]/.test(rest) ? 10 : 0) + (/[^A-Za-z0-9]/.test(rest) ? 32 : 0)
+  return Math.floor(rest.length * Math.log2(size))
+}
+// "1 hour", "15 min", "90 s": the receipt lifetime as the method's description states it. / 方法说明里的回执保留时长。
+const lifetime = (ms) => (ms < 1000 ? `${ms} ms` : ms % 3_600_000 === 0 ? `${ms / 3_600_000} hour${ms === 3_600_000 ? '' : 's'}` : ms % 60_000 === 0 ? `${ms / 60_000} min` : `${Math.round(ms / 1000)} s`)
 /** At most this many bytes of one event are held back (a final event, or a chunk that may be stripped); past it the
  *  event streams through and the receipt is appended at the end. / 单个事件至多扣住这么多字节；超过则照常转发，回执追加在末尾。 */
 export const HOLD_LIMIT = 4 * 1024 * 1024
@@ -52,12 +87,15 @@ const enc = new TextEncoder()
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
 const byteLength = (s) => enc.encode(s).length
 
-// The one free method the sidecar adds: a receipt by response id (A2). / 旁路添加的唯一免费方法：按响应 id 取回执。
+// The one free method the sidecar adds: a receipt by response id (A2). Its manifest entry names `id` only, as TAP-21
+// §3.5 fixes it; the optional `requestSha256` (§3.5, MAY) is accepted on the wire. The description states the lifetime.
+// 旁路添加的唯一免费方法：按响应 id 取回执。清单条目只写 id（TAP-21 §3.5 规定如此）；可选的 requestSha256 在请求里接受。
+// 说明里写明保留时长。
 const RECEIPT_METHOD = Object.freeze({
   name: ai.RECEIPT_METHOD, priceBEM: '0', params: { id: 'string' },
   returns: { id: 'string', ok: 'boolean', result: 'object', container: 'string', ts: 'number', method: 'string', params: 'object', sig: 'string' },
-  description: 'The signed usage receipt of an AI response, by the response id (kept for 1 hour after the answer).',
 })
+const receiptDescription = (ttlMs) => `The signed usage receipt of an AI response, by the response id (kept for ${lifetime(ttlMs)} after the answer).`
 
 // Caller headers that reach the upstream, verbatim: sdk ai.forwardsHeader decides (content-type, accept, the clients'
 // identity and session headers such as user-agent, x-claude-code-session-id, session-id, x-codex-*, x-stainless-*, and
@@ -156,15 +194,26 @@ function validFormat(f) {
  * @param {Function} [o.fetch]
  * @param {Function} [o.log]
  * @param {object|false} [o.rateLimit]  passed to createProvider; its `ip` budget (default free + paid) also bounds /v1/* per IP
- * @param {number} [o.receiptTtlMs=3600000]
+ * @param {number} [o.receiptTtlMs=3600000]  how long receipts stay retrievable; shorter narrows what a guessed id reaches
+ *        (TAP-21 §3.5 recommends at least an hour) / 回执可取回的时长；越短，猜中的 id 能拿到的越少（规范建议至少一小时）
  * @param {number} [o.maxReceipts=50000]
+ * @param {{ ip?: number, windowMs?: number }|false} [o.receiptRateLimit]  the `receipt` method's own budget per client IP
+ *        (default 10 per 60 000 ms), answered with an unsigned 429 like every rate limit; false: off
+ *        / receipt 方法自己的按 IP 预算（默认每分钟 10 次），超出回未签名的 429；false 关闭
+ * @param {boolean} [o.forwardSessionHeaders=true]  pass the clients' session headers (ai.SESSION_HEADERS:
+ *        x-claude-code-session-id, session-id, thread-id) upstream, as they are by default; false leaves them out, so
+ *        the upstream cannot tie a caller's requests into one session by them (it still sees the caller's key)
+ *        / 是否把客户端的会话头转发给上游（默认转发）；false 则不转发，上游无法凭它们把同一调用方的请求串成一段会话（仍看得到密钥）
+ * @param {boolean} [o.requireRequestHash=false]  answer a `receipt` lookup only when it names `requestSha256` too
+ *        (TAP-21 §3.5 MAY): a stranger who guesses an id does not have the hash. For an upstream with guessable ids.
+ *        / 取回执时必须同时给出 requestSha256：猜中 id 的陌生人没有这个哈希。适用于 id 可猜的上游。
  * @param {string} [o.publicUrl]  the service root the endpoints are built on; default endpoints.live[0] without /tapeapi/v1
  * @param {boolean} [o.allowHttp]  http endpoints (local testing)
  * @param {number} [o.upstreamTimeoutMs=600000]
  * @param {number} [o.streamIdleMs=300000]  a stream silent this long is ended (0: never) / 流静默这么久即结束（0：不限）
  */
 export function createAIProxy(opts = {}) {
-  const { upstream, manifestBase, signerKey, models, receiptTtlMs = RECEIPT_TTL_MS, maxReceipts = MAX_RECEIPTS, formats = ai.FORMATS } = opts
+  const { upstream, manifestBase, signerKey, models, receiptTtlMs = RECEIPT_TTL_MS, maxReceipts = MAX_RECEIPTS, formats = ai.FORMATS, requireRequestHash = false, forwardSessionHeaders = true } = opts
   if (!isObj(upstream) || typeof upstream.baseUrl !== 'string') throw new TapeAPIError('BAD_REQUEST', 'upstream must be { baseUrl, headers? }')
   let up
   try { up = new URL(upstream.baseUrl) } catch { throw new TapeAPIError('BAD_REQUEST', 'upstream.baseUrl must be a URL') }
@@ -183,6 +232,13 @@ export function createAIProxy(opts = {}) {
   if (!signerKey) throw new TapeAPIError('BAD_KEY', 'signerKey required')
   if (!Number.isFinite(receiptTtlMs) || receiptTtlMs <= 0) throw new TapeAPIError('BAD_REQUEST', 'receiptTtlMs must be a positive number')
   if (!Number.isInteger(maxReceipts) || maxReceipts <= 0) throw new TapeAPIError('BAD_REQUEST', 'maxReceipts must be a positive integer')
+  if (typeof requireRequestHash !== 'boolean') throw new TapeAPIError('BAD_REQUEST', 'requireRequestHash must be true or false')
+  if (typeof forwardSessionHeaders !== 'boolean') throw new TapeAPIError('BAD_REQUEST', 'forwardSessionHeaders must be true or false')
+  const receiptRl = opts.receiptRateLimit === false ? null : {
+    ip: Number(opts.receiptRateLimit?.ip ?? RECEIPT_LOOKUPS_PER_MIN),
+    windowMs: Number(opts.receiptRateLimit?.windowMs ?? 60_000),
+  }
+  if (receiptRl && (!Number.isInteger(receiptRl.ip) || receiptRl.ip < 0 || !Number.isInteger(receiptRl.windowMs) || receiptRl.windowMs <= 0)) throw new TapeAPIError('BAD_REQUEST', 'receiptRateLimit must be false or { ip: a non-negative integer, windowMs: a positive integer }')
   if (!Array.isArray(formats) || !formats.length || !formats.every(validFormat)) throw new TapeAPIError('BAD_REQUEST', 'formats must be a non-empty list of adapters (see sdk ai.js)')
   if (new Set(formats.map((f) => f.method)).size !== formats.length || new Set(formats.map((f) => f.name)).size !== formats.length) throw new TapeAPIError('BAD_REQUEST', 'two formats share a name or a receipt method')
   const listOf = (k) => formats.flatMap((f) => (Array.isArray(f[k]) ? f[k].map((h) => String(h).toLowerCase()) : []))
@@ -201,6 +257,7 @@ export function createAIProxy(opts = {}) {
   // An operator key sent on every request means the sidecar serves anyone who reaches it with that key: it does no
   // authentication of its own. Said out loud. / 运营者密钥随每个请求发送，意味着任何能访问旁路的人都在用这把密钥：旁路自己不做鉴权。
   for (const k of ['authorization', 'x-api-key']) if (operatorHeaders.has(k)) log(`upstream.headers sets ${k}: every caller's request goes upstream with the operator's key (callers' own ${k} is replaced) and this sidecar authenticates no one; put your own gateway in front, or let callers' keys through`)
+  if (receiptTtlMs < RECEIPT_TTL_MS) log(`receipts are kept for ${lifetime(receiptTtlMs)}, less than the hour TAP-21 §3.5 recommends: a client that looks one up later may find it gone (the copy delivered with each answer is unaffected)`)
 
   // ---- the manifest: one endpoint per format on the service root / 清单：每种格式一个端点，建在服务根上 ----
   const { tapeapi = '0.1', ...base } = manifestBase
@@ -209,31 +266,67 @@ export function createAIProxy(opts = {}) {
   if (!root) throw new TapeAPIError('MANIFEST_INVALID', 'publicUrl is required when endpoints.live is empty')
   const field = ai.validateAIField({ endpoints: formats.map((f) => ({ format: f.name, baseUrl: root + f.baseSuffix })), models }, { allowHttp: opts.allowHttp === true || base.dev === true })
   const rootPath = new URL(root).pathname.replace(/\/+$/, '')
-  const manifest = { tapeapi, ...base, signer, methods: [{ ...RECEIPT_METHOD, params: { ...RECEIPT_METHOD.params }, returns: { ...RECEIPT_METHOD.returns } }], [ai.MANIFEST_FIELD]: field }
+  const manifest = { tapeapi, ...base, signer, methods: [{ ...RECEIPT_METHOD, params: { ...RECEIPT_METHOD.params }, returns: { ...RECEIPT_METHOD.returns }, description: receiptDescription(receiptTtlMs) }], [ai.MANIFEST_FIELD]: field }
   const size = byteLength(JSON.stringify(manifest))
   if (size > MANIFEST_LIMIT) throw new TapeAPIError('MANIFEST_INVALID', `the manifest would be ${size} bytes, over TAP-20's ${MANIFEST_LIMIT}; shorten the price table`)
   if (size > CONSOLE_MANIFEST_LIMIT) log(`the manifest is ${size} bytes; the holder console publishes at most ${CONSOLE_MANIFEST_LIMIT} in one transaction`)
 
-  const st = { requests: 0, receipts: 0, streams: 0, passThrough: 0, upstreamErrors: 0, upstreamFailures: 0, timeouts: 0, idleTimeouts: 0, tooLarge: 0, redirects: 0, rateLimited: 0, duplicateIds: 0, lookups: 0, misses: 0, usageInjected: 0, appended: 0, incomplete: 0 }
+  const st = { requests: 0, receipts: 0, streams: 0, passThrough: 0, upstreamErrors: 0, upstreamFailures: 0, timeouts: 0, idleTimeouts: 0, tooLarge: 0, redirects: 0, rateLimited: 0, duplicateIds: 0, lookups: 0, misses: 0, usageInjected: 0, appended: 0, incomplete: 0, receiptRateLimited: 0, guessableIds: 0 }
   const unpriced = new Set()
+  // The fewest bits an upstream id has shown (null until one is seen), and whether its ids look guessable: estimated
+  // below ID_ENTROPY_MIN_BITS, or one id seen twice while its receipts are kept. Said once in the log.
+  // 上游 id 出现过的最少比特（见到之前为 null），以及它的 id 是否像可猜的：估计低于 ID_ENTROPY_MIN_BITS，或同一 id 在回执保留期内
+  // 出现两次。日志里只说一次。
+  const ids = { minBits: null, guessable: false }
+  function guessable(why) {
+    if (ids.guessable) return
+    ids.guessable = true
+    log(`the upstream's response ids look guessable (${why}): anyone can walk through them with the free receipt method and read those receipts (model, usage, time and the two hashes). ${requireRequestHash ? 'requireRequestHash is on: a lookup must name the request hash too.' : 'Set requireRequestHash (RECEIPT_REQUIRE_HASH=1 in the Worker) so a lookup must name the request hash too, and consider a shorter receiptTtlMs.'}`)
+  }
+  function assessId(id) {
+    const bits = idEntropyBits(id)
+    if (ids.minBits === null || bits < ids.minBits) ids.minBits = bits
+    if (bits < ID_ENTROPY_MIN_BITS) { st.guessableIds++; guessable(`about ${bits} bits in ${JSON.stringify(id.slice(0, 80))}`) }
+  }
 
   // ---- the receipt store: insertion-ordered, bounded, each entry dated / 回执存储：按插入排序、有界、逐条带期限 ----
-  const receipts = new Map()   // id -> { env, exp }
-  function keep(env) {
-    const t = Date.now()
-    if (receipts.has(env.id)) {
-      // Two answers with one id (an upstream reusing ids): the later one is served; both were delivered inline.
-      // 同一 id 的两个回答（上游重复使用 id）：取回时给后一个；两者都已随回答送达。
-      if (st.duplicateIds++ === 0) log(`the upstream reused response id ${env.id.slice(0, 80)}; the receipt method serves the latest answer for an id`)
-      receipts.delete(env.id)
-    }
-    receipts.set(env.id, { env, exp: t + receiptTtlMs })
-    for (const [k, v] of receipts) { if (v.exp > t && receipts.size <= maxReceipts) break; receipts.delete(k) }
+  // Keyed by (id, requestSha256): two answers that share an id (an upstream reusing ids, or ids drawn from a small set)
+  // keep a receipt each. An id-only lookup gets the later one (TAP-21 §3.5); one that also names requestSha256 gets the
+  // receipt of that request. The same id for the same request bytes is a replay: the later receipt replaces the earlier.
+  // 按 (id, requestSha256) 存：共用一个 id 的两个回答（上游重复使用 id，或 id 取自很小的集合）各留一份回执。只给 id 的取回得到
+  // 后一个；同时给出 requestSha256 的得到那个请求的回执。同一 id、同样的请求字节是重放：后一份替换前一份。
+  const receipts = new Map()   // `${id}\n${requestSha256}` -> { env, exp }
+  const byId = new Map()       // id -> Set of keys above, oldest first / id -> 上述键的集合，旧的在前
+  const keyOf = (id, hash) => `${id}\n${hash}`
+  function drop(k) {
+    const e = receipts.get(k)
+    if (!e) return
+    receipts.delete(k)
+    const set = byId.get(e.env.id)
+    if (set) { set.delete(k); if (!set.size) byId.delete(e.env.id) }
   }
-  function lookup(id) {
-    const e = receipts.get(id)
+  function keep(env, upstreamId) {
+    const t = Date.now()
+    const k = keyOf(env.id, env.params.requestSha256)
+    if (byId.has(env.id)) {
+      // Two answers with one id: both are kept apart by their request hash; both were delivered inline.
+      // 同一 id 的两个回答：按请求哈希分开保存；两者都已随回答送达。
+      if (st.duplicateIds++ === 0) log(`the upstream reused response id ${env.id.slice(0, 80)}; each answer's receipt is kept under (id, requestSha256), and an id-only lookup serves the latest`)
+      if (upstreamId) guessable(`the id ${JSON.stringify(env.id.slice(0, 80))} came twice within ${lifetime(receiptTtlMs)}`)
+      drop(k)
+    }
+    receipts.set(k, { env, exp: t + receiptTtlMs })
+    if (!byId.has(env.id)) byId.set(env.id, new Set())
+    byId.get(env.id).add(k)
+    for (const [key, v] of receipts) { if (v.exp > t && receipts.size <= maxReceipts) break; drop(key) }
+  }
+  function lookup(id, hash) {
+    let k = null
+    if (hash !== undefined) k = keyOf(id, hash)
+    else { const set = byId.get(id); if (set) for (const x of set) k = x }   // the latest / 最新的
+    const e = k === null ? undefined : receipts.get(k)
     if (!e) return null
-    if (e.exp <= Date.now()) { receipts.delete(id); return null }
+    if (e.exp <= Date.now()) { drop(k); return null }
     return e.env
   }
 
@@ -244,7 +337,12 @@ export function createAIProxy(opts = {}) {
         st.lookups++
         const id = params?.id
         if (typeof id !== 'string' || !id || id.length > 256) throw new TapeAPIError('BAD_REQUEST', 'params.id must be the response id (the id of the answer, or of the receipt)')
-        const env = lookup(id)
+        // TAP-21 §3.5: the optional requestSha256 picks the receipt of that request among answers that share the id.
+        // 可选的 requestSha256 在共用 id 的回答里挑出那个请求的回执。
+        const hash = params?.requestSha256
+        if (hash !== undefined && (typeof hash !== 'string' || !HEX64_RE.test(hash))) throw new TapeAPIError('BAD_REQUEST', 'params.requestSha256, when given, must be 64 lowercase hex digits: the SHA-256 of the request body you sent')
+        if (hash === undefined && requireRequestHash) throw new TapeAPIError('BAD_REQUEST', 'this service answers a receipt lookup only with params.requestSha256 as well (the SHA-256 of the request body you sent), since answer ids can be guessed')
+        const env = lookup(id, hash)
         if (!env) { st.misses++; throw new TapeAPIError('BAD_REQUEST', `no receipt for ${id.slice(0, 128)}: receipts are kept for ${Math.round(receiptTtlMs / 60_000)} min, in this process only`) }
         return env
       },
@@ -274,11 +372,12 @@ export function createAIProxy(opts = {}) {
     if (usageInjected) r.usageInjected = true
     return r
   }
-  function signReceipt({ id, method, params, result }) {
+  function signReceipt({ id, method, params, result }, upstreamId = false) {
     const ts = Math.floor(Date.now() / 1000)
     const env = { id, ok: true, result, container, ts, method, params }
     env.sig = sig.signResponse({ container, id, method, params, ok: true, body: result, ts }, signerKey)
-    keep(env)
+    if (upstreamId) assessId(id)
+    keep(env, upstreamId)
     st.receipts++
     return env
   }
@@ -306,7 +405,7 @@ export function createAIProxy(opts = {}) {
     const signed = () => {
       injected = true
       const r = read.result()
-      const env = signReceipt({ id: goodId(r.id) ? r.id : newId(), method: format.method, params, result: resultOf({ format, read: r, requested, responseSha256: scanner.digest(), stream: true, status, usageInjected }) })
+      const env = signReceipt({ id: goodId(r.id) ? r.id : newId(), method: format.method, params, result: resultOf({ format, read: r, requested, responseSha256: scanner.digest(), stream: true, status, usageInjected }) }, goodId(r.id))
       return enc.encode(ai.receiptComment(env))
     }
     const release = () => { for (const b of held) emit(b); held = []; heldLen = 0 }
@@ -441,16 +540,19 @@ export function createAIProxy(opts = {}) {
     budget: Number(opts.rateLimit?.ip ?? Number(opts.rateLimit?.free ?? 600) + Number(opts.rateLimit?.paid ?? 6000)),
     max: Number(opts.rateLimit?.max ?? 50_000),
   }
-  const buckets = new Map()
-  function limited(ip) {
-    if (!rl || !rl.budget) return 0
+  // Fixed window, bounded map; returns the seconds to wait when over budget, else 0. / 固定窗口、有界表；超出预算时返回需等待的秒数。
+  function hit(buckets, key, budget, windowMs, max) {
     const t = Date.now()
-    let b = buckets.get(ip)
-    if (!b || t >= b.reset) { b = { n: 0, reset: t + rl.windowMs }; buckets.delete(ip); buckets.set(ip, b) }
+    let b = buckets.get(key)
+    if (!b || t >= b.reset) { b = { n: 0, reset: t + windowMs }; buckets.delete(key); buckets.set(key, b) }
     b.n++
-    while (buckets.size > rl.max) buckets.delete(buckets.keys().next().value)
-    return b.n > rl.budget ? Math.max(1, Math.ceil((b.reset - t) / 1000)) : 0
+    while (buckets.size > max) buckets.delete(buckets.keys().next().value)
+    return b.n > budget ? Math.max(1, Math.ceil((b.reset - t) / 1000)) : 0
   }
+  const buckets = new Map()
+  const limited = (ip) => (!rl || !rl.budget ? 0 : hit(buckets, ip, rl.budget, rl.windowMs, rl.max))
+  const receiptBuckets = new Map()
+  const receiptLimited = (ip) => (!receiptRl ? 0 : hit(receiptBuckets, ip, receiptRl.ip, receiptRl.windowMs, rl?.max ?? 50_000))
 
   async function proxy(request, path, clientIp) {
     st.requests++
@@ -471,7 +573,7 @@ export function createAIProxy(opts = {}) {
     const url = new URL(up.origin + upPath + path.slice(API_PREFIX.length - 1) + new URL(request.url).search)
     if (url.origin !== up.origin || !url.pathname.startsWith(upPath + '/')) return oaError(400, 'bad_path', 'bad path')
     const headers = new Headers()
-    for (const [k, v] of request.headers) if (ai.forwardsHeader(k, formats)) headers.set(k, v)
+    for (const [k, v] of request.headers) if (ai.forwardsHeader(k, formats) && (forwardSessionHeaders || !ai.isSessionHeader(k))) headers.set(k, v)
     for (const [k, v] of operatorHeaders) headers.set(k, v)
     // A format may change what goes upstream (to ask for usage); the receipt still hashes what the client sent.
     // 格式可以改变发往上游的内容（为了要到 usage）；回执哈希的仍是客户端发来的字节。
@@ -530,13 +632,31 @@ export function createAIProxy(opts = {}) {
     const env = signReceipt({
       id: goodId(r.id) ? r.id : newId(), method: format.method, params,
       result: resultOf({ format, read: r, requested, responseSha256: ai.sha256Hex(bytes), stream: false, status: res.status, usageInjected: !!prepared }),
-    })
+    }, goodId(r.id))
     out.set(ai.RECEIPT_HEADER, ai.encodeReceipt(env))
     return new Response(NULL_BODY.has(res.status) ? null : bytes, { status: res.status, statusText: res.statusText, headers: out })
   }
 
+  // The `receipt` method's own budget, checked before the provider reads the body, and refused like every rate limit:
+  // an unsigned HTTP 429 with Retry-After and { ok: false, error: { code: RATE_LIMITED, data: { retryAfterS } } }
+  // (TAP-21 §3.4). / receipt 方法自己的预算，在提供者读正文之前检查；超出时与所有限流一样回未签名的 429。
+  const RECEIPT_PATH = `/tapeapi/v1/${ai.RECEIPT_METHOD}`
+  function receiptRefusal(request, pathname, path, clientIp) {
+    if (!receiptRl || request.method !== 'POST') return null
+    if (pathname.replace(/\/+$/, '') !== RECEIPT_PATH && path?.replace(/\/+$/, '') !== RECEIPT_PATH) return null
+    const wait = receiptLimited(clientIp || 'unknown')
+    if (!wait) return null
+    st.receiptRateLimited++
+    return new Response(JSON.stringify({ ok: false, error: { code: 'RATE_LIMITED', message: `too many receipt lookups; retry in ${wait}s`, data: { retryAfterS: wait } } }), {
+      status: 429, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'retry-after': String(wait) },
+    })
+  }
+
   async function handleRequest(request, { clientIp } = {}) {
-    const path = ai.apiPath(new URL(request.url).pathname, rootPath)
+    const pathname = new URL(request.url).pathname
+    const path = ai.apiPath(pathname, rootPath)
+    const refused = receiptRefusal(request, pathname, path, clientIp)
+    if (refused) return refused
     if (path && path.startsWith(API_PREFIX)) {
       if (request.method === 'OPTIONS') return preflight(request)
       try { return await proxy(request, path, clientIp) } catch (e) {
@@ -558,7 +678,7 @@ export function createAIProxy(opts = {}) {
     manifest: () => manifest,
     stats: () => ({
       ready: true, version: VERSION, upstream: label, endpoints: field.endpoints.map((e) => ({ ...e })), formats: formats.map((f) => f.name), models: field.models.length, receiptsKept: receipts.size,
-      ...st, unpricedModels: [...unpriced], provider: provider.stats(),
+      ...st, idEntropyMinBits: ids.minBits, guessableIdsSeen: ids.guessable, requireRequestHash, forwardSessionHeaders, unpricedModels: [...unpriced], provider: provider.stats(),
     }),
   }
 }

@@ -164,6 +164,15 @@ export const formatFor = (verb, path, formats = FORMATS) => (typeof path === 'st
  */
 export const FORWARD_HEADERS = Object.freeze(['content-type', 'accept', 'user-agent', 'x-app', 'x-claude-code-session-id', 'session-id', 'thread-id', 'originator', 'x-client-request-id', 'anthropic-dangerous-direct-browser-access', 'content-encoding'])
 export const FORWARD_PREFIXES = Object.freeze(['x-codex-', 'x-stainless-'])
+/**
+ * The session headers among those: they tie a caller's requests into one conversation for whoever receives them (Claude
+ * Code's x-claude-code-session-id, Codex's session-id, thread-id). Forwarded by default, as the clients expect; the
+ * sidecar (forwardSessionHeaders: false) and tapeapi-verify (--strip-session-headers) can leave them out.
+ * 其中的会话头：把同一个调用方的请求串成一段对话。默认转发（客户端期望如此）；旁路与 tapeapi-verify 可以不转发。
+ */
+export const SESSION_HEADERS = Object.freeze(['x-claude-code-session-id', 'session-id', 'thread-id'])
+/** Is this one of SESSION_HEADERS? / 是否为会话头。 */
+export const isSessionHeader = (name) => SESSION_HEADERS.includes(String(name).toLowerCase())
 const NEVER_FORWARD = new Set(['cookie', 'cookie2', 'forwarded', 'x-real-ip', 'host', 'content-length', 'connection', 'keep-alive', 'proxy-connection', 'proxy-authorization', 'proxy-authenticate', 'te', 'trailer', 'transfer-encoding', 'upgrade'])
 /** Does a proxy pass this caller header upstream (for these formats)? / 代理是否把这个调用方请求头转发到上游？ */
 export function forwardsHeader(name, formats = FORMATS) {
@@ -775,6 +784,63 @@ export function verifyUsageReceipt({ envelope, manifest, requestBytes, responseB
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Request salt / 请求加盐
+// ---------------------------------------------------------------------------------------------------------------
+/** How many whitespace characters saltRequestBody appends: 64, two random bits each, 128 bits. / 追加的空白字符数。 */
+export const SALT_LENGTH = 64
+// The four characters JSON allows between tokens (RFC 8259 §2): space, tab, line feed, carriage return.
+// JSON 允许出现在记号之间的四个字符：空格、制表、换行、回车。
+const JSON_WS = Object.freeze([0x20, 0x09, 0x0a, 0x0d])
+const isWs = (b) => b === 0x20 || b === 0x09 || b === 0x0a || b === 0x0d
+/**
+ * A JSON request body with SALT_LENGTH random whitespace characters appended, or null when the body is left alone.
+ *
+ * Why: a receipt carries `requestSha256`, the SHA-256 of the exact request bytes, and the official SDKs serialise a
+ * request deterministically, so a short prompt ("yes", one word to embed, a question from a known list) can be confirmed
+ * from a receipt by hashing guesses (TAP-21 §8). 128 random bits after the JSON text make the hash unguessable. What the
+ * upstream parses is unchanged: RFC 8259 allows whitespace after the value, so the parsed request (every field,
+ * `user` and `metadata.user_id` included) is identical, no token is added, and prompt caching, which keys on the
+ * parsed prompt's tokens (OpenAI's prefix cache, Anthropic's `cache_control`), sees the same prompt. No field is added
+ * or changed, since `user` and `metadata.user_id` steer cache routing and abuse tracking upstream. `requestSha256` is
+ * the hash of the salted bytes, which are the bytes actually sent. That every upstream accepts the trailing whitespace
+ * is what the JSON grammar says; it has not been measured against the live APIs of the three formats here.
+ *
+ * Left alone (null): an empty body; a body with a Content-Encoding other than identity (compressed bytes are not JSON
+ * text, and appending would corrupt them); a Content-Type that is not JSON; bytes that are not a JSON text in UTF-8.
+ *
+ * 为什么：回执带 requestSha256，即确切请求字节的 SHA-256；官方 SDK 的序列化是确定的，所以短提示词（"是"、一个要做嵌入的词、
+ * 已知问题清单里的一问）可以通过对猜测取哈希、从回执上确认（TAP-21 §8）。JSON 文本之后的 128 个随机比特让哈希无法猜测。上游解析
+ * 出来的内容不变：RFC 8259 允许值之后出现空白，所以解析出的请求（每个字段，包括 user 与 metadata.user_id）完全相同，不增加任何
+ * token；提示词缓存按解析后提示词的 token 取键（OpenAI 的前缀缓存、Anthropic 的 cache_control），看到的是同一个提示词。不增加也
+ * 不修改任何字段：user 与 metadata.user_id 在上游影响缓存路由与滥用追踪。requestSha256 是加盐后字节的哈希，也就是实际发出的字节。
+ * 各上游都接受尾随空白是 JSON 语法所规定的；这里没有对三种格式的线上接口实测过。
+ * 不处理（返回 null）：空正文；Content-Encoding 不是 identity 的正文（压缩后的字节不是 JSON 文本，追加会破坏它）；Content-Type 不是
+ * JSON；不是 UTF-8 JSON 文本的字节。
+ *
+ * @param {Uint8Array} bytes  the request body as it would be sent / 原本要发出的请求正文
+ * @param {Headers|Record<string, string>} [headers]  the request's headers / 请求头
+ * @returns {Uint8Array|null}
+ */
+export function saltRequestBody(bytes, headers) {
+  if (!(bytes instanceof Uint8Array) || !bytes.length) return null
+  const h = headers instanceof Headers ? headers : new Headers(headers || {})
+  const coding = (h.get('content-encoding') || '').trim().toLowerCase()
+  if (coding && coding !== 'identity') return null
+  const type = h.get('content-type')
+  if (type && !/(^|[/+])json\b/i.test(type)) return null
+  let i = 0
+  while (i < bytes.length && isWs(bytes[i])) i++
+  if (bytes[i] !== 0x7b && bytes[i] !== 0x5b) return null   // an object or an array / 对象或数组
+  try { JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) } catch { return null }
+  const r = new Uint8Array(SALT_LENGTH / 4)
+  crypto.getRandomValues(r)
+  const out = new Uint8Array(bytes.length + SALT_LENGTH)
+  out.set(bytes)
+  for (let k = 0; k < SALT_LENGTH; k++) out[bytes.length + k] = JSON_WS[(r[k >> 2] >> ((k & 3) * 2)) & 3]
+  return out
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // A verifying fetch for official SDKs / 给官方 SDK 用的核验 fetch
 // ---------------------------------------------------------------------------------------------------------------
 async function bodyBytes(url, init) {
@@ -808,11 +874,16 @@ async function bodyBytes(url, init) {
  * sidecarError: true and thrown (strict) as PROVIDER_UNAVAILABLE, or RATE_LIMITED for its 429; it is never verified.
  * 旁路自己产生的回答（带 SIDECAR_ERROR_HEADER、没有回执）是传输失败：报告 sidecarError，严格模式下抛 PROVIDER_UNAVAILABLE
  * （429 为 RATE_LIMITED）；它永远不算已核验。
+ * @param {boolean} [o.salt=true]  append SALT_LENGTH random whitespace characters to a JSON request body on a receipt path
+ *        (saltRequestBody: the parsed request is unchanged, the request hash becomes unguessable); compressed and
+ *        non-JSON bodies are sent as they are. false: send the bytes exactly as given. Reports carry `salted`.
+ *        在回执路径上的 JSON 请求正文末尾追加随机空白（解析出的请求不变，请求哈希无法猜测）；压缩或非 JSON 正文原样发送。
+ *        false：完全按给定字节发送。报告带 salted。
  * @param {boolean} [o.strict=true]  throw (or error the stream) on any problem; false: report only / 有问题即抛错；false 只报告
  * @param {number} [o.maxSkewS=300]  the receipt's ts must be this close to now / 回执时间与当前时间的最大偏差
  * @param {object[]} [o.formats]  the adapters (default FORMATS) / 适配器
  */
-export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport, strict = true, maxSkewS = 300, formats = FORMATS } = {}) {
+export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport, strict = true, maxSkewS = 300, formats = FORMATS, salt = true } = {}) {
   const doFetch = fetchImpl || ((...a) => globalThis.fetch(...a))
   let svc = isObj(service) && isObj(service.manifest) ? service : null
   let resolving = null
@@ -876,10 +947,18 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
       init = { method: req.method, headers: req.headers, body: new Uint8Array(await req.arrayBuffer()), signal: req.signal }
     }
     const got = await bodyBytes(url, init)
-    const requestBytes = got instanceof Uint8Array ? got : got.bytes
+    let requestBytes = got instanceof Uint8Array ? got : got.bytes
     const sendInit = { ...init, body: requestBytes }
     if (!(got instanceof Uint8Array) && got.contentType) {
       const h = new Headers(init.headers); if (!h.has('content-type')) h.set('content-type', got.contentType); sendInit.headers = h
+    }
+    // The salt goes on the bytes that are sent, and the request hash is checked over exactly those bytes.
+    // 盐加在实际发出的字节上，请求哈希也按这些字节核对。
+    let salted = false
+    if (salt) {
+      const h = new Headers(sendInit.headers)
+      const more = saltRequestBody(requestBytes, h)
+      if (more) { requestBytes = more; salted = true; h.delete('content-length'); sendInit.headers = h; sendInit.body = more }
     }
     const res = await doFetch(url, sendInit)
     const type = (res.headers.get('content-type') || '').toLowerCase()
@@ -891,7 +970,7 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
       if (res.headers.get(SIDECAR_ERROR_HEADER) === '1' && !res.headers.get(RECEIPT_HEADER)) {
         let why = ''
         try { why = String(JSON.parse(new TextDecoder().decode(bytes))?.error?.message ?? '').slice(0, 200) } catch { /* not JSON */ }
-        const rep = { ok: false, sidecarError: true, code: res.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_UNAVAILABLE', problems: [`the sidecar answered HTTP ${res.status} itself${why ? ` (${why})` : ''}: no upstream answer, no receipt`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: res.status }
+        const rep = { ok: false, sidecarError: true, code: res.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_UNAVAILABLE', problems: [`the sidecar answered HTTP ${res.status} itself${why ? ` (${why})` : ''}: no upstream answer, no receipt`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: res.status, salted }
         report(rep)
         if (strict) throw failure(rep)
         return new Response(bytes, { status: res.status, statusText: res.statusText, headers: res.headers })
@@ -900,7 +979,7 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
       try { envelope = decodeReceiptHeader(res.headers.get(RECEIPT_HEADER)) } catch (e) { headerError = e.message }
       const r = await check(s, { ...common, envelope, responseBytes: bytes, stream: false })
       if (headerError && !envelope) r.problems.splice(0, r.problems.length, headerError === 'no receipt' ? `no ${RECEIPT_HEADER} header` : headerError)
-      const rep = { ...r, url, stream: false, status: res.status }
+      const rep = { ...r, url, stream: false, status: res.status, salted }
       report(rep)
       if (!rep.ok && strict) throw failure(rep)
       return new Response(res.status === 204 || res.status === 205 || res.status === 304 ? null : bytes, { status: res.status, statusText: res.statusText, headers: res.headers })
@@ -926,13 +1005,13 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
           if (r.ok) break
         }
         if (!rep) rep = { ok: false, problems: ['no tapeapi-receipt comment in the event stream'], warnings: [], unchecked: [], receipt: null }
-        rep = { ...rep, url, stream: true, status: res.status }
+        rep = { ...rep, url, stream: true, status: res.status, salted }
         report(rep)
         if (!rep.ok && strict) controller.error(failure(rep))
       },
       // The consumer stopped reading (break, abort): nothing to verify, which is not a receipt problem.
       // 消费方停止读取（break、abort）：没有可核验的内容，这不是回执问题。
-      cancel() { if (!finished) report({ ok: false, incomplete: true, problems: [], warnings: ['the stream was not read to the end; its receipt was not checked'], unchecked: ['request', 'response'], receipt: null, url, stream: true, status: res.status }) },
+      cancel() { if (!finished) report({ ok: false, incomplete: true, problems: [], warnings: ['the stream was not read to the end; its receipt was not checked'], unchecked: ['request', 'response'], receipt: null, url, stream: true, status: res.status, salted }) },
     }))
     const headers = new Headers(res.headers)
     headers.delete('content-length')

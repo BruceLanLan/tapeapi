@@ -93,7 +93,8 @@ result looks like this (the link shortened):
 
 Signed by TapeAPI service 11.1013.tape (container 0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8, signer
 0xaB70dEe8e1CEabb1D10eDFeBcbe0c313c53cf154) at BNB Chain block 124374251. Anyone can verify this signature against
-the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2aWNl...
+the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoyLCJzZXJ2aWNl... (The link carries hashes only,
+not the params or result.)
 ```
 
 ## The local verifying command
@@ -102,7 +103,7 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoxLCJzZXJ2a
 it from the GitHub release, not from the npm registry:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 What it does differently from the remote server:
@@ -133,7 +134,7 @@ Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -153,7 +154,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -165,7 +166,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### Remote or local
@@ -197,13 +198,29 @@ Open the verification link. The receipt travels in the part of the URL after `#`
 server. The page at `https://tapeapi.fun/verify/` resolves the service from the chain in your browser, recovers the
 signer from the signature, checks it against the holder's delegation, and shows the result.
 
+### Two forms of the link
+
+- **Hashes only (the default).** The link carries the receipt with `params` and `result` (or `error`) replaced by the
+  two hashes the signature is computed over: `requestHash` = keccak256 of the canonical `{ method, params }`,
+  `bodyHash` = keccak256 of the canonical result. The page rebuilds the TAP-21 digest from them, so it checks who
+  signed, for which service, and when, but whoever gets the link does not see what was asked or answered. `method` is
+  shown as the receipt states it: it is bound only through `requestHash`, together with the params.
+- **With content** (`verifyLink(receipt, base, { content: true })`, `linkContent: true` on the server,
+  `tapeapi-mcp --link-content`). The whole receipt is in the link: the page shows the params and the result, and so
+  does everyone the link is passed to.
+- **Hashes hide only what cannot be guessed.** Params drawn from a small set (an address, a token id, a price pair) and
+  short results can be confirmed by hashing the candidates. Treat a hash-only link to such a call as revealing it.
+- The receipt in `_meta["fun.tapeapi/receipt"]` is always the whole one: it goes to the MCP client that made the call.
+- The verification page is static files (`site/verify/`); `verifyLink(receipt, base)` takes your own copy's address as
+  `base`, so you can check receipts on a page you host yourself.
+
 ### Offline, with the SDK
 
 Save the receipt (the `_meta["fun.tapeapi/receipt"]` object) as `receipt.json`. Install the SDK from the GitHub
 release, or work inside a clone of the repository as in [Call a service](consume.md):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz
 ```
 
 ```js
@@ -276,6 +293,7 @@ export default {
 - `/mcp` is a route on your server, not part of the manifest, so adding it changes nothing on chain and needs no
   republish.
 - `identity.name` is the TapeOut name shown in results and receipts.
+- Verification links carry hashes only; `linkContent: true` puts the params and results in them, in clear.
 
 ## Tape out your own MCP server
 
@@ -366,7 +384,7 @@ isolate can be restarted at any time. With it, changed tools are refused after a
   or later):
 
   ```bash
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.6.0/tapeapi-sdk-0.6.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### What clients check
