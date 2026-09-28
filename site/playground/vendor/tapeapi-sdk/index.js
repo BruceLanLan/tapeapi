@@ -24,6 +24,7 @@ export { TapeAPIError, createRpc, canonicalJSON, safeParseJSON, validateManifest
 export * as abi from './abi.js'
 export * as sig from './sig.js'
 export * as channel from './channel.js'   // TAP-26 real-time private channel / 实时私密通道
+export * as busPrivacy from './bus-privacy.js'   // ChannelBus reads that hide your rooms among cover rooms / 以掩护房间降低通道读取的关联性
 import * as channelLib from './channel.js'
 export * as group from './group.js'        // TAP-27 private group channels / 私密群聊
 // TAP-27 delivery in one call: epoch message to the group room AND invites to each member's inbox room / 一步投递

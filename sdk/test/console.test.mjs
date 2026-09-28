@@ -691,7 +691,7 @@ test('the page: an MCP service is published only after the page read and hashed 
   const send = pub.indexOf('eth_sendTransaction')
   assert.ok(at(/C\.manifestProblems\(served, s\)/) < at(/C\.fetchMcpTools\(sm\.mcp\.endpoint\)/), 'the served manifest (and its mcp shape) is checked first')
   assert.ok(at(/C\.fetchMcpTools\(sm\.mcp\.endpoint\)/) < at(/C\.mcpToolsProblems\(\{ mcp: sm\.mcp, methods: sm\.methods, tools \}\)/))
-  assert.ok(at(/C\.mcpToolsProblems/) < at(/C\.manifestText\(\{ \.\.\.s, name: sm\.name, methods: sm\.methods, mcp: sm\.mcp \}\)/), 'the page publishes the mcp field it checked')
+  assert.ok(at(/C\.mcpToolsProblems/) < at(/C\.manifestText\(\{ \.\.\.s, name: sm\.name, methods: sm\.methods, mcp: sm\.mcp, ai: sm\.ai \}\)/), 'the page publishes the mcp field it checked')
   const shown = at(/if \(tools\) showTools\(out, sm\.mcp, tools\)/)
   assert.ok(shown > 0 && shown < send, 'every tool is on screen before the wallet asks')
   assert.match(pub, /CORS/, 'a failed read says the endpoint must allow cross-origin requests, and publishes nothing')

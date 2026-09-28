@@ -89,10 +89,9 @@ compose 文件，放在同一个网络里，`UPSTREAM_BASE_URL` 指向你的 new
    日志里出现 `signer …, container …, delegation until …` 和四个端点，旁路就开始签回执了。
 4. 第 5 步把清单写上链。
 
-> **现状，请注意**：截至本包发布时（2026-09-28），操作台**还不能发布带 `ai` 字段的清单**。它只接受自己构造的字段
-> （外加形状完全符合的 `mcp`），遇到 `ai` 会报 “unexpected field "ai"”，不发交易。第 1 到 4 步（密钥、委托）可以照常使用，
-> 旁路也会照常签回执；但清单上不了链，按 TapeOut 名字在链上解析这个服务的客户端（`tapeapi-verify`、SDK 的
-> `createVerifyingFetch` 加 `api.resolve`）就找不到它。操作台支持 `ai` 字段后，本页会更新。
+> 第 5 步会按 SDK 的规则核对清单里的 `ai` 字段，在钱包请求之前把接口地址和价目表列成表（异常价格只提示、不拦截），发布后从链上
+> 回读核对。可以先在第 5 步粘贴或上传你的 `models.json` 预览；详见
+> [AI 服务方指南](../../docs/guides/zh-CN/ai-providers.md)的“用控制台发布价目表”。
 
 **4. 告诉你的用户**
 
@@ -108,7 +107,7 @@ compose 文件，放在同一个网络里，`UPSTREAM_BASE_URL` 指向你的 new
 把客户端指向它：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
 
@@ -248,12 +247,10 @@ repository (the image is built from it): `git clone https://github.com/BruceLanL
    `docker compose up -d` again; once the log shows `signer …, container …, delegation until …` and the four endpoints,
    the sidecar signs receipts. Step 5 publishes the manifest on chain.
 
-   > **Current state, please note**: as of this package (2026-09-28) the console **cannot publish a manifest with an
-   > `ai` field**. It accepts only the fields it builds itself (plus an `mcp` field of exactly its shape) and refuses
-   > `ai` with "unexpected field "ai"", sending no transaction. Steps 1 to 4 (key, delegation) work and the sidecar signs
-   > receipts, but the manifest does not reach the chain, so clients that resolve the service by its TapeOut name
-   > (`tapeapi-verify`, the SDK's `createVerifyingFetch` with `api.resolve`) cannot find it. This page will be updated
-   > when the console supports the `ai` field.
+   > Step 5 checks the manifest's `ai` field by the SDK's rules, shows the endpoints and the price table before the
+   > wallet asks (unusual prices are hinted at, never refused), and reads the manifest back from the chain once it is
+   > published. You can paste or upload your `models.json` in step 5 first to preview it; see "Publish the price table
+   > with the console" in the [AI provider guide](../../docs/guides/ai-providers.md).
 4. **Tell your users.** Same tokens (issued by new-api), new base URL: OpenAI SDKs and OpenAI-compatible tools use
    `https://api.example.com/v1`; the Anthropic SDK and Claude Code use `ANTHROPIC_BASE_URL=https://api.example.com`
    (no `/v1`) with `ANTHROPIC_AUTH_TOKEN=<new-api token>`; Codex uses `base_url = "https://api.example.com/v1"` with

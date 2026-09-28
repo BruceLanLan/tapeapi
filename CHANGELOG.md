@@ -6,6 +6,74 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-28
+
+### ChannelBus read privacy: contract-wide reads by default, cover rooms as the fallback
+
+- **`busPrivacy.busPrivacyReader`** (new module `sdk/src/bus-privacy.js`, subpath `@tapeapi/sdk/bus-privacy`): the
+  options and the reader of `channel.busReader`, plus `mode`, `cover`, `contract`, `setMode()`, `covers` and
+  `stats().privacy`. It wraps the rpc client busReader reads through, so busReader's own reading code (ranges, union,
+  confirmations, overlap, hold never skip) runs unchanged; `sdk/src/channel.js` is not touched.
+  - `mode: 'contract'` (the default): no room topic at all (`topics: [Wire]`); every frame on the bus is downloaded and
+    filtered locally, so a node learns only that the IP reads ChannelBus. It needs no cover pool, so the first poll
+    waits only for its own `lookback` read. Bounded per poll (`contract.maxBytes` 8 MiB, `maxLogs` 10,000, over every
+    node's answer); over it, `contract.onExceed: 'cover'` (the default) falls back to cover rooms and warns, and
+    `'error'` stops the reader with `BUS_BUDGET` (frames already read are handed over either way). Default because the
+    mainnet ChannelBus carried one log in 500,000 blocks on 2026-09-28: no rooms to draw covers from, and a
+    contract-wide read cost almost nothing.
+  - **Coming back, with hysteresis.** After a fallback the reader returns to `'contract'` by itself once it has spent
+    `contract.retryMs` in `'cover'` (30 min, doubled after each relapse soon after a return, at most 24 h) and a pool
+    refresh made after the fallback shows a poll's traffic at or under half the budget; `retryMs: null` never returns.
+    Covers are drawn once and kept, so the switching shows no new room sets; covers drawn at a fallback come first from
+    rooms seen in quiet contract polls, not from the junk that caused it. `stats().privacy.fallback` reports it.
+  - `mode: 'cover'`: each of your rooms goes out among `k` rooms (default 8), the others real rooms seen in the bus's
+    last 40,000 blocks of logs (read with queries that name no room), in quiet contract polls, or in `cover.pool`, in a
+    fresh random order on every request, catch-up reads of rooms added later included. Cover rooms' logs are dropped
+    before the scanner parses them: never decoded, decrypted or kept. Covers are drawn once per room and kept for the
+    reader's life, and across restarts with `cover.store`, because changing them lets a node intersect requests. Too
+    few covers is never passed off as cover: the reader warns once per change (`effectiveK`, `short`), or throws
+    `BUS_PRIVACY` before sending anything with `cover.onShort: 'error'`. Its pool scan costs one request per 5,000
+    blocks (3-6 s each on 48 Club), about 25-50 s before a fresh process's first read; `cover.scanBlocks` lowers it.
+  - `mode: 'plain'`: busReader as before.
+  - `scanCoverPool` and `plausibleRoom` are exported too. Tests: `sdk/test/bus-privacy.test.mjs`.
+- **No existing default changes.** Nothing in the SDK builds a `busReader` for you (`checkGroupInvites` reads relays), so
+  no existing call changes behaviour; `busReader` and `busTransport` still name your rooms. The guides now point bus
+  readers to `busPrivacyReader`; `mode: 'plain'` gives busReader's behaviour through it.
+- Docs: "Read privacy" in `docs/guides/channels.md` and the Chinese guide (the default and why, the first read, falling
+  back and coming back, what `k` means, what it helps against and what it does not). TAP-26 §8 gains a non-normative
+  note, "Node correlation", in both languages; no MUST/SHOULD/MAY changed.
+
+### Holder console: AI price tables
+
+- **The console publishes a manifest with an `ai` field** (TAP-20 §3.9). `site/console/lib.js` gains `aiProblems` and
+  `normalizeAI`, a line-for-line port of the SDK's `validateAIField` (the page loads no library): the same verdict, the
+  same first message and the same normalised bytes, checked in `sdk/test/console-ai.test.mjs` on every valid and invalid
+  sample of the SDK tests, the receipt vectors' table, the spec's example, `models.example.json` and 4,000 random
+  mutations of them. `manifestProblems` and `expectedManifest` accept `ai` in its normalised form (what the sidecar
+  serves); anything else new is still refused.
+- **The price table before the wallet asks.** Step 5 shows every API format's address and every model's id, aliases and
+  per-currency input, output, cache read, cache write, 1-hour cache write and reasoning prices per 1M tokens, with the
+  spec's defaults marked (`aiPriceTable`). Hints, never refusals: a price of 0, a price above a per-currency threshold
+  (`AI_HUGE`), output below input, a cache read above input, endpoints clients ignore, `USD` for display only, a table
+  near the one-transaction limit. Bilingual, with the page's language switch.
+- **Import.** Paste or upload a `models.json` (the new-api sidecar's bare array, converted by `modelsToAIField` on the
+  step-4 service URL exactly as the sidecar builds its endpoints), an `ai` field, or a whole manifest (`aiFieldOf`). A
+  previewed table must equal the served one (`aiDiff`) or nothing is published.
+- **Read back after publishing.** Once the `putFile` transaction is mined, the page reads the manifest back from the
+  chain (length and SHA-256 against the SiteRegistry) and compares it with the bytes sent, price table included
+  (`readBackProblems`); a lagging node gets a few tries and a mismatch says to check again later.
+- **Multi-chain.** On X Layer and Base the page states that payments are not open and the prices are for display only.
+- Docs: "Publish the price table with the console" in `docs/guides/ai-providers.md` (and the Chinese guide); the
+  "console cannot publish `ai`" notes there and in `examples/new-api-sidecar/README.md` are gone.
+
+### Fixed
+
+- **A page's own modules are content-stamped too.** Cloudflare caches `.js` for 4 hours; pages stamped the scripts
+  they load (`console.js?v=…`) but not what those scripts import (`./lib.js`), so after a release a returning visitor
+  could run the new `console.js` against a stale `lib.js` and the page would fail to load. `scripts/version-assets.mjs`
+  now stamps every relative import in `site/` modules, leaves first, so any change below a page changes the page's
+  own reference; vendored code is left alone so one module is never loaded under two URLs.
+
 ## [0.7.0] — 2026-09-28
 
 ### Privacy hardening
@@ -321,7 +389,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.4.0...v0.5.0

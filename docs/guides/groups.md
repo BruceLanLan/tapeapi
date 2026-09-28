@@ -139,7 +139,7 @@ for (const { invite } of found.invites) {
 | What stays | rooms in memory, forgotten 15 minutes after the last access | events on chain, public for ever |
 | Limits | invites and epoch messages: 8 per source per room per 10 minutes on the reference relay | up to 16,448 bytes per post |
 | Owner | `relay: { api, svc, payer? }` | `bus: { address: MAINNET.channelBus, sendTx }`: your wallet sends, one transaction per room |
-| Member | `checkGroupInvites({ relay })`, `channel.relayTransport` | `channel.busTransport` / `channel.busReader` on `channel.inboxRoom(...)` and `group.room` |
+| Member | `checkGroupInvites({ relay })`, `channel.relayTransport` | `busPrivacy.busPrivacyReader` (reads the whole contract by default, see [Read privacy](channels.md#5-read-privacy)) or `channel.busReader` on `channel.inboxRoom(...)` and `group.room` |
 
 Name both in `createGroup({ relays, bus })` and deliver over both when the group matters: a member can read either.
 

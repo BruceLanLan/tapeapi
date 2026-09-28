@@ -77,9 +77,26 @@ docker compose up -d
 完成：连接持有电路的钱包，生成服务密钥（它就是旁路的 `SIGNER_KEY`），签委托（操作台从旁路设置模式的健康检查里读出签名地址；
 委托有效 90 天），然后把清单发布上链。
 
-**现状：** 持有人操作台目前还不能发布带 `ai` 字段的清单。它的发布步骤只接受自己构造的字段（外加形状完全符合的 `mcp` 字段），
-所以会拒绝旁路的清单，不发交易。生成密钥、签委托可以照常进行，旁路也会照常签回执；但清单上链之前，按 TapeOut 名字解析服务的
-客户端找不到它。情况变化时本指南会更新。
+### 用控制台发布价目表
+
+操作台第 5 步发布旁路的清单，包括 `ai` 字段：
+
+1. **预览（可选，不需要钱包）。** 在第 5 步粘贴或上传 `models.json`（旁路的价目表，一个模型数组）、`ai` 字段本身，或整份清单。
+   `models.json` 里没有接口地址，页面按第 4 步的服务网址为每种格式补上一个端点，与旁路的做法完全相同（OpenAI 各格式加 `/v1`，
+   Anthropic Messages 就是服务根）。页面按与 SDK 的 `validateAIField` 相同的规则（TAP-20 §3.9）核对，并列成表：每种接口格式及其
+   地址；每个模型的 id、别名，以及各币种的输入、输出、缓存读、缓存写、1 小时缓存写与推理价格，单位都是每 1M tokens。清单没有单列的
+   价格以灰色斜体显示规范给它的值（缓存价缺省取 `input`，1 小时缓存写取 `cacheWrite`，推理取 `output`）。
+2. **只提示，不拦截。** 表格里高亮、表格下面列出可能填错的地方：价格为 0；价格远高于任何模型（按币种，例如每 1M tokens 高于
+   1,000 USDT：是不是漏了小数点？）；输出价低于输入价；缓存读比输入贵；客户端会忽略的端点；`USD`（只作展示）；价目表太大、一笔
+   交易装不下。这些都不会阻止发布，由你决定。
+3. **核对并发布。** 页面读取旁路提供的清单，照旧逐项核对，并按 SDK 的规则核对 `ai` 字段；如果你预览过价目表，服务提供的必须与它
+   一字不差。页面再展示一次价目表，然后请钱包确认那一笔 `SiteRegistry.putFile` 交易。第 4 步的委托只覆盖签名密钥，把价格写上链的
+   是这笔交易。
+4. **回读核对。** 交易上链后，页面像每个客户端一样从链上读回清单（长度与 SHA-256 对照 SiteRegistry），确认链上的字节（包括价目表）
+   正是它发出的。
+
+价格在所有链上都只是公示，不结算。操作台可以在 BNB Chain、X Layer 与 Base 上发布；X Layer 与 Base 上支付暂不开放，页面会写明：
+那里的价目表只作展示。按 TAP-20 §3.9，币种 `BNB`、`USDT`、`USDC`、`ETH`、`USD1` 指 BNB Chain 上的代币。
 
 **续期。** 在委托的最后 30 天内续期：操作台第 4 步选“续期”（服务密钥不变），设置新的 `DELEGATION_EXPIRES` 与 `DELEGATION_SIG`，
 重启旁路，再发布一次清单。委托过期后服务会停止，直到续期。
@@ -110,12 +127,12 @@ const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
 **Claude Code 与 Codex 用户**自己读不到回执。他们在本机运行核验代理 `tapeapi-verify`，把客户端指向它：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
 
 它在链上解析你的服务，回答原样透传，每次调用打印一行结论；加 `--strict` 时，核验失败会变成客户端看得到的错误。单份回执也可以贴到
-[核验页](https://tapeapi.fun/verify/)。这些都需要你的清单已经上链（见上面的现状）。
+[核验页](https://tapeapi.fun/verify/)。这些都需要你的清单已经上链（操作台第 5 步，见上文）。
 
 **请求加盐（两者默认开启）。** 回执带 `requestSha256`，即确切请求字节的 SHA-256，而官方 SDK 每次都用同样的方式序列化请求。于是
 短提示词（"是"、一个要做嵌入的词、已知问题清单里的一问）可以通过对猜测取哈希，从别人分享的回执上确认出来。所以 `createVerifyingFetch`

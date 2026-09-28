@@ -96,7 +96,97 @@ receipts) in a client of its own: `createRpc({ urls: BUS_RPC_URLS, quorum: 2, ti
 the reader read a real frame 73,700 blocks back (2026-09-27). The reader's tests include recorded answers from
 publicnode and the dataseed nodes. The relay transport does not depend on any of this.
 
-## 5. Limits
+## 5. Read privacy
+
+`busTransport` and `busReader` ask every node for your rooms by name: one `eth_getLogs` whose room topic lists them,
+sent to each of the 2 to 4 operators of the client. Each node therefore sees "this IP reads these rooms", and an inbox
+room is derived from a container address (`channel.inboxRoom`), so the node can put a container on the IP.
+`busPrivacy.busPrivacyReader` takes the same options and returns the same reader as `busReader`, and changes only what
+the nodes are asked. It lowers how easily a node links your IP to your rooms; it does not hide that you read ChannelBus,
+when, or how much.
+
+```js
+import { busPrivacy, channel, createRpc, BUS_RPC_URLS, MAINNET } from '@tapeapi/sdk'
+
+const rpc = createRpc({ urls: BUS_RPC_URLS, quorum: 2, timeoutMs: 15000 })
+const reader = busPrivacy.busPrivacyReader({
+  rpc, bus: MAINNET.channelBus,
+  rooms: [channel.inboxRoom(myContainer)],
+  cover: { store: myStore },      // any { get, set }: keeps the same covers across restarts, should it fall back
+})
+reader.start((wire, { room }) => { /* only your rooms' frames arrive here */ })
+console.log(reader.stats().privacy)   // { mode, k, effectiveK, short, pool, fallback, ... }
+```
+
+| `mode` | What each node sees | Cost |
+|---|---|---|
+| `'contract'` (default) | No room at all: every frame on the bus is downloaded and filtered on your machine. The node learns only "this IP reads ChannelBus". | All the bus's traffic, bounded per poll by `contract.maxBytes` / `maxLogs` (8 MiB, 10,000 logs, counted over every node's answer). Over it, the reader falls back to `'cover'` and says so (`contract.onExceed: 'error'` stops it with `BUS_BUDGET` instead). |
+| `'cover'` | Each of your rooms among `k` rooms (default 8): yours plus `k − 1` rooms other people really used on the bus, in a fresh random order on every request. | You download the frames of the cover rooms too (dropped at once, never decrypted or kept). |
+| `'plain'` | Your rooms by name: `busReader` as before. | None. |
+
+**Why `'contract'` is the default.** On 2026-09-28 the mainnet ChannelBus had carried one log in 500,000 blocks (the
+deploy probe), so there were no rooms to draw covers from, while reading the whole contract cost almost nothing. Pass
+`mode: 'cover'` or `'plain'` to choose otherwise; both behave as before.
+
+**The first read.** `'contract'` needs no cover pool: the first poll reads the `lookback` window (600 blocks by default,
+or from your `fromBlock`; lower `lookback` to wait less) with one request per node on 48 Club, a few seconds (each node
+is read on its own, and one that answers is enough; 1RPC's 50-block limit splits its share further). `'cover'` must first
+read its pool: one
+request per 5,000 blocks (48 Club's limit), 3 to 6 s each on 2026-09-28, so with the default 40,000 blocks
+(`cover.scanBlocks`) a fresh process waits about 25 to 50 s before its first frame. Lower `cover.scanBlocks` (5,000 is
+one request) or keep `cover.store`, and a restart reads only the blocks since the last save. 1RPC takes at most 50
+blocks per request, so without 48 Club the pool scan fails and covers come from `cover.pool` alone (with a warning).
+
+**Falling back, and coming back.** Anyone can post junk frames (about 100 MB for 100 USD of gas), and every
+contract-wide reader has to download them: the budget turns that into a fallback to `'cover'`, announced to `warn`
+(`... Switched to 'cover' mode ...`). The covers drawn then come first from rooms seen in quiet `'contract'` polls, never
+from the junk that caused the fallback (a spammer's own rooms are the covers it would recognise), so a fallback waits
+for no full scan. The reader returns to `'contract'` by itself (`... back to 'contract' mode ...`), with hysteresis:
+it leaves above the budget, and comes back only after `contract.retryMs` in `'cover'` (30 min, doubled after each relapse
+soon after a return, at most 24 h) **and** once a pool refresh made after the fallback shows a poll's traffic at or
+under **half** the budget. Coming back is worth it because `'contract'` names no room; the switching itself reveals
+little, because the covers are drawn once and kept, so every stretch in `'cover'` shows the same sets, and every default
+reader switches at the same moments. `contract.retryMs: null` stays in `'cover'`. `stats().privacy.fallback` says when
+it fell back and when it may return.
+
+**What `k` means.** From one request in `'cover'` mode, a node's best guess of which room is yours is 1 in `k`. `k = 8`
+is the default because the cost grows linearly (the frames of `k − 1` other rooms per room of yours, and a pool that
+large) while the attacks listed below do not get weaker with a larger `k`. Requests carry at most 128 room topics
+(`cover.maxTopics`; the BUS_RPC_URLS nodes accepted 256 and refused 1,024 on 2026-09-28), which fits 16 rooms of yours
+at `k = 8`.
+
+**Where covers come from, and why they stay.** The pool is the rooms seen in the bus's logs over the last 40,000 blocks
+(about 5 hours), read with queries that name no room, plus the rooms quiet `'contract'` polls saw, plus any rooms you
+pass in `cover.pool`, for example `channel.inboxRoom()` of containers you know. Covers are drawn at random when a room
+is first read in `'cover'` mode and then kept: for the life of the reader, and across restarts with `cover.store`.
+Changing them would give them away: two requests a node can link (same IP, or simply the same rooms of yours) reveal
+what they have in common, and if the covers changed while your rooms did not, that is exactly your rooms. A room added
+later is caught up among its own covers; removing a room removes its covers; re-adding it brings the same ones back.
+
+**When the pool is too small** the reader never pretends. It reads with the covers it has, reports `effectiveK` and
+`short` in `stats().privacy`, and tells `warn` once per change: `only N cover rooms ... 1 in E, not 1 in 8`, or
+`no cover rooms available ... the nodes see exactly which rooms this reader reads`. With `cover.onShort: 'error'` it
+throws `BUS_PRIVACY` instead, before any request naming a room is sent. Today that is what a fallback to `'cover'`
+meets unless you pass `cover.pool`.
+
+What it helps against, and what it does not:
+
+- `'contract'` names no room; `'cover'` leaves a node that reads your requests one at a time unable to tell your room
+  from the covers.
+- **Junk forces the fallback.** Whoever fills the bus past the budget makes default readers name their rooms among
+  covers for a while; the doubling wait bounds how often that can be repeated, not whether.
+- **An invite, then a new room.** When an invite lands in one of your rooms and the reader adds a channel room soon
+  after, a node can link the two in `'cover'` mode. Adding rooms after a random delay, or registering spare rooms ahead,
+  makes this harder, not impossible.
+- **The pool's source.** The pool rule is public, so a room you read that is not in the recent-activity pool stands out;
+  a node that lies during the pool scan can plant rooms it knows are fake; anyone can post to rooms of their own for
+  about 50,000 gas each and fill the pool with covers they recognise.
+- **Sessions without a store.** A new reader without `cover.store` draws new covers, and a node that sees both sessions
+  finds your rooms in their intersection.
+- Timing, IP address and volume are not hidden from the nodes you query. Reading through a node you run yourself shows
+  these requests to no third party.
+
+## 6. Limits
 
 - A frame carries up to 16 KiB of plaintext; an invite lives at most one hour.
 - Relays see room names, sizes and timing, never content or identities. ChannelBus makes that metadata public for

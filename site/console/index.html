@@ -123,6 +123,22 @@
   label.check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
   label.check input { width: auto; min-height: 0; margin-top: 4px; }
   ul.tools { margin: 0; padding-left: 20px; font-size: 14px; display: grid; gap: 4px; overflow-wrap: anywhere; }
+  /* the AI price table: scrolls sideways inside its box, never the page / AI 价目表：在自己的框里横向滚动，页面不横滚 */
+  textarea { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; width: 100%; min-height: 7rem; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: transparent; color: var(--fg); resize: vertical; }
+  textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  label.file { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+  label.file input { min-height: 0; padding: 6px 0; border: 0; }
+  .stack, .stack > *, #ai-out { min-width: 0; }   /* grid items: let the table's box shrink and scroll / 网格项可收缩，表格在框内滚动 */
+  .scroll { overflow-x: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 6px; }
+  table.prices { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+  table.prices th, table.prices td { padding: 5px 8px; border-bottom: 1px solid var(--line-2); text-align: left; vertical-align: top; white-space: nowrap; }
+  table.prices th { color: var(--muted); font-weight: 600; background: var(--bg); }
+  table.prices td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  table.prices td.dflt { color: var(--muted); font-style: italic; }
+  table.prices td.flag { background: var(--warn-bg); color: var(--warn); font-weight: 700; }
+  table.prices td.model { white-space: normal; min-width: 9rem; overflow-wrap: anywhere; }
+  ul.hints { margin: 0; padding-left: 20px; font-size: 14px; display: grid; gap: 2px; }
+  ul.hints li.warn { color: var(--warn); } ul.hints li.info { color: var(--muted); }
   /* language switch, as on the homepage (site/style.css) / 语言切换，与首页相同 */
   body [lang] { display: none; }
   :root[data-lang="zh"] body [lang="zh"], :root[data-lang="en"] body [lang="en"] { display: revert; }
@@ -130,7 +146,7 @@
   @media (max-width: 420px) { dl { grid-template-columns: 1fr; gap: 0 0; } dd { margin-bottom: 6px; } }
 </style>
 <script src="./lang.js?v=5f71b1c280"></script>
-<script type="module" src="./console.js?v=b2bdf8280b"></script>
+<script type="module" src="./console.js?v=b2561b0fcc"></script>
 </head>
 <body>
 <header class="hd-bar">
@@ -242,6 +258,28 @@
       <span lang="zh">如果服务是某个 MCP 服务器的签名代理（清单里有 <code>mcp</code> 字段），本页还会自己去读它的工具列表、计算工具定义的摘要，与服务报出的一致才发布，并在钱包请求之前列出每个工具的名字和说明。</span>
       <span lang="en">If the service is the signing proxy of an MCP server (its manifest has an <code>mcp</code> field), this page also reads its tool list itself, hashes the tool definitions, publishes only if that matches what the service reports, and lists every tool's name and description before your wallet is asked.</span>
     </p>
+    <div id="ai-box" class="stack">
+      <p class="muted">
+        <span lang="zh"><b>AI 服务的价目表</b>（清单里有 <code>ai</code> 字段，例如 new-api 旁路）：发布时本页按 TAP-20 §3.9 核对它，并在钱包请求之前把每种接口格式的地址和每个模型的价格列成表。你也可以先在这里粘贴或上传价目表预览：<code>models.json</code>（只有模型，本页按第 4 步的服务网址补上四种格式的地址，与旁路的做法相同）、<code>ai</code> 字段本身，或整份清单。预览过的价目表必须与服务提供的一字不差才会发布。第 4 步的委托不覆盖价目表，写上链的那笔交易才覆盖。</span>
+        <span lang="en"><b>An AI service's price table</b> (the manifest has an <code>ai</code> field, as the new-api sidecar's does): when publishing, this page checks it against TAP-20 §3.9 and, before your wallet is asked, lists every API format's address and every model's prices in a table. You can also paste or upload the table here first to preview it: a <code>models.json</code> (models only; the page adds the four formats' addresses on the service URL of step 4, as the sidecar does), the <code>ai</code> field itself, or a whole manifest. A previewed table is published only if the service serves exactly the same one. The delegation of step 4 does not cover the price table; the transaction that writes it on chain does.</span>
+      </p>
+      <p class="muted">
+        <span lang="zh">价格只是公示：TapeAPI 不结算这些价格，你的用户照旧向你付费；回执里的金额是任何人都能重算的声明，不是付款。按规范，<code>BNB</code>、<code>USDT</code>、<code>USDC</code>、<code>ETH</code>、<code>USD1</code> 指 BNB Chain 上的代币，<code>USD</code> 只作展示。</span>
+        <span lang="en">Prices are published, not settled: TapeAPI settles none of them and your users pay you as they do today; the amount in a receipt is a claim anyone can recompute, not a payment. Under the spec, <code>BNB</code>, <code>USDT</code>, <code>USDC</code>, <code>ETH</code> and <code>USD1</code> name the tokens on BNB Chain, and <code>USD</code> is for display only.</span>
+      </p>
+      <p id="ai-l2-note" class="warn" hidden>
+        <span lang="zh">你选的是 X Layer 或 Base：这两条链上 TapeAPI 的支付暂不开放，价目表只作公示，任何人都不能在这条链上按它付费。</span>
+        <span lang="en">You chose X Layer or Base: TapeAPI payments are not open on these chains yet, so the price table is published for display only and nobody can pay by it on this chain.</span>
+      </p>
+      <textarea id="ai-json" rows="6" spellcheck="false" autocomplete="off" aria-label="price table JSON" placeholder='[{ "id": "my-model", "prices": [{ "currency": "USDT", "unit": "1M tokens", "input": "1", "output": "4" }] }]'
+        data-zh-aria-label="价目表 JSON" data-en-aria-label="price table JSON" data-zh-placeholder='粘贴 models.json、ai 字段或整份清单，例如 [{ "id": "my-model", "prices": [{ "currency": "USDT", "unit": "1M tokens", "input": "1", "output": "4" }] }]' data-en-placeholder='Paste a models.json, an ai field or a whole manifest, e.g. [{ "id": "my-model", "prices": [{ "currency": "USDT", "unit": "1M tokens", "input": "1", "output": "4" }] }]'></textarea>
+      <div class="row">
+        <label class="file"><span lang="zh">或上传 models.json</span><span lang="en">or upload models.json</span>
+          <input id="ai-file" type="file" accept="application/json,.json"></label>
+        <button id="btn-ai-preview" type="button" class="ghost"><span lang="zh">预览价目表</span><span lang="en">Preview the price table</span></button>
+      </div>
+      <div id="ai-out"></div>
+    </div>
     <p id="publish-prev" class="warn" hidden></p>
     <label class="check" id="republish-wrap" hidden><input type="checkbox" id="republish">
       <span><span lang="zh">已发布过，仍要再发布（第 4 步续期委托后才需要）</span><span lang="en">Already published; publish again (only needed after renewing the delegation in step 4)</span></span></label>

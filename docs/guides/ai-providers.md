@@ -88,11 +88,32 @@ The identity steps are those of any TapeAPI service (see [Run a service](provide
 (it becomes the sidecar's `SIGNER_KEY`), sign the delegation (the console reads the sidecar's signing address from its
 setup-mode health check; the delegation lasts 90 days), then publish the manifest on chain.
 
-**Current state:** the holder console does not yet publish a manifest that carries the `ai` field. Its publish step
-accepts only the fields it builds itself (and an `mcp` field of exactly its shape), so it refuses the sidecar's manifest
-and sends nothing. Generating the key and signing the delegation work, and the sidecar signs receipts; but until the
-manifest is on chain, clients that resolve the service by its TapeOut name cannot find it. This guide will say so when
-that changes.
+### Publish the price table with the console
+
+Step 5 of the console publishes the sidecar's manifest, `ai` field included:
+
+1. **Preview (optional, no wallet needed).** In step 5, paste or upload your `models.json` (the sidecar's price table,
+   a bare array of models), the `ai` field itself, or a whole manifest. A `models.json` has no addresses, so the page adds
+   one endpoint per format on the service URL of step 4, exactly as the sidecar does (`/v1` for the OpenAI formats, the
+   root itself for Anthropic Messages). The page checks the field with the same rules as the SDK's `validateAIField`
+   (TAP-20 §3.9) and shows it as tables: every API format with its address, then every model with its aliases and, per
+   currency, the input, output, cache read, cache write, 1-hour cache write and reasoning prices, per 1M tokens. A price
+   the manifest does not state is shown in grey italics with the value the spec gives it (cache prices default to
+   `input`, 1-hour cache writes to `cacheWrite`, reasoning to `output`).
+2. **Hints, not refusals.** Cells and a list below the table point out what is probably a mistake: a price of 0, a price
+   far above what any model costs (per currency; for example above 1,000 USDT per 1M tokens: a missing decimal point?),
+   an output price below the input price, a cache read dearer than input, an endpoint clients would ignore, `USD` (display
+   only), and a table too large for one transaction. They never stop publishing: you decide.
+3. **Check and publish.** The page reads the manifest the sidecar serves, checks every field as before and the `ai`
+   field as the SDK does, and requires a previewed table to be exactly the served one. It shows the price table again,
+   then asks your wallet to confirm the one `SiteRegistry.putFile` transaction. The delegation of step 4 covers only the
+   signing key; this transaction is what puts the prices on chain.
+4. **Read back.** Once the transaction is mined, the page reads the manifest back from the chain as every client does
+   (length and SHA-256 against the SiteRegistry) and confirms the bytes, price table included, are the ones it sent.
+
+Prices are published, not settled, on every chain. The console publishes on BNB Chain, X Layer and Base; on X Layer and
+Base payments are not open, and the page says so: the table is for display only there. Under TAP-20 §3.9 the currencies
+`BNB`, `USDT`, `USDC`, `ETH` and `USD1` name the tokens on BNB Chain.
 
 **Renewal.** Renew the delegation in its last 30 days: console step 4, "Renew" (same service key), set the new
 `DELEGATION_EXPIRES` and `DELEGATION_SIG`, restart the sidecar, and publish again. An expired delegation stops the
@@ -126,13 +147,13 @@ const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
 and point the client at it:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.7.0/tapeapi-sdk-0.7.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.8.0/tapeapi-sdk-0.8.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
 
 It resolves your service on chain, passes the answers through unchanged, prints one verdict per call, and with
 `--strict` turns a failed receipt into an error the client sees. A single receipt can also be pasted into the
-[verification page](https://tapeapi.fun/verify/). All of these need your manifest on chain (see the current state above).
+[verification page](https://tapeapi.fun/verify/). All of these need your manifest on chain (console step 5, above).
 
 **Request salt (on by default in both).** A receipt carries `requestSha256`, the SHA-256 of the exact request bytes,
 and the official SDKs serialise a request the same way every time. A short prompt ("yes", one word to embed, a question

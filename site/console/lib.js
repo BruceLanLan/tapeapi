@@ -259,8 +259,12 @@ export function methodsProblems(methods) {
  *  so may an `mcp` field of exactly its shape (mcpProblems), whose tools the page reads and hashes itself (step 5).
  *  页面发布的清单：由持有人读到和签过的内容构造，不取自服务；字段和顺序与 worker.js build() 相同（有测试保证一致）。
  *  只有显示名称和免费方法列表（methodsProblems）可以来自服务，持有人签名前能看到两者；形状完全符合的 `mcp` 字段也可以
- *  （mcpProblems），它的工具由页面自己读取并计算摘要（第 5 步）。 */
-export function expectedManifest({ circuits, tokenId, container, signer, expires, sig, endpoint, name = 'TapeAPI Reader', methods = METHODS, mcp }) {
+ *  （mcpProblems），它的工具由页面自己读取并计算摘要（第 5 步）。
+ *  An AI service's `ai` field (TAP-20 §3.9) may come too, when sdk ai.validateAIField accepts it (aiProblems); the page
+ *  publishes its normalised copy, which is what the sidecar serves, and shows the price table before the wallet asks.
+ *  AI 服务的 ai 字段也可以来自服务，前提是 SDK 的 validateAIField 接受它（aiProblems）；页面发布它的规范化副本（即旁路提供的
+ *  内容），并在钱包请求之前展示价目表。 */
+export function expectedManifest({ circuits, tokenId, container, signer, expires, sig, endpoint, name = 'TapeAPI Reader', methods = METHODS, mcp, ai }) {
   if (!NAME_OK(name)) throw new Error('name must be 1 to 64 printable characters')
   const bad = methodsProblems(methods)
   if (bad.length) throw new Error(bad.join('; '))
@@ -269,12 +273,15 @@ export function expectedManifest({ circuits, tokenId, container, signer, expires
     const badMcp = mcpProblems(mcp, { local: String(endpoint).startsWith('http:') })
     if (badMcp.length) throw new Error(badMcp.join('; '))
   }
+  // http endpoints only for a service that is itself on a loopback address, as for mcp / 与 mcp 相同：只有本地服务才允许 http
+  const aiField = ai !== undefined ? normalizeAI(ai, { allowHttp: String(endpoint).startsWith('http:') }) : undefined
   return {
     tapeapi: '0.1', name, circuits, tokenId: String(tokenId), container, signer,
     delegation: { expires: Number(expires), sig },
     endpoints: { live: [endpoint], async: false },
     methods,
     ...(mcp !== undefined ? { mcp: { endpoint: mcp.endpoint, toolsSha256: mcp.toolsSha256 } } : {}),
+    ...(aiField !== undefined ? { ai: aiField } : {}),
   }
 }
 
@@ -301,6 +308,198 @@ export function mcpProblems(mcp, { local = false } = {}) {
   const ok = typeof e === 'string' && e.length <= 200 && !CONTROL.test(e) &&
     (/^https:\/\/[^/?#@\s]+(\/[^?#\s]*)?$/.test(e) || (local && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/[^?#\s]*)?$/.test(e)))
   if (!ok) out.push(`mcp.endpoint must be https://<host>/<path> with no query, fragment or credentials, not ${clip(e)}`)
+  return out
+}
+
+// ---------------------------------------------------------------- an AI service: endpoints and price table ----
+// An AI service (the signing sidecar in front of an AI API) publishes `ai: { endpoints, models }` (TAP-20 §3.9, frozen).
+// The page loads no library, so the SDK's ai.validateAIField is ported here line for line: the same checks in the same
+// order, the same first message, the same normalised copy (known keys only, fixed key order, baseUrl without trailing
+// slashes). sdk/test/console-ai.test.mjs runs every valid and invalid sample through both and requires identical answers.
+// AI 服务（AI 接口前的签名旁路）发布 `ai: { endpoints, models }`（TAP-20 §3.9，已冻结）。页面不加载库，所以把 SDK 的
+// ai.validateAIField 逐行移植到这里：同样的检查、同样的顺序、同样的第一条消息、同样的规范化副本。console-ai.test.mjs
+// 把每个合法与非法样例同时交给两边，要求结果逐条相同。
+/** The built-in formats and the suffix a client's base URL adds to the service root (sdk ai.FORMATS). / 内置格式及其后缀。 */
+export const AI_FORMATS = Object.freeze([
+  Object.freeze({ name: 'openai-chat', baseSuffix: '/v1', api: 'OpenAI Chat Completions' }),
+  Object.freeze({ name: 'openai-responses', baseSuffix: '/v1', api: 'OpenAI Responses' }),
+  Object.freeze({ name: 'anthropic-messages', baseSuffix: '', api: 'Anthropic Messages' }),
+  Object.freeze({ name: 'openai-embeddings', baseSuffix: '/v1', api: 'OpenAI Embeddings' }),
+])
+export const AI_CURRENCIES = Object.freeze(['BEM', 'BNB', 'USDT', 'USDC', 'ETH', 'USD1', 'USD'])
+export const AI_PRICE_KEYS = Object.freeze(['input', 'output', 'cacheRead', 'cacheWrite', 'cacheWrite1h', 'reasoning'])
+const AI_PRICE_UNIT = '1M tokens'
+const AI_PRICE_RE = /^(0|[1-9]\d{0,17})(\.\d{1,8})?$/
+const AI_FORMAT_RE = /^[a-z][a-z0-9-]{0,63}$/
+const AI_CONTROL = /[\u0000-\u001f\u007f-\u009f]/
+const AI_LIMITS = { endpoints: 16, models: 256, id: 256, aliases: 16, prices: 7, decimals: 8 }
+const isObjAI = (v) => !!v && typeof v === 'object' && !Array.isArray(v)   // the SDK's isObj / 同 SDK 的 isObj
+const givenAI = (v) => v !== undefined && v !== null
+
+// validateAIField, ported: throws Error('ai: <message>') at the first violation, else returns the normalised copy.
+// validateAIField 的移植：遇到第一处违规即抛出 'ai: <消息>'，否则返回规范化副本。
+function validateAI(o, { allowHttp = false } = {}) {
+  const fail = (m) => { throw new Error(`ai: ${m}`) }
+  if (!isObjAI(o)) fail('must be an object')
+  if (!Array.isArray(o.endpoints) || o.endpoints.length < 1 || o.endpoints.length > AI_LIMITS.endpoints) fail(`endpoints must hold 1 to ${AI_LIMITS.endpoints} entries`)
+  const names = new Set()
+  const endpoints = o.endpoints.map((e, i) => {
+    if (!isObjAI(e) || typeof e.format !== 'string' || !AI_FORMAT_RE.test(e.format)) fail(`endpoints[${i}].format must be a format name`)
+    if (names.has(e.format)) fail(`format ${e.format} appears twice`)
+    names.add(e.format)
+    if (typeof e.baseUrl !== 'string') fail(`endpoints[${i}].baseUrl must be a URL`)
+    let url
+    try { url = new URL(e.baseUrl) } catch { fail(`endpoints[${i}].baseUrl must be a URL`) }
+    if (url.protocol !== 'https:' && !(allowHttp && url.protocol === 'http:')) fail(`endpoints[${i}].baseUrl must be https (http only in dev)`)
+    if (url.search || url.hash || url.username || url.password) fail(`endpoints[${i}].baseUrl must not carry a query, fragment or credentials`)
+    return { format: e.format, baseUrl: url.href.replace(/\/+$/, '') }
+  })
+  if (!Array.isArray(o.models) || o.models.length < 1 || o.models.length > AI_LIMITS.models) fail(`models must hold 1 to ${AI_LIMITS.models} entries`)
+  const seen = new Set()
+  const goodId = (v) => typeof v === 'string' && v.length >= 1 && v.length <= AI_LIMITS.id && !AI_CONTROL.test(v)
+  const claim = (v, what) => { if (seen.has(v)) fail(`${what} ${v.slice(0, 64)} appears twice in the table (ids and aliases must be unique)`); seen.add(v) }
+  const models = o.models.map((m, i) => {
+    if (!isObjAI(m)) fail(`models[${i}] must be an object`)
+    if (!goodId(m.id)) fail(`models[${i}].id must be 1 to ${AI_LIMITS.id} characters, no control characters`)
+    claim(m.id, 'model')
+    const out = { id: m.id }
+    if (m.aliases !== undefined) {
+      if (!Array.isArray(m.aliases) || m.aliases.length < 1 || m.aliases.length > AI_LIMITS.aliases || !m.aliases.every(goodId)) fail(`models[${i}].aliases must list 1 to ${AI_LIMITS.aliases} model ids`)
+      for (const a of m.aliases) claim(a, 'alias')
+      out.aliases = [...m.aliases]
+    }
+    if (m.formats !== undefined) {
+      if (!Array.isArray(m.formats) || !m.formats.length || !m.formats.every((f) => typeof f === 'string' && names.has(f)) || new Set(m.formats).size !== m.formats.length) fail(`models[${i}].formats must list formats among the endpoints`)
+      out.formats = [...m.formats]
+    }
+    if (m.price !== undefined) fail(`models[${i}].price is not a field: use prices, a list with one entry per currency`)
+    if (!Array.isArray(m.prices) || m.prices.length < 1 || m.prices.length > AI_LIMITS.prices) fail(`models[${i}].prices must hold 1 to ${AI_LIMITS.prices} entries, one per currency`)
+    const currencies = new Set()
+    out.prices = m.prices.map((p, j) => {
+      const at = `models[${i}].prices[${j}]`
+      if (!isObjAI(p)) fail(`${at} must be an object`)
+      if (!AI_CURRENCIES.includes(p.currency)) fail(`${at}.currency must be one of ${AI_CURRENCIES.join(', ')}`)
+      if (currencies.has(p.currency)) fail(`${at}: currency ${p.currency} appears twice`)
+      currencies.add(p.currency)
+      if (p.unit !== AI_PRICE_UNIT) fail(`${at}.unit must be "${AI_PRICE_UNIT}"`)
+      const price = { currency: p.currency, unit: AI_PRICE_UNIT }
+      for (const k of AI_PRICE_KEYS) {
+        if (!givenAI(p[k])) { if (k === 'input' || k === 'output') fail(`${at}.${k} is required`); continue }
+        if (typeof p[k] !== 'string' || !AI_PRICE_RE.test(p[k])) fail(`${at}.${k} must be a decimal string with at most ${AI_LIMITS.decimals} decimals`)
+        price[k] = p[k]
+      }
+      return price
+    })
+    return out
+  })
+  return { endpoints, models }
+}
+/** Why an `ai` field cannot be published: [] when sdk ai.validateAIField accepts it, else [its message]. `allowHttp`
+ *  as the SDK's (http endpoints, for a service on a loopback address).
+ *  ai 字段为何不能发布：SDK 的 validateAIField 接受时为 []，否则为 [它的消息]。 */
+export function aiProblems(field, { allowHttp = false } = {}) {
+  try { validateAI(field, { allowHttp }); return [] } catch (e) { return [e.message] }
+}
+/** The normalised `ai` field, exactly what sdk ai.validateAIField returns (and what the sidecar serves); throws
+ *  Error('ai: …') where it throws. / 规范化的 ai 字段，与 SDK validateAIField 的返回值完全相同；它抛错时同样抛错。 */
+export const normalizeAI = (field, opts) => validateAI(field, opts)
+
+/** A models.json (the new-api sidecar's price table: a bare array of models, examples/new-api-sidecar/models.example.json)
+ *  -> the `ai` field the sidecar builds from it: one endpoint per built-in format on the service root `base` (its
+ *  PUBLIC_URL, the step-4 service URL), in the formats' order, and the models as they are.
+ *  models.json（旁路的价目表：模型数组）-> 旁路据此构造的 ai 字段：在服务根上每种内置格式一个端点，模型原样。 */
+export function modelsToAIField(models, base) {
+  const root = String(base ?? '').trim().replace(/\/+$/, '')
+  if (!isServiceBase(root)) throw new Error(`the service URL must be https://<host> (the sidecar's PUBLIC_URL) to build the endpoints, not ${clip(base)}`)
+  if (!Array.isArray(models)) throw new Error('models.json must be a JSON array of models')
+  return { endpoints: AI_FORMATS.map((f) => ({ format: f.name, baseUrl: root + f.baseSuffix })), models }
+}
+/** What the holder pasted or uploaded -> an `ai` field to check: a models.json array (converted with modelsToAIField),
+ *  an `ai` field { endpoints, models }, or a whole manifest that carries one. Anything else throws.
+ *  持有人粘贴或上传的内容 -> 待检查的 ai 字段：models.json 数组（经 modelsToAIField 转换）、ai 字段本身，或带 ai 的整份清单。 */
+export function aiFieldOf(value, { base } = {}) {
+  if (Array.isArray(value)) return modelsToAIField(value, base)
+  if (isObjAI(value) && Object.hasOwn(value, 'ai') && !Object.hasOwn(value, 'models')) return value.ai
+  if (isObjAI(value) && (Object.hasOwn(value, 'models') || Object.hasOwn(value, 'endpoints'))) return value
+  throw new Error('expected a models.json array, an ai field { endpoints, models } or a manifest with an ai field')
+}
+
+// Heuristics for the price-table hints, per 1M tokens (a hint never blocks publishing): above these a price is more
+// likely a typo (a missing decimal point, wei pasted) than a price. USD-pegged: above the dearest models of 2026;
+// BNB and ETH: about the same in dollars; BEM: only absurd values, since its price floats.
+// 价目提示的经验阈值（每 1M tokens；提示从不阻止发布）：超过它更像打错（漏了小数点、贴了 wei）而不是价格。
+export const AI_HUGE = Object.freeze({ USDT: '1000', USDC: '1000', USD1: '1000', USD: '1000', BNB: '2', ETH: '0.5', BEM: '100000' })
+const aiUnits = (d) => { const [i, f = ''] = d.split('.'); return BigInt(i) * 10n ** 8n + BigInt((f + '00000000').slice(0, 8)) }
+const AI_KEY_ZH = { input: '输入', output: '输出', cacheRead: '缓存读', cacheWrite: '缓存写', cacheWrite1h: '1 小时缓存写', reasoning: '推理' }
+const embeddingsOnly = (m) => Array.isArray(m.formats) && m.formats.every((f) => f === 'openai-embeddings')
+/**
+ * The price table as the holder reads it before publishing, from a normalised `ai` field:
+ *   { endpoints: [{ format, api, baseUrl }],
+ *     models: [{ id, aliases, formats, prices: [{ currency, cells: { input, output, cacheRead, cacheWrite, cacheWrite1h,
+ *               reasoning: { value, from } } }] }],     from: null when stated, else the price it defaults to (§3.9)
+ *     hints: [{ code, level: 'warn'|'info', model?, currency?, key?, zh, en }],  bytes }
+ * Hints: a price of 0, a huge price (AI_HUGE), output below input, a cache read dearer than input, an unknown format or
+ * a baseUrl clients ignore, USD (display only), a table near the one-transaction limit. None of them blocks.
+ * 发布前持有人看到的价目表。提示：价格为 0、极大值、输出价低于输入价、缓存读比输入贵、客户端会忽略的端点、USD 仅作展示、
+ * 价目表接近一笔交易的上限。都只提示，不拦截。
+ */
+export function aiPriceTable(field) {
+  const hints = []
+  const hint = (code, level, where, zh, en) => hints.push({ code, level, ...where, zh, en })
+  const endpoints = field.endpoints.map((e) => {
+    const f = AI_FORMATS.find((x) => x.name === e.format)
+    if (!f) hint('UNKNOWN_FORMAT', 'warn', { format: e.format }, `接口格式 ${e.format} 不是本版本的格式：客户端会忽略这个端点`, `format ${e.format} is not one of this version's formats: clients ignore this endpoint`)
+    else if (!e.baseUrl.endsWith(f.baseSuffix)) hint('BAD_SUFFIX', 'warn', { format: e.format }, `${e.format} 的地址应以 ${f.baseSuffix} 结尾，否则客户端会忽略这个端点`, `the ${e.format} baseUrl should end with ${f.baseSuffix}, or clients ignore this endpoint`)
+    else if (f.baseSuffix === '' && /\/v1$/.test(e.baseUrl)) hint('BAD_SUFFIX', 'warn', { format: e.format }, `${e.format} 的地址是服务根本身，不带 /v1（官方 SDK 会自己加 /v1）`, `the ${e.format} baseUrl is the service root itself, without /v1 (the official SDKs add /v1)`)
+    return { format: e.format, api: f ? f.api : null, baseUrl: e.baseUrl }
+  })
+  const usd = []
+  const models = field.models.map((m) => {
+    const emb = embeddingsOnly(m)
+    const prices = m.prices.map((p) => {
+      const at = { model: m.id, currency: p.currency }
+      const cw = p.cacheWrite !== undefined ? { value: p.cacheWrite, from: null } : { value: p.input, from: 'input' }
+      const cells = {
+        input: { value: p.input, from: null },
+        output: { value: p.output, from: null },
+        cacheRead: p.cacheRead !== undefined ? { value: p.cacheRead, from: null } : { value: p.input, from: 'input' },
+        cacheWrite: cw,
+        cacheWrite1h: p.cacheWrite1h !== undefined ? { value: p.cacheWrite1h, from: null } : { value: cw.value, from: cw.from ?? 'cacheWrite' },
+        reasoning: p.reasoning !== undefined ? { value: p.reasoning, from: null } : { value: p.output, from: 'output' },
+      }
+      for (const k of AI_PRICE_KEYS) {
+        if (p[k] === undefined) continue
+        const u = aiUnits(p[k])
+        if (u === 0n && !(k === 'output' && emb)) hint('ZERO', 'warn', { ...at, key: k }, `${m.id} 的 ${p.currency} ${AI_KEY_ZH[k]}价格为 0（免费）`, `${m.id}: the ${p.currency} ${k} price is 0 (free)`)
+        if (u > aiUnits(AI_HUGE[p.currency])) hint('HUGE', 'warn', { ...at, key: k }, `${m.id} 的 ${p.currency} ${AI_KEY_ZH[k]}价格 ${p[k]}（每 1M tokens）异常地高（高于 ${AI_HUGE[p.currency]}）：是不是漏了小数点？`, `${m.id}: the ${p.currency} ${k} price ${p[k]} per 1M tokens is unusually high (above ${AI_HUGE[p.currency]}): a missing decimal point?`)
+      }
+      if (!emb && aiUnits(p.output) < aiUnits(p.input)) hint('OUTPUT_BELOW_INPUT', 'warn', at, `${m.id} 的 ${p.currency} 输出价 ${p.output} 低于输入价 ${p.input}：通常输出更贵，是不是填反了？`, `${m.id}: the ${p.currency} output price ${p.output} is below the input price ${p.input}; output usually costs more: swapped?`)
+      if (p.cacheRead !== undefined && aiUnits(p.cacheRead) > aiUnits(p.input)) hint('CACHE_READ_ABOVE_INPUT', 'warn', at, `${m.id} 的 ${p.currency} 缓存读价 ${p.cacheRead} 高于输入价 ${p.input}：缓存命中通常更便宜`, `${m.id}: the ${p.currency} cache-read price ${p.cacheRead} is above the input price ${p.input}; a cache hit usually costs less`)
+      if (p.currency === 'USD') usd.push(m.id)
+      return { currency: p.currency, cells }
+    })
+    return { id: m.id, aliases: m.aliases ? [...m.aliases] : [], formats: m.formats ? [...m.formats] : null, prices }
+  })
+  const usdList = usd.slice(0, 5).join(', ') + (usd.length > 5 ? ` … (+${usd.length - 5})` : '')
+  if (usd.length) hint('USD_DISPLAY', 'info', { models: usd }, `USD 价格只作展示，背后没有代币：${usdList}`, `USD prices are for display only; no token stands behind them: ${usdList}`)
+  const bytes = utf8(JSON.stringify(field)).length
+  // The rest of the manifest takes about 1,500 bytes; one putFile carries MANIFEST_LIMIT. / 清单其余部分约 1500 字节。
+  if (bytes > MANIFEST_LIMIT - 1500) hint('TOO_LARGE', 'warn', {}, `价目表有 ${bytes} 字节：整份清单一笔交易最多 ${MANIFEST_LIMIT} 字节，可能发不出去，请精简`, `the price table is ${bytes} bytes; one transaction carries a manifest of at most ${MANIFEST_LIMIT} bytes, so it may not fit: shorten it`)
+  return { endpoints, models, hints, bytes }
+}
+
+/** How two normalised `ai` fields differ ([] when they are the same, to the byte): the table the holder previewed and
+ *  the one the service serves. Model ids are case-sensitive, as clients match them.
+ *  两份规范化 ai 字段的差别（逐字节相同则为 []）：持有人预览的与服务提供的。模型 id 区分大小写，与客户端匹配方式相同。 */
+export function aiDiff(mine, theirs) {
+  if (JSON.stringify(mine) === JSON.stringify(theirs)) return []
+  const out = []
+  if (JSON.stringify(mine?.endpoints) !== JSON.stringify(theirs?.endpoints)) out.push(`endpoints: previewed ${clip((mine?.endpoints || []).map((e) => `${e.format} ${e.baseUrl}`))}, served ${clip((theirs?.endpoints || []).map((e) => `${e.format} ${e.baseUrl}`))}`)
+  const byId = (f) => new Map((f?.models || []).map((m) => [m.id, JSON.stringify(m)]))
+  const a = byId(mine), b = byId(theirs)
+  for (const [id, m] of a) if (!b.has(id)) out.push(`model ${clip(id)} is only in the previewed table`); else if (b.get(id) !== m) out.push(`model ${clip(id)} differs`)
+  for (const id of b.keys()) if (!a.has(id)) out.push(`model ${clip(id)} is only in the served table`)
+  if (!out.length) out.push('the models are in another order')
   return out
 }
 
@@ -534,8 +733,9 @@ export function manifestProblems(text, s) {
   const bad = methodsProblems(m.methods)
   if (bad.length) return bad
   let want
-  // `mcp` is the one optional field, and only with exactly its shape (mcpProblems). / mcp 是唯一的可选字段，形状必须完全符合。
-  try { want = expectedManifest({ ...s, name: NAME_OK(m.name) ? m.name : undefined, methods: m.methods, mcp: Object.hasOwn(m, 'mcp') ? m.mcp : undefined }) } catch (e) { return [e.message] }
+  // `mcp` and `ai` are the optional fields: mcp only with exactly its shape (mcpProblems), ai only as the SDK accepts it
+  // and in its normalised form (aiProblems, normalizeAI). / mcp 与 ai 是可选字段：mcp 形状必须完全符合，ai 必须被 SDK 接受且为规范化形式。
+  try { want = expectedManifest({ ...s, name: NAME_OK(m.name) ? m.name : undefined, methods: m.methods, mcp: Object.hasOwn(m, 'mcp') ? m.mcp : undefined, ai: Object.hasOwn(m, 'ai') ? m.ai : undefined }) } catch (e) { return [e.message] }
   const out = []
   if (!NAME_OK(m.name)) out.push('name must be 1 to 64 printable characters')
   for (const k of new Set([...Object.keys(want), ...Object.keys(m)])) {
@@ -548,6 +748,22 @@ export function manifestProblems(text, s) {
 
 /** The exact text the page publishes. / 页面发布的确切文本。 */
 export const manifestText = (s) => JSON.stringify(expectedManifest(s))
+
+/** After publishing: does the manifest read back from the chain (readManifestFile, verified against the SiteRegistry's
+ *  own length and SHA-256) carry exactly the bytes the page sent? [] when it does; otherwise what differs, field by
+ *  field (the `ai` price table included), so a node that lags a block reads as "not there yet", not as a match.
+ *  发布之后：从链上回读的清单（已按 SiteRegistry 自己的长度与 SHA-256 核对）是否正是本页发出的字节？一致则为 []；否则逐字段
+ *  列出差别（包括 ai 价目表）。落后一个区块的节点读到的是“还没有”，不会被当成一致。 */
+export function readBackProblems(onChainText, sentText) {
+  if (onChainText == null) return ['there is no manifest on chain yet']
+  if (onChainText === sentText) return []
+  let a, b
+  try { a = JSON.parse(onChainText); b = JSON.parse(sentText) } catch { return ['the manifest on chain is not the one sent'] }
+  if (!isPlain(a) || !isPlain(b)) return ['the manifest on chain is not the one sent']
+  const out = []
+  for (const k of new Set([...Object.keys(b), ...Object.keys(a)])) if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) out.push(k in a ? (k in b ? `${k} on chain differs from the one sent` : `${k} is on chain but was not sent`) : `${k} was sent but is not on chain`)
+  return out.length ? out : ['the manifest on chain has the same fields but other bytes']
+}
 
 // ---------------------------------------------------------------- renewal: the key already on chain ----
 // A delegation lasts 90 days. To renew it the holder signs a new one for the SAME service key, which the page may not

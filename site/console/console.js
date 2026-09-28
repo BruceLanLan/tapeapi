@@ -3,7 +3,7 @@
 // "Advanced" (A deploy, B verify) is only for someone deploying their own ChannelBus.
 // 持有人操作台的页面脚本（模块，从 index.html 加载，使页面能在 script-src 'self' 下运行）。
 // 步骤：1 连接、2 读电路、3 服务密钥与变量、4 签委托、5 发布清单；“高级”（A 部署、B 核对）只给自己部署 ChannelBus 的人。
-import * as C from './lib.js'
+import * as C from './lib.js?v=6ffd96295a'
 
 const $ = (id) => document.getElementById(id)
 // ChannelBus (Advanced) runs on BNB Chain only (TapeAPI does not follow it to L2s). / ChannelBus（高级）只在 BNB Chain。
@@ -402,6 +402,87 @@ function showTools(out, mcp, tools) {
   out.append(ul)
 }
 
+// ---------------------------------------------------------------- an AI service's price table ----
+// The `ai` field (TAP-20 §3.9): every API format's address and every model's prices, per currency, per 1M tokens, as the
+// holder must see them before the wallet writes them on chain. Stated prices in plain type; a price the spec fills in
+// (a cache price from input, reasoning from output) in grey italics; a hinted cell highlighted. Hints never block.
+// Everything is text (textContent), never markup: the model ids come from the service or the pasted file.
+// ai 字段：每种接口格式的地址、每个模型各币种的价格（每 1M tokens），钱包写上链之前持有人必须看到。写明的价格正常显示；按规范
+// 缺省补上的（缓存价取 input、推理价取 output）灰色斜体；有提示的格子高亮。提示从不拦截。全部是纯文本（textContent），从不是标记。
+// Strings, not fragments: a fragment is emptied when appended, so the second table would lose its headers.
+// 存字符串而不是片段：片段插入后即清空，第二次渲染会丢掉表头。
+const AI_COLS = [['input', '输入', 'Input'], ['output', '输出', 'Output'], ['cacheRead', '缓存读', 'Cache read'], ['cacheWrite', '缓存写', 'Cache write'], ['cacheWrite1h', '缓存写 1h', 'Cache write 1h'], ['reasoning', '推理', 'Reasoning']]
+const cell = (tag, content, cls = '') => { const c = document.createElement(tag); if (cls) c.className = cls; c.replaceChildren(...nodes(content)); return c }
+function showPriceTable(out, field) {
+  const tb = C.aiPriceTable(field)
+  const eps = document.createElement('table'); eps.className = 'prices'
+  eps.append(cell('tr', [cell('th', bi('接口格式', 'API format')), cell('th', bi('地址（baseUrl）', 'Address (baseUrl)'))]))
+  for (const e of tb.endpoints) eps.append(cell('tr', [cell('td', `${e.format}${e.api ? ` (${e.api})` : ''}`), cell('td', e.baseUrl, 'mono')]))
+  const w1 = cell('div', eps, 'scroll')
+  const flagged = new Set(tb.hints.filter((h) => h.key || h.code === 'OUTPUT_BELOW_INPUT' || h.code === 'CACHE_READ_ABOVE_INPUT').flatMap((h) => {
+    const keys = h.key ? [h.key] : h.code === 'OUTPUT_BELOW_INPUT' ? ['input', 'output'] : ['input', 'cacheRead']
+    return keys.map((k) => `${h.model}\u0000${h.currency}\u0000${k}`)
+  }))
+  const tbl = document.createElement('table'); tbl.className = 'prices'
+  tbl.append(cell('tr', [cell('th', bi('模型 id / 别名', 'Model id / aliases')), cell('th', bi('币种', 'Currency')), ...AI_COLS.map(([, zh, en]) => cell('th', bi(zh, en)))]))
+  for (const m of tb.models) {
+    m.prices.forEach((p, i) => {
+      const tr = document.createElement('tr')
+      if (i === 0) {
+        const td = cell('td', m.id, 'model mono'); td.rowSpan = m.prices.length
+        if (m.aliases.length) td.append(document.createElement('br'), cell('span', m.aliases.join(', '), 'muted'))
+        if (m.formats) td.append(document.createElement('br'), cell('span', `formats: ${m.formats.join(', ')}`, 'muted'))
+        tr.append(td)
+      }
+      tr.append(cell('td', p.currency))
+      for (const [k] of AI_COLS) {
+        const c = p.cells[k], bad = flagged.has(`${m.id}\u0000${p.currency}\u0000${k}`)
+        const td = cell('td', c.value, `num${c.from ? ' dflt' : ''}${bad ? ' flag' : ''}`)
+        if (c.from) td.title = t(`未单列，按 ${c.from} 计`, `not stated: priced as ${c.from}`)
+        tr.append(td)
+      }
+      tbl.append(tr)
+    })
+  }
+  const w2 = cell('div', tbl, 'scroll')
+  const models = tb.models.length, rows = tb.models.reduce((n, m) => n + m.prices.length, 0)
+  note(out, true, bi(`✓ 价目表符合 TAP-20 §3.9（与 SDK 的检查相同）：${tb.endpoints.length} 个接口地址，${models} 个模型，${rows} 行价格，单位都是每 1M tokens。`, `✓ The price table follows TAP-20 §3.9 (the SDK's own checks): ${tb.endpoints.length} API addresses, ${models} models, ${rows} price rows, every price per 1M tokens.`))
+  if (CHAIN.chainId !== 56) note(out, null, bi(`本页在 ${CHAIN.name} 上：这里支付暂不开放，价格只作公示。`, `This page is on ${CHAIN.name}: payments are not open here yet; the prices are for display only.`))
+  out.append(w1, w2)
+  out.append(cell('p', bi('灰色斜体：清单里没有单列，按规范取另一列的价格（缓存读、缓存写取输入价，1 小时缓存写取缓存写价，推理取输出价）。高亮：下面有提示。', 'Grey italics: not stated in the manifest, so the spec prices it as another column (cache reads and writes as input, 1-hour cache writes as cache writes, reasoning as output). Highlighted: see the hints below.'), 'muted'))
+  const warns = tb.hints.filter((h) => h.level === 'warn')
+  if (tb.hints.length) {
+    if (warns.length) note(out, false, bi(`${warns.length} 条提示，请签名前核对（只是提示，不会阻止发布）：`, `${warns.length} hints to check before you sign (hints only; they do not stop publishing):`))
+    const ul = document.createElement('ul'); ul.className = 'hints'
+    for (const h of tb.hints) { const li = cell('li', bi(h.zh, h.en), h.level); ul.append(li) }
+    out.append(ul)
+  } else note(out, true, bi('没有异常提示。', 'No hints: nothing looks unusual.'))
+}
+// The table the holder previewed, normalised; memory only. When set, step 5 publishes only if the service serves exactly
+// it. / 持有人预览过的价目表（规范化后），只放在内存里；设置后，第 5 步只在服务提供的与它一字不差时才发布。
+let aiPreviewed = null
+const aiBase = () => $('svc-url').value.trim().replace(/\/+$/, '')
+function previewAI() {
+  const out = $('ai-out'); out.replaceChildren(); aiPreviewed = null
+  const text = $('ai-json').value.trim()
+  if (!text) { note(out, false, bi('先粘贴价目表，或上传 models.json。', 'Paste a price table or upload a models.json first.')); return }
+  let field
+  try { field = C.aiFieldOf(C.strictParseJSON(text), { base: aiBase() }) } catch (e) { note(out, false, bi(`读不懂这段价目表：${e.message}`, `Cannot read this price table: ${e.message}`)); return }
+  const bad = C.aiProblems(field, { allowHttp: aiBase().startsWith('http:') })
+  if (bad.length) { note(out, false, bi(`价目表不符合 TAP-20 §3.9，客户端会拒绝它：${bad.join('；')}`, `The price table breaks TAP-20 §3.9, and clients would refuse it: ${bad.join('; ')}`)); return }
+  aiPreviewed = C.normalizeAI(field, { allowHttp: aiBase().startsWith('http:') })
+  showPriceTable(out, aiPreviewed)
+}
+$('btn-ai-preview').onclick = previewAI
+$('ai-file').onchange = async () => {
+  const f = $('ai-file').files?.[0]
+  if (!f) return
+  if (f.size > 1024 * 1024) { say($('ai-out'), bi('文件超过 1 MB，不像价目表。', 'The file is over 1 MB; that is not a price table.'), 'bad'); return }
+  $('ai-json').value = await f.text()
+  previewAI()
+}
+$('ai-l2-note').hidden = CHAIN.chainId === 56
+
 $('btn-publish').onclick = async () => {
   const out = $('publish-out'); out.replaceChildren()
   $('btn-publish').disabled = true   // one tap, one transaction (review F5) / 一次点击一笔交易
@@ -429,10 +510,20 @@ $('btn-publish').onclick = async () => {
       const bad = await C.mcpToolsProblems({ mcp: sm.mcp, methods: sm.methods, tools })
       if (bad.length) { note(out, false, bi(`MCP 工具定义核对不通过，暂不上链：${bad.join('；')}。`, `The MCP tool definitions do not check out, so nothing is published: ${bad.join('; ')}.`)); return }
     }
-    const text = C.manifestText({ ...s, name: sm.name, methods: sm.methods, mcp: sm.mcp })
+    // An AI service (the manifest has `ai`): manifestProblems has checked it as the SDK does; a table previewed above must
+    // be exactly the one served, and the table is shown before the wallet asks. / AI 服务：manifestProblems 已按 SDK 的规则
+    // 核对；上面预览过的价目表必须与服务提供的一字不差，并在钱包请求之前展示。
+    let aiField = null
+    if (sm.ai !== undefined) {
+      aiField = C.normalizeAI(sm.ai, { allowHttp: base.startsWith('http:') })
+      const diff = aiPreviewed ? C.aiDiff(aiPreviewed, aiField) : []
+      if (diff.length) { note(out, false, bi(`服务提供的价目表与你上面预览的不一致，暂不上链：${diff.join('；')}。`, `The price table the service serves is not the one you previewed above, so nothing is published: ${diff.join('; ')}.`)); return }
+    } else if (aiPreviewed) { note(out, false, bi('你上面预览了价目表，但服务提供的清单没有 ai 字段，暂不上链。检查旁路的 models.json 与服务网址。', 'You previewed a price table above, but the manifest the service serves has no ai field, so nothing is published. Check the sidecar\'s models.json and the service URL.')); return }
+    const text = C.manifestText({ ...s, name: sm.name, methods: sm.methods, mcp: sm.mcp, ai: sm.ai })
     const size = new TextEncoder().encode(text).length, names = sm.methods.map((x) => x.name)
     note(out, true, bi(`✓ 清单核对通过（${size} 字节）。服务名「${sm.name}」，${names.length} 个免费方法：${names.join('、')}。将写上链的完整内容：`, `✓ The manifest checks out (${size} bytes). Service name "${sm.name}", ${names.length} free methods: ${names.join(', ')}. The full content to be written on chain:`))
     if (tools) showTools(out, sm.mcp, tools)
+    if (aiField) { note(out, null, bi('这是一个 AI 服务，清单带下面这份价目表：', 'This is an AI service; the manifest carries this price table:')); showPriceTable(out, aiField) }
     const pre = document.createElement('pre'); pre.className = 'mono'; pre.textContent = JSON.stringify(JSON.parse(text), null, 2); out.append(pre)
     const sha = '0x' + Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))).map((b) => b.toString(16).padStart(2, '0')).join('')
     const tx = C.putFileTx({ container: s.container, text, sha256Hex: sha })
@@ -455,6 +546,18 @@ $('btn-publish').onclick = async () => {
     saveSvc({ published: hash, sha, publishPending: undefined })
     note(out, true, [bi(`✓ 清单已写上链（容器 ${s.container}）。请保存交易备查：`, `✓ The manifest is on chain (container ${s.container}). Keep the transaction for your records: `), txLink(hash)])
     out.append(copyBtn(t('复制交易哈希', 'Copy transaction hash'), hash))
+    // Read it back from the chain as every client reads it (fileInfo, read, exact length and SHA-256) and compare with the
+    // bytes sent, the price table included. The wallet's node may lag a block: a few tries, and a miss says "check later".
+    // 像每个客户端一样从链上回读（fileInfo、read、长度与 SHA-256 严格一致），与发出的字节比较（包括价目表）。钱包的节点可能
+    // 落后一个区块：多试几次；仍不一致只提示稍后再核对。
+    let back = []
+    for (let i = 0; i < 5; i++) {
+      try { back = C.readBackProblems(await readOnChain(s), text) } catch (e) { back = [e.message] }
+      if (!back.length) break
+      await sleep(4000)
+    }
+    if (back.length) note(out, null, bi(`交易已上链，但回读核对还没通过（${back.join('；')}）。可能是节点还没同步，稍后在第 2 步重新读取即可核对。`, `The transaction is on chain, but reading it back does not match yet (${back.join('; ')}). The node may be behind; read the circuit again in step 2 later to check.`))
+    else note(out, true, bi(`✓ 回读核对通过：链上的清单与本页发出的字节完全一致（${size} 字节${aiField ? '，包括价目表' : ''}）。`, `✓ Read back from the chain: the manifest there is byte for byte what this page sent (${size} bytes${aiField ? ', the price table included' : ''}).`))
   } catch (e) { note(out, false, bi(`没有完成：${e.message}`, `Not completed: ${e.message}`)) } finally {
     // After a send, publishing again needs the explicit box (renewing the delegation is the reason to); a check that
     // failed before sending leaves the button on for a retry. / 发出后再发布需要勾选；发送前失败则按钮保持可用以便重试。

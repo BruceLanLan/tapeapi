@@ -130,7 +130,7 @@ for (const { invite } of found.invites) {
 | 保留什么 | 房间在内存里，最后一次访问后 15 分钟被遗忘 | 链上事件，永久公开 |
 | 限制 | 邀请与纪元消息：参考中继上每个来源每个房间每 10 分钟 8 条 | 每次投递至多 16,448 字节 |
 | 群主 | `relay: { api, svc, payer? }` | `bus: { address: MAINNET.channelBus, sendTx }`：由你的钱包发送，每个房间一笔交易 |
-| 成员 | `checkGroupInvites({ relay })`、`channel.relayTransport` | 在 `channel.inboxRoom(...)` 与 `group.room` 上用 `channel.busTransport` / `channel.busReader` |
+| 成员 | `checkGroupInvites({ relay })`、`channel.relayTransport` | 在 `channel.inboxRoom(...)` 与 `group.room` 上用 `busPrivacy.busPrivacyReader`（默认按合约全量读取，见[读取隐私](channels.md#5-读取隐私)）或 `channel.busReader` |
 
 群比较重要时，在 `createGroup({ relays, bus })` 里两者都写上，并在两者上都投递：成员读哪个都行。
 

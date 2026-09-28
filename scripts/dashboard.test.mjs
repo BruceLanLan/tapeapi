@@ -69,7 +69,8 @@ test('dashboard: every import of the page scripts and the vendored SDK they load
     seen.add(file)
     for (const spec of importsOf(read(file))) {
       let target
-      if (spec.startsWith('./') || spec.startsWith('../')) target = posix.normalize(posix.join(posix.dirname(file), spec))
+      // a relative import carries a content stamp (scripts/version-assets.mjs) / 相对导入带内容戳
+      if (spec.startsWith('./') || spec.startsWith('../')) target = posix.normalize(posix.join(posix.dirname(file), spec.replace(/\?v=[0-9a-f]{10}$/, '')))
       else {
         assert.ok(Object.hasOwn(map, spec), `${file}: bare import ${spec} is not in the dashboard's import map`)
         target = posix.normalize(posix.join('dashboard/', map[spec]))

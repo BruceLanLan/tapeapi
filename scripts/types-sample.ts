@@ -3,13 +3,14 @@
 //   npx --yes -p typescript@5 tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 \
 //     --lib es2022,dom --skipLibCheck false scripts/types-sample.ts
 import {
-  createTapeAPI, TapeAPIError, MAINNET, BUS_RPC_URLS, createRpc, channel, webmcp, sig, abi, parseUnits, formatUnits,
+  createTapeAPI, TapeAPIError, MAINNET, BUS_RPC_URLS, createRpc, channel, busPrivacy, webmcp, sig, abi, parseUnits, formatUnits,
   RPC_DEFAULTS, rpcUrlsFor, operatorOf, type RpcNode,
   group, deliverGroupUpdate, checkGroupInvites, type GroupDelivery, type GroupDeliveryResult, type GroupInviteCheck,
   type ResolvedService, type CallResult, type TapeAPI, type Rpc,
 } from '@tapeapi/sdk'
 import { exposeTapeAPI, manifestToTools } from '@tapeapi/sdk/webmcp'
 import { createInvite, acceptInvite, completeInvite, generateIdentity, fanIn } from '@tapeapi/sdk/channel'
+import { busPrivacyReader, type BusPrivacyStats } from '@tapeapi/sdk/bus-privacy'
 import { canonicalJSON } from '@tapeapi/sdk/canon'
 import { validateManifest } from '@tapeapi/sdk/manifest'
 import { voucherDigest } from '@tapeapi/sdk/sig'
@@ -50,6 +51,13 @@ async function consumer(): Promise<void> {
   const keys = await api.chain.channelKeys(container)
   const bus = createRpc({ urls: [...BUS_RPC_URLS], quorum: 2, timeoutMs: 15000 })
   const rpc2 = createRpc2({ urls: ['http://a', 'http://b'] })
+  const reader = busPrivacyReader({ rpc: bus, bus: MAINNET.channelBus, rooms: [channel.inboxRoom(container)], cover: { k: 8, store: new Map() }, contract: { onExceed: 'cover' } })
+  reader.add('00'.repeat(32), (wire, { room }) => { void wire.length; void room.length })
+  const privacy: BusPrivacyStats = reader.stats().privacy
+  const k: number | null = privacy.effectiveK
+  const r2 = busPrivacy.busPrivacyReader({ rpc: bus, bus: MAINNET.channelBus, mode: 'contract' })
+  r2.setMode('plain')
+  void [k, reader.covers, r2.mode]
   try { await api.call(svc, 'nope') } catch (e) { if (e instanceof TapeAPIError) { const c: string = e.code; void c } }
   void [s, agreed, accepted, one, fund.to, pub.txs, head, keys.x25519, bus, rpc2, formatUnits(1n), sig.randomPrivateKey(), abi.ZERO_ADDRESS]
 

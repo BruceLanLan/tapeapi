@@ -5,9 +5,9 @@
 // 回执核验页：从链接的 #r= 片段或用户粘贴的内容读出回执，恢复签名者，用真实 SDK 在链上解析服务，并用平实的话说明结论。
 // 手写；SDK 用调试台 vendor/ 里的同一份，纯逻辑在 lib.js（离线测试）。回执里的一切都是不可信文本，只经 textContent 进入页面。
 import { createTapeAPI, sig, abi, rpcUrlsFor, operatorOf, CHAINS, parseTapeName } from '../playground/vendor/tapeapi-sdk/index.js'
-import { readAny, verifyReceipt, verifyUsage, signedBlock, utc, ReceiptError, chainOfReceipt } from './lib.js'
+import { readAny, verifyReceipt, verifyUsage, signedBlock, utc, ReceiptError, chainOfReceipt } from './lib.js?v=c6393feef1'
 import { modelEntryOf, validateAIField, formatOfMethod, MANIFEST_FIELD } from '../playground/vendor/tapeapi-sdk/ai.js'
-import { T } from './strings.js'
+import { T } from './strings.js?v=125bb30cd7'
 
 // The SDK's default nodes: three distinct operators (NodeReal, Alchemy, 48 Club); the SDK counts agreement by operator.
 // A receipt of a service on X Layer or Base (its name carries area code 2 or 3; an AI receipt's container answers token()
