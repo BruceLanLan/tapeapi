@@ -1,0 +1,350 @@
+#!/usr/bin/env node
+// tapeapi-verify: a local verifying proxy for AI clients that cannot read usage receipts themselves (Claude Code, Codex,
+// any tool with a base-URL setting). Point ANTHROPIC_BASE_URL / OPENAI_BASE_URL at it; it forwards every request to the
+// TapeAPI AI service it was started for (resolved on chain from its TapeOut name, the delegation checked), passes the
+// bytes both ways unchanged, and checks each answer's signed usage receipt against the resolved manifest (signer, price
+// table) and the exact bytes sent and received. One verdict line per call on stderr; --log appends the receipts as JSON
+// lines; --strict turns a receipt that fails into an error the client sees.
+// tapeapi-verify：本地核验代理，给自己读不到用量回执的 AI 客户端用（Claude Code、Codex、任何能设 base URL 的工具）。把
+// ANTHROPIC_BASE_URL / OPENAI_BASE_URL 指向它；它把每个请求转给启动时指定的 TapeAPI AI 服务（按 TapeOut 名字在链上解析并核对
+// 委托），双向字节原样不变，并按解析到的清单（signer、价目表）与确切的收发字节核验每个回答的签名用量回执。每次调用在 stderr
+// 打一行结论；--log 把回执按 JSON 行追加到文件；--strict 让核验失败变成客户端看得到的错误。
+//
+//   npx -y --package=<release tgz> tapeapi-verify 11.1013.tape
+//   ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
+//
+// Strict mode and streams: a stream's receipt comes right before its final event (message_stop, response.completed,
+// [DONE]) and covers it, so in strict mode everything from the receipt on is held until the stream ends and checked;
+// if the check fails the final event is never delivered and a format-shaped error event is sent instead. A stream whose
+// receipt is appended after its end (no final event) can only be failed after it has been delivered.
+// 严格模式与流：流的回执紧挨在最终事件之前并覆盖它，所以严格模式下从回执起的内容一直扣到流结束、核验后才放出；核验失败则
+// 最终事件永不送达，改发一个该格式的错误事件。回执追加在末尾的流（没有最终事件）只能在送达之后判定失败。
+
+import http from 'node:http'
+import { appendFileSync, readFileSync, realpathSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { createTapeAPI, rpcUrlsFor, operatorOf } from '../src/index.js'
+import * as ai from '../src/ai.js'
+
+const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
+const DEFAULT_RPC = rpcUrlsFor(56)
+const DEFAULT_PORT = 8790
+const REQUEST_LIMIT = 64 * 1024 * 1024
+const RESPONSE_LIMIT = 64 * 1024 * 1024
+const TAPE_NAME_RE = /^(\d+)\.(\d+)\.tape$/
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
+// Request headers are forwarded by the same rule as the sidecar's (ai.forwardsHeader): content-type, accept, the client's
+// identity and session headers and each format's own; never cookies, forwarding headers, hop-by-hop headers or
+// accept-encoding (the bytes must arrive as signed). / 请求头按与旁路相同的规则转发（ai.forwardsHeader）。
+// Response headers not passed back: those that describe the transfer rather than the body (fetch has decoded it).
+// 不回传的响应头：描述传输而非正文的头（fetch 已解码）。
+const DROP_RESPONSE = new Set(['connection', 'keep-alive', 'transfer-encoding', 'content-length', 'content-encoding', 'trailer', 'upgrade'])
+
+const log = (...a) => console.error('[tapeapi-verify]', ...a)
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
+
+const USAGE = `tapeapi-verify ${VERSION}: a local proxy that verifies the signed usage receipt of every AI call.
+
+Usage: tapeapi-verify [options] <service>
+
+  <service>            the AI service: a TapeOut name (11.1013.tape) or a container address (0x...)
+  --port <n>           local port (default ${DEFAULT_PORT}; 0 = any free port)
+  --host <addr>        local address (default 127.0.0.1)
+  --log <file>         append one JSON line per verified call (verdict and signed receipt; no prompts, no keys)
+  --strict             a receipt that does not verify becomes an error to the client (HTTP 502, or an error
+                       event in place of a stream's final event)
+  --max-skew <s>       a receipt's time must be within this many seconds of now (default 300)
+  --rpc <url,url,...>  BNB Chain nodes; each chain read needs 2 to agree (default: ${DEFAULT_RPC.length} public nodes of distinct operators)
+  --dev <url>          TESTING ONLY: read the manifest from a local sidecar, no on-chain identity check
+  --quiet              no line for calls that carry no receipt (models, count_tokens, ...)
+  --version, --help
+
+Then point your client at it:
+  Claude Code   ANTHROPIC_BASE_URL=http://127.0.0.1:${DEFAULT_PORT}
+  Codex         [model_providers.x] base_url = "http://127.0.0.1:${DEFAULT_PORT}/v1", wire_api = "responses"
+  OpenAI SDKs   OPENAI_BASE_URL=http://127.0.0.1:${DEFAULT_PORT}/v1
+
+Your API key goes to the service as it would without this proxy; nothing else sees it. A receipt proves who answered,
+to exactly which request, with exactly which response, and what usage and price were claimed; it does not prove which
+model actually ran.
+`
+
+function parseArgs(argv) {
+  const o = { target: null, dev: null, rpc: null, port: DEFAULT_PORT, host: '127.0.0.1', log: null, strict: false, maxSkew: 300, quiet: false }
+  for (let i = 0; i < argv.length; i++) {
+    let a = argv[i], v
+    const eq = a.startsWith('--') ? a.indexOf('=') : -1
+    if (eq > 0) { v = a.slice(eq + 1); a = a.slice(0, eq) }
+    const value = () => {
+      if (v !== undefined) return v
+      if (i + 1 >= argv.length) throw new Error(`${a} needs a value`)
+      return argv[++i]
+    }
+    switch (a) {
+      case '--help': case '-h': o.help = true; break
+      case '--version': case '-v': o.version = true; break
+      case '--port': o.port = Number(value()); if (!Number.isInteger(o.port) || o.port < 0 || o.port > 65535) throw new Error('--port must be 0 to 65535'); break
+      case '--host': o.host = value(); break
+      case '--log': o.log = value(); break
+      case '--strict': o.strict = true; break
+      case '--quiet': o.quiet = true; break
+      case '--max-skew': o.maxSkew = Number(value()); if (!Number.isFinite(o.maxSkew) || o.maxSkew <= 0) throw new Error('--max-skew must be a positive number of seconds'); break
+      case '--rpc': o.rpc = value().split(',').map((s) => s.trim()).filter(Boolean); break
+      // TESTING ONLY: a local sidecar's manifest over http, no on-chain identity check. / 仅供测试。
+      case '--dev': o.dev = value(); break
+      default:
+        if (a.startsWith('-')) throw new Error(`unknown option ${a}`)
+        if (o.target) throw new Error('name one service')
+        o.target = a
+    }
+  }
+  if (o.target && o.dev) throw new Error('name a service or --dev, not both')
+  if (o.target && !TAPE_NAME_RE.test(o.target) && !ADDRESS_RE.test(o.target)) throw new Error(`${o.target} is not a TapeOut name (11.1013.tape) or a container address`)
+  return o
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Routing: a request path -> the service endpoint it goes to / 路由：请求路径 -> 它去往的服务端点
+// ---------------------------------------------------------------------------------------------------------------
+/**
+ * The service roots of the manifest's AI endpoints, with their adapters. A local path goes to the endpoint whose format
+ * matches it; any other path (models, count_tokens) to the Anthropic endpoint when the request speaks Anthropic
+ * (anthropic-version), else to the first OpenAI-style endpoint, else the first.
+ * 清单 AI 端点的服务根及其适配器。本地路径去往格式认得它的端点；其他路径（models、count_tokens）在请求说 Anthropic
+ * （带 anthropic-version）时去 Anthropic 端点，否则去第一个 OpenAI 风格端点，再否则去第一个端点。
+ */
+export function routesOf(manifest, formats = ai.FORMATS) {
+  const eps = manifest?.[ai.MANIFEST_FIELD]?.endpoints
+  if (!Array.isArray(eps) || !eps.length) throw new Error(`the service publishes no ${ai.MANIFEST_FIELD} endpoints`)
+  const routes = []
+  for (const ep of eps) {
+    const format = formats.find((f) => f.name === ep?.format)
+    const root = format && ai.rootOf(ep.baseUrl, format)
+    if (root) routes.push({ format, root: root.replace(/\/+$/, '') })
+  }
+  if (!routes.length) throw new Error(`none of the service's ${ai.MANIFEST_FIELD} endpoints has a format this version knows (${eps.map((e) => e?.format).join(', ')})`)
+  return routes
+}
+export function route(routes, verb, path, headers) {
+  const hit = routes.find((r) => r.format.match({ verb, path }))
+  if (hit) return { ...hit, metered: true }
+  const anthropic = headers.has('anthropic-version') ? routes.find((r) => r.format.name === 'anthropic-messages') : null
+  return { ...(anthropic || routes.find((r) => r.format.baseSuffix === '/v1') || routes[0]), metered: false }
+}
+
+// Errors in the shape the client's format reads. / 按客户端格式可读的错误形状。
+const anthropicLike = (r, headers) => r.format.name === 'anthropic-messages' || headers.has('anthropic-version')
+function errorBody(anthropic, code, message) {
+  return anthropic ? { type: 'error', error: { type: 'api_error', message: `tapeapi-verify: ${message}` } } : { error: { message: `tapeapi-verify: ${message}`, type: 'tapeapi_verify_error', param: null, code } }
+}
+// In place of a stream's final event: the event each format's clients treat as a failed answer (Anthropic `error`;
+// Responses `response.failed`, which Codex reports, where it ignores a bare `error` event and retries).
+// 代替流的最终事件：各格式客户端视为失败回答的事件（Anthropic 的 error；Responses 的 response.failed，Codex 会报告它，
+// 而对单独的 error 事件视而不见并重试）。
+function streamErrorEvent(format, message, id) {
+  const text = `tapeapi-verify: ${message}`
+  if (format.name === 'anthropic-messages') return `event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: text } })}\n\n`
+  if (format.name === 'openai-responses') return `event: response.failed\ndata: ${JSON.stringify({ type: 'response.failed', response: { id: id ?? 'tapeapi-verify', object: 'response', status: 'failed', error: { code: 'receipt_invalid', message: text }, output: [], usage: null } })}\n\n`
+  return `data: ${JSON.stringify({ error: { message: text, type: 'tapeapi_verify_error', param: null, code: 'receipt_invalid' } })}\n\n`
+}
+
+async function readAll(stream, limit) {
+  const parts = []; let n = 0
+  for await (const c of stream) {
+    n += c.length
+    if (n > limit) throw Object.assign(new Error(`larger than ${limit} bytes`), { tooLarge: true })
+    parts.push(c)
+  }
+  return new Uint8Array(Buffer.concat(parts))
+}
+
+const short = (s, n = 80) => String(s ?? '').slice(0, n)
+function verdictLine(rep) {
+  const r = rep.receipt?.result
+  const u = r?.usage
+  const bits = [rep.ok ? 'OK  ' : 'FAIL', `${rep.method} ${rep.path}`, rep.stream ? 'stream' : 'json', String(rep.status)]
+  if (r) bits.push(`model=${short(r.model ?? 'null', 60)}`, u ? `tokens in=${u.prompt_tokens} out=${u.completion_tokens}${u.cache_read_tokens ? ` cache_read=${u.cache_read_tokens}` : ''}${u.cache_write_tokens ? ` cache_write=${u.cache_write_tokens}` : ''}${u.cache_write_1h_tokens ? ` (1h ${u.cache_write_1h_tokens})` : ''}` : 'usage=null', r.prices ? `price=${r.prices.map((p) => `${p.amount} ${p.currency}`).join(' / ')}${r.modelMatchedBy === 'request' ? ' (model from the request)' : ''}` : 'price=null', ...(r.complete ? [] : ['INCOMPLETE']), `id=${short(rep.receipt.id, 48)}`)
+  if (rep.problems.length) bits.push(`problems: ${rep.problems.join('; ')}`)
+  if (rep.warnings.length) bits.push(`warnings: ${rep.warnings.join('; ')}`)
+  return bits.join('  ')
+}
+
+async function main() {
+  let opts
+  try { opts = parseArgs(process.argv.slice(2)) } catch (e) { process.stderr.write(`tapeapi-verify: ${e.message}\n\n${USAGE}`); process.exit(2) }
+  if (opts.help) { process.stdout.write(USAGE); return }
+  if (opts.version) { process.stdout.write(`${VERSION}\n`); return }
+  if (!opts.target && !opts.dev) { process.stderr.write(`tapeapi-verify: name the AI service\n\n${USAGE}`); process.exit(2) }
+  if (opts.dev) {
+    log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+    log('!! --dev is for TESTING ONLY: the service identity is NOT checked on chain.          !!')
+    log('!! Receipts are checked against the signer the local manifest names, nothing more.    !!')
+    log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+  }
+  const rpcUrls = opts.rpc ?? (opts.target ? DEFAULT_RPC : null)
+  if (rpcUrls && new Set(rpcUrls.map(operatorOf)).size < 2) { process.stderr.write('tapeapi-verify: --rpc needs nodes of at least 2 independent operators (every chain read must be agreed by 2)\n'); process.exit(2) }
+  const api = createTapeAPI({ ...(rpcUrls ? { rpcUrls, quorum: 2 } : {}), ...(opts.dev ? { dev: true } : {}) })
+  let svc, routes
+  try {
+    svc = await api.resolve(opts.dev ? { dev: opts.dev } : opts.target)
+    // resolve() validated the field (TAP-20 §3.9) and dropped it when invalid. / resolve() 已校验该字段，无效则已丢弃。
+    if (svc.aiProblems) throw new Error(`its ${ai.MANIFEST_FIELD} field is invalid: ${svc.aiProblems.join('; ')}`)
+    routes = routesOf(svc.manifest)
+  } catch (e) { process.stderr.write(`tapeapi-verify: cannot use ${opts.dev ?? opts.target}: ${e.message}\n`); process.exit(1) }
+  if (!svc.verified || (svc.verified.delegation !== true && svc.verified.dev !== true)) { process.stderr.write('tapeapi-verify: the service delegation did not verify\n'); process.exit(1) }
+
+  const stats = { calls: 0, ok: 0, failed: 0, passThrough: 0, sidecarErrors: 0 }
+  const writeLog = (rep) => {
+    if (!opts.log) return
+    const line = { ts: new Date().toISOString(), method: rep.method, path: rep.path, status: rep.status, stream: rep.stream, format: rep.format, ok: rep.ok, ...(rep.sidecarError ? { sidecarError: true, code: rep.code } : {}), problems: rep.problems, warnings: rep.warnings, unchecked: rep.unchecked, receipt: rep.receipt }
+    try { appendFileSync(opts.log, JSON.stringify(line) + '\n', { mode: 0o600 }) } catch (e) { log(`cannot write ${opts.log}: ${e.message}`) }
+  }
+  // Check one receipt; once more after re-reading the manifest when another key signed it (the service may have
+  // rotated). / 核验一份回执；换了签名密钥时重读清单后再核一次（服务可能换了钥）。
+  async function check(args) {
+    const run = () => ai.verifyUsageReceipt({ ...args, manifest: svc.manifest, maxSkewS: opts.maxSkew })
+    let r = run()
+    if (!r.ok && !svc.verified?.dev && r.problems.some((p) => p.startsWith('signed by '))) {
+      try { await api.refresh(svc); routes = routesOf(svc.manifest); r = run() } catch { /* keep the first verdict / 保留第一次的结论 */ }
+    }
+    return r
+  }
+  function report(rep) {
+    if (rep.sidecarError) { stats.sidecarErrors++; log(`ERR   ${rep.method} ${rep.path}  ${rep.status}  sidecar error (${rep.code}): ${rep.problems.join('; ')}`) }
+    else { if (rep.ok) stats.ok++; else stats.failed++; log(verdictLine(rep)) }
+    writeLog(rep)
+  }
+
+  const server = http.createServer(async (req, res) => {
+    const ac = new AbortController()
+    res.on('close', () => { if (!res.writableEnded) ac.abort() })
+    const sendError = (status, anthropic, code, message, extra = {}) => {
+      if (res.headersSent) return res.destroy()
+      res.writeHead(status, { 'content-type': 'application/json', 'x-should-retry': 'false', ...extra })
+      res.end(JSON.stringify(errorBody(anthropic, code, message)))
+    }
+    let url
+    try { url = new URL(req.url, 'http://local') } catch { return sendError(400, false, 'bad_request', 'bad request URL') }
+    const headers = new Headers()
+    for (let i = 0; i + 1 < req.rawHeaders.length; i += 2) {
+      const k = req.rawHeaders[i].toLowerCase()
+      if (!ai.forwardsHeader(k)) continue
+      try { headers.append(k, req.rawHeaders[i + 1]) } catch { /* not a fetch header */ }
+    }
+    const verb = req.method.toUpperCase()
+    const r = route(routes, verb, url.pathname, headers)
+    const anthropic = anthropicLike(r, headers)
+    stats.calls++
+    let body
+    try { body = verb === 'GET' || verb === 'HEAD' ? null : await readAll(req, REQUEST_LIMIT) } catch (e) {
+      return sendError(e.tooLarge ? 413 : 400, anthropic, 'bad_request', e.tooLarge ? `the request is larger than ${REQUEST_LIMIT} bytes` : 'the request body could not be read')
+    }
+    const target = r.root + url.pathname + url.search
+    let up
+    try { up = await fetch(target, { method: verb, headers, body: body && body.length ? body : verb === 'POST' ? body : undefined, redirect: 'manual', signal: ac.signal }) } catch (e) {
+      log(`FAIL ${verb} ${url.pathname}: the service could not be reached (${e?.cause?.message || e?.message || e})`)
+      return sendError(502, anthropic, 'service_unreachable', `the service at ${new URL(r.root).host} could not be reached`)
+    }
+    const out = {}
+    for (const [k, v] of up.headers) if (!DROP_RESPONSE.has(k)) out[k] = k in out ? `${out[k]}, ${v}` : v
+    const nullBody = verb === 'HEAD' || [101, 204, 205, 304].includes(up.status) || !up.body
+    if (!r.metered) {
+      stats.passThrough++
+      if (!opts.quiet) log(`--    ${verb} ${url.pathname} ${up.status} (no receipt: not a metered path)`)
+      res.writeHead(up.status, out)
+      if (nullBody) return res.end()
+      try { for await (const c of up.body) res.write(c) } catch { return res.destroy() }
+      return res.end()
+    }
+    const format = r.format
+    const common = { requestBytes: body ?? new Uint8Array(0), path: url.pathname, status: up.status }
+    const base = { method: verb, path: url.pathname, status: up.status, format: format.name }
+    const stream = !!format.stream && (up.headers.get('content-type') || '').toLowerCase().includes('text/event-stream') && !nullBody
+    if (!stream) {
+      let bytes
+      try { bytes = nullBody ? new Uint8Array(0) : await readAll(up.body, RESPONSE_LIMIT) } catch (e) {
+        return sendError(502, anthropic, 'bad_response', e.tooLarge ? `the answer is larger than ${RESPONSE_LIMIT} bytes` : 'the answer could not be read')
+      }
+      // An answer the sidecar made itself: no upstream answer and no receipt, a transport failure passed on as it is.
+      // 旁路自己产生的回答：没有上游回答也没有回执，是传输失败，原样转交。
+      if (up.headers.get(ai.SIDECAR_ERROR_HEADER) === '1' && !up.headers.get(ai.RECEIPT_HEADER)) {
+        let why = ''
+        try { why = String(JSON.parse(new TextDecoder().decode(bytes))?.error?.message ?? '').slice(0, 200) } catch { /* not JSON */ }
+        report({ ...base, ok: false, sidecarError: true, code: up.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_UNAVAILABLE', problems: [`the sidecar answered HTTP ${up.status} itself${why ? ` (${why})` : ''}: no upstream answer, no receipt`], warnings: [], unchecked: ['request', 'response'], receipt: null, stream: false })
+        res.writeHead(up.status, out)
+        return res.end(bytes)
+      }
+      let envelope = null, headerError = null
+      try { envelope = ai.decodeReceiptHeader(up.headers.get(ai.RECEIPT_HEADER)) } catch (e) { headerError = e.message }
+      const v = await check({ ...common, envelope, responseBytes: bytes, stream: false })
+      if (!envelope) v.problems.splice(0, v.problems.length, headerError === 'no receipt' ? `no ${ai.RECEIPT_HEADER} header` : headerError)
+      const rep = { ...base, ...v, stream: false }
+      report(rep)
+      if (!rep.ok && opts.strict) return sendError(502, anthropic, 'receipt_invalid', `the usage receipt did not verify: ${rep.problems.join('; ')}`)
+      res.writeHead(up.status, out)
+      return res.end(bytes)
+    }
+    // A stream: passed on chunk by chunk; in strict mode everything from the receipt comment on is held until it checks.
+    // 流：逐块转交；严格模式下从回执注释起的内容扣住，直到核验通过。
+    const st = format.streamState()
+    const scanner = ai.createSseScanner({ sentinel: format.stream.sentinel ?? null, onEvent: (j, n) => { try { st.event(j, n) } catch { /* the adapter's problem is the verdict's */ } } })
+    const held = []
+    res.writeHead(up.status, out)
+    try {
+      for await (const c of up.body) {
+        const chunk = new Uint8Array(c)
+        const before = scanner.info.receipts.length
+        scanner.push(chunk)
+        if (opts.strict && (held.length || scanner.info.receipts.length > before)) held.push(chunk)
+        else res.write(chunk)
+      }
+    } catch (e) {
+      if (!ac.signal.aborted) log(`FAIL ${verb} ${url.pathname}: the stream broke off (${e?.message || e})`)
+      return res.destroy()
+    }
+    scanner.end()
+    let rep = null
+    const receipts = scanner.info.receipts
+    // The last receipt first (the outermost sidecar's); an earlier one only if the last does not verify.
+    // 先看最后一个回执（最外层旁路的）；它核验不过时才看更早的。
+    for (let i = receipts.length - 1; i >= 0; i--) {
+      let envelope
+      try { envelope = ai.decodeReceiptHeader(receipts[i]) } catch { continue }
+      const v = await check({ ...common, envelope, responseSha256: scanner.digest(), stream: true, answer: st.result() })
+      if (v.ok || !rep) rep = v
+      if (v.ok) break
+    }
+    if (!rep) rep = { ok: false, problems: ['no tapeapi-receipt comment in the event stream'], warnings: [], unchecked: [], receipt: null }
+    const sid = st.result().id
+    rep = { ...base, ...rep, stream: true }
+    report(rep)
+    // "\n\n" first: the receipt comment may have arrived split, its head already passed on unterminated; a line end closes
+    // it and a blank line after a comment dispatches nothing, so the error event always stands on its own.
+    // 先写 "\n\n"：回执注释可能被切开到达，前半截已转出且未结束；换行把它结束，注释后的空行不分派任何事件，错误事件因此总是独立的。
+    if (!rep.ok && opts.strict) res.write('\n\n' + streamErrorEvent(format, `the usage receipt did not verify: ${rep.problems.join('; ')}`, sid))
+    else for (const c of held) res.write(c)
+    res.end()
+  })
+  // No overall request timeout: a stream may run for minutes. / 不设整体请求超时：流可能持续数分钟。
+  server.requestTimeout = 0
+  server.headersTimeout = 15_000
+  try {
+    await new Promise((resolve, reject) => server.once('error', reject).listen(opts.port, opts.host, resolve))
+  } catch (e) { process.stderr.write(`tapeapi-verify: cannot listen on ${opts.host}:${opts.port}: ${e.message}\n`); process.exit(1) }
+  const { port } = server.address()
+  const local = `http://${opts.host.includes(':') ? `[${opts.host}]` : opts.host}:${port}`
+  const m = svc.manifest
+  log(`service ${short(m.name, 80)}  container ${svc.container}  signer ${m.signer}${svc.verified.dev ? '  (DEV: not checked on chain)' : `  holder ${svc.verified.holder}`}`)
+  for (const r of routes) log(`  ${r.format.name.padEnd(18)} -> ${r.root}${r.format.baseSuffix}`)
+  log(`models priced: ${m[ai.MANIFEST_FIELD].models.map((x) => x.id).slice(0, 12).join(', ')}${m[ai.MANIFEST_FIELD].models.length > 12 ? ', ...' : ''}`)
+  log(`listening on ${local}${opts.strict ? '  (strict)' : ''}${opts.log ? `  log ${opts.log}` : ''}`)
+  log(`  ANTHROPIC_BASE_URL=${local}    OPENAI_BASE_URL=${local}/v1`)
+  const stop = (sig) => { log(`${sig}: ${stats.ok} verified, ${stats.failed} failed, ${stats.sidecarErrors} sidecar errors, ${stats.passThrough} passed through; exiting`); process.exit(0) }
+  process.on('SIGTERM', () => stop('SIGTERM'))
+  process.on('SIGINT', () => stop('SIGINT'))
+}
+
+// Run as a program, not when imported (tests import routesOf / route). / 作为程序运行时才启动（测试只导入函数）。
+const self = (() => { try { return realpathSync(fileURLToPath(import.meta.url)) } catch { return null } })()
+const argv1 = (() => { try { return process.argv[1] && realpathSync(process.argv[1]) } catch { return null } })()
+if (self && self === argv1) main().catch((e) => { log(`fatal: ${e?.stack || e}`); process.exit(1) })

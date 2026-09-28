@@ -33,7 +33,7 @@ export function manifestBaseOf(env) {
 export function build(env, extra = {}) {
   if (env.SIGNER_ADDRESS && env.SIGNER_ADDRESS.toLowerCase() !== sig.privateKeyToAddress(env.SIGNER_KEY).toLowerCase()) throw new Error(`SIGNER_ADDRESS ${env.SIGNER_ADDRESS} does not match SIGNER_KEY`)
   let models
-  try { models = JSON.parse(env.MODELS_JSON) } catch { throw new Error('MODELS_JSON must be the price table as JSON: [{ "id", "formats"?, "price": { "currency", "unit": "1M tokens", "input", "output", "cacheRead"?, "cacheWrite"?, "reasoning"? } }]') }
+  try { models = JSON.parse(env.MODELS_JSON) } catch { throw new Error('MODELS_JSON must be the price table as JSON: [{ "id", "aliases"?, "formats"?, "prices": [{ "currency", "unit": "1M tokens", "input", "output", "cacheRead"?, "cacheWrite"?, "cacheWrite1h"?, "reasoning"? }] }]') }
   return createAIProxy({
     upstream: { baseUrl: env.UPSTREAM_BASE_URL, ...(env.UPSTREAM_AUTHORIZATION ? { headers: { authorization: env.UPSTREAM_AUTHORIZATION } } : {}) },
     manifestBase: manifestBaseOf(env),

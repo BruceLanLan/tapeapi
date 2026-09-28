@@ -6,6 +6,7 @@
 // 手写；SDK 用调试台 vendor/ 里的同一份，纯逻辑在 lib.js（离线测试）。回执里的一切都是不可信文本，只经 textContent 进入页面。
 import { createTapeAPI, sig, abi, rpcUrlsFor, operatorOf } from '../playground/vendor/tapeapi-sdk/index.js'
 import { readAny, verifyReceipt, verifyUsage, signedBlock, utc, ReceiptError } from './lib.js'
+import { modelEntryOf, validateAIField, formatOfMethod, MANIFEST_FIELD } from '../playground/vendor/tapeapi-sdk/ai.js'
 import { T } from './strings.js'
 
 // The SDK's default nodes: three distinct operators (NodeReal, Alchemy, 48 Club); the SDK counts agreement by operator.
@@ -177,8 +178,8 @@ function renderChecks(r, o) {
       value = code(`${r.method} · ${r.params.path}`)
       how = t(`c.method.${state}`)
     } else if (id === 'amount') {
-      const p = r.result.price
-      value = p ? `${p.amount} ${p.currency}` : t('d.noPrice')
+      const ps = r.result.prices
+      value = ps ? ps.map((p) => `${p.amount} ${p.currency}`).join(' / ') : t('d.noPrice')
       how = state === 'pass' ? t('c.amount.how') : o.amountProblems.join('; ')
     } else if (id === 'request' || id === 'response') {
       value = code(id === 'request' ? r.params.requestSha256 : r.result.responseSha256)
@@ -213,7 +214,10 @@ function renderDetails(r, o) {
 // AI 用量回执的内容：调用、模型、token、价格与金额。这里的每个值都在签名范围内。
 function renderUsageDetails(r, o) {
   const aside = (k) => el('span', { class: 'aside' }, t(k))
-  const u = r.result.usage, p = r.result.price, m = o?.svc?.manifest
+  const u = r.result.usage, ps = r.result.prices, m = o?.svc?.manifest
+  // The unit prices are the manifest's, not the receipt's: the entry the receipt's model matches. / 单价来自清单条目。
+  let entry = null
+  try { entry = m ? modelEntryOf(validateAIField(m[MANIFEST_FIELD], { allowHttp: true }).models, r.result.model, formatOfMethod(r.method)?.name) : null } catch { entry = null }
   const kv = []
   kv.push([t('d.service'), m?.name ?? (o && !o.svc ? t('d.notResolved') : t('d.none'))])
   kv.push([t('d.container'), code(checksum(r.container))])
@@ -221,12 +225,14 @@ function renderUsageDetails(r, o) {
   kv.push([t('d.method'), code(r.method)])
   kv.push([t('d.path'), code(r.params.path)])
   kv.push([t('d.id'), code(r.id)])
-  kv.push([t('d.model'), r.result.model === null ? t('d.none') : code(r.result.model)])
+  const modelNote = r.result.modelMatchedBy === 'request' ? aside('d.model.request') : entry && entry.id !== r.result.model ? el('span', { class: 'aside' }, t('d.model.alias', entry.id)) : null
+  kv.push([t('d.model'), r.result.model === null ? t('d.none') : [code(r.result.model), modelNote]])
   kv.push([t('d.tokens'), u ? t('d.tokens.v', u) : t('d.noUsage')])
   if (r.result.usageInjected) kv.push([t('d.injected'), t('d.injected.v')])
-  kv.push([t('d.price'), p ? t('d.price.v', p) : t('d.noPrice')])
-  kv.push([t('d.amount'), p ? [code(`${p.amount} ${p.currency}`), p.unpriced ? el('span', { class: 'aside' }, t('d.unpriced', p.unpriced.join(', '))) : null] : t('d.none')])
-  if (r.result.status !== undefined) kv.push([t('d.status'), code(String(r.result.status))])
+  kv.push([t('d.price'), entry ? entry.prices.map((p) => t('d.price.v', p)).join('; ') : m ? t('d.noPrice') : t('d.price.unresolved')])
+  kv.push([t('d.amount'), ps ? [code(ps.map((p) => `${p.amount} ${p.currency}`).join(' / ')), r.result.unpriced ? el('span', { class: 'aside' }, t('d.unpriced', r.result.unpriced.join(', '))) : null] : t('d.noPrice')])
+  kv.push([t('d.complete'), r.result.complete ? t('d.complete.yes') : t('d.complete.no')])
+  kv.push([t('d.status'), code(String(r.result.status))])
   kv.push([t('d.stream'), r.result.stream ? t('d.stream.yes') : t('d.stream.no')])
   kv.push([t('d.ts'), `${utc(r.ts)} (${r.ts})`])
   kv.push([t('d.requestSha256'), [code(r.params.requestSha256), aside('d.hash.aside')]])

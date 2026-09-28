@@ -3,6 +3,8 @@
 // right before it, and it is left out of the hash). Usage arrives in a last chunk with `choices: []`, but only when the
 // request set stream_options.include_usage; the sidecar therefore always asks the upstream for it and, when the client
 // did not, strips that one chunk from what the client receives (prepareUpstream / isInjectedEvent).
+// Complete: some choice reached a finish_reason and no chunk carried an `error`.
+// 完整：某个 choice 有了 finish_reason，且没有带 error 的块。
 // AI 格式适配器：OpenAI Chat Completions。流：SSE，每个 data 行一个 JSON 块，以 `data: [DONE]` 结束（最终事件：回执放在它
 // 之前，它不计入哈希）。usage 在最后一个 choices 为空的块里，但只有请求设了 stream_options.include_usage 才有；所以旁路总是
 // 向上游要 usage，客户端没要时从它收到的内容里去掉这一块。
@@ -48,14 +50,17 @@ export const openaiChat = Object.freeze({
   response: (json) => (isObj(json) ? { id: str(json.id), model: str(json.model), usage: openaiUsage(json.usage) } : { id: null, model: null, usage: null }),
   streamState() {
     const s = { id: null, model: null, usage: null }
+    let finished = false, error = false
     return {
       event(json) {
         if (!isObj(json)) return
+        if (json.error !== undefined && json.error !== null) error = true
+        if (Array.isArray(json.choices) && json.choices.some((c) => isObj(c) && c.finish_reason !== null && c.finish_reason !== undefined)) finished = true
         if (s.id === null && typeof json.id === 'string') s.id = json.id   // every chunk repeats it; the first counts / 每块都带；以第一个为准
         if (typeof json.model === 'string') s.model = json.model
         if (isObj(json.usage)) s.usage = openaiUsage(json.usage)
       },
-      result: () => ({ ...s }),
+      result: () => ({ ...s, complete: finished && !error }),
     }
   },
 })

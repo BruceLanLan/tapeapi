@@ -16,10 +16,10 @@ const SIGNER = privateKeyToAddress(KEY)
 const CIRCUITS = '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', CONTAINER = '0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8'
 const price = (currency, input, output, extra = {}) => ({ currency, unit: '1M tokens', input, output, ...extra })
 const MODELS = [
-  { id: 'demo-chat', price: price('BEM', '0.15', '0.6') },
-  { id: 'gpt-4o', price: price('USDT', '2.5', '10') },
-  { id: 'gpt-4o-mini', formats: ['openai-chat'], price: price('USDC', '0.15', '0.6') },
-  { id: 'claude-demo', formats: ['anthropic-messages'], price: price('BEM', '3', '15', { cacheRead: '0.3', cacheWrite: '3.75' }) },
+  { id: 'demo-chat', prices: [price('BEM', '0.15', '0.6')] },
+  { id: 'gpt-4o', aliases: ['gpt-4o-2024-08-06'], prices: [price('USDT', '2.5', '10'), price('BEM', '25', '100')] },
+  { id: 'gpt-4o-mini', formats: ['openai-chat'], prices: [price('USDC', '0.15', '0.6')] },
+  { id: 'claude-demo', aliases: ['claude-demo-20260901'], formats: ['anthropic-messages'], prices: [price('BEM', '3', '15', { cacheRead: '0.3', cacheWrite: '3.75', cacheWrite1h: '6' })] },
 ]
 const ENDPOINTS = [
   { format: 'openai-chat', baseUrl: 'https://ai.example/v1' }, { format: 'openai-responses', baseUrl: 'https://ai.example/v1' },
@@ -112,20 +112,27 @@ test('scanner: receipt comments are collected (the last is the outermost); readS
 })
 
 // ── usage and price / 用量与价格 ─────────────────────────────────────────────────────────────────────────────────
-test('usage and amount: one bucket convention, BigInt only, rounded up once on the sum, exactly 8 decimals; price by exact model id and format', () => {
+test('usage and amount: one bucket convention, BigInt only, rounded up once on the sum, exactly 8 decimals; prices by exact model id or alias and format', () => {
   assert.deepEqual(ai.usageOf({ prompt_tokens: 3, completion_tokens: 4, total_tokens: 9 }), { prompt_tokens: 3, completion_tokens: 4, total_tokens: 9 })
   assert.deepEqual(ai.usageOf({ prompt_tokens: 3 }), { prompt_tokens: 3, completion_tokens: 0, total_tokens: 3 })
   // Fixed key order whatever the input order; zero per-use counts dropped. / 键顺序固定；为 0 的按次计数去掉。
   assert.deepEqual(JSON.stringify(ai.usageOf({ other: { b: 1, a: 2, z: 0 }, reasoning_tokens: 1, cache_write_tokens: 2, cache_read_tokens: 3, total_tokens: 20, completion_tokens: 5, prompt_tokens: 10 })),
     '{"prompt_tokens":10,"completion_tokens":5,"total_tokens":20,"cache_read_tokens":3,"cache_write_tokens":2,"reasoning_tokens":1,"other":{"a":2,"b":1}}')
   for (const bad of [null, {}, { prompt_tokens: -1 }, { prompt_tokens: 1.5 }, { prompt_tokens: '3' }, { prompt_tokens: 1, completion_tokens: 2 ** 53 },
-    { prompt_tokens: 5, cache_read_tokens: 3, cache_write_tokens: 3 }, { prompt_tokens: 5, completion_tokens: 1, reasoning_tokens: 2 }, { prompt_tokens: 1, other: 7 }]) assert.equal(ai.usageOf(bad), null, JSON.stringify(bad))
+    { prompt_tokens: 5, cache_read_tokens: 3, cache_write_tokens: 3 }, { prompt_tokens: 5, completion_tokens: 1, reasoning_tokens: 2 }, { prompt_tokens: 1, other: 7 },
+    { prompt_tokens: 5, cache_write_tokens: 1, cache_write_1h_tokens: 2 }, { prompt_tokens: 5, cache_write_1h_tokens: 1 }]) assert.equal(ai.usageOf(bad), null, JSON.stringify(bad))
+  assert.equal(JSON.stringify(ai.usageOf({ cache_write_1h_tokens: 1, cache_write_tokens: 2, prompt_tokens: 5 })), '{"prompt_tokens":5,"completion_tokens":0,"total_tokens":5,"cache_write_tokens":2,"cache_write_1h_tokens":1}', 'the 1-hour writes right after the writes')
   const e = (input, output, extra = {}) => ({ input, output, ...extra })
   // Buckets: 1000 prompt (300 cache reads, 200 cache writes), 100 completion (40 reasoning). / 分桶。
   const u = { prompt_tokens: 1000, completion_tokens: 100, cache_read_tokens: 300, cache_write_tokens: 200, reasoning_tokens: 40 }
   assert.equal(ai.amountOf(e('1', '2'), u), '0.00120000', 'no cache or reasoning price: everything at input/output')
   assert.equal(ai.amountOf(e('1', '2', { cacheRead: '0.1', cacheWrite: '1.25' }), u), '0.00098000', '500 + 30 + 250 + 200')
   assert.equal(ai.amountOf(e('1', '2', { reasoning: '5' }), u), '0.00132000', '1000 + 60 × 2 + 40 × 5')
+  // 1-hour cache writes: their own price, else cacheWrite, else input. / 1 小时缓存写：自己的价格，否则 cacheWrite，再否则 input。
+  const u1h = { ...u, cache_write_1h_tokens: 50 }
+  assert.equal(ai.amountOf(e('1', '2', { cacheRead: '0.1', cacheWrite: '1.25', cacheWrite1h: '2' }), u1h), '0.00101750', '500 + 30 + 150 × 1.25 + 50 × 2 + 200')
+  assert.equal(ai.amountOf(e('1', '2', { cacheRead: '0.1', cacheWrite: '1.25' }), u1h), '0.00098000', 'no cacheWrite1h: the 1-hour writes at cacheWrite')
+  assert.equal(ai.amountOf(e('1', '2', { cacheWrite1h: '2' }), u1h), '0.00125000', 'no cacheWrite: 5-minute writes at input, 1-hour ones at cacheWrite1h')
   assert.equal(ai.amountOf(e('0.1', '0.2'), { prompt_tokens: 1_000_000, completion_tokens: 1_000_000 }), '0.30000000', 'no 0.30000000000000004')
   assert.equal(ai.amountOf(e('0.00000001', '0'), { prompt_tokens: 1 }), '0.00000001', '1e-14 rounds up to the smallest unit')
   assert.equal(ai.amountOf(e('0.00000001', '0.00000001'), { prompt_tokens: 500_000, completion_tokens: 500_000 }), '0.00000001', 'rounded once, on the sum')
@@ -133,26 +140,40 @@ test('usage and amount: one bucket convention, BigInt only, rounded up once on t
   assert.equal(ai.amountOf(e('999999999999999999.99999999', '0'), { prompt_tokens: Number.MAX_SAFE_INTEGER }), '9007199254740990999999999909.92800746', 'far past float precision (checked with Python Decimal, ROUND_CEILING)')
   assert.equal(ai.amountOf(e('2.5', '10'), { prompt_tokens: 1234, completion_tokens: 567 }), '0.00875500')
   assert.throws(() => ai.amountOf(e(0.1, '1'), { prompt_tokens: 1 }), /decimal/)
-  assert.deepEqual(ai.priceOf(MODELS, 'gpt-4o-mini', { prompt_tokens: 1_000_000 }, 'openai-chat'), { currency: 'USDC', input: '0.15', output: '0.6', amount: '0.15000000' })
-  assert.equal(ai.priceOf(MODELS, 'gpt-4o-mini', { prompt_tokens: 1_000_000 }, 'openai-responses'), null, 'listed for other formats only')
-  assert.deepEqual(ai.priceOf(MODELS, 'gpt-4o', { prompt_tokens: 1 }, 'openai-responses').amount, '0.00000250', 'no formats: every format')
-  assert.equal(ai.priceOf(MODELS, 'gpt-4o-2024-08-06', { prompt_tokens: 1 }, 'openai-chat'), null, 'no prefix matching')
-  assert.equal(ai.priceOf(MODELS, 'gpt-4o', null, 'openai-chat'), null)
-  assert.deepEqual(ai.priceOf(MODELS, 'claude-demo', { prompt_tokens: 3100, completion_tokens: 50, cache_read_tokens: 2000, cache_write_tokens: 1000, other: { web_search_requests: 2 } }, 'anthropic-messages'),
-    { currency: 'BEM', input: '3', output: '15', cacheRead: '0.3', cacheWrite: '3.75', amount: '0.00540000', unpriced: ['web_search_requests'] })
+  const P = (o) => ai.pricingOf(MODELS, o)
+  assert.deepEqual(P({ reported: 'gpt-4o-mini', usage: { prompt_tokens: 1_000_000 }, format: 'openai-chat' }), { model: 'gpt-4o-mini', prices: [{ currency: 'USDC', amount: '0.15000000' }], modelMatchedBy: 'response' })
+  assert.deepEqual(P({ reported: 'gpt-4o-mini', usage: { prompt_tokens: 1_000_000 }, format: 'openai-responses' }), { model: 'gpt-4o-mini', prices: null }, 'listed for other formats only')
+  assert.deepEqual(P({ reported: 'gpt-4o', usage: { prompt_tokens: 1 }, format: 'openai-responses' }).prices, [{ currency: 'USDT', amount: '0.00000250' }, { currency: 'BEM', amount: '0.00002500' }], 'no formats: every format; one amount per currency, in the table\'s order')
+  assert.deepEqual(P({ reported: 'gpt-4o-2024-08-06', usage: { prompt_tokens: 1 }, format: 'openai-chat' }), { model: 'gpt-4o-2024-08-06', prices: [{ currency: 'USDT', amount: '0.00000250' }, { currency: 'BEM', amount: '0.00002500' }], modelMatchedBy: 'response' }, 'an alias matches; the reported id is kept')
+  assert.deepEqual(P({ reported: 'gpt-4o-2024-11-20', usage: { prompt_tokens: 1 }, format: 'openai-chat' }), { model: 'gpt-4o-2024-11-20', prices: null }, 'no prefix matching')
+  assert.deepEqual(P({ reported: 'GPT-4O', usage: { prompt_tokens: 1 }, format: 'openai-chat' }).prices, null, 'case-sensitive')
+  assert.deepEqual(P({ reported: 'gpt-4o', usage: null, format: 'openai-chat' }), { model: 'gpt-4o', prices: null, modelMatchedBy: 'response' }, 'matched, but nothing to price')
+  // No reported model: the requested one, marked as such; a reported model always wins. / 上游没报模型：用请求的模型并注明；上游报了就以它为准。
+  assert.deepEqual(P({ reported: null, requested: 'demo-chat', usage: { prompt_tokens: 1_000_000 }, format: 'openai-chat' }), { model: 'demo-chat', prices: [{ currency: 'BEM', amount: '0.15000000' }], modelMatchedBy: 'request' })
+  assert.deepEqual(P({ reported: 'unlisted', requested: 'demo-chat', usage: { prompt_tokens: 1 }, format: 'openai-chat' }), { model: 'unlisted', prices: null })
+  assert.deepEqual(P({ reported: null, requested: 'unlisted', usage: { prompt_tokens: 1 }, format: 'openai-chat' }), { model: null, prices: null })
+  assert.deepEqual(P({ reported: 'claude-demo-20260901', usage: { prompt_tokens: 3100, completion_tokens: 50, cache_read_tokens: 2000, cache_write_tokens: 1000, cache_write_1h_tokens: 400, other: { web_search_requests: 2 } }, format: 'anthropic-messages' }),
+    // 100 × 3 + 2000 × 0.3 + 600 × 3.75 + 400 × 6 + 50 × 15 = 6300 per 1M / 每百万
+    { model: 'claude-demo-20260901', prices: [{ currency: 'BEM', amount: '0.00630000' }], modelMatchedBy: 'response', unpriced: ['web_search_requests'] })
+  assert.equal(ai.modelEntryOf(MODELS, 'claude-demo', 'openai-chat'), null)
+  assert.equal(ai.modelEntryOf(MODELS, 'claude-demo', 'anthropic-messages').id, 'claude-demo')
 })
 
 test('the manifest AI field: endpoints (one per format), 1-256 models, unique ids, formats among the endpoints, nested prices', () => {
   assert.equal(ai.MANIFEST_FIELD, 'ai')
-  assert.deepEqual(ai.CURRENCIES, ['BEM', 'BNB', 'USDT', 'USDC', 'ETH', 'USD'])
+  assert.deepEqual(ai.CURRENCIES, ['BEM', 'BNB', 'USDT', 'USDC', 'ETH', 'USD1', 'USD'])
   assert.deepEqual(ai.FORMATS.map((f) => [f.name, f.method, f.baseSuffix]), [['openai-chat', 'openai_chat', '/v1'], ['openai-responses', 'openai_responses', '/v1'], ['anthropic-messages', 'anthropic_messages', ''], ['openai-embeddings', 'openai_embeddings', '/v1']])
   const ok = { endpoints: [{ format: 'openai-chat', baseUrl: 'https://ai.example/v1/' }, { format: 'future-format', baseUrl: 'https://ai.example' }],
-    models: ai.CURRENCIES.map((currency, i) => ({ id: `m${i}`, extra: 1, ...(i ? {} : { formats: ['openai-chat'] }), price: { currency, unit: '1M tokens', input: '1', output: '2.12345678', cacheRead: '0.5', junk: 1 } })) }
+    models: ai.CURRENCIES.map((currency, i) => ({ id: `m${i}`, extra: 1, ...(i ? {} : { formats: ['openai-chat'], aliases: ['m0-2026'] }), prices: [{ currency, unit: '1M tokens', input: '1', output: '2.12345678', cacheRead: '0.5', junk: 1 }] })) }
+  ok.models[1].prices = ai.CURRENCIES.map((currency) => ({ reasoning: '3', cacheWrite1h: '2', cacheWrite: '1', cacheRead: '0.5', output: '2', input: '1', unit: '1M tokens', currency }))
   const v = ai.validateAIField(ok)
   assert.equal(v.endpoints[0].baseUrl, 'https://ai.example/v1')
-  assert.deepEqual(v.models[0], { id: 'm0', formats: ['openai-chat'], price: { currency: 'BEM', unit: '1M tokens', input: '1', output: '2.12345678', cacheRead: '0.5' } }, 'only the known fields')
+  assert.deepEqual(v.models[0], { id: 'm0', aliases: ['m0-2026'], formats: ['openai-chat'], prices: [{ currency: 'BEM', unit: '1M tokens', input: '1', output: '2.12345678', cacheRead: '0.5' }] }, 'only the known fields')
+  assert.equal(JSON.stringify(v.models[1].prices[0]), '{"currency":"BEM","unit":"1M tokens","input":"1","output":"2","cacheRead":"0.5","cacheWrite":"1","cacheWrite1h":"2","reasoning":"3"}', 'a fixed key order')
+  assert.equal(v.models[1].prices.length, 7, 'one entry per currency, all seven')
   const bad = (patch, o = {}) => { try { ai.validateAIField({ ...ok, ...patch }, o); return 'ok' } catch (e) { return e.code } }
-  const ep = (x) => ({ endpoints: [{ format: 'openai-chat', baseUrl: x }] , models: [{ id: 'a', price: ok.models[1].price }] })
+  const P0 = ok.models[2].prices[0]
+  const ep = (x) => ({ endpoints: [{ format: 'openai-chat', baseUrl: x }] , models: [{ id: 'a', prices: [P0] }] })
   assert.equal(bad(ep('http://ai.example/v1')), 'MANIFEST_INVALID')
   assert.equal(bad(ep('http://ai.example/v1'), { allowHttp: true }), 'ok')
   assert.equal(bad(ep('https://ai.example/v1?x=1')), 'MANIFEST_INVALID')
@@ -160,11 +181,25 @@ test('the manifest AI field: endpoints (one per format), 1-256 models, unique id
   assert.equal(bad({ endpoints: [ok.endpoints[0], ok.endpoints[0]] }), 'MANIFEST_INVALID', 'one endpoint per format')
   assert.equal(bad({ endpoints: [{ format: 'Bad Name', baseUrl: 'https://x.example' }] }), 'MANIFEST_INVALID')
   assert.equal(bad({ models: [] }), 'MANIFEST_INVALID')
-  assert.equal(bad({ models: [{ id: 'a', price: { ...ok.models[1].price, currency: 'EUR' } }] }), 'MANIFEST_INVALID')
-  assert.equal(bad({ models: [{ id: 'a', price: { ...ok.models[1].price, input: '1e3' } }] }), 'MANIFEST_INVALID')
-  assert.equal(bad({ models: [{ id: 'a', price: { ...ok.models[1].price, reasoning: 2 } }] }), 'MANIFEST_INVALID')
-  assert.equal(bad({ models: [{ id: 'a', price: { ...ok.models[1].price, output: undefined } }] }), 'MANIFEST_INVALID')
-  assert.equal(bad({ models: [{ id: '', price: ok.models[1].price }] }), 'MANIFEST_INVALID')
+  const one = (m) => bad({ models: [{ id: 'a', prices: [P0], ...m }] })
+  assert.equal(one({ prices: [{ ...P0, currency: 'EUR' }] }), 'MANIFEST_INVALID')
+  assert.equal(one({ prices: [{ ...P0, input: '1e3' }] }), 'MANIFEST_INVALID')
+  assert.equal(one({ prices: [{ ...P0, reasoning: 2 }] }), 'MANIFEST_INVALID')
+  assert.equal(one({ prices: [{ ...P0, cacheWrite1h: '1.123456789' }] }), 'MANIFEST_INVALID')
+  assert.equal(one({ prices: [{ ...P0, output: undefined }] }), 'MANIFEST_INVALID')
+  assert.equal(one({ prices: [P0, P0] }), 'MANIFEST_INVALID', 'one entry per currency')
+  assert.equal(one({ prices: [] }), 'MANIFEST_INVALID')
+  assert.equal(one({ prices: P0 }), 'MANIFEST_INVALID', 'a list')
+  assert.equal(one({ prices: undefined, price: P0 }), 'MANIFEST_INVALID', 'the single price object is not accepted')
+  assert.equal(one({ id: '' }), 'MANIFEST_INVALID')
+  assert.equal(one({ aliases: [] }), 'MANIFEST_INVALID')
+  assert.equal(one({ aliases: ['a'] }), 'MANIFEST_INVALID', 'an alias equal to an id')
+  assert.equal(one({ aliases: ['b', 'b'] }), 'MANIFEST_INVALID')
+  assert.equal(one({ aliases: ['x\u0007'] }), 'MANIFEST_INVALID')
+  assert.equal(one({ aliases: Array.from({ length: 17 }, (_, i) => `a${i}`) }), 'MANIFEST_INVALID', 'at most 16 aliases')
+  assert.equal(one({ aliases: Array.from({ length: 16 }, (_, i) => `a${i}`) }), 'ok')
+  assert.equal(bad({ models: [{ id: 'a', prices: [P0] }, { id: 'b', aliases: ['a'], prices: [P0] }] }), 'MANIFEST_INVALID', 'an alias of one entry is the id of another')
+  assert.equal(bad({ models: [{ id: 'a', aliases: ['x'], prices: [P0] }, { id: 'b', aliases: ['x'], prices: [P0] }] }), 'MANIFEST_INVALID', 'two entries share an alias')
   assert.equal(bad({ models: [ok.models[1], ok.models[1]] }), 'MANIFEST_INVALID')
   assert.equal(bad({ models: [{ ...ok.models[1], formats: ['anthropic-messages'] }] }), 'MANIFEST_INVALID', 'formats must be among the endpoints')
 })
@@ -174,7 +209,8 @@ const REQ = '{"model":"demo-chat","messages":[{"role":"user","content":"hi"}]}'
 const RES = '{"id":"chatcmpl-1","model":"demo-chat","usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30}}'
 function receipt({ key = KEY, container = CONTAINER, method = 'openai_chat', path = '/v1/chat/completions', req = REQ, res = RES, result = {}, id = 'chatcmpl-1', ts = Math.floor(Date.now() / 1000) } = {}) {
   const params = { path, requestSha256: sha(req) }
-  const r = { model: 'demo-chat', usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 }, responseSha256: sha(res), stream: false, price: { currency: 'BEM', input: '0.15', output: '0.6', amount: '0.00001350' }, status: 200, ...result }
+  const r = { model: 'demo-chat', usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 }, responseSha256: sha(res), stream: false, complete: true, status: 200, prices: [{ currency: 'BEM', amount: '0.00001350' }], modelMatchedBy: 'response', ...result }
+  for (const k of Object.keys(r)) if (r[k] === undefined) delete r[k]
   return { id, ok: true, result: r, container, ts, method, params, sig: signResponse({ container, id, method, params, ok: true, body: r, ts }, key) }
 }
 const verify = (env, extra = {}) => ai.verifyUsageReceipt({ envelope: env, manifest: MANIFEST, requestBytes: REQ, responseBytes: RES, stream: false, ...extra })
@@ -184,7 +220,7 @@ test('verifyUsageReceipt: a good receipt passes; what was not given is listed as
   const r = verify(receipt(), { path: '/v1/chat/completions', status: 200, maxSkewS: 300 })
   assert.deepEqual(r.problems, []); assert.equal(r.ok, true); assert.deepEqual(r.unchecked, [])
   const bare = ai.verifyUsageReceipt({ envelope: receipt(), manifest: MANIFEST })
-  assert.equal(bare.ok, true); assert.deepEqual(bare.unchecked, ['request', 'response', 'freshness'])
+  assert.equal(bare.ok, true); assert.deepEqual(bare.unchecked, ['request', 'response', 'id', 'model', 'usage', 'complete', 'freshness'], 'a check that could not be made is reported as not made')
   assert.equal(ai.verifyUsageReceipt({ envelope: null, manifest: MANIFEST }).ok, false)
 })
 
@@ -204,19 +240,43 @@ test('verifyUsageReceipt: every tampering and mismatch is reported', () => {
   assert.match(problems(receipt({ id: 'other' })), /response's id is chatcmpl-1/)
   assert.match(problems(receipt({ ts: 1_000_000 }), { maxSkewS: 300 }), /outside ±300 s/)
   // Amounts: signed by the right key, but not what the table says. / 金额：签名正确，但与价目表不符。
-  assert.match(problems(receipt({ result: { price: { currency: 'BEM', input: '0.15', output: '0.6', amount: '0.00001349' } } })), /charges 0\.00001349 BEM .* manifest gives 0\.00001350/)
-  assert.match(problems(receipt({ result: { price: { currency: 'BEM', input: '0.01', output: '0.01', amount: '0.00000030' } } })), /manifest gives/)
-  assert.match(problems(receipt({ result: { price: null } })), /carries no price, but the manifest prices/)
+  assert.match(problems(receipt({ result: { prices: [{ currency: 'BEM', amount: '0.00001349' }] } })), /charges 0\.00001349 BEM; the manifest gives 0\.00001350 BEM/)
+  assert.match(problems(receipt({ result: { prices: [{ currency: 'USDT', amount: '0.00001350' }] } })), /manifest gives 0\.00001350 BEM/, 'another currency')
+  assert.match(problems(receipt({ result: { prices: [{ currency: 'BEM', amount: '0.00001350' }, { currency: 'USDT', amount: '0.00000001' }] } })), /manifest gives/, 'an extra currency')
+  assert.match(problems(receipt({ result: { prices: null } })), /carries no prices, but the manifest prices/)
+  assert.match(problems(receipt({ result: { modelMatchedBy: undefined, prices: null } })), /does not say it matched/)
   assert.match(problems(receipt({ result: { model: 'unlisted' } }), { requestBytes: undefined }), /lists no price for model unlisted/)
-  const unpriced = verify(receipt({ result: { model: 'unlisted', price: null } }))
+  assert.match(problems(receipt({ result: { model: 'unlisted', prices: null } }), { requestBytes: undefined }), /says model unlisted matched the price table/)
+  assert.match(problems(receipt({ result: { unpriced: ['web_search_requests'] } })), /lists unpriced/)
+  const RESU = RES.replace('demo-chat', 'unlisted')
+  const unpriced = verify(receipt({ res: RESU, result: { model: 'unlisted', prices: null, modelMatchedBy: undefined } }), { responseBytes: RESU })
   assert.equal(unpriced.ok, true)
   assert.deepEqual(unpriced.warnings, ['asked for model demo-chat, the upstream reported unlisted', 'model unlisted is not in the manifest\'s price table'])
+  // Matched by the request: the request must have asked for exactly that model. / 按请求匹配：请求必须恰好要的是这个模型。
+  assert.equal(verify(receipt({ result: { modelMatchedBy: 'request' } })).ok, true)
+  const REQ2 = REQ.replace('demo-chat', 'gpt-4o')
+  assert.match(problems(receipt({ req: REQ2, result: { modelMatchedBy: 'request' } }), { requestBytes: REQ2 }), /prices the requested model demo-chat, but the request asked for gpt-4o/)
+  // An alias is the same model: no warning. / 别名即同一模型：不警告。
+  const REQ3 = REQ.replace('demo-chat', 'gpt-4o'), RES3 = RES.replace('demo-chat', 'gpt-4o-2024-08-06')
+  const r3 = verify(receipt({ req: REQ3, res: RES3, result: { model: 'gpt-4o-2024-08-06', prices: [{ currency: 'USDT', amount: '0.00022500' }, { currency: 'BEM', amount: '0.00225000' }] } }), { requestBytes: REQ3, responseBytes: RES3 })
+  assert.deepEqual([r3.problems, r3.warnings], [[], []])
+  // Completeness: signed, and checked against the answer. / 完整性：已签名，并与回答核对。
+  assert.match(problems(receipt({ result: { complete: false } })), /says complete false, but the answer is complete/)
+  const failedRes = '{"id":"chatcmpl-1","error":"x"}'
+  assert.deepEqual(verify(receipt({ res: failedRes, result: { status: 500, usage: null, prices: null, modelMatchedBy: 'request', complete: false } }), { responseBytes: failedRes, status: 500 }).problems, [], 'the error body names no model: the requested one, as the sidecar signs it')
+  assert.match(problems(receipt({ result: { status: 500 } }), { status: 500 }), /a failed call .* carries usage null and prices null/)
   // Shape. / 结构。
   assert.match(problems({ ...receipt(), result: { ...receipt().result, usage: { prompt_tokens: 1 } } }), /result.usage must be/)
   assert.match(problems({ ...receipt(), ok: false }), /ok must be true/)
   assert.match(problems({ ...receipt(), params: { path: '/v1/chat/completions' } }), /params must be/)
   assert.match(ai.verifyUsageReceipt({ envelope: receipt(), manifest: { ...MANIFEST, ai: undefined } }).problems.join(), /ai field/)
   assert.match(problems({ ...receipt(), result: { ...receipt().result, usageInjected: false } }), /usageInjected/)
+  for (const [k, v, re] of [['complete', undefined, /complete must be a boolean/], ['status', undefined, /status must be/], ['prices', [{ currency: 'BEM', amount: '1' }], /prices must be/], ['prices', [], /prices must be/],
+    ['prices', [{ currency: 'BEM', amount: '0.00000001', extra: 1 }], /prices must be/], ['modelMatchedBy', 'guess', /modelMatchedBy must be/], ['unpriced', [], /unpriced must be/], ['prices', undefined, /prices must be/]]) {
+    const r = { ...receipt().result, [k]: v }
+    if (v === undefined) delete r[k]
+    assert.match(problems({ ...receipt(), result: r }), re, `${k} = ${JSON.stringify(v)}`)
+  }
 })
 
 // ── the verifying fetch, against the real sidecar / 核验 fetch，对照真实旁路 ────────────────────────────────────────
@@ -260,7 +320,7 @@ test('verifying fetch: a non-stream answer is checked, returned intact, and repo
   assert.equal(await res.text(), RES)
   assert.equal(reports.length, 1)
   assert.deepEqual(reports[0].problems, []); assert.equal(reports[0].ok, true); assert.equal(reports[0].stream, false)
-  assert.deepEqual(reports[0].receipt.result.price, { currency: 'BEM', input: '0.15', output: '0.6', amount: '0.00001350' })
+  assert.deepEqual(reports[0].receipt.result.prices, [{ currency: 'BEM', amount: '0.00001350' }])
   // A Request object works too; the bytes it carries are the bytes hashed. / Request 对象同样可用。
   const r2 = await vf(new Request('https://ai.example/v1/chat/completions', { method: 'POST', body: REQ }))
   assert.equal(await r2.text(), RES); assert.equal(reports[1].ok, true)
@@ -356,10 +416,10 @@ test('verifying fetch: the manifest endpoints route each format, Anthropic\'s wi
   const mt = await m.text()
   assert.ok(mt.includes('event: ping'))
   assert.equal(reports.at(-1).ok, true, reports.at(-1).problems.join())
-  assert.deepEqual(reports.at(-1).receipt.result.price, { currency: 'BEM', input: '3', output: '15', cacheRead: '0.3', cacheWrite: '3.75', amount: '0.00011100' }, '10 × 3 + 20 × 0.3 + 5 × 15')
+  assert.deepEqual(reports.at(-1).receipt.result.prices, [{ currency: 'BEM', amount: '0.00011100' }], '10 × 3 + 20 × 0.3 + 5 × 15')
   const r = await vf('https://ai.example/v1/responses', { method: 'POST', body: '{"model":"gpt-4o","stream":true,"input":"x"}' })
   await r.text()
-  assert.equal(reports.at(-1).ok, true); assert.equal(reports.at(-1).receipt.method, 'openai_responses'); assert.equal(reports.at(-1).receipt.result.price.amount, '0.00003000')
+  assert.equal(reports.at(-1).ok, true); assert.equal(reports.at(-1).receipt.method, 'openai_responses'); assert.deepEqual(reports.at(-1).receipt.result.prices, [{ currency: 'USDT', amount: '0.00003000' }, { currency: 'BEM', amount: '0.00030000' }])
   await vf('https://ai.example/v1/messages/count_tokens', { method: 'POST', body: '{}' })
   assert.equal(reports.length, 2, 'count_tokens is not a receipt path')
 })

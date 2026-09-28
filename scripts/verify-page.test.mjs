@@ -432,7 +432,7 @@ test('verify page: served with one frame-forbidding policy, listed in the sitema
 
 // ── AI usage receipts / AI 用量回执 ─────────────────────────────────────────────────────────────────────────────
 // Made by the real sidecar, then read in every form a client holds and judged on facts. / 由真实旁路签发，再以各种形式读出并判断。
-const AI_MODELS = [{ id: 'demo-chat', price: { currency: 'BEM', unit: '1M tokens', input: '0.15', output: '0.6' } }]
+const AI_MODELS = [{ id: 'demo-chat', prices: [{ currency: 'BEM', unit: '1M tokens', input: '0.15', output: '0.6' }] }]
 const AI_REQ = '{"model":"demo-chat","messages":[{"role":"user","content":"hi"}]}'
 const AI_JSON = '{"id":"chatcmpl-7","model":"demo-chat","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30}}'
 const AI_SSE = 'data: {"id":"chatcmpl-8","model":"demo-chat","choices":[]}\n\ndata: {"id":"chatcmpl-8","model":"demo-chat","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}\n\ndata: [DONE]\n\n'
@@ -474,7 +474,8 @@ test('verify: an AI usage receipt reads from the header value or line, the SSE c
   const shape = (mut) => { const x = structuredClone(env); mut(x); try { parseUsageReceipt(x); return 'ok' } catch (e) { return e.field } }
   assert.equal(shape((x) => { x.params.requestSha256 = 'xyz' }), 'params')
   assert.equal(shape((x) => { x.result.usage = { prompt_tokens: -1 } }), 'result.usage')
-  assert.equal(shape((x) => { x.result.price.amount = '1.5' }), 'result.price')
+  assert.equal(shape((x) => { x.result.prices[0].amount = '1.5' }), 'result.prices')
+  assert.equal(shape((x) => { delete x.result.complete }), 'result.complete')
   assert.equal(shape((x) => { x.ok = false }), 'ok')
   assert.equal(shape((x) => { x.sig = '0x12' }), 'sig')
   assert.equal(recoverResponseSigner(usageEnvelopeOf(want), want.sig), SIGNER, 'the page\'s envelope is exactly what was signed')
@@ -502,7 +503,7 @@ test('verify: AI receipt verdicts: valid; other key when altered; invalid amount
   const altered = structuredClone(r); altered.result.usage.completion_tokens = 2
   assert.equal((await verifyUsage(altered, aiIo(manifest))).verdict, 'other-key')
   // The right key, a price the table does not give. / 密钥正确，价格与价目表不符。
-  const priced = { ...manifest, ai: { ...manifest.ai, models: [{ ...AI_MODELS[0], price: { ...AI_MODELS[0].price, output: '0.5' } }] } }
+  const priced = { ...manifest, ai: { ...manifest.ai, models: [{ ...AI_MODELS[0], prices: [{ ...AI_MODELS[0].prices[0], output: '0.5' }] }] } }
   out = await verifyUsage(r, aiIo(priced))
   assert.deepEqual([out.verdict, out.failed], ['invalid', 'amount'])
   assert.match(out.amountProblems[0], /manifest gives 0\.00001150/)

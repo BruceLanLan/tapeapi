@@ -2,7 +2,8 @@
 // billing; the sidecar passes /v1/* through byte for byte and signs every answer a format adapter recognises (sdk
 // ai.FORMATS: OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, OpenAI Embeddings) as an AI usage receipt
 // (A2): a TAP-21 envelope by the service's delegated key over { path, requestSha256 } and { model, usage,
-// responseSha256, stream, price, status, usageInjected? }. Whole answers carry it in `x-tapeapi-receipt`; in an event
+// responseSha256, stream, complete, status, prices, modelMatchedBy?, unpriced?, usageInjected? } (sdk ai.js states the
+// rules). Whole answers carry it in `x-tapeapi-receipt`; in an event
 // stream the format's final event (`data: [DONE]`, `response.completed`, `message_stop`) is held back, the receipt is
 // signed, sent as one SSE comment block (clients ignore comments), and then the final event is released; with no final
 // event the comment is appended at the end. Every receipt is also kept for an hour and served by the free manifest
@@ -24,12 +25,18 @@ import { sig, ai, TapeAPIError } from '@tapeapi/sdk'
 import { createProvider, VERSION } from './index.js'
 import { readCappedBytes, TooLarge } from './read-capped.js'
 
-/** Request bodies are refused past this many bytes (4 MiB). / 请求正文上限。 */
-export const REQUEST_LIMIT = 4 * 1024 * 1024
+/** Request bodies are refused past this many bytes (32 MiB, Anthropic's own request limit: images and PDFs ride in the
+ *  body). / 请求正文上限（32 MiB，与 Anthropic 自己的上限相同：图片与 PDF 都在正文里）。 */
+export const REQUEST_LIMIT = 32 * 1024 * 1024
 /** A non-stream upstream answer is refused past this many bytes (16 MiB); streams are not capped. / 非流式上游回答上限。 */
 export const RESPONSE_LIMIT = 16 * 1024 * 1024
-/** A non-stream answer must be complete, and a stream must have started, within this many ms. / 上游时限。 */
-export const UPSTREAM_TIMEOUT_MS = 120_000
+/** A non-stream answer must be complete, and a stream must have started, within this many ms (600 s, the official SDKs'
+ *  own timeout: Claude Code falls back to a non-streaming call after a stream error, and that call may be long).
+ *  / 非流式回答须在此时限内完成、流须在此时限内开始（600 秒，与官方 SDK 的超时相同）。 */
+export const UPSTREAM_TIMEOUT_MS = 600_000
+/** A stream that sends nothing for this many ms is ended there (its receipt appended, complete false). / 流在这么久没有
+ *  任何字节时就此结束（回执追加在末尾，complete 为 false）。 */
+export const STREAM_IDLE_MS = 300_000
 export const RECEIPT_TTL_MS = 3_600_000
 export const MAX_RECEIPTS = 50_000
 /** At most this many bytes of one event are held back (a final event, or a chunk that may be stripped); past it the
@@ -52,25 +59,28 @@ const RECEIPT_METHOD = Object.freeze({
   description: 'The signed usage receipt of an AI response, by the response id (kept for 1 hour after the answer).',
 })
 
-// Caller headers that reach the upstream: these, plus each configured format's own (`headers`: OpenAI's authorization,
-// openai-beta, -organization, -project; Anthropic's x-api-key, anthropic-version, anthropic-beta), passed verbatim.
-// Nothing else a caller sent does: no cookie, no x-forwarded-*, no cf-*, no x-stainless-*.
-// 能到达上游的调用方请求头：这些，加上各格式声明的，原样转发。调用方发来的其它任何头都到不了上游。
-const FORWARD_BASE = ['content-type', 'accept']
+// Caller headers that reach the upstream, verbatim: sdk ai.forwardsHeader decides (content-type, accept, the clients'
+// identity and session headers such as user-agent, x-claude-code-session-id, session-id, x-codex-*, x-stainless-*, and
+// each format's own auth, version and beta headers). Never a cookie, forwarded / x-forwarded-* / x-real-ip / cf-*, or a
+// hop-by-hop header. / 能到达上游的调用方请求头由 ai.forwardsHeader 决定，原样转发；Cookie、转发与客户端地址头、逐跳头永不转发。
+const FORWARD_BASE = ai.FORWARD_HEADERS
 // Upstream response headers that are not passed on: hop-by-hop, those that describe the transfer rather than the body
 // (fetch has already decoded it), cookies of the upstream's own domain, the upstream's CORS (ours replaces it), and any
 // receipt header an upstream tries to set (ours replaces it).
 // 不转交的上游响应头：逐跳头、描述传输而非正文的头（fetch 已解码）、上游自己域名的 Cookie、上游的 CORS、上游试图设置的回执头。
 const DROP = new Set(['connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'te', 'trailer', 'upgrade', 'proxy-authenticate',
   'proxy-authorization', 'content-encoding', 'content-length', 'set-cookie', 'set-cookie2', 'alt-svc', ai.RECEIPT_HEADER])
-const EXPOSE_BASE = [ai.RECEIPT_HEADER, 'retry-after']
+const EXPOSE_BASE = [ai.RECEIPT_HEADER, ai.SIDECAR_ERROR_HEADER, 'retry-after']
 const TOKEN_LIST = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+(?:\s*,\s*[A-Za-z0-9!#$%&'*+.^_`|~-]+)*$/
 const NULL_BODY = new Set([101, 204, 205, 304])
 
 // Errors of the sidecar itself, in the OpenAI error shape (the most widely read one). Unsigned: no upstream answer
 // exists to bind. / 旁路自己的错误，按 OpenAI 的错误格式。未签名：没有可绑定的上游回答。
+// Marked with x-tapeapi-sidecar-error: 1 (ai.SIDECAR_ERROR_HEADER), so a verifying client reports a transport failure
+// rather than a failed receipt; the mark is informative and never makes an answer verified.
+// 带 x-tapeapi-sidecar-error: 1，核验方据此报告传输失败而不是回执失败；该标记仅供参考，不会让回答变成已核验。
 const errorResponse = (status, code, message, headers) => new Response(JSON.stringify({ error: { message, type: 'tapeapi_proxy_error', param: null, code } }), {
-  status, headers: { 'content-type': 'application/json', ...headers },
+  status, headers: { 'content-type': 'application/json', [ai.SIDECAR_ERROR_HEADER]: '1', ...headers },
 })
 
 const sameBytes = (a, b) => a.length === b.length && a.every((x, i) => x === b[i])
@@ -86,7 +96,7 @@ function concat(parts) {
   for (const p of parts) { out.set(p, o); o += p.length }
   return out
 }
-const goodId = (v) => typeof v === 'string' && /^[\x21-\x7e]{1,128}$/.test(v)
+const goodId = ai.isAnswerId   // TAP-21 §3.5: the answer's id when it is 1 to 128 characters in U+0021–U+007E / 回答自己的 id
 function newId() {
   const b = new Uint8Array(12); crypto.getRandomValues(b)
   return 'tapeapi-' + [...b].map((x) => x.toString(16).padStart(2, '0')).join('')
@@ -106,6 +116,24 @@ function eventOf(bytes) {
   let json
   try { json = data === null ? undefined : JSON.parse(data) } catch { json = undefined }
   return { json, name }
+}
+// A stream that ends quietly after `ms` without a chunk (the upstream is cancelled); `onIdle` is told.
+// 超过 ms 没有新块时悄然结束的流（取消上游），并告知 onIdle。
+function untilIdle(body, ms, onIdle) {
+  const reader = body.getReader()
+  return new ReadableStream({
+    async pull(c) {
+      let timer
+      const idle = new Promise((resolve) => { timer = setTimeout(() => resolve(null), ms) })
+      let got
+      try { got = await Promise.race([reader.read(), idle]) } catch (e) { clearTimeout(timer); return c.error(e) }
+      clearTimeout(timer)
+      if (got === null) { onIdle(); reader.cancel().catch(() => {}); return c.close() }
+      if (got.done) return c.close()
+      c.enqueue(got.value)
+    },
+    cancel(reason) { return reader.cancel(reason) },
+  }, { highWaterMark: 0 })
 }
 function validFormat(f) {
   return isObj(f) && typeof f.name === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(f.name) && /^[a-z][a-z0-9_]{0,63}$/.test(f.method) &&
@@ -132,7 +160,8 @@ function validFormat(f) {
  * @param {number} [o.maxReceipts=50000]
  * @param {string} [o.publicUrl]  the service root the endpoints are built on; default endpoints.live[0] without /tapeapi/v1
  * @param {boolean} [o.allowHttp]  http endpoints (local testing)
- * @param {number} [o.upstreamTimeoutMs=120000]
+ * @param {number} [o.upstreamTimeoutMs=600000]
+ * @param {number} [o.streamIdleMs=300000]  a stream silent this long is ended (0: never) / 流静默这么久即结束（0：不限）
  */
 export function createAIProxy(opts = {}) {
   const { upstream, manifestBase, signerKey, models, receiptTtlMs = RECEIPT_TTL_MS, maxReceipts = MAX_RECEIPTS, formats = ai.FORMATS } = opts
@@ -163,6 +192,8 @@ export function createAIProxy(opts = {}) {
   const oaError = (status, code, message, extra = {}) => errorResponse(status, code, message, { ...CORS, ...extra })
   const timeoutMs = Number(opts.upstreamTimeoutMs ?? UPSTREAM_TIMEOUT_MS)
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new TapeAPIError('BAD_REQUEST', 'upstreamTimeoutMs must be a positive number')
+  const idleMs = Number(opts.streamIdleMs ?? STREAM_IDLE_MS)
+  if (!Number.isFinite(idleMs) || idleMs < 0) throw new TapeAPIError('BAD_REQUEST', 'streamIdleMs must be 0 or a positive number')
   const signer = sig.privateKeyToAddress(signerKey)
   const log = opts.log || ((...a) => console.error('[tapeapi/ai-proxy]', ...a))
   const fetchImpl = opts.fetch || ((...a) => globalThis.fetch(...a))
@@ -183,7 +214,7 @@ export function createAIProxy(opts = {}) {
   if (size > MANIFEST_LIMIT) throw new TapeAPIError('MANIFEST_INVALID', `the manifest would be ${size} bytes, over TAP-20's ${MANIFEST_LIMIT}; shorten the price table`)
   if (size > CONSOLE_MANIFEST_LIMIT) log(`the manifest is ${size} bytes; the holder console publishes at most ${CONSOLE_MANIFEST_LIMIT} in one transaction`)
 
-  const st = { requests: 0, receipts: 0, streams: 0, passThrough: 0, upstreamErrors: 0, upstreamFailures: 0, timeouts: 0, tooLarge: 0, redirects: 0, rateLimited: 0, duplicateIds: 0, lookups: 0, misses: 0, usageInjected: 0, appended: 0 }
+  const st = { requests: 0, receipts: 0, streams: 0, passThrough: 0, upstreamErrors: 0, upstreamFailures: 0, timeouts: 0, idleTimeouts: 0, tooLarge: 0, redirects: 0, rateLimited: 0, duplicateIds: 0, lookups: 0, misses: 0, usageInjected: 0, appended: 0, incomplete: 0 }
   const unpriced = new Set()
 
   // ---- the receipt store: insertion-ordered, bounded, each entry dated / 回执存储：按插入排序、有界、逐条带期限 ----
@@ -224,18 +255,22 @@ export function createAIProxy(opts = {}) {
   const container = provider.container
 
   // ---- signing / 签名 ----
-  function resultOf({ format, model, usage, responseSha256, stream, status, usageInjected }) {
+  function resultOf({ format, read, requested, responseSha256, stream, status, usageInjected }) {
     const ok = status >= 200 && status < 300
-    const m = typeof model === 'string' && model.length <= ai.MODEL_ID_MAX ? model : null
+    const model = typeof read.model === 'string' && read.model.length <= ai.MODEL_ID_MAX ? read.model : null
     // A failed call claims no usage, so it carries no price: the receipt makes the failure attributable, not billable.
     // 失败的调用不声称用量，也就没有价格：回执让失败可追责，而不是可计费。
-    const u = ok ? ai.usageOf(usage) : null
-    const price = ai.priceOf(field.models, m, u, format.name)
-    if (u && m !== null && !price && !unpriced.has(m) && unpriced.size < UNPRICED_LOG_MAX) {
-      unpriced.add(m)
-      log(`the upstream reported model ${JSON.stringify(m.slice(0, 80))}, which is not priced for ${format.name}: its receipts carry price null (add the exact id to models to price it)`)
+    const u = ok ? ai.usageOf(read.usage) : null
+    const p = ai.pricingOf(field.models, { reported: model, requested: typeof requested === 'string' && requested.length <= ai.MODEL_ID_MAX ? requested : null, usage: u, format: format.name })
+    if (u && model !== null && !p.modelMatchedBy && !unpriced.has(model) && unpriced.size < UNPRICED_LOG_MAX) {
+      unpriced.add(model)
+      log(`the upstream reported model ${JSON.stringify(model.slice(0, 80))}, which is not priced for ${format.name}: its receipts carry prices null (add it to models as an id or an alias to price it)`)
     }
-    const r = { model: m, usage: u, responseSha256, stream, price, status }
+    const complete = ai.completeOf({ status, stream, read })
+    if (!complete && ok) st.incomplete++
+    const r = { model: p.model, usage: u, responseSha256, stream, complete, status, prices: p.prices }
+    if (p.modelMatchedBy) r.modelMatchedBy = p.modelMatchedBy
+    if (p.unpriced) r.unpriced = p.unpriced
     if (usageInjected) r.usageInjected = true
     return r
   }
@@ -257,7 +292,7 @@ export function createAIProxy(opts = {}) {
   // 到达即转交，只有两类事件会扣到其空行：格式的最终事件（凭首行认出），在回执注释块之后放出；以及当旁路替客户端向上游要了
   // usage 时的每个 data 事件，以便去掉因此多出的 usage 块。其它事件一旦首行表明不属于这两类，就立即转发。
   // 客户端收到的正是扫描器取哈希的内容（注释与被去掉的块都不在其中）。
-  function receiptStream({ format, params, status, strip, usageInjected }) {
+  function receiptStream({ format, params, status, strip, usageInjected, requested }) {
     const finals = finalLines(format.stream.final)
     const read = format.streamState()
     const onEvent = (json, name) => { try { read.event(json, name) } catch (e) { log(`${format.name}: reading a stream event failed: ${e?.message || e}`) } }
@@ -271,7 +306,7 @@ export function createAIProxy(opts = {}) {
     const signed = () => {
       injected = true
       const r = read.result()
-      const env = signReceipt({ id: goodId(r.id) ? r.id : newId(), method: format.method, params, result: resultOf({ format, model: r.model, usage: r.usage, responseSha256: scanner.digest(), stream: true, status, usageInjected }) })
+      const env = signReceipt({ id: goodId(r.id) ? r.id : newId(), method: format.method, params, result: resultOf({ format, read: r, requested, responseSha256: scanner.digest(), stream: true, status, usageInjected }) })
       return enc.encode(ai.receiptComment(env))
     }
     const release = () => { for (const b of held) emit(b); held = []; heldLen = 0 }
@@ -436,7 +471,7 @@ export function createAIProxy(opts = {}) {
     const url = new URL(up.origin + upPath + path.slice(API_PREFIX.length - 1) + new URL(request.url).search)
     if (url.origin !== up.origin || !url.pathname.startsWith(upPath + '/')) return oaError(400, 'bad_path', 'bad path')
     const headers = new Headers()
-    for (const k of forward) { const v = request.headers.get(k); if (v !== null) headers.set(k, v) }
+    for (const [k, v] of request.headers) if (ai.forwardsHeader(k, formats)) headers.set(k, v)
     for (const [k, v] of operatorHeaders) headers.set(k, v)
     // A format may change what goes upstream (to ask for usage); the receipt still hashes what the client sent.
     // 格式可以改变发往上游的内容（为了要到 usage）；回执哈希的仍是客户端发来的字节。
@@ -472,13 +507,16 @@ export function createAIProxy(opts = {}) {
       return new Response(NULL_BODY.has(res.status) ? null : res.body, { status: res.status, statusText: res.statusText, headers: out })
     }
     const params = { path, requestSha256: ai.sha256Hex(body ?? new Uint8Array(0)) }
+    let requested = null
+    try { requested = typeof format.requestModel === 'function' ? format.requestModel(jsonOf(body ?? new Uint8Array(0))) : null } catch { /* not the adapter's JSON */ }
     // A stream only for a format that streams, answered as an event stream (the verifiers apply the same rule).
     // 只有会流式的格式、且以事件流作答时才按流处理（核验方用同一条规则）。
     const stream = !!format.stream && (res.headers.get('content-type') || '').toLowerCase().includes('text/event-stream') && !!res.body && !NULL_BODY.has(res.status)
     if (stream) {
       clearTimeout(timer); st.streams++
-      const s = receiptStream({ format, params, status: res.status, strip: !!prepared?.strip, usageInjected: !!prepared })
-      return new Response(res.body.pipeThrough(s), { status: res.status, statusText: res.statusText, headers: out })
+      const s = receiptStream({ format, params, status: res.status, strip: !!prepared?.strip, usageInjected: !!prepared, requested })
+      const upBody = idleMs ? untilIdle(res.body, idleMs, () => { st.idleTimeouts++; log(`${path}: the upstream stream sent nothing for ${idleMs} ms; ended there`) }) : res.body
+      return new Response(upBody.pipeThrough(s), { status: res.status, statusText: res.statusText, headers: out })
     }
     let bytes
     try { bytes = NULL_BODY.has(res.status) ? new Uint8Array(0) : await readCappedBytes(res.body, RESPONSE_LIMIT, { signal: ac.signal }) } catch (e) {
@@ -491,7 +529,7 @@ export function createAIProxy(opts = {}) {
     try { r = format.response(jsonOf(bytes)) ?? r } catch (e) { log(`${format.name}: reading the answer failed: ${e?.message || e}`) }
     const env = signReceipt({
       id: goodId(r.id) ? r.id : newId(), method: format.method, params,
-      result: resultOf({ format, model: r.model, usage: r.usage, responseSha256: ai.sha256Hex(bytes), stream: false, status: res.status, usageInjected: !!prepared }),
+      result: resultOf({ format, read: r, requested, responseSha256: ai.sha256Hex(bytes), stream: false, status: res.status, usageInjected: !!prepared }),
     })
     out.set(ai.RECEIPT_HEADER, ai.encodeReceipt(env))
     return new Response(NULL_BODY.has(res.status) ? null : bytes, { status: res.status, statusText: res.statusText, headers: out })

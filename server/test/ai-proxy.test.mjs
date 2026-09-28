@@ -17,13 +17,14 @@ const CIRCUITS = '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', CONTAINER = '0x1b
 const BASE = 'https://ai.example'
 const UP = 'https://upstream.example/api/v1'
 const price = (currency, input, output, extra = {}) => ({ currency, unit: '1M tokens', input, output, ...extra })
+// One price per model here (the multi-currency table is covered in sdk/test/ai.test.mjs). / 这里每个模型一个价格。
 const MODELS = [
   { id: 'demo-chat', price: price('USD', '0.15', '0.6') },
   { id: 'tiny', price: price('BEM', '0.00000001', '1.23456789') },
   { id: 'demo-embed', formats: ['openai-embeddings'], price: price('USDT', '0.02', '0') },
   { id: 'claude-demo', formats: ['anthropic-messages'], price: price('BEM', '3', '15', { cacheRead: '0.3', cacheWrite: '3.75' }) },
   { id: 'o-demo', formats: ['openai-responses', 'openai-chat'], price: price('USDC', '1', '4', { cacheRead: '0.25', reasoning: '8' }) },
-]
+].map(({ price: p, ...m }) => ({ ...m, prices: [p] }))
 const ENDPOINTS = [
   { format: 'openai-chat', baseUrl: `${BASE}/v1` }, { format: 'openai-responses', baseUrl: `${BASE}/v1` },
   { format: 'anthropic-messages', baseUrl: BASE }, { format: 'openai-embeddings', baseUrl: `${BASE}/v1` },
@@ -112,18 +113,19 @@ test('the manifest: the AI field { endpoints (one per format), models } and a fr
 test('boot refuses a bad price table or upstream, before serving anything', () => {
   const boot = (over) => { try { createAIProxy({ upstream: { baseUrl: UP }, manifestBase: manifestBase(), signerKey: KEY, models: MODELS, log: () => {}, ...over }); return 'booted' } catch (e) { return e.code } }
   assert.equal(boot({}), 'booted')
-  const m = (patch) => [{ id: 'x', price: { ...MODELS[0].price, ...patch } }]
+  const m = (patch) => [{ id: 'x', prices: [{ ...MODELS[0].prices[0], ...patch }] }]
   assert.equal(boot({ models: [] }), 'MANIFEST_INVALID')
   assert.equal(boot({ models: Array.from({ length: 257 }, (_, i) => ({ ...MODELS[0], id: `m${i}` })) }), 'MANIFEST_INVALID')
   assert.equal(boot({ models: [MODELS[0], MODELS[0]] }), 'MANIFEST_INVALID', 'ids are unique')
   assert.equal(boot({ models: m({ unit: '1K tokens' }) }), 'MANIFEST_INVALID')
   assert.equal(boot({ models: m({ currency: 'EUR' }) }), 'MANIFEST_INVALID')
-  for (const c of ['BEM', 'BNB', 'USDT', 'USDC', 'ETH', 'USD']) assert.equal(boot({ models: m({ currency: c }) }), 'booted', c)
+  for (const c of ['BEM', 'BNB', 'USDT', 'USDC', 'ETH', 'USD1', 'USD']) assert.equal(boot({ models: m({ currency: c }) }), 'booted', c)
   assert.equal(boot({ models: m({ input: '0.123456789' }) }), 'MANIFEST_INVALID', 'at most 8 decimals')
   assert.equal(boot({ models: m({ output: 0.6 }) }), 'MANIFEST_INVALID', 'decimal strings, never numbers')
   assert.equal(boot({ models: m({ cacheRead: 0.1 }) }), 'MANIFEST_INVALID')
   assert.equal(boot({ models: m({ input: '-1' }) }), 'MANIFEST_INVALID')
-  assert.equal(boot({ models: [{ id: 'a\u0000b', price: MODELS[0].price }] }), 'MANIFEST_INVALID')
+  assert.equal(boot({ models: [{ id: 'a\u0000b', prices: MODELS[0].prices }] }), 'MANIFEST_INVALID')
+  assert.equal(boot({ models: [{ id: 'x', price: MODELS[0].prices[0] }] }), 'MANIFEST_INVALID', 'the single price object is gone')
   assert.equal(boot({ models: [{ ...MODELS[0], formats: ['gemini'] }] }), 'MANIFEST_INVALID', 'formats name configured endpoints')
   assert.equal(boot({ models: [{ id: 'x', input: '1', output: '1', unit: '1M tokens', currency: 'BEM' }] }), 'MANIFEST_INVALID', 'the old flat shape')
   assert.equal(boot({ upstream: { baseUrl: 'ftp://upstream.example/v1' } }), 'BAD_REQUEST')
@@ -152,7 +154,7 @@ test('non-stream: request and response bytes pass through unchanged; the receipt
   assert.equal(env.id, 'chatcmpl-abc')
   assert.equal(env.method, 'openai_chat')
   assert.deepEqual(env.params, { path: '/v1/chat/completions', requestSha256: oa.sha256Hex(body) })
-  assert.deepEqual(env.result, { model: 'demo-chat', usage: { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 }, responseSha256: oa.sha256Hex(answer), stream: false, price: { currency: 'USD', input: '0.15', output: '0.6', amount: '0.00000480' }, status: 200 })
+  assert.deepEqual(env.result, { model: 'demo-chat', usage: { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 }, responseSha256: oa.sha256Hex(answer), stream: false, complete: true, status: 200, prices: [{ currency: 'USD', amount: '0.00000480' }], modelMatchedBy: 'response' })
   assert.equal(env.container, CONTAINER)
   assert.equal(recoverResponseSigner({ container: env.container, id: env.id, method: env.method, params: env.params, ok: true, body: env.result, ts: env.ts }, env.sig), SIGNER)
   const v = oa.verifyUsageReceipt({ envelope: env, manifest: m, requestBytes: body, responseBytes: got, stream: false, path: CHAT, status: 200, maxSkewS: 300 })
@@ -169,12 +171,12 @@ test('non-stream: request and response bytes pass through unchanged; the receipt
   const e1 = oa.decodeReceiptHeader((await post(p2, '/v1/embeddings', '{"model":"demo-embed","input":"x"}')).headers.get('x-tapeapi-receipt'))
   assert.equal(e1.method, 'openai_embeddings'); assert.match(e1.id, /^tapeapi-[0-9a-f]{24}$/, 'a generated id when the upstream gives none')
   assert.deepEqual(e1.result.usage, { prompt_tokens: 1000000, completion_tokens: 0, total_tokens: 1000000 })
-  assert.deepEqual(e1.result.price, { currency: 'USDT', input: '0.02', output: '0', amount: '0.02000000' })
+  assert.deepEqual(e1.result.prices, [{ currency: 'USDT', amount: '0.02000000' }])
   const e2 = oa.decodeReceiptHeader((await post(p2, '/v1/responses', '{"model":"o-demo","input":"x"}')).headers.get('x-tapeapi-receipt'))
   assert.equal(e2.method, 'openai_responses'); assert.equal(e2.id, 'resp_1')
   assert.deepEqual(e2.result.usage, { prompt_tokens: 1000, completion_tokens: 300, total_tokens: 1300, cache_read_tokens: 400, reasoning_tokens: 100 })
   // 600 × 1 + 400 × 0.25 + 200 × 4 + 100 × 8 = 2300 per 1M / 每百万
-  assert.deepEqual(e2.result.price, { currency: 'USDC', input: '1', output: '4', cacheRead: '0.25', reasoning: '8', amount: '0.00230000' })
+  assert.deepEqual(e2.result.prices, [{ currency: 'USDC', amount: '0.00230000' }])
   // The legacy completions endpoint is not a receipt format: passed through, unsigned. / 旧版 completions 不是回执格式：原样透传、不签名。
   const e3 = await post(p2, '/v1/completions', '{"model":"demo-chat","prompt":"x"}')
   assert.equal(e3.headers.get('x-tapeapi-receipt'), null); assert.equal(await e3.text(), '{"id":"cmpl-1","model":"demo-chat","choices":[]}')
@@ -201,7 +203,7 @@ for (const size of [1, 7, 64, 4096]) {
       assert.equal(env.id, 'chatcmpl-1')
       assert.deepEqual(env.result.usage, { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 })
       assert.equal(env.result.stream, true)
-      assert.equal(env.result.price.amount, '0.00000480')
+      assert.equal(env.result.prices[0].amount, '0.00000480')
       assert.equal(env.result.usageInjected, undefined, 'the client asked for usage itself')
       const payloads = parseSse(out).map((e) => e.data)
       assert.equal(env.result.responseSha256, oa.sseDigestOfPayloads(payloads, { sentinel: oa.sentinelOf('openai_chat') }))
@@ -231,7 +233,7 @@ test('stream without [DONE]: the comment is appended; an unfinished last event s
       assert.match(out.slice(upstreamText.length), new RegExp(`^${pre}: tapeapi-receipt [A-Za-z0-9_-]+\\n$`), `case ${i}: then one comment line`)
       assert.deepEqual(parseSse(out), parseSse(upstreamText + pre), `case ${i}: no event added or completed`)
       const env = oa.readSseReceipt(out)
-      if (i === 0) { assert.equal(env.result.usage, null); assert.equal(env.result.price, null) }
+      if (i === 0) { assert.equal(env.result.usage, null); assert.equal(env.result.prices, null) }
       assert.equal(oa.verifyUsageReceipt({ envelope: env, manifest: m, requestBytes: body, responseBytes: out, stream: true }).ok, true, `case ${i} size ${size}`)
     }
   }
@@ -316,7 +318,7 @@ test('OpenAI Responses stream: the receipt block goes right before event: respon
       const env = oa.readSseReceipt(out)
       assert.deepEqual([env.id, env.method, env.result.model], ['resp_9', 'openai_responses', 'o-demo'])
       assert.deepEqual(env.result.usage, { prompt_tokens: 1000, completion_tokens: 300, total_tokens: 1300, cache_read_tokens: 400, reasoning_tokens: 100 })
-      assert.equal(env.result.price.amount, '0.00230000')
+      assert.equal(env.result.prices[0].amount, '0.00230000')
       assert.deepEqual(oa.verifyUsageReceipt({ envelope: env, manifest: m, requestBytes: req, responseBytes: out, stream: true }).problems, [])
     }
   }
@@ -344,7 +346,7 @@ test('Anthropic Messages: its own headers verbatim, ping passed through, cumulat
     assert.equal(up.calls[0].url, `${UP}/messages`)
     const h = up.calls[0].headers
     assert.deepEqual([h['x-api-key'], h['anthropic-version'], h['anthropic-beta']], ['sk-ant-caller', '2023-06-01', 'a-2025-01-01,b-2026-02-02'], 'verbatim')
-    assert.equal(h['x-claude-code-session-id'], undefined)
+    assert.equal(h['x-claude-code-session-id'], 's', 'Claude Code\'s session header goes upstream (relays key sessions on it)')
     const out = await res.text()
     assert.equal(out.replace(RECEIPT_LINE, ''), text)
     assert.ok(out.includes('event: ping\ndata: {"type": "ping"}\n\n'), 'ping passed through untouched')
@@ -354,7 +356,7 @@ test('Anthropic Messages: its own headers verbatim, ping passed through, cumulat
     // input 100 + cache write 1000 + cache read 2000 = prompt 3100; output 50 (message_delta is cumulative and wins).
     assert.deepEqual(env.result.usage, { prompt_tokens: 3100, completion_tokens: 50, total_tokens: 3150, cache_read_tokens: 2000, cache_write_tokens: 1000, other: { web_search_requests: 2 } })
     // 100 × 3 + 2000 × 0.3 + 1000 × 3.75 + 50 × 15 = 5400 per 1M; searches have no token price. / 搜索次数没有 token 价。
-    assert.deepEqual(env.result.price, { currency: 'BEM', input: '3', output: '15', cacheRead: '0.3', cacheWrite: '3.75', amount: '0.00540000', unpriced: ['web_search_requests'] })
+    assert.deepEqual([env.result.prices, env.result.unpriced, env.result.modelMatchedBy, env.result.complete], [[{ currency: 'BEM', amount: '0.00540000' }], ['web_search_requests'], 'response', true])
     const v = oa.verifyUsageReceipt({ envelope: env, manifest: m, requestBytes: req, responseBytes: out, stream: true })
     assert.deepEqual(v.problems, []); assert.match(v.warnings.join(), /web_search_requests/)
   }
@@ -388,13 +390,14 @@ test('usage and amount: from the upstream usage and the table, rounded up to 8 d
   const m = await p.ready
   const receipt = async (model, usage) => { next = answer(model, usage); return oa.decodeReceiptHeader((await post(p, CHAT, chatBody())).headers.get('x-tapeapi-receipt')).result }
   // 1 × 0.00000001 + 1 × 1.23456789 per 1M = 0.0000012345679 -> rounded up / 向上取整
-  assert.equal((await receipt('tiny', { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 })).price.amount, '0.00000124')
-  assert.equal((await receipt('tiny', { prompt_tokens: 1, completion_tokens: 0, total_tokens: 1 })).price.amount, '0.00000001', 'any fraction of a unit rounds up')
-  assert.equal((await receipt('demo-chat', { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 })).price.amount, '0.00000000')
-  assert.equal((await receipt('demo-chat', { prompt_tokens: 1_000_000, completion_tokens: 2_000_000, total_tokens: 3_000_000 })).price.amount, '1.35000000')
+  assert.equal((await receipt('tiny', { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 })).prices[0].amount, '0.00000124')
+  assert.equal((await receipt('tiny', { prompt_tokens: 1, completion_tokens: 0, total_tokens: 1 })).prices[0].amount, '0.00000001', 'any fraction of a unit rounds up')
+  assert.equal((await receipt('demo-chat', { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 })).prices[0].amount, '0.00000000')
+  assert.equal((await receipt('demo-chat', { prompt_tokens: 1_000_000, completion_tokens: 2_000_000, total_tokens: 3_000_000 })).prices[0].amount, '1.35000000')
   assert.equal((await receipt('demo-chat', { prompt_tokens: 9_007_199_254_740_991, completion_tokens: 1, total_tokens: 9_007_199_254_740_992 })).usage, null, 'unsafe counts are not trusted')
   const r = await receipt('demo-chat-2025', { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 })
-  assert.equal(r.price, null, 'exact ids only: demo-chat-2025 is not demo-chat')
+  assert.equal(r.prices, null, 'exact ids only: demo-chat-2025 is not demo-chat')
+  assert.equal(r.modelMatchedBy, undefined)
   await receipt('demo-chat-2025', { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 })
   assert.equal(logs.filter((l) => l.includes('"demo-chat-2025"')).length, 1, 'logged once')
   assert.deepEqual(p.stats().unpricedModels, ['demo-chat-2025'])
@@ -440,7 +443,7 @@ test('an upstream reusing a response id: the latest receipt is served, the reuse
   assert.equal(p.stats().duplicateIds, 1)
 })
 
-test('headers: only the formats\' own caller headers (auth, version, beta, org) plus content-type and accept reach the upstream; never cookies, x-forwarded-* or cf-*', async () => {
+test('headers: the formats\' own caller headers (auth, version, beta, org), content-type, accept and the clients\' identity and session headers reach the upstream; never cookies, forwarded / x-forwarded-* / x-real-ip, cf-* or host', async () => {
   const up = stub(() => jsonResponse('{"id":"h","model":"demo-chat"}', 200, {
     'set-cookie': 'upstream_session=1; Path=/', 'content-encoding': 'identity', 'access-control-allow-origin': 'https://upstream.example',
     'x-request-id': 'req_9', 'retry-after': '1',
@@ -450,9 +453,15 @@ test('headers: only the formats\' own caller headers (auth, version, beta, org) 
     authorization: 'Bearer sk-caller-XYZ', cookie: 'session=secret', 'x-forwarded-for': '203.0.113.9', 'x-real-ip': '203.0.113.9', 'x-stainless-os': 'MacOS',
     'openai-beta': 'assistants=v2', accept: 'application/json', 'openai-organization': 'org-1', 'x-api-key': 'k', host: 'evil.example', origin: 'https://evil.example',
     'x-forwarded-proto': 'http', 'x-forwarded-host': 'evil.example', 'cf-connecting-ip': '203.0.113.9', 'cf-ray': 'r', 'x-stainless-lang': 'js',
+    forwarded: 'for=203.0.113.9', 'user-agent': 'codex_exec/0.158.0', originator: 'codex_exec', 'session-id': 's-1', 'thread-id': 't-1', 'x-client-request-id': 'c-1',
+    'x-codex-turn-metadata': '{"a":1}', 'x-codex-window-id': 'w:0', 'x-app': 'cli', 'x-claude-code-session-id': 'cc-1', 'anthropic-dangerous-direct-browser-access': 'true',
+    'accept-encoding': 'gzip', 'x-other': 'no', 'proxy-authorization': 'Basic x',
   } })
   assert.equal(res.status, 200)
-  assert.deepEqual(Object.keys(up.calls[0].headers).sort(), ['accept', 'authorization', 'content-type', 'openai-beta', 'openai-organization', 'x-api-key', 'x-gateway'])
+  assert.deepEqual(Object.keys(up.calls[0].headers).sort(), ['accept', 'anthropic-dangerous-direct-browser-access', 'authorization', 'content-type', 'openai-beta', 'openai-organization', 'originator', 'session-id', 'thread-id', 'user-agent',
+    'x-api-key', 'x-app', 'x-claude-code-session-id', 'x-client-request-id', 'x-codex-turn-metadata', 'x-codex-window-id', 'x-gateway', 'x-stainless-lang', 'x-stainless-os'])
+  assert.equal(up.calls[0].headers['x-codex-turn-metadata'], '{"a":1}', 'verbatim')
+  assert.equal(up.calls[0].headers['user-agent'], 'codex_exec/0.158.0')
   assert.equal(up.calls[0].headers.authorization, 'Bearer sk-caller-XYZ', 'the caller\'s key goes upstream as it is')
   assert.equal(up.calls[0].headers['x-gateway'], 'g-1')
   assert.equal(res.headers.get('set-cookie'), null, 'upstream cookies are not passed on')
@@ -469,10 +478,11 @@ test('headers: only the formats\' own caller headers (auth, version, beta, org) 
   // CORS preflight for a browser SDK: Authorization and the SDK's own headers allowed. / 浏览器 SDK 的预检。
   const pre = await p.handleRequest(new Request(`${BASE}${CHAT}`, { method: 'OPTIONS', headers: { 'access-control-request-headers': 'authorization, content-type, x-stainless-os' } }))
   assert.equal(pre.status, 204)
-  assert.match(pre.headers.get('access-control-allow-headers'), /^content-type, accept, authorization, openai-beta, openai-organization, openai-project, x-api-key, anthropic-version, anthropic-beta, .*x-stainless-os$/)
+  const LISTED = [...oa.FORWARD_HEADERS, 'authorization', 'openai-beta', 'openai-organization', 'openai-project', 'x-api-key', 'anthropic-version', 'anthropic-beta'].join(', ')
+  assert.equal(pre.headers.get('access-control-allow-headers'), `${LISTED}, authorization, content-type, x-stainless-os`)
   assert.equal(up.calls.length, 1, 'a preflight never reaches the upstream')
   const bad = await p.handleRequest(new Request(`${BASE}${CHAT}`, { method: 'OPTIONS', headers: { 'access-control-request-headers': 'xÿ' } }))
-  assert.equal(bad.headers.get('access-control-allow-headers'), 'content-type, accept, authorization, openai-beta, openai-organization, openai-project, x-api-key, anthropic-version, anthropic-beta')
+  assert.equal(bad.headers.get('access-control-allow-headers'), LISTED)
 })
 
 test('redirects are not followed and not passed on; the upstream URL cannot be steered by the path', async () => {
@@ -510,7 +520,7 @@ test('other /v1 paths pass through without a receipt (models, GET of a receipt p
   assert.equal(p.stats().passThrough, 2)
 })
 
-test('upstream errors pass through unchanged and are signed too, with usage and price null', async () => {
+test('upstream errors pass through unchanged and are signed too, with usage and prices null, complete false', async () => {
   for (const [status, text, headers] of [
     [401, '{"error":{"message":"Incorrect API key provided.","type":"invalid_request_error","code":"invalid_api_key"}}', {}],
     [429, '{"error":{"message":"Rate limit reached","type":"requests","code":"rate_limit_exceeded"}}', { 'retry-after': '20' }],
@@ -525,7 +535,7 @@ test('upstream errors pass through unchanged and are signed too, with usage and 
     assert.equal(got, text)
     if (headers['retry-after']) assert.equal(res.headers.get('retry-after'), '20')
     const env = oa.decodeReceiptHeader(res.headers.get('x-tapeapi-receipt'))
-    assert.deepEqual({ usage: env.result.usage, price: env.result.price, stream: env.result.stream, status: env.result.status }, { usage: null, price: null, stream: false, status })
+    assert.deepEqual({ usage: env.result.usage, prices: env.result.prices, stream: env.result.stream, status: env.result.status, complete: env.result.complete }, { usage: null, prices: null, stream: false, status, complete: false })
     assert.equal(oa.verifyUsageReceipt({ envelope: env, manifest: m, requestBytes: body, responseBytes: got, status, stream: false }).ok, true)
   }
   // A "usage" in an error body is not claimed. / 错误正文里的 usage 不被声称。
@@ -667,7 +677,7 @@ test('a non-OpenAI format plugs in as an adapter: its headers, its events, no se
     assert.ok(out.startsWith(text)); assert.match(out.slice(text.length), /^: tapeapi-receipt [A-Za-z0-9_-]+\n$/)
     const env = oa.readSseReceipt(out)
     assert.deepEqual([env.id, env.method, env.result.model, env.result.usage], ['msg_1', 'test_events', 'demo-chat', { prompt_tokens: 10, completion_tokens: 7, total_tokens: 17 }])
-    assert.equal(env.result.price.amount, '0.00000570')
+    assert.equal(env.result.prices[0].amount, '0.00000570')
     assert.deepEqual(oa.verifyUsageReceipt({ envelope: env, manifest: m, requestBytes: body, responseBytes: out, stream: true, formats: [eventsFormat] }).problems, [])
     assert.match(oa.verifyUsageReceipt({ envelope: env, manifest: m }).problems.join(), /unknown receipt method test_events/, 'a verifier without the adapter says so')
   }

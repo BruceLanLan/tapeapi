@@ -20,10 +20,12 @@ enabled = true
 SERVICE_NAME = "My AI service"
 # The /v1 base URL of YOUR OpenAI-compatible API. Edit this line. / 你的 OpenAI 兼容接口的 /v1 地址。改这一行。
 UPSTREAM_BASE_URL = "https://your-ai-gateway.example/v1"
-# The price table published on chain: prices per 1M tokens (input, output; optional cacheRead, cacheWrite, reasoning),
-# currency BEM, BNB, USDT, USDC, ETH or USD; "formats": [...] limits an entry to some API formats.
-# 发布到链上的价目表：每百万 token 的价格（输入、输出；可选缓存读、缓存写、推理），formats 可限定适用的 API 格式。
-MODELS_JSON = '[{"id":"your-model","price":{"currency":"BEM","unit":"1M tokens","input":"0.15","output":"0.60"}}]'
+# The price table published on chain: per model, "prices" lists one entry per currency (BEM, BNB, USDT, USDC, ETH, USD1
+# or USD) with prices per 1M tokens (input, output; optional cacheRead, cacheWrite, cacheWrite1h, reasoning); "aliases"
+# lists other ids the upstream may report for it; "formats": [...] limits an entry to some API formats.
+# 发布到链上的价目表：每个模型的 prices 按币种各列一项，价格按每百万 token（输入、输出；可选缓存读、缓存写、1 小时缓存写、推理）；
+# aliases 列出上游可能报告的其它 id；formats 可限定适用的 API 格式。
+MODELS_JSON = '[{"id":"your-model","prices":[{"currency":"BEM","unit":"1M tokens","input":"0.15","output":"0.60"}]}]'
 # PUBLIC_URL = "https://ai.example.com"   this Worker's own https hostname / 本 Worker 自己的 https 主机名
 # CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES and DELEGATION_SIG are set in the Cloudflare dashboard (Settings ->
 # Variables and Secrets), as the holder console at tapeapi.fun/console shows them.

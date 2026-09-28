@@ -17,7 +17,7 @@ const API_KEY = process.env.API_KEY || 'sk-demo'
 const api = createTapeAPI({ dev: true })
 const svc = await api.resolve({ dev: PROXY_URL })
 const show = (r) => console.log(`[client] receipt ${r.ok ? 'OK ' : 'BAD'} ${r.stream ? 'stream ' : 'json   '} id=${r.receipt?.id} model=${r.receipt?.result.model} ` +
-  `usage=${JSON.stringify(r.receipt?.result.usage)} price=${r.receipt?.result.price ? `${r.receipt.result.price.amount} ${r.receipt.result.price.currency}` : 'null'}` +
+  `usage=${JSON.stringify(r.receipt?.result.usage)} prices=${r.receipt?.result.prices ? r.receipt.result.prices.map((p) => `${p.amount} ${p.currency}`).join(' / ') : 'null'}${r.receipt && !r.receipt.result.complete ? ' INCOMPLETE' : ''}` +
   `${r.problems.length ? `  problems: ${r.problems.join('; ')}` : ''}${r.warnings.length ? `  warnings: ${r.warnings.join('; ')}` : ''}`)
 const verifyingFetch = ai.createVerifyingFetch({ api, service: svc, onReport: show })
 // One endpoint per API format; an OpenAI SDK takes the openai-chat one. / 每种格式一个端点；OpenAI SDK 用 openai-chat 那个。

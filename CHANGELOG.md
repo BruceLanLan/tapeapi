@@ -6,6 +6,8 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-28
+
 ### Changed
 
 - **Fee policy (before anything is charged):** no mandatory protocol fee. When paid calls settle through the next
@@ -34,6 +36,21 @@ Before 1.0.0, a minor version may change interfaces.
   receipt readers and the price arithmetic (exact, BigInt). The manifest's `ai` field lists the endpoints and the price
   table (BEM, BNB, USDT, USDC, ETH or USD).
 - The verification page reads AI usage receipts.
+- **Frozen specification** of the AI layer: TAP-20 §3.9 (the `ai` manifest field: endpoints per format, models with
+  aliases and a price per currency, usage and the amount formula) and TAP-21 §3.5 (AI usage receipts: envelope, request
+  and stream hashes, delivery, retrieval, client checks, security). Test vectors in
+  `sdk/test/fixtures/ai-receipt-vectors.json`, checked three ways (the sidecar, the SDK and `spec/vectors/verify.py`).
+- **`tapeapi-verify`**, a local verifying proxy in the SDK release tarball: point Claude Code (`ANTHROPIC_BASE_URL`)
+  or Codex (`OPENAI_BASE_URL`) at it and every answer's receipt is checked against the service's on-chain manifest;
+  `--strict` refuses an answer whose receipt fails. Tested end to end with the real Claude Code and Codex CLIs.
+- The sidecar forwards the coding agents' session headers (so relays keep session affinity and caching), accepts
+  requests up to 32 MiB, waits up to 600 s for a whole answer and ends a stream silent for 300 s; its own errors carry
+  `x-tapeapi-sidecar-error: 1`.
+
+### Fixed
+
+- `spec/vectors/tap-21-envelope.json` was signed over the raw digest instead of the EIP-191 message TAP-21 §3.3 names;
+  regenerated, and `spec/vectors/verify.py` now recovers every vector's signer.
 
 ## [0.4.0] — 2026-09-28
 
@@ -183,7 +200,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/BruceLanLan/tapeapi/releases/tag/v0.2.0

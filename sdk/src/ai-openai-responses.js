@@ -1,4 +1,9 @@
-// AI format adapter: OpenAI Responses (POST /v1/responses). See ai.js for the adapter interface.
+// AI format adapter: OpenAI Responses (POST /v1/responses, and POST /v1/responses/compact, the conversation compaction
+// Codex calls, which is billed like a response and signed as one, never streamed in practice). See ai.js for the adapter
+// interface. Complete: response.completed (a whole answer: status "completed", or no status); response.failed,
+// response.incomplete, an `error` event or a stream without a final event are not complete.
+// 也计量 /v1/responses/compact（Codex 的会话压缩，按回答计费、按回答签名）。完整：response.completed；failed、incomplete、
+// error 事件或没有最终事件都不算完整。
 // Stream: typed server-sent events (`event: response.created`, `response.output_text.delta`, ...), each with a JSON
 // `data` whose `type` repeats the event name. The final event is `response.completed`, `response.incomplete` or
 // `response.failed`, and it carries the whole response with its usage: the receipt goes right before it. A trailing
@@ -30,23 +35,27 @@ export const openaiResponses = Object.freeze({
   name: 'openai-responses',
   method: 'openai_responses',
   baseSuffix: '/v1',
-  match: ({ verb, path }) => verb === 'POST' && path === '/v1/responses',
+  match: ({ verb, path }) => verb === 'POST' && (path === '/v1/responses' || path === '/v1/responses/compact'),
   headers: HEADERS,
   exposeHeaders: EXPOSE,
   requestModel: (body) => (isObj(body) ? str(body.model) : null),
   stream: Object.freeze({ framing: 'sse', sentinel: '[DONE]', final: Object.freeze({ event: Object.freeze(['response.completed', 'response.incomplete', 'response.failed']) }) }),
-  response: (json) => (isObj(json) ? { id: str(json.id), model: str(json.model), usage: usage(json.usage) } : { id: null, model: null, usage: null }),
+  response: (json) => (isObj(json) ? { id: str(json.id), model: str(json.model), usage: usage(json.usage), complete: typeof json.status === 'string' ? json.status === 'completed' : undefined } : { id: null, model: null, usage: null }),
   streamState() {
     const s = { id: null, model: null, usage: null }
+    let done = false, bad = false
     return {
-      event(json) {
+      event(json, name) {
+        const type = isObj(json) && typeof json.type === 'string' ? json.type : name
+        if (type === 'response.completed') done = true
+        else if (type === 'response.failed' || type === 'response.incomplete' || type === 'error') bad = true
         const r = isObj(json) ? json.response : null
         if (!isObj(r)) return
         if (s.id === null && typeof r.id === 'string') s.id = r.id
         if (typeof r.model === 'string') s.model = r.model
         if (isObj(r.usage)) s.usage = usage(r.usage)
       },
-      result: () => ({ ...s }),
+      result: () => ({ ...s, complete: done && !bad }),
     }
   },
 })

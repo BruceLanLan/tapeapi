@@ -80,6 +80,7 @@ TapeAPI closes this gap without changing the protocol: identity is the existing 
 | `endpoints.async` | boolean | MUST | `true` means the service accepts requests via its TAP-10 (TapeSend) inbox addressed to `container`. At least one of `live` non-empty or `async == true` MUST hold. |
 | `methods` | array | MUST | Non-empty. Method names MUST be unique. |
 | `mcp` | object | MAY | The service's tools as an MCP server, pinned by digest; see §3.8. |
+| `ai` | object | MAY | The service's AI API endpoints and its published price table, whose answers carry signed usage receipts (TAP-21 §3.5); see §3.9. |
 | `payment` | object | MUST* | `{ "escrow": address, "unit": "BEM", "decimals": 8 }`. *REQUIRED if any `priceBEM != "0"`, and then `escrow` is a non-zero address (a zero escrow can settle nothing). `unit` and `decimals` carry no information, since both are fixed: either may be omitted and is then read as `"BEM"` and `8`; any other value is invalid. |
 
 Method descriptor:
@@ -171,6 +172,119 @@ A service whose methods are the tools of a Model Context Protocol (MCP) server M
 - A provider whose upstream tool definitions no longer match `toolsSha256` MUST refuse every call with a signed error until the holder publishes a new manifest.
 - `toolsSha256` binds the definitions, not the behaviour: a server can still answer differently under the same definitions. Signed results make that attributable, not impossible.
 
+### 3.9 AI Service Binding (`ai`)
+
+A service that runs an AI API (a gateway, an aggregator, a team serving its own models) MAY publish the API's endpoints and its price table with an optional `ai` object. Callers keep the official SDK of the API's format and only point its base URL at the service; every answer carries a usage receipt signed by the manifest `signer` (TAP-21 §3.5), which a client checks against this field.
+
+```json
+"ai": {
+  "endpoints": [
+    { "format": "openai-chat", "baseUrl": "https://ai.example/v1" },
+    { "format": "anthropic-messages", "baseUrl": "https://ai.example" }
+  ],
+  "models": [
+    { "id": "gpt-x", "aliases": ["gpt-x-2026-09-01"], "formats": ["openai-chat"], "prices": [
+      { "currency": "USDT", "unit": "1M tokens", "input": "1.25", "output": "10", "cacheRead": "0.125", "reasoning": "12" },
+      { "currency": "BEM", "unit": "1M tokens", "input": "12.5", "output": "100", "cacheRead": "1.25" } ] },
+    { "id": "claude-x", "formats": ["anthropic-messages"], "prices": [
+      { "currency": "BEM", "unit": "1M tokens", "input": "3", "output": "15", "cacheRead": "0.3", "cacheWrite": "3.75", "cacheWrite1h": "6" } ] }
+  ]
+}
+```
+
+**Endpoints.**
+
+| Field | Type | Req. | Constraint |
+|---|---|---|---|
+| `endpoints` | array | MUST | 1 to 16 entries, at most one per `format`. |
+| `endpoints[].format` | string | MUST | `^[a-z][a-z0-9-]{0,63}$`. The formats of this version are listed below. A client MUST ignore an endpoint whose format it does not know, so that a later format (Gemini, for instance) can be added without breaking older clients. |
+| `endpoints[].baseUrl` | string | MUST | An absolute `https://` URL (`http://` only in the development mode of §3.2) without query, fragment or user information. Trailing slashes carry no meaning and are removed before use. |
+
+A `baseUrl` is what a caller configures in the official SDK of its format: the **service root** followed by the format's suffix. A request of a format goes to the service root followed by the format's path, and that path is the `path` its receipt names (TAP-21 §3.5). For the formats below, a client MUST ignore an endpoint whose `baseUrl` does not end with the format's suffix.
+
+| Format | API | Requests with a receipt | `baseUrl` | Request model |
+|---|---|---|---|---|
+| `openai-chat` | OpenAI Chat Completions | `POST /v1/chat/completions` | root + `/v1` | the request body's `model` |
+| `openai-responses` | OpenAI Responses | `POST /v1/responses`, `POST /v1/responses/compact` | root + `/v1` | the request body's `model` |
+| `anthropic-messages` | Anthropic Messages | `POST /v1/messages` | the root itself (the Anthropic SDKs add `/v1`) | the request body's `model` |
+| `openai-embeddings` | OpenAI Embeddings | `POST /v1/embeddings` | root + `/v1` | the request body's `model` |
+
+Other paths under the root (`/v1/models`, `/v1/messages/count_tokens`, …) MAY be served; they carry no receipt and no price.
+
+**Models.**
+
+| Field | Type | Req. | Constraint |
+|---|---|---|---|
+| `models` | array | MUST | 1 to 256 entries. |
+| `models[].id` | string | MUST | The model name as the API reports it: 1 to 256 UTF-16 code units, none of them a control character (U+0000–U+001F, U+007F–U+009F). |
+| `models[].aliases` | string[] | MAY | 1 to 16 further names of the same entry, each under the rules of `id`. |
+| `models[].formats` | string[] | MAY | A non-empty list of distinct formats, each the `format` of an entry of `endpoints`. When present, the entry prices answers of these formats only; when absent, of every format. |
+| `models[].prices` | array | MUST | 1 to 7 price entries, one per currency. The singular `price` of earlier drafts is not a field: a model entry that carries it is invalid. |
+
+Every `id` and every alias MUST appear at most once in the whole table, ids and aliases counted together, so that a model name selects at most one entry.
+
+Price entry:
+
+| Field | Type | Req. | Constraint |
+|---|---|---|---|
+| `currency` | string | MUST | One of `BEM`, `BNB`, `USDT`, `USDC`, `ETH`, `USD1`, `USD`; unique among the price entries of one model. |
+| `unit` | string | MUST | `"1M tokens"`: every price of the entry is per 1 000 000 tokens. |
+| `input` | decimal | MUST | Input tokens that are neither cache reads nor cache writes. |
+| `output` | decimal | MUST | Output tokens; reasoning tokens too, unless `reasoning` is given. |
+| `cacheRead` | decimal | MAY | Input tokens read from a prompt cache. Default: `input`. |
+| `cacheWrite` | decimal | MAY | Input tokens written to a prompt cache. Default: `input`. |
+| `cacheWrite1h` | decimal | MAY | The cache writes kept for one hour (Anthropic's 1-hour cache). Default: `cacheWrite`, else `input`. |
+| `reasoning` | decimal | MAY | Output tokens spent on reasoning. When absent, reasoning tokens are priced as `output`. |
+
+A **decimal** is a JSON string matching `^(0|[1-9][0-9]{0,17})(\.[0-9]{1,8})?$`: at most 18 integer digits without leading zeros, at most 8 decimals, no sign, no exponent, no whitespace. Trailing zeros after the point carry no meaning (`"0.30"` is `"0.3"`).
+
+**Currencies.** `BEM` is the token of §3.3 (8 decimals). `BNB` is the native coin of BNB Chain, and `USDT`, `USDC`, `ETH` and `USD1` name those tokens on BNB Chain. `USD` is a display currency with no token behind it. The order of a model's price entries is kept in its receipts and has no other meaning.
+
+**Prices are published, not settled.** The table states what the provider claims to charge and lets anyone recompute the amount a receipt claims; nothing in this TAP moves funds, and an amount in a receipt is a checkable claim, not a payment. Settlement per token belongs to the next escrow version of TAP-22; until then a provider bills as it already does (its own keys, its own accounts). The `priceBEM` of `methods` is unrelated: `ai` prices apply only to the requests in the format table.
+
+**Validation.** A client that uses the field MUST validate the whole field and MUST refuse to use it (`MANIFEST_INVALID`) when it violates any MUST of this section. The rest of the manifest is unaffected, and a client that does not use the field ignores it (§3.3).
+
+**Model matching.** An entry is *allowed* for a format when it has no `formats` or its `formats` lists that format. The entry that prices an answer is the allowed entry whose `id`, or one of whose `aliases`, equals the model the upstream API **reported** in the answer (TAP-21 §3.5 says where each format reports it): equal as strings, code unit for code unit, with no case folding, no Unicode normalisation and no prefix or pattern matching. Only when the answer reports no model (none, or not a string of 1 to 256 code units) is the request model of the format table matched in the same way; the receipt then names that requested model and says `modelMatchedBy: "request"`. When no entry matches, the answer is not priced. Providers and clients MUST apply exactly this rule: any other matching would let one side price a receipt that the other leaves unpriced or prices differently.
+
+**Usage.** A receipt reports token counts in one object, the same for every format (TAP-21 §3.5 maps each format's own counts onto it):
+
+| Member | Req. | Meaning |
+|---|---|---|
+| `prompt_tokens` | MUST | All input tokens, cache reads and cache writes included. |
+| `completion_tokens` | MUST | All output tokens, reasoning included; `0` for a format without output tokens (embeddings). |
+| `total_tokens` | MUST | As the API reported it, else `prompt_tokens + completion_tokens`. |
+| `cache_read_tokens` | MAY | Input tokens read from a cache: a subset of `prompt_tokens`. |
+| `cache_write_tokens` | MAY | Input tokens written to a cache: a subset of `prompt_tokens`. |
+| `cache_write_1h_tokens` | MAY | Cache writes kept for one hour: a subset of `cache_write_tokens`. |
+| `reasoning_tokens` | MAY | Output tokens spent on reasoning: a subset of `completion_tokens`. |
+| `other` | MAY | `{ name: count }`: counts billed per use rather than per token, e.g. `web_search_requests`. Names match `^[a-z][a-z0-9_]{0,63}$`, counts are above 0, members are sorted by name, and the object is left out when it would be empty. |
+
+- An optional count is present exactly when the API reported it; a reported `0` is present.
+- Every count is an integer from 0 to 2^53 − 1, and the members MUST appear in the order of the table.
+- `cache_read_tokens + cache_write_tokens ≤ prompt_tokens`, `cache_write_1h_tokens ≤ cache_write_tokens` and `reasoning_tokens ≤ completion_tokens`. Reported counts that break any of these, or an answer that does not report its input tokens, give no usage (`null`), and therefore no price.
+
+**Amount.** For each price entry `p` of the matched model and a usage `u`, reading every absent count as 0:
+
+```
+cr = u.cache_read_tokens    cw = u.cache_write_tokens    cw1h = u.cache_write_1h_tokens
+rs = u.reasoning_tokens if p.reasoning is given, else 0
+
+sum =  p.input        × (u.prompt_tokens − cr − cw)
+     + p.cacheRead    × cr                              default p.input
+     + p.cacheWrite   × (cw − cw1h)                     default p.input
+     + p.cacheWrite1h × cw1h                            default p.cacheWrite, else p.input
+     + p.output       × (u.completion_tokens − rs)
+     + p.reasoning    × rs
+
+amount = sum / 1 000 000, rounded up to 8 decimals
+```
+
+- The buckets are disjoint: every token is priced exactly once.
+- The arithmetic MUST be exact: each price is read as an integer number of 10^-8 units, every product and the sum are integers, and the sum is divided by 1 000 000 and rounded **up** to a whole number of 10^-8 units **once**, on the sum, never per bucket. Floating point MUST NOT be used.
+- The amount is written as a decimal string with at least one integer digit and exactly 8 decimals (`"0.00357500"`, `"12.00000000"`).
+- Per-use counts (`other`) have no token price: they add 0 and are named in the receipt's `unpriced`.
+- A matched entry gives one amount per price entry, in the entry's order. No matched entry, or no usage, gives no amount. An answer that did not complete is priced from the usage it reported.
+
 ## 4. Rationale
 
 - **Circuit as identity.** A circuit is transferable, already has a container, a DeWEB site and a TapeSend inbox, and is the unit users already recognise. Every service therefore consumes a circuit, which aligns provider incentives with the protocol rather than with a parallel registry. Alternatives (bare EOA, ENS-like names) would create a second identity system and a second name grammar.
@@ -217,9 +331,23 @@ Inputs: `chainId = 56`, `verifyingContract = 0xe61A9C7213a6Aa616C246a2B569e555B4
 | `structHash` | `0x525ae7f6670fd36175882a96c6f8491af6c83c3ebb4ab51437a9733ecc7dd6da` |
 | `digest` | `0xf0ef7315ef455303fb4a7d8a301ca84f25e9fbd0641e931cdb01e7f7e8bcaa9a` |
 
+### 6.3 AI price table and amounts (§3.9)
+
+`sdk/test/fixtures/ai-receipt-vectors.json` holds a complete `ai` field (four endpoints, three models with aliases, `formats` and prices in four currencies) and seven receipts made from it, one per case, with the exact request and response bytes, the expected usage and amounts and the signed envelope (TAP-21 §6). `sdk/test/ai-receipt-vectors.test.mjs` regenerates the file with the reference sidecar and requires it to be identical.
+
+Worked amount (case `openai-chat-json`, model `gpt-x`): usage `prompt_tokens` 1200, `cache_read_tokens` 1000, `completion_tokens` 300, `reasoning_tokens` 100.
+
+| Currency | Prices | Sum | Amount |
+|---|---|---|---|
+| `USDT` | `input` 1.25, `cacheRead` 0.125, `output` 10, `reasoning` 12 | 1.25 × 200 + 0.125 × 1000 + 10 × 200 + 12 × 100 = 3575 | `"0.00357500"` |
+| `BEM` | `input` 12.5, `cacheRead` 1.25, `output` 100, no `reasoning` | 12.5 × 200 + 1.25 × 1000 + 100 × 300 = 33750 | `"0.03375000"` |
+
+Without a `reasoning` price, the BEM entry prices all 300 output tokens as `output`.
+
 ## 7. Reference Implementation
 
 - SDK: `sdk/` in this repository (`sdk/src/index.js` `resolve` for every input form including names, and `verifyDelegation` for the §3.4 checks against the holder; `sdk/src/manifest.js` schema validation; `sdk/src/sig.js` delegation digest and signature recovery; `sdk/src/rpc.js` quorum reads).
+- AI binding (§3.9): `sdk/src/ai.js` (`validateAIField`, `modelEntryOf`, `pricingOf`, `amountOf`), one format adapter per `sdk/src/ai-*.js`, and the signing sidecar `server/src/ai-proxy.js` (example: `examples/ai-proxy/`).
 - Contract: `contracts/src/ServiceDirectory.sol`, tests in `contracts/test/`.
 - Live (2026-09-27): `https://api.tapeapi.fun` (`11.1013.tape`, source `examples/public-api/`, on `server/`) and `https://relay.tapeapi.fun` (`12.1013.tape`, source `examples/cloudflare-worker/relay-worker.js`) publish TAP-20 manifests with holder delegations; each resolves by name, container or pair.
 - ServiceDirectory is not deployed, and nothing here has a third-party audit. Resolution needs no directory: every input form except a label reads only TapeOut's own deployed contracts.
@@ -314,6 +442,7 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 | `endpoints.async` | boolean | MUST | `true` 表示服务接受经其 TAP-10（TapeSend）收件箱、以 `container` 为收件人的请求。`live` 非空或 `async == true` 至少 MUST 满足其一。 |
 | `methods` | array | MUST | 非空。方法名 MUST 唯一。 |
 | `mcp` | object | MAY | 服务作为 MCP 服务器提供的工具，以摘要钉住；见 §3.8。 |
+| `ai` | object | MAY | 服务的 AI 接口端点与公示价目表，其回答带签名的用量回执（TAP-21 §3.5）；见 §3.9。 |
 | `payment` | object | MUST* | `{ "escrow": address, "unit": "BEM", "decimals": 8 }`。*任一 `priceBEM != "0"` 时 REQUIRED，此时 `escrow` 为非零地址（零地址托管结算不了任何东西）。`unit` 与 `decimals` 都是固定值，不携带信息：二者均可省略，省略时按 `"BEM"` 与 `8` 读取；任何其它值无效。 |
 
 方法描述符：
@@ -404,6 +533,119 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 - 上游工具定义不再与 `toolsSha256` 相符的提供者 MUST 以签名错误拒绝每次调用，直到持有者发布新的清单。
 - `toolsSha256` 约束的是定义而不是行为：同一套定义下服务器仍可能给出不同回答。签名结果让这种情况可以追责，而不是不可能发生。
 
+### 3.9 AI 服务绑定（`ai`）
+
+运营 AI 接口的服务（网关、聚合商、自建模型的团队）MAY 用可选的 `ai` 对象发布接口端点与价目表。调用方照旧使用该接口格式的官方 SDK，只把 base URL 指向服务；每个回答都带一份由清单 `signer` 签名的用量回执（TAP-21 §3.5），客户端对照本字段核验。
+
+```json
+"ai": {
+  "endpoints": [
+    { "format": "openai-chat", "baseUrl": "https://ai.example/v1" },
+    { "format": "anthropic-messages", "baseUrl": "https://ai.example" }
+  ],
+  "models": [
+    { "id": "gpt-x", "aliases": ["gpt-x-2026-09-01"], "formats": ["openai-chat"], "prices": [
+      { "currency": "USDT", "unit": "1M tokens", "input": "1.25", "output": "10", "cacheRead": "0.125", "reasoning": "12" },
+      { "currency": "BEM", "unit": "1M tokens", "input": "12.5", "output": "100", "cacheRead": "1.25" } ] },
+    { "id": "claude-x", "formats": ["anthropic-messages"], "prices": [
+      { "currency": "BEM", "unit": "1M tokens", "input": "3", "output": "15", "cacheRead": "0.3", "cacheWrite": "3.75", "cacheWrite1h": "6" } ] }
+  ]
+}
+```
+
+**端点。**
+
+| 字段 | 类型 | 要求 | 约束 |
+|---|---|---|---|
+| `endpoints` | array | MUST | 1 到 16 项，每种 `format` 至多一项。 |
+| `endpoints[].format` | string | MUST | `^[a-z][a-z0-9-]{0,63}$`。本版本的格式见下表。客户端 MUST 忽略它不认识的格式的端点，使以后的格式（例如 Gemini）加入时不影响旧客户端。 |
+| `endpoints[].baseUrl` | string | MUST | 绝对 `https://` URL（仅在 §3.2 的开发模式下可为 `http://`），不含 query、fragment 与用户信息。末尾斜杠没有含义，使用前去掉。 |
+
+`baseUrl` 就是调用方在该格式官方 SDK 里配置的地址：**服务根**加上该格式的后缀。某格式的请求发往服务根加该格式的路径，该路径也就是其回执所写的 `path`（TAP-21 §3.5）。对下表中的格式，客户端 MUST 忽略 `baseUrl` 不以该格式后缀结尾的端点。
+
+| 格式 | 接口 | 带回执的请求 | `baseUrl` | 请求模型 |
+|---|---|---|---|---|
+| `openai-chat` | OpenAI Chat Completions | `POST /v1/chat/completions` | 根 + `/v1` | 请求体的 `model` |
+| `openai-responses` | OpenAI Responses | `POST /v1/responses`、`POST /v1/responses/compact` | 根 + `/v1` | 请求体的 `model` |
+| `anthropic-messages` | Anthropic Messages | `POST /v1/messages` | 根本身（Anthropic 的 SDK 自己加 `/v1`） | 请求体的 `model` |
+| `openai-embeddings` | OpenAI Embeddings | `POST /v1/embeddings` | 根 + `/v1` | 请求体的 `model` |
+
+根之下的其它路径（`/v1/models`、`/v1/messages/count_tokens` 等）MAY 提供服务；它们没有回执，也没有价格。
+
+**模型。**
+
+| 字段 | 类型 | 要求 | 约束 |
+|---|---|---|---|
+| `models` | array | MUST | 1 到 256 项。 |
+| `models[].id` | string | MUST | 接口报告的模型名：1 到 256 个 UTF-16 码元，不含控制字符（U+0000–U+001F、U+007F–U+009F）。 |
+| `models[].aliases` | string[] | MAY | 同一条目的 1 到 16 个其它名称，每个都按 `id` 的规则。 |
+| `models[].formats` | string[] | MAY | 非空、互不重复的格式列表，每项都是 `endpoints` 中某项的 `format`。给出时，该条目只为这些格式的回答定价；省略时为所有格式定价。 |
+| `models[].prices` | array | MUST | 1 到 7 个价格条目，每个币种一个。早期草案中单数的 `price` 不是字段：带有它的模型条目无效。 |
+
+每个 `id` 与每个别名在整张表中（id 与别名合并计算）MUST 至多出现一次，使一个模型名至多选中一个条目。
+
+价格条目：
+
+| 字段 | 类型 | 要求 | 约束 |
+|---|---|---|---|
+| `currency` | string | MUST | `BEM`、`BNB`、`USDT`、`USDC`、`ETH`、`USD1`、`USD` 之一；在同一模型的价格条目中唯一。 |
+| `unit` | string | MUST | `"1M tokens"`：条目中每个价格都按每 1 000 000 个 token 计。 |
+| `input` | decimal | MUST | 既非缓存读也非缓存写的输入 token。 |
+| `output` | decimal | MUST | 输出 token；未给出 `reasoning` 时也包括推理 token。 |
+| `cacheRead` | decimal | MAY | 从提示缓存读取的输入 token。缺省：`input`。 |
+| `cacheWrite` | decimal | MAY | 写入提示缓存的输入 token。缺省：`input`。 |
+| `cacheWrite1h` | decimal | MAY | 保留一小时的缓存写入（Anthropic 的 1 小时缓存）。缺省：`cacheWrite`，再缺省为 `input`。 |
+| `reasoning` | decimal | MAY | 用于推理的输出 token。省略时推理 token 按 `output` 计价。 |
+
+**decimal** 是匹配 `^(0|[1-9][0-9]{0,17})(\.[0-9]{1,8})?$` 的 JSON 字符串：至多 18 位整数且无前导零，至多 8 位小数，无符号、无指数、无空白。小数点后的末尾零没有含义（`"0.30"` 即 `"0.3"`）。
+
+**币种。** `BEM` 是 §3.3 所述代币（8 位小数）。`BNB` 是 BNB Chain 的原生币，`USDT`、`USDC`、`ETH` 与 `USD1` 指 BNB Chain 上的这些代币。`USD` 是仅供展示的币种，背后没有代币。一个模型各价格条目的顺序会保留在其回执中，除此之外没有含义。
+
+**价格只是公示，不结算。** 价目表陈述提供者声称的收费，任何人都能据此重算回执所声称的金额；本 TAP 中没有任何东西转移资金，回执里的金额是可以核对的声明，不是付款。按 token 结算属于 TAP-22 的下一个托管版本；在那之前，提供者照旧按自己的方式计费（自己的密钥、自己的账户）。`methods` 的 `priceBEM` 与此无关：`ai` 的价格只适用于格式表中的请求。
+
+**校验。** 使用本字段的客户端 MUST 校验整个字段，并在它违反本节任一 MUST 时 MUST 拒绝使用它（`MANIFEST_INVALID`）。清单的其余部分不受影响，不使用本字段的客户端忽略它（§3.3）。
+
+**模型匹配。** 一个条目没有 `formats`，或其 `formats` 列出了某格式时，称它对该格式*可用*。为某个回答定价的条目，是其 `id` 或某个 `aliases` 等于上游接口在回答中**报告**的模型（各格式在哪里报告见 TAP-21 §3.5）的可用条目：按字符串逐个码元相等，不做大小写折叠、不做 Unicode 规范化、不做前缀或模式匹配。只有回答没有报告模型时（没有，或不是 1 到 256 个码元的字符串），才以同样方式匹配格式表中的请求模型；此时回执写的是这个请求的模型，并注明 `modelMatchedBy: "request"`。没有条目匹配时，该回答不定价。提供者与客户端 MUST 恰好按这条规则匹配：任何别的匹配方式都会让一方为某份回执定了价，另一方却不定价或定出不同的价。
+
+**用量。** 回执用一个对象报告 token 数，所有格式相同（TAP-21 §3.5 把各格式自己的计数映射到它上面）：
+
+| 成员 | 要求 | 含义 |
+|---|---|---|
+| `prompt_tokens` | MUST | 全部输入 token，含缓存读与缓存写。 |
+| `completion_tokens` | MUST | 全部输出 token，含推理；没有输出 token 的格式（embeddings）为 `0`。 |
+| `total_tokens` | MUST | 接口报告的值，否则为 `prompt_tokens + completion_tokens`。 |
+| `cache_read_tokens` | MAY | 从缓存读取的输入 token：`prompt_tokens` 的子集。 |
+| `cache_write_tokens` | MAY | 写入缓存的输入 token：`prompt_tokens` 的子集。 |
+| `cache_write_1h_tokens` | MAY | 保留一小时的缓存写入：`cache_write_tokens` 的子集。 |
+| `reasoning_tokens` | MAY | 用于推理的输出 token：`completion_tokens` 的子集。 |
+| `other` | MAY | `{ 名称: 次数 }`：按次而不是按 token 计费的计数，例如 `web_search_requests`。名称匹配 `^[a-z][a-z0-9_]{0,63}$`，次数大于 0，成员按名称排序，为空时整个对象省略。 |
+
+- 可选计数恰在接口报告了它时出现；报告的 `0` 也出现。
+- 每个计数都是 0 到 2^53 − 1 的整数，成员 MUST 按上表的顺序出现。
+- `cache_read_tokens + cache_write_tokens ≤ prompt_tokens`、`cache_write_1h_tokens ≤ cache_write_tokens`、`reasoning_tokens ≤ completion_tokens`。违反其中任何一条的计数，或没有报告输入 token 的回答，没有用量（`null`），因此也没有价格。
+
+**金额。** 对匹配模型的每个价格条目 `p` 与用量 `u`，缺失的计数一律按 0：
+
+```
+cr = u.cache_read_tokens    cw = u.cache_write_tokens    cw1h = u.cache_write_1h_tokens
+rs = 给出了 p.reasoning 时为 u.reasoning_tokens，否则为 0
+
+sum =  p.input        × (u.prompt_tokens − cr − cw)
+     + p.cacheRead    × cr                              缺省 p.input
+     + p.cacheWrite   × (cw − cw1h)                     缺省 p.input
+     + p.cacheWrite1h × cw1h                            缺省 p.cacheWrite，再缺省 p.input
+     + p.output       × (u.completion_tokens − rs)
+     + p.reasoning    × rs
+
+amount = sum / 1 000 000，向上取整到 8 位小数
+```
+
+- 各分桶互不重叠：每个 token 恰好计价一次。
+- 运算 MUST 精确：每个价格读作 10^-8 单位的整数，每个乘积与总和都是整数，总和除以 1 000 000 后**向上**取整到 10^-8 单位的整数，只取整**一次**、对总和取整，绝不按分桶取整。MUST NOT 使用浮点数。
+- 金额写成十进制字符串，至少一位整数、恰好 8 位小数（`"0.00357500"`、`"12.00000000"`）。
+- 按次计费的计数（`other`）没有 token 价：计 0，并在回执的 `unpriced` 中列出名称。
+- 匹配到的条目为每个价格条目给出一个金额，顺序与条目相同。没有匹配条目或没有用量，就没有金额。没有完成的回答按它报告的用量定价。
+
 ## 4. 原理
 
 - **以电路为身份。** 电路可转让，已经拥有容器、DeWEB 站点与 TapeSend 收件箱，且是用户已经认识的单位。因此每个服务都消耗一个电路，这使提供者的激励与协议对齐，而非与一个平行注册表对齐。替代方案（裸 EOA、类 ENS 名称）会产生第二套身份系统与第二套名称语法。
@@ -450,9 +692,23 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 | `structHash` | `0x525ae7f6670fd36175882a96c6f8491af6c83c3ebb4ab51437a9733ecc7dd6da` |
 | `digest` | `0xf0ef7315ef455303fb4a7d8a301ca84f25e9fbd0641e931cdb01e7f7e8bcaa9a` |
 
+### 6.3 AI 价目表与金额（§3.9）
+
+`sdk/test/fixtures/ai-receipt-vectors.json` 含一个完整的 `ai` 字段（四个端点，三个模型，带别名、`formats` 与四个币种的价格），以及据此生成的七份回执，每个用例一份，附确切的请求与回应字节、期望的用量与金额以及签名信封（TAP-21 §6）。`sdk/test/ai-receipt-vectors.test.mjs` 用参考旁路重新生成该文件，并要求与之完全一致。
+
+金额算例（用例 `openai-chat-json`，模型 `gpt-x`）：用量 `prompt_tokens` 1200、`cache_read_tokens` 1000、`completion_tokens` 300、`reasoning_tokens` 100。
+
+| 币种 | 价格 | 总和 | 金额 |
+|---|---|---|---|
+| `USDT` | `input` 1.25、`cacheRead` 0.125、`output` 10、`reasoning` 12 | 1.25 × 200 + 0.125 × 1000 + 10 × 200 + 12 × 100 = 3575 | `"0.00357500"` |
+| `BEM` | `input` 12.5、`cacheRead` 1.25、`output` 100、无 `reasoning` | 12.5 × 200 + 1.25 × 1000 + 100 × 300 = 33750 | `"0.03375000"` |
+
+没有 `reasoning` 价格，BEM 条目把全部 300 个输出 token 都按 `output` 计价。
+
 ## 7. 参考实现
 
 - SDK：本仓库 `sdk/`（`sdk/src/index.js` 中的 `resolve` 处理包括名称在内的每种输入形式，`verifyDelegation` 对照持有者执行 §3.4 的检查；`sdk/src/manifest.js` 结构校验；`sdk/src/sig.js` 委托摘要与签名恢复；`sdk/src/rpc.js` 法定人数读取）。
+- AI 绑定（§3.9）：`sdk/src/ai.js`（`validateAIField`、`modelEntryOf`、`pricingOf`、`amountOf`），每种格式一个适配器 `sdk/src/ai-*.js`，以及签名旁路 `server/src/ai-proxy.js`（示例：`examples/ai-proxy/`）。
 - 合约：`contracts/src/ServiceDirectory.sol`，测试位于 `contracts/test/`。
 - 运行中（2026-09-27）：`https://api.tapeapi.fun`（`11.1013.tape`，源码 `examples/public-api/`，基于 `server/`）与 `https://relay.tapeapi.fun`（`12.1013.tape`，源码 `examples/cloudflare-worker/relay-worker.js`）发布了带持有者委托的 TAP-20 清单；二者均可按名称、容器或二元组解析。
 - ServiceDirectory 未部署，以上均未经第三方审计。解析不需要目录：除标签外的每种输入形式都只读取 TapeOut 自己已部署的合约。

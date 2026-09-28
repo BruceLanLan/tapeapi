@@ -1,12 +1,78 @@
-// AI usage receipts (docs/PLAN-2026Q4.md, "A1/A2 接口约定"): the rules both sides share. A signing sidecar in front of
-// an AI API (@tapeapi/server/ai-proxy) signs every metered answer as a TAP-21 envelope over { path, requestSha256 } ->
-// { model, usage, responseSha256, stream, price, status, usageInjected? }; the client keeps the bytes it sent and received, hashes them
-// the same way and checks the signature against the service's on-chain signer and the amount against the manifest's
-// price table. The hashing, the event-stream scanner, the price arithmetic, the receipt codec and the verifier live
-// here, once, so the sidecar and every verifier compute exactly the same thing.
+// AI usage receipts (docs/PLAN-2026Q4.md, "A1/A2"): the rules both sides share. A signing sidecar in front of an AI API
+// (@tapeapi/server/ai-proxy) signs every metered answer as a TAP-21 envelope; the client keeps the bytes it sent and
+// received, hashes them the same way and checks the signature against the service's on-chain signer and the amounts
+// against the manifest's price table. The hashing, the event-stream scanner, the price arithmetic, the receipt codec and
+// the verifier live here, once, so the sidecar and every verifier compute exactly the same thing.
 // AI 用量回执：两端共用的规则。签名旁路把每个计量的回答签成 TAP-21 信封；客户端保留自己发出和收到的字节，按同样的方法取哈希，
-// 对照链上 signer 核验签名、对照清单价目表核验金额。哈希、事件流扫描、价格运算、回执编解码与核验都只在这里写一次，旁路与
-// 每个核验方算出的结果因此完全相同。
+// 对照链上 signer 核验签名、对照清单价目表核验金额。哈希、事件流扫描、价格运算、回执编解码与核验都只在这里写一次。
+//
+// THE MANIFEST FIELD (manifest.ai, TAP-20 extension; validateAIField is normative):
+//   { endpoints: [ { format, baseUrl } ],                                1..16, one per format, https (http in dev only)
+//     models: [ { id, aliases?: [string] (<= 16), formats?: [format], prices: [ { currency, unit: "1M tokens", input,
+//                 output, cacheRead?, cacheWrite?, cacheWrite1h?, reasoning? } ] } ] }                    1..256 models
+//   `prices` holds 1..7 entries, one per currency, currencies unique among BEM, BNB, USDT, USDC, ETH, USD1, USD; every price
+//   is a decimal string (at most 18 integer digits and 8 decimals) per 1M tokens. Every id and alias is 1..256 characters
+//   without control characters and appears at most once in the whole table. `formats`, when given, names formats among the
+//   endpoints and limits the entry to them.
+//
+// MODEL MATCHING: the entry used is the one whose `id` or one of whose `aliases` equals, exactly and case-sensitively,
+//   the model the upstream REPORTED, among the entries allowed for the answer's format. Only when the upstream reported no
+//   model is the model the REQUEST asked for (the format's requestModel) matched the same way; the receipt then carries
+//   that requested model as `model` and says modelMatchedBy "request". No prefix matching, no case folding.
+//
+// USAGE, one convention for every format:
+//   { prompt_tokens      ALL input tokens, cache reads and writes included
+//     completion_tokens  ALL output tokens, reasoning included (0 when the format has none, e.g. embeddings)
+//     total_tokens       as reported, else prompt + completion
+//     cache_read_tokens?  cache_write_tokens?  cache_write_1h_tokens?  reasoning_tokens?     subsets, only when reported
+//     other?: { name: count } }                          per-use counts above 0 (e.g. web_search_requests), sorted by name
+//   Keys in exactly this order. cache_read + cache_write <= prompt, cache_write_1h <= cache_write, reasoning <= completion.
+//
+// AMOUNT, per currency entry, over disjoint buckets, per 1M tokens:
+//     input × (prompt − cache_read − cache_write) + cacheRead × cache_read + cacheWrite × (cache_write − cache_write_1h)
+//   + cacheWrite1h × cache_write_1h + output × (completion − reasoning) + reasoning × reasoning_tokens
+//   cacheRead and cacheWrite default to input; cacheWrite1h to cacheWrite, then input; without `reasoning` the reasoning
+//   tokens stay in output. Per-use counts (`other`) add 0 and are listed in `unpriced`. The sum is divided by 1 000 000 and
+//   rounded UP once to 8 decimals; the amount is a string with exactly 8 decimals. Integer (BigInt) arithmetic only.
+//
+// THE RECEIPT: a TAP-21 envelope { id, ok: true, container, ts, method, params, result, sig } signed by the manifest's
+//   signer, where method is the format's receipt method (openai_chat, openai_responses, anthropic_messages,
+//   openai_embeddings), id is the answer's id (or one the sidecar generated when the answer has none), and
+//     params = { path, requestSha256 }       the API path from the service root (no query), sha256 of the request body
+//                                            bytes exactly as the client sent them
+//     result = { model, usage, responseSha256, stream, complete, status, prices, modelMatchedBy?, unpriced?, usageInjected? }
+//       model           the model the upstream reported, or the requested one when modelMatchedBy is "request"; null if none
+//       usage           as above, or null (no usage reported, or status not 2xx)
+//       responseSha256  see below
+//       stream          whether the answer was an event stream (a streaming format answered with text/event-stream)
+//       complete        true for a 2xx whole answer that is not itself marked unfinished, and for a stream that reached
+//                       its format's final success event (Chat: a choice with a finish_reason and no error chunk;
+//                       Responses: response.completed; Anthropic: message_stop and no error event); false otherwise.
+//                       An incomplete answer is still priced from the usage it reported.
+//       status          the upstream's HTTP status; a status outside 2xx carries usage null and prices null
+//       prices          [ { currency, amount } ], one per entry of the matched model's `prices`, in the same order; null
+//                       when no model matched or there is no usage
+//       modelMatchedBy  "response" | "request", present exactly when a price-table entry matched
+//       unpriced        the names in usage.other (billed per use, no token price), present only with prices
+//       usageInjected   true when the sidecar asked the upstream for usage the client did not ask for (and removed
+//                       from the client's copy what that request added)
+//
+// RESPONSE HASH (responseSha256). A whole answer: sha256 of the body bytes exactly as the client received them. An event
+//   stream: parse the bytes the client received as server-sent events (WHATWG: lines end at CRLF, LF or CR; one leading
+//   U+FEFF is skipped; lines starting with ":" are comments and ignored, which includes the receipt comment; a line
+//   "field: value" drops one space after the colon; a line without a colon is a field with an empty value; the values
+//   of all `data` fields of an event are joined with "\n"; an event is dispatched only at a blank line, and only if it
+//   had a `data` field; an unfinished event at the end is discarded). For each dispatched event in order take its data
+//   as UTF-8 bytes; leave out every event whose data is exactly the format's sentinel ("[DONE]" for Chat and Responses,
+//   none for Anthropic); hash the concatenation of each remaining data followed by one "\n" byte. Event names, ids and
+//   comments are not hashed.
+//
+// DELIVERY: a whole answer carries the receipt in the `x-tapeapi-receipt` header (base64url of the envelope JSON). A
+//   stream carries it as one SSE comment block ": tapeapi-receipt <base64url>\n\n" inserted right before the format's
+//   final event (data: [DONE], event: response.completed|incomplete|failed, event: message_stop); with no final event
+//   the line ": tapeapi-receipt <base64url>\n" is appended at the end (after a line end when the stream stopped mid-line).
+//   The free manifest method `receipt` returns a stored envelope by id for an hour.
+// 清单字段、模型匹配、用量、金额、回执、响应哈希与送达规则见上（英文为准）。
 //
 // API formats are adapters, one small module each (ai-openai-chat.js, ai-openai-responses.js, ai-anthropic-messages.js,
 // ai-openai-embeddings.js). Nothing in this file knows a vendor's JSON; it knows server-sent events, bytes, prices and
@@ -14,21 +80,16 @@
 //   { name, method, baseSuffix, match({ verb, path }), headers?, exposeHeaders?, requestModel(body),
 //     stream: { framing: 'sse', sentinel, final: { event?: [...], data?: [...] } } | null,
 //     prepareUpstream?(body) -> { body, strip } | null, isInjectedEvent?(json),
-//     response(json) -> { id, model, usage }, streamState() -> { event(json, eventName), result() -> { id, model, usage } } }
+//     response(json) -> { id, model, usage, complete? },
+//     streamState() -> { event(json, eventName), result() -> { id, model, usage, complete } } }
 // - `name` is the format ('openai-chat'), `method` the receipt method ('openai_chat');
 // - `path` is the API path from the service root ('/v1/chat/completions'); `baseSuffix` is what a client's base URL adds
 //   to that root ('/v1' for OpenAI's SDKs, '' for Anthropic's);
 // - `headers` are the caller headers the format needs upstream (its auth, its version and beta flags);
-// - `sentinel` is a data payload left out of the hash ('[DONE]'); `final` names the stream's last event by its first
-//   line (`data: [DONE]`, `event: message_stop`): the sidecar holds that event back, signs, sends the receipt comment,
-//   then the event; with no final event the receipt is appended at the end;
+// - `sentinel` is a data payload left out of the hash; `final` names the stream's last event by its first line;
 // - `prepareUpstream` may change the body sent upstream (e.g. to ask for usage); events it caused are stripped
-//   (`isInjectedEvent`), so the client receives, and the hash covers, exactly what it asked for;
-// - usage uses one convention for every format: { prompt_tokens (ALL input, cache reads and writes included),
-//   completion_tokens (all output, reasoning included), total_tokens, cache_read_tokens?, cache_write_tokens?,
-//   reasoning_tokens? (subsets), other?: { name: count } (billed per use, e.g. web_search_requests) }.
-// Receipt delivery is not the adapter's: a header for whole answers, an SSE comment for event streams, for every format.
-// API 格式是适配器（每种一个小模块）。本文件不认识任何厂商的 JSON，只认识 SSE、字节、价格与签名。适配器接口见上。
+//   (`isInjectedEvent`), so the client receives, and the hash covers, exactly what it asked for.
+// API 格式是适配器（每种一个小模块）。本文件不认识任何厂商的 JSON，只认识 SSE、字节、价格与签名。
 //
 // Only leaf modules are imported, no node: imports: this file runs in Workers, browsers and Node.
 // 只引用叶子模块、不引用 node:，可在 Workers、浏览器与 Node 中运行。
@@ -52,13 +113,21 @@ export const MANIFEST_FIELD = 'ai'
 export const RECEIPT_HEADER = 'x-tapeapi-receipt'
 /** SSE comment that carries a stream's receipt (the line is `: tapeapi-receipt <base64url>`). / 流式回执所在的 SSE 注释。 */
 export const SSE_RECEIPT_PREFIX = ': tapeapi-receipt '
+/** Response header marking an error the sidecar made itself (no upstream answer, no receipt, no signature): a transport
+ *  failure to the client. Informative: anyone on the path can set or strip it, so it never makes an answer verified.
+ *  标记旁路自己产生的错误（没有上游回答、没有回执、没有签名）的响应头：对客户端是传输失败。仅供参考，不会让回答变成已核验。 */
+export const SIDECAR_ERROR_HEADER = 'x-tapeapi-sidecar-error'
 /** The free manifest method that returns a stored receipt by response id. / 按响应 id 取回回执的免费清单方法。 */
 export const RECEIPT_METHOD = 'receipt'
 export const PRICE_UNIT = '1M tokens'
 /** BEM first (the network's token); BNB, USDT, USDC, ETH as BSC tokens; USD for display only. / 价目币种。 */
-export const CURRENCIES = Object.freeze(['BEM', 'BNB', 'USDT', 'USDC', 'ETH', 'USD'])
+export const CURRENCIES = Object.freeze(['BEM', 'BNB', 'USDT', 'USDC', 'ETH', 'USD1', 'USD'])
 export const MODELS_MAX = 256
 export const MODEL_ID_MAX = 256
+/** At most this many aliases per model entry. / 每个模型条目至多这么多别名。 */
+export const ALIASES_MAX = 16
+/** At most this many price entries (one per currency) per model. / 每个模型至多这么多价格条目（每币种一个）。 */
+export const PRICES_MAX = 7
 /** Prices carry at most, amounts exactly, this many decimals. / 价格至多、金额恰好这么多位小数。 */
 export const AMOUNT_DECIMALS = 8
 /** A decoded event's data is parsed as JSON (for the adapter) up to this size, the same bound as a whole non-stream
@@ -76,7 +145,7 @@ const SIG_RE = /^0x[0-9a-fA-F]{130}$/
 const PRICE_RE = /^(0|[1-9]\d{0,17})(\.\d{1,8})?$/
 const METHOD_RE = /^[a-z][a-z0-9_]{0,63}$/
 const FORMAT_RE = /^[a-z][a-z0-9-]{0,63}$/
-const PRICE_KEYS = ['input', 'output', 'cacheRead', 'cacheWrite', 'reasoning']
+const PRICE_KEYS = ['input', 'output', 'cacheRead', 'cacheWrite', 'cacheWrite1h', 'reasoning']
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/
 const enc = new TextEncoder()
 const toBytes = (v) => (typeof v === 'string' ? enc.encode(v) : v instanceof Uint8Array ? v : v instanceof ArrayBuffer ? new Uint8Array(v) : ArrayBuffer.isView(v) ? new Uint8Array(v.buffer, v.byteOffset, v.byteLength) : null)
@@ -84,12 +153,36 @@ const NL = new Uint8Array([0x0a])
 
 /** The adapter a request goes to, or null (then it passes through without a receipt). / 请求对应的适配器，没有则为 null。 */
 export const formatFor = (verb, path, formats = FORMATS) => (typeof path === 'string' && formats.find((f) => f.match({ verb: String(verb).toUpperCase(), path }))) || null
+/**
+ * Caller headers a proxy passes upstream, verbatim: content-type and accept; the client's identity and session headers
+ * (user-agent, x-app, x-claude-code-session-id, session-id, thread-id, originator, x-client-request-id,
+ * anthropic-dangerous-direct-browser-access, every x-codex-* and x-stainless-*); and each format's own `headers` (auth,
+ * version and beta flags). Never: cookies, forwarding and client-address headers (forwarded, x-forwarded-*, x-real-ip,
+ * cf-*), hop-by-hop headers, host and content-length. One rule for the sidecar and tapeapi-verify.
+ * 代理原样转发到上游的调用方请求头：content-type、accept；客户端身份与会话头；以及各格式自己声明的头。永不转发：Cookie、
+ * 转发与客户端地址头、逐跳头、host 与 content-length。旁路与 tapeapi-verify 共用这一条规则。
+ */
+export const FORWARD_HEADERS = Object.freeze(['content-type', 'accept', 'user-agent', 'x-app', 'x-claude-code-session-id', 'session-id', 'thread-id', 'originator', 'x-client-request-id', 'anthropic-dangerous-direct-browser-access', 'content-encoding'])
+export const FORWARD_PREFIXES = Object.freeze(['x-codex-', 'x-stainless-'])
+const NEVER_FORWARD = new Set(['cookie', 'cookie2', 'forwarded', 'x-real-ip', 'host', 'content-length', 'connection', 'keep-alive', 'proxy-connection', 'proxy-authorization', 'proxy-authenticate', 'te', 'trailer', 'transfer-encoding', 'upgrade'])
+/** Does a proxy pass this caller header upstream (for these formats)? / 代理是否把这个调用方请求头转发到上游？ */
+export function forwardsHeader(name, formats = FORMATS) {
+  const k = String(name).toLowerCase()
+  if (NEVER_FORWARD.has(k) || k.startsWith('x-forwarded-') || k.startsWith('cf-')) return false
+  return FORWARD_HEADERS.includes(k) || FORWARD_PREFIXES.some((p) => k.startsWith(p)) || formats.some((f) => Array.isArray(f.headers) && f.headers.some((h) => String(h).toLowerCase() === k))
+}
+/**
+ * Is this an answer id a sidecar uses as the receipt id (TAP-21 §3.5: 1 to 128 characters in U+0021–U+007E)? Otherwise
+ * the sidecar generates one, and a verifier does not compare them. / 旁路是否把它用作回执 id；否则旁路自己生成，核验方不比较。
+ */
+export const isAnswerId = (v) => typeof v === 'string' && /^[\x21-\x7e]{1,128}$/.test(v)
 /** The adapter that signs receipts of `method`, or null. / 签发该方法回执的适配器。 */
 export const formatOfMethod = (method, formats = FORMATS) => formats.find((f) => f.method === method) || null
 /**
- * The API path a request names: its URL path after the service root's path ('/v1/messages' under root '/relay' is
- * '/relay/v1/messages'), or null when it is not under the root. One rule for the sidecar and the verifiers.
- * 请求所指的 API 路径：URL 路径去掉服务根路径之后的部分；不在根之下则为 null。旁路与核验方共用这一条规则。
+ * The API path a request names: its URL path with the service root's path taken off (the URL path '/relay/v1/messages'
+ * under the root '/relay' names '/v1/messages'), or null when it is not under the root. One rule for the sidecar and the
+ * verifiers. / 请求所指的 API 路径：URL 路径去掉服务根路径（根为 '/relay' 时，'/relay/v1/messages' 所指的是 '/v1/messages'）；
+ * 不在根之下则为 null。旁路与核验方共用这一条规则。
  */
 export function apiPath(pathname, rootPath) {
   const rp = String(rootPath).replace(/\/+$/, '')
@@ -285,8 +378,8 @@ export function scanSse(body, { format, sentinel } = {}) {
   const st = format?.streamState ? format.streamState() : null
   const s = createSseScanner({ sentinel: sentinel !== undefined ? sentinel : format?.stream?.sentinel ?? null, onEvent: st ? (j, n) => st.event(j, n) : undefined })
   s.push(b); s.end()
-  const read = st ? st.result() : { id: null, model: null, usage: null }
-  return { responseSha256: s.digest(), id: read.id ?? null, model: read.model ?? null, usage: usageOf(read.usage), events: s.info.events, done: s.info.done, receipts: s.info.receipts.slice() }
+  const read = st ? st.result() : { id: null, model: null, usage: null, complete: false }
+  return { responseSha256: s.digest(), id: read.id ?? null, model: read.model ?? null, usage: usageOf(read.usage), complete: read.complete === true, events: s.info.events, done: s.info.done, receipts: s.info.receipts.slice() }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -294,12 +387,13 @@ export function scanSse(body, { format, sentinel } = {}) {
 // ---------------------------------------------------------------------------------------------------------------
 const safeCount = (n) => Number.isSafeInteger(n) && n >= 0
 const given = (v) => v !== undefined && v !== null
+const USAGE_SUBSETS = ['cache_read_tokens', 'cache_write_tokens', 'cache_write_1h_tokens', 'reasoning_tokens']
 /**
  * Counts an adapter read -> the receipt's usage, in a fixed key order: { prompt_tokens, completion_tokens, total_tokens,
- * cache_read_tokens?, cache_write_tokens?, reasoning_tokens?, other? }, or null when they do not say how many prompt
- * tokens or do not add up (cache reads plus writes above prompt_tokens, reasoning above completion_tokens).
- * completion_tokens defaults to 0 (embeddings have none) and total_tokens to prompt + completion. `other` keeps the
- * per-use counts above zero, sorted by name.
+ * cache_read_tokens?, cache_write_tokens?, cache_write_1h_tokens?, reasoning_tokens?, other? }, or null when they do not
+ * say how many prompt tokens or do not add up (cache reads plus writes above prompt_tokens, 1-hour cache writes above
+ * cache writes, reasoning above completion_tokens). completion_tokens defaults to 0 (embeddings have none) and
+ * total_tokens to prompt + completion. `other` keeps the per-use counts above zero, sorted by name.
  * 适配器读出的计数 -> 回执的 usage（键顺序固定）；没有 prompt_tokens 或数目对不上时为 null。
  */
 export function usageOf(u) {
@@ -309,12 +403,13 @@ export function usageOf(u) {
   const total = given(u.total_tokens) ? u.total_tokens : u.prompt_tokens + completion
   if (!safeCount(total)) return null
   const out = { prompt_tokens: u.prompt_tokens, completion_tokens: completion, total_tokens: total }
-  for (const k of ['cache_read_tokens', 'cache_write_tokens', 'reasoning_tokens']) {
+  for (const k of USAGE_SUBSETS) {
     if (!given(u[k])) continue
     if (!safeCount(u[k])) return null
     out[k] = u[k]
   }
-  if ((out.cache_read_tokens ?? 0) + (out.cache_write_tokens ?? 0) > out.prompt_tokens || (out.reasoning_tokens ?? 0) > out.completion_tokens) return null
+  if ((out.cache_read_tokens ?? 0) + (out.cache_write_tokens ?? 0) > out.prompt_tokens || (out.cache_write_1h_tokens ?? 0) > (out.cache_write_tokens ?? 0) ||
+    (out.reasoning_tokens ?? 0) > out.completion_tokens) return null
   if (given(u.other)) {
     if (!isObj(u.other)) return null
     const o = Object.entries(u.other).filter(([k, v]) => METHOD_RE.test(k) && safeCount(v) && v > 0).sort(([a], [b]) => (a < b ? -1 : 1))
@@ -332,56 +427,77 @@ function units(price) {
 function formatAmount(u) { const s = u.toString().padStart(AMOUNT_DECIMALS + 1, '0'); return `${s.slice(0, -AMOUNT_DECIMALS)}.${s.slice(-AMOUNT_DECIMALS)}` }
 
 /**
- * The amount for one call, per 1M tokens, over disjoint buckets:
- *   input × (prompt − cache_read − cache_write) + cacheRead × cache_read + cacheWrite × cache_write
- *   + output × (completion − reasoning) + reasoning × reasoning_tokens
- * A cache price the table does not give falls back to `input`; without a `reasoning` price, reasoning tokens stay in
- * output. Per-use counts (`other`) have no token price: they add 0 and priceOf lists them as `unpriced`. Divided by
- * 1 000 000 and rounded UP once, on the sum, to 8 decimals; exactly 8 decimals out. BigInt only: no floating point.
- * 一次调用的金额（每百万 token 计价，分桶互不重叠）。缓存价缺省按 input；没有 reasoning 价时推理 token 计入 output；按次计费的
- * 计数（other）没有 token 价，计 0 并列为 unpriced。对总和向上取整一次到 8 位小数。只用 BigInt。
+ * The amount for one call in one currency, per 1M tokens, over disjoint buckets:
+ *   input × (prompt − cache_read − cache_write) + cacheRead × cache_read + cacheWrite × (cache_write − cache_write_1h)
+ *   + cacheWrite1h × cache_write_1h + output × (completion − reasoning) + reasoning × reasoning_tokens
+ * cacheRead and cacheWrite fall back to `input`, cacheWrite1h to cacheWrite and then `input`; without a `reasoning` price,
+ * reasoning tokens stay in output. Per-use counts (`other`) have no token price and add 0. Divided by 1 000 000 and rounded
+ * UP once, on the sum, to 8 decimals; exactly 8 decimals out. BigInt only: no floating point.
+ * 一次调用在一个币种下的金额（每百万 token 计价，分桶互不重叠）。缓存读写价缺省按 input，1 小时缓存写缺省按 cacheWrite 再按
+ * input；没有 reasoning 价时推理 token 计入 output；按次计费的计数计 0。对总和向上取整一次到 8 位小数。只用 BigInt。
+ * @param {{ input: string, output: string, cacheRead?: string, cacheWrite?: string, cacheWrite1h?: string, reasoning?: string }} price
  */
 export function amountOf(price, usage) {
   const dec = (v) => typeof v === 'string' && PRICE_RE.test(v)
   if (!isObj(price) || !dec(price.input) || !dec(price.output) || PRICE_KEYS.some((k) => given(price[k]) && !dec(price[k]))) throw new TapeAPIError('BAD_REQUEST', 'prices must be decimal strings')
   const u = usageOf(usage)
   if (!u) throw new TapeAPIError('BAD_REQUEST', 'usage needs prompt_tokens')
-  const cr = BigInt(u.cache_read_tokens ?? 0), cw = BigInt(u.cache_write_tokens ?? 0)
+  const cr = BigInt(u.cache_read_tokens ?? 0), cw = BigInt(u.cache_write_tokens ?? 0), cw1h = BigInt(u.cache_write_1h_tokens ?? 0)
   const rs = given(price.reasoning) ? BigInt(u.reasoning_tokens ?? 0) : 0n
+  const cacheWrite = given(price.cacheWrite) ? price.cacheWrite : price.input
   const num = (BigInt(u.prompt_tokens) - cr - cw) * units(price.input)
     + cr * units(given(price.cacheRead) ? price.cacheRead : price.input)
-    + cw * units(given(price.cacheWrite) ? price.cacheWrite : price.input)
+    + (cw - cw1h) * units(cacheWrite)
+    + cw1h * units(given(price.cacheWrite1h) ? price.cacheWrite1h : cacheWrite)
     + (BigInt(u.completion_tokens) - rs) * units(price.output)
     + (given(price.reasoning) ? rs * units(price.reasoning) : 0n)
   return formatAmount((num + PER - 1n) / PER)
 }
 
 /**
- * The `price` a receipt must carry: from the price-table entry whose id is exactly the model the upstream reported (and
- * whose `formats`, when listed, include this format), with the usage it reported; null when either is missing. Exact
- * match only: a prefix match would price one model at another's rate.
- * 回执应带的 price：按上游报告的 model 精确匹配价目表（列了 formats 时还须包含本格式），用上游报告的 usage 计算；任一缺失则为 null。
- * @returns {{ currency, input, output, cacheRead?, cacheWrite?, reasoning?, amount, unpriced? } | null}
+ * The price-table entry for a model id: the one whose `id` or one of whose `aliases` equals it exactly (case-sensitive),
+ * among the entries allowed for `format` (no `formats`, or `formats` listing it); null when none. No prefix matching.
+ * 某个模型 id 对应的价目表条目：id 或某个别名与之精确相等（区分大小写），且允许用于该格式；没有则为 null。不做前缀匹配。
  */
-export function priceOf(models, model, usage, format) {
+export function modelEntryOf(models, model, format) {
+  if (typeof model !== 'string' || !model || !Array.isArray(models)) return null
+  return models.find((m) => isObj(m) && (m.id === model || (Array.isArray(m.aliases) && m.aliases.includes(model))) && (!Array.isArray(m.formats) || format === undefined || m.formats.includes(format))) || null
+}
+
+/** The `prices` of a receipt for a matched entry and a usage: [{ currency, amount }] in the entry's order. / 回执的 prices。 */
+export function pricesOf(entry, usage) {
+  if (!isObj(entry) || !Array.isArray(entry.prices)) return null
   const u = usageOf(usage)
-  if (!u || typeof model !== 'string' || !Array.isArray(models)) return null
-  const e = models.find((m) => isObj(m) && m.id === model && (!Array.isArray(m.formats) || m.formats.includes(format)))
-  if (!e || !isObj(e.price)) return null
-  const out = { currency: e.price.currency }
-  for (const k of PRICE_KEYS) if (given(e.price[k])) out[k] = e.price[k]
-  out.amount = amountOf(e.price, u)
-  if (u.other) out.unpriced = Object.keys(u.other)
+  if (!u) return null
+  return entry.prices.map((p) => ({ currency: p.currency, amount: amountOf(p, u) }))
+}
+
+/**
+ * Everything price-related a receipt carries, from what the upstream reported and what the request asked for:
+ *   { model, prices, modelMatchedBy?, unpriced? }
+ * The reported model is matched first; only when the upstream reported none is the requested model matched, and then it
+ * becomes the receipt's `model` with modelMatchedBy "request". `prices` is null when no entry matched or there is no
+ * usage; `modelMatchedBy` is present exactly when an entry matched; `unpriced` lists usage.other's names, with prices.
+ * 回执里与价格有关的全部内容：先匹配上游报告的模型；上游没报时才匹配请求的模型，此时它成为回执的 model，modelMatchedBy 为
+ * "request"。没匹配到条目或没有 usage 时 prices 为 null；匹配到条目时才有 modelMatchedBy；有 prices 时 unpriced 列出按次计费项。
+ */
+export function pricingOf(models, { reported = null, requested = null, usage = null, format } = {}) {
+  const rep = typeof reported === 'string' && reported ? reported : null
+  let model = rep, by = null, entry = null
+  if (rep) { entry = modelEntryOf(models, rep, format); if (entry) by = 'response' }
+  else if (typeof requested === 'string' && requested) { entry = modelEntryOf(models, requested, format); if (entry) { model = requested; by = 'request' } }
+  const out = { model, prices: entry ? pricesOf(entry, usage) : null }
+  if (by) out.modelMatchedBy = by
+  const u = usageOf(usage)
+  if (out.prices && u?.other) out.unpriced = Object.keys(u.other)
   return out
 }
 
 /**
- * Validate a manifest's AI field (manifest[MANIFEST_FIELD], TAP-20 extension A1) and return a normalised copy:
- *   { endpoints: [{ format, baseUrl }],                       1 to 16, one per format
- *     models: [{ id, formats?, price: { currency, unit: '1M tokens', input, output, cacheRead?, cacheWrite?, reasoning? } }] }
- * 1 to 256 models with unique ids; `formats`, when given, name formats among the endpoints. Unknown format names are
- * accepted (a later adapter may know them). Throws MANIFEST_INVALID.
- * 校验清单的 AI 字段并返回规范化副本；不合规抛 MANIFEST_INVALID。
+ * Validate a manifest's AI field (manifest[MANIFEST_FIELD], TAP-20 extension) and return a normalised copy (only the
+ * known keys, in a fixed order). See the header of this file for the shape. Unknown format names are accepted (a later
+ * adapter may know them). Throws MANIFEST_INVALID.
+ * 校验清单的 AI 字段并返回规范化副本（只保留已知键，顺序固定）；不合规抛 MANIFEST_INVALID。
  * @param {unknown} o
  * @param {{ allowHttp?: boolean }} [opts]
  */
@@ -403,27 +519,40 @@ export function validateAIField(o, { allowHttp = false } = {}) {
   })
   if (!Array.isArray(o.models) || o.models.length < 1 || o.models.length > MODELS_MAX) fail(`models must hold 1 to ${MODELS_MAX} entries`)
   const seen = new Set()
+  const goodId = (v) => typeof v === 'string' && v.length >= 1 && v.length <= MODEL_ID_MAX && !CONTROL.test(v)
+  const claim = (v, what) => { if (seen.has(v)) fail(`${what} ${v.slice(0, 64)} appears twice in the table (ids and aliases must be unique)`); seen.add(v) }
   const models = o.models.map((m, i) => {
     if (!isObj(m)) fail(`models[${i}] must be an object`)
-    if (typeof m.id !== 'string' || !m.id || m.id.length > MODEL_ID_MAX || CONTROL.test(m.id)) fail(`models[${i}].id must be 1 to ${MODEL_ID_MAX} characters, no control characters`)
-    if (seen.has(m.id)) fail(`model ${m.id.slice(0, 64)} appears twice`)
-    seen.add(m.id)
+    if (!goodId(m.id)) fail(`models[${i}].id must be 1 to ${MODEL_ID_MAX} characters, no control characters`)
+    claim(m.id, 'model')
     const out = { id: m.id }
+    if (m.aliases !== undefined) {
+      if (!Array.isArray(m.aliases) || m.aliases.length < 1 || m.aliases.length > ALIASES_MAX || !m.aliases.every(goodId)) fail(`models[${i}].aliases must list 1 to ${ALIASES_MAX} model ids`)
+      for (const a of m.aliases) claim(a, 'alias')
+      out.aliases = [...m.aliases]
+    }
     if (m.formats !== undefined) {
       if (!Array.isArray(m.formats) || !m.formats.length || !m.formats.every((f) => typeof f === 'string' && names.has(f)) || new Set(m.formats).size !== m.formats.length) fail(`models[${i}].formats must list formats among the endpoints`)
       out.formats = [...m.formats]
     }
-    const p = m.price
-    if (!isObj(p)) fail(`models[${i}].price must be an object`)
-    if (!CURRENCIES.includes(p.currency)) fail(`models[${i}].price.currency must be one of ${CURRENCIES.join(', ')}`)
-    if (p.unit !== PRICE_UNIT) fail(`models[${i}].price.unit must be "${PRICE_UNIT}"`)
-    const price = { currency: p.currency, unit: PRICE_UNIT }
-    for (const k of PRICE_KEYS) {
-      if (!given(p[k])) { if (k === 'input' || k === 'output') fail(`models[${i}].price.${k} is required`); continue }
-      if (typeof p[k] !== 'string' || !PRICE_RE.test(p[k])) fail(`models[${i}].price.${k} must be a decimal string with at most ${AMOUNT_DECIMALS} decimals`)
-      price[k] = p[k]
-    }
-    out.price = price
+    if (m.price !== undefined) fail(`models[${i}].price is not a field: use prices, a list with one entry per currency`)
+    if (!Array.isArray(m.prices) || m.prices.length < 1 || m.prices.length > PRICES_MAX) fail(`models[${i}].prices must hold 1 to ${PRICES_MAX} entries, one per currency`)
+    const currencies = new Set()
+    out.prices = m.prices.map((p, j) => {
+      const at = `models[${i}].prices[${j}]`
+      if (!isObj(p)) fail(`${at} must be an object`)
+      if (!CURRENCIES.includes(p.currency)) fail(`${at}.currency must be one of ${CURRENCIES.join(', ')}`)
+      if (currencies.has(p.currency)) fail(`${at}: currency ${p.currency} appears twice`)
+      currencies.add(p.currency)
+      if (p.unit !== PRICE_UNIT) fail(`${at}.unit must be "${PRICE_UNIT}"`)
+      const price = { currency: p.currency, unit: PRICE_UNIT }
+      for (const k of PRICE_KEYS) {
+        if (!given(p[k])) { if (k === 'input' || k === 'output') fail(`${at}.${k} is required`); continue }
+        if (typeof p[k] !== 'string' || !PRICE_RE.test(p[k])) fail(`${at}.${k} must be a decimal string with at most ${AMOUNT_DECIMALS} decimals`)
+        price[k] = p[k]
+      }
+      return price
+    })
     return out
   })
   return { endpoints, models }
@@ -462,12 +591,23 @@ export function readSseReceipt(text) {
 // ---------------------------------------------------------------------------------------------------------------
 const sameJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const jsonOf = (bytes) => { try { return JSON.parse(new TextDecoder().decode(bytes)) } catch { return undefined } }
+const AMOUNT_RE = /^\d+\.\d{8}$/
+
+/**
+ * Is the answer complete? A whole answer: a 2xx status and the adapter does not mark it unfinished. A stream: a 2xx
+ * status and the adapter saw the format's final success event. / 回答是否完整：整体回答为 2xx 且适配器未标记为未完成；流为 2xx
+ * 且适配器看到了格式的最终成功事件。
+ */
+export function completeOf({ status, stream, read }) {
+  if (!(status >= 200 && status < 300)) return false
+  return stream ? read?.complete === true : read?.complete !== false
+}
 
 /** The shape problems of a usage-receipt envelope ([] when it is well-formed). / 用量回执信封的结构问题（合规为 []）。 */
 export function envelopeProblems(env) {
   const p = []
   if (!isObj(env)) return ['the receipt is not an object']
-  if (typeof env.id !== 'string' || !env.id || env.id.length > 256) p.push('id must be a non-empty string')
+  if (typeof env.id !== 'string' || !env.id || env.id.length > 128) p.push('id must be a string of 1 to 128 characters')
   if (env.ok !== true) p.push('ok must be true')
   if (typeof env.method !== 'string' || !METHOD_RE.test(env.method)) p.push('method must be a receipt method name')
   if (!isObj(env.params) || typeof env.params.path !== 'string' || typeof env.params.requestSha256 !== 'string' || !HEX64.test(env.params.requestSha256)) p.push('params must be { path, requestSha256 (64 hex) }')
@@ -477,20 +617,30 @@ export function envelopeProblems(env) {
   const r = env.result
   if (!isObj(r)) { p.push('result must be an object'); return p }
   if (r.model !== null && typeof r.model !== 'string') p.push('result.model must be a string or null')
-  if (r.usage !== null && !(isObj(r.usage) && sameJSON(usageOf(r.usage), r.usage))) p.push('result.usage must be { prompt_tokens, completion_tokens, total_tokens, cache_read_tokens?, cache_write_tokens?, reasoning_tokens?, other? } in that order, or null')
+  if (r.usage !== null && !(isObj(r.usage) && sameJSON(usageOf(r.usage), r.usage))) p.push('result.usage must be { prompt_tokens, completion_tokens, total_tokens, cache_read_tokens?, cache_write_tokens?, cache_write_1h_tokens?, reasoning_tokens?, other? } in that order, or null')
   if (typeof r.responseSha256 !== 'string' || !HEX64.test(r.responseSha256)) p.push('result.responseSha256 must be 64 hex')
   if (typeof r.stream !== 'boolean') p.push('result.stream must be a boolean')
-  const priceOk = (x) => isObj(x) && CURRENCIES.includes(x.currency) && typeof x.input === 'string' && typeof x.output === 'string' &&
-    PRICE_KEYS.every((k) => !given(x[k]) || (typeof x[k] === 'string' && PRICE_RE.test(x[k]))) && typeof x.amount === 'string' && /^\d+\.\d{8}$/.test(x.amount) &&
-    (x.unpriced === undefined || (Array.isArray(x.unpriced) && x.unpriced.every((k) => typeof k === 'string' && METHOD_RE.test(k))))
-  if (r.price !== null && !priceOk(r.price)) p.push('result.price must be { currency, input, output, cacheRead?, cacheWrite?, reasoning?, amount (8 decimals), unpriced? } or null')
+  if (typeof r.complete !== 'boolean') p.push('result.complete must be a boolean')
+  if (!(Number.isInteger(r.status) && r.status >= 100 && r.status <= 599)) p.push('result.status must be an HTTP status')
+  if (r.prices !== null) {
+    const ok = Array.isArray(r.prices) && r.prices.length >= 1 && r.prices.length <= PRICES_MAX &&
+      r.prices.every((x) => isObj(x) && Object.keys(x).join() === 'currency,amount' && CURRENCIES.includes(x.currency) && typeof x.amount === 'string' && AMOUNT_RE.test(x.amount)) &&
+      new Set(r.prices.map((x) => x.currency)).size === r.prices.length
+    if (!ok) p.push(`result.prices must be null or 1 to ${PRICES_MAX} entries { currency, amount (8 decimals) }, currencies unique`)
+    else if (r.usage === null) p.push('result.prices needs a usage')
+  }
+  if (r.modelMatchedBy !== undefined && r.modelMatchedBy !== 'response' && r.modelMatchedBy !== 'request') p.push('result.modelMatchedBy must be "response" or "request" when present')
+  if (r.prices !== null && r.modelMatchedBy === undefined) p.push('result.prices needs modelMatchedBy')
+  if (r.modelMatchedBy !== undefined && typeof r.model !== 'string') p.push('result.modelMatchedBy needs a model')
+  if (r.unpriced !== undefined && !(Array.isArray(r.unpriced) && r.unpriced.length && r.unpriced.every((k) => typeof k === 'string' && METHOD_RE.test(k)) && r.prices !== null)) p.push('result.unpriced must be a non-empty list of names, only with prices')
   if (r.usageInjected !== undefined && r.usageInjected !== true) p.push('result.usageInjected must be true when present')
-  if (r.status !== undefined && !(Number.isInteger(r.status) && r.status >= 100 && r.status <= 599)) p.push('result.status must be an HTTP status')
+  if (!(r.status >= 200 && r.status < 300) && (r.usage !== null || r.prices !== null)) p.push('a failed call (status outside 2xx) carries usage null and prices null')
   return p
 }
 
+const showPrices = (ps) => (ps ? ps.map((x) => `${x.amount} ${x.currency}`).join(' / ') : 'nothing')
 /**
- * Is the receipt's price what the manifest's table says for the model and usage it reports? [] when it is.
+ * Are the receipt's prices what the manifest's table says for the model and usage it reports? [] when they are.
  * 回执的价格是否就是清单价目表对它所报 model 与 usage 给出的价格？一致则为 []。
  * @param {{ models: Array<object> }} field  manifest[MANIFEST_FIELD]
  * @param {object} result  the receipt's result / 回执的 result
@@ -499,11 +649,25 @@ export function envelopeProblems(env) {
 export function priceProblems(field, result, format) {
   if (!isObj(field) || !Array.isArray(field.models)) return ['the manifest has no AI price table']
   if (!isObj(result)) return ['the receipt has no result']
-  const want = priceOf(field.models, result.model, result.usage, format)
-  if (sameJSON(want, result.price ?? null)) return []
-  if (want === null && result.price) return [`the receipt charges ${result.price.amount} ${result.price.currency}, but the manifest lists no price for model ${String(result.model).slice(0, 80)}${result.usage ? '' : ' (and there is no usage)'}`]
-  if (want && !result.price) return [`the receipt carries no price, but the manifest prices model ${String(result.model).slice(0, 80)} (${want.amount} ${want.currency} for this usage)`]
-  return [`the receipt charges ${result.price.amount} ${result.price.currency} at ${result.price.input}/${result.price.output} per ${PRICE_UNIT}; the manifest gives ${want.amount} ${want.currency} at ${want.input}/${want.output}`]
+  const entry = modelEntryOf(field.models, result.model, format)
+  const model = String(result.model).slice(0, 80)
+  if (!entry) {
+    if (result.prices) return [`the receipt charges ${showPrices(result.prices)}, but the manifest lists no price for model ${model}`]
+    if (result.modelMatchedBy) return [`the receipt says model ${model} matched the price table, but the manifest lists no such model`]
+    return []
+  }
+  const want = pricesOf(entry, result.usage)
+  const p = []
+  if (!result.modelMatchedBy) p.push(`the manifest prices model ${model}, but the receipt does not say it matched`)
+  if (!sameJSON(want, result.prices ?? null)) {
+    if (!want) p.push(`the receipt charges ${showPrices(result.prices)}, but there is no usage to price`)
+    else if (!result.prices) p.push(`the receipt carries no prices, but the manifest prices model ${model} (${showPrices(want)} for this usage)`)
+    else p.push(`the receipt charges ${showPrices(result.prices)}; the manifest gives ${showPrices(want)}`)
+  }
+  const u = usageOf(result.usage)
+  const wantUnpriced = want && u?.other ? Object.keys(u.other) : undefined
+  if (!sameJSON(wantUnpriced, result.unpriced)) p.push(`the receipt lists unpriced ${JSON.stringify(result.unpriced ?? [])}, the usage says ${JSON.stringify(wantUnpriced ?? [])}`)
+  return p
 }
 
 /**
@@ -514,11 +678,18 @@ export function priceProblems(field, result, format) {
  * The two hashes bind the exact bytes: pass `requestBytes` (what you sent) and either `responseBytes` (what you received;
  * for a stream, the raw event-stream bytes), `sseDataPayloads` (a stream's data payloads, in order) or `responseSha256`
  * (if you hashed them yourself). What you do not pass is not checked and is listed in `unchecked`.
+ * Holding the answer, the client re-reads it with the format's adapter (TAP-21 §3.5, check 4): its id (compared only when
+ * it is one the sidecar would use, isAnswerId), model, usage and completeness must be what the receipt says. From
+ * `responseBytes` this reading is done here; with only a hash, pass it as `answer` ({ id, model, usage, complete }, e.g.
+ * an adapter's streamState().result()). The usage cannot be compared when the receipt says usageInjected (the client's
+ * copy lacks the usage chunk): listed in `unchecked`, like every check that could not be made.
+ * 持有回答时，客户端用格式适配器重读它：id（仅当旁路会用它时才比较）、model、usage 与完整性必须与回执一致。usageInjected 时
+ * 无法比较 usage，列入 unchecked；做不了的检查一律列入 unchecked，绝不算通过。
  * 两个哈希绑定确切字节：传入 requestBytes 与 responseBytes / sseDataPayloads / responseSha256 之一；没传的不核验，列在 unchecked。
  *
  * @returns {{ ok: boolean, problems: string[], warnings: string[], unchecked: string[], receipt: object|null }}
  */
-export function verifyUsageReceipt({ envelope, manifest, requestBytes, responseBytes, sseDataPayloads, responseSha256, stream, path, status, now, maxSkewS, formats = FORMATS } = {}) {
+export function verifyUsageReceipt({ envelope, manifest, requestBytes, responseBytes, sseDataPayloads, responseSha256, answer, stream, path, status, complete, now, maxSkewS, formats = FORMATS } = {}) {
   const problems = [], warnings = [], unchecked = []
   const out = () => ({ ok: problems.length === 0 && !!envelope, problems, warnings, unchecked, receipt: isObj(envelope) ? envelope : null })
   if (!envelope) { problems.push('no receipt'); return out() }
@@ -538,7 +709,7 @@ export function verifyUsageReceipt({ envelope, manifest, requestBytes, responseB
     if (signer && !eqAddr(signer, manifest.signer)) problems.push(`signed by ${signer}, but the manifest's signer is ${manifest.signer}`)
   }
   if (path !== undefined && path !== envelope.params.path) problems.push(`the receipt is for ${envelope.params.path.slice(0, 80)}, the request went to ${String(path).slice(0, 80)}`)
-  if (status !== undefined && r.status !== undefined && r.status !== status) problems.push(`the receipt says HTTP ${r.status}, the response was ${status}`)
+  if (status !== undefined && r.status !== status) problems.push(`the receipt says HTTP ${r.status}, the response was ${status}`)
   // Request / 请求
   if (requestBytes === undefined) unchecked.push('request')
   else {
@@ -547,27 +718,54 @@ export function verifyUsageReceipt({ envelope, manifest, requestBytes, responseB
     else {
       if (sha256Hex(b) !== envelope.params.requestSha256) problems.push('requestSha256 does not match the request that was sent')
       const asked = typeof format?.requestModel === 'function' ? format.requestModel(jsonOf(b)) : null
-      if (asked && typeof r.model === 'string' && asked !== r.model) warnings.push(`asked for model ${asked.slice(0, 80)}, the upstream reported ${r.model.slice(0, 80)}`)
+      if (r.modelMatchedBy === 'request') {
+        if (asked !== r.model) problems.push(`the receipt prices the requested model ${String(r.model).slice(0, 80)}, but the request asked for ${String(asked).slice(0, 80)}`)
+      } else if (asked && typeof r.model === 'string' && asked !== r.model) {
+        // The same entry under an alias is the same model as far as the price table goes. / 同一条目的别名在价目表看来是同一个模型。
+        const a = field && modelEntryOf(field.models, asked, format?.name), m = field && modelEntryOf(field.models, r.model, format?.name)
+        if (!a || a !== m) warnings.push(`asked for model ${asked.slice(0, 80)}, the upstream reported ${r.model.slice(0, 80)}`)
+      }
     }
   }
   // Response / 回应
   if (stream !== undefined && r.stream !== stream) problems.push(`the receipt says stream ${r.stream}, the response was ${stream ? '' : 'not '}a stream`)
-  let got = null, respId = null
+  let got = null, read = isObj(answer) ? answer : null
   const sentinel = format?.stream?.sentinel ?? null
   if (responseSha256 !== undefined) got = String(responseSha256)
   else if (sseDataPayloads !== undefined) got = sseDigestOfPayloads(sseDataPayloads, { sentinel })
   else if (responseBytes !== undefined) {
     const b = toBytes(responseBytes)
     if (!b) problems.push('responseBytes must be bytes or a string')
-    else if (r.stream) { const s = scanSse(b, format ? { format } : { sentinel }); got = s.responseSha256; respId = s.id } else { got = sha256Hex(b); respId = format ? format.response(jsonOf(b)).id : null }
+    else if (r.stream) {
+      const s = scanSse(b, format ? { format } : { sentinel }); got = s.responseSha256
+      if (format) read = s
+    } else {
+      got = sha256Hex(b)
+      if (format) read = format.response(jsonOf(b)) ?? null
+    }
   }
   if (got === null) unchecked.push('response')
   else if (got !== r.responseSha256) problems.push('responseSha256 does not match the response that was received')
-  if (typeof respId === 'string' && respId !== envelope.id) problems.push(`the receipt is for response ${envelope.id.slice(0, 80)}, the response's id is ${respId.slice(0, 80)}`)
+  // The client's own reading of the answer (check 4). / 客户端自己对回答的读取。
+  if (!read) unchecked.push('id', 'model', 'usage', ...(complete === undefined ? ['complete'] : []))
+  else {
+    if (isAnswerId(read.id) && read.id !== envelope.id) problems.push(`the receipt is for response ${envelope.id.slice(0, 80)}, the response's id is ${read.id.slice(0, 80)}`)
+    const said = typeof read.model === 'string' && read.model.length >= 1 && read.model.length <= MODEL_ID_MAX ? read.model : null
+    if (said !== null && r.model !== said) problems.push(`the receipt says model ${String(r.model).slice(0, 80)}, but the answer reports ${said.slice(0, 80)}`)
+    if (said === null && r.model !== null && r.modelMatchedBy !== 'request') problems.push(`the receipt says model ${String(r.model).slice(0, 80)}, but the answer reports none`)
+    if (r.usageInjected) unchecked.push('usage (usageInjected: the answer the client received lacks the usage chunk the sidecar read)')
+    else {
+      const u = r.status >= 200 && r.status < 300 ? usageOf(read.usage) : null
+      if (!sameJSON(u, r.usage)) problems.push(`the receipt says usage ${JSON.stringify(r.usage)}, but the answer reports ${JSON.stringify(u)}`)
+    }
+  }
+  const seenComplete = complete !== undefined ? complete : read ? completeOf({ status: r.status, stream: r.stream, read }) : undefined
+  if (seenComplete !== undefined && seenComplete !== r.complete) problems.push(`the receipt says complete ${r.complete}, but the answer ${seenComplete ? 'is' : 'is not'} complete`)
+  if (r.complete === false && r.status >= 200 && r.status < 300) warnings.push(`the answer did not complete (no final success event); it is ${r.prices ? 'priced from the usage it reported' : 'not priced'}`)
   // Amount / 金额
   if (field) problems.push(...priceProblems(field, r, format?.name))
-  if (field && r.price === null && r.usage && typeof r.model === 'string' && !field.models.some((m) => m.id === r.model)) warnings.push(`model ${r.model.slice(0, 80)} is not in the manifest's price table`)
-  if (r.price?.unpriced) warnings.push(`billed per use and not priced by the table: ${r.price.unpriced.join(', ')}`)
+  if (field && r.prices === null && r.usage && typeof r.model === 'string' && !modelEntryOf(field.models, r.model, format?.name)) warnings.push(`model ${r.model.slice(0, 80)} is not in the manifest's price table`)
+  if (r.unpriced) warnings.push(`billed per use and not priced by the table: ${r.unpriced.join(', ')}`)
   // Freshness / 时效
   if (maxSkewS !== undefined) {
     const t = now ?? Math.floor(Date.now() / 1000)
@@ -604,7 +802,12 @@ async function bodyBytes(url, init) {
  * @param {object} [o.api]    the createTapeAPI instance: resolves `service` if needed and re-reads the manifest once when
  *                            a receipt is signed by another key (the service may have rotated) / 用于解析与换钥后重读
  * @param {Function} [o.fetch]
- * @param {(report: object) => void} [o.onReport]  every check: { ok, problems, warnings, unchecked, receipt, url, stream, status }
+ * @param {(report: object) => void} [o.onReport]  every check: { ok, problems, warnings, unchecked, receipt, url, stream, status,
+ *        sidecarError?, code? }
+ * An answer the sidecar made itself (SIDECAR_ERROR_HEADER, no receipt) is a transport failure, reported with
+ * sidecarError: true and thrown (strict) as PROVIDER_UNAVAILABLE, or RATE_LIMITED for its 429; it is never verified.
+ * 旁路自己产生的回答（带 SIDECAR_ERROR_HEADER、没有回执）是传输失败：报告 sidecarError，严格模式下抛 PROVIDER_UNAVAILABLE
+ * （429 为 RATE_LIMITED）；它永远不算已核验。
  * @param {boolean} [o.strict=true]  throw (or error the stream) on any problem; false: report only / 有问题即抛错；false 只报告
  * @param {number} [o.maxSkewS=300]  the receipt's ts must be this close to now / 回执时间与当前时间的最大偏差
  * @param {object[]} [o.formats]  the adapters (default FORMATS) / 适配器
@@ -623,7 +826,17 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
     if (onReport) { try { onReport(r) } catch { /* the reporter's own failure is not the call's / 回调自己的错误不影响调用 */ } }
     else if (!r.ok && !strict && r.problems.length) console.warn('[tapeapi/ai] usage receipt problem:', r.problems.join('; '))
   }
-  const failure = (r) => new TapeAPIError('RECEIPT_INVALID', `usage receipt: ${r.problems.join('; ')}`, { data: { problems: r.problems, receipt: r.receipt } })
+  const failure = (r) => (r.sidecarError
+    ? new TapeAPIError(r.code, r.problems.join('; '), { data: { status: r.status, problems: r.problems } })
+    : new TapeAPIError('RECEIPT_INVALID', `usage receipt: ${r.problems.join('; ')}`, { data: { problems: r.problems, receipt: r.receipt } }))
+  // Only a validated `ai` field is used (TAP-20 §3.9); an endpoint of an unknown format, or without its format's suffix,
+  // is ignored. / 只使用校验过的 ai 字段；未知格式、或缺少格式后缀的端点被忽略。
+  const endpointsOf = (s) => {
+    if (Array.isArray(s.aiProblems) && s.aiProblems.length) throw new TapeAPIError('MANIFEST_INVALID', `${s.container}: its ${MANIFEST_FIELD} field is invalid and was dropped: ${s.aiProblems.join('; ')}`)
+    const raw = s.manifest?.[MANIFEST_FIELD]
+    if (raw === undefined) throw new TapeAPIError('MANIFEST_INVALID', `${s.container} publishes no ${MANIFEST_FIELD} field`)
+    return validateAIField(raw, { allowHttp: s.verified?.dev === true }).endpoints
+  }
 
   async function check(s, args) {
     let r = verifyUsageReceipt({ ...args, manifest: s.manifest, maxSkewS, formats })
@@ -638,8 +851,7 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
   return async function verifyingFetch(input, init = {}) {
     const s = await current()
     if (!s.verified || (s.verified.delegation !== true && s.verified.dev !== true)) throw new TapeAPIError('DELEGATION_INVALID', 'the service must come from api.resolve(): its signer is only trustworthy once the delegation has been verified')
-    const endpoints = s.manifest?.[MANIFEST_FIELD]?.endpoints
-    if (!Array.isArray(endpoints)) throw new TapeAPIError('MANIFEST_INVALID', `${s.container} publishes no ${MANIFEST_FIELD} field`)
+    const endpoints = endpointsOf(s)
     const isRequest = typeof Request !== 'undefined' && input instanceof Request
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input?.url
     const verb = String(init.method || (isRequest ? input.method : 'GET')).toUpperCase()
@@ -676,6 +888,14 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
     // 与旁路相同的规则：只有会流式的格式、且以事件流作答时才算流。
     if (!format.stream || !type.includes('text/event-stream') || !res.body) {
       const bytes = new Uint8Array(await res.arrayBuffer())
+      if (res.headers.get(SIDECAR_ERROR_HEADER) === '1' && !res.headers.get(RECEIPT_HEADER)) {
+        let why = ''
+        try { why = String(JSON.parse(new TextDecoder().decode(bytes))?.error?.message ?? '').slice(0, 200) } catch { /* not JSON */ }
+        const rep = { ok: false, sidecarError: true, code: res.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_UNAVAILABLE', problems: [`the sidecar answered HTTP ${res.status} itself${why ? ` (${why})` : ''}: no upstream answer, no receipt`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: res.status }
+        report(rep)
+        if (strict) throw failure(rep)
+        return new Response(bytes, { status: res.status, statusText: res.statusText, headers: res.headers })
+      }
       let envelope = null, headerError = null
       try { envelope = decodeReceiptHeader(res.headers.get(RECEIPT_HEADER)) } catch (e) { headerError = e.message }
       const r = await check(s, { ...common, envelope, responseBytes: bytes, stream: false })
@@ -701,13 +921,11 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
         for (let i = receipts.length - 1; i >= 0; i--) {
           let envelope = null
           try { envelope = decodeReceiptHeader(receipts[i]) } catch { continue }
-          const r = await check(s, { ...common, envelope, responseSha256: scanner.digest(), stream: true })
+          const r = await check(s, { ...common, envelope, responseSha256: scanner.digest(), stream: true, answer: st.result() })
           if (r.ok || !rep) rep = r
           if (r.ok) break
         }
         if (!rep) rep = { ok: false, problems: ['no tapeapi-receipt comment in the event stream'], warnings: [], unchecked: [], receipt: null }
-        const sid = st.result().id
-        if (rep.receipt && typeof sid === 'string' && sid !== rep.receipt.id) { rep.problems.push(`the receipt is for response ${rep.receipt.id.slice(0, 80)}, the stream's id is ${sid.slice(0, 80)}`); rep.ok = false }
         rep = { ...rep, url, stream: true, status: res.status }
         report(rep)
         if (!rep.ok && strict) controller.error(failure(rep))

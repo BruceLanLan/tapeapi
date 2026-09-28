@@ -92,13 +92,13 @@ async function provider(): Promise<void> {
 async function aiSidecar(): Promise<void> {
   const px: AIProxy = createAIProxy({
     upstream: { baseUrl: 'https://upstream.example/v1' }, manifestBase: { circuits: '0x', tokenId: '1', container: '0x', endpoints: { live: ['https://ai.example/tapeapi/v1'], async: false } },
-    signerKey: '0x' + '11'.repeat(32), models: [{ id: 'm', formats: ['openai-chat'], price: { currency: 'BEM', unit: '1M tokens', input: '1', output: '2', cacheRead: '0.5' } }],
+    signerKey: '0x' + '11'.repeat(32), models: [{ id: 'm', aliases: ['m-2026'], formats: ['openai-chat'], prices: [{ currency: 'BEM', unit: '1M tokens', input: '1', output: '2', cacheRead: '0.5', cacheWrite1h: '4' }, { currency: 'USD1', unit: '1M tokens', input: '0.1', output: '0.2' }] }],
   })
   const chat: AIFormat = FORMATS[0]
   const base: string = px.manifest().ai.endpoints[0].baseUrl
   const fetch = createVerifyingFetch({ service: {}, api: createTapeAPI({}), onReport: (r) => void r.receipt?.result.usage?.cache_read_tokens })
   const receipt: UsageReceipt | null = verifyUsageReceipt({ envelope: null, manifest: { container: '0x', signer: '0x' } }).receipt
-  void [chat.method, base, fetch, receipt?.result.price?.unpriced, ai.MANIFEST_FIELD, createOpenAIProxy]
+  void [chat.method, base, fetch, receipt?.result.prices?.[0]?.amount, receipt?.result.unpriced, receipt?.result.complete, receipt?.result.modelMatchedBy, receipt?.result.usage?.cache_write_1h_tokens, ai.MANIFEST_FIELD, createOpenAIProxy]
 }
 
 void consumer; void provider; void aiSidecar

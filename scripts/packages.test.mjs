@@ -63,7 +63,7 @@ for (const [dir, pkg] of Object.entries(PKGS)) {
     const [info] = JSON.parse(out)
     const files = info.files.map((f) => f.path).sort()
     for (const f of files) {
-      assert.ok(/^(src\/[a-z0-9-]+\.js|types\/[a-z0-9-]+\.d\.ts|bin\/tapeapi-mcp\.js|README\.md|LICENSE|package\.json)$/.test(f), `unexpected file in the tarball: ${f}`)
+      assert.ok(/^(src\/[a-z0-9-]+\.js|types\/[a-z0-9-]+\.d\.ts|bin\/tapeapi-(mcp|verify)\.js|README\.md|LICENSE|package\.json)$/.test(f), `unexpected file in the tarball: ${f}`)
     }
     for (const f of ['package.json', 'README.md', 'LICENSE']) assert.ok(files.includes(f), `${f} is packed`)
     const srcOnDisk = readdirSync(join(ROOT, dir, 'src')).filter((f) => f.endsWith('.js')).map((f) => `src/${f}`)

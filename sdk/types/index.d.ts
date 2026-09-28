@@ -97,6 +97,8 @@ export interface ResolvedService {
   file: { size: unknown; sha256Hash: Hex; updatedAt: unknown } | null
   target: ResolveTarget
   fetchedAt: number
+  /** Why the manifest's `ai` field was dropped (TAP-20 §3.9: an invalid field is refused, the rest of the manifest is kept). */
+  aiProblems?: string[]
 }
 
 export interface CallOptions {

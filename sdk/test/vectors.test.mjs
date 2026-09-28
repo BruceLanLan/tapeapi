@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { canonicalJSON, safeParseJSON, TapeAPIError } from '../src/index.js'
-import { responseDigest, delegationDigest, voucherDigest, signDigest, recoverAddress, privateKeyToAddress } from '../src/sig.js'
+import { responseDigest, delegationDigest, voucherDigest, signDigest, recoverAddress, privateKeyToAddress, personalDigest, recoverResponseSigner } from '../src/sig.js'
 import { toHex, keccak256, utf8ToBytes } from '../src/abi.js'
 
 const load = (n) => JSON.parse(readFileSync(new URL(`../../spec/vectors/${n}`, import.meta.url), 'utf8'))
@@ -44,8 +44,13 @@ test('TAP-21 §3.2 envelope digest vectors, including every intermediate hash', 
     assert.equal(k(i.canonicalBody), i.keccakBody, c.name)
     const d = responseDigest({ container: v.container, id: c.id, method: c.method, params: c.params, ok: c.ok, body: c.body, ts: c.ts })
     assert.equal(toHex(d), c.digest, c.name)
-    assert.equal(signDigest(d, v.signerKey), c.sig, c.name)
-    assert.equal(recoverAddress(d, c.sig).toLowerCase(), c.recoversTo.toLowerCase(), c.name)
+    // EIP-191 personal_sign over the digest (TAP-21 §3.3), exactly as signResponse does. / 与 signResponse 相同的 EIP-191 签名。
+    const pd = personalDigest(d)
+    assert.equal(toHex(pd), c.personalDigest, c.name)
+    assert.equal(signDigest(pd, v.signerKey), c.sig, c.name)
+    assert.equal(recoverAddress(pd, c.sig).toLowerCase(), c.recoversTo.toLowerCase(), c.name)
+    assert.equal(c.recoversTo.toLowerCase(), v.signerAddress.toLowerCase(), c.name)
+    assert.equal(recoverResponseSigner({ container: v.container, id: c.id, method: c.method, params: c.params, ok: c.ok, body: c.body, ts: c.ts }, c.sig).toLowerCase(), v.signerAddress.toLowerCase(), `${c.name}: the SDK's own verifier agrees`)
   }
   // ok is inside the digest, so a signed error cannot be relabelled as a success / ok 在摘要里，签过名的错误无法被改标成成功
   const e = v.cases.find((c) => c.ok === false)

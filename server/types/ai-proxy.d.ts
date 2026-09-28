@@ -3,12 +3,14 @@ import type { Manifest } from '@tapeapi/sdk'
 import type { ModelPrice, AIField, AIFormat } from '@tapeapi/sdk/ai'
 import type { CreateProviderOptions } from './index.js'
 
-/** Request bodies are refused past this many bytes (4 MiB). */
+/** Request bodies are refused past this many bytes (32 MiB). */
 export declare const REQUEST_LIMIT: number
 /** Non-stream upstream answers are refused past this many bytes (16 MiB); streams are not capped. */
 export declare const RESPONSE_LIMIT: number
-/** 120 s: a non-stream answer must be complete, a stream must have started. */
+/** 600 s: a non-stream answer must be complete, a stream must have started. */
 export declare const UPSTREAM_TIMEOUT_MS: number
+/** 300 s: a stream that sends nothing this long is ended (receipt appended, complete false). */
+export declare const STREAM_IDLE_MS: number
 export declare const RECEIPT_TTL_MS: number
 export declare const MAX_RECEIPTS: number
 /** At most this many bytes of one event are held back (4 MiB); past it the event streams and the receipt is appended. */
@@ -44,6 +46,8 @@ export interface AIProxyStats {
   upstreamErrors: number
   upstreamFailures: number
   timeouts: number
+  /** Streams ended because the upstream sent nothing for streamIdleMs. */
+  idleTimeouts: number
   tooLarge: number
   redirects: number
   rateLimited: number
@@ -54,7 +58,9 @@ export interface AIProxyStats {
   usageInjected: number
   /** Streams whose receipt was appended at the end (no final event seen). */
   appended: number
-  /** Models the upstream reported that the price table does not list (their receipts carry price null). */
+  /** 2xx answers signed with complete false. */
+  incomplete: number
+  /** Models the upstream reported that the price table does not list (their receipts carry prices null). */
   unpricedModels: string[]
   provider: Record<string, unknown>
 }
@@ -89,6 +95,8 @@ export declare function createAIProxy(o: {
   /** The service root the endpoints are built on; default endpoints.live[0] without /tapeapi/v1. */
   publicUrl?: string
   allowHttp?: boolean
-  /** Default 120 000. */
+  /** Default 600 000. */
   upstreamTimeoutMs?: number
+  /** A stream silent this long is ended; default 300 000, 0 = never. */
+  streamIdleMs?: number
 }): AIProxy

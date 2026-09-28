@@ -1,5 +1,12 @@
 [
-  { "id": "demo-chat", "price": { "currency": "BEM", "unit": "1M tokens", "input": "0.15", "output": "0.60", "cacheRead": "0.075" } },
-  { "id": "demo-claude", "formats": ["anthropic-messages"], "price": { "currency": "BEM", "unit": "1M tokens", "input": "3", "output": "15", "cacheRead": "0.30", "cacheWrite": "3.75" } },
-  { "id": "demo-embed", "formats": ["openai-embeddings"], "price": { "currency": "BEM", "unit": "1M tokens", "input": "0.02", "output": "0" } }
+  { "id": "demo-chat", "prices": [
+    { "currency": "BEM", "unit": "1M tokens", "input": "0.15", "output": "0.60", "cacheRead": "0.075" },
+    { "currency": "USDT", "unit": "1M tokens", "input": "0.015", "output": "0.06", "cacheRead": "0.0075" }
+  ] },
+  { "id": "demo-claude", "aliases": ["demo-claude-20260901"], "formats": ["anthropic-messages"], "prices": [
+    { "currency": "BEM", "unit": "1M tokens", "input": "3", "output": "15", "cacheRead": "0.30", "cacheWrite": "3.75", "cacheWrite1h": "6" }
+  ] },
+  { "id": "demo-embed", "formats": ["openai-embeddings"], "prices": [
+    { "currency": "BEM", "unit": "1M tokens", "input": "0.02", "output": "0" }
+  ] }
 ]

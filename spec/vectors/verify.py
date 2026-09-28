@@ -551,6 +551,135 @@ for m in gv['messages']:
     sg = ed25519_sign(bh(people[i]['ed25519Secret']), b'TAP-27/msg/v1' + hdr + ct)
     check('tap27/message from %d %r' % (i, m['plaintext']), '0x' + (hdr + ct + sg).hex(), m['wire'])
 
+# ======================================================= TAP-21 §3.5 / TAP-20 §3.9 AI usage receipts ====
+# The receipt vectors of the reference sidecar (sdk/test/fixtures/ai-receipt-vectors.json), checked from the text of
+# TAP-21 §3.5 and TAP-20 §3.9 alone: the request hash, the stream hash by the event-stream rules of §3.5 (parsed here on
+# bytes), every amount in Decimal with ROUND_CEILING, the model match, and the §3.3 digest of each receipt with its
+# signer recovered by secp256k1 (SEC 1 §4.1.6, written here) over the EIP-191 message.
+# 参考旁路的回执向量，只按 TAP-21 §3.5 与 TAP-20 §3.9 的文字核对：请求哈希、按 §3.5 事件流规则（此处按字节解析）的流哈希、
+# 用 Decimal 与 ROUND_CEILING 算的每个金额、模型匹配，以及每份回执的 §3.3 摘要和用 secp256k1 恢复出的签名者。
+import base64, re
+from decimal import Decimal, getcontext, ROUND_CEILING
+getcontext().prec = 100          # exact: 18 integer digits × counts up to 2^53 fit many times over / 足够精确
+
+# ---------- secp256k1 public-key recovery (SEC 1 v2 §4.1.6), affine coordinates ----------
+_SP = 2 ** 256 - 2 ** 32 - 977
+_SN = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+_SG = (0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798, 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8)
+
+def _sec_add(A, B):
+    if A is None: return B
+    if B is None: return A
+    if A[0] == B[0] and (A[1] + B[1]) % _SP == 0: return None
+    if A == B:
+        lam = 3 * A[0] * A[0] * pow(2 * A[1], _SP - 2, _SP) % _SP
+    else:
+        lam = (B[1] - A[1]) * pow(B[0] - A[0], _SP - 2, _SP) % _SP
+    x = (lam * lam - A[0] - B[0]) % _SP
+    return (x, (lam * (A[0] - x) - A[1]) % _SP)
+
+def _sec_mul(k, A):
+    R = None
+    while k:
+        if k & 1: R = _sec_add(R, A)
+        A = _sec_add(A, A); k >>= 1
+    return R
+
+def eip191(digest32):
+    return keccak256(b'\x19Ethereum Signed Message:\n32' + digest32)
+
+def recover_address(digest32, sig_hex):
+    """The address whose key made the 65-byte r ‖ s ‖ v signature over digest32, or None. Refuses high s (TAP-21 §3.3)."""
+    sig = bytes.fromhex(sig_hex[2:])
+    if len(sig) != 65: return None
+    r, s, v = int.from_bytes(sig[:32], 'big'), int.from_bytes(sig[32:64], 'big'), sig[64]
+    if v >= 27: v -= 27
+    if not (0 < r < _SN and 0 < s <= _SN // 2) or v not in (0, 1): return None
+    y2 = (pow(r, 3, _SP) + 7) % _SP
+    y = pow(y2, (_SP + 1) // 4, _SP)
+    if y * y % _SP != y2: return None
+    if y & 1 != v: y = _SP - y
+    e = int.from_bytes(digest32, 'big')
+    ri = pow(r, -1, _SN)
+    Q = _sec_add(_sec_mul(s * ri % _SN, (r, y)), _sec_mul((-e * ri) % _SN, _SG))
+    if Q is None: return None
+    return '0x' + keccak256(Q[0].to_bytes(32, 'big') + Q[1].to_bytes(32, 'big'))[12:].hex()
+
+# TAP-21 §3.3: every envelope signature is an EIP-191 personal_sign over the 32-byte digest; recover each vector's signer.
+# (Until 2026-09-28 the file was signed over the raw digest; regenerated.) / 每个信封签名都是对摘要的 EIP-191 签名；逐条恢复签名者。
+for c in env['cases']:
+    d = bytes.fromhex(c['digest'][2:])
+    check('envelope-personal/' + c['name'], h(eip191(d)), c['personalDigest'])
+    check('envelope-signer/' + c['name'], recover_address(eip191(d), c['sig']), env['signerAddress'].lower())
+
+# ---------- TAP-21 §3.5 response hash of a stream, on bytes ----------
+def sse_digest(body, sentinel):
+    if body.startswith(b'\xef\xbb\xbf'):
+        body = body[3:]                                   # rule 1: one U+FEFF at the very start / 开头的一个 BOM
+    lines = re.split(rb'\r\n|\r|\n', body)[:-1]           # rule 1: an unterminated last line is not a line / 未结束的行不算
+    datas, data = [], None
+    for line in lines:
+        if line == b'':                                   # rule 5: dispatch at a blank line, if it had data / 空行分派
+            if data is not None: datas.append(b'\n'.join(data))  # rule 4
+            data = None; continue
+        if line.startswith(b':'): continue                # rule 2: comments / 注释
+        k = line.find(b':')
+        field, value = (line, b'') if k < 0 else (line[:k], line[k + 1:])
+        if value.startswith(b' '): value = value[1:]      # rule 3
+        if field == b'data': data = (data or []) + [value]
+    kept = [d for d in datas if sentinel is None or d != sentinel.encode()]
+    return hashlib.sha256(b''.join(d + b'\n' for d in kept)).hexdigest()
+
+# ---------- TAP-20 §3.9 amounts and model matching ----------
+FORMAT_OF = {'openai_chat': 'openai-chat', 'openai_responses': 'openai-responses', 'anthropic_messages': 'anthropic-messages', 'openai_embeddings': 'openai-embeddings'}
+SENTINEL = {'openai-chat': '[DONE]', 'openai-responses': '[DONE]', 'anthropic-messages': None}
+
+def match_entry(models, model, fmt):
+    for m in models:
+        if 'formats' in m and fmt not in m['formats']: continue
+        if isinstance(model, str) and (m['id'] == model or model in m.get('aliases', [])): return m
+    return None
+
+def amount(p, u):
+    D = lambda k, dflt=None: Decimal(p[k]) if k in p else dflt
+    inp, out = Decimal(p['input']), Decimal(p['output'])
+    cread, cwrite = D('cacheRead', inp), D('cacheWrite', inp)
+    cw1h_price = D('cacheWrite1h', cwrite)
+    cr, cw, cw1h = u.get('cache_read_tokens', 0), u.get('cache_write_tokens', 0), u.get('cache_write_1h_tokens', 0)
+    rs = u.get('reasoning_tokens', 0) if 'reasoning' in p else 0
+    s = (inp * (u['prompt_tokens'] - cr - cw) + cread * cr + cwrite * (cw - cw1h) + cw1h_price * cw1h
+         + out * (u['completion_tokens'] - rs) + (D('reasoning', Decimal(0)) * rs))
+    return format((s / Decimal(1000000)).quantize(Decimal('0.00000001'), rounding=ROUND_CEILING), 'f')
+
+AIV = json.loads((HERE.parent.parent / 'sdk' / 'test' / 'fixtures' / 'ai-receipt-vectors.json').read_text())
+AI_PREFIX = 'TAPI-1/resp/v2'
+check('ai/prefix is the TAP-21 §3.3 prefix', AI_PREFIX, env['prefix'])
+for c in AIV['cases']:
+    e, name = c['expected'], 'ai/' + c['name']
+    envl, res = e['envelope'], e['envelope']['result']
+    fmt = FORMAT_OF[envl['method']]
+    req, body = base64.b64decode(c['requestBase64']), base64.b64decode(c['responseBase64'])
+    check(name + '/requestSha256', hashlib.sha256(req).hexdigest(), envl['params']['requestSha256'])
+    got = sse_digest(body, SENTINEL[fmt]) if res['stream'] else hashlib.sha256(body).hexdigest()
+    check(name + '/responseSha256', got, res['responseSha256'])
+    entry = match_entry(AIV['manifest']['ai']['models'], res['model'], fmt)
+    want = [{'currency': p['currency'], 'amount': amount(p, res['usage'])} for p in entry['prices']] if entry and res['usage'] else None
+    check(name + '/prices', json.dumps(want), json.dumps(res['prices']))
+    check(name + '/modelMatchedBy present exactly when an entry matches', 'modelMatchedBy' in res, entry is not None)
+    if entry is not None and res.get('modelMatchedBy') == 'request':
+        check(name + '/requested model', json.loads(req.decode())['model'], res['model'])
+    digest = response_digest(AI_PREFIX, envl['container'], envl['id'], envl['method'], envl['params'], True, res, envl['ts'])
+    check(name + '/signer', recover_address(eip191(digest), envl['sig']), AIV['signer'].lower())
+    if c['receiptDelivery'] == 'header':
+        check(name + '/header', json.loads(base64.urlsafe_b64decode(e['encoded'] + '=' * (-len(e['encoded']) % 4))), envl)
+    else:
+        check(name + '/comment', (': tapeapi-receipt ' + e['encoded'] + '\n').encode() in body, True)
+# The worked amount of TAP-20 §6.3. / TAP-20 §6.3 的算例。
+check('ai/§6.3 USDT', amount({'input': '1.25', 'cacheRead': '0.125', 'output': '10', 'reasoning': '12'}, {'prompt_tokens': 1200, 'cache_read_tokens': 1000, 'completion_tokens': 300, 'reasoning_tokens': 100}), '0.00357500')
+check('ai/§6.3 BEM', amount({'input': '12.5', 'cacheRead': '1.25', 'output': '100'}, {'prompt_tokens': 1200, 'cache_read_tokens': 1000, 'completion_tokens': 300, 'reasoning_tokens': 100}), '0.03375000')
+check('ai/rounded up once, on the sum', amount({'input': '0.00000001', 'output': '0.00000001'}, {'prompt_tokens': 500000, 'completion_tokens': 500000}), '0.00000001')
+check('ai/exact past float precision', amount({'input': '999999999999999999.99999999', 'output': '0'}, {'prompt_tokens': 9007199254740991, 'completion_tokens': 0}), '9007199254740990999999999909.92800746')
+
 if fail:
     print('FAIL: %d of %d checks disagreed with the reference implementation\n' % (len(fail), checked))
     for f in fail:

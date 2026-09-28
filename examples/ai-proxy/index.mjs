@@ -78,7 +78,7 @@ console.log(`[ai-proxy] upstream ${proxy.stats().upstream}${fake ? ` (the in-rep
 console.log(`[ai-proxy] signer   ${m.signer}   container ${m.container}   dev=${m.dev}`)
 console.log(`[ai-proxy] manifest http://127.0.0.1:${port}/.well-known/tapeapi.json`)
 for (const e of m.ai.endpoints) console.log(`[ai-proxy] ${e.format.padEnd(18)} ${e.baseUrl}`)
-console.log(`[ai-proxy] models   ${models.map((x) => `${x.id} ${x.price.input}/${x.price.output} ${x.price.currency}`).join('; ')}`)
+console.log(`[ai-proxy] models   ${models.map((x) => `${x.id} ${x.prices.map((p) => `${p.input}/${p.output} ${p.currency}`).join(', ')}`).join('; ')}`)
 console.log(`[ai-proxy] try      curl -si ${base}/chat/completions -H 'authorization: Bearer ${fake ? DEMO_KEY : '<your key>'}' -H 'content-type: application/json' -d '{"model":"demo-chat","messages":[{"role":"user","content":"hello"}]}'`)
 
 for (const sig of ['SIGINT', 'SIGTERM']) {

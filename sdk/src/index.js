@@ -12,6 +12,7 @@ import {
 } from './sig.js'
 import { validateManifest, findMethod, methodPrice, parseUnits, formatUnits, METHOD_NAME_RE, BEM_DECIMALS, MAX_DELEGATION_S } from './manifest.js'
 import { canonicalJSON, safeParseJSON } from './canon.js'
+import { validateAIField, MANIFEST_FIELD as AI_FIELD } from './ai.js'
 
 // Default nodes per chain and who operates them (quorums count operators, not URLs) / 各链默认节点及其运营方
 export { RPC_DEFAULTS, rpcUrlsFor, operatorOf } from './rpc-defaults.js'
@@ -563,7 +564,15 @@ export function createTapeAPI(opts = {}) {
 
     // 只有 dev 来源的清单才放宽校验；dev: true 不影响链上来源清单（M-06）/ only dev-sourced manifests are relaxed
     const dev = !!src.dev
-    const manifest = validateManifest(src.manifest, { requireDelegation: !dev, allowHttp })
+    let manifest = validateManifest(src.manifest, { requireDelegation: !dev, allowHttp })
+    // TAP-20 §3.9: an `ai` field that breaks any MUST is refused as a field (MANIFEST_INVALID) and dropped here; the rest
+    // of the manifest is unaffected. A valid one is kept in its normalised form. / 违反 §3.9 任一 MUST 的 ai 字段按字段拒绝并在此
+    // 丢弃，清单其余部分不受影响；合规的保留其规范化形式。
+    let aiProblems
+    if (manifest[AI_FIELD] !== undefined) {
+      manifest = { ...manifest }
+      try { manifest[AI_FIELD] = validateAIField(manifest[AI_FIELD], { allowHttp: allowHttp || dev }) } catch (e) { aiProblems = [e.message]; delete manifest[AI_FIELD] }
+    }
     if (src.container && !eqAddr(src.container, manifest.container)) throw new TapeAPIError('MANIFEST_INVALID', 'manifest.container does not match resolved container')
     // TAP-20 §3.6 step 3, for EVERY on-chain input form (label, container, pair): the container is re-derived from
     // the manifest's own (circuits, tokenId) on the hub and must equal both manifest.container and the located
@@ -586,6 +595,7 @@ export function createTapeAPI(opts = {}) {
     // 记住来源与取回时间，清单才能重读。TAP-20 §3.6 要求客户端定期复查；没有回到来源的路径这句话就无法实现，
     // 而提供者一旦改价，所有持旧清单的消费者会被永久卡死。
     const svc = { manifest, container: checksumAddress(manifest.container), verified, contribution, file: src.file ?? null, target, fetchedAt: now() }
+    if (aiProblems) svc.aiProblems = aiProblems
     ACCEPTED.set(svc, pricesOf(manifest))
     return svc
   }
@@ -613,6 +623,7 @@ export function createTapeAPI(opts = {}) {
       throw new TapeAPIError('MANIFEST_INVALID', `refresh resolved to ${fresh.container}, not ${svc.container}: that is a different service`)
     }
     svc.manifest = fresh.manifest; svc.verified = fresh.verified; svc.contribution = fresh.contribution
+    if (fresh.aiProblems) svc.aiProblems = fresh.aiProblems; else delete svc.aiProblems
     svc.file = fresh.file; svc.fetchedAt = fresh.fetchedAt
     return svc
   }

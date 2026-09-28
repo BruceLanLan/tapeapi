@@ -77,7 +77,9 @@ write('tap-21-envelope.json', {
   signerAddress: sig.privateKeyToAddress(SIGNER_KEY),
   cases: envCases.map((c) => {
     const digest = sig.responseDigest({ container: CONTAINER, id: c.id, method: c.method, params: c.params, ok: c.ok, body: c.body, ts: c.ts })
-    const signature = sig.signDigest(digest, SIGNER_KEY)
+    // TAP-21 §3.3: the signature is an EIP-191 personal_sign over the 32-byte digest. / 签名是对 32 字节摘要的 EIP-191 personal_sign。
+    const personal = sig.personalDigest(digest)
+    const signature = sig.signDigest(personal, SIGNER_KEY)
     return {
       ...c,
       intermediate: {
@@ -88,8 +90,9 @@ write('tap-21-envelope.json', {
         keccakBody: k(canonicalJSON(c.body)),
       },
       digest: toHex(digest),
+      personalDigest: toHex(personal),
       sig: signature,
-      recoversTo: sig.recoverAddress(digest, signature),
+      recoversTo: sig.recoverAddress(personal, signature),
     }
   }),
 })

@@ -20,5 +20,5 @@ export const openaiEmbeddings = Object.freeze({
   response: (json) => (isObj(json)
     ? { id: typeof json.id === 'string' ? json.id : null, model: typeof json.model === 'string' ? json.model : null, usage: isObj(json.usage) ? { prompt_tokens: json.usage.prompt_tokens, total_tokens: json.usage.total_tokens } : null }
     : { id: null, model: null, usage: null }),
-  streamState: () => ({ event() {}, result: () => ({ id: null, model: null, usage: null }) }),
+  streamState: () => ({ event() {}, result: () => ({ id: null, model: null, usage: null, complete: false }) }),
 })

@@ -6,23 +6,37 @@ export declare const MANIFEST_FIELD: 'ai'
 export declare const RECEIPT_HEADER: 'x-tapeapi-receipt'
 export declare const SSE_RECEIPT_PREFIX: ': tapeapi-receipt '
 export declare const RECEIPT_METHOD: 'receipt'
+/** Marks an error the sidecar made itself (no upstream answer, no receipt): a transport failure. Informative only. */
+export declare const SIDECAR_ERROR_HEADER: 'x-tapeapi-sidecar-error'
+/** An answer id a sidecar uses as the receipt id: 1 to 128 characters in U+0021–U+007E (TAP-21 §3.5). */
+export declare function isAnswerId(v: unknown): v is string
 export declare const PRICE_UNIT: '1M tokens'
 export declare const CURRENCIES: readonly Currency[]
 export declare const MODELS_MAX: number
 export declare const ENDPOINTS_MAX: number
 export declare const MODEL_ID_MAX: number
+/** At most 16 aliases per model entry. */
+export declare const ALIASES_MAX: number
+/** At most 7 price entries (one per currency) per model entry. */
+export declare const PRICES_MAX: number
+/** Caller headers a proxy forwards verbatim (besides each format's own `headers` and the FORWARD_PREFIXES families). */
+export declare const FORWARD_HEADERS: readonly string[]
+/** Header-name prefixes a proxy forwards: x-codex-*, x-stainless-*. */
+export declare const FORWARD_PREFIXES: readonly string[]
+/** Does a proxy pass this caller header upstream? Never cookies, forwarded / x-forwarded-* / x-real-ip / cf-*, hop-by-hop, host, content-length. */
+export declare function forwardsHeader(name: string, formats?: readonly AIFormat[]): boolean
 /** Prices carry at most, amounts exactly, this many decimals (8). */
 export declare const AMOUNT_DECIMALS: number
 /** An event's data is parsed as JSON (for the adapter) up to this many bytes; it is hashed whatever its size. */
 export declare const EVENT_PARSE_LIMIT: number
 
-export type Currency = 'BEM' | 'BNB' | 'USDT' | 'USDC' | 'ETH' | 'USD'
+export type Currency = 'BEM' | 'BNB' | 'USDT' | 'USDC' | 'ETH' | 'USD1' | 'USD'
 /** Counts as an adapter reads them; the core normalises and checks them. */
-export interface RawUsage { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown; cache_read_tokens?: unknown; cache_write_tokens?: unknown; reasoning_tokens?: unknown; other?: unknown }
+export interface RawUsage { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown; cache_read_tokens?: unknown; cache_write_tokens?: unknown; cache_write_1h_tokens?: unknown; reasoning_tokens?: unknown; other?: unknown }
 /**
  * The receipt's usage, one convention for every format: prompt_tokens is ALL input (cache reads and writes included),
- * completion_tokens all output (reasoning included); the cache and reasoning counts are subsets; `other` holds per-use
- * counts (e.g. web_search_requests). Keys always in this order.
+ * completion_tokens all output (reasoning included); the cache and reasoning counts are subsets (cache_write_1h_tokens of
+ * cache_write_tokens); `other` holds per-use counts (e.g. web_search_requests). Keys always in this order.
  */
 export interface Usage {
   prompt_tokens: number
@@ -30,6 +44,7 @@ export interface Usage {
   total_tokens: number
   cache_read_tokens?: number
   cache_write_tokens?: number
+  cache_write_1h_tokens?: number
   reasoning_tokens?: number
   other?: Record<string, number>
 }
@@ -62,35 +77,49 @@ export interface AIFormat {
   /** May change the body sent upstream (e.g. to ask for usage); `strip` removes the events that caused (isInjectedEvent). */
   prepareUpstream?(body: unknown): { body: unknown; strip: boolean } | null
   isInjectedEvent?(json: unknown): boolean
-  /** A whole answer's id, model and usage. */
-  response(json: unknown): { id: string | null; model: string | null; usage: RawUsage | null }
-  /** Folds a stream's JSON events. */
-  streamState(): { event(json: unknown, eventName: string): void; result(): { id: string | null; model: string | null; usage: RawUsage | null } }
+  /** A whole answer's id, model and usage; `complete: false` marks an answer the format itself says is unfinished. */
+  response(json: unknown): { id: string | null; model: string | null; usage: RawUsage | null; complete?: boolean }
+  /** Folds a stream's JSON events; `complete`: the format's final success event was seen (and no error event). */
+  streamState(): { event(json: unknown, eventName: string): void; result(): { id: string | null; model: string | null; usage: RawUsage | null; complete: boolean } }
 }
 /** The built-in formats: OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, OpenAI Embeddings. */
 export declare const FORMATS: readonly AIFormat[]
 
-/** Prices per 1M tokens, decimal strings with at most 8 decimals. Cache prices default to `input`; without `reasoning`, reasoning tokens are output. */
-export interface TokenPrice { currency: Currency; unit: '1M tokens'; input: string; output: string; cacheRead?: string; cacheWrite?: string; reasoning?: string }
-/** One entry of the price table; `formats` limits it to some endpoints. */
-export interface ModelPrice { id: string; formats?: string[]; price: TokenPrice }
+/**
+ * Prices per 1M tokens in one currency, decimal strings with at most 8 decimals. cacheRead and cacheWrite default to
+ * `input`, cacheWrite1h to cacheWrite then `input`; without `reasoning`, reasoning tokens are output.
+ */
+export interface TokenPrice { currency: Currency; unit: '1M tokens'; input: string; output: string; cacheRead?: string; cacheWrite?: string; cacheWrite1h?: string; reasoning?: string }
+/**
+ * One entry of the price table: matched when the reported (or, if none was reported, the requested) model equals `id` or
+ * one of `aliases` exactly; `formats` limits it to some endpoints; `prices` has one entry per currency (1 to 7).
+ */
+export interface ModelPrice { id: string; aliases?: string[]; formats?: string[]; prices: TokenPrice[] }
 /** The manifest's AI field (TAP-20 extension). */
 export interface AIField { endpoints: Array<{ format: string; baseUrl: string }>; models: ModelPrice[] }
-/** A receipt's price: the table entry used, the amount, and the per-use counts no token price covers. */
-export interface Price { currency: Currency; input: string; output: string; cacheRead?: string; cacheWrite?: string; reasoning?: string; amount: string; unpriced?: string[] }
+/** One amount of a receipt: 8 decimals, rounded up. */
+export interface ReceiptPrice { currency: Currency; amount: string }
 
 /** An AI usage receipt: a TAP-21 envelope, with the method and params it is signed over. */
 export interface UsageReceipt {
   id: string
   ok: true
   result: {
+    /** The model the upstream reported, or the requested one when modelMatchedBy is 'request'. */
     model: string | null
     usage: Usage | null
     responseSha256: string
     stream: boolean
-    price: Price | null
-    /** The upstream's HTTP status (an addition to the A2 field list: failed calls are signed too, with usage null). */
-    status?: number
+    /** A finished answer (2xx; a stream reached its format's final success event). An incomplete answer is still priced. */
+    complete: boolean
+    /** The upstream's HTTP status; outside 2xx, usage and prices are null. */
+    status: number
+    /** One amount per currency of the matched entry, in its order; null when no entry matched or there is no usage. */
+    prices: ReceiptPrice[] | null
+    /** How the price-table entry was found; present exactly when one matched. */
+    modelMatchedBy?: 'response' | 'request'
+    /** usage.other names, billed per use and not priced by the table; only with prices. */
+    unpriced?: string[]
     /** The sidecar asked the upstream for usage the client did not ask for (and stripped what that added). */
     usageInjected?: true
   }
@@ -133,13 +162,19 @@ export interface SseScanner {
 }
 /** An incremental byte-level server-sent-events parser that hashes data payloads by the receipt rule. */
 export declare function createSseScanner(o?: { sentinel?: string | null; onEvent?: (json: unknown, eventName: string) => void; eventParseLimit?: number }): SseScanner
-export declare function scanSse(body: Uint8Array | ArrayBuffer | string, o?: { format?: AIFormat; sentinel?: string | null }): { responseSha256: string; id: string | null; model: string | null; usage: Usage | null; events: number; done: boolean; receipts: string[] }
+export declare function scanSse(body: Uint8Array | ArrayBuffer | string, o?: { format?: AIFormat; sentinel?: string | null }): { responseSha256: string; id: string | null; model: string | null; usage: Usage | null; complete: boolean; events: number; done: boolean; receipts: string[] }
 
 export declare function usageOf(u: unknown): Usage | null
-/** Disjoint buckets per 1M tokens (input, cache reads, cache writes, output, reasoning), rounded up once, exactly 8 decimals; BigInt only. */
+/** Disjoint buckets per 1M tokens (input, cache reads, cache writes, 1-hour cache writes, output, reasoning), rounded up once, exactly 8 decimals; BigInt only. */
 export declare function amountOf(price: Omit<TokenPrice, 'currency' | 'unit'> & Partial<TokenPrice>, usage: RawUsage): string
-/** The price for the model the upstream reported (exact id match, format allowed) and its usage, or null. */
-export declare function priceOf(models: ModelPrice[], model: string | null, usage: RawUsage | null, format?: string): Price | null
+/** The entry whose id or an alias equals `model` exactly, allowed for `format`; null when none. */
+export declare function modelEntryOf(models: ModelPrice[], model: string | null, format?: string): ModelPrice | null
+/** A matched entry's amounts for a usage, one per currency; null without usage. */
+export declare function pricesOf(entry: ModelPrice | null, usage: RawUsage | null): ReceiptPrice[] | null
+/** What a receipt carries about price: the reported model matched first, the requested one only when none was reported. */
+export declare function pricingOf(models: ModelPrice[], o: { reported?: string | null; requested?: string | null; usage?: RawUsage | null; format?: string }): { model: string | null; prices: ReceiptPrice[] | null; modelMatchedBy?: 'response' | 'request'; unpriced?: string[] }
+/** Is the answer complete: 2xx and, for a stream, the format's final success event seen. */
+export declare function completeOf(o: { status: number; stream: boolean; read: { complete?: boolean } | null | undefined }): boolean
 /** Validate a manifest's AI field; throws MANIFEST_INVALID. */
 export declare function validateAIField(o: unknown, opts?: { allowHttp?: boolean }): AIField
 
@@ -165,6 +200,10 @@ export declare function verifyUsageReceipt(o: {
   /** The API path the request went to, e.g. '/v1/chat/completions'. */
   path?: string
   status?: number
+  /** Whether the answer you received is complete (compared with the receipt's `complete`); worked out from responseBytes or `answer` when absent. */
+  complete?: boolean
+  /** Your own reading of the answer (e.g. an adapter's streamState().result()), when you hold only its hash; read from responseBytes otherwise. */
+  answer?: { id?: string | null; model?: string | null; usage?: RawUsage | null; complete?: boolean }
   now?: number
   /** Check |now - ts| <= maxSkewS; not checked when absent. */
   maxSkewS?: number
@@ -177,7 +216,8 @@ export declare function createVerifyingFetch(o: {
   service: any
   api?: { resolve(target: any): Promise<any>; refresh?(svc: any): Promise<any> }
   fetch?: FetchLike
-  onReport?: (report: VerifyReport & { url: string; stream: boolean; status: number; incomplete?: boolean }) => void
+  /** sidecarError: an answer the sidecar made itself (code PROVIDER_UNAVAILABLE, or RATE_LIMITED for 429), never verified. */
+  onReport?: (report: VerifyReport & { url: string; stream: boolean; status: number; incomplete?: boolean; sidecarError?: true; code?: 'PROVIDER_UNAVAILABLE' | 'RATE_LIMITED' }) => void
   /** Throw (or error the stream) on a problem; default true. */
   strict?: boolean
   /** Default 300. */
