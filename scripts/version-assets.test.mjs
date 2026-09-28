@@ -112,9 +112,12 @@ test('site modules: every relative import outside vendor/ carries the current ha
   for (const m of modules()) assert.equal(rd(m, 'utf8'), stampModule(m, memo), `${m} is not stamped; run node scripts/version-assets.mjs`)
 })
 
-// The vendored SDK is not content-stamped inside (see stampModule), so its files must be revalidated on every load.
-// vendor 内部不加内容戳，所以每次加载都要重新验证。
-test('_headers: the vendored SDK is revalidated on every load (no 4-hour cache that could mix two releases)', async () => {
+// The vendored SDK is not content-stamped inside (see stampModule). What keeps two releases apart is its content-hashed
+// directory (scripts/build-playground.mjs, tested in build-playground.test.mjs); Cloudflare's Browser Cache TTL overrides
+// this rule today, but it is kept so a revalidation is asked for wherever the setting allows it.
+// vendor 内部不加内容戳。真正保证两次发版不混用的是按内容哈希命名的目录（build-playground.test.mjs 测试）；Cloudflare 的
+// Browser Cache TTL 目前会覆盖这条规则，但保留它：设置允许时浏览器会重新验证。
+test('_headers: the vendored SDK is revalidated on every load where the host allows it (the hashed directory is the guarantee)', async () => {
   const { readFileSync: rd } = await import('node:fs')
   const { join: j } = await import('node:path')
   const { SITE } = await import('./version-assets.mjs')

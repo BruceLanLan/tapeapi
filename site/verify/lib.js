@@ -16,10 +16,10 @@
 // carry by default, carries only the two hashes the signature is computed over (requestHash, bodyHash), and is checked
 // by rebuilding the digest from them. / MCP / TAP-21 回执有两种形态：v 1 带明文参数与结果；v 2（核验链接默认的形态）只带签名
 // 所依据的两个哈希，按它们重建摘要来核对。
-import { fromBase64Url, RECEIPT_META_KEY } from '../playground/vendor/tapeapi-sdk/mcp.js'
-import { findDuplicateKey, FORBIDDEN_KEYS } from '../playground/vendor/tapeapi-sdk/canon.js'
-import { envelopeProblems, priceProblems, formatOfMethod, validateAIField, MANIFEST_FIELD, sha256Hex, scanSse } from '../playground/vendor/tapeapi-sdk/ai.js'
-import { parseTapeName } from '../playground/vendor/tapeapi-sdk/chains.js'
+import { fromBase64Url, RECEIPT_META_KEY } from '../playground/vendor/a85b126b36/tapeapi-sdk/mcp.js'
+import { findDuplicateKey, FORBIDDEN_KEYS } from '../playground/vendor/a85b126b36/tapeapi-sdk/canon.js'
+import { envelopeProblems, priceProblems, formatOfMethod, validateAIField, MANIFEST_FIELD, sha256Hex, scanSse } from '../playground/vendor/a85b126b36/tapeapi-sdk/ai.js'
+import { parseTapeName } from '../playground/vendor/a85b126b36/tapeapi-sdk/chains.js'
 
 export { RECEIPT_META_KEY }
 export const MAX_INPUT = 64 * 1024   // bytes of pasted text or link / 粘贴文本或链接的字节上限

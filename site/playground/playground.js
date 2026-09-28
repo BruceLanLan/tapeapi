@@ -1,9 +1,11 @@
 // TapeAPI Playground: resolve a TapeOut service and call it with the real SDK, showing what the SDK checked.
-// Hand-written. The SDK is vendored by scripts/build-playground.mjs; bare @noble imports go through the import map.
+// Hand-written. The SDK is vendored by scripts/build-playground.mjs, which also writes the vendor/<hash>/ path below;
+// bare @noble imports go through the import map.
 // Everything the manifest or a provider says is untrusted text: it reaches the page through textContent only.
-// 调试台：用真实的 SDK 解析并调用 TapeOut 服务，展示 SDK 核对了什么。手写；SDK 由 scripts/build-playground.mjs 放入 vendor/。
+// 调试台：用真实的 SDK 解析并调用 TapeOut 服务，展示 SDK 核对了什么。手写；SDK 由 scripts/build-playground.mjs 放入 vendor/<hash>/，
+// 下面导入里的路径也由它写入。
 // 清单与提供者给出的一切都是不可信文本，只经 textContent 进入页面。
-import { createTapeAPI, TapeAPIError, parseUnits, sig, abi, rpcUrlsFor, operatorOf, CHAINS, chainByArea } from './vendor/tapeapi-sdk/index.js'
+import { createTapeAPI, TapeAPIError, parseUnits, sig, abi, rpcUrlsFor, operatorOf, CHAINS, chainByArea } from './vendor/a85b126b36/tapeapi-sdk/index.js'
 
 // The SDK's default nodes: three distinct operators (NodeReal, Alchemy, 48 Club); the SDK counts agreement by operator.
 // SDK 的默认节点：三家不同运营方；SDK 按运营方计票。

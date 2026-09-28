@@ -24,10 +24,13 @@
 /playground/*
   Content-Security-Policy: frame-ancestors 'none'
 
-# The vendored SDK imports its own modules without a content stamp (so one module is never loaded under two URLs), so a
-# browser must revalidate them on every load: with the default 4-hour cache a release could pair a new index.js with a
-# cached ai.js. Revalidation is one 304 per unchanged file. / vendor 内部导入不带内容戳（避免同一模块两个网址），浏览器每次
-# 都要重新验证：默认缓存 4 小时，发版后可能出现新的 index.js 配旧的 ai.js。未变的文件只多一次 304。
+# The vendored SDK imports its own modules without a content stamp (so one module is never loaded under two URLs). What
+# guarantees that a release never pairs a new index.js with a cached old ai.js is its directory: vendor/<hash>/, named by
+# the content of every file in it (scripts/build-playground.mjs), so a changed file is always a new URL. This rule is
+# only a second line: the zone's Browser Cache TTL currently rewrites Cache-Control on .js to 4 hours, whatever this says;
+# it is kept so browsers revalidate if that setting changes. / vendor 内部导入不带内容戳（避免同一模块两个网址）。真正保证
+# 发版后不会出现新的 index.js 配缓存的旧 ai.js 的，是它的目录 vendor/<hash>/：按其中全部文件的内容命名，文件变了网址一定变。
+# 这条规则只是第二道防线：站点的 Browser Cache TTL 目前会把 .js 的 Cache-Control 改成 4 小时；保留它，设置改了以后浏览器会重新验证。
 /playground/vendor/*
   Cache-Control: public, max-age=0, must-revalidate
 

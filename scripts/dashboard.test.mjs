@@ -5,7 +5,7 @@
 // 每个导入都能解析、只向钱包要地址、lib.js 的纯函数行为正确。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { importsOf } from './build-playground.mjs'
@@ -54,7 +54,7 @@ test('dashboard: the import map is the playground\'s, read from ../playground/ve
   const mine = mapOf(html)
   const theirs = mapOf(read('playground/index.html'))
   const expected = Object.fromEntries(Object.entries(theirs).map(([k, v]) => [k, v.replace(/^\.\/vendor\//, '../playground/vendor/')]))
-  assert.deepEqual(mine, expected, 'copy the import map from site/playground/index.html, with ./vendor/ -> ../playground/vendor/')
+  assert.deepEqual(mine, expected, 'the import map is the playground\'s with ./vendor/ -> ../playground/vendor/: run node scripts/build-playground.mjs')
   for (const [spec, to] of Object.entries(mine)) {
     assert.match(to, /^\.\.\/playground\/vendor\//, spec)
     assert.ok(existsSync(join(DIR, to)), `${spec} -> ${to} does not exist`)
@@ -81,7 +81,11 @@ test('dashboard: every import of the page scripts and the vendored SDK they load
   }
   assert.match(html, /<script type="module" src="dashboard\.js\?v=[0-9a-f]{10}"><\/script>/)
   walk('dashboard/dashboard.js')
-  assert.ok(seen.has('dashboard/lib.js') && seen.has('playground/vendor/tapeapi-sdk/index.js'))
+  const [dir, ...others] = readdirSync(join(SITE, 'playground/vendor'))
+  assert.deepEqual(others, [], 'one vendor directory (scripts/build-playground.mjs)')
+  assert.ok(seen.has('dashboard/lib.js') && seen.has(`playground/vendor/${dir}/tapeapi-sdk/index.js`))
+  // One module, one URL: every vendored module comes from the one content-hashed directory. / 同一模块一个网址：都来自唯一的哈希目录。
+  for (const f of seen) if (f.includes('/vendor/')) assert.ok(f.startsWith(`playground/vendor/${dir}/`), `${f} is outside playground/vendor/${dir}/`)
   assert.ok(seen.size > 20, `only ${seen.size} modules reached`)
 })
 

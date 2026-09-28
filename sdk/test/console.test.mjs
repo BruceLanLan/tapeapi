@@ -305,6 +305,13 @@ test('_headers: the console gets exactly one strict CSP; every page forbids fram
     assert.ok(p[0].split(/;\s*/).includes("frame-ancestors 'none'"), path)
     if (path !== '/console/') assert.doesNotMatch(p[0], /script-src/, `${path} may have inline scripts`)
   }
+  // The vendored SDK lives in a content-hashed directory (scripts/build-playground.mjs); a file in it still gets one policy and
+  // the revalidation rule. / vendor 放在按内容哈希命名的目录里；其中的文件仍然只有一条策略，并带重新验证的规则。
+  const [dir, ...others] = readdirSync(new URL('playground/vendor/', SITE))
+  assert.deepEqual(others, [], 'one vendor directory')
+  const vendored = headersFor(text, `/playground/vendor/${dir}/tapeapi-sdk/index.js`)
+  assert.equal(vendored['content-security-policy']?.length, 1)
+  assert.deepEqual(vendored['cache-control'], ['public, max-age=0, must-revalidate'])
 })
 
 test('the console warns against look-alike addresses and shows what the wallet will be asked to write', () => {

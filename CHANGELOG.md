@@ -6,6 +6,20 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+## [1.0.0-rc.3] — 2026-09-29
+
+### Website
+
+- **The vendored SDK lives in a content-hashed directory, so a release can never mix old and new modules.** The
+  1.0.0-rc.2 fix (`Cache-Control: max-age=0` on `/playground/vendor/*`) did not hold in production: the zone's Browser
+  Cache TTL rewrites `Cache-Control` on every `.js` to 4 hours, so a returning visitor could still get a new `index.js`
+  with a cached old `ai.js` (a problem since 0.x). `npm run build:playground` now writes the whole tree to
+  `site/playground/vendor/<hash>/`, named by the first 10 hex digits of a SHA-256 over every vendored file and path, and
+  removes the old directory. The files themselves are unchanged, byte for byte what `sdk/src` and `@noble` hold, and
+  still import each other by relative path, so a module has one URL. The same run regenerates the import maps of the
+  playground, the receipt checker and "My services", the vendor paths in their scripts, and the checker's policy hash.
+  A new test fails unless changing any SDK file changes the directory name. The `_headers` rule stays as a second line.
+
 ## [1.0.0-rc.2] — 2026-09-29
 
 ### SDK
@@ -27,7 +41,7 @@ Before 1.0.0, a minor version may change interfaces.
 
 ### Website
 
-- **The vendored SDK is revalidated on every load.** Its modules import each other without a content stamp (so one
+- **The vendored SDK is revalidated on every load** (correction after release: this did not take effect; Cloudflare's browser-cache setting forces 4 hours on .js files. Fixed at the root in 1.0.0-rc.3). Its modules import each other without a content stamp (so one
   module is never loaded under two URLs), and Cloudflare cached them for 4 hours, so a returning visitor could run a new
   `index.js` against a cached `ai.js` right after a release. `/playground/vendor/*` is now served with
   `Cache-Control: public, max-age=0, must-revalidate` (an unchanged file costs one 304).
@@ -549,7 +563,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.2...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.3...HEAD
+[1.0.0-rc.3]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/BruceLanLan/tapeapi/compare/v0.8.0...v1.0.0-rc.1
 [0.8.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.7.0...v0.8.0

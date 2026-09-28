@@ -7,7 +7,7 @@
 // 中英成对，不从别处加载任何东西。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -351,7 +351,7 @@ test('verify page: scripts are files from this site, except the import map, whic
   assert.deepEqual(dirs['style-src'], ["'self'"])
   assert.deepEqual(dirs['connect-src'], ['https:'], 'the public BSC nodes only need https')
   const hash = `'sha256-${createHash('sha256').update(mapOf(html).body).digest('base64')}'`
-  assert.deepEqual(dirs['script-src'], ["'self'", hash], 'script-src is self plus the hash of the import map as it stands (rehash after build-playground changes the map)')
+  assert.deepEqual(dirs['script-src'], ["'self'", hash], 'script-src is self plus the hash of the import map as it stands (scripts/build-playground.mjs rewrites it with the map)')
   assert.doesNotMatch(csp[1], /unsafe-inline|unsafe-eval|strict-dynamic/)
   for (const [name, text] of [['verify.js', js], ['lib.js', lib], ['strings.js', strings], ['boot.js', boot]]) {
     assert.doesNotMatch(text, /innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function/, `${name}: receipt text must never become HTML or code`)
@@ -364,7 +364,7 @@ test('verify page: the import map is the playground\'s, read from ../playground/
   const mine = mapOf(html).imports
   const theirs = mapOf(read('playground/index.html')).imports
   const expected = Object.fromEntries(Object.entries(theirs).map(([k, v]) => [k, v.replace(/^\.\/vendor\//, '../playground/vendor/')]))
-  assert.deepEqual(mine, expected, 'copy the import map from site/playground/index.html, with ./vendor/ -> ../playground/vendor/')
+  assert.deepEqual(mine, expected, 'the import map is the playground\'s with ./vendor/ -> ../playground/vendor/: run node scripts/build-playground.mjs')
   const seen = new Set()
   const walk = (file) => {
     if (seen.has(file)) return
@@ -384,8 +384,12 @@ test('verify page: the import map is the playground\'s, read from ../playground/
   assert.match(html, /<script type="module" src="verify\.js\?v=[0-9a-f]{10}"><\/script>/)
   assert.match(html, /<script src="boot\.js\?v=[0-9a-f]{10}"><\/script>/)
   walk('verify/verify.js')
-  assert.ok(seen.has('playground/vendor/tapeapi-sdk/index.js') && seen.has('verify/lib.js') && seen.has('verify/strings.js'))
+  const [dir, ...others] = readdirSync(join(SITE, 'playground/vendor'))
+  assert.deepEqual(others, [], 'one vendor directory (scripts/build-playground.mjs)')
+  assert.ok(seen.has(`playground/vendor/${dir}/tapeapi-sdk/index.js`) && seen.has('verify/lib.js') && seen.has('verify/strings.js'))
   assert.equal([...seen].some((f) => f.startsWith('verify/vendor')), false, 'no second copy of the vendor tree')
+  // One module, one URL: every vendored module comes from the one content-hashed directory. / 同一模块一个网址：都来自唯一的哈希目录。
+  for (const f of seen) if (f.includes('/vendor/')) assert.ok(f.startsWith(`playground/vendor/${dir}/`), `${f} is outside playground/vendor/${dir}/`)
 })
 
 test('verify page: every id the script uses exists, and ids are unique', () => {

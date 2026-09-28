@@ -2,18 +2,19 @@
 <html lang="zh-CN" data-lang="zh">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-PlXSgCPIX8ivpAKrPar7Fx8VRHe//ygBAytI7yZYliY='; style-src 'self'; font-src 'self'; img-src 'self'; connect-src https:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-x6KpQccHVbaJhQESME67Sm6SG7yduWk6RwelUQAP/zw='; style-src 'self'; font-src 'self'; img-src 'self'; connect-src https:; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <title>TapeAPI 核验回执 · Verify a receipt</title>
 <meta name="description" content="Check a TapeAPI receipt against BNB Chain in your browser: who signed it, whether that key is the service's on-chain key today, and exactly what was asked and answered. 在浏览器里对照 BNB 链核验 TapeAPI 回执。">
 <!-- Hand-written page. A receipt is untrusted input: it arrives in the URL fragment (#r=, which browsers never send to a
      server) or is pasted, and every claim in it is checked against the chain here, with the playground's vendored SDK
-     (../playground/vendor/; the import map below is the playground's with ./vendor/ read as ../playground/vendor/).
-     Scripts: files from this site only, plus the import map by its hash (scripts/verify-page.test.mjs keeps the hash,
-     the map and the policy in step). No external resources.
+     (../playground/vendor/<hash>/; the import map below is the playground's with ./vendor/ read as ../playground/vendor/).
+     Scripts: files from this site only, plus the import map by its hash. scripts/build-playground.mjs writes the map, the
+     vendor paths in the scripts and the map's hash in the policy; scripts/verify-page.test.mjs checks them. No external resources.
      手写页面。回执是不可信输入：来自 URL 片段（#r=，浏览器不会发给服务器）或粘贴，其中每一项说法都在本页对照链上核对，
-     用的是调试台 vendor/ 里的 SDK。脚本只允许本站文件与按哈希放行的 import map（由测试保持同步）。无外部资源。 -->
+     用的是调试台 vendor/<hash>/ 里的 SDK。脚本只允许本站文件与按哈希放行的 import map；map、脚本里的 vendor 路径和策略里的
+     哈希都由 scripts/build-playground.mjs 写入，测试负责核对。无外部资源。 -->
 <script src="boot.js?v=b046eee3c4"></script>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
@@ -34,22 +35,22 @@
 <script type="importmap">
 {
   "imports": {
-    "@noble/ciphers/chacha": "../playground/vendor/noble-ciphers/chacha.js",
-    "@noble/curves/ed25519": "../playground/vendor/noble-curves/ed25519.js",
-    "@noble/curves/secp256k1": "../playground/vendor/noble-curves/secp256k1.js",
-    "@noble/hashes/crypto": "../playground/vendor/noble-hashes/crypto.js",
-    "@noble/hashes/hkdf": "../playground/vendor/noble-hashes/hkdf.js",
-    "@noble/hashes/hmac": "../playground/vendor/noble-hashes/hmac.js",
-    "@noble/hashes/hmac.js": "../playground/vendor/noble-hashes/hmac.js",
-    "@noble/hashes/sha2.js": "../playground/vendor/noble-hashes/sha2.js",
-    "@noble/hashes/sha256": "../playground/vendor/noble-hashes/sha256.js",
-    "@noble/hashes/sha3": "../playground/vendor/noble-hashes/sha3.js",
-    "@noble/hashes/utils": "../playground/vendor/noble-hashes/utils.js",
-    "@noble/hashes/utils.js": "../playground/vendor/noble-hashes/utils.js"
+    "@noble/ciphers/chacha": "../playground/vendor/a85b126b36/noble-ciphers/chacha.js",
+    "@noble/curves/ed25519": "../playground/vendor/a85b126b36/noble-curves/ed25519.js",
+    "@noble/curves/secp256k1": "../playground/vendor/a85b126b36/noble-curves/secp256k1.js",
+    "@noble/hashes/crypto": "../playground/vendor/a85b126b36/noble-hashes/crypto.js",
+    "@noble/hashes/hkdf": "../playground/vendor/a85b126b36/noble-hashes/hkdf.js",
+    "@noble/hashes/hmac": "../playground/vendor/a85b126b36/noble-hashes/hmac.js",
+    "@noble/hashes/hmac.js": "../playground/vendor/a85b126b36/noble-hashes/hmac.js",
+    "@noble/hashes/sha2.js": "../playground/vendor/a85b126b36/noble-hashes/sha2.js",
+    "@noble/hashes/sha256": "../playground/vendor/a85b126b36/noble-hashes/sha256.js",
+    "@noble/hashes/sha3": "../playground/vendor/a85b126b36/noble-hashes/sha3.js",
+    "@noble/hashes/utils": "../playground/vendor/a85b126b36/noble-hashes/utils.js",
+    "@noble/hashes/utils.js": "../playground/vendor/a85b126b36/noble-hashes/utils.js"
   }
 }
 </script>
-<script type="module" src="verify.js?v=7ed116be67"></script>
+<script type="module" src="verify.js?v=8189ae0d3e"></script>
 </head>
 <body>
 <header class="hd-bar">

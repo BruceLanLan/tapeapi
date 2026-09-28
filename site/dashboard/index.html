@@ -21,10 +21,11 @@
 <meta name="twitter:description" content="A read-only view of the TapeAPI services you run: holder, endpoint, delegation expiry and live health.">
 <meta name="twitter:image" content="https://tapeapi.fun/og.png">
 <!-- Hand-written page. No external resources: the SDK and its @noble dependencies are the playground's vendored copy
-     (../playground/vendor/); the import map below is the playground's with ./vendor/ read as ../playground/vendor/
-     (scripts/dashboard.test.mjs keeps the two in step). Read-only: the wallet is asked for its address, nothing else.
-     手写页面，无外部资源：SDK 与 @noble 依赖用调试台 vendor/ 里的同一份；下面的 import map 与调试台一致，只把 ./vendor/
-     换成 ../playground/vendor/（由测试保持同步）。只读：只向钱包要地址，别的什么都不要。 -->
+     (../playground/vendor/<hash>/); the import map below is the playground's with ./vendor/ read as ../playground/vendor/
+     (written by scripts/build-playground.mjs, checked by scripts/dashboard.test.mjs). Read-only: the wallet is asked for
+     its address, nothing else.
+     手写页面，无外部资源：SDK 与 @noble 依赖用调试台 vendor/<hash>/ 里的同一份；下面的 import map 与调试台一致，只把 ./vendor/
+     换成 ../playground/vendor/（由 scripts/build-playground.mjs 写入，测试核对）。只读：只向钱包要地址，别的什么都不要。 -->
 <script>
   // Theme and language before the first paint; storage may throw in a private window. / 首次绘制前应用主题与语言。
   (function (r) {
@@ -39,22 +40,22 @@
 <script type="importmap">
 {
   "imports": {
-    "@noble/ciphers/chacha": "../playground/vendor/noble-ciphers/chacha.js",
-    "@noble/curves/ed25519": "../playground/vendor/noble-curves/ed25519.js",
-    "@noble/curves/secp256k1": "../playground/vendor/noble-curves/secp256k1.js",
-    "@noble/hashes/crypto": "../playground/vendor/noble-hashes/crypto.js",
-    "@noble/hashes/hkdf": "../playground/vendor/noble-hashes/hkdf.js",
-    "@noble/hashes/hmac": "../playground/vendor/noble-hashes/hmac.js",
-    "@noble/hashes/hmac.js": "../playground/vendor/noble-hashes/hmac.js",
-    "@noble/hashes/sha2.js": "../playground/vendor/noble-hashes/sha2.js",
-    "@noble/hashes/sha256": "../playground/vendor/noble-hashes/sha256.js",
-    "@noble/hashes/sha3": "../playground/vendor/noble-hashes/sha3.js",
-    "@noble/hashes/utils": "../playground/vendor/noble-hashes/utils.js",
-    "@noble/hashes/utils.js": "../playground/vendor/noble-hashes/utils.js"
+    "@noble/ciphers/chacha": "../playground/vendor/a85b126b36/noble-ciphers/chacha.js",
+    "@noble/curves/ed25519": "../playground/vendor/a85b126b36/noble-curves/ed25519.js",
+    "@noble/curves/secp256k1": "../playground/vendor/a85b126b36/noble-curves/secp256k1.js",
+    "@noble/hashes/crypto": "../playground/vendor/a85b126b36/noble-hashes/crypto.js",
+    "@noble/hashes/hkdf": "../playground/vendor/a85b126b36/noble-hashes/hkdf.js",
+    "@noble/hashes/hmac": "../playground/vendor/a85b126b36/noble-hashes/hmac.js",
+    "@noble/hashes/hmac.js": "../playground/vendor/a85b126b36/noble-hashes/hmac.js",
+    "@noble/hashes/sha2.js": "../playground/vendor/a85b126b36/noble-hashes/sha2.js",
+    "@noble/hashes/sha256": "../playground/vendor/a85b126b36/noble-hashes/sha256.js",
+    "@noble/hashes/sha3": "../playground/vendor/a85b126b36/noble-hashes/sha3.js",
+    "@noble/hashes/utils": "../playground/vendor/a85b126b36/noble-hashes/utils.js",
+    "@noble/hashes/utils.js": "../playground/vendor/a85b126b36/noble-hashes/utils.js"
   }
 }
 </script>
-<script type="module" src="dashboard.js?v=4b8a50bed4"></script>
+<script type="module" src="dashboard.js?v=fc842a2cfa"></script>
 </head>
 <body>
 <header class="hd-bar">

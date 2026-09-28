@@ -51,7 +51,7 @@ services:
       additional_contexts:
         sdk: ../../sdk
         server: ../../server
-    image: tapeapi-new-api-sidecar:1.0.0-rc.2
+    image: tapeapi-new-api-sidecar:1.0.0-rc.3
     restart: unless-stopped
     depends_on:
       new-api:

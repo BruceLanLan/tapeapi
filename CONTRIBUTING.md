@@ -102,7 +102,7 @@ GitHub Pages runs no build, so some files under `site/` are generated and **comm
 | You changed | Run | Commit |
 |---|---|---|
 | `docs/guides/*.md`, `docs/guides/zh-CN/*.md` or `CHANGELOG.md` | `npm run build:docs` | `site/docs/` |
-| anything the SDK imports (`sdk/src/`) | `npm run build:playground` | `site/playground/vendor/` and the import map in `site/playground/index.html` |
+| anything the SDK imports (`sdk/src/`) | `npm run build:playground`, then `npm run build:assets` | `site/playground/vendor/<hash>/` (the old directory is removed: `git rm -r` it), the import maps and vendor paths in `site/playground/`, `site/verify/` and `site/dashboard/`, and the restamped pages |
 | `contracts/src/ChannelBus.sol` (rare; the deployed bytecode is fixed) | `cd contracts && forge build && cd .. && node scripts/build-console.mjs` | `site/console/channelbus.json` |
 
 Edit the markdown sources, never the generated HTML. `site/` uses relative paths only.
@@ -232,7 +232,7 @@ GitHub Pages 不执行构建，所以 `site/` 下有些文件是生成后**提�
 | 你改了 | 运行 | 提交 |
 |---|---|---|
 | `docs/guides/*.md`、`docs/guides/zh-CN/*.md` 或 `CHANGELOG.md` | `npm run build:docs` | `site/docs/` |
-| SDK 导入到的任何文件（`sdk/src/`） | `npm run build:playground` | `site/playground/vendor/` 与 `site/playground/index.html` 里的 import map |
+| SDK 导入到的任何文件（`sdk/src/`） | `npm run build:playground`，然后 `npm run build:assets` | `site/playground/vendor/<hash>/`（旧目录已删除，用 `git rm -r` 提交删除）、`site/playground/`、`site/verify/`、`site/dashboard/` 里的 import map 与 vendor 路径，以及重新加戳的页面 |
 | `contracts/src/ChannelBus.sol`（很少见；已部署的字节码是固定的） | `cd contracts && forge build && cd .. && node scripts/build-console.mjs` | `site/console/channelbus.json` |
 
 改 markdown 源文件，不要改生成的 HTML。`site/` 只用相对路径。
