@@ -142,10 +142,16 @@ overwrite the dashboard's on every deploy. `npm run deploy:relay` deploys the pr
 因为那里的值每次部署都会覆盖后台的值。`npm run deploy:relay` 部署的是本项目自己的公共中继（`relay.tapeapi.fun`，
 来自 `examples/public-api/wrangler-relay.toml`），不是给 fork 用的。
 
-Frames are held in memory only; an evicted room loses them and TAP-26 receivers see the gap. The relay holds no
-key and cannot read a byte of what it carries. `relay-worker.test.mjs` runs two isolates against one simulated
+Each room is written to its Durable Object's storage (SQLite-backed, `new_sqlite_classes`): one key per frame
+(`f:<i>`) and one meta key (`m`: room, epoch, next, touched, handshake-only). Cloudflare recycles an idle object
+within seconds; the recreated object restores the room with the same epoch and indices, so clients' cursors keep
+working. The room and its storage are cleared once it has been idle 15 minutes (10 for a handshake-only room). What
+is stored is ciphertext: the relay holds no key and cannot read a byte of what it carries. Client IPs are not stored. `relay-worker.test.mjs` runs two isolates against one simulated
 namespace, including a full TAP-26 channel with each side on a different isolate.
-帧只在内存里；房间被回收时帧随之消失，TAP-26 接收方会看到空洞。中继没有任何密钥，读不了它搬运的任何一个字节。
+每个房间写进它的 Durable Object 存储（SQLite 后端，`new_sqlite_classes`）：每帧一个键（`f:<i>`），外加一个元数据键
+（`m`：房间、纪元、next、touched、是否仅握手）。Cloudflare 几秒内就会回收空闲对象；重建的对象以相同的纪元与序号恢复房间，
+客户端游标照常可用。房间闲置 15 分钟（仅握手房间 10 分钟）后连同存储一起清除。存的是密文：中继没有任何密钥，读不了它搬运的
+任何一个字节。客户端 IP 不落盘。
 
 A room expires on a Durable Object alarm, armed by a post and not re-armed once the room is empty. Each client IP
 may create `RATE_NEW_ROOMS` (default 60) new rooms per minute **per isolate**; that is a cheap-flood guard, not a

@@ -1,6 +1,6 @@
 {
   "name": "@tapeapi/server",
-  "version": "1.0.0-rc.4",
+  "version": "1.0.0-rc.5",
   "description": "TapeAPI provider runtime: serve signed, optionally paid methods from Node or any fetch runtime (TapeOut protocol on BNB Smart Chain)",
   "keywords": [
     "tapeapi",
@@ -60,7 +60,7 @@
     "test": "node --test test"
   },
   "dependencies": {
-    "@tapeapi/sdk": "^1.0.0-rc.4"
+    "@tapeapi/sdk": "^1.0.0-rc.5"
   },
   "publishConfig": {
     "access": "public"

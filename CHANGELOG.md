@@ -6,6 +6,25 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+## [1.0.0-rc.5] — 2026-09-29
+
+### Fixed
+
+- **The Cloudflare relay (relay.tapeapi.fun) no longer loses a room when Cloudflare recycles an idle Durable Object.**
+  Seen live on 2026-09-29: a frame posted to a room was read back at once, but every read from +30 s to +400 s found
+  0 frames and `epoch: null`, with no redeploy in between. `RelayRoom` kept its room only in memory, and Cloudflare
+  evicts an idle object within seconds, so a room designed to live 15 minutes lived about ten seconds and asynchronous
+  delivery (group invites, TAP-26 invites, messages to a peer that was not polling at that moment) mostly failed. The
+  room is now written to the object's SQLite-backed Durable Object storage, one key per frame plus one meta key, and a
+  recreated object restores it with the same epoch and indices, so clients' cursors keep working. `relaySend` answers
+  only after its frame is stored; a frame a full ring drops is deleted from storage; the Durable Object alarm clears an
+  expired room and its storage (15 minutes idle, 10 for a handshake-only room, as before), and only then does a new
+  room get a new epoch. The relay's methods, parameters and answers are unchanged, and the Node relay
+  (`examples/relay-service`) still keeps rooms in memory: `createRelayCore` gained an optional `onChange` hook and
+  `restore()`, which it does not use. Privacy: frames (ciphertext), room names, indices and timestamps are now at rest
+  in Cloudflare's Durable Object storage until the room expires; the source of a post (IP address or paying consumer)
+  is still held in memory only and never written. The privacy page says so.
+
 ## [1.0.0-rc.4] — 2026-09-29
 
 ### Error codes (the last alignments before 1.0)
@@ -615,7 +634,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.4...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.5...HEAD
+[1.0.0-rc.5]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.1...v1.0.0-rc.2

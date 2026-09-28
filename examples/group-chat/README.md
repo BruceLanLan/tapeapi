@@ -40,7 +40,7 @@ node examples/group-chat/index.mjs
 
 ## 限制
 
-- 中继是尽力而为的公共服务：房间只在内存里，最后一次访问后 15 分钟就被遗忘；邀请与纪元消息按来源按房间限流。
+- 中继是尽力而为的公共服务：房间保留到最后一次访问后 15 分钟就被清除（公共中继存在 Durable Object 存储里，存的是密文）；邀请与纪元消息按来源按房间限流。
 - 中继看得到房间号、帧大小与时间，看不到内容与成员名单。
 - 至多 32 人；群主是单点；未经第三方审计。
 
@@ -94,7 +94,8 @@ The full flow, choosing a transport, saving state and a troubleshooting checklis
 
 ## Limits
 
-- The relay is a best-effort public service: rooms live in memory only and are forgotten 15 minutes after the last
-  access; invites and epoch messages are limited per source per room.
+- The relay is a best-effort public service: rooms are cleared 15 minutes after the last access (the public relay
+  keeps them, as ciphertext, in Durable Object storage until then); invites and epoch messages are limited per source
+  per room.
 - The relay sees room ids, frame sizes and timing, not content or the member list.
 - At most 32 members; the owner is a single point; not audited by a third party.

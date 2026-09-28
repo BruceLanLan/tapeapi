@@ -424,7 +424,7 @@ test('FIXED H-1: a re-created room carries a new epoch, and a client presenting 
   const first = await core.recv(r, -1, 0)
   const cursor = first.next, epoch = first.epoch
   assert.equal(cursor, 4); assert.match(epoch, /^[0-9a-f]{16}$/)
-  t += 901_000; core.sweep()                   // idle 15 minutes (or: relay restart, Durable Object eviction)
+  t += 901_000; core.sweep()                   // idle 15 minutes (or: a Node relay restart)
   assert.equal(core.size, 0)
   const sent = core.send(r, 'BBBB')
   assert.equal(sent.i, 0, 'indices still restart in a new room ...')
@@ -432,7 +432,8 @@ test('FIXED H-1: a re-created room carries a new epoch, and a client presenting 
   const after = await core.recv(r, cursor, 0, epoch)
   assert.deepEqual(after.frames, [{ i: 0, frame: 'BBBB' }], 'the new frame is delivered to the client whose cursor was 4')
   assert.equal(after.epoch, sent.epoch)
-  // Durable Object eviction: two RelayRoom instances for the same room name have different epochs.
+  // Two RelayRoom instances that share no storage (a room re-created from nothing) have different epochs. An instance
+  // recreated on the same storage keeps the epoch (FIXED RELAY-1, relay-persist.test.mjs).
   const room1 = new RelayRoom({}, {}), room2 = new RelayRoom({}, {})
   const post = (o, path, body) => o.fetch(new Request(`https://room${path}`, { method: 'POST', body: JSON.stringify(body) })).then((x) => x.json())
   const e1 = (await post(room1, '/send', { room: r, frame: 'AAAA' })).epoch

@@ -65,6 +65,17 @@ export function createRelayCore({
   // 单次回答必须放得进 TAP-21 的 1 MiB 上限：否则攒了很多大帧的房间会让每次轮询都失败、游标永不前进、通道死掉。
   maxRecvBytes = 512 * 1024,
   now = () => Date.now(),
+  // Optional storage adapter (FIXED RELAY-1). Called synchronously with what changed: `put` (a frame was taken, and
+  // `dropped` is the index a full ring shifted out), `touch` (a read touched the room) and `drop` (the sweep removed an
+  // expired room). The Node relay passes none and keeps everything in memory; the Worker's RelayRoom writes these to
+  // Durable Object storage and hands the room back through `restore` when Cloudflare recreates the object. Only the
+  // core knows which frame a ring pushed out and which rooms a sweep removed, so the hook sits here rather than a copy
+  // of the ring rules in the Worker.
+  // 可选的存储适配层：同步告知变化——`put`（收下一帧，`dropped` 是满环移出的序号）、`touch`（读取触碰了房间）、
+  // `drop`（清理删掉了过期房间）。Node 中继不传，一切仍在内存里；Worker 的 RelayRoom 把它们写进 Durable Object 存储，
+  // 对象被 Cloudflare 重建时经 `restore` 交回房间。只有核心知道环挤掉了哪一帧、清理删了哪些房间，所以挂钩放在这里，
+  // 而不是在 Worker 里再抄一份环的规则。
+  onChange = null,
   random = () => { const b = new Uint8Array(8); globalThis.crypto.getRandomValues(b); return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('') },
 } = {}) {
   // Rooms are created ONLY by send. A long-poll on a room that does not exist yet waits in `waiters`, which is
@@ -83,7 +94,9 @@ export function createRelayCore({
   let waiting = 0
   const bad = (msg) => Object.assign(new Error(msg), { code: 'BAD_REQUEST' })
   const checkName = (name) => { if (typeof name !== 'string' || !ROOM_RE.test(name)) throw bad('room must be 32 bytes of lowercase hex') }
-  const touch = (r) => { r.touched = now(); return r }
+  const meta = (r) => ({ epoch: r.epoch, next: r.next, touched: r.touched, handshakeOnly: r.handshakeOnly })
+  const touch = (r, name) => { r.touched = now(); if (onChange && name) onChange({ type: 'touch', room: name, meta: meta(r) }); return r }
+  const expired = (r, t) => t - r.touched > (r.handshakeOnly ? handshakeRoomTtlMs : roomTtlMs)
   // Only EXPIRED rooms are ever evicted. When the relay is full of live rooms it refuses new ones instead of
   // throwing away frames other channels have not collected yet (audit M-2).
   // 只清理已过期的房间。中继被活跃房间占满时拒绝新建房间，而不是扔掉其他通道还没取走的帧。
@@ -91,7 +104,7 @@ export function createRelayCore({
   function sweep() {
     const t = now()
     for (const [k, r] of rooms) {
-      if (t - r.touched > (r.handshakeOnly ? handshakeRoomTtlMs : roomTtlMs)) { if (r.handshakeOnly) handshakeRooms--; rooms.delete(k) }
+      if (expired(r, t)) { if (r.handshakeOnly) handshakeRooms--; rooms.delete(k); if (onChange) onChange({ type: 'drop', room: k }) }
     }
   }
   // Both rings in posting order: `i` comes from one counter, so a merge by `i` is the order the relay took them in.
@@ -152,7 +165,8 @@ export function createRelayCore({
       const i = r.next++
       const ring = kept ? r.kept : r.frames
       ring.push({ i, frame })
-      if (ring.length > (kept ? maxKeptPerRoom : maxFramesPerRoom)) ring.shift()   // oldest first; TAP-26 reports the gap / 丢最旧的，TAP-26 会报告空洞
+      const dropped = ring.length > (kept ? maxKeptPerRoom : maxFramesPerRoom) ? ring.shift().i : undefined   // oldest first; TAP-26 reports the gap / 丢最旧的，TAP-26 会报告空洞
+      if (onChange) onChange({ type: 'put', room: roomName, meta: meta(r), frame: { i, frame }, dropped })
       wake(roomName)
       return { i, epoch: r.epoch }
     },
@@ -167,7 +181,7 @@ export function createRelayCore({
       const pick = () => {
         const r = rooms.get(roomName)
         if (!r) return { frames: [], next: after, epoch: null }
-        touch(r)
+        touch(r, roomName)
         // A cursor from another epoch refers to a room that no longer exists: read this one from the start.
         // 另一个纪元的游标指向已不存在的房间：从头读这个房间。
         const from = epoch !== undefined && epoch !== r.epoch ? -1 : after
@@ -200,6 +214,26 @@ export function createRelayCore({
       return pick()
     },
     sweep,
+    // Hands back a room the storage adapter kept (FIXED RELAY-1): same epoch, same indices, each frame in the ring its
+    // wire type puts it in. A room already past its lifetime is not restored (false): the caller clears its storage.
+    // Nothing else changes: no touch, no hook, no wake.
+    // 交回存储适配层保存的房间：纪元与序号不变，每帧按线路类型回到它的环。已超过寿命的房间不恢复（返回 false），由调用方清掉存储。
+    restore(roomName, { epoch, next, touched, handshakeOnly = false, frames = [] }) {
+      checkName(roomName)
+      if (rooms.has(roomName) || typeof epoch !== 'string' || !Number.isInteger(next) || next < 0 || !Number.isFinite(touched)) return false
+      const r = { frames: [], kept: [], sources: new Map(), next, epoch, touched, handshakeOnly: !!handshakeOnly }
+      if (expired(r, now())) return false
+      for (const f of [...frames].filter((f) => Number.isInteger(f?.i) && f.i >= 0 && f.i < next && typeof f.frame === 'string').sort((a, b) => a.i - b.i)) {
+        (KEPT.has(wireType(f.frame)) ? r.kept : r.frames).push({ i: f.i, frame: f.frame })
+      }
+      // Only if storage held more than a ring allows (it never should): keep the newest, as send would have.
+      // 仅当存储里多于环的上限（本不应发生）：留最新的，与 send 一致。
+      r.frames.splice(0, Math.max(0, r.frames.length - maxFramesPerRoom))
+      r.kept.splice(0, Math.max(0, r.kept.length - maxKeptPerRoom))
+      if (r.handshakeOnly) handshakeRooms++
+      rooms.set(roomName, r)
+      return true
+    },
     // For tests and operators: every stored frame, so one can check that nothing readable is kept.
     // 供测试与运维使用：列出所有存储的帧，用来确认没有保存任何可读内容。
     dump() { return [...rooms.values()].flatMap((r) => inOrder(r).map((f) => f.frame)) },
