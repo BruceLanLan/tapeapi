@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createTapeAPI, channel, TapeAPIError, sig, abi, parseUnits } from '../src/index.js'
 import { createRpc, isNodeLimit } from '../src/rpc.js'
-import { createFakeChain, ADDR } from './helpers/fake-chain.mjs'
+import { createFakeChain, ADDR, eachCall } from './helpers/fake-chain.mjs'
 import { createProvider } from '../../server/src/index.js'
 import { createRelayCore, relayMethods } from '../../examples/relay-service/relay-core.mjs'
 import { signTx } from '../../examples/_lib/sendtx.mjs'
@@ -307,6 +307,7 @@ test('FIXED L-5: dueSettlements skips a consumer whose escrow state cannot be re
   chain.setChannel(good, ADDR.container, 1000n)
   const fetch = async (url, init) => {
     const req = JSON.parse(init.body)
+    if (Array.isArray(req)) return eachCall(url, init, fetch)   // a JSON-RPC batch: call by call / 批量请求：逐个处理
     if (req.method === 'eth_call' && req.params[0].data.toLowerCase().includes('b2'.repeat(20))) {
       return new Response(JSON.stringify({ jsonrpc: '2.0', id: req.id, error: { code: -32000, message: 'missing trie node' } }))
     }

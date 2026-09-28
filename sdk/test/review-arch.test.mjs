@@ -10,7 +10,7 @@ import { TapeAPIError, createTapeAPI, sig, CHANNEL_KEYS_KEY, canonicalJSON } fro
 import * as G from '../src/group.js'
 import { validateManifest } from '../src/manifest.js'
 import { createRpc } from '../src/rpc.js'
-import { createFakeChain, ADDR } from './helpers/fake-chain.mjs'
+import { createFakeChain, ADDR, eachCall } from './helpers/fake-chain.mjs'
 import { createRelayCore } from '../../examples/relay-service/relay-core.mjs'
 
 const { createInvite, acceptInvite, completeInvite, generateKeyPair, encodeWire, decodeWire, relayTransport, fanIn, roomsFor } = channel
@@ -1005,7 +1005,7 @@ const { selector: selectorOf, signatureOf } = await import('../src/abi.js')
 function failCall(chain, fn, message = 'header not found') {
   const sel = selectorOf(signatureOf(fn))
   const s = { on: true }
-  s.fetch = (url, init) => { const b = JSON.parse(init.body); return s.on && b.method === 'eth_call' && String(b.params[0].data).startsWith(sel) ? rpcAnswer(b, -32000, message) : chain.fetch(url, init) }
+  s.fetch = (url, init) => { const b = JSON.parse(init.body); if (Array.isArray(b)) return eachCall(url, init, s.fetch); return s.on && b.method === 'eth_call' && String(b.params[0].data).startsWith(sel) ? rpcAnswer(b, -32000, message) : chain.fetch(url, init) }
   return s
 }
 

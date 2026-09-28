@@ -1,9 +1,12 @@
 #!/usr/bin/env node
-// Stamp every local stylesheet and script a page loads with a hash of its content: `href="style.css?v=<hash>"`.
+// Stamp every local stylesheet, script and font a page loads with a hash of its content: `href="style.css?v=<hash>"`,
+// `url(fonts/x.woff2?v=<hash>)` in stylesheets (and a page's own <style>), `href="fonts/x.woff2?v=<hash>"` in a preload.
 // Cloudflare serves .css and .js with a 4-hour browser cache while HTML revalidates on every visit, so after a change a
 // returning visitor got the new page with the old stylesheet (2026-09-27, the site redesign). A new hash is a new URL.
-//   node scripts/version-assets.mjs    rewrites site/**/*.html in place (build-docs.mjs stamps its own pages the same way)
-// 给页面加载的每个本地样式表和脚本加上内容哈希：`href="style.css?v=<hash>"`。Cloudflare 让 .css/.js 在浏览器缓存 4 小时，
+//   node scripts/version-assets.mjs    rewrites site/**/*.css, *.js and *.html in place, stylesheets first, so a new font changes
+//                                      its stylesheet's hash and so the page's (build-docs.mjs stamps its own pages the same way)
+// 给页面加载的每个本地样式表、脚本和字体加上内容哈希：`href="style.css?v=<hash>"`，样式表（及页面自己的 <style>）里的
+// `url(fonts/x.woff2?v=<hash>)`，预加载的 `href="fonts/x.woff2?v=<hash>"`。先处理样式表，字体变了，样式表和页面的哈希也跟着变。Cloudflare 让 .css/.js 在浏览器缓存 4 小时，
 // HTML 每次都重新验证，于是改版后回访者拿到新页面配旧样式表（2026-09-27 网站改版）。哈希变了，网址就变了。
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join, dirname, relative, sep } from 'node:path'
@@ -16,15 +19,21 @@ export const SITE = join(ROOT, 'site')
 export const assetHash = (buf) => createHash('sha256').update(buf).digest('hex').slice(0, 10)
 
 // A local reference: relative or root-absolute, no scheme, no protocol-relative `//`. / 本地引用：相对或以 / 开头，不含协议。
-const REF = /\b(href|src)="((?!\/\/)(?![a-z][a-z0-9+.-]*:)[^"?#]+\.(?:css|js))(?:\?v=[0-9a-f]*)?"/gi
+const REF = /\b(href|src)="((?!\/\/)(?![a-z][a-z0-9+.-]*:)[^"?#]+\.(?:css|js|woff2))(?:\?v=[0-9a-f]*)?"/gi
+// A font in a stylesheet: `url(fonts/x.woff2)`, quoted or not; data: URIs and other schemes are left alone.
+// 样式表里的字体：`url(fonts/x.woff2)`，带不带引号均可；data: 与其他协议不动。
+const FONT_URL = /\burl\((['"]?)((?!\/\/)(?![a-z][a-z0-9+.-]*:)[^'"()?#]+\.woff2)(?:\?v=[0-9a-f]*)?\1\)/gi
 
-/** Stamp the references in one page. `pageDir` is the page's directory; a missing file is an error. */
-export function versionRefs(html, pageDir, siteRoot = SITE) {
-  return html.replace(REF, (_, attr, ref) => {
-    const file = ref.startsWith('/') ? join(siteRoot, ref) : join(pageDir, ref)
-    if (!existsSync(file)) throw new Error(`${attr}="${ref}" points at a missing file (${relative(ROOT, file)})`)
-    return `${attr}="${ref}?v=${assetHash(readFileSync(file))}"`
-  })
+/** Stamp the references in one page or stylesheet. `baseDir` is its directory; a missing file is an error. */
+export function versionRefs(text, baseDir, siteRoot = SITE) {
+  const hashOf = (what, ref) => {
+    const file = ref.startsWith('/') ? join(siteRoot, ref) : join(baseDir, ref)
+    if (!existsSync(file)) throw new Error(`${what} points at a missing file (${relative(ROOT, file)})`)
+    return assetHash(readFileSync(file))
+  }
+  return text
+    .replace(REF, (_, attr, ref) => `${attr}="${ref}?v=${hashOf(`${attr}="${ref}"`, ref)}"`)
+    .replace(FONT_URL, (_, q, ref) => `url(${q}${ref}?v=${hashOf(`url(${ref})`, ref)}${q})`)
 }
 
 // A static relative import in a page's own module (vendored code excluded): `from './lib.js'` / `import('./lib.js')`. A module imported by
@@ -61,17 +70,38 @@ export function modules(dir = SITE) {
 }
 
 /** Every HTML page under site/, vendored code excluded. / site/ 下全部 HTML 页面，不含 vendor。 */
-export function pages(dir = SITE) {
+export function pages(dir = SITE, ext = '.html') {
   return readdirSync(dir).sort().flatMap((n) => {
     const p = join(dir, n)
-    if (statSync(p).isDirectory()) return n === 'vendor' || n.startsWith('.') ? [] : pages(p)
-    return n.endsWith('.html') ? [p] : []
+    if (statSync(p).isDirectory()) return n === 'vendor' || n.startsWith('.') ? [] : pages(p, ext)
+    return n.endsWith(ext) ? [p] : []
+  })
+}
+
+/** Every stylesheet under site/, vendored code excluded. / site/ 下全部样式表，不含 vendor。 */
+export const stylesheets = (dir = SITE) => pages(dir, '.css')
+
+/**
+ * The stylesheet with every local woff2 `url()` replaced by a data URI of the file's bytes (the ?v= stamp dropped), for a
+ * copy that must be self-contained (the DeWEB copy of the homepage, scripts/publish-site.mjs). A missing file is an error.
+ * 把样式表里每个本地 woff2 `url()` 换成该文件字节的 data URI（去掉 ?v= 戳），供必须自包含的副本使用（首页的 DeWEB 副本）。
+ */
+export function inlineFonts(css, cssDir) {
+  return css.replace(FONT_URL, (_, q, ref) => {
+    const file = join(cssDir, ref)
+    if (ref.startsWith('/') || !existsSync(file)) throw new Error(`url(${ref}) points at a missing file (${relative(ROOT, file)})`)
+    return `url(data:font/woff2;base64,${readFileSync(file).toString('base64')})`
   })
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   let changed = 0
   const memo = new Map()
+  for (const c of stylesheets()) {
+    const before = readFileSync(c, 'utf8')
+    const after = versionRefs(before, dirname(c))
+    if (after !== before) { writeFileSync(c, after); changed++; console.log(`stamped ${relative(ROOT, c).split(sep).join('/')}`) }
+  }
   for (const m of modules()) {
     const before = readFileSync(m, 'utf8')
     const after = stampModule(m, memo)

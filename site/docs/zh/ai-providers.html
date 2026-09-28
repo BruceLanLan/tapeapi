@@ -6,7 +6,7 @@
 <title>接入 AI 服务 · TapeAPI 手册</title>
 <meta name="description" content="你已经在运营 AI 接口：用 new-api 搭的中转站、网关、聚合商，或者自己部署的开源模型。TapeAPI 在它前面加一个签名旁路。你的接口、密钥和计费完全不变；你的用户照旧用官方 SDK，只改 base URL。 本指南面向在上游服务商条款范围内合规经营的服务方（见 合规 ）。">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="../docs.css?v=07114d1e64">
+<link rel="stylesheet" href="../docs.css?v=ab593a8478">
 <link rel="alternate" hreflang="en" href="../en/ai-providers.html">
 <script src="../docs.js?v=dee763d4ca"></script>
 </head>
@@ -70,7 +70,7 @@ const baseURL = svc.manifest.ai.endpoints.find((e) =&gt; e.format === 'openai-ch
 const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })</code></pre></div>
 <p>请原样使用清单里的 <code>baseUrl</code>。发往任何其它主机（<code>localhost</code> 对 <code>127.0.0.1</code>、端口不同）的计量路径请求，会在发送之前以 <code>INVALID_ARGUMENT</code> 拒绝，并写明期望的端点；<code>strict: false</code> 时照常发出，<code>onReport</code> 报告 <code>not verified: endpoint mismatch</code>。流式回答同样会核验。流在最终事件、<code>[DONE]</code> 或连接关闭时结束（先到者为准）；在默认的 <code>strict: true</code> 下，结束的那一段要等结束之前到达的回执核验通过才放出，核验不过的流会让 SDK 的迭代器抛出 <code>RECEIPT_INVALID</code>。<code>strict: false</code> 时不扣留任何内容，结论交给 <code>onReport</code>。strict 下，核验不过的整体（非流式）回答会变成一个 HTTP 502：按该 API 的错误格式，code 为 <code>RECEIPT_INVALID</code>，带 <code>x-should-retry: false</code> 与 <code>x-tapeapi-verify-error: RECEIPT_INVALID</code> 两个头；官方 SDK 抛出 <code>APIError</code> 且不重试，自己调用这个 fetch 的代码检查 <code>res.ok</code>。付费调用在其它 5xx 上是否自动重试，由你自己决定（SDK 的 <code>maxRetries</code>）。</p>
 <p><strong>Claude Code 与 Codex 用户</strong>自己读不到回执。他们在本机运行核验代理 <code>tapeapi-verify</code>，把客户端指向它：</p>
-<div class="code"><pre data-lang="sh"><code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz tapeapi-verify 42.1013.tape
+<div class="code"><pre data-lang="sh"><code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.2/tapeapi-sdk-1.0.0-rc.2.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex</code></pre></div>
 <p>它在链上解析你的服务，回答原样透传，每次调用打印一行结论；加 <code>--strict</code> 时，核验失败会变成客户端看得到的错误。单份回执也可以贴到 <a href="https://tapeapi.fun/verify/" rel="noopener">核验页</a>。这些都需要你的清单已经上链（操作台第 5 步，见上文）。</p>
 <p><strong>请求加盐（两者默认开启）。</strong> 回执带 <code>requestSha256</code>，即确切请求字节的 SHA-256，而官方 SDK 每次都用同样的方式序列化请求。于是短提示词（&quot;是&quot;、一个要做嵌入的词、已知问题清单里的一问）可以通过对猜测取哈希，从别人分享的回执上确认出来。所以 <code>createVerifyingFetch</code> 与 <code>tapeapi-verify</code> 会在回执路径上每个请求正文的 JSON 文本之后追加 64 个随机空白字符（空格、制表、换行、回车，共 128 个随机比特），回执按实际发出的字节核验。</p>

@@ -117,6 +117,22 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     return Object.assign(new Error(`${prefix}node cannot answer (${err.code}): ${refusal.message}`), { refusal })
   }
 
+  // One JSON-RPC response object -> an answer ({ kind, value }), or a throw when the node did not answer (the rules below).
+  // 一个 JSON-RPC 响应对象 -> 回答；节点没有作答时抛出（规则见下）。
+  function answerOf(j) {
+    if (!j || typeof j !== 'object') throw new Error('bad json-rpc body')
+    // A node that rate limits us, does not implement a method, or caps how much it will scan is telling us
+    // about ITSELF, not about the chain: that is a node failure, like a timeout. A revert is an answer about
+    // the chain and stays one. / 节点限流、不支持某方法、或限制扫描范围，说的是它自己而不是链：属于节点故障。
+    // 回滚说的是链，仍然算作答。
+    // `refusal` keeps what the node said: a node that ANSWERED no differs from one that could not be reached (review R2-1)
+    // `refusal` 保留节点的原话：作答说"不"的节点与连不上的节点不同
+    if (j.error && isNodeLimit(j.error)) throw refused(j.error)
+    if (j.error) return { kind: 'error', value: { code: j.error.code, message: String(j.error.message ?? ''), data: typeof j.error.data === 'string' ? j.error.data : undefined } }
+    if (!('result' in j)) throw new Error('no result')
+    return { kind: 'ok', value: j.result }
+  }
+
   async function one(url, method, params) {
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), timeoutMs)
@@ -141,19 +157,80 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
         if (j && typeof j === 'object' && j.error && typeof j.error === 'object') throw refused(j.error, `http ${res.status}, `)
         throw new Error(`http ${res.status}`)
       }
-      const j = await readJsonBounded(res, bodyLimit)
-      if (!j || typeof j !== 'object') throw new Error('bad json-rpc body')
-      // A node that rate limits us, does not implement a method, or caps how much it will scan is telling us
-      // about ITSELF, not about the chain: that is a node failure, like a timeout. A revert is an answer about
-      // the chain and stays one. / 节点限流、不支持某方法、或限制扫描范围，说的是它自己而不是链：属于节点故障。
-      // 回滚说的是链，仍然算作答。
-      // `refusal` keeps what the node said: a node that ANSWERED no differs from one that could not be reached (review R2-1)
-      // `refusal` 保留节点的原话：作答说"不"的节点与连不上的节点不同
-      if (j.error && isNodeLimit(j.error)) throw refused(j.error)
-      if (j.error) return { kind: 'error', value: { code: j.error.code, message: String(j.error.message ?? ''), data: typeof j.error.data === 'string' ? j.error.data : undefined } }
-      if (!('result' in j)) throw new Error('no result')
-      return { kind: 'ok', value: j.result }
+      return answerOf(await readJsonBounded(res, bodyLimit))
     } finally { clearTimeout(timer) }
+  }
+
+  // JSON-RPC batching (performance only; what counts as an answer, and every quorum rule, is unchanged). Calls to one node
+  // started in the same turn of the event loop go out as one batch request of at most MAX_BATCH calls; a lone call goes
+  // out as a plain request, exactly as before. Each call in a batch is still its own quorum round across all nodes.
+  // JSON-RPC 批量（只为性能；什么算回答、所有法定数规则都不变）。同一轮事件循环里发往同一节点的调用合并为一个批量请求，
+  // 每批至多 MAX_BATCH 个；只有一个调用时照旧发普通请求。批里的每个调用仍然各自在全部节点间过法定数。
+  // - Answers are matched by id, never by position; a call the batch did not answer is a call that node did not answer.
+  //   按 id 而不是位置对应回答；批量里没有回答的调用，就是该节点没有回答的调用。
+  // - A node that does not take the batch (an HTTP error, a body that is not an array, an answer too large, a failure
+  //   that is not a timeout) is asked again call by call, and every later call to it goes out alone. Its elements are
+  //   never read on an HTTP error: dRPC's free plan answers a batch of 4 with HTTP 500 and an error per element (code 31,
+  //   measured 2026-09-29), which read as answers would be a false disagreement.
+  //   不接受批量的节点（HTTP 错误、响应体不是数组、回答过大、非超时的失败）改为逐个重问，之后发往它的调用都逐个发送。HTTP 错误时
+  //   绝不读取其中的元素：dRPC 免费档对 4 个调用的批量回 HTTP 500 且每个元素都带错误（code 31，2026-09-29 实测），当作回答会造成假分歧。
+  // - A timeout is not retried call by call: the node did not answer, and each call fails as a single one would.
+  //   超时不逐个重问：节点没有作答，每个调用都像单个请求那样失败。
+  // MAX_BATCH 3: dRPC's free plan (a default node of X Layer and Base) refuses a batch of more than 3 (measured 2026-09-29).
+  // MAX_BATCH 为 3：dRPC 免费档（X Layer 与 Base 的默认节点）拒绝超过 3 个调用的批量（2026-09-29 实测）。
+  const MAX_BATCH = 3
+  const noBatch = new Set()      // urls that did not take a batch / 不接受批量的节点
+  const queues = new Map()       // url -> calls waiting for this turn's flush / 等待本轮发出的调用
+  // Only eth_call is batched: resolve and the identity reads are eth_calls, and the other methods keep the exact wire
+  // behaviour each node was measured with (publicnode refuses old eth_getLogs as HTTP 403 per request, review R4-1).
+  // 只批量 eth_call：解析与身份读取都是 eth_call；其它方法保持各节点实测时的原样（publicnode 按请求以 HTTP 403 拒绝旧日志）。
+  function ask(url, method, params) {
+    if (method !== 'eth_call' || noBatch.has(url)) return one(url, method, params)
+    return new Promise((resolve, reject) => {
+      let q = queues.get(url)
+      // setTimeout 0, not a microtask: a read started after an already-settled await (a cached fact) still joins the batch
+      // setTimeout 0 而不是微任务：在已完成的 await（缓存的事实）之后才开始的读取也能进入同一批
+      if (!q) { q = []; queues.set(url, q); setTimeout(() => flush(url), 0) }
+      q.push({ method, params, resolve, reject })
+    })
+  }
+  function flush(url) {
+    const q = queues.get(url) ?? []
+    queues.delete(url)
+    for (let i = 0; i < q.length; i += MAX_BATCH) {
+      const part = q.slice(i, i + MAX_BATCH)
+      if (part.length === 1 || noBatch.has(url)) for (const c of part) one(url, c.method, c.params).then(c.resolve, c.reject)
+      else batch(url, part)
+    }
+  }
+  async function batch(url, part) {
+    const ids = part.map(() => nextId++)
+    const ac = new AbortController()
+    const timer = setTimeout(() => ac.abort(), timeoutMs)
+    let list
+    try {
+      const res = await f(url, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(part.map((c, k) => ({ jsonrpc: '2.0', id: ids[k], method: c.method, params: c.params }))), signal: ac.signal,
+      })
+      if (!res.ok) { try { await res.body?.cancel() } catch { /* already gone / 已经没了 */ } throw new Error(`http ${res.status}`) }
+      list = await readJsonBounded(res, bodyLimit)
+      if (!Array.isArray(list)) throw new Error('batch answered with a single object')
+    } catch (e) {
+      if (ac.signal.aborted) { for (const c of part) c.reject(e); return }
+      // An answer over bodyLimit is about this batch, not the node: ask call by call, each under its own limit.
+      // 超过 bodyLimit 说的是这一批而不是节点：逐个重问，各自受上限约束。
+      if (!e?.tooLarge) noBatch.add(url)
+      for (const c of part) one(url, c.method, c.params).then(c.resolve, c.reject)
+      return
+    } finally { clearTimeout(timer) }
+    const byId = new Map()
+    for (const j of list) if (j && typeof j === 'object' && 'id' in j && !byId.has(String(j.id))) byId.set(String(j.id), j)
+    part.forEach((c, k) => {
+      const j = byId.get(String(ids[k]))
+      if (!j) { c.reject(new Error('no answer in batch')); return }
+      try { c.resolve(answerOf(j)) } catch (e) { c.reject(e) }
+    })
   }
 
   // TAP-20 §3.2: accept only when EVERY node that answered returned the same bytes; any split is RPC_DISAGREE,
@@ -165,7 +242,7 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
   // 也不算分歧，但作答数须 ≥ need。一个 revert、一个有值，是分歧。对全部节点重问一次以吸收 "latest" 跨块边界的
   // 诚实竞态；重问也必须一致。
   async function round(method, params, project) {
-    const settled = await Promise.allSettled(urls.map(u => one(u, method, params)))
+    const settled = await Promise.allSettled(urls.map(u => ask(u, method, params)))
     const buckets = new Map(); const failures = []; const refusals = []; const answeredIdx = []; let tooLarge = 0
     settled.forEach((s, i) => {
       if (s.status === 'rejected') { failures.push(`${describeUrl(urls[i], i)}: ${s.reason?.message || s.reason}`); if (s.reason?.refusal) refusals.push(s.reason.refusal); if (s.reason?.tooLarge) tooLarge++; return }

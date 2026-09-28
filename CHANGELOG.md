@@ -6,6 +6,40 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] — 2026-09-29
+
+### SDK
+
+- **`api.resolve()` takes 4 round trips instead of 7, and 12 HTTP requests instead of 21** (no
+  interface or return shape changes). Against the default BSC nodes, `resolve('11.1013.tape')` went from a median
+  2.77 s to 1.79 s on a new client, and from 2.00 s (6 rounds, 18 requests) to 0.68 s (2 rounds, 6 requests) when the
+  same client resolves it again (10 interleaved runs each). How: the second, identical `accountOf` is gone; reads that
+  do not depend on each other go out together (a name's `isCPU` and `ownerOf` with `accountOf`, and for any target
+  steps 3-5 of TAP-20 §3.6 in one round), each still checked in its old place with the same error codes; `fileInfo`
+  still comes before `read`. `createRpc` sends concurrent `eth_call`s to one node as a JSON-RPC batch of at most 3 (all
+  ten default nodes take one; dRPC's free plan refuses more than 3), each call still its own quorum round; a node that
+  does not take a batch is asked call by call from then on, and a batch refused with an HTTP error is never read as
+  answers. `resolve` keeps `cpuAt(n)` and `accountOf(circuits, tokenId)` answers (never errors) for at most 300 s, per
+  chain; the holder, the manifest file and its hash are read on every resolve.
+- **Server: one voucher could be served twice.** A priced call that committed while the next call with the same
+  cumulative was reading the escrow was missed by both checks. The in-flight reservation is now read before the store,
+  both after the escrow read.
+
+### Website
+
+- **The vendored SDK is revalidated on every load.** Its modules import each other without a content stamp (so one
+  module is never loaded under two URLs), and Cloudflare cached them for 4 hours, so a returning visitor could run a new
+  `index.js` against a cached `ai.js` right after a release. `/playground/vendor/*` is now served with
+  `Cache-Control: public, max-age=0, must-revalidate` (an unchanged file costs one 304).
+
+- **The homepage's fonts are files, not data URIs.** The four subsets (same bytes) moved out of `site/style.css` into
+  `site/fonts/`, all with `font-display: swap`, and the homepage preloads Archivo. The render-blocking stylesheet drops
+  from 93 KB to 27 KB (58 KB to 6 KB brotli): on a throttled Slow 4G load the first paint comes at about 550 ms instead
+  of 690 ms, and every face is in by about 680 ms. Once the fonts are in, the page is pixel for pixel what it was.
+  `scripts/version-assets.mjs` now stamps fonts too (`url(...woff2?v=<hash>)` in stylesheets and a preload's `href`),
+  and `scripts/publish-site.mjs` inlines the fonts back into the self-contained DeWEB copy, which still makes no
+  external request.
+
 ## [1.0.0-rc.1] — 2026-09-29
 
 ### Breaking changes toward 1.0
@@ -515,7 +549,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.2...HEAD
+[1.0.0-rc.2]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/BruceLanLan/tapeapi/compare/v0.8.0...v1.0.0-rc.1
 [0.8.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/BruceLanLan/tapeapi/compare/v0.6.0...v0.7.0

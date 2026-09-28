@@ -18,7 +18,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.2/tapeapi-sdk-1.0.0-rc.2.tgz
 ```
 
 把下面的脚本保存为 `.mjs` 文件，**放在 `tapeapi` 目录之内**，然后用 `node <文件>.mjs` 运行。`@tapeapi/sdk` 通过仓库的

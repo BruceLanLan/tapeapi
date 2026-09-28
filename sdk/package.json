@@ -1,6 +1,6 @@
 {
   "name": "@tapeapi/sdk",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "description": "TapeAPI JavaScript SDK: resolve on-chain services, call them and verify every signed answer (TapeOut protocol on BNB Smart Chain)",
   "keywords": [
     "tapeapi",

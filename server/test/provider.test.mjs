@@ -235,6 +235,21 @@ test('concurrent vouchers with the same cumulative: exactly one wins', async () 
   assert.equal(envs.filter(e => e.ok).length, 1)
   assert.equal(envs.filter(e => e.error?.code === 'BAD_VOUCHER').length, 2)
 })
+// A call that commits (and drops its reservation) while the next one, holding the lock, is still reading the escrow must
+// still be seen: the reservation is read before the store, both after the escrow read (found 2026-09-29).
+// 某调用在下一个调用持锁读取托管期间提交并撤掉预留，仍须被看到：先读预留、再读 store，且都在读托管之后（2026-09-29 发现）。
+test('a call that commits while the next voucher is reading the escrow is not missed: the same cumulative is served once', async () => {
+  const c = createFakeChain()
+  c.setChannel(consumer, ADDR.container, parseUnits('1'))
+  c.setSession(consumer, ADDR.container, sessionAddr, 1900000000)
+  // every escrow read takes 30 ms, the method none / 每次读托管 30 毫秒，方法本身不耗时
+  const slow = async (url, init) => { await new Promise((r) => setTimeout(r, 30)); return c.fetch(url, init) }
+  const p = mk({ rpcUrls: RPC, quorum: 2, chainId: 56, fetch: slow, escrowCacheMs: 0, methods: { blockNumber() {}, circuitHolder: async () => ({ ok: 1 }), leak() {} } })
+  const v = voucher(PRICE)
+  const envs = await Promise.all([p.invoke({ id: 'r1', method: 'circuitHolder', params: {}, voucher: v }), p.invoke({ id: 'r2', method: 'circuitHolder', params: {}, voucher: v })])
+  assert.deepEqual(envs.map((x) => x.env.ok).sort(), [false, true])
+  assert.equal(envs.find((x) => !x.env.ok).env.error.code, 'BAD_VOUCHER')
+})
 test('METHOD_NOT_FOUND (incl. prototype names), malformed JSON, __proto__ bodies, oversize body, bad params', async () => {
   const nf = await post('nope', { id: 'x', params: {} })
   assert.equal(nf.status, 404); assert.equal((await nf.json()).error.code, 'METHOD_NOT_FOUND')

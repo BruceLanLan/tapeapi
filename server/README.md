@@ -16,8 +16,8 @@ Not on npm yet: install both packages from the GitHub release, the SDK first (th
 which npm would otherwise look for in the registry):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-server-1.0.0-rc.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.2/tapeapi-sdk-1.0.0-rc.2.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.2/tapeapi-server-1.0.0-rc.2.tgz
 ```
 
 Built from https://github.com/BruceLanLan/tapeapi (folder `server/`). ES modules; Node 20+. TypeScript declarations

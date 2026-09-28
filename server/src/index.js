@@ -7,7 +7,7 @@ const { voucherDigest, recoverAddress, signResponse, privateKeyToAddress } = sig
 // would stop this runtime loading on Cloudflare Workers, Deno or a browser. A test asserts the two agree.
 // 写成字面量而不是读 package.json：`createRequire` 属于 node:module，在模块顶层导入会让这套运行时无法在
 // Cloudflare Workers、Deno 或浏览器里加载。有测试断言两者一致。
-export const VERSION = '1.0.0-rc.1'
+export const VERSION = '1.0.0-rc.2'
 const now = () => Math.floor(Date.now() / 1000)
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -289,15 +289,22 @@ export function createProvider(opts = {}) {
     }
     const key = `${v.consumer.toLowerCase()}|${container.toLowerCase()}`
     return withLock(v.consumer.toLowerCase(), async () => {
-      const prev = await store.get(v.consumer, container)
       const { channel, claimed, armed, available } = await escrowState(v.consumer)
-      // E-05: the store may lag the chain (restart, new instance); a voucher at or below claimedOf can never settle.
-      // E-05：本地 store 可能落后于链上（重启、扩容）；不高于 claimedOf 的凭证永远无法结算。
-      const stored = prev ? BigInt(prev.cumulative) : 0n
       // An in-flight call has already claimed its slice of the meter but is not billed yet; count it so two
       // concurrent calls cannot both spend the same cumulative.
       // 在途调用已占用计量但尚未计费；一并计入，避免两个并发调用花同一个 cumulative。
+      // Reservation FIRST, then the store, both after the escrow read: a call commits (store.advance, outside this lock)
+      // and only then drops its reservation, so whichever of the two we miss, the other shows it. Reading the store
+      // before the escrow read let a call that committed and cleared during that read be missed twice, and the same
+      // cumulative was served twice (found 2026-09-29 when batched RPC reads made the escrow read yield longer).
+      // 先读在途预留、再读 store，且都在读托管之后：调用先提交（store.advance，在锁外）再撤预留，所以两者至少能看到一个。
+      // 以前在读托管之前读 store，读托管期间提交并撤预留的调用两边都看不到，同一个 cumulative 被服务两次
+      // （2026-09-29 发现：批量 RPC 让读托管的让出时间变长）。
       const inflight = heldOf(key)
+      const prev = await store.get(v.consumer, container)
+      // E-05: the store may lag the chain (restart, new instance); a voucher at or below claimedOf can never settle.
+      // E-05：本地 store 可能落后于链上（重启、扩容）；不高于 claimedOf 的凭证永远无法结算。
+      const stored = prev ? BigInt(prev.cumulative) : 0n
       const held = inflight?.cumulative ?? 0n
       let last = stored > claimed ? stored : claimed
       if (held > last) last = held

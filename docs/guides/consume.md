@@ -16,7 +16,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 Or install just the SDK into your own project from the GitHub release (not the npm registry):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.2/tapeapi-sdk-1.0.0-rc.2.tgz
 ```
 
 Save the scripts below as `.mjs` files **inside the `tapeapi` directory** and run them with `node <file>.mjs`.

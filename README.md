@@ -16,7 +16,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 
 [中文说明](README.zh-CN.md) · [Website](https://tapeapi.fun) · [Docs](https://tapeapi.fun/docs/) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md)
 
-> **Status: pre-release (v1.0.0-rc.1).** Everything live today is free. Interfaces may still change before 1.0. Paid
+> **Status: pre-release (v1.0.0-rc.2).** Everything live today is free. Interfaces may still change before 1.0. Paid
 > channels (TAP-22) are experimental and not deployed. Nothing here has had a third-party audit.
 
 ## Start here
@@ -41,7 +41,7 @@ curl shows the signed envelope but checks nothing. The SDK checks it. It is not 
 release (Node.js 20 or later):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.2/tapeapi-sdk-1.0.0-rc.2.tgz
 ```
 
 ```js
@@ -79,7 +79,7 @@ No outside provider has published a price table on chain yet, so this was run ag
 **Claude Code and Codex** cannot read receipts themselves. Run the local verifying proxy and point them at it:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.1/tapeapi-sdk-1.0.0-rc.1.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.2/tapeapi-sdk-1.0.0-rc.2.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1
 ```
 

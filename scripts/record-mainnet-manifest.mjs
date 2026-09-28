@@ -37,19 +37,27 @@ if (block.number !== number) throw new Error(`asked for block ${number}, nodes a
 // 2. resolve through the SDK, every eth_call pinned to that block; record what each node said.
 // 2. 经 SDK 解析，每个 eth_call 都钉在该区块；记下每个节点的回答。
 const seen = new Map()   // `${to}:${data}` -> { to, data, answers: Map(operator -> json) }
+// The SDK sends concurrent eth_calls to one node as a JSON-RPC batch (an array): every call in it is pinned and recorded,
+// its answer matched by id. A batch the node refuses (HTTP error) is recorded as nothing; the SDK then asks call by call.
+// SDK 把发往同一节点的并发 eth_call 合并为 JSON-RPC 批量（数组）：其中每个调用都钉块并记录，回答按 id 对应。节点拒绝的批量
+// （HTTP 错误）不记录任何东西；SDK 随后逐个再问。
 const pinningFetch = async (url, init) => {
-  const req = JSON.parse(init.body)
-  if (req.method === 'eth_call') req.params[1] = { blockHash: block.hash }
-  const res = await fetch(url, { ...init, body: JSON.stringify(req) })
+  const body = JSON.parse(init.body)
+  const reqs = Array.isArray(body) ? body : [body]
+  for (const req of reqs) if (req.method === 'eth_call') req.params[1] = { blockHash: block.hash }
+  const res = await fetch(url, { ...init, body: JSON.stringify(body) })
   const text = await res.text()
-  if (req.method === 'eth_call' && res.ok) {
-    const k = `${req.params[0].to.toLowerCase()}:${req.params[0].data.toLowerCase()}`
-    const e = seen.get(k) || { to: req.params[0].to, data: req.params[0].data.toLowerCase(), answers: new Map() }
-    try {
-      const j = JSON.parse(text)
-      e.answers.set(url, 'result' in j ? { result: j.result } : { error: j.error })
-    } catch { /* not JSON: a transport failure, not an answer / 不是 JSON：传输失败，不算回答 */ }
-    seen.set(k, e)
+  if (res.ok) {
+    let answers = null
+    try { const j = JSON.parse(text); answers = Array.isArray(j) ? j : [j] } catch { /* not JSON: a transport failure, not an answer / 不是 JSON：传输失败，不算回答 */ }
+    for (const req of reqs) {
+      if (req.method !== 'eth_call') continue
+      const k = `${req.params[0].to.toLowerCase()}:${req.params[0].data.toLowerCase()}`
+      const e = seen.get(k) || { to: req.params[0].to, data: req.params[0].data.toLowerCase(), answers: new Map() }
+      const j = answers && (Array.isArray(body) ? answers.find((a) => a && a.id === req.id) : answers[0])
+      if (j && typeof j === 'object') e.answers.set(url, 'result' in j ? { result: j.result } : { error: j.error })
+      seen.set(k, e)
+    }
   }
   return new Response(text, { status: res.status, headers: res.headers })
 }

@@ -108,6 +108,16 @@ const now = () => Math.floor(Date.now() / 1000)
 // 执行回滚：链的回答。rpc.js 把所有节点一致的 JSON-RPC 错误都报为 RPC_ERROR，回滚与 "header not found" 不分；只有每个作答节点
 // 都报回滚时才标 `rpcRevert`，因为消息只是第一个节点的。
 const isRevert = (e) => e instanceof TapeAPIError && e.code === 'RPC_ERROR' && (Number(e.data?.rpcCode) === 3 || e.data?.rpcRevert === true)
+// Start a read now and use its outcome later, exactly where the sequential code would have read it: a failure is held
+// (never an unhandled rejection) and thrown by the `await` at that point, so checks and error codes keep their order.
+// 现在就发出读取，在原本顺序读取的位置才使用结果：失败先被保留（不会成为未处理的拒绝），在那个位置的 `await` 抛出，
+// 检查与错误码的先后不变。
+const early = (read) => {
+  let p
+  try { p = Promise.resolve(read()) } catch (e) { p = Promise.reject(e) }
+  p.catch(() => {})
+  return p
+}
 const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : toHex(crypto.getRandomValues(new Uint8Array(16))).slice(2))
 
 // 选项 / options:
@@ -186,6 +196,35 @@ export function createTapeAPI(opts = {}) {
     if (!isAddress(to) || /^0x0{40}$/i.test(to)) throw new TapeAPIError('INVALID_ARGUMENT', `${p.container} names no escrow: it takes no payment`)
     return { to, provider: p.container }
   }
+  // resolve's cache of facts that do not change once they exist, read under the same quorum as any read (through chain.*,
+  // so every check on the answer is the same) and kept for at most FACT_TTL_MS:
+  // hub.accountOf(circuits, tokenId) is a CREATE2 derivation (a function of its inputs and the hub), and
+  // factory.cpuAt(n) of an existing processor never changes (the processor list is append-only; isCPU true is kept for
+  // good below on the same ground). Only an answer is kept, never an error: a processor past the end may exist later,
+  // and an RPC failure is not a fact. Concurrent reads of one fact share one read, which is what removes resolve's
+  // second, identical accountOf. The cap (300 s, as the identity cache) bounds what a replaced hub or factory could
+  // leave behind, and the cache lives in this client: every chain has its own client (forChain), and the key names
+  // the chain and the contract, so no fact of one chain is ever used on another.
+  // resolve 用的缓存：存在之后就不再改变的事实，与其它读取同样过法定数（经 chain.*，对回答的检查相同），最多保留 FACT_TTL_MS：hub.accountOf 是 CREATE2 推导（只取决于输入与 hub），
+  // 已存在的处理器的 factory.cpuAt(n) 不会改变（处理器列表只增不删；下面 isCPU 为 true 永久保留也是这个理由）。只保留回答，
+  // 绝不保留错误：超出范围的处理器以后可能出现，RPC 故障也不是事实。同一事实的并发读取共用一次读取，resolve 里第二次、
+  // 完全相同的 accountOf 就是这样省掉的。上限 300 秒（与身份缓存相同）约束 hub 或工厂被替换时可能留下的旧值；缓存属于本客户端：
+  // 每条链有自己的客户端（forChain），键里还写明链与合约，一条链的事实绝不会用到另一条链上。
+  const FACT_TTL_MS = IDENTITY_CACHE_S * 1000
+  const facts = new Map()   // key -> { at, p }, oldest first / 旧的在前
+  function fact(key, read) {
+    const e = facts.get(key)
+    if (e && Date.now() - e.at < FACT_TTL_MS) return e.p
+    const p = read()
+    facts.delete(key); facts.set(key, { at: Date.now(), p })
+    while (facts.size > 4096) facts.delete(facts.keys().next().value)
+    p.catch(() => { if (facts.get(key)?.p === p) facts.delete(key) })
+    return p
+  }
+  // Only resolve reads through these; api.chain.accountOf / cpuAt still read the chain every time, as documented.
+  // 只有 resolve 经由它们读取；api.chain.accountOf / cpuAt 仍然每次读链，与文档一致。
+  const factAccountOf = (circuits, tokenId) => { const t = BigInt(tokenId); return fact(`${chainId}:${String(hub).toLowerCase()}:accountOf:${String(circuits).toLowerCase()}:${t}`, () => chain.accountOf(circuits, t)) }
+  const factCpuAt = (processor) => { const n = BigInt(processor); return fact(`${chainId}:${String(factory).toLowerCase()}:cpuAt:${n}`, () => chain.cpuAt(n)) }
   const chain = {
     accountOf: (circuits, tokenId) => view(hub, 'accountOf', [circuits, BigInt(tokenId)]),
     /** Processor contract number `processor` (the number in <#ID>.<processor>.tape); NOT_FOUND past the last one.
@@ -388,8 +427,9 @@ export function createTapeAPI(opts = {}) {
   // circuit, for free and by the thousand (TAP-20 §3.6 step 3, TAP-26 §3.1; found 2026-09-24).
   // accountOf 对任何 ERC-721 都能推导账户，否则仿冒的代币合约就能免费、成批地冒充 TapeOut 电路。
   const knownCPUs = new Set()
-  async function requireCPU(circuits, code) {
-    if (!(await chain.isCPU(circuits))) throw new TapeAPIError(code, `${circuits} is not a TapeOut processor (factory.isCPU is false)`)
+  // `answer`: an isCPU(circuits) read already under way (resolve starts it early) / 已经发出的 isCPU 读取
+  async function requireCPU(circuits, code, answer = null) {
+    if (!(await (answer ?? chain.isCPU(circuits)))) throw new TapeAPIError(code, `${circuits} is not a TapeOut processor (factory.isCPU is false)`)
   }
 
   // An ERC-6551 container knows which circuit it belongs to / ERC-6551 容器知道自己属于哪个电路
@@ -428,6 +468,8 @@ export function createTapeAPI(opts = {}) {
   // with its own index — a truncated or mis-assembled file is returned identically by every honest node.
   // 先 fileInfo 再 read（各自过 quorum），字节必须与声明的长度和 SHA-256 一致。quorum 只证明节点一致，这一步证明
   // SiteRegistry 拼出来的文件与它自己的索引一致——拼装错误或截断的文件会被每个诚实节点原样返回。
+  // read() waits for fileInfo on purpose (TAP-20 §3.6 step 2 "fileInfo then read"): a file that is missing, over the
+  // limit or has no hash is refused without downloading it. / read() 有意等 fileInfo：缺失、超限或没有哈希的文件不下载就拒绝。
   async function readVerifiedFile(container, path, { limit = MANIFEST_LIMIT, code = 'MANIFEST_INVALID' } = {}) {
     const info = await chain.fileInfo(container, path)
     const size = Number(info.size)
@@ -458,12 +500,15 @@ export function createTapeAPI(opts = {}) {
   // 清单直接从 SiteRegistry 的固定路径读取，不经过目录：免费服务在零个 TapeAPI 合约部署时即可解析。配置了目录时，
   // 其记录只作可选交叉校验（TAP-20 §3.5 的"提示"）；未注册的容器或 serviceOf 回滚的目录都不会阻塞解析。
   async function manifestFromContainer(container) {
+    // The directory's record goes out with the file reads; it is still looked at only after the file checks passed.
+    // 目录记录与文件读取一起发出；仍然只在文件检查通过之后才看它。
+    const serviceP = isAddress(directory) ? early(() => chain.serviceOf(container)) : null
     const file = await readVerifiedFile(container, MANIFEST_PATH)
     const m = safeParseJSON(new TextDecoder().decode(file.bytes), { code: 'MANIFEST_INVALID' })
     let service = null
-    if (isAddress(directory)) {
+    if (serviceP) {
       try {
-        const rec = await chain.serviceOf(container)
+        const rec = await serviceP
         if (!eqAddr(rec.container, ZERO_ADDRESS)) service = rec
       } catch (e) {
         // A directory that reverts or returns garbage is a broken hint, not a broken service / 目录坏了只是提示坏了
@@ -496,7 +541,8 @@ export function createTapeAPI(opts = {}) {
   // 校验委托：恢复签名者并对比链上 holder / Verify delegation: recover signer, compare with on-chain holder.
   // dev 只在没有配置 RPC 时才跳过 holder 比对；配置了 rpcUrls 的 dev 客户端照样读 ownerOf（M-06b）。
   // Dev mode skips the holder comparison only when no RPC is configured; a dev client with rpcUrls still reads ownerOf.
-  async function verifyDelegation(m, { dev }) {
+  // `holder`: an ownerOf(m.circuits, m.tokenId) read already under way (resolve starts it early) / 已经发出的 ownerOf 读取
+  async function verifyDelegation(m, { dev, holder: holderP = null }) {
     if (!m.delegation) {
       if (dev) return { delegation: false, holder: null, dev: true }
       throw new TapeAPIError('DELEGATION_INVALID', 'delegation missing')
@@ -509,7 +555,7 @@ export function createTapeAPI(opts = {}) {
     const checkHolder = !(dev && !rpc)
     let holder
     if (checkHolder) {
-      try { holder = await chain.ownerOf(m.circuits, m.tokenId) } catch (e) {
+      try { holder = await (holderP ?? chain.ownerOf(m.circuits, m.tokenId)) } catch (e) {
         if (isRevert(e)) throw new TapeAPIError('MANIFEST_INVALID', `ownerOf(${m.circuits}, ${m.tokenId}) reverted: the manifest names a circuit that does not exist`)
         throw e
       }
@@ -644,22 +690,42 @@ export function createTapeAPI(opts = {}) {
     // delegation all live on the chain the circuit is on). / 别的链上的名字或 { chainId, ... } 交给那条链的客户端解析。
     const where = chainOfTarget(target)
     if (where !== null && where !== Number(chainId)) return forChain(where).resolve(target)
+    // Round trips (review O-1 / P2-1): reads that do not depend on each other go out together, and the rpc client sends
+    // those to one node as one batch. A target that names its (circuits, tokenId) -- a name, or the pair -- lets the
+    // reads of steps 3 and 4 (isCPU, ownerOf) start with accountOf, before the manifest is read. They are used only if
+    // the manifest names that same pair, which step 3 requires anyway (the container must re-derive from the manifest's
+    // own pair); otherwise they are read again for the manifest's pair. Every check runs on the same answers, in the same
+    // order, with the same codes as when each read waited for the one before it.
+    // 往返次数：互不依赖的读取一起发出，rpc 客户端把发往同一节点的读取合并成一个批量请求。目标本身给出 (circuits, tokenId)
+    // 时（名字或二元组），第 3、4 步的读取（isCPU、ownerOf）与 accountOf 一起提前发出，在读清单之前。只有清单写的正是这一对时
+    // 才使用它们——第 3 步本来就要求如此（容器必须能由清单自己的二元组重新推导出来）；否则按清单的二元组重新读取。
+    // 每项检查都作用于同样的回答，先后与错误码与逐个等待时完全相同。
     let src
+    let located = null
+    const ahead = (circuits, tokenId) => ({ circuits, tokenId, isCPU: early(() => chain.isCPU(circuits)), holder: early(() => chain.ownerOf(circuits, tokenId)) })
     if (typeof target === 'string') {
       const name = tapeName(target)
       if (isAddress(target)) src = await manifestFromContainer(target)
       // A TapeOut name, <#ID>.<processor>.tape: the processor number gives the circuits contract, which with #ID gives
       // the container (TapeKit SPEC §3.2), so the name adds no trust beyond the { circuits, tokenId } path.
       // TapeOut 名字：处理器编号 → 电路合约，再与 #ID 得到容器；与 { circuits, tokenId } 路径信任相同。
-      else if (name) src = await manifestFromContainer(await chain.accountOf(await chain.cpuAt(name.processor), name.tokenId))
-      else {
+      else if (name) {
+        const circuits = await factCpuAt(name.processor)
+        const container = factAccountOf(circuits, name.tokenId)
+        located = ahead(circuits, name.tokenId)
+        src = await manifestFromContainer(await container)
+      } else {
         const container = await chain.resolve(target)
         if (eqAddr(container, ZERO_ADDRESS)) throw new TapeAPIError('NOT_FOUND', `label "${target}" not registered`)
         src = await manifestFromContainer(container)
       }
     } else if (target && typeof target === 'object') {
       if ('dev' in target) src = await manifestFromDev(target.dev)
-      else if (target.circuits && target.tokenId != null) src = await manifestFromContainer(await chain.accountOf(target.circuits, target.tokenId))
+      else if (target.circuits && target.tokenId != null) {
+        const container = factAccountOf(target.circuits, target.tokenId)
+        located = ahead(target.circuits, target.tokenId)
+        src = await manifestFromContainer(await container)
+      }
       else if (target.chainId !== undefined && isAddress(target.container)) src = await manifestFromContainer(target.container)
       else throw new TapeAPIError('INVALID_ARGUMENT', 'unsupported resolve target')
     } else throw new TapeAPIError('INVALID_ARGUMENT', 'unsupported resolve target')
@@ -681,16 +747,25 @@ export function createTapeAPI(opts = {}) {
     // container. This is what makes identity non-self-asserted, and it needs no directory.
     // §3.6 第 3 步，对所有链上输入形式生效：用清单自己的 (circuits, tokenId) 在 hub 上重新推导容器，必须同时等于
     // manifest.container 与定位到的容器。身份不可自述靠的就是这一步，且不需要目录。
+    // Steps 3-5 and the contribution read go out together; each is still checked in its place below. accountOf of the pair
+    // the target named is the cached fact from above: no second read.
+    // 第 3-5 步与贡献比例的读取一起发出；每一项仍在下面原来的位置检查。目标所给二元组的 accountOf 是上面缓存的事实：不再读第二次。
+    let holder = null, contributionP = null
     if (!dev) {
-      const derived = await chain.accountOf(manifest.circuits, manifest.tokenId)
+      const same = located !== null && eqAddr(located.circuits, manifest.circuits) && BigInt(located.tokenId) === BigInt(manifest.tokenId)
+      const derivedP = factAccountOf(manifest.circuits, manifest.tokenId)
+      const cpu = same ? located.isCPU : early(() => chain.isCPU(manifest.circuits))
+      holder = same ? located.holder : early(() => chain.ownerOf(manifest.circuits, manifest.tokenId))
+      contributionP = early(() => readContribution(manifest))
+      const derived = await derivedP
       if (!eqAddr(derived, manifest.container)) throw new TapeAPIError('MANIFEST_INVALID', `hub.accountOf(${manifest.circuits}, ${manifest.tokenId}) is ${derived}, manifest.container is ${manifest.container}`)
-      await requireCPU(manifest.circuits, 'MANIFEST_INVALID')
+      await requireCPU(manifest.circuits, 'MANIFEST_INVALID', cpu)
     }
     if (src.service) {
       if (!eqAddr(src.service.circuits, manifest.circuits) || BigInt(src.service.tokenId) !== BigInt(manifest.tokenId)) throw new TapeAPIError('MANIFEST_INVALID', 'manifest circuits/tokenId do not match directory record')
     }
-    const verified = await verifyDelegation(manifest, { dev })
-    const contribution = dev ? 0 : await readContribution(manifest)
+    const verified = await verifyDelegation(manifest, { dev, holder })
+    const contribution = dev ? 0 : await contributionP
     // `target` and `fetchedAt` make the manifest re-readable. TAP-20 §3.6 says clients SHOULD re-check
     // periodically; without a way back to the source that sentence cannot be implemented, and a provider that
     // changes its price deadlocks every consumer holding the old manifest for ever.

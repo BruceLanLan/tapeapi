@@ -15,6 +15,16 @@ export const ADDR = {
 // 主网工厂地址同样作答，未传 `factory` 的客户端与主网一致；其它地址没有代码，eth_call 返回 '0x'，与真实节点相同。
 export const MAINNET_FACTORY = '0x68224F668083c29e9800Be2a646d42d18cedF7e2'
 
+// A JSON-RPC batch handed to a fetch that only understands one call: ask it call by call and answer the batch as a
+// node would (an array; a call refused at the HTTP level refuses the whole batch). For tests whose fetch wrappers
+// inject a fault per call. / 把批量请求拆给只懂单个调用的 fetch，逐个问、像节点那样以数组作答；供按调用注入故障的测试包装使用。
+export async function eachCall(url, init, fetchOne) {
+  const answers = await Promise.all(JSON.parse(init.body).map((req) => fetchOne(url, { ...init, body: JSON.stringify(req) })))
+  const bad = answers.find((r) => !r.ok)
+  if (bad) return bad
+  return new Response(JSON.stringify(await Promise.all(answers.map((r) => r.json()))), { status: 200, headers: { 'content-type': 'application/json' } })
+}
+
 export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
   const st = {
     block: 62_000_000, owners: new Map(), accounts: new Map(), tokens: new Map(), hubKeys: new Map(), labels: new Map(), services: new Map(), files: new Map(),
@@ -163,11 +173,29 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
   const IS_VALID_SIG = '0x1626ba7e'
   const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } })
   // 假 fetch，只处理 JSON-RPC / Fake fetch handling JSON-RPC only.
+  // A JSON-RPC batch (an array body) is answered with an array, one answer per call, faults applied per call, like the
+  // default nodes (all of them take a batch of up to 3, measured 2026-09-29). 'nobatch' makes a node answer a batch as one
+  // -32600 object, as a node without batch support does. Every request (plain or batch) is logged in `st.requests`.
+  // 批量请求（数组）以数组作答，每个调用一个回答，故障按调用施加，与默认节点一致。'nobatch' 让节点像不支持批量的节点那样
+  // 以单个 -32600 对象回答批量。每个请求（普通或批量）记在 `st.requests`。
+  st.requests = []
   api.fetch = async (url, init = {}) => {
     const fault = st.faults.get(url)
+    const body = JSON.parse(init.body)
+    st.requests.push({ url, batch: Array.isArray(body), calls: (Array.isArray(body) ? body : [body]).map((r) => r?.method) })
     if (fault === 'timeout') return new Promise((_, rej) => init.signal?.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' }))))
     if (fault === 'http500') return new Response('boom', { status: 500 })
-    const req = JSON.parse(init.body)
+    if (Array.isArray(body)) {
+      if (fault === 'nobatch') return json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'invalid request' } })
+      const answers = await Promise.all(body.map((req) => answer(url, fault, req)))
+      // a call refused at the HTTP level refuses the whole batch / 某个调用在 HTTP 层被拒，整批被拒
+      const bad = answers.find((r) => !r.ok)
+      if (bad) return bad
+      return json(await Promise.all(answers.map((r) => r.json())))
+    }
+    return answer(url, fault, body)
+  }
+  async function answer(url, fault, req) {
     const reply = (result) => json({ jsonrpc: '2.0', id: req.id, result })
     if (fault === 'rpcerror') return json({ jsonrpc: '2.0', id: req.id, error: { code: -32000, message: 'node says no' } })
     try {
