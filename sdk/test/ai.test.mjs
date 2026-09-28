@@ -414,6 +414,36 @@ test('verifying fetch: other paths pass through untouched; a metered path on ano
   assert.ok(reports.every((r) => r.ok))
 })
 
+// FIXED P2-O1 / P2-F2 (rc review P2): a metered path written loosely ('/v1//chat/completions', '/v1/chat/%63ompletions',
+// a trailing slash) matched no format and passed through unverified, with no report; OpenAI and Anthropic serve such
+// paths. Strict now refuses it before sending, like an endpoint mismatch (same error data); otherwise it goes on and
+// onReport says it was not verified. A path no format meters passes through however it is written.
+// 计量路径的宽松写法曾不经核验、也不报告就放行；真实上游会回答这些写法。strict 现在在发送之前拒绝（与端点不符相同的错误数据）；
+// 否则照常发出，并由 onReport 说明未核验。不计量的路径无论怎么写都照旧透传。
+test('FIXED P2-O1: a metered path written loosely is refused before sending (strict) or reported as not verified', async () => {
+  const calls = []
+  const passthrough = async (u, i) => { calls.push(u); return new Response('{"data":[]}') }
+  const svc = { manifest: MANIFEST, container: CONTAINER, verified: { dev: true } }
+  const vf = ai.createVerifyingFetch({ service: svc, fetch: passthrough, onReport: () => assert.fail('no report in strict mode') })
+  for (const url of ['https://ai.example/v1//chat/completions', 'https://ai.example/v1/chat/%63ompletions', 'https://ai.example/v1/chat/completions/', 'https://ai.example//v1/chat/completions', 'https://ai.example/v1/%6Dessages', 'https://ai.example/v1///responses']) {
+    await assert.rejects(vf(url, { method: 'POST', body: '{}' }), (e) => {
+      assert.equal(e.code, 'INVALID_ARGUMENT', url)
+      assert.deepEqual(Object.keys(e.data).sort(), ['actual', 'expected', 'format'])
+      assert.match(e.message, /written exactly/)
+      return true
+    })
+  }
+  assert.equal(calls.length, 0, 'nothing was sent')
+  await vf('https://ai.example/v1//models', { method: 'GET' })
+  assert.deepEqual(calls, ['https://ai.example/v1//models'], 'a path no format meters passes through')
+  const reports = []
+  const lax = ai.createVerifyingFetch({ service: svc, fetch: passthrough, strict: false, onReport: (r) => reports.push(r) })
+  await lax('https://ai.example/v1//chat/completions', { method: 'POST', body: '{}' })
+  assert.equal(calls.length, 2)
+  assert.equal(reports.length, 1); assert.equal(reports[0].ok, false); assert.equal(reports[0].mismatch, true)
+  assert.match(reports[0].problems[0], /^not verified: /)
+})
+
 test('verifying fetch: the manifest endpoints route each format, Anthropic\'s without /v1 in its base URL', async () => {
   const MSG = 'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_1","model":"claude-demo","usage":{"input_tokens":10,"cache_read_input_tokens":20,"output_tokens":1}}}\n\nevent: ping\ndata: {"type":"ping"}\n\nevent: message_delta\ndata: {"type":"message_delta","delta":{},"usage":{"output_tokens":5}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n'
   const RESP = 'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_1","model":"gpt-4o"}}\n\nevent: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_1","model":"gpt-4o","usage":{"input_tokens":4,"output_tokens":2,"total_tokens":6}}}\n\n'

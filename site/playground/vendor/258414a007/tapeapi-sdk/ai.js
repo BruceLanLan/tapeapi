@@ -200,6 +200,17 @@ export function apiPath(pathname, rootPath) {
   const rp = String(rootPath).replace(/\/+$/, '')
   return typeof pathname === 'string' && pathname.startsWith(rp + '/') ? pathname.slice(rp.length) : null
 }
+/**
+ * A URL path as a lenient server reads it: percent-encoded unreserved characters decoded ('%63' -> 'c'), runs of '/'
+ * collapsed, a trailing '/' dropped. OpenAI and Anthropic serve '/v1//chat/completions' and '/v1/chat/%63ompletions';
+ * a metered path must still be written exactly, so a path that only matches a format this way is refused, never signed
+ * or verified as if it did (review P2-O1). / 宽松服务器眼中的路径：解码百分号编码的非保留字符、合并连续斜杠、去掉结尾斜杠。
+ * 计量路径必须按原样书写：只有这样才能匹配某个格式的路径会被拒绝，而不是当作匹配来签名或核验。
+ */
+export function loosePath(path) {
+  const p = String(path).replace(/%([0-9A-Fa-f]{2})/g, (m, h) => { const c = String.fromCharCode(parseInt(h, 16)); return /[A-Za-z0-9._~-]/.test(c) ? c : m }).replace(/\/{2,}/g, '/')
+  return p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p
+}
 /** The service root of an endpoint's baseUrl (the baseUrl minus the format's suffix), or null. / 端点 baseUrl 对应的服务根。 */
 export function rootOf(baseUrl, format) {
   const b = String(baseUrl).replace(/\/+$/, ''), suf = format?.baseSuffix ?? ''
@@ -980,12 +991,15 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
     // 请求的格式：URL 位于清单某个端点的根之下，且该端点格式的适配器认得这个路径。
     let rel = null, format = null
     // A request that looks like a metered call (its path, taken under an endpoint's root path or as it stands, is one a
-    // format meters) but is not addressed to an endpoint of the manifest: 'localhost' for '127.0.0.1', another port, a
-    // base URL without its /v1. Passing it on unverified would be silent (review G1 M15): strict refuses it with
-    // INVALID_ARGUMENT before anything is sent; otherwise it goes on and onReport says it was not verified.
-    // 看起来是计量调用（其路径在某端点的根路径之下、或按原样，是某格式会计量的路径），却没有发往清单里的端点：
-    // localhost 对 127.0.0.1、端口不同、base URL 缺了 /v1。不核验就放行是静默的：strict 在发出任何请求之前以 INVALID_ARGUMENT 拒绝；
-    // 否则照常发出，并由 onReport 说明未核验。
+    // format meters) but is not addressed to an endpoint of the manifest: 'localhost' for '127.0.0.1', another port or
+    // host, a root path left out (review G1 M15); or a metered path written loosely ('//', '%63', a trailing '/'), which
+    // OpenAI and Anthropic still serve (review P2-O1). Passing it on unverified would be silent: strict refuses it with
+    // INVALID_ARGUMENT before anything is sent; otherwise it goes on and onReport says it was not verified. A path that
+    // meters nothing under any spelling (a base URL without its /v1, a path in another case) passes through.
+    // 看起来是计量调用（其路径在某端点的根路径之下、或按原样，是某格式会计量的路径），却没有发往清单里的端点：localhost 对 127.0.0.1、
+    // 端口或主机不同、漏了根路径；或者计量路径的宽松写法（'//'、'%63'、结尾斜杠），OpenAI 与 Anthropic 照样回答。不核验就放行是静默的：
+    // strict 在发出任何请求之前以 INVALID_ARGUMENT 拒绝；否则照常发出，并由 onReport 说明未核验。怎么写都不计量的路径（缺 /v1 的
+    // base URL、大小写不同的路径）照旧透传。
     let near = null
     try {
       const u = new URL(url)
@@ -999,15 +1013,21 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
         if (!near) {
           const q = apiPath(u.pathname, r.pathname)
           if ((q && f.match({ verb, path: q })) || f.match({ verb, path: u.pathname })) near = { format: f.name, baseUrl: ep.baseUrl }
+          else {
+            const lq = apiPath(loosePath(u.pathname), r.pathname)
+            if ((lq && f.match({ verb, path: lq })) || f.match({ verb, path: loosePath(u.pathname) })) near = { format: f.name, baseUrl: ep.baseUrl, loose: loosePath(u.pathname) }
+          }
         }
       }
     } catch { /* not a URL: not ours / 不是 URL：不是我们的 */ }
     if (!format && near) {
       let origin = String(url)
       try { const u = new URL(url); origin = u.origin + u.pathname } catch { /* keep it as given */ }
-      const why = `${verb} ${origin} looks like a metered ${near.format} call, but the manifest's ${near.format} endpoint is ${near.baseUrl}: point the client's base URL at exactly that endpoint (not verified: endpoint mismatch)`
+      const why = near.loose
+        ? `${verb} ${origin} looks like a metered ${near.format} call written loosely (a lenient server reads the path as ${near.loose}); a metered path must be written exactly, under the manifest's ${near.format} endpoint ${near.baseUrl} (not verified: path mismatch)`
+        : `${verb} ${origin} looks like a metered ${near.format} call, but the manifest's ${near.format} endpoint is ${near.baseUrl}: point the client's base URL at exactly that endpoint (not verified: endpoint mismatch)`
       if (strict) throw new TapeAPIError('INVALID_ARGUMENT', why, { data: { expected: near.baseUrl, actual: origin, format: near.format } })
-      report({ ok: false, mismatch: true, problems: [`not verified: endpoint mismatch: ${why}`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: 0, salted: false, expected: near.baseUrl })
+      report({ ok: false, mismatch: true, problems: [`not verified: ${near.loose ? 'path' : 'endpoint'} mismatch: ${why}`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: 0, salted: false, expected: near.baseUrl })
       return doFetch(input, init)
     }
     if (!format) return doFetch(input, init)

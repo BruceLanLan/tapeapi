@@ -456,6 +456,27 @@ test('a dev provider may boot with a zero escrow, and its paid calls are refused
   assert.ok(logs.some((l) => /no escrow configured/.test(l)))
 })
 
+// FIXED P2-F7 (rc review P2): createProvider({ dev: true }) still needed `dev: true` in the manifest too before it booted with
+// a zero escrow (validateManifest's exemption read the manifest's field), against S2 "only createProvider({ dev: true })
+// relaxes them; the manifest's own dev field switches nothing". The served manifest is not touched.
+// dev 选项之外还要清单里写 dev: true 才能以零地址托管启动；现在只看 opts.dev，且不改动对外提供的清单。
+test('FIXED P2-F7: createProvider({ dev: true }) boots with a zero escrow whether or not the manifest says dev; without it, never', async () => {
+  const zero = '0x' + '00'.repeat(20)
+  const methods = { blockNumber() {}, circuitHolder() {}, leak() {} }
+  const plain = { ...manifest, payment: { escrow: zero, unit: 'BEM', decimals: 8 } }
+  delete plain.dev
+  const p = createProvider({ minVoucherLifeS: 0, manifest: plain, signerKey: SIGNER_KEY, dev: true, log: () => {}, methods })
+  assert.ok(p)
+  assert.equal('dev' in plain, false, 'the manifest object is not changed')
+  assert.equal(p.manifest, plain, 'and it is the manifest the provider serves')
+  for (const m of [plain, { ...plain, dev: true }]) {
+    assert.throws(() => createProvider({ minVoucherLifeS: 0, manifest: m, signerKey: SIGNER_KEY, allowHttp: true, log: () => {}, methods }), (e) => e.code === 'MANIFEST_INVALID')
+  }
+  // A priced method with no payment field at all is a TAP-20 manifest error, dev or not. / 完全没有 payment 字段是清单错误。
+  const { payment: _, ...nopay } = plain
+  assert.throws(() => createProvider({ minVoucherLifeS: 0, manifest: nopay, signerKey: SIGNER_KEY, dev: true, log: () => {}, methods }), (e) => e.code === 'MANIFEST_INVALID' && /payment\.escrow/.test(e.message))
+})
+
 test('opts.escrow may only restate the manifest escrow, never replace it or zero it (runtime audit I-03)', () => {
   const methods = { blockNumber() {}, circuitHolder() {}, leak() {} }
   assert.throws(() => createProvider({ minVoucherLifeS: 0, manifest, signerKey: SIGNER_KEY, allowHttp: true, escrow: '0x' + '22'.repeat(20), methods }),
@@ -569,4 +590,11 @@ test('an oversized body gets an actual 413 from the node server, not a dropped c
     assert.equal(r.status, 413)
     assert.equal((await r.json()).error.code, 'BAD_REQUEST')
   } finally { s2.close() }
+})
+
+// FIXED RC-14 (rc review round 4): a provider built without rpcUrls reported INTERNAL on its first chain read, a
+// configuration mistake the M1 rule gives to INVALID_ARGUMENT (as the SDK already does), with a hint how to fix it.
+// FIXED RC-14：没配 rpcUrls 的服务端第一次读链时报 INTERNAL；按 M1 这是配置错误，应为 INVALID_ARGUMENT，并提示怎么改。
+test('FIXED RC-14: a provider without rpcUrls says INVALID_ARGUMENT, and how to fix it, on its first chain read', async () => {
+  await assert.rejects(mk().dueSettlements(), (e) => e.code === 'INVALID_ARGUMENT' && /rpcUrls/.test(e.message) && /rpcUrlsFor/.test(e.message))
 })

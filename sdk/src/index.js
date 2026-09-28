@@ -147,7 +147,7 @@ const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : toHex(
 export function createTapeAPI(opts = {}) {
   // 1.0 (review G1 S4): the RPC timeout is `rpcTimeoutMs`; `timeoutMs` is the per-call option of api.call only.
   // 1.0：RPC 超时改名 rpcTimeoutMs；timeoutMs 只是 api.call 的每次调用选项。
-  const renamed = 'the option `timeoutMs` of createTapeAPI was renamed `rpcTimeoutMs` in 1.0 (it is the timeout of one RPC request; api.call keeps its own timeoutMs): see docs/guides/upgrade-1.0.md'
+  const renamed = 'the option `timeoutMs` of createTapeAPI was renamed `rpcTimeoutMs` in 1.0 (it is the timeout of one RPC request; api.call keeps its own timeoutMs): see https://tapeapi.fun/docs/en/upgrade-1.0'
   if (opts && Object.prototype.hasOwnProperty.call(opts, 'timeoutMs')) throw new TapeAPIError('INVALID_ARGUMENT', renamed)
   for (const [id, c] of Object.entries(opts?.chains ?? {})) if (c && Object.prototype.hasOwnProperty.call(c, 'timeoutMs')) throw new TapeAPIError('INVALID_ARGUMENT', `chains[${id}]: ${renamed}`)
   const chainId = opts.chainId ?? MAINNET.chainId
@@ -184,7 +184,7 @@ export function createTapeAPI(opts = {}) {
   }
   const identityTtlS = Math.min(IDENTITY_CACHE_S, Math.max(0, Number.isFinite(opts.identityCacheS) ? Math.floor(opts.identityCacheS) : IDENTITY_CACHE_S))
   const identityMax = Number.isInteger(opts.identityCacheSize) && opts.identityCacheSize > 0 ? opts.identityCacheSize : IDENTITY_CACHE_SIZE
-  const needRpc = () => { if (!rpc) throw new TapeAPIError('INVALID_ARGUMENT', 'rpcUrls not configured'); return rpc }
+  const needRpc = () => { if (!rpc) throw new TapeAPIError('INVALID_ARGUMENT', `rpcUrls not configured: pass createTapeAPI({ rpcUrls: rpcUrlsFor(${chainId}) }) for the SDK's default nodes of this chain, or your own`); return rpc }
   const needDirectory = () => { if (!isAddress(directory)) throw new TapeAPIError('INVALID_ARGUMENT', 'directory address not configured'); return directory }
   const needFetch = () => { if (typeof fetchImpl !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'no fetch implementation'); return fetchImpl }
 

@@ -145,7 +145,9 @@ const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
 
 Use the `baseUrl` from the manifest exactly. A request to a metered path on any other host (`localhost` for
 `127.0.0.1`, another port) is refused with `INVALID_ARGUMENT` before it is sent, naming the endpoint it expected; with
-`strict: false` it goes through and `onReport` says `not verified: endpoint mismatch`. Streams are verified too. A
+`strict: false` it goes through and `onReport` says `not verified: endpoint mismatch`. So is a metered path written
+loosely (`/v1//chat/completions`, `/v1/chat/%63ompletions`, a trailing `/`), which OpenAI and Anthropic still answer:
+`not verified: path mismatch`. Streams are verified too. A
 stream ends at its final event, at `[DONE]` or when the connection closes, whichever comes first; with the default
 `strict: true` the part in which it ends is passed on only once a receipt that came before it verifies, so a stream
 that fails makes the SDK's iterator throw `RECEIPT_INVALID`. With `strict: false` nothing is held back, and the
@@ -159,7 +161,7 @@ the fetch itself checks `res.ok`. Whether a paid call is retried after other 5xx
 and point the client at it:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.3/tapeapi-sdk-1.0.0-rc.3.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.4/tapeapi-sdk-1.0.0-rc.4.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
 

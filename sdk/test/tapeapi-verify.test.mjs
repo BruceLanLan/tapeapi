@@ -286,6 +286,28 @@ test('an error the sidecar made itself passes through as it is, reported as a si
   assert.doesNotMatch(v.stderr(), /FAIL\s+POST/)
 })
 
+// FIXED P2-O1 / P2-F2 (rc review P2): a metered path written loosely ('/v1//messages', '/v1/%6Dessages') was passed on
+// as a free path, unverified, even with --strict; OpenAI and Anthropic serve such paths. --strict now answers 400 and
+// forwards nothing; without it the request goes on and the log says it was not verified.
+// 计量路径的宽松写法曾被当作免费路径不经核验地转发（--strict 也一样）。--strict 现在回 400、不转发；不加时照常转发并在日志里说明。
+test('FIXED P2-O1: --strict refuses a metered path written loosely before forwarding it; without --strict it is logged as not verified', async () => {
+  const side = await startSidecar()
+  const v = await startVerify(side.url, ['--strict'])
+  const lax = await startVerify(side.url)
+  const before = knobs.bodies.length
+  for (const path of ['/v1//messages', '/v1/%6Dessages', '/v1/messages/', '//v1/messages']) {
+    const r = await fetch(`${v.url}${path}`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(false) })
+    assert.equal(r.status, 400, path)
+    const j = await r.json()
+    assert.equal(j.type, 'error'); assert.match(j.error.message, /written exactly/)
+  }
+  assert.equal(knobs.bodies.length, before, 'nothing reached the service')
+  const r = await fetch(`${lax.url}/v1//messages`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(false) })
+  await r.arrayBuffer()
+  assert.equal(knobs.bodies.length, before + 1, 'forwarded without --strict')
+  await waitFor(() => /not verified/.test(lax.stderr()), 'the log says it was not verified')
+})
+
 test('arguments: a service or --dev, not both; bad names refused before anything is read', async () => {
   const run = (args) => new Promise((ok) => { const c = spawn(process.execPath, [BIN, ...args], { stdio: ['ignore', 'pipe', 'pipe'] }); let e = ''; c.stderr.on('data', (d) => { e += d }); c.on('exit', (code) => ok({ code, e })) })
   assert.equal((await run([])).code, 2)

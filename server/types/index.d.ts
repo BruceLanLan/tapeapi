@@ -77,7 +77,7 @@ export interface CreateProviderOptions {
   rpcTimeoutMs?: number
   fetch?: FetchLike
   allowSingleNode?: boolean
-  /** Development only: allows http:// endpoints, and priced methods without an escrow (paid calls are then refused) and
+  /** Development only: allows http:// endpoints, and priced methods whose payment.escrow is the zero address (paid calls are then refused) and
    *  on the in-memory meter without a warning. Only this option switches dev on: since 1.0 a manifest's own `dev` field
    *  does not. */
   dev?: boolean

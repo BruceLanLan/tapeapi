@@ -42,7 +42,7 @@ const rpcFail = (status, code, message) => reply(status, { jsonrpc: '2.0', id: n
  */
 export function createMcpEndpoint(o = {}) {
   // 1.0 (review G1 S11): the display name is `name`; `identity` meant a key pair elsewhere in the SDK. / 展示名改为 name。
-  if (o && Object.prototype.hasOwnProperty.call(o, 'identity')) throw new TapeAPIError('INVALID_ARGUMENT', 'createMcpEndpoint takes { name } (the TapeOut name to show): the option `identity` was renamed in 1.0')
+  if (o && Object.prototype.hasOwnProperty.call(o, 'identity')) throw new TapeAPIError('INVALID_ARGUMENT', 'createMcpEndpoint takes { name } (the TapeOut name to show): the option `identity` was renamed in 1.0 (https://tapeapi.fun/docs/en/upgrade-1.0)')
   const { provider, manifest, name: tapeName, version = '0', onMessage, linkContent = false } = o
   // This server signs its answers; it does not check them for the caller. The tool text says so.
   // 本服务器只签名，不替调用方核验。工具说明如实这么写。

@@ -121,6 +121,14 @@ const errorResponse = (status, code, message, headers) => new Response(JSON.stri
   status, headers: { 'content-type': 'application/json', [ai.SIDECAR_ERROR_HEADER]: '1', ...headers },
 })
 
+// A URL path as a lenient server reads it (as sdk ai.js loosePath, which is not in the SDK's public face): percent-encoded
+// unreserved characters decoded, runs of '/' collapsed, a trailing '/' dropped. OpenAI and Anthropic serve
+// '/v1//chat/completions' and '/v1/chat/%63ompletions'; a metered path must be written exactly (review P2-O1).
+// 宽松服务器眼中的路径（同 sdk ai.js 的 loosePath，它不在 SDK 的公开接口里）：计量路径必须按原样书写。
+const loosePath = (path) => {
+  const p = String(path).replace(/%([0-9A-Fa-f]{2})/g, (m, h) => { const c = String.fromCharCode(parseInt(h, 16)); return /[A-Za-z0-9._~-]/.test(c) ? c : m }).replace(/\/{2,}/g, '/')
+  return p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p
+}
 const sameBytes = (a, b) => a.length === b.length && a.every((x, i) => x === b[i])
 const isPrefix = (a, b) => a.length <= b.length && a.every((x, i) => x === b[i])
 // The first lines that open a format's final event: `data: X` / `data:X`, `event: Y` / `event:Y`.
@@ -264,7 +272,7 @@ export function createAIProxy(opts = {}) {
   const live = base.endpoints?.live?.[0]
   const root = (opts.publicUrl ?? (typeof live === 'string' ? live.replace(/\/tapeapi\/v1\/*$/, '') : null))?.replace(/\/+$/, '')
   if (!root) throw new TapeAPIError('INVALID_ARGUMENT', 'publicUrl is required when endpoints.live is empty')
-  const field = ai.validateAIField({ endpoints: formats.map((f) => ({ format: f.name, baseUrl: root + f.baseSuffix })), models }, { allowHttp: opts.allowHttp === true || base.dev === true })
+  const field = ai.validateAIField({ endpoints: formats.map((f) => ({ format: f.name, baseUrl: root + f.baseSuffix })), models }, { allowHttp: opts.allowHttp === true })
   const rootPath = new URL(root).pathname.replace(/\/+$/, '')
   const manifest = { tapeapi, ...base, signer, methods: [{ ...RECEIPT_METHOD, params: { ...RECEIPT_METHOD.params }, returns: { ...RECEIPT_METHOD.returns }, description: receiptDescription(receiptTtlMs) }], [ai.MANIFEST_FIELD]: field }
   const size = byteLength(JSON.stringify(manifest))
@@ -561,6 +569,10 @@ export function createAIProxy(opts = {}) {
     const verb = request.method
     if (verb !== 'GET' && verb !== 'POST' && verb !== 'DELETE') return oaError(405, 'method_not_allowed', 'use GET, POST or DELETE', { allow: 'GET, POST, DELETE, OPTIONS' })
     const format = ai.formatFor(verb, path, formats)
+    // A metered path written loosely would reach an upstream that serves it, with no receipt: refused, never signed as
+    // if written exactly (the client's receipt check would not match its own URL). / 宽松写法的计量路径：拒绝，不转发、不签名。
+    const loose = format ? null : ai.formatFor(verb, loosePath(path), formats)
+    if (loose) return oaError(400, 'bad_path', `${verb} ${path} is a ${loose.name} path written loosely; write it exactly as ${loosePath(path)}, the only way it gets a signed receipt`)
     let body = null
     if (verb !== 'GET') {
       try { body = await readCappedBytes(request.body, REQUEST_LIMIT) } catch (e) {

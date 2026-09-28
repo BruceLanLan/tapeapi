@@ -4,12 +4,12 @@ JavaScript SDK for [TapeAPI](https://tapeapi.fun): find a service on BNB Smart C
 answer whose signature is checked against the key the service's holder delegated on chain. Paid methods use
 EIP-712 vouchers against an escrow; nothing is signed or sent without you.
 
-> **Pre-alpha.** Interfaces may change before 1.0.0. See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md).
+> **Pre-release (1.0 release candidate).** Interfaces may still change before 1.0.0. See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md).
 
 ## Install
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.3/tapeapi-sdk-1.0.0-rc.3.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.4/tapeapi-sdk-1.0.0-rc.4.tgz
 ```
 
 Not on the npm registry yet: each GitHub release carries the package file. Built from https://github.com/BruceLanLan/tapeapi
@@ -44,9 +44,12 @@ naming rules.
 
 | Import | What |
 | --- | --- |
-| `@tapeapi/sdk` | `createTapeAPI`, `createRpc`, `TapeAPIError`, `MAINNET`, `BUS_RPC_URLS`, `RPC_DEFAULTS` / `rpcUrlsFor` / `operatorOf` (default nodes per chain and who runs them; quorums count operators, not URLs), and the `abi`, `sig`, `channel`, `group`, `tapesend`, `webmcp` namespaces |
+| `@tapeapi/sdk` | `createTapeAPI`, `createRpc`, `TapeAPIError`, `MAINNET`, `BUS_RPC_URLS`, `RPC_DEFAULTS` / `rpcUrlsFor` / `operatorOf` (default nodes per chain and who runs them; quorums count operators, not URLs), `deliverGroupUpdate` / `checkGroupInvites`, and the `abi`, `sig`, `channel`, `busPrivacy`, `group`, `tapesend`, `webmcp`, `mcp`, `ai` namespaces |
 | `@tapeapi/sdk/webmcp` | `exposeTapeAPI`, `manifestToTools`: a service's methods as WebMCP tools for in-browser agents |
 | `@tapeapi/sdk/channel` | TAP-26 private channels (invites, relay and ChannelBus transports) |
+| `@tapeapi/sdk/bus-privacy` | `busPrivacyReader`: ChannelBus reads that hide your rooms among cover rooms (`@experimental`) |
+| `@tapeapi/sdk/ai` | AI usage receipts: `createVerifyingFetch` (a `fetch` for the official OpenAI and Anthropic SDKs that checks every answer's receipt), `verifyUsageReceipt`, the format adapters |
+| `@tapeapi/sdk/mcp` | the MCP server core behind `tapeapi-mcp` and `@tapeapi/server/mcp`: tools with signed results and receipts |
 | `@tapeapi/sdk/chains` | `CHAINS` (BNB Smart Chain, X Layer, Base: factory, opener, DeWebHub, SiteRegistry, area code), `parseTapeName`, `formatTapeName` |
 | `@tapeapi/sdk/rpc`, `/abi`, `/sig`, `/canon`, `/manifest` | the building blocks |
 
@@ -60,11 +63,11 @@ The package ships a command that exposes any TapeAPI service's free methods as M
 Cursor, any MCP client), and verifies every answer in your own process before the model sees it:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.3/tapeapi-sdk-1.0.0-rc.3.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.4/tapeapi-sdk-1.0.0-rc.4.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ```json
-{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.3/tapeapi-sdk-1.0.0-rc.3.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
+{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.4/tapeapi-sdk-1.0.0-rc.4.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
 ```
 
 - **Identity from the chain.** Each service (a TapeOut name like `11.1013.tape` or a container address) is resolved
@@ -85,6 +88,20 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0
   (`t11_1013_bnbUsd`). Priced methods are not exposed. Logs go to stderr; stdout carries only JSON-RPC.
 
 `--dev <url>` exists for this package's tests only. It skips every on-chain identity check and prints a warning.
+
+## Local verifying proxy: `tapeapi-verify`
+
+For AI clients that cannot read usage receipts themselves (Claude Code, Codex, any tool with a base-URL setting): it
+forwards every request to a TapeAPI AI service resolved on chain and checks the signed receipt of every answer.
+
+```bash
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.4/tapeapi-sdk-1.0.0-rc.4.tgz tapeapi-verify 42.1013.tape
+ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1
+```
+
+With `--strict` a receipt that does not verify becomes an error to the client. `tapeapi-verify --help` lists every
+option. In your own code, `createVerifyingFetch` from `@tapeapi/sdk/ai` does the same without a proxy
+([AI providers](https://tapeapi.fun/docs/en/ai-providers.html)).
 
 ## Docs
 

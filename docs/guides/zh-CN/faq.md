@@ -25,8 +25,8 @@ BNB Smart Chain（chainId 56），也就是 TapeOut 所在的链。
 
 ## 调用服务
 
-**`ERR_MODULE_NOT_FOUND: Cannot find package '@tapeapi/sdk'`**：这些包尚未发布到 npm，要通过仓库的 workspace 解析。
-克隆仓库，在其中运行 `npm install`，并把你的脚本保存在 `tapeapi` 目录之内（[调用服务](consume.md)）。
+**`ERR_MODULE_NOT_FOUND: Cannot find package '@tapeapi/sdk'`**：这些包尚未发布到 npm。要么把发布包装进你的项目、在那个项目里运行脚本，
+要么克隆仓库、在其中运行 `npm install`，并把你的脚本保存在 `tapeapi` 目录之内（[调用服务](consume.md)）。
 
 **`MANIFEST_INVALID: ... does not match`**：容器站点中的文件与其链上哈希不一致，或者没有清单。该服务没有被正确发布。
 

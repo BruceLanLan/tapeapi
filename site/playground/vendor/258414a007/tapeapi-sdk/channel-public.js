@@ -25,7 +25,7 @@ export {
  */
 export function relayTransport(opts = {}) {
   if (opts && Object.prototype.hasOwnProperty.call(opts, 'svc')) {
-    throw new TapeAPIError('INVALID_ARGUMENT', 'relayTransport takes { service }: the option `svc` was renamed in 1.0 (docs/guides/upgrade-1.0.md)')
+    throw new TapeAPIError('INVALID_ARGUMENT', 'relayTransport takes { service }: the option `svc` was renamed in 1.0 (https://tapeapi.fun/docs/en/upgrade-1.0)')
   }
   const { service, ...rest } = opts ?? {}
   if (!service || typeof service !== 'object') throw new TapeAPIError('INVALID_ARGUMENT', 'relayTransport needs { api, service }: service is the resolved relay (await api.resolve(...))')

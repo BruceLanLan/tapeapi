@@ -220,7 +220,7 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
       if (ac.signal.aborted) { for (const c of part) c.reject(e); return }
       // An answer over bodyLimit is about this batch, not the node: ask call by call, each under its own limit.
       // 超过 bodyLimit 说的是这一批而不是节点：逐个重问，各自受上限约束。
-      if (!e?.tooLarge) noBatch.add(url)
+      if (!e?.data?.tooLarge) noBatch.add(url)
       for (const c of part) one(url, c.method, c.params).then(c.resolve, c.reject)
       return
     } finally { clearTimeout(timer) }
@@ -245,7 +245,7 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     const settled = await Promise.allSettled(urls.map(u => ask(u, method, params)))
     const buckets = new Map(); const failures = []; const refusals = []; const answeredIdx = []; let tooLarge = 0
     settled.forEach((s, i) => {
-      if (s.status === 'rejected') { failures.push(`${describeUrl(urls[i], i)}: ${s.reason?.message || s.reason}`); if (s.reason?.refusal) refusals.push(s.reason.refusal); if (s.reason?.tooLarge) tooLarge++; return }
+      if (s.status === 'rejected') { failures.push(`${describeUrl(urls[i], i)}: ${s.reason?.message || s.reason}`); if (s.reason?.refusal) refusals.push(s.reason.refusal); if (s.reason?.data?.tooLarge) tooLarge++; return }
       // 错误按 code 与是否回滚形态分桶，不按原文（各实现 revert 文本不同，M-12；R3-4）/ errors bucket by code and revert
       // shape, never by text: revert texts differ per client (review M-12, R3-4)
       // `project` keeps only the fields that are facts about the chain: nodes decorate some answers differently

@@ -14,7 +14,7 @@ const config = JSON.parse(await readFile(new URL(process.env.ADAPTER_CONFIG || '
 
 // ---- env ----
 const env = exampleEnv('adapter', { port: 8788 })
-const { RPC_URLS, QUORUM, CHAIN_ID, SIGNER_KEY, log, store } = env
+const { RPC_URLS, QUORUM, CHAIN_ID, PROD, SIGNER_KEY, log, store } = env
 // 方法表先从配置生成，再做占位符替换 —— 顺序反过来的话 applyEnvToManifest 的 FREE_ALL 会作用在
 // 清单里那份即将被覆盖的方法表上。/ Generate the method table from the config first: the other way round,
 // applyEnvToManifest's FREE_ALL pass would act on the method table that is about to be replaced.
@@ -26,8 +26,8 @@ applyEnvToManifest(manifest, env)
 const methods = buildMethods(config, { log, env: { UPSTREAM_API_KEY: process.env.UPSTREAM_API_KEY } })
 
 const provider = createProvider({
-  manifest, signerKey: SIGNER_KEY, dev: manifest.dev === true, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID,
-  allowSingleNode: manifest.dev, // dev 允许单节点；生产 urls 少于 quorum 直接拒绝启动 / single node only in dev (review M-11)
+  manifest, signerKey: SIGNER_KEY, dev: !PROD, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID,
+  allowSingleNode: !PROD, // dev 允许单节点；生产 urls 少于 quorum 直接拒绝启动 / single node only in dev (review M-11)
   log, store, methods,
 })
 

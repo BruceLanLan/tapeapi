@@ -717,3 +717,41 @@ test('a final event larger than HOLD_LIMIT is not held: it streams through and t
   assert.equal(oa.verifyUsageReceipt({ envelope: env, manifest: m, responseBytes: out, stream: true }).ok, true)
   assert.equal(p.stats().appended, 1)
 })
+
+// FIXED P2-O2 (rc review P2): createAIProxy still let the manifest's own `dev` field allow an http endpoint for the ai
+// field (dead code: createProvider refused it next), against S2 "the manifest's dev field switches nothing". Now the
+// refusal is the same with or without it, and only opts.allowHttp allows http.
+// 清单自己的 dev 字段曾在 ai 字段校验处放行 http（死代码，随后 createProvider 拒绝）；现在有没有它拒绝都一样，只有 allowHttp 放行。
+test('FIXED P2-O2: the manifest\'s own dev field allows nothing in createAIProxy; only allowHttp allows http', () => {
+  const httpBase = (extra = {}) => ({ ...manifestBase(), endpoints: { live: ['http://127.0.0.1:9/tapeapi/v1'], async: false }, ...extra })
+  const refusal = (mb, over = {}) => { try { createAIProxy({ upstream: { baseUrl: UP }, manifestBase: mb, signerKey: KEY, models: MODELS, log: () => {}, ...over }); return 'booted' } catch (e) { return `${e.code}: ${e.message}` } }
+  const without = refusal(httpBase())
+  assert.match(without, /^MANIFEST_INVALID: ai: endpoints\[0\]\.baseUrl must be https/)
+  assert.equal(refusal(httpBase({ dev: true })), without)
+  assert.equal(refusal(httpBase({ dev: true }), { allowHttp: true }), 'booted')
+})
+
+// FIXED P2-O1 / P2-F2 (rc review P2): a metered path written loosely -- a repeated slash, a percent-encoded letter, a
+// trailing slash -- matched no format, so the sidecar passed it upstream with no receipt. OpenAI and Anthropic both
+// serve '/v1//chat/completions', '/v1/chat/%63ompletions', '/v1//messages' and '/v1/%6Dessages' (checked against
+// api.openai.com and api.anthropic.com on 2026-09-29, unauthenticated: they answer 401, not 404). The sidecar now
+// refuses such a path with 400 bad_path before anything goes upstream; other paths written loosely still pass through.
+// 计量路径的宽松写法（重复斜杠、百分号编码的字母、结尾斜杠）不匹配任何格式，旁路曾不带回执地转给上游；真实的 OpenAI 与 Anthropic
+// 都会回答这些写法。现在旁路在转发之前以 400 bad_path 拒绝；其它路径的宽松写法照旧透传。
+test('FIXED P2-O1: a metered path written loosely is refused with 400 bad_path and never reaches the upstream', async () => {
+  const s = stub(() => jsonResponse('{"id":"x","model":"demo-chat","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'))
+  const p = make(s.fetch)
+  for (const path of ['/v1//chat/completions', '/v1/chat//completions', '/v1/chat/%63ompletions', '/v1/chat/completions/', '/v1//messages', '/v1/%6Dessages', '/v1/%72esponses', '/v1//embeddings']) {
+    const res = await post(p, path, chatBody())
+    assert.equal(res.status, 400, path)
+    const j = await res.json()
+    assert.equal(j.error.code, 'bad_path', path)
+    assert.equal(res.headers.get(oa.RECEIPT_HEADER), null)
+  }
+  assert.equal(s.calls.length, 0, 'nothing went upstream')
+  // Not a metered path, however written: passed through as before. / 非计量路径，无论怎么写，照旧透传。
+  const res = await p.handleRequest(new Request(`${BASE}/v1//models`, { headers: { authorization: 'Bearer sk-caller' } }), { clientIp: '1.1.1.1' })
+  assert.equal(res.status, 200)
+  assert.equal(s.calls.length, 1)
+  assert.equal(new URL(s.calls[0].url).pathname, '/api/v1//models')
+})

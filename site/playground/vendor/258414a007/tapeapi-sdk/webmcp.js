@@ -330,7 +330,7 @@ export async function exposeTapeAPI(api, target, opts = {}) {
   const handle = Object.assign(() => handle.dispose(), {
     supported: false, reason: null, service: null, tools: [], skipped: [],
     spentBEM: () => formatUnits(spent + inflight),
-    refresh: async () => { throw new TapeAPIError('BAD_REQUEST', 'nothing exposed') },
+    refresh: async () => { throw new TapeAPIError('INVALID_ARGUMENT', 'nothing exposed: see handle.reason') },
     dispose: () => { disposed = true },
   })
   if (!mc) { handle.reason = 'NO_MODEL_CONTEXT'; return handle }
@@ -356,7 +356,7 @@ export async function exposeTapeAPI(api, target, opts = {}) {
   }
 
   async function execute(def, input, options) {
-    if (disposed) throw new TapeAPIError('BAD_REQUEST', `${def.name} was unregistered`)
+    if (disposed) throw new TapeAPIError('INVALID_ARGUMENT', `${def.name} was unregistered`)
     // Input: an object (draft) or a JSON string (some Chrome builds); parsed without prototype keys.
     // 输入：对象（草案）或 JSON 字符串（部分 Chrome 版本）；解析时拒绝原型键。
     let params = input
@@ -474,7 +474,7 @@ export async function exposeTapeAPI(api, target, opts = {}) {
   }
 
   handle.refresh = async () => {
-    if (disposed) throw new TapeAPIError('BAD_REQUEST', 'disposed')
+    if (disposed) throw new TapeAPIError('INVALID_ARGUMENT', 'disposed')
     if (syncing) await syncing
     if (svc.target !== undefined) await api.refresh(svc)
     await sync()

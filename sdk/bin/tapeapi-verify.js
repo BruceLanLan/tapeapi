@@ -49,7 +49,6 @@ const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
 const DROP_RESPONSE = new Set(['connection', 'keep-alive', 'transfer-encoding', 'content-length', 'content-encoding', 'trailer', 'upgrade'])
 
 const log = (...a) => console.error('[tapeapi-verify]', ...a)
-const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
 
 const USAGE = `tapeapi-verify ${VERSION}: a local proxy that verifies the signed usage receipt of every AI call.
 
@@ -152,6 +151,11 @@ export function routesOf(manifest, formats = ai.FORMATS) {
 export function route(routes, verb, path, headers) {
   const hit = routes.find((r) => r.format.match({ verb, path }))
   if (hit) return { ...hit, metered: true }
+  // A metered path written loosely ('//', '%6D', a trailing '/'), which OpenAI and Anthropic still serve: `loose` names
+  // the path it stands for (review P2-O1). / 计量路径的宽松写法（真实上游照样回答）：loose 给出它所指的路径。
+  const lp = ai.loosePath(path)
+  const loose = routes.find((r) => r.format.match({ verb, path: lp }))
+  if (loose) return { ...loose, metered: false, loose: lp }
   const anthropic = headers.has('anthropic-version') ? routes.find((r) => r.format.name === 'anthropic-messages') : null
   return { ...(anthropic || routes.find((r) => r.format.baseSuffix === '/v1') || routes[0]), metered: false }
 }
@@ -254,7 +258,8 @@ async function main() {
       res.end(JSON.stringify(errorBody(anthropic, code, message)))
     }
     let url
-    try { url = new URL(req.url, 'http://local') } catch { return sendError(400, false, 'bad_request', 'bad request URL') }
+    // Joined, not resolved: a path that starts with '//' stays a path. / 拼接而非解析：以 '//' 开头的路径仍是路径。
+    try { url = new URL('http://local' + req.url) } catch { return sendError(400, false, 'bad_request', 'bad request URL') }
     const headers = new Headers()
     for (let i = 0; i + 1 < req.rawHeaders.length; i += 2) {
       const k = req.rawHeaders[i].toLowerCase()
@@ -265,6 +270,11 @@ async function main() {
     const r = route(routes, verb, url.pathname, headers)
     const anthropic = anthropicLike(r, headers)
     stats.calls++
+    if (r.loose) {
+      const why = `${verb} ${url.pathname} is a metered ${r.format.name} path written loosely; it must be written exactly as ${r.loose}, the only path whose receipt is checked`
+      if (opts.strict) { stats.failed++; log(`FAIL ${why}`); return sendError(400, anthropic, 'bad_path', why) }
+      log(`FAIL ${why}: passed on, not verified`)
+    }
     let body
     try { body = verb === 'GET' || verb === 'HEAD' ? null : await readAll(req, REQUEST_LIMIT) } catch (e) {
       return sendError(e.tooLarge ? 413 : 400, anthropic, 'bad_request', e.tooLarge ? `the request is larger than ${REQUEST_LIMIT} bytes` : 'the request body could not be read')

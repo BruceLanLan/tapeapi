@@ -40,7 +40,7 @@
 <div class="sheet">
 
 <div class="plate">
-  <p class="docno"><span><span lang="zh">数据手册</span><span lang="en">Datasheet</span></span><span>v1.0.0-rc.3</span><span>2026-09-29</span><span>BNB 56 · X Layer 196 · Base 8453</span></p>
+  <p class="docno"><span><span lang="zh">数据手册</span><span lang="en">Datasheet</span></span><span>v1.0.0-rc.4</span><span>2026-09-29</span><span>BNB 56 · X Layer 196 · Base 8453</span></p>
 
   <h1 lang="zh">每次 AI 调用，都附一张签名回执</h1>
   <h1 lang="en">A signed receipt for every AI call</h1>
@@ -224,7 +224,7 @@
     <p class="step"><span class="no">A · curl</span><span lang="zh">向公共服务要 BNB 价格。curl 只显示签名信封（<code>result</code>、<code>container</code>、<code>ts</code>、<code>block</code>、<code>sig</code>），不做任何核对；验签请用 SDK 或<a href="playground/">调试台</a>。</span><span lang="en">Ask the public service for the BNB price. curl shows the signed envelope (<code>result</code>, <code>container</code>, <code>ts</code>, <code>block</code>, <code>sig</code>) but checks nothing; the SDK or the <a href="playground/">playground</a> verifies it.</span></p>
 <div class="code"><div class="cap">shell</div><pre class="sys">curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{"id":"1","params":{}}'</pre></div>
     <p class="step"><span class="no">B · SDK</span><span lang="zh">SDK 还没发到 npm，从 GitHub Release 装进一个空目录（Node.js 20 或以上）：</span><span lang="en">The SDK is not on npm yet; install it from the GitHub release into an empty directory (Node.js 20 or later):</span></p>
-<div class="code"><div class="cap">shell</div><pre>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.3/tapeapi-sdk-1.0.0-rc.3.tgz</pre></div>
+<div class="code"><div class="cap">shell</div><pre>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.4/tapeapi-sdk-1.0.0-rc.4.tgz</pre></div>
     <p class="step"><span lang="zh">把下面存为 <code>try.mjs</code>，运行 <code>node try.mjs</code>。SDK 从链上解析服务、验签，通过了才返回结果：</span><span lang="en">Save this as <code>try.mjs</code> and run <code>node try.mjs</code>. The SDK resolves the service from the chain and verifies the answer before it returns:</span></p>
 <div class="code"><div class="cap">try.mjs</div><pre><span class="k">import</span> { createTapeAPI, rpcUrlsFor } <span class="k">from</span> <span class="s">'@tapeapi/sdk'</span>
 
@@ -247,7 +247,7 @@ console.log(result.bnbUsd, verified)                      <span class="c">// <sp
 <span class="k">const</span> r = <span class="k">await</span> client.chat.completions.create({ model: <span class="s">'gpt-4o-mini'</span>, messages: [{ role: <span class="s">'user'</span>, content: <span class="s">'Hello'</span> }] })
 console.log(r.choices[0].message.content)</pre></div>
     <p class="step"><span lang="zh">Claude Code 和 Codex 自己读不到回执。用它们时，在本机开一个核验代理，再把 base URL 指向它：</span><span lang="en">Claude Code and Codex cannot read receipts themselves. For them, run a verifying proxy on your machine and point the base URL at it:</span></p>
-<div class="code"><div class="cap">shell</div><pre class="sys">npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.3/tapeapi-sdk-1.0.0-rc.3.tgz tapeapi-verify 42.1013.tape
+<div class="code"><div class="cap">shell</div><pre class="sys">npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.4/tapeapi-sdk-1.0.0-rc.4.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude     <span class="c"># <span lang="zh">Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1</span><span lang="en">Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1</span></span></pre></div>
     <p class="note" lang="zh"><b>如实说明。</b>今天链上还没有发布 AI 价目表的外部服务方，所以 C 段的代码是对仓库里的参考旁路（<code>examples/ai-proxy</code>，本地开发模式）实际运行验证的；接真实服务方时只换名字。</p>
     <p class="note" lang="en"><b>Plainly.</b> No outside provider has published an AI price table on chain yet, so the code in C was run against the reference sidecar in the repository (<code>examples/ai-proxy</code>, local dev mode); with a real provider only the name changes.</p>
@@ -620,8 +620,8 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
   </div>
   <div>
     <h4 lang="zh">状态</h4><h4 lang="en">Status</h4>
-    <p lang="zh">预发布，接口在 1.0 之前仍可能变化。公共服务、MCP 端点与公共中继已上线，ChannelBus 已部署；付费托管合约是实验性的，尚未部署；没有经过第三方审计。测试：JS 约 1,140 项（npm test）、合约 169 项（forge）、Python 独立验证器 249 项，全部通过。</p>
-    <p lang="en">Pre-release; interfaces may still change before 1.0. The public service, the MCP endpoint and the public relay are live and ChannelBus is deployed; the paid-call escrow is experimental and not deployed; there is no third-party audit. Tests: about 1,140 JS (npm test), 169 contract (forge) and 249 in the independent Python verifier, all passing.</p>
+    <p lang="zh">预发布，接口在 1.0 之前仍可能变化。公共服务、MCP 端点与公共中继已上线，ChannelBus 已部署；付费托管合约是实验性的，尚未部署；没有经过第三方审计。测试：JS 约 1,200 项（npm test）、合约 169 项（forge）、Python 独立验证器 249 项，全部通过。</p>
+    <p lang="en">Pre-release; interfaces may still change before 1.0. The public service, the MCP endpoint and the public relay are live and ChannelBus is deployed; the paid-call escrow is experimental and not deployed; there is no third-party audit. Tests: about 1,200 JS (npm test), 169 contract (forge) and 249 in the independent Python verifier, all passing.</p>
   </div>
   <div>
     <h4 lang="zh">想法来源</h4><h4 lang="en">Idea by</h4>

@@ -4,9 +4,11 @@
 // and on a signed provider error the TAP-21 envelope fields `ts`, `block`, `id`, `sig`, `error`. Any other detail a
 // thrower attaches goes into `data`. For code written against 0.x, each such key is also readable at the top level
 // (`e.tooLarge`, `e.rpcCode`, `e.agreed`, ...) through a read-only, non-enumerable alias of `e.data[key]`; the aliases
-// are deprecated and go in 2.0.
+// are deprecated and go in 2.0. Only a key given at the top level of `extra` gets an alias: one given inside `extra.data`
+// has none (new code puts details in `data` and reads `e.data.*`), and an alias does not survive structuredClone or JSON.
 // 顶层字段在 1.x 内固定；其它附加信息一律放进 `data`。为兼容 0.x 代码，这些键在顶层仍可读（只读、不可枚举的别名，指向
-// `e.data[key]`）；别名已弃用，2.0 删除。
+// `e.data[key]`）；别名已弃用，2.0 删除。只有写在 `extra` 顶层的键才有别名：写在 `extra.data` 里的没有（新代码把细节放进 `data`、
+// 读 `e.data.*`）；别名经 structuredClone 或 JSON 之后不复存在。
 const TOP_LEVEL_FIELDS = Object.freeze(['data', 'signed', 'httpStatus', 'cause', 'ts', 'block', 'id', 'sig', 'error'])
 const TOP = new Set(TOP_LEVEL_FIELDS)
 const RESERVED = new Set(['name', 'code', 'message', 'stack'])

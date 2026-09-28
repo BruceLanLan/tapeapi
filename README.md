@@ -16,7 +16,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 
 [中文说明](README.zh-CN.md) · [Website](https://tapeapi.fun) · [Docs](https://tapeapi.fun/docs/) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md)
 
-> **Status: pre-release (v1.0.0-rc.3).** Everything live today is free. Interfaces may still change before 1.0. Paid
+> **Status: pre-release (v1.0.0-rc.4).** Everything live today is free. Interfaces may still change before 1.0. Paid
 > channels (TAP-22) are experimental and not deployed. Nothing here has had a third-party audit.
 
 ## Start here
@@ -41,7 +41,7 @@ curl shows the signed envelope but checks nothing. The SDK checks it. It is not 
 release (Node.js 20 or later):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.3/tapeapi-sdk-1.0.0-rc.3.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.4/tapeapi-sdk-1.0.0-rc.4.tgz
 ```
 
 ```js
@@ -79,7 +79,7 @@ No outside provider has published a price table on chain yet, so this was run ag
 **Claude Code and Codex** cannot read receipts themselves. Run the local verifying proxy and point them at it:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.3/tapeapi-sdk-1.0.0-rc.3.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.4/tapeapi-sdk-1.0.0-rc.4.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1
 ```
 
@@ -140,7 +140,7 @@ the signature adds is accountability. A receipt cannot be disowned, so anyone ru
   upstream's terms).
 - **Chains:** BNB Chain (chainId 56) for everything, and the only chain where payments will run. X Layer (196) and Base
   (8453) are read-only: identity, resolution, receipts and MCP checks. X Layer has only two independent RPC operators.
-- **No third-party audit.** Tests: about 1,140 JavaScript tests (`npm test`), 169 contract tests (`forge test`) and an
+- **No third-party audit.** Tests: about 1,200 JavaScript tests (`npm test`), 169 contract tests (`forge test`) and an
   independent Python implementation of every signature, hash and encoding (`python3 spec/vectors/verify.py`).
 
 ## Privacy, plainly

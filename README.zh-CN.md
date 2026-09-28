@@ -18,7 +18,7 @@ TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上�
 
 [English](README.md) · [网站](https://tapeapi.fun) · [手册](https://tapeapi.fun/docs/zh/) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [更新日志](CHANGELOG.md) · [路线图](docs/ROADMAP.md)
 
-> **状态：预发布（v1.0.0-rc.3）。** 今天上线的一切都免费。1.0 之前接口仍可能变化。付费通道（TAP-22）是实验性的，没有部署。
+> **状态：预发布（v1.0.0-rc.4）。** 今天上线的一切都免费。1.0 之前接口仍可能变化。付费通道（TAP-22）是实验性的，没有部署。
 > 所有代码和合约都没有经过第三方审计。
 
 ## 从这里开始
@@ -42,7 +42,7 @@ curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/
 curl 只显示签名信封，不做任何核对；核对交给 SDK。SDK 还没发到 npm，从 GitHub Release 安装（Node.js 20 或以上）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.3/tapeapi-sdk-1.0.0-rc.3.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.4/tapeapi-sdk-1.0.0-rc.4.tgz
 ```
 
 ```js
@@ -80,7 +80,7 @@ console.log(r.choices[0].message.content)
 **Claude Code 和 Codex** 自己读不到回执。在本机开一个核验代理，再把它们指过去：
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.3/tapeapi-sdk-1.0.0-rc.3.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.4/tapeapi-sdk-1.0.0-rc.4.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1
 ```
 
@@ -138,7 +138,7 @@ flowchart LR
   封禁或地区限制（TapeAPI 只面向在上游条款范围内经营的服务方）。
 - **链：** BNB Chain（chainId 56）什么都能做，将来的支付也只在这条链上。X Layer（196）和 Base（8453）只读：身份、解析、
   回执和 MCP 核验。X Layer 只有两家独立的 RPC 运营方。
-- **没有经过第三方审计。** 测试：约 1,140 个 JavaScript 测试（`npm test`）、169 个合约测试（`forge test`），另有一份独立的
+- **没有经过第三方审计。** 测试：约 1,200 个 JavaScript 测试（`npm test`）、169 个合约测试（`forge test`），另有一份独立的
   Python 实现核对每一处签名、哈希和编码（`python3 spec/vectors/verify.py`）。
 
 ## 隐私，如实说

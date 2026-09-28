@@ -57,9 +57,9 @@ Start from a working example rather than a blank file:
 - [`examples/cloudflare-worker/`](../../examples/cloudflare-worker/): the same on Cloudflare Workers, deployable from a
   phone.
 
-`dev: true` is what lets it run locally: an http endpoint, no delegation, priced methods without an escrow. A
-manifest's own `dev` field switches nothing; remove the option when you go live. Clients connect to a dev service
-with `createTapeAPI({ dev: true })`. Check it against the protocol with the black-box conformance suite:
+`dev: true` is what lets it run locally: an http endpoint, no delegation, priced methods whose `payment.escrow` is
+the zero address (their paid calls are refused). A manifest's own `dev` field switches nothing; remove the option when
+you go live. Clients connect to a dev service with `createTapeAPI({ dev: true })`. Check it against the protocol with the black-box conformance suite:
 
 ```bash
 node conformance/run.mjs --url http://127.0.0.1:8787
@@ -114,8 +114,9 @@ send the signing key to anyone.**
    ```
 3. Run the service over HTTPS with `SIGNER_KEY`, `CIRCUITS`, `TOKEN_ID`, `CONTAINER`, `DELEGATION_EXPIRES`,
    `DELEGATION_SIG` and `PUBLIC_URL`. A live manifest must advertise an `https://` endpoint.
-4. Publish the manifest: `api.tx.publishManifest({ container, manifest })` returns the `SiteRegistry.putFile`
-   transaction for the holder's wallet. The key is `.well-known/tapeapi.json`, with no leading slash.
+4. Publish the manifest: `api.tx.publishManifest({ container, manifest })` returns `{ txs, key, size, sha256Hash }`:
+   `txs` are the transactions for the holder's wallet to send in order (a `SiteRegistry.putFile`, then an `appendChunk`
+   per further 24,000 bytes). The key is `.well-known/tapeapi.json`, with no leading slash.
 
 Check it the way any client would:
 

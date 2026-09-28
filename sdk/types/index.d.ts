@@ -19,6 +19,7 @@ export { CHAINS, CHAIN_IDS, HOME_CHAIN_ID, IMPL_SLOT, chainById, chainByArea, ch
 export type { TapeOutChain, ParsedTapeName } from './chains.js'
 export { canonicalJSON, safeParseJSON } from './canon.js'
 export { validateManifest, parseUnits, formatUnits, METHOD_NAME_RE, BEM_DECIMALS } from './manifest.js'
+/** @experimental ServiceDirectory labels (not deployed); may change in a 1.x minor release. */
 export { labelToBytes32 } from './abi.js'
 export * as abi from './abi.js'
 export * as sig from './sig.js'

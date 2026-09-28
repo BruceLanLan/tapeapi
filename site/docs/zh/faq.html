@@ -30,7 +30,7 @@
 <p><strong>如果我出售或转让电路会怎样？</strong> 服务随之转移：容器、其站点以及签署委托的权利。旧持有者的委托不再被接受，因为客户端会对照当前持有者检查委托。</p>
 <p><strong>用哪条链？</strong> BNB Smart Chain（chainId 56），也就是 TapeOut 所在的链。</p>
 <h2 id="调用服务"><a class="anchor" href="#调用服务" aria-hidden="true">#</a>调用服务</h2>
-<p><strong><code>ERR_MODULE_NOT_FOUND: Cannot find package '@tapeapi/sdk'</code></strong>：这些包尚未发布到 npm，要通过仓库的 workspace 解析。克隆仓库，在其中运行 <code>npm install</code>，并把你的脚本保存在 <code>tapeapi</code> 目录之内（<a href="consume.html">调用服务</a>）。</p>
+<p><strong><code>ERR_MODULE_NOT_FOUND: Cannot find package '@tapeapi/sdk'</code></strong>：这些包尚未发布到 npm。要么把发布包装进你的项目、在那个项目里运行脚本，要么克隆仓库、在其中运行 <code>npm install</code>，并把你的脚本保存在 <code>tapeapi</code> 目录之内（<a href="consume.html">调用服务</a>）。</p>
 <p><strong><code>MANIFEST_INVALID: ... does not match</code></strong>：容器站点中的文件与其链上哈希不一致，或者没有清单。该服务没有被正确发布。</p>
 <p><strong><code>DELEGATION_INVALID</code></strong>：委托已过期，或者电路在委托签署之后易主。提供者必须签署一份新的委托，并重新发布清单（<a href="provide.html#4-续期">续期</a>）。</p>
 <p><strong><code>RPC_UNAVAILABLE: only 1/2 nodes answered</code></strong>：至少使用三个 RPC URL 并设置 <code>quorum: 2</code>，这样一个节点宕机时仍能凑够法定人数。<code>allowSingleNode: true</code> 仅用于本地开发。</p>

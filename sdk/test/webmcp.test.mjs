@@ -417,7 +417,7 @@ test('refresh follows the manifest: new methods registered, removed ones withdra
     assert.ok(!mc.tools.has('z_ping'), 'removed from the manifest -> unregistered')
     h()
     assert.deepEqual([...mc.tools.keys()], ['z_extra'], 'dispose leaves other scripts\' tools alone')
-    await assert.rejects(h.refresh(), (e) => e.code === 'BAD_REQUEST')
+    await assert.rejects(h.refresh(), (e) => e.code === 'INVALID_ARGUMENT')
   } finally { await w.close() }
 })
 
@@ -430,6 +430,15 @@ test('an already-resolved service can be exposed directly, and a stale tool refe
     assert.equal(h.service, svc)
     const exec = mc.tools.get('s_ping').execute
     h()
-    await assert.rejects(exec({}, {}), (e) => e.code === 'BAD_REQUEST' && /unregistered/.test(e.message))
+    await assert.rejects(exec({}, {}), (e) => e.code === 'INVALID_ARGUMENT' && /unregistered/.test(e.message))
   } finally { await w.close() }
+})
+
+// FIXED RC-15 (rc review round 4, O4/F8): a caller-state mistake -- refreshing when nothing is exposed, calling a tool
+// after dispose -- was BAD_REQUEST, which reads like the agent's input; M1 gives it INVALID_ARGUMENT.
+// FIXED RC-15：调用方状态错误（未暴露任何工具时刷新、释放后调用）原来报 BAD_REQUEST；按 M1 应为 INVALID_ARGUMENT。
+test('FIXED RC-15: refresh with nothing exposed is INVALID_ARGUMENT, not BAD_REQUEST', async () => {
+  const h = await exposeTapeAPI({}, '0x' + '11'.repeat(20), {})
+  assert.equal(h.supported, false)
+  await assert.rejects(h.refresh(), (e) => e.code === 'INVALID_ARGUMENT')
 })

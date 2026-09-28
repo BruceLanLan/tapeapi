@@ -209,8 +209,9 @@ export declare function isSessionHeader(name: string): boolean
  * end verifies; otherwise the stream errors and the SDK's iterator throws RECEIPT_INVALID. Not strict: nothing is held,
  * the verdict goes to onReport. Nothing waits for the upstream to close, and an upstream that breaks off after the end
  * (strict: once verified) does not fail the call. A request to a metered path that
- * is not addressed to one of the manifest's `ai` endpoints (e.g. localhost for 127.0.0.1) is refused with
- * INVALID_ARGUMENT before it is sent (strict), or passed on with an onReport of `mismatch: true` (not strict).
+ * is not addressed to one of the manifest's `ai` endpoints (e.g. localhost for 127.0.0.1), or a metered path written
+ * loosely ('//', a percent-encoded letter, a trailing '/'), is refused with INVALID_ARGUMENT before it is sent
+ * (strict), or passed on with an onReport of `mismatch: true` (not strict).
  * Strict, a whole answer whose receipt fails: an HTTP 502 in the request format's error shape (code RECEIPT_INVALID) with
  * `x-should-retry: false` and `x-tapeapi-verify-error: RECEIPT_INVALID`, onReport as always; the official SDKs throw an
  * APIError and do not retry it, a caller of the fetch itself checks `res.ok`. Retrying a paid call after other 5xx

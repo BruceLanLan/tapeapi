@@ -11,8 +11,11 @@ export declare function isAddress(a: unknown): a is Address
 export declare function checksumAddress(a: string): Address
 export declare function eqAddr(a: unknown, b: unknown): boolean
 export declare const ZERO_ADDRESS: Address
+/** @experimental ServiceDirectory labels (not deployed); may change in a 1.x minor release. */
 export declare const LABEL_RE: RegExp
+/** @experimental ServiceDirectory labels (not deployed); may change in a 1.x minor release. */
 export declare function labelToBytes32(label: string): Hex
+/** @experimental ServiceDirectory labels (not deployed); may change in a 1.x minor release. */
 export declare function bytes32ToLabel(h: string): string
 export declare function encodeParams(types: string[], values: unknown[]): Hex
 export declare function decodeParams(types: string[], data: string | Uint8Array, base?: number): any[]

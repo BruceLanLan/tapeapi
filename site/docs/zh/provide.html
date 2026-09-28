@@ -51,7 +51,7 @@ await provider.listen(8787)                     // Node
 // 在 Cloudflare Workers 上：export default { fetch: (request) =&gt; provider.handleRequest(request) }</code></pre></div>
 <p>从一个能运行的示例开始，而不是从空白文件开始：</p>
 <ul><li><a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/reader-service" rel="noopener"><code>examples/reader-service/</code></a>：最小的完整服务，附带委托脚本。</li><li><a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/web2-adapter" rel="noopener"><code>examples/web2-adapter/</code></a>：一个配置文件就能把现有的 REST 端点变成方法；上游 API 密钥保存在环境变量中。</li><li><a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/cloudflare-worker" rel="noopener"><code>examples/cloudflare-worker/</code></a>：同样的服务运行在 Cloudflare Workers 上，可以从手机部署。</li></ul>
-<p>正是 <code>dev: true</code> 让它能在本地运行：http 端点、没有委托、有价方法没有托管合约。清单自己的 <code>dev</code> 字段不起任何作用；正式上线时去掉这个选项。客户端用 <code>createTapeAPI({ dev: true })</code> 连接开发模式的服务。用黑盒一致性测试套件对照协议检查它：</p>
+<p>正是 <code>dev: true</code> 让它能在本地运行：http 端点、没有委托、有价方法的 <code>payment.escrow</code> 为零地址（其付费调用会被拒绝）。清单自己的 <code>dev</code> 字段不起任何作用；正式上线时去掉这个选项。客户端用 <code>createTapeAPI({ dev: true })</code> 连接开发模式的服务。用黑盒一致性测试套件对照协议检查它：</p>
 <div class="code"><pre data-lang="bash"><code>node conformance/run.mjs --url http://127.0.0.1:8787</code></pre></div>
 <p>开发模式的服务会得到 NOT CONFORMANT，这是预期的：它没有委托（这是一项 MUST），需要参数的方法也会被跳过，除非用 <code>--params</code> 传入。服务带着持有人委托正式上线后再跑一次，那次的结果才算数。</p>
 <h2 id="2-从手机上线cloudflare-持有者控制台"><a class="anchor" href="#2-从手机上线cloudflare-持有者控制台" aria-hidden="true">#</a>2. 从手机上线（Cloudflare + 持有者控制台）</h2>
@@ -65,7 +65,7 @@ await provider.listen(8787)                     // Node
 <div class="code"><pre data-lang="bash"><code>node examples/reader-service/sign-delegation.mjs --container 0x&lt;container&gt; --signer 0x&lt;signing key address&gt; --expires &lt;unix time&gt;
 # sign the printed typed data with the holder's wallet (eth_signTypedData_v4; a Safe signs via EIP-1271), then
 node examples/reader-service/sign-delegation.mjs --container 0x&lt;container&gt; --signer 0x&lt;address&gt; --expires &lt;unix time&gt; --sig 0x&lt;signature&gt;</code></pre></div>
-<p>（先用持有者的钱包签署打印出的类型化数据：<code>eth_signTypedData_v4</code>；Safe 通过 EIP-1271 签名，然后运行第二条命令。）</li><li>通过 HTTPS 运行服务，并设置 <code>SIGNER_KEY</code>、<code>CIRCUITS</code>、<code>TOKEN_ID</code>、<code>CONTAINER</code>、<code>DELEGATION_EXPIRES</code>、 <code>DELEGATION_SIG</code> 和 <code>PUBLIC_URL</code>。上线的清单必须声明一个 <code>https://</code> 端点。</li><li>发布清单：<code>api.tx.publishManifest({ container, manifest })</code> 返回供持有者钱包使用的 <code>SiteRegistry.putFile</code> 交易。键为 <code>.well-known/tapeapi.json</code>，不带前导斜杠。</li></ol>
+<p>（先用持有者的钱包签署打印出的类型化数据：<code>eth_signTypedData_v4</code>；Safe 通过 EIP-1271 签名，然后运行第二条命令。）</li><li>通过 HTTPS 运行服务，并设置 <code>SIGNER_KEY</code>、<code>CIRCUITS</code>、<code>TOKEN_ID</code>、<code>CONTAINER</code>、<code>DELEGATION_EXPIRES</code>、 <code>DELEGATION_SIG</code> 和 <code>PUBLIC_URL</code>。上线的清单必须声明一个 <code>https://</code> 端点。</li><li>发布清单：<code>api.tx.publishManifest({ container, manifest })</code> 返回 <code>{ txs, key, size, sha256Hash }</code>：<code>txs</code> 是持有者钱包要按顺序发送的交易（一笔 <code>SiteRegistry.putFile</code>，之后每多 24,000 字节一笔 <code>appendChunk</code>）。键为 <code>.well-known/tapeapi.json</code>，不带前导斜杠。</li></ol>
 <p>像任何客户端那样检查它：</p>
 <div class="code"><pre data-lang="js"><code>const svc = await createTapeAPI({ rpcUrls: [/* ... */], quorum: 2 }).resolve('0x&lt;container&gt;')</code></pre></div>
 <h2 id="4-续期"><a class="anchor" href="#4-续期" aria-hidden="true">#</a>4. 续期</h2>

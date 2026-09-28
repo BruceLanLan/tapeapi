@@ -184,7 +184,7 @@ function checkRpc(rpc, bus) {
   if (!isAddress(bus)) fail('bus must be a ChannelBus contract address')
 }
 const nodesOf = (rpc) => (typeof rpc.single === 'function' && Array.isArray(rpc.urls) ? rpc.urls.map((u) => rpc.single(u)) : [rpc])
-const tooWide = (e) => e?.data?.tooLarge === true || /range|limit|exceed|too many|too large|more than|max results/i.test([e?.message, ...(e?.refusals || []).map((r) => r?.message)].join(' '))
+const tooWide = (e) => e?.data?.tooLarge === true || /range|limit|exceed|too many|too large|more than|max results/i.test([e?.message, ...(e?.data?.refusals || []).map((r) => r?.message)].join(' '))
 
 /**
  * scanCoverPool({ rpc, bus, blocks, span, maxBytes, since, head }) -> { from, to, rooms: [[room, lastBlock]], logs, bytes, complete }

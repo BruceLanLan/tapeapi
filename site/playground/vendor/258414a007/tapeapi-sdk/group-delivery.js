@@ -40,7 +40,7 @@ const list = (x) => (x === undefined || x === null ? [] : Array.isArray(x) ? x :
 // 载体是客户端，所以另起名字。0.x 的单数选项与 1.0 候选名 `relays` / `buses` 都会被拒绝。
 const listOf = (opts, name, olds) => {
   for (const old of olds) {
-    if (opts && Object.prototype.hasOwnProperty.call(opts, old)) invalid(`the option \`${old}\` was renamed in 1.0: pass \`${name}\`, a list of ${name === 'relayClients' ? '{ api, service, payer? }' : '{ address, sendTx }'} (\`relays\` is the roster's list of { url, container }; see docs/guides/upgrade-1.0.md)`)
+    if (opts && Object.prototype.hasOwnProperty.call(opts, old)) invalid(`the option \`${old}\` was renamed in 1.0: pass \`${name}\`, a list of ${name === 'relayClients' ? '{ api, service, payer? }' : '{ address, sendTx }'} (\`relays\` is the roster's list of { url, container }; see https://tapeapi.fun/docs/en/upgrade-1.0)`)
   }
   const x = opts?.[name]
   if (x === undefined || x === null) return []
@@ -52,7 +52,7 @@ const hexN = (n) => '0x' + n.toString(16)
 // One relay client, as { api, service, payer }: api is a TapeAPI client (createTapeAPI), service the resolved relay service.
 // 一个中继客户端：api 为 TapeAPI 客户端，service 为解析出的中继服务。
 function checkRelay(r, i) {
-  if (r && Object.prototype.hasOwnProperty.call(r, 'svc')) invalid(`relayClients[${i}]: the key \`svc\` was renamed in 1.0: pass { api, service }`)
+  if (r && Object.prototype.hasOwnProperty.call(r, 'svc')) invalid(`relayClients[${i}]: the key \`svc\` was renamed in 1.0: pass { api, service } (https://tapeapi.fun/docs/en/upgrade-1.0)`)
   if (!r || typeof r.api?.call !== 'function') invalid(`relayClients[${i}] needs { api, service }: api is a TapeAPI client (createTapeAPI)`)
   if (!r.service || typeof r.service !== 'object') invalid(`relayClients[${i}] needs service, the resolved relay service (await api.resolve('12.1013.tape'))`)
   return r

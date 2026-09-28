@@ -54,7 +54,7 @@ await provider.listen(8787)                     // Node
 - [`examples/cloudflare-worker/`](../../../examples/cloudflare-worker/)：同样的服务运行在 Cloudflare Workers 上，可以
   从手机部署。
 
-正是 `dev: true` 让它能在本地运行：http 端点、没有委托、有价方法没有托管合约。清单自己的 `dev` 字段不起任何作用；正式上线时去掉
+正是 `dev: true` 让它能在本地运行：http 端点、没有委托、有价方法的 `payment.escrow` 为零地址（其付费调用会被拒绝）。清单自己的 `dev` 字段不起任何作用；正式上线时去掉
 这个选项。客户端用 `createTapeAPI({ dev: true })` 连接开发模式的服务。用黑盒一致性测试套件对照协议检查它：
 
 ```bash
@@ -105,7 +105,8 @@ node conformance/run.mjs --url http://127.0.0.1:8787
    （先用持有者的钱包签署打印出的类型化数据：`eth_signTypedData_v4`；Safe 通过 EIP-1271 签名，然后运行第二条命令。）
 3. 通过 HTTPS 运行服务，并设置 `SIGNER_KEY`、`CIRCUITS`、`TOKEN_ID`、`CONTAINER`、`DELEGATION_EXPIRES`、
    `DELEGATION_SIG` 和 `PUBLIC_URL`。上线的清单必须声明一个 `https://` 端点。
-4. 发布清单：`api.tx.publishManifest({ container, manifest })` 返回供持有者钱包使用的 `SiteRegistry.putFile` 交易。
+4. 发布清单：`api.tx.publishManifest({ container, manifest })` 返回 `{ txs, key, size, sha256Hash }`：`txs` 是持有者钱包要按顺序发送的交易
+   （一笔 `SiteRegistry.putFile`，之后每多 24,000 字节一笔 `appendChunk`）。
    键为 `.well-known/tapeapi.json`，不带前导斜杠。
 
 像任何客户端那样检查它：

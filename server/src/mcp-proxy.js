@@ -14,7 +14,7 @@
 // 都得到签名的 TOOLS_CHANGED 拒绝。带不可见字符或格式字符的工具（mcp.invisibleProblems）一律不提供。
 //
 // No node: imports: runs in Workers and Node alike. / 不引用 node:，Workers 与 Node 都能运行。
-import { mcp, sig, abi, TapeAPIError, METHOD_NAME_RE, safeParseJSON } from '@tapeapi/sdk'
+import { mcp, sig, TapeAPIError, METHOD_NAME_RE } from '@tapeapi/sdk'
 import { createProvider, VERSION } from './index.js'
 import { readCapped, TooLarge } from './read-capped.js'
 
@@ -250,7 +250,7 @@ function methodOf(tool) {
  * @param {number} [o.upstreamTimeoutMs=20000]
  */
 export function createMcpProxy(opts = {}) {
-  if (Object.prototype.hasOwnProperty.call(opts, 'identity')) throw new TapeAPIError('INVALID_ARGUMENT', 'createMcpProxy takes { name } (the TapeOut name shown in receipts): the option `identity` was renamed in 1.0')
+  if (Object.prototype.hasOwnProperty.call(opts, 'identity')) throw new TapeAPIError('INVALID_ARGUMENT', 'createMcpProxy takes { name } (the TapeOut name shown in receipts): the option `identity` was renamed in 1.0 (https://tapeapi.fun/docs/en/upgrade-1.0)')
   const { upstream, manifestBase, signerKey, refreshMs = 60_000, name: tapeName } = opts
   if (!isObj(upstream) || (typeof upstream.url !== 'string' && typeof upstream.call !== 'function')) throw new TapeAPIError('INVALID_ARGUMENT', 'upstream must be { url } or { call }')
   if (!isObj(manifestBase)) throw new TapeAPIError('INVALID_ARGUMENT', 'manifestBase must be an object')

@@ -6,6 +6,58 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+## [1.0.0-rc.4] — 2026-09-29
+
+### Error codes (the last alignments before 1.0)
+
+- `@tapeapi/server`: a provider built without `rpcUrls` now says `INVALID_ARGUMENT` on its first chain read, with the
+  fix in the message (`rpcUrls: rpcUrlsFor(<chainId>)`); it was `INTERNAL`.
+- WebMCP: `refresh()` with nothing exposed, `refresh()` after dispose, and a tool called after dispose are
+  `INVALID_ARGUMENT` (a mistake in the page's own calls); they were `BAD_REQUEST`, which reads like the agent's input.
+  A malformed tool input from the agent stays `BAD_REQUEST`.
+
+Fixes from the release-candidate review (P2 items, observation period): no interface or return shape changes.
+
+### Fixed
+
+- **A metered path written loosely is refused, not passed on unverified.** `/v1//chat/completions`,
+  `/v1/chat/%63ompletions`, `/v1//messages` and `/v1/%6Dessages` matched no format, so the reference sidecar forwarded
+  them with no receipt, and `createVerifyingFetch` and `tapeapi-verify --strict` let the answer through unverified and
+  unreported; api.openai.com and api.anthropic.com serve these spellings. A path that matches a format only once
+  percent-encoded unreserved characters are decoded, repeated slashes collapsed and a trailing slash dropped is now:
+  400 `bad_path` from the sidecar, before anything goes upstream; `INVALID_ARGUMENT` before sending from a strict
+  `createVerifyingFetch` (the same `e.data` as an endpoint mismatch), or `onReport` with `mismatch: true` and
+  `not verified: path mismatch`; 400 from `tapeapi-verify --strict`, a logged warning without it. Paths no format
+  meters pass through however they are written. (1.0.0-rc.1's "`createVerifyingFetch` no longer lets anything through
+  unverified" did not hold for these spellings.)
+- **`createProvider({ dev: true })` alone allows a priced method on a zero-address escrow.** The manifest also had to
+  say `dev: true` (1.0.0-rc.1 said its `dev` field switches nothing). What dev allows is exactly a zero-address
+  `payment.escrow`, not a priced manifest with no `payment` field, which stays invalid; the rc.1 wording "priced
+  methods without an escrow" is corrected in the guide and the declarations.
+- `createAIProxy` no longer reads the manifest's `dev` field when checking its endpoints (dead code; the refusal was
+  the same).
+- The refusals of 0.x option names link https://tapeapi.fun/docs/en/upgrade-1.0 (they named a path the npm package
+  does not contain, or nothing); "rpcUrls not configured" says how: `createTapeAPI({ rpcUrls: rpcUrlsFor(<chainId>) })`.
+- The SDK's own code no longer reads `TapeAPIError`'s deprecated top-level aliases (`rpc.js`, `bus-privacy.js`);
+  `channel.js` keeps its reads until 2.0. Unused imports and a helper removed from `tapeapi-verify` and the MCP proxy.
+- `tapeapi-verify` reads a request path that starts with `//` as a path, not as a host.
+- `examples/web2-adapter` takes dev mode from the environment (`dev: !PROD`), not from the manifest.
+
+### Docs
+
+- `labelToBytes32` and the `abi` label helpers are marked `@experimental` (ServiceDirectory only), as the upgrade
+  guide's list already implied.
+- groups: a rate-limited delivery carries `rateLimited` / `retryAfterS` on the failed entry of `e.data.deliveries`;
+  consume, faq: a script runs wherever `@tapeapi/sdk` resolves (a clone, or a project with the release package);
+  provide: `publishManifest` returns `{ txs, key, size, sha256Hash }`; sdk/README lists `/ai`, `/mcp`,
+  `/bus-privacy` and `tapeapi-verify`; both package READMEs say pre-release, not pre-alpha; README test count.
+
+### Tests
+
+- The browser smoke test loads "My services", the playground, the receipt checker, the holder console and the status
+  page and fails if one throws while loading (RC-1 could not show there); its TAP-21 envelope checks sign EIP-191, as
+  the vectors have since 0.5.0.
+
 ## [1.0.0-rc.3] — 2026-09-29
 
 ### Website
@@ -563,7 +615,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.3...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.4...HEAD
+[1.0.0-rc.4]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/BruceLanLan/tapeapi/compare/v0.8.0...v1.0.0-rc.1

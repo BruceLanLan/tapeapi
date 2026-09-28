@@ -42,7 +42,7 @@ trust with a signature anyone can check:
 
 ## Status
 
-Pre-release, version 1.0.0-rc.3. The free tier runs on TapeOut's deployed contracts. Our own contracts have no third-party
+Pre-release, version 1.0.0-rc.4. The free tier runs on TapeOut's deployed contracts. Our own contracts have no third-party
 audit; the paid-call escrow is not deployed yet. Interfaces may still change, and the TAP numbers are proposed to the
 TapeKit maintainers, not yet assigned.
 

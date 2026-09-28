@@ -59,7 +59,7 @@ const nowS = (clock) => Math.floor(clock.now() / 1000)
 // milliseconds) is refused rather than misread. / 全 SDK 的 now 都是 Unix 秒；长期存在的群句柄接受返回 Unix 秒的 clock 函数（可带小数），
 // 内部仍用毫秒。0.x 的 `now`（返回毫秒的函数）直接拒绝，而不是被误读。
 const clockMs = (opts) => {
-  if (Object.prototype.hasOwnProperty.call(opts, 'now')) throw new TapeAPIError('INVALID_ARGUMENT', 'the group option `now` (milliseconds) was renamed in 1.0: pass `clock`, a function returning Unix seconds (docs/guides/upgrade-1.0.md)')
+  if (Object.prototype.hasOwnProperty.call(opts, 'now')) throw new TapeAPIError('INVALID_ARGUMENT', 'the group option `now` (milliseconds) was renamed in 1.0: pass `clock`, a function returning Unix seconds (https://tapeapi.fun/docs/en/upgrade-1.0)')
   const { clock } = opts
   if (clock === undefined) return undefined
   if (typeof clock !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'clock must be a function returning Unix seconds')

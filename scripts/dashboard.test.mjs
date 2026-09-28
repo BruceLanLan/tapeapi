@@ -206,3 +206,17 @@ test('FIXED RC-1: no page script passes the removed createTapeAPI option timeout
   walk(site)
   assert.deepEqual(bad, [])
 })
+
+// FIXED P2-F12 (rc review P2): the browser smoke test loaded no site page, so RC-1 ("My services" dead on load) could
+// not show there. It now loads every page with a module script, and the status page; this keeps the list whole.
+// 浏览器冒烟测试曾不加载任何站点页面，RC-1 在那里显不出来。现在加载每个带模块脚本的页面与状态页；这里保证名单完整。
+test('FIXED P2-F12: the browser smoke test loads "My services", the status page and every site page with a module script', () => {
+  const smoke = readFileSync(join(ROOT, 'scripts/browser-smoke/smoke.mjs'), 'utf8')
+  const m = /\bconst PAGES = \[([^\]]*)\]/.exec(smoke)
+  assert.ok(m, 'smoke.mjs lists its PAGES')
+  const listed = new Set([...m[1].matchAll(/'([a-z-]+)'/g)].map((x) => x[1]))
+  const withModule = readdirSync(SITE).filter((d) => existsSync(join(SITE, d, 'index.html')) && /<script type="module"/.test(read(`${d}/index.html`)))
+  assert.ok(withModule.includes('dashboard'))
+  for (const d of [...withModule, 'status']) assert.ok(listed.has(d), `scripts/browser-smoke/smoke.mjs PAGES lacks ${d}`)
+  assert.ok(existsSync(join(ROOT, 'scripts/browser-smoke/probe.mjs')))
+})

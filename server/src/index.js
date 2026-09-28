@@ -7,7 +7,7 @@ const { voucherDigest, recoverAddress, signResponse, privateKeyToAddress } = sig
 // would stop this runtime loading on Cloudflare Workers, Deno or a browser. A test asserts the two agree.
 // 写成字面量而不是读 package.json：`createRequire` 属于 node:module，在模块顶层导入会让这套运行时无法在
 // Cloudflare Workers、Deno 或浏览器里加载。有测试断言两者一致。
-export const VERSION = '1.0.0-rc.3'
+export const VERSION = '1.0.0-rc.4'
 const now = () => Math.floor(Date.now() / 1000)
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -56,16 +56,19 @@ export function memoryStore() {
 export function createProvider(opts = {}) {
   // 1.0 (review G1 S4): as in createTapeAPI, the RPC timeout is `rpcTimeoutMs` (beside handlerTimeoutMs, requestTimeoutMs,
   // headersTimeoutMs). / 与 createTapeAPI 一致，RPC 超时叫 rpcTimeoutMs。
-  if (Object.prototype.hasOwnProperty.call(opts, 'timeoutMs')) throw new TapeAPIError('INVALID_ARGUMENT', 'the option `timeoutMs` of createProvider was renamed `rpcTimeoutMs` in 1.0 (the timeout of one RPC request): see docs/guides/upgrade-1.0.md')
+  if (Object.prototype.hasOwnProperty.call(opts, 'timeoutMs')) throw new TapeAPIError('INVALID_ARGUMENT', 'the option `timeoutMs` of createProvider was renamed `rpcTimeoutMs` in 1.0 (the timeout of one RPC request): see https://tapeapi.fun/docs/en/upgrade-1.0')
   const { signerKey, methods = {}, rpcUrls = [], quorum = 2, fetch: fetchImpl, rpcTimeoutMs: timeoutMs } = opts
   if (!signerKey) throw new TapeAPIError('INVALID_ARGUMENT', 'signerKey required')
   const manifest = opts.manifest // 保留引用，方便调用方后续补 endpoints / keep the reference (caller may patch endpoints later)
-  // 1.0 (review G1 S2): `dev` alone relaxes the payment checks (priced methods without an escrow, the in-memory meter
+  // 1.0 (review G1 S2): `dev` alone relaxes the payment checks (priced methods on a zero-address escrow, the in-memory meter
   // warning); `allowHttp` only allows http endpoints (dev implies it). A manifest's own `dev` field switches nothing:
   // it is published data, not configuration. / `dev` 只由 opts.dev 决定；allowHttp 只管 http；清单里的 dev 字段不再起作用。
   const devMode = opts.dev === true
   const allowHttp = devMode || opts.allowHttp === true
-  const normalized = validateManifest(manifest, { requireDelegation: false, allowHttp })
+  // validateManifest exempts a zero escrow only for a manifest that says `dev: true`; here that follows opts.dev alone
+  // (review P2-F7), on a copy, so the manifest served is exactly the one given.
+  // validateManifest 只对写了 dev: true 的清单豁免零地址托管；这里只按 opts.dev 决定（在副本上），对外提供的仍是原清单。
+  const normalized = validateManifest(devMode && manifest && typeof manifest === 'object' ? { ...manifest, dev: true } : manifest, { requireDelegation: false, allowHttp })
   // An already-expired delegation serves responses that every consumer rejects. Refuse to boot rather than
   // look healthy for hours. The consumer side keeps its own, more precise DELEGATION_INVALID.
   // 已过期的委托会一直发出所有消费者都拒绝的响应。宁可拒绝启动，也不要看起来健康地空转几小时。
@@ -180,7 +183,7 @@ export function createProvider(opts = {}) {
   const methodDef = (name) => (typeof name === 'string' && METHOD_NAME_RE.test(name) && hasOwn(methods, name)) ? (normalized.methods.find(m => m.name === name) || null) : null
 
   // ---- 链读带缓存 / cached chain reads ----
-  const needRpc = () => { if (!rpc) throw new TapeAPIError('INTERNAL', 'rpcUrls not configured'); return rpc }
+  const needRpc = () => { if (!rpc) throw new TapeAPIError('INVALID_ARGUMENT', `rpcUrls not configured: pass createProvider({ rpcUrls: rpcUrlsFor(${chainId}) }) (from @tapeapi/sdk) for the default nodes, or your own`); return rpc }
   async function view(to, name, args) { return decodeReturn(name, await needRpc().ethCall(to, encodeCall(name, args))) }
   const cache = new Map()
   function sweep() { // 过期淘汰，避免随 consumer 数无限增长（M-14）/ evict expired entries so the map cannot grow unbounded

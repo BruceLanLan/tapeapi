@@ -20,7 +20,7 @@ the methods and result shapes of the public services (api.tapeapi.fun, relay.tap
 audited, and neither is the ServiceDirectory. That covers `api.payer()`, `api.acceptPrice()` / `api.acceptedPrice()`,
 the `payer` and `maxPrice` call options, the channel builders `api.tx.approve / fund / requestWithdraw / cancelWithdraw /
 withdraw / authorizeSession / settle / setContribution / register`, `api.chain.escrow.*`, `api.chain.resolve()` and
-`api.chain.serviceOf()` (and resolving a directory label), the `directory` and `escrow` options, `contribution`, the
+`api.chain.serviceOf()` (and resolving a directory label; `labelToBytes32`, and `LABEL_RE` / `bytes32ToLabel` of `abi`), the `directory` and `escrow` options, `contribution`, the
 voucher helpers of `sig`, WebMCP's `paid` option, and on the server the voucher store, the settlement helpers and the
 payment options of `createProvider`. Reading prices from a manifest (`priceBEM`, `parseUnits`, `formatUnits`) is
 Stable, and so are the codes `PAYMENT_REQUIRED`, `BAD_VOUCHER` and `PRICE_CHANGED`: a free service's client can meet
@@ -44,7 +44,7 @@ Search your code for the name in the first column.
 
 | 0.x | 1.0 | Why |
 |---|---|---|
-| A configuration or argument mistake reported as `RPC_UNAVAILABLE`, `MANIFEST_INVALID`, `BAD_VOUCHER`, `ABI_INVALID`, `BAD_KEY`, `CHANNEL_INVALID`, `BAD_REQUEST`, `QUORUM_FAILED`, `METHOD_NOT_FOUND` or `GROUP_DELIVERY` | `INVALID_ARGUMENT` | One code for "your own options or arguments are wrong", raised before anything is sent and never worth retrying. A retry loop on `RPC_UNAVAILABLE` no longer spins on a missing `rpcUrls`. See the table below. |
+| A configuration or argument mistake reported as `RPC_UNAVAILABLE`, `MANIFEST_INVALID`, `BAD_VOUCHER`, `ABI_INVALID`, `BAD_KEY`, `CHANNEL_INVALID`, `BAD_REQUEST`, `QUORUM_FAILED`, `METHOD_NOT_FOUND` or `GROUP_DELIVERY`; on `@tapeapi/server`, a provider without `rpcUrls` (was `INTERNAL`); in WebMCP, `refresh()` with nothing exposed and a tool called after dispose (was `BAD_REQUEST`) | `INVALID_ARGUMENT` | One code for "your own options or arguments are wrong", raised before anything is sent and never worth retrying. A retry loop on `RPC_UNAVAILABLE` no longer spins on a missing `rpcUrls`. See the table below. |
 | `e.tooLarge`, `e.rpcCode`, `e.rpcRevert`, `e.rpcData`, `e.agreed`, `e.disagreed`, `e.failed`, `e.groups`, `e.quorum`, `e.reason` | `e.data.tooLarge`, `e.data.rpcCode`, ... | `TapeAPIError` keeps a fixed set of top-level fields (`name`, `code`, `message`, `data`, `signed`, `httpStatus`, `cause`, and `ts`, `block`, `id`, `sig`, `error` on a signed provider error). The old names still read, as deprecated aliases, until 2.0. |
 | `channel.toHex`, `channel.fromHex`, `channel.toBase64`, `channel.fromBase64` | `abi.toHex` (with `0x`), `abi.bytesToHex` (without), `abi.hexToBytes`; base64 from your platform | `channel.toHex` returned hex without `0x` while `abi.toHex` returns it with: the same name with two meanings. |
 | `channel._keySchedule`, `channel._busMerge`, `channel._busKindOf` | removed | Test hooks, not API. |

@@ -27,9 +27,9 @@ BNB Smart Chain (chainId 56), where TapeOut lives.
 
 ## Calling services
 
-**`ERR_MODULE_NOT_FOUND: Cannot find package '@tapeapi/sdk'`** — the packages are not on npm yet and resolve through the
-repository's workspace. Clone the repository, run `npm install` in it, and save your script inside the `tapeapi`
-directory ([Call a service](consume.md)).
+**`ERR_MODULE_NOT_FOUND: Cannot find package '@tapeapi/sdk'`** — the packages are not on npm yet. Either install the
+release package into your project and run the script there, or clone the repository, run `npm install` in it, and save
+your script inside the `tapeapi` directory ([Call a service](consume.md)).
 
 **`MANIFEST_INVALID: ... does not match`** — the file in the container's site differs from its on-chain hash, or
 there is no manifest. The service is not correctly published.

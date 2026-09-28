@@ -154,7 +154,7 @@ for (const { invite } of found.invites) {
 | 同上，但邀请确实投了 | 房间不对：收件房间是用持有人**钱包**地址而不是**容器**地址算的，或者 chainId 不对 | 对比群主投递结果里邀请的 `room` 与 `checkGroupInvites` 返回的 `room`。用容器地址和它所在链的 chainId；`checkSelf: true` 会直接指出错误 |
 | 序号 0 的邀请始终读不到 | 读取时沿用了别的房间（群房间）的 `after` 游标，又没带 `epoch`，中继从 0 号之后开始给 | 每个房间单独存游标并带房间纪元，首次读取用 `after: -1, epoch: null`。`checkGroupInvites` 就是这样做的，并会忽略没有纪元的存储游标 |
 | 邀请或纪元消息过一阵就不见了 | 中继只在内存里保存房间，最后一次访问后 15 分钟遗忘 | 每 10 分钟重发纪元消息（`deliverGroupUpdate({ group, relayClients: [relay] })`）；给还没入群的成员重发邀请（`invite: 'all'`）；成员手里的旧游标会因房间纪元变化而自动重置 |
-| 投递报错 `too many invites / epoch messages from this source in this room` | 中继对 0x03 / 0x04 帧按来源按房间限流（参考中继每 10 分钟 8 条） | 等 `error.retryAfterS` 秒后重新投递，不要紧密循环重发。绝不能吞掉这个错误：`deliverGroupUpdate` 会抛出 `GROUP_DELIVERY`，并标明 `rateLimited: true` |
+| 投递报错 `too many invites / epoch messages from this source in this room` | 中继对 0x03 / 0x04 帧按来源按房间限流（参考中继每 10 分钟 8 条） | 等 `retryAfterS` 秒后重新投递，不要紧密循环重发。绝不能吞掉这个错误：`deliverGroupUpdate` 会抛出 `GROUP_DELIVERY`，`e.data.deliveries` 里失败的那一条带 `error.rateLimited: true` 与 `error.retryAfterS` |
 | 签通道密钥时手机钱包回不到应用 | 应用跑在局域网 HTTP 地址上（`http://192.168.x.x`），钱包不会回连 | 用 HTTPS 隧道对外提供应用，并把 WalletConnect 的 `metadata.url` 设成与实际访问地址完全一致的 HTTPS 源 |
 | 新成员对某些纪元消息报 "not a member of it" | 群房间里更早的纪元不是为它生成的 | 正常现象：捕获后继续；加入它的那个纪元能打开 |
 
