@@ -24,7 +24,12 @@ jobs:
     # The public repository only: the private copy it is staged from has the same file. / 只在公开仓库运行。
     if: github.repository == 'BruceLanLan/tapeapi'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # A healthy run takes about 65 s: the relay async check leaves its room idle for 60 s (ASYNC_WAIT_S) while the other
+    # checks run alongside. Worst case, every step timing out: resolve 2 x 25 s, relaySend 3 x 20 s + 2 x 3 s, the 60 s
+    # wait, relayRecv 3 x (a fresh client's resolve 25 s + 20 s) + 2 x 3 s, about 5 minutes, plus npm ci. 15 leaves margin.
+    # 健康时约 65 秒：中继异步检查让房间闲置 60 秒（ASYNC_WAIT_S），其它检查同时进行。最坏情况（每步都超时）：解析 2 x 25 秒、
+    # relaySend 3 x 20 秒 + 2 x 3 秒、60 秒等待、relayRecv 3 x（全新客户端解析 25 秒 + 20 秒）+ 2 x 3 秒，约 5 分钟，另加 npm ci。15 分钟留有余量。
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
       TITLE: 'Monitor: service problem'

@@ -6,6 +6,18 @@ Before 1.0.0, a minor version may change interfaces.
 
 ## [Unreleased]
 
+### Added
+
+- **The monitor checks the relay's asynchronous delivery (RELAY-1 would now alert within one 30-minute run).**
+  `scripts/monitor.mjs` posts one random 0x03 test frame (64 to 200 bytes) to a random room through `relaySend`, leaves
+  the room idle for 60 s (`ASYNC_WAIT_S`, or `--async-wait-s=N`), then reads it back with a brand-new client
+  (`relayRecv` from -1, epoch null). It passes only on exactly that one frame, the same bytes, under the epoch
+  `relaySend` answered; the report says why otherwise ("0 frames, epoch null: the relay lost the room while idle").
+  Network-layer failures are retried twice and reported as DOWN, apart from a relay that answered wrongly (FAILED).
+  The send goes out first and the other checks run during the wait, so a run takes about 65 s; the workflow's timeout
+  is now 15 minutes. `relaySend` is free on relay.tapeapi.fun and the frame expires with its room after 15 minutes;
+  the monitor still sends no transactions and holds no keys.
+
 ## [1.0.0-rc.5] — 2026-09-29
 
 ### Fixed
