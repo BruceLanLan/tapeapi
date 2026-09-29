@@ -88,6 +88,10 @@
 编解码层不变：无论字节来自你还是来自网络，`abi` 报 `ABI_INVALID`，`canon` 报 `CANON_INVALID`。`callQuorum` 的协议性拒绝
 （少于两个提供者、两个服务共用持有人或来源、见证读取没有区块号）仍是 `QUORUM_FAILED`。
 
+有三个模块在整个 1.x 里保留自己的"调用方错误"错误码，处理错误时请一并匹配：通道模块（`channel.*`，TAP-26）报
+`CHANNEL_INVALID`，群聊模块（`group.*`，TAP-27）报 `GROUP_INVALID`，`api.call()` 在发送前对 `params` 与 `id` 的检查报
+`BAD_REQUEST`（与提供者对同一请求的回答相同）。这些错误都不值得重试。
+
 ## 错误码
 
 完整列表。提供者错误码在签名信封里传递，含义永不改变（[TAP-21](../../../spec/TAP-21.md) §3.2）；客户端错误码由 SDK 报出（§3.4）。

@@ -2,7 +2,7 @@
 // Uses the global fetch types (Request, Response); no @types/node needed.
 //
 // Stability (1.0): every declaration is Stable (no breaking change within 1.x) unless tagged @experimental (payments,
-// ServiceDirectory: may change in a 1.x minor release) or @internal (not part of the API). See docs/guides/upgrade-1.0.md.
+// ServiceDirectory, bus-privacy: may change in a 1.x minor release) or @internal (not part of the API). See docs/guides/upgrade-1.0.md.
 import type { Rpc, Manifest, ManifestMethod, FetchLike, TxRequest } from '@tapeapi/sdk'
 
 export declare const VERSION: string

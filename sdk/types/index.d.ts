@@ -2,7 +2,7 @@
 // Shapes that the protocol leaves open (manifests, results, channel records) are typed loosely on purpose.
 //
 // Stability (1.0): every declaration is Stable (no breaking change within 1.x) unless tagged @experimental (payments,
-// ServiceDirectory: may change in a 1.x minor release) or @internal (not part of the API). See docs/guides/upgrade-1.0.md.
+// ServiceDirectory, bus-privacy: may change in a 1.x minor release) or @internal (not part of the API). See docs/guides/upgrade-1.0.md.
 import type { Address, Hex, BigNumberish, FetchLike, TxRequest } from './common.js'
 import type { Rpc } from './rpc.js'
 import type { Manifest } from './manifest.js'

@@ -2,8 +2,7 @@
 |---|---|
 | Title | Tape Channel: Real-Time Private Channels Between Containers |
 | Author | Bruce (@BruceLanLan) |
-| Status | Draft |
-| Target | Stable (v1) at TapeAPI 1.0 |
+| Status | Stable (v1) since 2026-09-29 (TapeAPI 1.0.0) |
 | Implementation | Live (2026-09-27): ChannelBus is deployed on BNB Chain at `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707` (code byte-for-byte the reference build); a free public relay runs at `relay.tapeapi.fun` (`12.1013.tape`, source `examples/cloudflare-worker/relay-worker.js`); the SDK implements channels over relays and ChannelBus and exports a measured bus node set, `BUS_RPC_URLS` (§3.7). No third-party audit. |
 | Type | Standards |
 | Created | 2026-09-22 |
@@ -216,7 +215,9 @@ Copyright and related rights waived via [CC0](https://creativecommons.org/public
 
 > **实现状态（2026-09-27）：** 运行中：ChannelBus 已部署于 BNB Chain `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`（代码与参考构建逐字节一致）；免费公共中继运行于 `relay.tapeapi.fun`（`12.1013.tape`，源码 `examples/cloudflare-worker/relay-worker.js`）；SDK 实现了经中继与 ChannelBus 的通道，并导出一组实测的总线节点 `BUS_RPC_URLS`（§3.7）。未经第三方审计。
 
-> **目标状态：** Target: Stable (v1) at TapeAPI 1.0。在 TapeAPI 1.0 发布时由 Draft 进入 Stable (v1)（见 [TAP-1](TAP-1.md) §4.1）；在此之前仍是 Draft。
+> **状态：** Stable (v1)（稳定，第 1 版，见 [TAP-1](TAP-1.md) §4.1），自 2026-09-29（TapeAPI 1.0.0）起生效。
+
+本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 
 ## 1. 摘要
 

@@ -2,8 +2,7 @@
 |---|---|
 | Title | Tape Group: Private Group Channels Between Containers |
 | Author | Bruce (@BruceLanLan) |
-| Status | Draft |
-| Target | Stable (v1) at TapeAPI 1.0 |
+| Status | Stable (v1) since 2026-09-29 (TapeAPI 1.0.0) |
 | Implementation | Implemented (2026-09-27): `sdk/src/group.js` runs groups over any TAP-26 transport, including the deployed ChannelBus (`0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`) and the public relay `relay.tapeapi.fun`. There is no group service to host: the owner is a client. No third-party audit. |
 | Type | Standards |
 | Created | 2026-09-23 |
@@ -156,7 +155,9 @@ Copyright and related rights waived via [CC0](https://creativecommons.org/public
 
 > **实现状态（2026-09-27）：** 已实现：`sdk/src/group.js` 可经任一 TAP-26 传输运行群聊，包括已部署的 ChannelBus（`0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`）与公共中继 `relay.tapeapi.fun`。群聊无需托管服务：群主本身是客户端。未经第三方审计。
 
-> **目标状态：** Target: Stable (v1) at TapeAPI 1.0。在 TapeAPI 1.0 发布时由 Draft 进入 Stable (v1)（见 [TAP-1](TAP-1.md) §4.1）；在此之前仍是 Draft。
+> **状态：** Stable (v1)（稳定，第 1 版，见 [TAP-1](TAP-1.md) §4.1），自 2026-09-29（TapeAPI 1.0.0）起生效。
+
+本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 
 ## 1. 摘要
 

@@ -75,3 +75,15 @@ test('build-docs: the renderer handles the constructs the guides use', () => {
   assert.equal(inline('`**x**` and <b> [`c`](u)', { href: (h) => h }), '<code>**x**</code> and &lt;b&gt; <a href="u"><code>c</code></a>')
   assert.match(md('> **Note.** one\n> two'), /^<blockquote><p><strong>Note\.<\/strong> one two<\/p><\/blockquote>$/)
 })
+
+// FIXED DOCS-1 (1.0 review): Markdown link reference definitions ("[1.0.0]: https://…") produce no output, but the
+// builder printed the changelog's 15 of them as one paragraph, which also made the page scroll sideways at 360 px.
+// FIXED DOCS-1：Markdown 的链接定义行不应输出；构建器把更新日志末尾的 15 行拼成一段正文，手机宽度下还会横向滚动。
+test('FIXED DOCS-1: link reference definitions are not rendered as text', async () => {
+  const { renderPage } = await import('./build-docs.mjs')
+  const html = renderPage('changelog', 'en').body
+  assert.equal(typeof html, 'string')
+  assert.match(html, /1\.0\.0/)
+  assert.doesNotMatch(html, /\[Unreleased\]: https:\/\//)
+  assert.doesNotMatch(html, /compare\/v1\.0\.0-rc\.5\.\.\.v1\.0\.0/)
+})

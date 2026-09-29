@@ -42,9 +42,10 @@ trust with a signature anyone can check:
 
 ## Status
 
-Pre-release, version 1.0.0-rc.5. The free tier runs on TapeOut's deployed contracts. Our own contracts have no third-party
-audit; the paid-call escrow is not deployed yet. Interfaces may still change, and the TAP numbers are proposed to the
-TapeKit maintainers, not yet assigned.
+Released, version 1.0.0. From 1.0 on, TapeAPI follows semantic versioning: code written against the 1.0 docs keeps
+working in every 1.x release, and breaking changes come only in 2.0 ([what 1.0 promises](upgrade-1.0.md)). The free
+tier runs on TapeOut's deployed contracts. Our own contracts have no third-party audit; the paid-call escrow is not
+deployed yet. The TAP numbers are proposed to the TapeKit maintainers, not yet assigned.
 
 ## On-chain addresses
 
@@ -82,7 +83,7 @@ The protocol is written down as TAPs, in English and Chinese (English authoritat
 | [TAP-21](../../spec/TAP-21.md) | Signed response envelope |
 | [TAP-22](../../spec/TAP-22.md) | Metered payment |
 | [TAP-23](../../spec/TAP-23.md) | Attested cross-chain read |
-| [TAP-24](../../spec/TAP-24.md) | Intent RFQ (frozen) |
+| [TAP-24](../../spec/TAP-24.md) | Intent RFQ (withdrawn) |
 | [TAP-25](../../spec/TAP-25.md) | Circuit-verified methods |
 | [TAP-26](../../spec/TAP-26.md) | Private channels |
 | [TAP-27](../../spec/TAP-27.md) | Private groups |

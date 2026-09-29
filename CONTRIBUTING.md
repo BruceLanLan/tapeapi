@@ -111,8 +111,8 @@ Edit the markdown sources, never the generated HTML. `site/` uses relative paths
 
 We follow semver, applied to the standard and to the packages separately.
 
-- **Specs.** A TAP in `Draft` may change freely; record what changed and why in its own change log section. Once a TAP is `Final`, a change that can make a previously-conforming implementation non-conforming needs a **new TAP that supersedes it**, not an edit. Adding an optional field is a minor change; changing a digest preimage, a typehash, an error code's meaning or a MUST is a breaking change. Precedent: TAP-21's envelope digest went `TAPI-1/resp/v1` → `TAPI-1/resp/v2` rather than being edited in place, and v2 clients reject v1.
-- **Packages.** `@tapeapi/sdk` and `@tapeapi/server` are pre-1.0 and not yet on npm; minor bumps may break. After 1.0, a breaking wire-format or API change is a major bump.
+- **Specs.** A TAP in `Draft` may change freely; record what changed and why in its own change log section. A TAP in `Stable (v1)` (TAP-1 §4.1) is frozen: every field, encoding, signature domain and error code keeps its meaning, a revision may add only optional content and non-normative text, and a change that can make a conforming v1 implementation non-conforming is a new version (v2) with its own wire markers. `Experimental` sections and TAPs may change in any release.
+- **Packages.** `@tapeapi/sdk` and `@tapeapi/server` follow semantic versioning from 1.0.0: code written against the 1.0 documentation keeps working in every 1.x release, and a breaking change to a Stable interface is a major bump (2.0). Anything marked `@experimental` may change in a minor release, with a changelog entry. The packages ship as release assets on GitHub, not on npm.
 - Do not bump versions in a PR unless a maintainer asks. Releases are cut separately. Add a line under `[Unreleased]` in `CHANGELOG.md` for a user-visible change.
 
 ## 8. Repository layout
@@ -241,8 +241,8 @@ GitHub Pages 不执行构建，所以 `site/` 下有些文件是生成后**提�
 
 遵循 semver，标准与软件包分别适用。
 
-- **规范。** 处于 `Draft` 的 TAP 可自由修改，在其自身的变更记录小节写清改了什么、为什么。一旦 `Final`，任何可能让原本合规的实现变成不合规的改动，需要**一个取代它的新 TAP**，而不是就地编辑。新增可选字段属于 minor；改摘要前像、改 typehash、改错误码含义、改任何 MUST，都属于破坏性变更。先例：TAP-21 的信封摘要从 `TAPI-1/resp/v1` 升到 `TAPI-1/resp/v2` 是新版本而非就地修改，且 v2 客户端拒绝 v1。
-- **软件包。** `@tapeapi/sdk` 与 `@tapeapi/server` 尚未 1.0，也还没有发布到 npm，minor 版本也可能破坏兼容。1.0 之后，破坏线格式或 API 的改动升 major。
+- **规范。** 处于 `Draft` 的 TAP 可自由修改，在其自身的变更记录小节写清改了什么、为什么。处于 `Stable (v1)`（TAP-1 §4.1）的 TAP 已冻结：已定义的字段、编码、签名域与错误码保持含义，修订只能追加可选内容与非规范性文字；可能让合规的 v1 实现变得不合规的改动，要开新版本（v2），并使用自己的线上标记。标为 `Experimental` 的章节与 TAP 可以在任何版本里修改。
+- **软件包。** `@tapeapi/sdk` 与 `@tapeapi/server` 自 1.0.0 起遵循语义化版本：按 1.0 文档写的代码在所有 1.x 版本里都能继续使用，Stable 接口的破坏性修改只能升 major（2.0）。标为 `@experimental` 的接口可以在 minor 版本里修改，并写进更新日志。两个包以 GitHub Release 附件的形式发布，不在 npm 上。
 - 除非维护者要求，PR 里不要改版本号，发版单独进行。用户可见的改动请在 `CHANGELOG.md` 的 `[Unreleased]` 下加一行。
 
 ## 8. 仓库布局

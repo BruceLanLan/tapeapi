@@ -5,7 +5,7 @@
 ## 一般问题
 
 **1.0 承诺什么？**
-按 1.0 文档写的代码，在所有 1.x 版本里都能继续工作。除了标注 `@experimental` 的（尚未部署的付费功能与 ServiceDirectory）
+按 1.0 文档写的代码，在所有 1.x 版本里都能继续工作。除了标注 `@experimental` 的（尚未部署的付费功能与 ServiceDirectory，以及 `bus-privacy` 读取器）
 和 `@internal` 的，其余全部是稳定的。相对 0.x 的修改与完整的错误码表见[升级到 1.0](upgrade-1.0.md)。
 
 **运行免费服务需要部署合约吗？**

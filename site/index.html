@@ -21,7 +21,7 @@
 <meta name="twitter:description" content="The signed API layer of TapeOut. A signing sidecar gives any OpenAI- or Anthropic-compatible API an on-chain identity, a price table pinned on chain and a signed receipt for every call; clients change no code.">
 <meta name="twitter:image" content="https://tapeapi.fun/og.png?v=2">
 <link rel="preload" href="fonts/tapeapi-archivo.woff2?v=b19983b68b" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=89993750a9">
+<link rel="stylesheet" href="style.css?v=ee0680e199">
 </head>
 <body>
 <header class="hd-bar">
@@ -40,7 +40,7 @@
 <div class="sheet">
 
 <div class="plate">
-  <p class="docno"><span><span lang="zh">数据手册</span><span lang="en">Datasheet</span></span><span>v1.0.0-rc.5</span><span>2026-09-29</span><span>BNB 56 · X Layer 196 · Base 8453</span></p>
+  <p class="docno"><span><span lang="zh">数据手册</span><span lang="en">Datasheet</span></span><span>v1.0.0</span><span>2026-09-29</span><span>BNB 56 · X Layer 196 · Base 8453</span></p>
 
   <h1 lang="zh">每次 AI 调用，都附一张签名回执</h1>
   <h1 lang="en">A signed receipt for every AI call</h1>
@@ -51,9 +51,9 @@
   <p class="lede sub" lang="en">TapeAPI is the signed API layer of TapeOut. The same identity and signatures also cover MCP tools and private channels and groups between containers, on BNB Chain, X Layer and Base.</p>
 
   <div class="badges">
-    <span class="stamp">PRELIMINARY</span>
-    <span class="meta" lang="zh">预发布 · 今天所有调用免费 · 代码 MIT · 规范 CC0 · 未经第三方审计</span>
-    <span class="meta" lang="en">Pre-release · Every call free today · Code MIT · Spec CC0 · No third-party audit</span>
+    <span class="stamp">RELEASED 1.0</span>
+    <span class="meta" lang="zh">正式版 1.0 · 今天所有调用免费 · 代码 MIT · 规范 CC0 · 未经第三方审计</span>
+    <span class="meta" lang="en">Released 1.0 · Every call free today · Code MIT · Spec CC0 · No third-party audit</span>
   </div>
   <div class="cta">
     <a class="btn pri" href="#start"><span lang="zh">从这里开始</span><span lang="en">Start here</span><span class="ar" aria-hidden="true">↓</span></a>
@@ -153,8 +153,8 @@
       <div class="pb">
         <h3>ChannelBus</h3>
         <div class="where"><a href="https://bscscan.com/address/0x486110c35d9b90a9d6D85c8063A065f9e7b6b707">0x486110c35d9b90a9d6D85c8063A065f9e7b6b707</a></div>
-        <p lang="zh">把通道帧直接写上 BNB Chain 的合约。没有所有者，没有状态，不可升级。用 SDK 的 <code>busPrivacyReader</code> 读取时，默认下载整个合约、在本地筛选，节点看不出你读的是哪些房间。</p>
-        <p lang="en">A contract that carries channel frames on BNB Chain. No owner, no state, not upgradeable. Read it with the SDK's <code>busPrivacyReader</code> and by default it downloads the whole contract and filters locally, so a node cannot tell which rooms you read.</p>
+        <p lang="zh">把通道帧直接写上 BNB Chain 的合约。没有所有者，没有状态，不可升级。用 SDK 的 <code>busPrivacyReader</code>（实验性）读取时，默认下载整个合约、在本地筛选，节点看不出你读的是哪些房间。</p>
+        <p lang="en">A contract that carries channel frames on BNB Chain. No owner, no state, not upgradeable. Read it with the SDK's <code>busPrivacyReader</code> (experimental) and by default it downloads the whole contract and filters locally, so a node cannot tell which rooms you read.</p>
       </div>
       <span class="st on">Live</span>
     </div>
@@ -224,7 +224,7 @@
     <p class="step"><span class="no">A · curl</span><span lang="zh">向公共服务要 BNB 价格。curl 只显示签名信封（<code>result</code>、<code>container</code>、<code>ts</code>、<code>block</code>、<code>sig</code>），不做任何核对；验签请用 SDK 或<a href="playground/">调试台</a>。</span><span lang="en">Ask the public service for the BNB price. curl shows the signed envelope (<code>result</code>, <code>container</code>, <code>ts</code>, <code>block</code>, <code>sig</code>) but checks nothing; the SDK or the <a href="playground/">playground</a> verifies it.</span></p>
 <div class="code"><div class="cap">shell</div><pre class="sys">curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{"id":"1","params":{}}'</pre></div>
     <p class="step"><span class="no">B · SDK</span><span lang="zh">SDK 还没发到 npm，从 GitHub Release 装进一个空目录（Node.js 20 或以上）：</span><span lang="en">The SDK is not on npm yet; install it from the GitHub release into an empty directory (Node.js 20 or later):</span></p>
-<div class="code"><div class="cap">shell</div><pre>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.5/tapeapi-sdk-1.0.0-rc.5.tgz</pre></div>
+<div class="code"><div class="cap">shell</div><pre>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz</pre></div>
     <p class="step"><span lang="zh">把下面存为 <code>try.mjs</code>，运行 <code>node try.mjs</code>。SDK 从链上解析服务、验签，通过了才返回结果：</span><span lang="en">Save this as <code>try.mjs</code> and run <code>node try.mjs</code>. The SDK resolves the service from the chain and verifies the answer before it returns:</span></p>
 <div class="code"><div class="cap">try.mjs</div><pre><span class="k">import</span> { createTapeAPI, rpcUrlsFor } <span class="k">from</span> <span class="s">'@tapeapi/sdk'</span>
 
@@ -247,7 +247,7 @@ console.log(result.bnbUsd, verified)                      <span class="c">// <sp
 <span class="k">const</span> r = <span class="k">await</span> client.chat.completions.create({ model: <span class="s">'gpt-4o-mini'</span>, messages: [{ role: <span class="s">'user'</span>, content: <span class="s">'Hello'</span> }] })
 console.log(r.choices[0].message.content)</pre></div>
     <p class="step"><span lang="zh">Claude Code 和 Codex 自己读不到回执。用它们时，在本机开一个核验代理，再把 base URL 指向它：</span><span lang="en">Claude Code and Codex cannot read receipts themselves. For them, run a verifying proxy on your machine and point the base URL at it:</span></p>
-<div class="code"><div class="cap">shell</div><pre class="sys">npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.5/tapeapi-sdk-1.0.0-rc.5.tgz tapeapi-verify 42.1013.tape
+<div class="code"><div class="cap">shell</div><pre class="sys">npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude     <span class="c"># <span lang="zh">Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1</span><span lang="en">Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1</span></span></pre></div>
     <p class="note" lang="zh"><b>如实说明。</b>今天链上还没有发布 AI 价目表的外部服务方，所以 C 段的代码是对仓库里的参考旁路（<code>examples/ai-proxy</code>，本地开发模式）实际运行验证的；接真实服务方时只换名字。</p>
     <p class="note" lang="en"><b>Plainly.</b> No outside provider has published an AI price table on chain yet, so the code in C was run against the reference sidecar in the repository (<code>examples/ai-proxy</code>, local dev mode); with a real provider only the name changes.</p>
@@ -415,8 +415,8 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude     <span class="c"># <span lang
           <li lang="en"><b>AI receipts carry hashes only</b><span class="d">No prompt, no answer; requests sent through the SDK or tapeapi-verify get 128 random bits of whitespace by default, so a short prompt cannot be confirmed by hashing guesses</span></li>
           <li lang="zh"><b>MCP 核验链接只带哈希</b><span class="d">不带参数和结果；参数很短时（一个地址、一个编号）仍可能被猜出</span></li>
           <li lang="en"><b>MCP links carry hashes only</b><span class="d">Not the params or the result; very short params (an address, a token ID) can still be guessed</span></li>
-          <li lang="zh"><b>链上通道读取</b><span class="d">SDK 的 busPrivacyReader 默认读整个 ChannelBus、在本地筛选，节点看不出你的房间</span></li>
-          <li lang="en"><b>Reading channels on chain</b><span class="d">The SDK's busPrivacyReader reads all of ChannelBus by default and filters locally, so nodes cannot see your rooms</span></li>
+          <li lang="zh"><b>链上通道读取</b><span class="d">SDK 的 busPrivacyReader（实验性）默认读整个 ChannelBus、在本地筛选，节点看不出你的房间</span></li>
+          <li lang="en"><b>Reading channels on chain</b><span class="d">The SDK's busPrivacyReader (experimental) reads all of ChannelBus by default and filters locally, so nodes cannot see your rooms</span></li>
           <li lang="zh"><b>日志最小化</b><span class="d">我们的公共服务在配置里关闭了逐请求调用日志；Cloudflare 自己的请求记录是否含 IP 仍待核实</span></li>
           <li lang="en"><b>Minimal logs</b><span class="d">Our public services' configuration turns per-request invocation logs off; whether Cloudflare's own records include the IP is still to be verified</span></li>
         </ul>
@@ -565,14 +565,14 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
 
 <section id="roadmap">
   <div class="shead"><span class="idx">10</span><h2 lang="zh">路线图</h2><h2 lang="en">Roadmap</h2><span class="line"></span></div>
-  <p class="tcap" lang="zh">以下都还没有上线，也不承诺日期</p>
-  <p class="tcap" lang="en">None of this is live yet, and no dates are promised</p>
+  <p class="tcap" lang="zh">除了已完成的 1.0，以下都还没有上线，也不承诺日期</p>
+  <p class="tcap" lang="en">Apart from 1.0, which is done, none of this is live yet, and no dates are promised</p>
   <div class="apps road">
     <div class="app">
-      <div class="no">NEXT</div>
+      <div class="no yes">DONE</div>
       <h3 lang="zh">1.0：接口稳定</h3><h3 lang="en">1.0: stable interfaces</h3>
-      <p lang="zh">冻结 SDK 与规范的接口，补齐测试数据和一致性测试套件。1.0 之后，按文档写的代码不会因为我们升级而坏掉。</p>
-      <p lang="en">Freeze the SDK and spec interfaces and complete the test vectors and the conformance suite. After 1.0, code written to the docs will not break when we upgrade.</p>
+      <p lang="zh">SDK 与规范的接口已冻结：TAP-20、21、23、26、27 为 Stable (v1)，测试数据由独立的 Python 验证器核对。1.0 起遵循语义化版本：按文档写的代码不会因为我们升级而坏掉，破坏性修改只在 2.0；标为实验性的部分（付费、ServiceDirectory、bus-privacy）除外。</p>
+      <p lang="en">The SDK and spec interfaces are frozen: TAP-20, 21, 23, 26 and 27 are Stable (v1), with test vectors checked by the independent Python verifier. From 1.0 on, TapeAPI follows semantic versioning: code written to the docs does not break when we upgrade, and breaking changes come only in 2.0, except in what is marked experimental (payments, the ServiceDirectory, bus-privacy).</p>
     </div>
     <div class="app">
       <div class="no">NEXT</div>
@@ -599,14 +599,14 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
   <div class="shead"><span class="idx">11</span><h2 lang="zh">规范索引</h2><h2 lang="en">Specification Index</h2><span class="line"></span></div>
   <div class="specs">
     <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-1.md">TAP-1</a></span><span><span lang="zh">TAP 流程与编号</span><span lang="en">TAP purpose and process</span></span><span class="st">Draft</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-20.md">TAP-20</a></span><span><span lang="zh">服务身份与清单，含 AI 价目表（ai 字段）与多链</span><span lang="en">Service identity and manifest, with the AI price table (the ai field) and multi-chain</span></span><span class="st">Draft · target Stable (v1)</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md">TAP-21</a></span><span><span lang="zh">签名响应信封，含 AI 用量回执</span><span lang="en">Signed response envelope, with AI usage receipts</span></span><span class="st">Draft · target Stable (v1)</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-20.md">TAP-20</a></span><span><span lang="zh">服务身份与清单，含 AI 价目表（ai 字段）与多链</span><span lang="en">Service identity and manifest, with the AI price table (the ai field) and multi-chain</span></span><span class="st">Stable (v1) · §3.5 Experimental</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md">TAP-21</a></span><span><span lang="zh">签名响应信封，含 AI 用量回执</span><span lang="en">Signed response envelope, with AI usage receipts</span></span><span class="st">Stable (v1)</span></div>
     <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-22.md">TAP-22</a></span><span><span lang="zh">计量支付凭证与托管</span><span lang="en">Metered vouchers and escrow</span></span><span class="st">Experimental</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-23.md">TAP-23</a></span><span><span lang="zh">多家交叉验证的读取</span><span lang="en">Attested read, cross-checked by independent providers</span></span><span class="st">Draft · target Stable (v1)</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-23.md">TAP-23</a></span><span><span lang="zh">多家交叉验证的读取</span><span lang="en">Attested read, cross-checked by independent providers</span></span><span class="st">Stable (v1)</span></div>
     <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-24.md">TAP-24</a></span><span><span lang="zh">跨链意图询价</span><span lang="en">Intent RFQ</span></span><span class="st">Withdrawn</span></div>
     <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-25.md">TAP-25</a></span><span><span lang="zh">可由电路验证的方法</span><span lang="en">Circuit-verified methods</span></span><span class="st">Experimental</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-26.md">TAP-26</a></span><span><span lang="zh">容器间的私密通道</span><span lang="en">Private channels between containers</span></span><span class="st">Draft · target Stable (v1)</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-27.md">TAP-27</a></span><span><span lang="zh">容器间的私密群聊</span><span lang="en">Private groups between containers</span></span><span class="st">Draft · target Stable (v1)</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-26.md">TAP-26</a></span><span><span lang="zh">容器间的私密通道</span><span lang="en">Private channels between containers</span></span><span class="st">Stable (v1)</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-27.md">TAP-27</a></span><span><span lang="zh">容器间的私密群聊</span><span lang="en">Private groups between containers</span></span><span class="st">Stable (v1)</span></div>
   </div>
   <p class="note" lang="zh"><b>TAP 编号是提案。</b>它们已<a href="https://github.com/TapeOutProtocol/TapeKit/issues/8">提交给 TapeOut 维护者</a>，尚未正式分配。规范中英双语，以英文为准。</p>
   <p class="note" lang="en"><b>TAP numbers are proposals.</b> They are <a href="https://github.com/TapeOutProtocol/TapeKit/issues/8">proposed to the TapeOut maintainers</a> and not yet assigned. The specs are bilingual; English is authoritative.</p>
@@ -620,8 +620,8 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
   </div>
   <div>
     <h4 lang="zh">状态</h4><h4 lang="en">Status</h4>
-    <p lang="zh">预发布，接口在 1.0 之前仍可能变化。公共服务、MCP 端点与公共中继已上线，ChannelBus 已部署；付费托管合约是实验性的，尚未部署；没有经过第三方审计。测试：JS 约 1,200 项（npm test）、合约 169 项（forge）、Python 独立验证器 249 项，全部通过。</p>
-    <p lang="en">Pre-release; interfaces may still change before 1.0. The public service, the MCP endpoint and the public relay are live and ChannelBus is deployed; the paid-call escrow is experimental and not deployed; there is no third-party audit. Tests: about 1,200 JS (npm test), 169 contract (forge) and 249 in the independent Python verifier, all passing.</p>
+    <p lang="zh">正式版 1.0，遵循语义化版本：破坏性修改只在 2.0。公共服务、MCP 端点与公共中继已上线，ChannelBus 已部署；付费托管合约是实验性的，尚未部署；没有经过第三方审计。测试：JS 约 1,200 项（npm test）、合约 169 项（forge）、Python 独立验证器 249 项，全部通过。</p>
+    <p lang="en">Released 1.0, with semantic versioning: breaking changes come only in 2.0. The public service, the MCP endpoint and the public relay are live and ChannelBus is deployed; the paid-call escrow is experimental and not deployed; there is no third-party audit. Tests: about 1,200 JS (npm test), 169 contract (forge) and 249 in the independent Python verifier, all passing.</p>
   </div>
   <div>
     <h4 lang="zh">想法来源</h4><h4 lang="en">Idea by</h4>

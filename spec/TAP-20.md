@@ -2,8 +2,7 @@
 |---|---|
 | Title | TapeAPI: Service Identity and Manifest |
 | Author | Bruce (@BruceLanLan) |
-| Status | Draft |
-| Target | Stable (v1) at TapeAPI 1.0 |
+| Status | Stable (v1) since 2026-09-29 (TapeAPI 1.0.0); §3.5 (ServiceDirectory) is Experimental |
 | Implementation | Live without a directory (2026-09-27): on BNB Chain, `api.tapeapi.fun` (`11.1013.tape`, source `examples/public-api/`) and `relay.tapeapi.fun` (`12.1013.tape`) publish TAP-20 manifests with holder delegations, and the SDK resolves containers, `(circuits, tokenId)` pairs and names `<#ID>.<processor>.tape`; read-only resolution on X Layer and Base (area-coded names) since 2026-09-28. ServiceDirectory (§3.5) is not deployed, so labels do not resolve on mainnet. No third-party audit. |
 | Type | Standards |
 | Created | 2026-09-20 |
@@ -120,6 +119,8 @@ The holder authorises `signer` with an EIP-712 signature.
 - `ServiceDirectory.verifyDelegation(circuits, tokenId, signer, expires, sig)` MUST implement the MUST-level checks of this section (the 366-day bound is a client SHOULD and is not enforced on-chain) and MAY be used by clients instead of local recovery; either way the holder MUST be read on-chain, never from the manifest.
 
 ### 3.5 ServiceDirectory
+
+> **Experimental.** This section is Experimental under [TAP-1](TAP-1.md) §4.1 (freeze rule 3): the ServiceDirectory contract is not deployed or audited, and this section can change incompatibly, or be withdrawn, without a new version of this document. It is outside the Stable (v1) freeze, and so are the places that use it: a label as input to §3.6 step 1, the optional `serviceOf` cross-check at the end of this section, and `ServiceDirectory.verifyDelegation` in §3.4. The rest of this document does not depend on it: resolution by name, container or `(circuits, tokenId)` (§3.6) needs no directory.
 
 A non-upgradeable contract per chain that maps labels to containers and records manifest paths. It is constructed with `(hub, factory, domainBinding)`; `factory` is the TapeOut processor factory and `domainBinding` MAY be the zero address to disable the activation gate.
 
@@ -409,7 +410,7 @@ Copyright and related rights waived via CC0-1.0.
 
 > **实现状态（2026-09-27）：** 无目录运行中：在 BNB Chain 上，`api.tapeapi.fun`（`11.1013.tape`，源码 `examples/public-api/`）与 `relay.tapeapi.fun`（`12.1013.tape`）发布了带持有者委托的 TAP-20 清单，SDK 可按容器、`(circuits, tokenId)` 二元组与名称 `<#ID>.<processor>.tape` 解析。ServiceDirectory（§3.5）未部署，因此标签在主网上无法解析。未经第三方审计。
 
-> **目标状态：** Target: Stable (v1) at TapeAPI 1.0。在 TapeAPI 1.0 发布时由 Draft 进入 Stable (v1)（见 [TAP-1](TAP-1.md) §4.1）；在此之前仍是 Draft。
+> **状态：** Stable (v1)（稳定，第 1 版，见 [TAP-1](TAP-1.md) §4.1），自 2026-09-29（TapeAPI 1.0.0）起生效。§3.5（ServiceDirectory）整节为 Experimental（实验性），不在冻结范围内（TAP-1 §4.1 冻结规则第 3 项）。
 
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 
@@ -515,6 +516,8 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 - `ServiceDirectory.verifyDelegation(circuits, tokenId, signer, expires, sig)` MUST 实现本节中 MUST 级别的检查（366 天上限是客户端的 SHOULD，链上不强制），客户端 MAY 用它代替本地恢复；无论哪种方式，持有者 MUST 从链上读取，永不取自清单。
 
 ### 3.5 ServiceDirectory
+
+> **实验性。** 本节按 [TAP-1](TAP-1.md) §4.1（冻结规则第 3 项）标为 Experimental（实验性）：ServiceDirectory 合约尚未部署、未经审计，本节可能不兼容地修改或撤回，且不需要新版本。本节不在 Stable (v1) 的冻结范围内，用到它的地方也一样：§3.6 第 1 步以标签作输入、本节末尾可选的 `serviceOf` 比对，以及 §3.4 中的 `ServiceDirectory.verifyDelegation`。本文其余部分不依赖本节：按名称、容器或 `(circuits, tokenId)` 解析（§3.6）不需要目录。
 
 每条链上一个不可升级的合约，将标签映射到容器并记录清单路径。构造参数为 `(hub, factory, domainBinding)`；`factory` 为 TapeOut 处理器工厂，`domainBinding` MAY 为零地址以关闭激活门槛。
 

@@ -2,9 +2,56 @@
 
 All notable changes to this project are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
-Before 1.0.0, a minor version may change interfaces.
+From 1.0.0 on, a breaking change comes only in a new major version (2.0); before 1.0.0, a minor version could change
+interfaces.
 
 ## [Unreleased]
+
+## [1.0.0] — 2026-09-29
+
+TapeAPI 1.0.0, the first stable release. Nothing on the wire and nothing in the interfaces of `@tapeapi/sdk` and
+`@tapeapi/server` changed since 1.0.0-rc.5: the specifications change status, not content.
+
+### What 1.0 promises
+
+- **Semantic versioning from 1.0.0 on.** Code written against the 1.0 documentation keeps working in every 1.x release;
+  a breaking change comes only in 2.0. Additions (a new optional option, a new field, a new error code) may come in any
+  minor release.
+- **Stable:** every export of `@tapeapi/sdk` and `@tapeapi/server`, the command-line tools `tapeapi-mcp` and
+  `tapeapi-verify`, and the methods and result shapes of the public services (api.tapeapi.fun, relay.tapeapi.fun),
+  except what is marked otherwise.
+- **Experimental** (`@experimental`; may change in a 1.x minor release, each change in this changelog): everything that
+  pays (TAP-22 payment channels, the escrow, vouchers, `api.payer()`, `maxPrice`, the channel builders of `api.tx`,
+  `api.chain.escrow.*`), the ServiceDirectory (`api.chain.resolve()`, `api.chain.serviceOf()`, directory labels, the
+  `directory` option, `labelToBytes32` and the label helpers of `abi`), and the whole `@tapeapi/sdk/bus-privacy`
+  subpath. Reading prices from a manifest and the codes `PAYMENT_REQUIRED`, `BAD_VOUCHER` and `PRICE_CHANGED` are
+  Stable: a free service's client can meet them too.
+- **Internal:** marked `@internal`, or not exported.
+
+The full lists, what changed from 0.x and the error-code table are in the upgrade guide:
+[docs/guides/upgrade-1.0.md](docs/guides/upgrade-1.0.md) (https://tapeapi.fun/docs/en/upgrade-1.0).
+
+### Specification statuses (TAP-1 §4.1)
+
+- **TAP-20, TAP-21, TAP-23, TAP-26 and TAP-27 are Stable (v1)** since 2026-09-29; their `Target` rows are gone. Every
+  field, encoding, signature domain and error code they define keeps its meaning; a revision may add only optional
+  content and non-normative text; a breaking change is a v2 with its own wire markers, and v1 is not withdrawn earlier
+  than 12 months after v2 becomes Stable.
+- **TAP-20 §3.5 (ServiceDirectory) is Experimental**, outside the freeze (TAP-1 §4.1, freeze rule 3), and so are the
+  places that use it: a label as input to §3.6 step 1, the `serviceOf` cross-check and `verifyDelegation` in §3.4.
+  Resolution by name, container or `(circuits, tokenId)` needs no directory.
+- **TAP-21's error codes, `PAYMENT_REQUIRED` and `BAD_VOUCHER` among them, are frozen with TAP-21**, although the
+  payment flow that uses them is in TAP-22, which is Experimental.
+- Unchanged: TAP-22 and TAP-25 Experimental, TAP-24 Withdrawn, TAP-1 Draft. No normative text changed. The TAP numbers
+  are still proposals to the TapeKit maintainers ([TapeKit#8](https://github.com/TapeOutProtocol/TapeKit/issues/8)).
+- The Chinese halves of TAP-26 and TAP-27 gain the RFC 2119 keyword sentence their English halves already had
+  (translation only; both halves now count the same keywords).
+
+### Website and READMEs
+
+- The homepage, both READMEs, both package READMEs and the introduction (English and Chinese) say 1.0.0 instead of
+  pre-release; the homepage roadmap marks 1.0 done; the spec index and the READMEs' spec tables show the new statuses.
+  The public-API, MCP and groups guides drop their stale "pre-alpha" label (the no-SLA and no-audit notes stay).
 
 ### Added
 
@@ -17,6 +64,34 @@ Before 1.0.0, a minor version may change interfaces.
   The send goes out first and the other checks run during the wait, so a run takes about 65 s; the workflow's timeout
   is now 15 minutes. `relaySend` is free on relay.tapeapi.fun and the frame expires with its room after 15 minutes;
   the monitor still sends no transactions and holds no keys.
+
+### Fixed
+
+- **The public copy keeps git's executable bit.** `scripts/stage-public.mjs` wrote every file 0644, so the CLIs in
+  `sdk/bin` reached the public repository without their executable bit once; they keep 100755 now, with a test.
+
+### From 1.0.0-rc.1 to 1.0.0-rc.5
+
+- **rc.1**, the interface freeze: `INVALID_ARGUMENT` for the caller's own mistakes; fixed `TapeAPIError` top-level
+  fields (details in `e.data`, the old names deprecated until 2.0); `service`, `relayClients` / `busClients`,
+  `rpcTimeoutMs`, `name` for MCP, `clock` in Unix seconds; `openai-proxy` removed; narrower public faces for `ai`,
+  `channel`, `rpc` and `group`; `createVerifyingFetch` verifies streams the official SDKs read; provider dev mode only
+  through `opts.dev`; TAP-1 §4.1 statuses; the TAP-20 §6.1 mainnet manifest and TAP-23 §6 vectors (the Python
+  verifier went from 159 to 249 checks).
+- **rc.2**: `api.resolve()` in 4 round trips and 12 requests instead of 7 and 21; the server could serve one voucher
+  twice (fixed); the homepage's fonts are files.
+- **rc.3**: the website's vendored SDK lives in a content-hashed directory, so a release never mixes old and new
+  modules.
+- **rc.4**: the last error-code alignments (a server without `rpcUrls`, and WebMCP's caller-state errors, are
+  `INVALID_ARGUMENT`); loosely written metered paths are refused instead of passed on unverified; review fixes with no
+  interface change.
+- **rc.5**: the Cloudflare relay keeps its rooms in Durable Object storage, so idle rooms no longer lose frames.
+
+### Upgrading
+
+- From 0.x: follow the [upgrade guide](docs/guides/upgrade-1.0.md).
+- From 1.0.0-rc.4 or rc.5: nothing to change. From rc.1 to rc.3: code that matched `INTERNAL` for a server without
+  `rpcUrls`, or `BAD_REQUEST` for WebMCP's `refresh()` and calls after dispose, now sees `INVALID_ARGUMENT`.
 
 ## [1.0.0-rc.5] — 2026-09-29
 
@@ -646,7 +721,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.5...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.5...v1.0.0
 [1.0.0-rc.5]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.2...v1.0.0-rc.3

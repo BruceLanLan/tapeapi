@@ -94,6 +94,11 @@ The codec layers are unchanged: `abi` reports `ABI_INVALID` and `canon` reports 
 from you or from the network. Protocol refusals of `callQuorum` (fewer than two providers, two services that share a
 holder or an origin, an attested read without a block) stay `QUORUM_FAILED`.
 
+Three modules keep their own code for a caller's mistake throughout 1.x, so match these as well: the channel module
+(`channel.*`, TAP-26) reports `CHANNEL_INVALID`, the group module (`group.*`, TAP-27) reports `GROUP_INVALID`, and the
+checks `api.call()` makes on `params` and `id` before sending report `BAD_REQUEST`, the code a provider would answer
+for the same request. None of them is worth retrying.
+
 ## Error codes
 
 The full list. Provider codes travel in signed envelopes and never change meaning ([TAP-21](../../spec/TAP-21.md) §3.2);

@@ -2,8 +2,7 @@
 |---|---|
 | Title | TapeAPI: Attested Read |
 | Author | Bruce (@BruceLanLan) |
-| Status | Draft |
-| Target | Stable (v1) at TapeAPI 1.0 |
+| Status | Stable (v1) since 2026-09-29 (TapeAPI 1.0.0) |
 | Implementation | Implemented, not hosted (2026-09-27): the SDK's `callQuorum` applies §3.4 (including `ATTEST_DISAGREE`), and `examples/chain-attested-read` is a provider, but no live service offers an `attestedRead` method. No third-party audit. Staking and slashing remain out of scope. |
 | Type | Standards |
 | Created | 2026-09-20 |
@@ -172,7 +171,7 @@ Copyright and related rights waived via CC0-1.0.
 
 > **实现状态（2026-09-27）：** 已实现，未托管：SDK 的 `callQuorum` 执行 §3.4（包括 `ATTEST_DISAGREE`），`examples/chain-attested-read` 是一个提供者示例，但没有任何运行中的服务提供 `attestedRead` 方法。未经第三方审计。质押与罚没仍不在范围内。
 
-> **目标状态：** Target: Stable (v1) at TapeAPI 1.0。在 TapeAPI 1.0 发布时由 Draft 进入 Stable (v1)（见 [TAP-1](TAP-1.md) §4.1）；在此之前仍是 Draft。
+> **状态：** Stable (v1)（稳定，第 1 版，见 [TAP-1](TAP-1.md) §4.1），自 2026-09-29（TapeAPI 1.0.0）起生效。
 
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 

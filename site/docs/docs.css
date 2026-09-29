@@ -217,7 +217,7 @@ article h2, article h3 { position: relative; }
   font-weight: 400;
 }
 h2:hover .anchor, h3:hover .anchor, .anchor:focus { opacity: 1; }
-article p { margin: 0 0 16px; color: var(--ink-2); }
+article p { margin: 0 0 16px; color: var(--ink-2); overflow-wrap: break-word; }
 article li { color: var(--ink-2); }
 article strong { color: var(--ink); font-weight: 650; }
 article ul, article ol { margin: 0 0 16px; padding-left: 1.4em; }

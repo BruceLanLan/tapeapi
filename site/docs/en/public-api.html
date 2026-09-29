@@ -6,7 +6,7 @@
 <title>Public API · TapeAPI Docs</title>
 <meta name="description" content="TapeAPI runs a free public service at https://api.tapeapi.fun : signed, block-pinned reads of BNB Smart Chain and of TapeOut itself, with no sign-up and no key.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="../docs.css?v=ab593a8478">
+<link rel="stylesheet" href="../docs.css?v=0c186fb80b">
 <link rel="alternate" hreflang="zh-CN" href="../zh/public-api.html">
 <script src="../docs.js?v=dee763d4ca"></script>
 </head>
@@ -102,7 +102,7 @@ await link.send(channel.encodeWire(ready))
 await link.send(channel.encodeWire(session.seal('hello')))</code></pre></div>
 <p>The responder opens its own transport on its session's rooms (<code>session.rooms.inbound</code>, <code>session.rooms.outbound</code>); <code>link.start(onWire)</code> keeps polling in the background. To advertise the relay in your container's channel keys, pass <code>--relay https://relay.tapeapi.fun/tapeapi/v1@0x9cD838625251576c199B2DeF7A17e50266843185</code> to <code>scripts/channel-keys.mjs</code>. The full handshake, the other transports and running your own relay are in <a href="channels.html">Private channels</a>.</p>
 <h2 id="limits-and-status"><a class="anchor" href="#limits-and-status" aria-hidden="true">#</a>Limits and status</h2>
-<ul><li>Pre-alpha. Both services are free and run on a best-effort basis, with no SLA and no guarantee of uptime. Methods may be added; a change to the list is published on chain as a new manifest.</li><li>A relay can drop frames or go offline; TAP-26 detects gaps but cannot refill them. Name more than one transport in an invite if the channel matters.</li><li>For anything you depend on, run your own provider or relay as well, and cross-check.</li></ul>
+<ul><li>Both services are free and run on a best-effort basis, with no SLA and no guarantee of uptime. Methods may be added; a change to the list is published on chain as a new manifest.</li><li>A relay can drop frames or go offline; TAP-26 detects gaps but cannot refill them. Name more than one transport in an invite if the channel matters.</li><li>For anything you depend on, run your own provider or relay as well, and cross-check.</li></ul>
 </article>
 <nav class="pn"><a class="prev" href="index.html"><span>Previous</span>Introduction</a><a class="next" href="mcp.html"><span>Next</span>Use TapeAPI from Claude, Cursor and other MCP clients</a></nav>
 <p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/public-api.md" rel="noopener">Edit this page on GitHub</a></p>

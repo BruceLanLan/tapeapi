@@ -18,7 +18,7 @@ TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上�
 
 [English](README.md) · [网站](https://tapeapi.fun) · [手册](https://tapeapi.fun/docs/zh/) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [更新日志](CHANGELOG.md) · [路线图](docs/ROADMAP.md)
 
-> **状态：预发布（v1.0.0-rc.5）。** 今天上线的一切都免费。1.0 之前接口仍可能变化。付费通道（TAP-22）是实验性的，没有部署。
+> **状态：正式版（1.0.0）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAP-22）是实验性的，没有部署。
 > 所有代码和合约都没有经过第三方审计。
 
 ## 从这里开始
@@ -42,7 +42,7 @@ curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/
 curl 只显示签名信封，不做任何核对；核对交给 SDK。SDK 还没发到 npm，从 GitHub Release 安装（Node.js 20 或以上）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.5/tapeapi-sdk-1.0.0-rc.5.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz
 ```
 
 ```js
@@ -80,7 +80,7 @@ console.log(r.choices[0].message.content)
 **Claude Code 和 Codex** 自己读不到回执。在本机开一个核验代理，再把它们指过去：
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.5/tapeapi-sdk-1.0.0-rc.5.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1
 ```
 
@@ -144,7 +144,7 @@ flowchart LR
 ## 隐私，如实说
 
 - **受保护的：** 通道和群聊的内容（端到端加密）；AI 回执只带哈希，经 SDK 或 `tapeapi-verify` 发出的请求还会追加 128 位
-  随机空白，短提示词没法靠猜哈希对上；MCP 核验链接默认只带哈希；SDK 的 `busPrivacyReader` 读取整个 ChannelBus 后在本地
+  随机空白，短提示词没法靠猜哈希对上；MCP 核验链接默认只带哈希；SDK 的 `busPrivacyReader`（实验性）读取整个 ChannelBus 后在本地
   筛选，节点看不出你的房间。
 - **藏不住的：** 服务方看得到它处理的一切（你的请求、IP 和 API 密钥）；公共 RPC 节点看得到你的 IP 和你在核验哪个服务；
   中继和链看得到通道的房间、时间和大小；链上的一切都是公开的，将来的付款也一样。
@@ -160,14 +160,14 @@ flowchart LR
 | TAP | 标题 | 状态 |
 |---|---|---|
 | [TAP-1](spec/TAP-1.md) | TAP 流程与状态 | Draft |
-| [TAP-20](spec/TAP-20.md) | 服务身份与清单，含 AI 价目表与多链名字 | Draft，目标 Stable (v1) |
-| [TAP-21](spec/TAP-21.md) | 签名响应信封，含 AI 用量回执 | Draft，目标 Stable (v1) |
+| [TAP-20](spec/TAP-20.md) | 服务身份与清单，含 AI 价目表与多链名字 | Stable (v1)（稳定）；§3.5 实验性 |
+| [TAP-21](spec/TAP-21.md) | 签名响应信封，含 AI 用量回执 | Stable (v1)（稳定） |
 | [TAP-22](spec/TAP-22.md) | 计量支付：凭证与托管 | Experimental（实验性） |
-| [TAP-23](spec/TAP-23.md) | 多家交叉验证的读取 | Draft，目标 Stable (v1) |
+| [TAP-23](spec/TAP-23.md) | 多家交叉验证的读取 | Stable (v1)（稳定） |
 | [TAP-24](spec/TAP-24.md) | 跨链意图询价 | Withdrawn（已撤回） |
 | [TAP-25](spec/TAP-25.md) | 可由电路验证的方法 | Experimental（实验性） |
-| [TAP-26](spec/TAP-26.md) | 容器间的私密通道 | Draft，目标 Stable (v1) |
-| [TAP-27](spec/TAP-27.md) | 最多 32 个容器的私密群聊 | Draft，目标 Stable (v1) |
+| [TAP-26](spec/TAP-26.md) | 容器间的私密通道 | Stable (v1)（稳定） |
+| [TAP-27](spec/TAP-27.md) | 最多 32 个容器的私密群聊 | Stable (v1)（稳定） |
 
 规范中英双语，以英文为准。TAP 编号已[提交给 TapeKit 维护者](https://github.com/TapeOutProtocol/TapeKit/issues/8)，尚未正式分配。
 

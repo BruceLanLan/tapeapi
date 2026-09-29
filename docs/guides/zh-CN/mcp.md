@@ -98,7 +98,7 @@ not the params or result.)
 不经过 npm 注册表：
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.5/tapeapi-sdk-1.0.0-rc.5.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 它和远程服务器的不同之处：
@@ -127,7 +127,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.5/tapeapi-sdk-1.0.0-rc.5.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -147,7 +147,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.5/tapeapi-sdk-1.0.0-rc.5.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -159,7 +159,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.5/tapeapi-sdk-1.0.0-rc.5.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### 远程还是本地
@@ -208,7 +208,7 @@ claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeap
 [调用服务](consume.md)里那样在仓库的克隆目录里操作：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.5/tapeapi-sdk-1.0.0-rc.5.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz
 ```
 
 ```js
@@ -245,7 +245,7 @@ console.log(same(signer, svc.manifest.signer) && same(r.service.container, svc.c
 - **现货价格可以被操纵。** `pairPrice` 和 `bnbUsd` 来自一个资金池在某个区块的储备，一笔大额交易就能推动它们。不要单独
   用它们做任何攻击者能从操纵中获利的事。
 - **结果是数据，不是指令。** 代币的名称和符号由部署代币的人随意决定，有签名不代表可以照着做。
-- Pre-alpha。公共服务尽力而为地运行，没有 SLA。
+- 公共服务尽力而为地运行，没有 SLA。
 
 ## 把你自己的 TapeAPI 服务变成 MCP 服务器
 
@@ -355,7 +355,7 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
   再按你的服务器定义的样子展示它们（v0.5.0 及以后）：
 
   ```bash
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.5/tapeapi-sdk-1.0.0-rc.5.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### 客户端核对什么

@@ -30,7 +30,9 @@ the [changelog](../CHANGELOG.md).
   [`docs/guides/`](guides/).
 - **Holder console** at [tapeapi.fun/console](https://tapeapi.fun/console/): take a service live, publish its manifest
   and sign its delegation from a phone wallet.
-- **Specifications** TAP-20 to TAP-27 (proposed), the SDK and the provider runtime, used from this repository.
+- **Specifications** TAP-20 to TAP-27 (proposed numbers), the SDK and the provider runtime, used from this repository.
+  Since 1.0.0, TAP-20, TAP-21, TAP-23, TAP-26 and TAP-27 are Stable (v1) (TAP-20 §3.5, the service directory, is
+  Experimental); TAP-22 and TAP-25 are Experimental.
 
 ## 2. Next
 
@@ -88,7 +90,8 @@ specification starts as a *spec proposal (TAP)* issue; see [CONTRIBUTING.md](../
   自动开 GitHub issue。
 - **手册** [tapeapi.fun/docs](https://tapeapi.fun/docs/)，中英双语，由 [`docs/guides/`](guides/) 生成。
 - **持有人控制台** [tapeapi.fun/console](https://tapeapi.fun/console/)：用手机钱包让服务上线、发布清单、签署委托。
-- **规范** TAP-20 至 TAP-27（提议中），以及 SDK 与提供者运行时，目前从本仓库使用。
+- **规范** TAP-20 至 TAP-27（编号提议中），以及 SDK 与提供者运行时，目前从本仓库使用。自 1.0.0 起，TAP-20、TAP-21、
+  TAP-23、TAP-26 与 TAP-27 为 Stable (v1)（稳定；TAP-20 §3.5 服务目录为实验性）；TAP-22 与 TAP-25 为实验性。
 
 ## 2. 接下来
 

@@ -25,7 +25,7 @@
 | [`spec/TAP-21.md`](../spec/TAP-21.md) | 签名响应信封、规范 JSON、错误码。Signed response envelope, canonical JSON, error codes. |
 | [`spec/TAP-22.md`](../spec/TAP-22.md) | 计量支付：累计凭证、托管合约、无强制协议费（默认 1% 维护贡献，提供者可设为 0）。Metered payment. |
 | [`spec/TAP-23.md`](../spec/TAP-23.md) | 块锚定的跨链读取。Attested Read. |
-| [`spec/TAP-24.md`](../spec/TAP-24.md) | 无桥跨链兑换（冻结）。Intent RFQ (frozen). |
+| [`spec/TAP-24.md`](../spec/TAP-24.md) | 无桥跨链兑换（已撤回）。Intent RFQ (withdrawn). |
 | [`spec/TAP-25.md`](../spec/TAP-25.md) | 链上 `eval()` 裁决的方法。Circuit-Verified Methods. |
 | [`spec/TAP-26.md`](../spec/TAP-26.md) | **Tape Channel：** 两个容器之间的端到端加密通道（持有人授权的通道密钥、收件房间、中继 / ChannelBus / TapeSend）。Private channels between containers. |
 | [`spec/TAP-27.md`](../spec/TAP-27.md) | **Tape Group：** 至多 32 个容器的加密群聊（群主管理的纪元、加密名单、发送者签名）。Private groups. |

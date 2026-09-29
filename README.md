@@ -16,8 +16,9 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 
 [中文说明](README.zh-CN.md) · [Website](https://tapeapi.fun) · [Docs](https://tapeapi.fun/docs/) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md)
 
-> **Status: pre-release (v1.0.0-rc.5).** Everything live today is free. Interfaces may still change before 1.0. Paid
-> channels (TAP-22) are experimental and not deployed. Nothing here has had a third-party audit.
+> **Status: released, 1.0.0.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
+> breaking changes come only in 2.0. Paid channels (TAP-22) are experimental and not deployed. Nothing here has had a
+> third-party audit.
 
 ## Start here
 
@@ -41,7 +42,7 @@ curl shows the signed envelope but checks nothing. The SDK checks it. It is not 
 release (Node.js 20 or later):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.5/tapeapi-sdk-1.0.0-rc.5.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz
 ```
 
 ```js
@@ -79,7 +80,7 @@ No outside provider has published a price table on chain yet, so this was run ag
 **Claude Code and Codex** cannot read receipts themselves. Run the local verifying proxy and point them at it:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0-rc.5/tapeapi-sdk-1.0.0-rc.5.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1
 ```
 
@@ -147,7 +148,7 @@ the signature adds is accountability. A receipt cannot be disowned, so anyone ru
 
 - **Protected:** channel and group content (end-to-end encrypted); AI receipts carry hashes only, and requests sent
   through the SDK or `tapeapi-verify` get 128 random bits of whitespace, so a short prompt cannot be confirmed from its
-  hash; MCP verification links carry hashes only by default; the SDK's `busPrivacyReader` reads all of ChannelBus and
+  hash; MCP verification links carry hashes only by default; the SDK's `busPrivacyReader` (experimental) reads all of ChannelBus and
   filters locally, so nodes cannot see your rooms.
 - **Not hidden:** a service sees what it processes (your request, your IP, your API key); public RPC nodes see your IP
   and which service you check; relays and the chain see channel rooms, timing and sizes; everything on chain is public,
@@ -165,14 +166,14 @@ chain as they do now; the prices in their manifest are published, not settled. S
 | TAP | Title | Status |
 |---|---|---|
 | [TAP-1](spec/TAP-1.md) | TAP process and statuses | Draft |
-| [TAP-20](spec/TAP-20.md) | Service identity and manifest, with the AI price table and multi-chain names | Draft, target Stable (v1) |
-| [TAP-21](spec/TAP-21.md) | Signed response envelope, with AI usage receipts | Draft, target Stable (v1) |
+| [TAP-20](spec/TAP-20.md) | Service identity and manifest, with the AI price table and multi-chain names | Stable (v1); §3.5 Experimental |
+| [TAP-21](spec/TAP-21.md) | Signed response envelope, with AI usage receipts | Stable (v1) |
 | [TAP-22](spec/TAP-22.md) | Metered payment: vouchers and escrow | Experimental |
-| [TAP-23](spec/TAP-23.md) | Attested read, cross-checked by independent providers | Draft, target Stable (v1) |
+| [TAP-23](spec/TAP-23.md) | Attested read, cross-checked by independent providers | Stable (v1) |
 | [TAP-24](spec/TAP-24.md) | Intent RFQ | Withdrawn |
 | [TAP-25](spec/TAP-25.md) | Circuit-verified methods | Experimental |
-| [TAP-26](spec/TAP-26.md) | Private channels between containers | Draft, target Stable (v1) |
-| [TAP-27](spec/TAP-27.md) | Private groups of up to 32 containers | Draft, target Stable (v1) |
+| [TAP-26](spec/TAP-26.md) | Private channels between containers | Stable (v1) |
+| [TAP-27](spec/TAP-27.md) | Private groups of up to 32 containers | Stable (v1) |
 
 The specs are bilingual; English is authoritative. The TAP numbers are
 [proposed](https://github.com/TapeOutProtocol/TapeKit/issues/8) to the TapeKit maintainers and not yet assigned.

@@ -182,7 +182,7 @@ to `scripts/channel-keys.mjs`. The full handshake, the other transports and runn
 
 ## Limits and status
 
-- Pre-alpha. Both services are free and run on a best-effort basis, with no SLA and no guarantee of uptime. Methods
+- Both services are free and run on a best-effort basis, with no SLA and no guarantee of uptime. Methods
   may be added; a change to the list is published on chain as a new manifest.
 - A relay can drop frames or go offline; TAP-26 detects gaps but cannot refill them. Name more than one transport in
   an invite if the channel matters.

@@ -180,4 +180,4 @@ Nothing needs saving to stay **safe**; these keep a restart **smooth**:
   reading the group room sees the member count and message sizes and times. On ChannelBus all of that is public for
   ever. Content and the member list stay encrypted.
 - A removed member keeps everything it could read before its removal.
-- Pre-alpha and not audited by a third party.
+- Not audited by a third party.

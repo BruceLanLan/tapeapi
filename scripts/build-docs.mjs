@@ -205,7 +205,11 @@ const SWITCH_LINE = /^\[(English|中文)\]\([^)]*\)\s*\|\s*(English|中文)\s*$/
 
 export function renderPage(page, lang, read = (p) => readFileSync(join(ROOT, p), 'utf8')) {
   const src = SOURCES[page][lang]
-  const lines = read(src).replace(/\r\n/g, '\n').split('\n').filter((l, n) => !(n < 3 && SWITCH_LINE.test(l.trim())))
+  // A link reference definition ("[1.0.0]: https://...") renders nothing in Markdown (FIXED DOCS-1).
+  // 链接定义行在 Markdown 里不输出任何内容。
+  const lines = read(src).replace(/\r\n/g, '\n').split('\n')
+    .filter((l, n) => !(n < 3 && SWITCH_LINE.test(l.trim())))
+    .filter((l) => !/^ {0,3}\[[^\]]+\]:\s+\S+\s*$/.test(l))
   const ctx = { href: resolver(src, lang), headings: [], ids: new Set() }
   const body = blocks(lines, ctx)
   const h1 = ctx.headings.find((h) => h.level === 1)

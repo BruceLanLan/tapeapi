@@ -315,6 +315,7 @@ code { font-size: .88em; background: var(--well); padding: 1px 5px; border: 1px 
 .app h3 { margin: 12px 0 8px; font-size: 17.5px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3; }
 .app p { margin: 0; font-size: 14px; color: var(--ink-2); line-height: 1.55; }
 .app .no.nope { color: var(--red); }
+.app .no.yes { color: var(--ok); }
 /* Not built yet: drawn dashed, the way a schematic draws a part that is not populated.
    尚未上线：虚线框，就像原理图里“不贴装”的元件。 */
 .apps.road { background: transparent; border: 0; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }

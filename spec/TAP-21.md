@@ -2,8 +2,7 @@
 |---|---|
 | Title | TapeAPI: Signed Response Envelope |
 | Author | Bruce (@BruceLanLan) |
-| Status | Draft |
-| Target | Stable (v1) at TapeAPI 1.0 |
+| Status | Stable (v1) since 2026-09-29 (TapeAPI 1.0.0) |
 | Implementation | Live (2026-09-27): every answer of `api.tapeapi.fun` (`11.1013.tape`) and `relay.tapeapi.fun` (`12.1013.tape`), errors included, is a v2 envelope signed by `server/src/`; the SDK verifies it. No third-party audit. |
 | Type | Standards |
 | Created | 2026-09-20 |
@@ -15,6 +14,8 @@
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
 
 > **Placeholder number.** TAP-21 is a placeholder number proposed in [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8). TapeKit has no numbered-proposal process yet (changes to TapeOut itself follow TapeKit `SPEC.md` §15), so the maintainers may assign another number or move this document to another process; see [TAP-1](TAP-1.md).
+
+> **Error codes and TAP-22.** The error codes this document defines, `PAYMENT_REQUIRED` and `BAD_VOUCHER` among them, are frozen with it: what a code means can be fixed now, while the payment flow that uses them is in TAP-22, which is Experimental.
 
 RFC 2119 keywords apply.
 
@@ -257,7 +258,7 @@ Copyright and related rights waived via CC0-1.0.
 
 > **实现状态（2026-09-27）：** 运行中：`api.tapeapi.fun`（`11.1013.tape`）与 `relay.tapeapi.fun`（`12.1013.tape`）的每个回答（包括错误）都是由 `server/src/` 签名的 v2 信封；SDK 负责验证。未经第三方审计。
 
-> **目标状态：** Target: Stable (v1) at TapeAPI 1.0。在 TapeAPI 1.0 发布时由 Draft 进入 Stable (v1)（见 [TAP-1](TAP-1.md) §4.1）；在此之前仍是 Draft。
+> **状态：** Stable (v1)（稳定，第 1 版，见 [TAP-1](TAP-1.md) §4.1），自 2026-09-29（TapeAPI 1.0.0）起生效。本文定义的错误码（包括 `PAYMENT_REQUIRED` 与 `BAD_VOUCHER`）随本文一起冻结：错误码的含义可以定死，而使用它们的付费流程在 TAP-22，TAP-22 是 Experimental。
 
 RFC 2119 关键词适用。
 
