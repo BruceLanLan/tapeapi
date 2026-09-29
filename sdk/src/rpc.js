@@ -168,24 +168,46 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
   // 每批至多 MAX_BATCH 个；只有一个调用时照旧发普通请求。批里的每个调用仍然各自在全部节点间过法定数。
   // - Answers are matched by id, never by position; a call the batch did not answer is a call that node did not answer.
   //   按 id 而不是位置对应回答；批量里没有回答的调用，就是该节点没有回答的调用。
-  // - A node that does not take the batch (an HTTP error, a body that is not an array, an answer too large, a failure
-  //   that is not a timeout) is asked again call by call, and every later call to it goes out alone. Its elements are
-  //   never read on an HTTP error: dRPC's free plan answers a batch of 4 with HTTP 500 and an error per element (code 31,
-  //   measured 2026-09-29), which read as answers would be a false disagreement.
-  //   不接受批量的节点（HTTP 错误、响应体不是数组、回答过大、非超时的失败）改为逐个重问，之后发往它的调用都逐个发送。HTTP 错误时
-  //   绝不读取其中的元素：dRPC 免费档对 4 个调用的批量回 HTTP 500 且每个元素都带错误（code 31，2026-09-29 实测），当作回答会造成假分歧。
+  // - A batch that fails other than by a timeout (an HTTP error, a body that is not an array, an answer too large, a network
+  //   failure) is asked again call by call. Its elements are never read on an HTTP error: dRPC's free plan answers a batch
+  //   of 4 with HTTP 500 and an error per element (code 31, measured 2026-09-29), which read as answers would be a false
+  //   disagreement. / 非超时的批量失败（HTTP 错误、响应体不是数组、回答过大、网络失败）改为逐个重问。HTTP 错误时绝不读取其中的
+  //   元素：dRPC 免费档对 4 个调用的批量回 HTTP 500 且每个元素都带错误（code 31，2026-09-29 实测），当作回答会造成假分歧。
+  // - What the node ANSWERED about the batch (an HTTP error, a single object, a 200 body that is not JSON) means it does not
+  //   take batches: every later call to it goes out alone. A failure with no answer (the connection reset, the body cut
+  //   off mid-read) says nothing about batches: later calls go out alone only until BATCH_RETRY_MS has passed or the node
+  //   has answered BATCH_RETRY_CALLS calls alone, then it is sent a batch again (FIXED P101-3: one reset used to stop
+  //   batching to that node for the client's lifetime). An answer too large is about that batch only and changes nothing.
+  //   节点对批量的**回答**（HTTP 错误、单个对象、不是 JSON 的 200 响应体）说明它不接受批量：之后发往它的调用都逐个发送。没有回答的
+  //   失败（连接被重置、响应体读到一半断掉）与批量无关：之后的调用只逐个发送到过了 BATCH_RETRY_MS 或该节点逐个答完
+  //   BATCH_RETRY_CALLS 个调用为止，然后再发批量（FIXED P101-3：以前一次重置就让该节点在客户端生命周期内不再批量）。
+  //   回答过大只关乎那一批，什么都不改变。
   // - A timeout is not retried call by call: the node did not answer, and each call fails as a single one would.
   //   超时不逐个重问：节点没有作答，每个调用都像单个请求那样失败。
   // MAX_BATCH 3: dRPC's free plan (a default node of X Layer and Base) refuses a batch of more than 3 (measured 2026-09-29).
   // MAX_BATCH 为 3：dRPC 免费档（X Layer 与 Base 的默认节点）拒绝超过 3 个调用的批量（2026-09-29 实测）。
   const MAX_BATCH = 3
-  const noBatch = new Set()      // urls that did not take a batch / 不接受批量的节点
+  const BATCH_RETRY_MS = 5 * 60_000, BATCH_RETRY_CALLS = 20
+  // url -> { until, calls }: no batch to it before `until` (Infinity: never) unless `calls` calls were answered alone first
+  // url -> { until, calls }：`until` 之前（Infinity 为永不）不向它发批量，除非先逐个答完 `calls` 个调用
+  const noBatch = new Map()
+  const batching = (url) => {
+    const p = noBatch.get(url)
+    if (!p) return true
+    if (p.until === Infinity || (Date.now() < p.until && p.calls < BATCH_RETRY_CALLS)) return false
+    noBatch.delete(url)
+    return true
+  }
+  // an eth_call sent alone while batching is paused; each one the node answers counts toward batching again
+  // 暂停批量期间单独发出的 eth_call；节点每答一个，都向恢复批量计一次
+  const alone = (url, method, params) => one(url, method, params).then((a) => { const p = noBatch.get(url); if (p) p.calls++; return a })
   const queues = new Map()       // url -> calls waiting for this turn's flush / 等待本轮发出的调用
   // Only eth_call is batched: resolve and the identity reads are eth_calls, and the other methods keep the exact wire
   // behaviour each node was measured with (publicnode refuses old eth_getLogs as HTTP 403 per request, review R4-1).
   // 只批量 eth_call：解析与身份读取都是 eth_call；其它方法保持各节点实测时的原样（publicnode 按请求以 HTTP 403 拒绝旧日志）。
   function ask(url, method, params) {
-    if (method !== 'eth_call' || noBatch.has(url)) return one(url, method, params)
+    if (method !== 'eth_call') return one(url, method, params)
+    if (!batching(url)) return alone(url, method, params)
     return new Promise((resolve, reject) => {
       let q = queues.get(url)
       // setTimeout 0, not a microtask: a read started after an already-settled await (a cached fact) still joins the batch
@@ -199,7 +221,8 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     queues.delete(url)
     for (let i = 0; i < q.length; i += MAX_BATCH) {
       const part = q.slice(i, i + MAX_BATCH)
-      if (part.length === 1 || noBatch.has(url)) for (const c of part) one(url, c.method, c.params).then(c.resolve, c.reject)
+      if (part.length === 1) one(url, part[0].method, part[0].params).then(part[0].resolve, part[0].reject)
+      else if (!batching(url)) for (const c of part) alone(url, c.method, c.params).then(c.resolve, c.reject)
       else batch(url, part)
     }
   }
@@ -208,20 +231,28 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), timeoutMs)
     let list
+    let answered = false      // the node said something about the batch / 节点对这一批有所回答
     try {
       const res = await f(url, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(part.map((c, k) => ({ jsonrpc: '2.0', id: ids[k], method: c.method, params: c.params }))), signal: ac.signal,
       })
-      if (!res.ok) { try { await res.body?.cancel() } catch { /* already gone / 已经没了 */ } throw new Error(`http ${res.status}`) }
-      list = await readJsonBounded(res, bodyLimit)
+      if (!res.ok) { answered = true; try { await res.body?.cancel() } catch { /* already gone / 已经没了 */ } throw new Error(`http ${res.status}`) }
+      // A body that is not JSON is an answer; a body cut off mid-read (a raw stream error) is not.
+      // 不是 JSON 的响应体是回答；读到一半断掉的响应体（原始的流错误）不是。
+      try { list = await readJsonBounded(res, bodyLimit) } catch (e) { if (e instanceof TapeAPIError) answered = true; throw e }
+      answered = true
       if (!Array.isArray(list)) throw new Error('batch answered with a single object')
     } catch (e) {
       if (ac.signal.aborted) { for (const c of part) c.reject(e); return }
       // An answer over bodyLimit is about this batch, not the node: ask call by call, each under its own limit.
       // 超过 bodyLimit 说的是这一批而不是节点：逐个重问，各自受上限约束。
-      if (!e?.data?.tooLarge) noBatch.add(url)
-      for (const c of part) one(url, c.method, c.params).then(c.resolve, c.reject)
+      if (!e?.data?.tooLarge) {
+        const before = noBatch.get(url)
+        if (answered) noBatch.set(url, { until: Infinity, calls: 0 })
+        else if (before?.until !== Infinity) noBatch.set(url, { until: Date.now() + BATCH_RETRY_MS, calls: 0 })
+      }
+      for (const c of part) alone(url, c.method, c.params).then(c.resolve, c.reject)
       return
     } finally { clearTimeout(timer) }
     const byId = new Map()

@@ -75,6 +75,13 @@ export function createRelayCore({
   // `drop`（清理删掉了过期房间）。Node 中继不传，一切仍在内存里；Worker 的 RelayRoom 把它们写进 Durable Object 存储，
   // 对象被 Cloudflare 重建时经 `restore` 交回房间。只有核心知道环挤掉了哪一帧、清理删了哪些房间，所以挂钩放在这里，
   // 而不是在 Worker 里再抄一份环的规则。
+  // A host that writes asynchronously sends with `pending: true` and then calls `commit(room, i)` once the write landed
+  // or `abort(room, i)` if it failed (FIXED P101-4). A pending frame is read by no one (a read stops before it) and
+  // wakes no one; abort takes it back out -- its index if nothing came after it, the frame a full ring shifted out for
+  // it, the per-source count -- so a client's retry after the error is the only copy.
+  // 异步写入的宿主以 `pending: true` 发送，写入落地后调用 `commit(room, i)`，失败则调用 `abort(room, i)`（FIXED P101-4）。
+  // 暂存的帧谁也读不到（读取停在它之前），也不唤醒任何人；abort 把它撤出——其后没有别的帧时连序号一起、满环为它移出的帧、
+  // 按来源的计数——因此客户端在错误之后的重试是唯一的一份。
   onChange = null,
   random = () => { const b = new Uint8Array(8); globalThis.crypto.getRandomValues(b); return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('') },
 } = {}) {
@@ -126,7 +133,7 @@ export function createRelayCore({
     // `source` is who posted, as the host vouches for it (the proven consumer of a paid call, else the client IP);
     // it only keys the 0x03 / 0x04 budget and is never stored with a frame.
     // `source` 是宿主担保的投递者（付费调用已证明的消费者，否则是客户端 IP）；只用于 0x03 / 0x04 的额度，不随帧保存。
-    send(roomName, frame, { handshakeOnly = false, source } = {}) {
+    send(roomName, frame, { handshakeOnly = false, source, pending = false } = {}) {
       checkName(roomName)
       if (typeof frame !== 'string' || !frame || frame.length % 4 || !B64_RE.test(frame)) throw bad('frame must be non-empty base64')
       if (frame.length > maxFrameB64) throw bad(`frame larger than ${maxFrameB64} base64 characters`)
@@ -139,6 +146,7 @@ export function createRelayCore({
         if (r0 && r0.frames.filter((f) => wireType(f.frame) === WIRE_HANDSHAKE).length >= maxHandshakePerRoom) throw bad('too many handshake messages in this room')
       }
       let r = rooms.get(roomName)
+      const created = !r, adopted = !!r && r.handshakeOnly && !handshakeOnly
       if (!r) {
         if (rooms.size >= maxRooms) sweep()
         if (rooms.size >= maxRooms) throw Object.assign(new Error('relay is full'), { code: 'UNAVAILABLE' })
@@ -147,28 +155,61 @@ export function createRelayCore({
           if (handshakeRooms >= maxHandshakeRooms) throw Object.assign(new Error('too many handshake-only rooms; try again shortly'), { code: 'UNAVAILABLE' })
           handshakeRooms++
         }
-        r = { frames: [], kept: [], sources: new Map(), next: 0, epoch: random(), touched: now(), handshakeOnly }
+        r = { frames: [], kept: [], sources: new Map(), next: 0, epoch: random(), touched: now(), handshakeOnly, staged: new Map() }
         rooms.set(roomName, r)
       } else if (r.handshakeOnly && !handshakeOnly) {
         r.handshakeOnly = false; handshakeRooms--   // a paid post adopts the room / 付费消息接管该房间
       }
       const kept = KEPT.has(wireType(frame))
+      let budget = null
       if (kept) {
         const t = now(), who = String(source ?? '')
         let b = r.sources.get(who)
         if (!b || t >= b.reset) { b = { n: 0, reset: t + keptWindowMs }; r.sources.delete(who); r.sources.set(who, b) }
         if (b.n >= maxKeptPerSource) throw bad(`too many invites / epoch messages from this source in this room; retry in ${Math.ceil((b.reset - t) / 1000)} s`)
         b.n++
+        budget = b
         while (r.sources.size > maxSourcesPerRoom) r.sources.delete(r.sources.keys().next().value)
       }
       touch(r)
       const i = r.next++
       const ring = kept ? r.kept : r.frames
-      ring.push({ i, frame })
-      const dropped = ring.length > (kept ? maxKeptPerRoom : maxFramesPerRoom) ? ring.shift().i : undefined   // oldest first; TAP-26 reports the gap / 丢最旧的，TAP-26 会报告空洞
-      if (onChange) onChange({ type: 'put', room: roomName, meta: meta(r), frame: { i, frame }, dropped })
-      wake(roomName)
+      const entry = pending ? { i, frame, pending: true } : { i, frame }
+      ring.push(entry)
+      const out = ring.length > (kept ? maxKeptPerRoom : maxFramesPerRoom) ? ring.shift() : undefined   // oldest first; TAP-26 reports the gap / 丢最旧的，TAP-26 会报告空洞
+      if (pending) (r.staged ??= new Map()).set(i, { entry, ring, out, budget, created, adopted })
+      if (onChange) onChange({ type: 'put', room: roomName, meta: meta(r), frame: { i, frame }, dropped: out?.i })
+      if (!pending) wake(roomName)
       return { i, epoch: r.epoch }
+    },
+    // A pending frame's write landed: readers may have it now (FIXED P101-4). / 暂存帧的写入已落地：现在可以读了。
+    commit(roomName, i) {
+      const r = rooms.get(roomName), st = r?.staged?.get(i)
+      if (!st) return false
+      r.staged.delete(i)
+      delete st.entry.pending
+      wake(roomName)
+      return true
+    },
+    // A pending frame's write failed: take it back out, as if it had never been sent (FIXED P101-4).
+    // 暂存帧的写入失败：撤出，如同从未发送。
+    abort(roomName, i) {
+      const r = rooms.get(roomName), st = r?.staged?.get(i)
+      if (!st) return false
+      r.staged.delete(i)
+      const at = st.ring.indexOf(st.entry)
+      if (at >= 0) st.ring.splice(at, 1)
+      // The frame the ring shifted out for it goes back in index order (a host deletes it from storage only after the write
+      // landed). / 环为它移出的帧按序号放回（宿主只在写入落地之后才从存储删除它）。
+      if (st.out) { const k = st.ring.findIndex((f) => f.i > st.out.i); st.ring.splice(k < 0 ? st.ring.length : k, 0, st.out) }
+      if (st.budget && st.budget.n > 0) st.budget.n--
+      if (r.next === i + 1) r.next = i                  // nothing came after it / 其后没有别的帧
+      if (st.adopted) { r.handshakeOnly = true; handshakeRooms++ }
+      if (st.created && !r.frames.length && !r.kept.length && !r.staged.size) {
+        rooms.delete(roomName)
+        if (r.handshakeOnly) handshakeRooms--
+      }
+      return true
     },
     async recv(roomName, after = -1, waitMs = 0, epoch) {
       checkName(roomName)
@@ -191,6 +232,7 @@ export function createRelayCore({
         const frames = []
         let bytes = 0
         for (const f of inOrder(r)) {
+          if (f.pending) break                   // not written yet: nothing at or after it is handed out / 尚未写入：它及其后都不交出
           if (f.i <= from) continue
           bytes += f.frame.length + 32
           if (frames.length && bytes > maxRecvBytes) break
@@ -221,7 +263,7 @@ export function createRelayCore({
     restore(roomName, { epoch, next, touched, handshakeOnly = false, frames = [] }) {
       checkName(roomName)
       if (rooms.has(roomName) || typeof epoch !== 'string' || !Number.isInteger(next) || next < 0 || !Number.isFinite(touched)) return false
-      const r = { frames: [], kept: [], sources: new Map(), next, epoch, touched, handshakeOnly: !!handshakeOnly }
+      const r = { frames: [], kept: [], sources: new Map(), next, epoch, touched, handshakeOnly: !!handshakeOnly, staged: new Map() }
       if (expired(r, now())) return false
       for (const f of [...frames].filter((f) => Number.isInteger(f?.i) && f.i >= 0 && f.i < next && typeof f.frame === 'string').sort((a, b) => a.i - b.i)) {
         (KEPT.has(wireType(f.frame)) ? r.kept : r.frames).push({ i: f.i, frame: f.frame })

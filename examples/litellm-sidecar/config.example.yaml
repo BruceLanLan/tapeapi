@@ -1,0 +1,34 @@
+# A minimal LiteLLM Proxy config for the sidecar package. Copy it to config.yaml and edit the model list.
+# 给签名旁路一键包用的最小 LiteLLM Proxy 配置。复制为 config.yaml 后改模型列表。
+#
+# The sidecar prices receipts by the model LiteLLM REPORTS, and LiteLLM 1.103.0 reports each deployment's public
+# model_name (it restamps the answer's `model` to the name the client asked for), so every model_name below must be an
+# `id` (or an alias) in models.json. After a fallback LiteLLM reports the model group that actually answered: list
+# fallback groups in models.json too, each with its own prices.
+# 旁路按 LiteLLM **报告的** model 计价；LiteLLM 1.103.0 报告的是部署的公开 model_name（它把回答的 model 改写成客户端请求的名字），
+# 所以下面每个 model_name 都要是 models.json 里的 id（或别名）。发生回退（fallback）时 LiteLLM 报告实际作答的模型组，也要按它自己的价格写进 models.json。
+#
+# Provider keys come from the environment (.env), never from this file. / 服务商密钥来自环境变量（.env），不写在本文件里。
+model_list:
+  - model_name: gpt-5-mini
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: claude-sonnet-4-5
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5-20250929
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: deepseek-chat
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+  - model_name: text-embedding-3-small
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: os.environ/OPENAI_API_KEY
+
+general_settings:
+  # Admin key: creates virtual keys (/key/generate) for your users. / 管理员密钥：用来给用户创建虚拟密钥。
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # Virtual keys, budgets and spend live in PostgreSQL. / 虚拟密钥、预算与花费存在 PostgreSQL 里。
+  database_url: os.environ/DATABASE_URL

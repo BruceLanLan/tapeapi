@@ -76,7 +76,8 @@ bob.open(frame, { text: true }).data                 // 'hello'
 一个免费的公共中继运行在 `https://relay.tapeapi.fun`（TapeOut 名称 `12.1013.tape`）；如何在邀请中写明它、让通道经由它
 传输，见[公共 API](public-api.md) 的"公共中继"一节。自己运行中继：[`examples/relay-service/`](../../../examples/relay-service/)（Node）或
 [`examples/cloudflare-worker/`](../../../examples/cloudflare-worker/)（每个房间一个 Durable Object）。用
-`node conformance/relay.mjs --url <relay>` 检查任意中继。
+`node conformance/relay.mjs --url https://relay.tapeapi.fun` 检查任意中继：`--url` 填中继的站点根，不要带邀请里
+`relays[].url` 所用的 `/tapeapi/v1`。
 
 ## 4. 可靠地读取链
 

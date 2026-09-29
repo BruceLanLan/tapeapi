@@ -4,12 +4,12 @@ JavaScript SDK for [TapeAPI](https://tapeapi.fun): find a service on BNB Smart C
 answer whose signature is checked against the key the service's holder delegated on chain. Paid methods use
 EIP-712 vouchers against an escrow; nothing is signed or sent without you.
 
-> **1.0.0.** Semantic versioning from 1.0 on: breaking changes come only in 2.0. See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md).
+> **1.1.0.** Semantic versioning from 1.0 on: breaking changes come only in 2.0. See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md).
 
 ## Install
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz
 ```
 
 Not on the npm registry yet: each GitHub release carries the package file. Built from https://github.com/BruceLanLan/tapeapi
@@ -32,7 +32,7 @@ console.log(result.bnbUsd, verified)                // price of BNB in USDT, sig
 
 `api.callQuorum([svcA, svcB], method, params)` asks independent providers and accepts only an answer they agree on.
 
-**X Layer and Base.** TapeOut names on other chains carry an area code: `1.2.344.tape` is circuit 1 of processor 344
+**X Layer and Base.** TapeOut names on other chains carry an area code: `1.2.230.tape` is circuit 1 of processor 230
 on X Layer (chainId 196, area 2), `1.3.5.tape` is on Base (chainId 8453, area 3). `api.resolve()` reads such a name on its
 own chain (identity, manifest and a delegation signed for that chain's EIP-712 domain), through `chains: { 196: { rpcUrls } }`
 or else that chain's defaults (`rpcUrlsFor(196)`: OKX and dRPC, two operators, so no spare). `{ chainId, circuits, tokenId }`
@@ -63,11 +63,11 @@ The package ships a command that exposes any TapeAPI service's free methods as M
 Cursor, any MCP client), and verifies every answer in your own process before the model sees it:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ```json
-{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
+{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
 ```
 
 - **Identity from the chain.** Each service (a TapeOut name like `11.1013.tape` or a container address) is resolved
@@ -95,7 +95,8 @@ For AI clients that cannot read usage receipts themselves (Claude Code, Codex, a
 forwards every request to a TapeAPI AI service resolved on chain and checks the signed receipt of every answer.
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-verify 42.1013.tape
+# 42.1013.tape is an example name: put your AI provider's TapeOut name here
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1
 ```
 

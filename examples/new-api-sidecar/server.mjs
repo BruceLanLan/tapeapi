@@ -40,6 +40,17 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 const HEADER_NAME = /^[a-z0-9!#$%&'*+.^_`|~-]+$/
 const LOOPBACK_HTTP = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type' }
+/**
+ * Which gateway the sidecar stands in front of: its name in messages, the log label, the default upstream, and
+ * optionally the API format adapters handed to createAIProxy (default ai.FORMATS) and the price table used when
+ * MODELS_FILE is unset. Other one-command packages (examples/litellm-sidecar) pass their own; every default here is
+ * new-api's, unchanged.
+ * 旁路放在哪个网关前面：消息里的名字、日志标签、默认上游，以及可选的格式适配器（默认 ai.FORMATS）与未设 MODELS_FILE 时的价目表。
+ * 其它一键包（examples/litellm-sidecar）传入自己的；这里的默认值都是 new-api 的，保持不变。
+ * @typedef {{ upstreamName: string, label: string, defaultUpstream: string, formats?: object[], modelsFile?: string }} SidecarProfile
+ */
+/** @type {SidecarProfile} */
+export const NEW_API_PROFILE = Object.freeze({ upstreamName: 'new-api', label: 'new-api-sidecar', defaultUpstream: DEFAULT_UPSTREAM })
 
 /**
  * Read and check the environment. Never throws: `ok: false` is setup mode, with `missing` (variables not set) and
@@ -48,7 +59,7 @@ const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods
  * @param {Record<string, string|undefined>} rawEnv
  * @returns {{ ok: boolean, missing: string[], problem: string|null, signer: string|null, config?: object }}
  */
-export function readConfig(rawEnv = process.env) {
+export function readConfig(rawEnv = process.env, profile = NEW_API_PROFILE) {
   // Values pasted from a phone or a web page often carry a trailing space or newline. / 粘贴来的值常带尾随空白。
   const env = Object.fromEntries(Object.entries(rawEnv || {}).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]))
   const out = (problem, extra = {}) => ({ ok: false, missing: extra.missing ?? [], problem, signer: extra.signer ?? null })
@@ -81,12 +92,12 @@ export function readConfig(rawEnv = process.env) {
   if (expires <= Math.floor(Date.now() / 1000)) return out(`the delegation expired at ${new Date(expires * 1000).toISOString()}: renew it in step 4 of the holder console (${CONSOLE_URL}) and set the new DELEGATION_EXPIRES and DELEGATION_SIG`, { signer })
   if (!/^0x[0-9a-fA-F]{130,}$/.test(env.DELEGATION_SIG)) return out('DELEGATION_SIG must be the 65-byte signature from step 4 of the holder console (0x followed by 130 hex digits)', { signer })
 
-  // Upstream (new-api) / 上游
-  const upstreamBaseUrl = env.UPSTREAM_BASE_URL || DEFAULT_UPSTREAM
-  try { const u = new URL(upstreamBaseUrl); if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error() } catch { return out(`UPSTREAM_BASE_URL must be new-api's /v1 base, such as ${DEFAULT_UPSTREAM}`, { signer }) }
+  // Upstream (new-api, or the profile's gateway) / 上游
+  const upstreamBaseUrl = env.UPSTREAM_BASE_URL || profile.defaultUpstream
+  try { const u = new URL(upstreamBaseUrl); if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error() } catch { return out(`UPSTREAM_BASE_URL must be ${profile.upstreamName}'s /v1 base, such as ${profile.defaultUpstream}`, { signer }) }
 
   // The price table / 价目表
-  const modelsFile = env.MODELS_FILE || DEFAULT_MODELS_FILE
+  const modelsFile = env.MODELS_FILE || profile.modelsFile || DEFAULT_MODELS_FILE
   const models = readModels(modelsFile, publicUrl)
   if (typeof models === 'string') return out(models, { signer })
 
@@ -138,8 +149,9 @@ export function readModels(file, publicUrl = 'https://sidecar.invalid') {
 }
 
 /** The sidecar for a good configuration. Throws what createAIProxy throws. / 按正确配置建出旁路。 */
-export function buildProxy(config, { fetch, log } = {}) {
+export function buildProxy(config, { fetch, log, formats } = {}) {
   return createAIProxy({
+    ...(formats ? { formats } : {}),
     upstream: { baseUrl: config.upstreamBaseUrl },
     manifestBase: config.manifestBase,
     signerKey: config.signerKey,
@@ -171,11 +183,11 @@ export function setupAnswer(state, request) {
  * The request handler for an environment: the sidecar when the configuration is complete, setup mode otherwise.
  * 按环境变量得到请求处理函数：配置完整时是旁路，否则是设置模式。
  */
-export function createSidecar(env = process.env, { fetch, log = (...a) => console.error('[new-api-sidecar]', ...a) } = {}) {
-  let state = readConfig(env)
+export function createSidecar(env = process.env, { fetch, profile = NEW_API_PROFILE, log = (...a) => console.error(`[${profile.label}]`, ...a) } = {}) {
+  let state = readConfig(env, profile)
   let proxy = null
   if (state.ok) {
-    try { proxy = buildProxy(state.config, { fetch, log }) } catch (e) { state = { ok: false, missing: [], problem: e.message, signer: state.signer } }
+    try { proxy = buildProxy(state.config, { fetch, log, formats: profile.formats }) } catch (e) { state = { ok: false, missing: [], problem: e.message, signer: state.signer } }
   }
   return {
     state, proxy,
@@ -201,10 +213,11 @@ export function clientIpOf(req, header) {
  * chunk as it comes, never buffered (the same bridge as examples/ai-proxy/index.mjs).
  * 监听并服务。Node http 与 fetch 风格处理函数之间双向流式转换：事件流逐块写出，从不缓冲。
  * @param {{ env?: object, port?: number, host?: string, fetch?: Function, log?: Function, quiet?: boolean,
- *           localPublicUrl?: boolean }} [o]  localPublicUrl: TESTING ONLY, PUBLIC_URL defaults to http://127.0.0.1:<port>
+ *           localPublicUrl?: boolean, profile?: SidecarProfile }} [o]  localPublicUrl: TESTING ONLY, PUBLIC_URL defaults to
+ *           http://127.0.0.1:<port>; profile: the gateway in front of which it stands (default new-api's)
  */
-export async function startSidecar({ env = process.env, port, host, fetch, log, quiet = false, localPublicUrl = false } = {}) {
-  const say = quiet ? () => {} : (l) => console.log(`[new-api-sidecar] ${l}`)
+export async function startSidecar({ env = process.env, port, host, fetch, log, quiet = false, localPublicUrl = false, profile = NEW_API_PROFILE } = {}) {
+  const say = quiet ? () => {} : (l) => console.log(`[${profile.label}] ${l}`)
   let sidecar = null
   const server = http.createServer(async (req, res) => {
     try {
@@ -224,7 +237,7 @@ export async function startSidecar({ env = process.env, port, host, fetch, log, 
       for await (const chunk of r.body) res.write(chunk)
       res.end()
     } catch (e) {
-      console.error('[new-api-sidecar] request failed:', e?.message || e)
+      console.error(`[${profile.label}] request failed:`, e?.message || e)
       if (!res.headersSent) { res.writeHead(400, { 'content-type': 'application/json' }); res.end('{"error":{"message":"malformed request","type":"tapeapi_proxy_error","code":"bad_request"}}') } else res.destroy()
     }
   })
@@ -237,7 +250,7 @@ export async function startSidecar({ env = process.env, port, host, fetch, log, 
   await new Promise((resolve, reject) => server.once('error', reject).listen(listenPort, listenHost, resolve))
   const actual = server.address().port
   const effective = localPublicUrl && !env.PUBLIC_URL ? { ...env, PUBLIC_URL: `http://127.0.0.1:${actual}` } : env
-  sidecar = createSidecar(effective, { fetch, ...(log ? { log } : {}) })
+  sidecar = createSidecar(effective, { fetch, profile, ...(log ? { log } : {}) })
 
   const { state } = sidecar
   say(`listening on http://${listenHost}:${actual}`)
@@ -248,11 +261,11 @@ export async function startSidecar({ env = process.env, port, host, fetch, log, 
   } else {
     const m = sidecar.proxy.manifest(), c = state.config
     say(`${m.name}: signer ${m.signer}, container ${m.container}, delegation until ${new Date(m.delegation.expires * 1000).toISOString().slice(0, 10)}`)
-    say(`upstream ${c.upstreamBaseUrl}   (new-api; your users' keys pass through to it unchanged)`)
+    say(`upstream ${c.upstreamBaseUrl}   (${profile.upstreamName}; your users' keys pass through to it unchanged)`)
     for (const e of m.ai.endpoints) say(`${e.format.padEnd(18)} ${e.baseUrl}`)
     say(`models   ${m.ai.models.length} priced (${m.ai.models.slice(0, 6).map((x) => x.id).join(', ')}${m.ai.models.length > 6 ? ', ...' : ''}) from ${c.modelsFile}`)
     say(`manifest ${c.publicUrl}/.well-known/tapeapi.json   (publish it on chain from ${CONSOLE_URL})`)
-    if (c.rateIp && !c.clientIpHeader) say(`rate     ${c.rateIp}/min per TCP peer: behind a reverse proxy set CLIENT_IP_HEADER, or all callers share one bucket (RATE_IP=0 leaves limits to new-api)`)
+    if (c.rateIp && !c.clientIpHeader) say(`rate     ${c.rateIp}/min per TCP peer: behind a reverse proxy set CLIENT_IP_HEADER, or all callers share one bucket (RATE_IP=0 leaves limits to ${profile.upstreamName})`)
     if (c.tapeName) say(`verify   users of Claude Code or Codex can run: tapeapi-verify ${c.tapeName}`)
     const days = Math.floor((m.delegation.expires * 1000 - Date.now()) / 86_400_000)
     if (days < 30) say(`RENEW    the delegation expires in ${days} days: renew it in step 4 of ${CONSOLE_URL}`)

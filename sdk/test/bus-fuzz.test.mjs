@@ -18,6 +18,7 @@ import { channel } from '../src/index.js'
 import { createRpc } from '../src/rpc.js'
 import { encodeParams } from '../src/abi.js'
 import { createFakeChain } from './helpers/fake-chain.mjs'
+import { loadedMachine, virtualClock, withClock } from './helpers/clock.mjs'
 
 const EXT = true, STRICT = true, ONLY_ENV = process.env.FUZZ_ONLY || ''
 const DEBUG = process.env.FUZZ_DEBUG === '1'
@@ -31,7 +32,6 @@ const ARCHIVE = 'Archive requests require a personal token. Get one at: https://
 const ROOM = ['a1'.repeat(32), 'b2'.repeat(32)]
 const ROOM3 = 'c3'.repeat(32)
 const JUNK = 0xffff
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // MIX (default on): hash the seed first. The repo harness feeds the seed straight into xorshift32, whose first outputs
 // are nearly a linear function of a small seed: consecutive seeds draw the same early choices (liar or not, ...).
@@ -61,7 +61,13 @@ function drawNode(r, { liar, liarKind, ONLY }) {
   return n
 }
 
-async function run(seed, ONLY = ONLY_ENV) {
+// Each run is on a virtual clock (FIXED P101-1): a node's latency is simulated time, the reader's work takes none, so
+// budgetMs is spent on the latency the seed draws and nothing else. A run no longer depends on how busy the machine is,
+// and a tiny-budget seed replays the same run too.
+// 每次运行都在虚拟时钟上（FIXED P101-1）：节点延迟是模拟时间，读取方的计算不耗时间，budgetMs 只花在种子抽到的延迟上。
+// 运行结果不再取决于机器多忙，极小预算的种子也能重放同一个场景。
+const run = (seed, ONLY = ONLY_ENV) => withClock(virtualClock(), (clock) => runOn(clock, seed, ONLY))
+async function runOn(clock, seed, ONLY) {
   const r = rng(seed)
   const chain = createFakeChain()
   const st = chain.state
@@ -130,7 +136,7 @@ async function run(seed, ONLY = ONLY_ENV) {
     const b = JSON.parse(init.body)
     const n = nodes[URLS.indexOf(url)]
     const r = nodeRng[URLS.indexOf(url)]   // each node its own stream: replays do not depend on request order / 每个节点各自的随机数流
-    if (n.slow) await sleep(r.int(n.slow + 1))
+    if (n.slow) await clock.sleep(r.int(n.slow + 1))
     if (toggle && r.p(0.3)) { const t = toggle; toggle = null; t() }
     if (URLS.indexOf(url) === outAt && pollNo >= 5 && pollNo <= 27 && (b.method === 'eth_getLogs' || b.method === 'eth_getBlockReceipts')) throw new TypeError('fetch failed')
     if (faults.on && n.flaky && r.p(n.flaky) && (b.method === 'eth_getLogs' || b.method === 'eth_getBlockReceipts')) {
@@ -319,8 +325,16 @@ test(`bus reader, randomised: ${RUNS} runs of faulty, lying and noisy nodes, stu
 
 // Seeds that once found a defect, replayed every time (seed, focus) / 曾经发现缺陷的种子，每次都重放（种子、方向）
 const REGRESSIONS = [[21200346, 'cant'], [11000712, ''], [14000061, 'outage'], [31416, ''], [31458, ''], [31479, ''], [31600, ''], [31734, ''], [31819, ''], [40000295, ''], [44000268, 'reorg']]
-// (tiny-budget seeds are left out: they depend on how fast the machine is, so they do not replay the same run)
-// （极小预算的种子不放进来：它们取决于机器快慢，重放的不是同一个场景）
+// (Tiny-budget seeds used to be left out because they depended on how fast the machine was; on the virtual clock they
+// replay the same run.) / （极小预算的种子以前不放进来，因为取决于机器快慢；在虚拟时钟上它们重放的是同一个场景。）
 test('bus reader, randomised: the seeds that found defects before still pass', async () => {
   for (const [seed, only] of REGRESSIONS) await run(seed, only)
 })
+
+// FIXED P101-1: seed 31392 (budgetMs 200) failed its liveness check once on a loaded machine: the nodes ran out of their
+// per-poll budget of wall time, so the cursor held. The same seeds on a clock running 50x fast must pass.
+// FIXED P101-1：种子 31392（budgetMs 200）在高负载机器上活性检查失败过一次：节点用完了每次轮询的墙钟预算，游标停住。
+// 同样的种子在快 50 倍的时钟上必须通过。
+test('FIXED P101-1: the randomised bus runs do not depend on how busy the machine is', () => withClock(loadedMachine(50), async () => {
+  for (const seed of [31392, SEED0, SEED0 + 1, SEED0 + 2]) await run(seed, '')
+}))

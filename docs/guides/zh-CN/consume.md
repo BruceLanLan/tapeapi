@@ -18,7 +18,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz
 ```
 
 把下面的脚本保存为 `.mjs` 文件，放在能解析到 `@tapeapi/sdk` 的地方，然后用 `node <文件>.mjs` 运行：用克隆时，**放在 `tapeapi`
@@ -125,7 +125,7 @@ try {
 | `PRICE_CHANGED` | 价格涨到了你已接受的价格之上。 | 先征询你的用户，再调用 `api.acceptPrice(svc, method)` 或传入 `{ maxPrice }`。 |
 | `QUORUM_FAILED` | `callQuorum` 中的提供者未达成一致。 | 视为没有回答。 |
 
-完整列表见 [TAP-21](../../../spec/TAP-21.md)。服务发出的错误同样带签名（`e.signed`）。
+完整列表见[升级到 1.0](upgrade-1.0.md#错误码)与 [TAP-21](../../../spec/TAP-21.md)。服务发出的错误同样带签名（`e.signed`）。
 
 ## 4. 要求多个提供者之间达成一致
 

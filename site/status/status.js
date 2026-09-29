@@ -139,7 +139,9 @@
       var x = root.getAttribute('data-theme'); var zh = root.getAttribute('data-lang') === 'zh'
       t.textContent = x === 'dark' ? (zh ? '浅色' : 'Light') : x === 'light' ? (zh ? '深色' : 'Dark') : (zh ? '主题' : 'Theme')
     }
-    root.lang = root.getAttribute('data-lang') === 'zh' ? 'zh-CN' : 'en'
+    var zhPage = root.getAttribute('data-lang') === 'zh'
+    root.lang = zhPage ? 'zh-CN' : 'en'
+    document.title = zhPage ? 'TapeAPI 状态' : 'TapeAPI Status'
   }
 
   document.addEventListener('DOMContentLoaded', function () {

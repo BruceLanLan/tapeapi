@@ -11,7 +11,15 @@
     var nav = (navigator.languages && navigator.languages[0]) || navigator.language || 'en';
     lang = /^zh/i.test(nav) ? 'zh' : 'en';
   }
-  root.setAttribute('data-lang', lang);
+  // <html lang> and the tab title follow the language too (screen readers, bookmarks).
+  // <html lang> 与标签页标题也随语言切换（读屏软件、书签）。
+  var TITLE = { en: document.title, zh: 'TapeAPI — 每次 AI 调用，都附一张签名回执' };
+  function setLang(l) {
+    root.setAttribute('data-lang', l);
+    root.lang = l === 'zh' ? 'zh-CN' : 'en';
+    document.title = TITLE[l];
+  }
+  setLang(lang);
 
   var theme = get('tapeapi.theme');
   if (theme === 'dark' || theme === 'light') root.setAttribute('data-theme', theme);
@@ -30,7 +38,7 @@
     if (!el) return;
     if (el.id === 'lang-btn') {
       var next = root.getAttribute('data-lang') === 'zh' ? 'en' : 'zh';
-      root.setAttribute('data-lang', next); set('tapeapi.lang', next); label();
+      setLang(next); set('tapeapi.lang', next); label();
     }
     if (el.id === 'theme-btn') {
       var cur = root.getAttribute('data-theme');

@@ -73,7 +73,8 @@ A free public relay runs at `https://relay.tapeapi.fun` (TapeOut name `12.1013.t
 carry a channel over it is in [Public API](public-api.md), under "The public relay". To run your own relay:
 [`examples/relay-service/`](../../examples/relay-service/) (Node) or
 [`examples/cloudflare-worker/`](../../examples/cloudflare-worker/) (one Durable Object per room). Check any relay with
-`node conformance/relay.mjs --url <relay>`.
+`node conformance/relay.mjs --url https://relay.tapeapi.fun`: give the relay's site root, not the
+`/tapeapi/v1` address that goes into an invite's `relays[].url`.
 
 ## 4. Reading the chain reliably
 

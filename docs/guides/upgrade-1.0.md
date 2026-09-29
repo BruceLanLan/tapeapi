@@ -20,8 +20,8 @@ the methods and result shapes of the public services (api.tapeapi.fun, relay.tap
 audited, and neither is the ServiceDirectory. That covers `api.payer()`, `api.acceptPrice()` / `api.acceptedPrice()`,
 the `payer` and `maxPrice` call options, the channel builders `api.tx.approve / fund / requestWithdraw / cancelWithdraw /
 withdraw / authorizeSession / settle / setContribution / register`, `api.chain.escrow.*`, `api.chain.resolve()` and
-`api.chain.serviceOf()` (and resolving a directory label; `labelToBytes32`, and `LABEL_RE` / `bytes32ToLabel` of `abi`), the `directory` and `escrow` options, `contribution`, the
-voucher helpers of `sig`, WebMCP's `paid` option, and on the server the voucher store, the settlement helpers and the
+`api.chain.serviceOf()` (and resolving a directory label; `labelToBytes32`, and `LABEL_RE` / `bytes32ToLabel` of `abi`), the `directory` and `escrow` options, `contribution`,
+`MAX_CONTRIBUTION_BPS`, `RECOMMENDED_CONTRIBUTION_BPS` and `MAINNET.bem` (the payment token), the voucher helpers of `sig`, WebMCP's `paid` option, and on the server the voucher store, the settlement helpers and the
 payment options of `createProvider`. Reading prices from a manifest (`priceBEM`, `parseUnits`, `formatUnits`) is
 Stable, and so are the codes `PAYMENT_REQUIRED`, `BAD_VOUCHER` and `PRICE_CHANGED`: a free service's client can meet
 them too.
@@ -137,6 +137,8 @@ client codes are raised by the SDK (§3.4).
 | `RECEIPT_INVALID` | client | An AI usage receipt is missing or fails a check | no |
 | `BUDGET_EXCEEDED`, `USER_DECLINED` | client | WebMCP spending budget; the user said no | no |
 | `INVALID_ARGUMENT` | client | Your own options or arguments are wrong | **never** |
+| `METHOD_NOT_ALLOWED` | provider route, unsigned | HTTP 405: a request other than POST to `/tapeapi/v1/<method>`. The SDK always POSTs; a client that meets it treats it as a transport failure (`PROVIDER_UNAVAILABLE`) | no |
+| `NAME_TAKEN` | WebMCP | In `handle.skipped[].code`: `registerTool` failed, usually because another script on the page already registered that tool name (`reason` says why). Not thrown | after the other tool is gone (`refresh()`) |
 
 An MCP server in front of a service (`createMcpProxy`) reports its own refusals as JSON-RPC errors whose
 `error.data.code` is `TOOLS_CHANGED`, `INVISIBLE_CHARACTERS` or `UPSTREAM_UNAVAILABLE`.

@@ -185,3 +185,75 @@ test('FIXED RELAY-1 (Worker): the live scenario -- an invite read back at +30 s 
     assert.deepEqual([got.frames, got.epoch], [[{ i: 0, frame }], sent.epoch], `+${s} s: 1 frame, same epoch`)
   }
 })
+
+// FIXED P101-4: a storage write that failed used to leave the frame in memory while relaySend answered with an error, so
+// the client's retry added it a second time (i and i+1, both readable; after an eviction, the retry's copy and a hole).
+// Now the frame is staged until its own write lands: a failed write answers with the error and takes the frame back
+// out (its index, the frame a full ring shifted out, the per-source count), and nothing reads it in the meantime.
+// FIXED P101-4：存储写入失败时，以前帧仍留在内存里而 relaySend 回错误，客户端重试就再加一次（i 与 i+1 都读得到；回收后
+// 是重试的副本加一个空洞）。现在帧在自己的写入落地之前处于暂存：写入失败就回错误并把帧撤出（序号、满环移出的帧、按来源的计数），
+// 期间也没有人能读到它。
+const failingStorage = () => {
+  const s = fakeStorage()
+  const put = s.put.bind(s)
+  s.failPuts = 0
+  s.put = (k, v) => (s.failPuts > 0 && typeof k === 'object' && Object.keys(k).some((x) => x.startsWith('f:')) ? (s.failPuts--, Promise.reject(new Error('storage down'))) : put(k, v))
+  return s
+}
+const send = async (o, body, path = '/send') => { const res = await o.fetch(new Request(`https://room${path}`, { method: 'POST', body: JSON.stringify(body) })); return { status: res.status, ...(await res.json()) } }
+
+test('FIXED P101-4: a failed storage write answers with an error and leaves no frame behind; the retry is the only copy, before and after an eviction', async () => {
+  // A new room: the failed first post leaves no room at all. / 新房间：失败的第一次投递连房间都不留。
+  const storage = failingStorage(), r = room(20)
+  const o = new RelayRoom(stateOf(storage), {})
+  storage.failPuts = 1
+  const failed = await send(o, { room: r, frame: wire(0x02, 1) })
+  assert.equal(failed.status, 503); assert.deepEqual(failed.error, { code: 'INTERNAL', message: 'storage down' })
+  assert.deepEqual(await op(o, '/recv', { room: r, after: -1, waitMs: 0 }), { frames: [], next: -1, epoch: null }, 'nothing in memory')
+  assert.equal(storage.data.size, 0, 'nothing in storage')
+  const ok = await send(o, { room: r, frame: wire(0x02, 1) })
+  assert.equal(ok.status, 200); assert.equal(ok.i, 0)
+  const once = await op(o, '/recv', { room: r, after: -1, waitMs: 0, epoch: null })
+  assert.deepEqual(once.frames, [{ i: 0, frame: wire(0x02, 1) }], 'the retry is the only copy')
+  // A room with frames: the failed post takes nothing with it. / 已有帧的房间：失败的投递不带走任何东西。
+  for (let k = 2; k <= 3; k++) await send(o, { room: r, frame: wire(0x02, k) })
+  storage.failPuts = 1
+  assert.equal((await send(o, { room: r, frame: wire(0x02, 4) })).status, 503)
+  assert.deepEqual((await op(o, '/recv', { room: r, after: -1, waitMs: 0 })).frames.map((f) => f.i), [0, 1, 2])
+  const retry = await send(o, { room: r, frame: wire(0x02, 4) })
+  assert.deepEqual(retry, { status: 200, i: 3, epoch: ok.epoch }, 'the retry takes the index the failed post gave back')
+  const seen = await op(o, '/recv', { room: r, after: -1, waitMs: 0 })
+  assert.deepEqual(seen.frames.map((f) => f.frame), [1, 2, 3, 4].map((k) => wire(0x02, k)), 'each frame once, in order')
+  // Evicted: storage holds exactly the same. / 回收后：存储里完全一样。
+  const back = await op(new RelayRoom(stateOf(storage), {}), '/recv', { room: r, after: -1, waitMs: 0, epoch: ok.epoch })
+  assert.deepEqual(back, seen)
+})
+
+test('FIXED P101-4: a failed write gives back the frame a full ring shifted out and the per-source count; a waiting reader never sees the failed frame', async () => {
+  const storage = failingStorage(), r = room(21)
+  const o = new RelayRoom(stateOf(storage), {})
+  for (let k = 0; k < 256; k++) await send(o, { room: r, frame: wire(0x02, k) })
+  storage.failPuts = 1
+  assert.equal((await send(o, { room: r, frame: wire(0x02, 999) })).status, 503)
+  const full = await op(o, '/recv', { room: r, after: -1, waitMs: 0 })
+  assert.equal(full.frames.length, 256); assert.equal(full.frames[0].i, 0, 'frame 0, which the failed post had shifted out, is back')
+  assert.ok(storage.data.has('f:0'))
+  // Invites: 8 a source per window. The failed one does not count, so the retry of the 8th is still taken.
+  // 邀请：每个来源每个窗口 8 条。失败的那条不计数，所以第 8 条的重试仍被接受。
+  const inv = room(22), si = failingStorage(), oi = new RelayRoom(stateOf(si), {})     // one room per object / 一个对象一个房间
+  for (let k = 0; k < 7; k++) assert.equal((await send(oi, { room: inv, frame: wire(0x03, k), source: 'ip:9.9.9.9' })).status, 200)
+  si.failPuts = 1
+  assert.equal((await send(oi, { room: inv, frame: wire(0x03, 7), source: 'ip:9.9.9.9' })).status, 503)
+  assert.equal((await send(oi, { room: inv, frame: wire(0x03, 7), source: 'ip:9.9.9.9' })).status, 200, 'the retry is within the budget')
+  assert.equal((await send(oi, { room: inv, frame: wire(0x03, 8), source: 'ip:9.9.9.9' })).status, 400, 'and the budget still holds')
+  // A long-poll waiting while a post fails is not woken by it, and gets the retry once. / 投递失败时在等的长轮询不被它唤醒，重试到来时只收到一次。
+  const w = room(23), sw = failingStorage(), ow = new RelayRoom(stateOf(sw), {})
+  const first = await send(ow, { room: w, frame: wire(0x02, 1) })
+  const waiting = op(ow, '/recv', { room: w, after: first.i, waitMs: 5000, epoch: first.epoch })
+  sw.failPuts = 1
+  assert.equal((await send(ow, { room: w, frame: wire(0x02, 2) })).status, 503)
+  const early = await Promise.race([waiting, new Promise((res) => setTimeout(() => res('still waiting'), 50))])
+  assert.equal(early, 'still waiting', 'the failed frame woke nobody')
+  assert.equal((await send(ow, { room: w, frame: wire(0x02, 2) })).status, 200)
+  assert.deepEqual((await waiting).frames, [{ i: 1, frame: wire(0x02, 2) }])
+})

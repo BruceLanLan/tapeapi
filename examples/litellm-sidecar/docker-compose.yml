@@ -1,0 +1,116 @@
+# LiteLLM Proxy (with its PostgreSQL) + the TapeAPI signing sidecar in front of it.
+# LiteLLM Proxy（带它的 PostgreSQL）加上放在它前面的 TapeAPI 签名旁路。
+#
+#   cp env.example .env && cp config.example.yaml config.yaml && cp models.example.json models.json   # then edit all three
+#   docker compose up -d
+#
+# Traffic / 流量:  your users -> your HTTPS reverse proxy -> tapeapi-sidecar:8080 -> litellm:4000/v1 -> your providers
+# Every service publishes on the host's loopback only. Your reverse proxy terminates TLS and serves PUBLIC_URL ->
+# 127.0.0.1:8080. LiteLLM's own port (admin UI, key management) stays private: reach it over an SSH tunnel or your VPN.
+# 所有服务都只发布在宿主机回环地址上。你的反向代理终结 TLS：PUBLIC_URL -> 127.0.0.1:8080。LiteLLM 自己的端口（管理界面、密钥管理）
+# 不对公网开放：通过 SSH 隧道或内网访问。
+#
+# Build: the sidecar image is built from this repository (sdk/, server/ and examples/new-api-sidecar/server.mjs at this
+# checkout), so run compose from examples/litellm-sidecar/ inside a tapeapi checkout. Needs Docker Compose 2.17+.
+# 构建：旁路镜像由本仓库构建，请在 tapeapi 检出目录的 examples/litellm-sidecar/ 下运行。需要 Docker Compose 2.17 或更高版本。
+name: tapeapi-litellm
+
+services:
+  litellm:
+    # Pinned: v1.103.0 is LiteLLM's latest stable release (2026-09-28; GitHub release, not a pre-release), multi-arch
+    # (amd64, arm64), signed with cosign (see its release notes). Index digest at the time of writing:
+    # sha256:bd089afdcd35b894b14a93f9743cdc8b591f82da1a38dd43a010a7b0c9de5fd7. Upgrade on purpose, then rerun e2e.mjs.
+    # 固定版本：v1.103.0 是 LiteLLM 最新的稳定发布（2026-09-28），多架构，cosign 签名。升级请有意为之，升级后重跑 e2e.mjs。
+    image: ghcr.io/berriai/litellm:v1.103.0
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    # Loopback only: API traffic goes through the sidecar. / 只在回环地址：接口流量经过旁路。
+    ports:
+      - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env (sk- followed by a random string)}
+      # Encrypts the provider credentials LiteLLM stores in its database; set it once and never change it.
+      # 用来加密 LiteLLM 存进数据库的服务商凭据；只设一次，之后不要改。
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?set LITELLM_SALT_KEY in .env (openssl rand -hex 32)}
+      DATABASE_URL: postgresql://llmproxy:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/litellm
+      # Provider keys, referenced from config.yaml as os.environ/... / 服务商密钥，config.yaml 里以 os.environ/... 引用。
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # The official compose file's check. / 官方 compose 文件里的健康检查。
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  db:
+    image: postgres:16.15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: llmproxy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    # Not published at all: only LiteLLM reaches it, on the compose network. / 完全不发布端口：只有 LiteLLM 在 compose 网络里访问它。
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d litellm -U llmproxy"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  tapeapi-sidecar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      additional_contexts:
+        sdk: ../../sdk
+        server: ../../server
+        newapi: ../new-api-sidecar
+    image: tapeapi-litellm-sidecar:1.1.0
+    restart: unless-stopped
+    depends_on:
+      litellm:
+        condition: service_healthy
+    environment:
+      UPSTREAM_BASE_URL: http://litellm:4000/v1
+      MODELS_FILE: /config/models.json
+      HOST: 0.0.0.0
+      PORT: "8080"
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      CIRCUITS: ${CIRCUITS:-}
+      TOKEN_ID: ${TOKEN_ID:-}
+      CONTAINER: ${CONTAINER:-}
+      DELEGATION_EXPIRES: ${DELEGATION_EXPIRES:-}
+      DELEGATION_SIG: ${DELEGATION_SIG:-}
+      # Secret: only in .env, which is never committed. `docker compose config` prints it; do not paste that output.
+      # 机密：只放在不提交的 .env 里。`docker compose config` 会把它打印出来，不要外传那段输出。
+      SIGNER_KEY: ${SIGNER_KEY:-}
+      TAPE_NAME: ${TAPE_NAME:-}
+      SERVICE_NAME: ${SERVICE_NAME:-}
+      RATE_IP: ${RATE_IP:-600}
+      CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
+      RECEIPT_TTL_S: ${RECEIPT_TTL_S:-}
+      RECEIPT_REQUIRE_HASH: ${RECEIPT_REQUIRE_HASH:-}
+      FORWARD_SESSION_HEADERS: ${FORWARD_SESSION_HEADERS:-}
+    volumes:
+      - ./models.json:/config/models.json:ro
+    # The only way in for API traffic; point your HTTPS reverse proxy (PUBLIC_URL) here. / 接口流量的唯一入口。
+    ports:
+      - "${SIDECAR_BIND:-127.0.0.1}:${SIDECAR_PORT:-8080}:8080"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      # 200 in setup mode too; `docker compose logs tapeapi-sidecar` says what is missing. / 设置模式下也是 200，缺什么看日志。
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/tapeapi/v1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

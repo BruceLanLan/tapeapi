@@ -11,6 +11,7 @@ import * as G from '../src/group.js'
 import { validateManifest } from '../src/manifest.js'
 import { createRpc } from '../src/rpc.js'
 import { createFakeChain, ADDR, eachCall } from './helpers/fake-chain.mjs'
+import { loadedMachine, virtualClock, withClock } from './helpers/clock.mjs'
 import { createRelayCore } from '../../examples/relay-service/relay-core.mjs'
 
 const { createInvite, acceptInvite, completeInvite, generateKeyPair, encodeWire, decodeWire, relayTransport, fanIn, roomsFor } = channel
@@ -2166,7 +2167,8 @@ test('FIXED R9-1: every recorded BSC node answer, taken through rpc.js as it arr
   assert.ok(checked >= 7, `${checked} recorded answers checked`)
 })
 
-test('FIXED R8-S1: a block too full for the stash no longer drops what was read above it during a hold', async () => {
+// On a virtual clock (FIXED P101-1): the stash, not the budget, is what this test is about. / 在虚拟时钟上运行：本测试关心的是暂存，不是预算。
+const r8s1 = () => withClock(virtualClock(), async () => {
   // Both nodes keep 200 blocks and cap results at 100; rpc2 fails poll 1 after serving once (so the cursor holds). The
   // block b holds 20,001 junk frames (over STASH_MAX) and an honest frame; honest frames also sit at b+5 and b+60. After
   // the held poll the window slides past b and b+5. / 两个节点都保留 200 块、每次最多 100 条；b 塞了 20001 条垃圾帧（超过暂存上限）。
@@ -2201,6 +2203,11 @@ test('FIXED R8-S1: a block too full for the stash no longer drops what was read 
   assert.ok(got.includes(1) && got.includes(2), `the frames above the full block, read during the hold, arrive (${got})`)
   if (!got.includes(0)) assert.ok(warns.some((d) => d.oldestServed != null && d.from <= b && b <= d.to), 'the full block itself, if lost, is a reported gap')
 })
+test('FIXED R8-S1: a block too full for the stash no longer drops what was read above it during a hold', r8s1)
+// FIXED P101-1: R8-S1 took 2 s on an idle machine and over 40 s on a loaded one, past the default budgetMs (20 s), and
+// then failed. The same test on a clock running 50x fast must pass. / R8-S1 在空闲机器上 2 秒、高负载时超过 40 秒，
+// 超出默认 budgetMs（20 秒）后失败。同一测试在快 50 倍的时钟上必须通过。
+test('FIXED P101-1: R8-S1 does not depend on how busy the machine is', () => withClock(loadedMachine(50), r8s1))
 
 test('FIXED R9-2: a range over OUR bodyLimit is read once more with room enough; publicnode\'s "retry with the range" is taken, a wrong one is not', async () => {
   const setup = async ({ cap = Infinity, hint = null, bodyLimit } = {}) => {

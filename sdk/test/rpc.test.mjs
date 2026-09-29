@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRpc } from '../src/rpc.js'
 import { createFakeChain } from './helpers/fake-chain.mjs'
+import { virtualClock, withClock } from './helpers/clock.mjs'
 
 const URLS = ['http://rpc1', 'http://rpc2', 'http://rpc3']
 
@@ -143,4 +144,84 @@ test('a node describing itself (rate limit, missing method, range refusal) has n
   // some clients report a revert as -32000: the word "revert" keeps it an answer, whatever else it says
   // 有些客户端把回滚报为 -32000：只要消息里有 revert，它就仍是回答，不管还写了什么
   await assert.rejects(createRpc({ urls: URLS, quorum: 2, disagreeRetryMs: 0, fetch: err(-32000, 'execution reverted: rate limit reached') }).ethCall(to, '0x'), (e) => e.code === 'RPC_DISAGREE')
+})
+
+// FIXED P101-3: one transient network error on a batch (a reset connection) used to make that node take calls one by one
+// for the client's lifetime. Now only what a node SAID about the batch (an HTTP error, a body that is not an array, a 200
+// that is not JSON) stops batching for good; a failure before any answer, or a body cut off mid-read, stops it until
+// BATCH_RETRY_MS (5 min) has passed or the node has answered BATCH_RETRY_CALLS (20) calls alone, whichever comes first.
+// FIXED P101-3：批量请求遇到一次瞬时网络错误（连接被重置），以前会让该节点在客户端生命周期内永久逐个请求。现在只有节点对批量
+// 的**回答**（HTTP 错误、不是数组的响应体、不是 JSON 的 200）才永久停止批量；没有任何回答的失败或读到一半断掉的响应体，只停到
+// 过了 BATCH_RETRY_MS（5 分钟）或该节点逐个答完 BATCH_RETRY_CALLS（20）个调用为止，以先到者为准。
+const batchWorld = (fault) => {
+  const log = [], batches = {}
+  const echo = (q) => ({ jsonrpc: '2.0', id: q.id, result: q.params[0].data })
+  const fetch = async (url, init) => {
+    const body = JSON.parse(init.body)
+    const batch = Array.isArray(body)
+    log.push({ url, batch })
+    if (batch) batches[url] = (batches[url] ?? 0) + 1
+    const f = batch && fault(url, batches[url])        // the n-th batch this node is sent / 该节点收到的第 n 个批量
+    if (f) return f()
+    return new Response(JSON.stringify(batch ? body.map(echo) : echo(body)), { headers: { 'content-type': 'application/json' } })
+  }
+  const rpc = createRpc({ urls: URLS, quorum: 2, fetch, quiet: true })
+  const three = () => Promise.all([1, 2, 3].map((k) => rpc.ethCall('0x' + '11'.repeat(20), '0x0' + k)))
+  // what was sent to `url` since the last look, true for a batch / 自上次查看以来发往 `url` 的请求，批量为 true
+  const batchedBy = (url) => { const n = log.filter((l) => l.url === url); log.splice(0, log.length, ...log.filter((l) => l.url !== url)); return n.map((l) => l.batch) }
+  return { rpc, three, batchedBy, log }
+}
+const reset = () => { throw new TypeError('fetch failed', { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }) }
+const cutOff = () => new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('[{"jsonrpc":"2.0",')); c.error(new TypeError('terminated')) } }), { headers: { 'content-type': 'application/json' } })
+
+test('FIXED P101-3: a transient network error on a batch pauses batching to that node for a while, not for good', async () => {
+  for (const [what, fail] of [['a reset connection', reset], ['a body cut off mid-read', cutOff]]) {
+    await withClock(virtualClock(), async (clock) => {
+      const w = batchWorld((url, n) => url === 'http://rpc1' && n === 1 && fail)
+      assert.deepEqual(await w.three(), ['0x01', '0x02', '0x03'], `${what}: the calls still get their answers`)
+      assert.deepEqual(w.batchedBy('http://rpc1'), [true, false, false, false], `${what}: the failed batch is asked again call by call`)
+      assert.deepEqual(w.batchedBy('http://rpc2'), [true])
+      await w.three()
+      assert.deepEqual(w.batchedBy('http://rpc1'), [false, false, false], `${what}: calls go out alone during the pause`)
+      clock.advance(5 * 60_000)
+      await w.three()
+      assert.deepEqual(w.batchedBy('http://rpc1'), [true], `${what}: after 5 minutes the node is sent a batch again`)
+    })
+  }
+  // ...or after 20 calls answered alone, without waiting / ……或者逐个答完 20 个调用之后，不必等待
+  await withClock(virtualClock(), async () => {
+    const w = batchWorld((url, n) => url === 'http://rpc1' && n === 1 && reset)
+    await w.three()                                       // 3 answered alone / 逐个答了 3 个
+    w.batchedBy('http://rpc1')
+    for (let k = 0; k < 5; k++) await w.three()           // 15 more: 18 / 再 15 个：18
+    assert.ok(w.batchedBy('http://rpc1').every((b) => !b))
+    await w.three()                                       // 21 / 21
+    await w.three()
+    assert.deepEqual(w.batchedBy('http://rpc1'), [false, false, false, true], 'batching resumes once 20 calls were answered alone')
+  })
+  // A second transient failure pauses it again. / 再一次瞬时失败会再次暂停。
+  await withClock(virtualClock(), async (clock) => {
+    const w = batchWorld((url, n) => url === 'http://rpc1' && (n === 1 || n === 2) && reset)
+    await w.three(); clock.advance(5 * 60_000); await w.three(); w.batchedBy('http://rpc1')
+    await w.three()
+    assert.deepEqual(w.batchedBy('http://rpc1'), [false, false, false])
+  })
+})
+
+test('FIXED P101-3: what a node answered about a batch still stops batching to it for good (single object, HTTP error, not JSON)', async () => {
+  const answers = {
+    'a single error object': () => new Response(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'batch not allowed' } }), { headers: { 'content-type': 'application/json' } }),
+    'HTTP 500': () => new Response('boom', { status: 500 }),
+    'a 200 that is not JSON': () => new Response('<html>nope</html>', { headers: { 'content-type': 'text/html' } }),
+  }
+  for (const [what, answer] of Object.entries(answers)) {
+    await withClock(virtualClock(), async (clock) => {
+      const w = batchWorld((url) => url === 'http://rpc1' && answer)
+      assert.deepEqual(await w.three(), ['0x01', '0x02', '0x03'], what)
+      assert.deepEqual(w.batchedBy('http://rpc1'), [true, false, false, false], what)
+      clock.advance(24 * 3600_000)
+      for (let k = 0; k < 10; k++) await w.three()
+      assert.ok(w.batchedBy('http://rpc1').every((b) => !b), `${what}: never batched again, whatever the time or the count`)
+    })
+  }
 })

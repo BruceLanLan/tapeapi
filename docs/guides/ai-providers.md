@@ -40,10 +40,11 @@ it: it sees your users' API keys, so TapeAPI never hosts it for you.
 | **new-api** | A docker-compose package: new-api plus the sidecar in front of it, both on loopback behind your HTTPS reverse proxy | [`examples/new-api-sidecar/`](../../examples/new-api-sidecar/) |
 | Any OpenAI- or Anthropic-compatible API, on a server | Node: the example entry, or `createAIProxy` inside your own server (it is a fetch-style handler) | [`examples/ai-proxy/index.mjs`](../../examples/ai-proxy/index.mjs) |
 | Any such API, without a server of your own | A Cloudflare Worker on a hostname of yours, in front of your API | [`examples/ai-proxy/worker.js`](../../examples/ai-proxy/worker.js) |
-| LiteLLM Proxy | A LiteLLM callback plugin is planned; until then, put the Node or Worker sidecar in front of LiteLLM | not available yet |
+| **LiteLLM Proxy** | A docker-compose package: LiteLLM (with its PostgreSQL) plus the sidecar in front of it, all on loopback behind your HTTPS reverse proxy; the price table's `id`s are LiteLLM's `model_name`s | [`examples/litellm-sidecar/`](../../examples/litellm-sidecar/) |
 
-The sidecar sits **in front of** your gateway, never inside it: new-api has no hook on text relaying, and in front the
-receipt covers the price and usage you charge your own users.
+The sidecar sits **in front of** your gateway, never inside it: new-api has no hook on text relaying, a LiteLLM callback
+sees parsed Python objects rather than the bytes a receipt proves, and in front the receipt covers the price and usage
+you charge your own users.
 
 ### The new-api package in brief
 
@@ -161,7 +162,8 @@ the fetch itself checks `res.ok`. Whether a paid call is retried after other 5xx
 and point the client at it:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-verify 42.1013.tape
+# 42.1013.tape is an example name: put your service's TapeOut name here
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
 

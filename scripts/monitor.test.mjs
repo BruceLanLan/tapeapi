@@ -276,3 +276,21 @@ test('relay async delivery: the test frame is 0x03, 64-200 bytes, accepted by th
   const ev = evaluate(withAsync({ skipped: true, error: 'resolve failed: RPC_UNAVAILABLE: quorum' }), NOW)
   assert.deepEqual(ev.problems, [])
 })
+
+test('FIXED P101-2: a signed answer with no result is a clear failure, not a TypeError that ends the monitor without a report', async () => {
+  const sent = { bytes: new Uint8Array(64), epoch: 'aa' }
+  // judgeAsync used to throw here (JSON.stringify(undefined).slice) / judgeAsync 以前在这里抛 TypeError
+  assert.equal(judgeAsync(sent, undefined), 'relayRecv answered with no result (undefined), not { frames, next, epoch }')
+  assert.equal(judgeAsync(sent, null), 'unexpected result null', 'as before')
+  const cyclic = {}; cyclic.self = cyclic
+  assert.equal(judgeAsync(sent, cyclic), 'unexpected result [object Object]', 'an answer JSON cannot show is still judged')
+  assert.equal(judgeAsync(sent, 5n), 'unexpected result 5')
+  // checkRelayAsync: the send's or the read's signed envelope without `result` / 发送或读取的签名信封没有 `result`
+  let r = await runAsync(fakeRelay(), { send: async () => ({ verified: true }) })
+  assert.deepEqual([r.ok, r.kind, r.error], [false, 'wrong', 'relaySend answered with no result (undefined), not { i, epoch }'])
+  assert.deepEqual(r.attempts, { send: 1, recv: 0 }, 'a signed answer is not retried')
+  r = await runAsync(fakeRelay({ recvAnswers: () => ({ verified: true }) }))
+  assert.deepEqual([r.ok, r.kind, r.error], [false, 'wrong', 'relayRecv answered with no result (undefined), not { frames, next, epoch }'])
+  const ev = evaluate(withAsync(r), NOW)
+  assert.deepEqual(ev.problems, ['relay: async delivery failed after 1.2 s idle (relayRecv answered with no result (undefined), not { frames, next, epoch })'])
+})

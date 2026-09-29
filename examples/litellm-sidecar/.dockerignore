@@ -1,0 +1,6 @@
+# The build context is this directory; only server.mjs goes into the image. Above all, .env (SIGNER_KEY, provider keys,
+# LiteLLM's master and salt keys), config.yaml and models.json never reach the builder.
+# 构建上下文是本目录，只有 server.mjs 进入镜像；.env（SIGNER_KEY、服务商密钥、LiteLLM 的 master 与 salt 密钥）、config.yaml、
+# models.json 绝不发给构建器。
+*
+!server.mjs

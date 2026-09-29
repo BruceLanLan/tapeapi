@@ -145,6 +145,15 @@ export function testFrame() {
 // actually answered (a signed error, a wrong result) is not. / 中继回答之前的失败：请求没拿到签名回答，会重试；
 // 中继确实回答了的（签名错误、结果不对）不重试。
 const NET_CODES = new Set(['PROVIDER_UNAVAILABLE', 'RPC_UNAVAILABLE', 'RPC_ERROR', 'RPC_DISAGREE', 'QUORUM_FAILED'])
+// An answer, in at most 120 characters, for a problem line. JSON.stringify gives undefined for undefined and throws on a
+// BigInt or a cycle; neither may end the monitor without a report (FIXED P101-2).
+// 用于问题行的回答，至多 120 字符。JSON.stringify 对 undefined 返回 undefined、对 BigInt 或循环引用抛错；都不能让监控没有报告就结束。
+function show(x) {
+  let s
+  try { s = JSON.stringify(x) } catch { s = undefined }
+  return String(s ?? x).slice(0, 120)
+}
+
 export function isNetworkError(e) {
   if (e?.code) return NET_CODES.has(e.code)
   return e?.name === 'TypeError' || e?.name === 'AbortError' || e?.name === 'TimeoutError' || /fetch failed|timeout|timed out|ECONNRESET|ECONNREFUSED|ETIMEDOUT|socket|network/i.test(String(e?.message ?? e))
@@ -157,7 +166,10 @@ export function isNetworkError(e) {
  */
 export function judgeAsync(sent, got) {
   const frames = Array.isArray(got?.frames) ? got.frames : null
-  if (!frames) return `unexpected result ${JSON.stringify(got).slice(0, 120)}`
+  // A signed envelope without `result` is a failure in words, never a TypeError (FIXED P101-2)
+  // 没有 `result` 的签名信封是用文字说明的失败，绝不是 TypeError
+  if (got === undefined) return 'relayRecv answered with no result (undefined), not { frames, next, epoch }'
+  if (!frames) return `unexpected result ${show(got)}`
   const ep = got.epoch ?? null
   if (frames.length === 0) {
     return ep === null ? '0 frames, epoch null: the relay lost the room while idle'
@@ -327,7 +339,7 @@ export async function checkRelayAsync({ send, recv, waitMs = ASYNC_WAIT_S * 1000
   const { room, bytes, out: so } = sent
   if (so?.verified !== true) return fail('wrong', 'relaySend: envelope not verified', { room })
   const epoch = so.result?.epoch
-  if (!Number.isInteger(so.result?.i) || typeof epoch !== 'string') return fail('wrong', `relaySend answered ${JSON.stringify(so.result).slice(0, 120)}, not { i, epoch }`, { room })
+  if (!Number.isInteger(so.result?.i) || typeof epoch !== 'string') return fail('wrong', `relaySend answered ${so.result === undefined ? 'with no result (undefined)' : show(so.result)}, not { i, epoch }`, { room })
   // 2. leave the room idle / 让房间闲置
   await wait(waitMs)
   // 3. read back through a fresh client / 用全新客户端读回

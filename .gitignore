@@ -13,3 +13,8 @@ contracts/cache/
 contracts/out-deploy/
 contracts/broadcast/
 contracts/verify/
+
+# The LiteLLM package: what an operator copies and fills in, and PostgreSQL's data.
+examples/litellm-sidecar/config.yaml
+examples/litellm-sidecar/models.json
+examples/litellm-sidecar/pgdata/

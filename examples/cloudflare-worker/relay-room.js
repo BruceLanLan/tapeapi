@@ -20,16 +20,21 @@
 //
 // Storage layout, one object = one room: `m` holds { room, epoch, next, touched, handshakeOnly }, and every frame has a
 // key of its own, `f:<i>` -> the base64 frame (a room holds up to 256 + 64 frames of ~22 KB, far past one value's
-// limit). A frame and `m` are written in one put, and a frame a full ring shifts out is deleted in the same turn; the
+// limit). A frame and `m` are written in one put, and a frame a full ring shifts out is deleted once that put landed; the
 // answer to relaySend leaves only after the write. Which ring a frame belongs to follows from its wire type, as in send.
+// Until its write lands the frame is pending: no read hands it out and no long-poll wakes for it. If the write fails,
+// relaySend answers with the error and the frame is taken back out of memory, so the client's retry is the only copy
+// (FIXED P101-4: it used to stay in memory, and the retry added it again).
 // `touched` from reads is written at most once a minute, so a room that is only polled may, after an eviction, expire
 // up to a minute early. Not stored, on purpose: the long-poll waiters (open requests of this instance, which cannot
 // outlive it, and an object is not evicted while one is open) and the per-source budget for 0x03 / 0x04 (keeping it
 // would put IP addresses at rest; an eviction resets it only after the object has been idle, which a flooder does not
 // choose, and the per-IP new-room and request limits still apply).
 // 存储布局，一个对象就是一个房间：`m` 存 { room, epoch, next, touched, handshakeOnly }，每帧单独一个键 `f:<i>` -> base64 帧
-// （一个房间最多 256 + 64 帧、每帧约 22 KB，远超单值上限）。一帧与 `m` 在同一次 put 里写入，满环移出的帧在同一轮删除；
-// relaySend 的回答在写入之后才发出。帧属于哪个环由线路类型决定，与 send 一致。读取带来的 `touched` 至多每分钟写一次，因此只被
+// （一个房间最多 256 + 64 帧、每帧约 22 KB，远超单值上限）。一帧与 `m` 在同一次 put 里写入，满环移出的帧在该 put 落地后删除；
+// relaySend 的回答在写入之后才发出。帧属于哪个环由线路类型决定，与 send 一致。写入落地之前帧处于暂存：任何读取都不交出它，
+// 也没有长轮询为它醒来。写入失败时 relaySend 回错误，帧从内存撤出，客户端的重试就是唯一的一份（FIXED P101-4：以前帧留在内存里，
+// 重试又加一次）。读取带来的 `touched` 至多每分钟写一次，因此只被
 // 轮询的房间在对象回收后最多提早一分钟过期。刻意不存：长轮询等待者（本实例上打开的请求，活不过实例；有请求打开时对象也不会被
 // 回收）与 0x03 / 0x04 的按来源额度（存下来就等于把 IP 地址落盘；回收只发生在对象闲置之后，不由刷量者决定，按 IP 的新建房间
 // 与请求限额照样有效）。
@@ -88,14 +93,21 @@ export class RelayRoom {
     this.savedTouched = m.touched
     await this.arm()                                             // a restored room always has an alarm / 恢复的房间一定有 alarm
   }
-  // Issued at once, awaited by flush() before the answer leaves. put(object) is one atomic write; a delete issued in the
-  // same turn is coalesced with it. / 立即发出，回答发出前由 flush() 等待。put(对象) 是一次原子写入，同一轮发出的删除与它合并。
+  // Issued at once. put(object) is one atomic write. A touch or a drop is awaited by flush() before the answer leaves.
+  // 立即发出。put(对象) 是一次原子写入。touch 与 drop 在回答发出前由 flush() 等待。
+  // A frame's write is kept apart (`written`), for the send that made it to await alone: whether that write landed decides
+  // its answer and whether the frame stays (FIXED P101-4). The frame a full ring shifted out is deleted only after the
+  // put landed, so a failed put never takes it from storage while abort puts it back in memory. (If that delete fails,
+  // storage holds one frame too many; restore keeps the newest a ring allows.)
+  // 帧的写入单独保存（`written`），由发出它的 send 单独等待：写入是否落地决定其回答以及帧是否保留。满环移出的帧在 put 落地之后
+  // 才删除，因此失败的 put 绝不会在 abort 把它放回内存的同时把它从存储里删掉。（若这次删除失败，存储多存一帧；restore 只留环
+  // 允许的最新帧。）
   record(ev) {
     const s = this.storage
     if (ev.type === 'put') {
       this.savedTouched = ev.meta.touched
-      this.pending.push(s.put({ [`f:${ev.frame.i}`]: ev.frame.frame, m: { room: ev.room, ...ev.meta } }))
-      if (ev.dropped !== undefined) this.pending.push(s.delete(`f:${ev.dropped}`))
+      const put = s.put({ [`f:${ev.frame.i}`]: ev.frame.frame, m: { room: ev.room, ...ev.meta } })
+      this.written = ev.dropped === undefined ? put : put.then(() => { this.pending.push(s.delete(`f:${ev.dropped}`)) })
     } else if (ev.type === 'touch') {
       if (ev.meta.touched - this.savedTouched < TOUCH_WRITE_MS) return
       this.savedTouched = ev.meta.touched
@@ -128,8 +140,20 @@ export class RelayRoom {
     try {
       if (path === '/send' || path === '/handshake') {
         let out
-        try { out = this.core.send(body.room, body.frame, { handshakeOnly: path === '/handshake', source: typeof body.source === 'string' ? body.source : undefined }) } finally { await this.flush() }
-        await this.arm()
+        this.written = null
+        try { out = this.core.send(body.room, body.frame, { handshakeOnly: path === '/handshake', source: typeof body.source === 'string' ? body.source : undefined, pending: !!this.storage }) } catch (e) { await this.flush(); throw e }
+        const write = this.written
+        this.written = null
+        if (write) {
+          // This frame's own write decides: landed, readers may have it; failed, it is taken back out and the error goes back.
+          // 由这一帧自己的写入决定：落地了，读者可以拿到；失败了，撤出帧并回错误。
+          try { await write } catch (e) { this.core.abort(body.room, out.i); throw e }
+          this.core.commit(body.room, out.i)
+        }
+        // The frame is stored now: what follows cannot make its answer an error, or the client would post it again.
+        // 帧已存好：之后的事不能让回答变成错误，否则客户端会再发一次。
+        try { await this.flush() } catch { /* another request's write; that request reports it / 别的请求的写入，由它自己报告 */ }
+        try { await this.arm() } catch { /* not armed: the next post, or a restore, arms it / 未设上：下一次投递或恢复时再设 */ }
         return Response.json(out)
       }
       if (path === '/recv') {

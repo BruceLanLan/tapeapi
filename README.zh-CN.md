@@ -18,7 +18,7 @@ TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上�
 
 [English](README.md) · [网站](https://tapeapi.fun) · [手册](https://tapeapi.fun/docs/zh/) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [更新日志](CHANGELOG.md) · [路线图](docs/ROADMAP.md)
 
-> **状态：正式版（1.0.0）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAP-22）是实验性的，没有部署。
+> **状态：正式版（1.1.0）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAP-22）是实验性的，没有部署。
 > 所有代码和合约都没有经过第三方审计。
 
 ## 从这里开始
@@ -42,7 +42,7 @@ curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/
 curl 只显示签名信封，不做任何核对；核对交给 SDK。SDK 还没发到 npm，从 GitHub Release 安装（Node.js 20 或以上）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz
 ```
 
 ```js
@@ -80,7 +80,8 @@ console.log(r.choices[0].message.content)
 **Claude Code 和 Codex** 自己读不到回执。在本机开一个核验代理，再把它们指过去：
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-verify 42.1013.tape
+# 42.1013.tape 是示例名：换成 AI 服务方的 TapeOut 名字
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1
 ```
 

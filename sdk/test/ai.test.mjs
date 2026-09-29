@@ -506,3 +506,47 @@ test('FIXED RC-3: createVerifyingFetch refuses (strict) or warns once about (not
   ai.createVerifyingFetch({ service })
   assert.equal(quiet.length, 0)
 })
+
+// FIXED P101-b: LiteLLM sends the usage chunk of stream_options.include_usage with `choices: [{ index: 0, delta: {} }]`,
+// not `choices: []`, so a sidecar that asked for usage on the client's behalf left that chunk in the client's stream.
+// A chunk with usage whose choices carry nothing (an empty delta, no finish_reason, no logprobs) is the injected one now;
+// a chunk with any content, a finish_reason or anything else in a choice is never taken out.
+// FIXED P101-b：LiteLLM 的 include_usage 用量块带 `choices: [{ index: 0, delta: {} }]` 而不是 `choices: []`，旁路替客户端要来的
+// 这一块因此留在了客户端的流里。现在带 usage、且 choices 里什么都没有（空 delta、无 finish_reason、无 logprobs）的块算注入的块；
+// 有任何内容、finish_reason 或其它成员的块绝不去掉。
+test('FIXED P101-b: the injected usage chunk is recognised with choices that carry nothing (LiteLLM), never one with content', async () => {
+  const chat = ai.FORMATS.find((f) => f.name === 'openai-chat')
+  const usage = { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 }
+  const yes = [
+    { choices: [], usage },                                                                   // OpenAI / OpenAI
+    { id: 'c', object: 'chat.completion.chunk', choices: [{ index: 0, delta: {} }], usage },   // LiteLLM / LiteLLM
+    { choices: [{ index: 0, delta: {}, finish_reason: null, logprobs: null }], usage },
+    { choices: [{ index: 0, delta: { content: null, role: null } }], usage },
+  ]
+  const no = [
+    { choices: [{ index: 0, delta: { content: 'x' } }], usage },
+    { choices: [{ index: 0, delta: { content: '' } }], usage },
+    { choices: [{ index: 0, delta: { role: 'assistant' } }], usage },
+    { choices: [{ index: 0, delta: { tool_calls: [] } }], usage },
+    { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage },
+    { choices: [{ index: 0, delta: {}, logprobs: { content: [] } }], usage },
+    { choices: [{ index: 0, delta: {}, message: { content: 'x' } }], usage },
+    { choices: [{ index: 0 }], usage },
+    { choices: [{ index: 0, delta: {} }, { index: 1, delta: { content: 'x' } }], usage },
+    { choices: [null], usage },
+    { choices: [{ index: 0, delta: {} }] },
+    { choices: [{ index: 0, delta: {} }], usage: null },
+  ]
+  for (const j of yes) assert.equal(chat.isInjectedEvent(j), true, JSON.stringify(j))
+  for (const j of no) assert.equal(chat.isInjectedEvent(j), false, JSON.stringify(j))
+  // Through the reference sidecar: the client did not ask for usage, receives no usage chunk, and the receipt verifies.
+  // 经参考旁路：客户端没要 usage，收不到用量块，回执核验通过。
+  const LITELLM = 'data: {"id":"c-1","model":"demo-chat","choices":[{"index":0,"delta":{"content":"hi"}}]}\n\ndata: {"id":"c-1","model":"demo-chat","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\ndata: {"id":"c-1","model":"demo-chat","choices":[{"index":0,"delta":{}}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}\n\ndata: [DONE]\n\n'
+  const { p, fetch } = sidecar(() => sse(LITELLM, 9))
+  const reports = []
+  const events = await sdkRead(await ai.createVerifyingFetch({ service: svcOf(p), fetch, onReport: (r) => reports.push(r) })('https://ai.example/v1/chat/completions', { method: 'POST', body: '{"model":"demo-chat","stream":true}' }))
+  assert.equal(events.length, 2, 'the usage chunk the client did not ask for is stripped')
+  assert.ok(events.every((e) => !('usage' in e)))
+  assert.equal(reports[0].ok, true, reports[0].problems.join('; '))
+  assert.equal(reports[0].receipt.result.usageInjected, true); assert.equal(reports[0].receipt.result.usage.total_tokens, 5)
+})

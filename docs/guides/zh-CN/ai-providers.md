@@ -35,9 +35,9 @@
 | **new-api** | docker-compose 一键包：new-api 加上它前面的旁路，两者都只在回环地址上，由你的 HTTPS 反向代理对外 | [`examples/new-api-sidecar/`](../../../examples/new-api-sidecar/) |
 | 任何 OpenAI 或 Anthropic 兼容接口，有服务器 | Node：示例入口，或把 `createAIProxy` 嵌进你自己的服务（它是 fetch 风格的处理函数） | [`examples/ai-proxy/index.mjs`](../../../examples/ai-proxy/index.mjs) |
 | 这类接口，没有自己的服务器 | Cloudflare Worker，放在你自己的主机名上、你的接口前面 | [`examples/ai-proxy/worker.js`](../../../examples/ai-proxy/worker.js) |
-| LiteLLM Proxy | 计划做成 LiteLLM 回调插件；在那之前，把 Node 或 Worker 版旁路放在 LiteLLM 前面 | 暂无 |
+| **LiteLLM Proxy** | docker-compose 一键包：LiteLLM（带它的 PostgreSQL）加上它前面的旁路，都只在回环地址上，由你的 HTTPS 反向代理对外；价目表的 `id` 就是 LiteLLM 的 `model_name` | [`examples/litellm-sidecar/`](../../../examples/litellm-sidecar/) |
 
-旁路放在网关**前面**，不嵌进网关里面：new-api 的文本转发没有钩子；而且放在前面，回执覆盖的才是你向自己用户收取的价格与用量。
+旁路放在网关**前面**，不嵌进网关里面：new-api 的文本转发没有钩子，LiteLLM 的回调拿到的是解析后的 Python 对象、不是回执要证明的字节；而且放在前面，回执覆盖的才是你向自己用户收取的价格与用量。
 
 ### new-api 一键包速览
 
@@ -137,7 +137,8 @@ const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
 **Claude Code 与 Codex 用户**自己读不到回执。他们在本机运行核验代理 `tapeapi-verify`，把客户端指向它：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-verify 42.1013.tape
+# 42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
 

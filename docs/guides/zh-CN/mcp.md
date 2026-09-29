@@ -98,7 +98,7 @@ not the params or result.)
 不经过 npm 注册表：
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 它和远程服务器的不同之处：
@@ -127,7 +127,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -147,7 +147,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -159,7 +159,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### 远程还是本地
@@ -208,7 +208,7 @@ claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeap
 [调用服务](consume.md)里那样在仓库的克隆目录里操作：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz
 ```
 
 ```js
@@ -259,7 +259,7 @@ import { createProvider } from '@tapeapi/server'
 import { createMcpEndpoint, MCP_PATH } from '@tapeapi/server/mcp'
 
 const provider = createProvider({ manifest, signerKey, rpcUrls, quorum: 2, methods })
-const mcp = createMcpEndpoint({ provider, manifest: provider.manifest, name: '42.1013.tape' })
+const mcp = createMcpEndpoint({ provider, manifest: provider.manifest, name: '11.1013.tape' })
 
 export default {
   fetch(request) {
@@ -329,13 +329,13 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
   `my-tapeapi-mcp-proxy`），然后用 `npx --yes wrangler@4.141.0 deploy -c examples/mcp-proxy/wrangler.toml` 部署。
   在 Cloudflare 后台给 Worker 添加自定义域名，并把变量 `PUBLIC_URL` 设为它。身份设置好之前，Worker 只回答
   `/tapeapi/v1/health`，其中给出由 secret `SIGNER_KEY` 推导出的签名地址：设置模式与
-  [从手机上线](provide.md#2-从手机上线cloudflare-持有者控制台)相同。
+  [从手机上线](provide.md#2-从手机上线cloudflare-与持有者控制台)相同。
 - **Node。** 在你自己的 https 反向代理后面运行 `examples/mcp-proxy/index.mjs`，在环境变量里设置 `PUBLIC_URL`、
   `SIGNER_KEY` 和下面的身份变量（`HOST` 和 `PORT` 决定监听位置，`NAME` 设置服务名称）。
 
 身份的添加方式和任何 TapeAPI 服务完全一样：铸造电路并开通容器，在[持有者控制台](https://tapeapi.fun/console/)里填入
 代理的网址，签署委托，把 `CIRCUITS`、`TOKEN_ID`、`CONTAINER`、`DELEGATION_EXPIRES` 和 `DELEGATION_SIG` 设为变量，
-`SIGNER_KEY` 设为 secret。每一步见[运行服务](provide.md#2-从手机上线cloudflare-持有者控制台)。
+`SIGNER_KEY` 设为 secret。每一步见[运行服务](provide.md#2-从手机上线cloudflare-与持有者控制台)。
 
 ### 2. 用持有者控制台发布清单
 
@@ -355,7 +355,8 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
   再按你的服务器定义的样子展示它们（v0.5.0 及以后）：
 
   ```bash
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-mcp 42.1013.tape
+  # 42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### 客户端核对什么

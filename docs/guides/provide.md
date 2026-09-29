@@ -69,7 +69,7 @@ A dev service reports NOT CONFORMANT, and that is expected: it has no delegation
 parameters are skipped unless you pass them with `--params`. Run the suite again once the service is live with a
 holder delegation; that is the result that counts.
 
-## 2. Go live from a phone (Cloudflare + holder console)
+## 2. Go live from a phone (Cloudflare and holder console)
 
 This is the path with no server and no command line.
 

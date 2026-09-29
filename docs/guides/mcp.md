@@ -103,7 +103,7 @@ not the params or result.)
 it from the GitHub release, not from the npm registry:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 What it does differently from the remote server:
@@ -134,7 +134,7 @@ Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -154,7 +154,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -166,7 +166,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### Remote or local
@@ -220,7 +220,7 @@ Save the receipt (the `_meta["fun.tapeapi/receipt"]` object) as `receipt.json`. 
 release, or work inside a clone of the repository as in [Call a service](consume.md):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz
 ```
 
 ```js
@@ -276,7 +276,7 @@ import { createProvider } from '@tapeapi/server'
 import { createMcpEndpoint, MCP_PATH } from '@tapeapi/server/mcp'
 
 const provider = createProvider({ manifest, signerKey, rpcUrls, quorum: 2, methods })
-const mcp = createMcpEndpoint({ provider, manifest: provider.manifest, name: '42.1013.tape' })
+const mcp = createMcpEndpoint({ provider, manifest: provider.manifest, name: '11.1013.tape' })
 
 export default {
   fetch(request) {
@@ -352,7 +352,7 @@ To go live, the proxy needs an https hostname of yours, because its URL is writt
   a custom domain to the Worker in the Cloudflare dashboard and set the variable `PUBLIC_URL` to it. Until its identity
   is set, the Worker answers only `/tapeapi/v1/health`, which names the signing address derived from the secret
   `SIGNER_KEY`: the same setup mode as in
-  [Go live from a phone](provide.md#2-go-live-from-a-phone-cloudflare-holder-console).
+  [Go live from a phone](provide.md#2-go-live-from-a-phone-cloudflare-and-holder-console).
 - **Node.** Run `examples/mcp-proxy/index.mjs` behind your own https reverse proxy, with `PUBLIC_URL`, `SIGNER_KEY`
   and the identity variables below in its environment (`HOST` and `PORT` say where it listens, `NAME` sets the service
   name).
@@ -360,7 +360,7 @@ To go live, the proxy needs an https hostname of yours, because its URL is writt
 The identity is added exactly as for any TapeAPI service: mint a circuit and open its container, enter the proxy's URL
 in the [holder console](https://tapeapi.fun/console/), sign the delegation, and set `CIRCUITS`, `TOKEN_ID`,
 `CONTAINER`, `DELEGATION_EXPIRES` and `DELEGATION_SIG` as variables and `SIGNER_KEY` as a secret.
-[Run a service](provide.md#2-go-live-from-a-phone-cloudflare-holder-console) walks through each step.
+[Run a service](provide.md#2-go-live-from-a-phone-cloudflare-and-holder-console) walks through each step.
 
 ### 2. Publish the manifest with the holder console
 
@@ -384,7 +384,8 @@ isolate can be restarted at any time. With it, changed tools are refused after a
   or later):
 
   ```bash
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.0.0/tapeapi-sdk-1.0.0.tgz tapeapi-mcp 42.1013.tape
+  # 42.1013.tape is an example name: put your service's TapeOut name here
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### What clients check

@@ -18,7 +18,7 @@
 包括 `api.payer()`、`api.acceptPrice()` / `api.acceptedPrice()`、调用选项 `payer` 与 `maxPrice`、通道构造器
 `api.tx.approve / fund / requestWithdraw / cancelWithdraw / withdraw / authorizeSession / settle / setContribution / register`、
 `api.chain.escrow.*`、`api.chain.resolve()` 与 `api.chain.serviceOf()`（以及按目录标签解析；`labelToBytes32`，以及 `abi` 的 `LABEL_RE` / `bytes32ToLabel`）、选项 `directory` 与 `escrow`、
-`contribution`、`sig` 里的凭证函数、WebMCP 的 `paid` 选项，以及服务端的凭证存储、结算辅助函数和 `createProvider` 的付费选项。
+`contribution`、`MAX_CONTRIBUTION_BPS`、`RECOMMENDED_CONTRIBUTION_BPS`、`MAINNET.bem`（支付代币）、`sig` 里的凭证函数、WebMCP 的 `paid` 选项，以及服务端的凭证存储、结算辅助函数和 `createProvider` 的付费选项。
 从清单读取价格（`priceBEM`、`parseUnits`、`formatUnits`）是稳定的；错误码 `PAYMENT_REQUIRED`、`BAD_VOUCHER`、`PRICE_CHANGED`
 也是稳定的：免费服务的客户端同样可能遇到它们。
 
@@ -129,6 +129,8 @@
 | `RECEIPT_INVALID` | 客户端 | AI 用量回执缺失或未通过核验 | 否 |
 | `BUDGET_EXCEEDED`、`USER_DECLINED` | 客户端 | WebMCP 花费预算；用户拒绝 | 否 |
 | `INVALID_ARGUMENT` | 客户端 | 你自己的选项或参数有误 | **绝不** |
+| `METHOD_NOT_ALLOWED` | 提供者路由，不签名 | HTTP 405：对 `/tapeapi/v1/<方法>` 发了 POST 以外的请求。SDK 总是用 POST；客户端遇到它按传输失败处理（`PROVIDER_UNAVAILABLE`） | 否 |
+| `NAME_TAKEN` | WebMCP | 出现在 `handle.skipped[].code`：`registerTool` 失败，通常是页面上别的脚本已经注册了同名工具（原因见 `reason`）。不抛出 | 那个工具移除后（`refresh()`） |
 
 位于服务之前的 MCP 服务器（`createMcpProxy`）以 JSON-RPC 错误报告它自己的拒绝，其 `error.data.code` 为
 `TOOLS_CHANGED`、`INVISIBLE_CHARACTERS` 或 `UPSTREAM_UNAVAILABLE`。

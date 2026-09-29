@@ -8,6 +8,7 @@ import { randomBytes } from 'node:crypto'
 import { channel, busPrivacy, TapeAPIError } from '../src/index.js'
 import { createRpc } from '../src/rpc.js'
 import { createFakeChain } from './helpers/fake-chain.mjs'
+import { loadedMachine, virtualClock, withClock } from './helpers/clock.mjs'
 import { forbiddenIn } from '../../scripts/privacy-words.mjs'
 
 const { busPrivacyReader, scanCoverPool, plausibleRoom, DEFAULT_COVER_K } = busPrivacy
@@ -296,7 +297,10 @@ test('contract mode with onExceed "cover": falls back to cover rooms and warns; 
   assert.deepEqual(got, [{ room: mine, wire: w }])
 })
 
-test('default: contract mode, no pool scan; over budget it falls back to cover rooms drawn from quiet traffic (never the junk), warns, and comes back with hysteresis and doubling waits', async () => {
+const DEFAULT_TITLE = 'default: contract mode, no pool scan; over budget it falls back to cover rooms drawn from quiet traffic (never the junk), warns, and comes back with hysteresis and doubling waits'
+// On a virtual clock (FIXED P101-1): retryMs is 60 ms, so real time between two polls was part of the outcome.
+// 在虚拟时钟上运行（FIXED P101-1）：retryMs 只有 60 ms，两次轮询之间的真实耗时曾影响结果。
+const defaultScenario = () => withClock(virtualClock(), async (clock) => {
   const { chain, rec, rpc, post, others, start } = await world(20)
   const mine = room()
   const warns = []
@@ -323,7 +327,7 @@ test('default: contract mode, no pool scan; over budget it falls back to cover r
   // 低于预算但高于一半（每块 1 条：一个轮询窗口 20 块、2 个节点，共 40 条，预算 50）：还不回来
   const busy = post(others[1])
   for (let i = 0; i < 50; i++) { await busy.send(Uint8Array.of(0x02, i)); chain.mine(1) }
-  await sleep(70)
+  clock.advance(70)                                      // past retryAt / 越过 retryAt
   await reader.poll(); await reader.poll()
   assert.equal(reader.mode, 'cover', 'hysteresis: it comes back only under half the budget')
   chain.mine(200); await reader.poll()                   // a quiet stretch is measured / 测到一段安静
@@ -347,7 +351,12 @@ test('default: contract mode, no pool scan; over budget it falls back to cover r
   assert.equal(stay.mode, 'cover'); assert.match(warns.at(-1), /stays in cover mode/)
   assert.equal(stay.stats().privacy.fallback.retryAt, null)
 })
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+test(DEFAULT_TITLE, defaultScenario)
+// FIXED P101-1: the scenario above failed now and then on a loaded machine (strikes 1 instead of 2: more than retryMs
+// passed between coming back and falling back again). The same scenario on a clock running 50x fast must pass.
+// FIXED P101-1：上面的场景在高负载机器上偶发失败（strikes 为 1 而不是 2：回来与再次降级之间过了超过 retryMs）。
+// 同一场景在快 50 倍的时钟上必须通过。
+test('FIXED P101-1: the fallback scenario does not depend on how busy the machine is', () => withClock(loadedMachine(50), defaultScenario))
 
 test('plain mode is busReader exactly: one room, the single-room filter', async () => {
   const { chain, rec, rpc, post, start } = await world(5)

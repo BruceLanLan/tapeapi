@@ -7,6 +7,72 @@ interfaces.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-09-30
+
+### Added
+
+- **One-command signing for LiteLLM Proxy (`examples/litellm-sidecar/`).** A docker-compose package puts the signing
+  sidecar in front of LiteLLM Proxy (the official image `ghcr.io/berriai/litellm:v1.103.0`, pinned, with PostgreSQL for
+  virtual keys); LiteLLM is unchanged, and users keep their virtual keys and SDKs, pointing only the base URL at the
+  sidecar. The price table's `id`s are LiteLLM's `model_name`s, which LiteLLM reports back in `model`. The entry is the
+  new-api package's with LiteLLM's profile (`examples/new-api-sidecar/server.mjs` gains an optional `profile`; its
+  defaults are unchanged) and one stream adjustment through `createAIProxy`'s `formats` option: a Responses stream that
+  ends at `data: [DONE]` (LiteLLM sends Responses events as `data:` lines only) gets its receipt before it. `smoke.mjs` and the tests run without Docker or LiteLLM; `e2e.mjs` checks a real LiteLLM with
+  the official `openai` and `@anthropic-ai/sdk` packages in strict mode. A sidecar in front, not a LiteLLM callback: a
+  callback sees parsed objects, not the bytes a receipt proves.
+
+### Fixed
+
+- **RPC batching recovers from a transient network error (`sdk/src/rpc.js`, FIXED P101-3).** One reset connection on a
+  JSON-RPC batch made that node take `eth_call`s one by one for the client's lifetime. Now only what a node answered
+  about a batch (an HTTP error, a single object, a 200 body that is not JSON) stops batching to it for good; a failure
+  with no answer (the connection reset, the body cut off mid-read) pauses batching to that node until 5 minutes have
+  passed or it has answered 20 calls alone. The calls of the failed batch are still asked again one by one, as before.
+  Performance only: what counts as an answer and every quorum rule are unchanged.
+- **A relay room whose storage write fails no longer keeps the frame (`examples/cloudflare-worker/relay-room.js`,
+  `examples/relay-service/relay-core.mjs`, FIXED P101-4).** relaySend answered with the error but the frame stayed in
+  memory, so the client's retry added it a second time. The frame is now pending until its own write lands: no read
+  hands it out and no long-poll wakes for it; if the write fails, relaySend answers with the error and the frame is
+  taken back out (its index, the frame a full ring had shifted out for it, the per-source 0x03 / 0x04 count), so the
+  retry is the only copy, before and after an eviction. The relay core without storage (the Node relay) is unchanged.
+- **The sidecar also strips LiteLLM's injected Chat usage chunk (`sdk/src/ai-openai-chat.js`, FIXED P101-b).** When the
+  sidecar asked the upstream for usage on the client's behalf, it removed only a usage chunk with `choices: []`; LiteLLM
+  sends it with `choices: [{ index: 0, delta: {} }]`, so the client received a chunk it had not asked for. A usage chunk
+  whose choices carry nothing (an empty delta, no `finish_reason`, no `logprobs`, no other member) is now the injected
+  one too; any content, `finish_reason` or other member keeps a chunk in the stream. `examples/litellm-sidecar` no
+  longer needs its own Chat adjustment; its Responses adjustment (`data: [DONE]` as a final line) stays.
+- **The monitor reports a signed answer without `result` instead of crashing (`scripts/monitor.mjs`, FIXED P101-2).**
+  `judgeAsync` and `checkRelayAsync` threw a TypeError on it, and the run could end without a report; it is now a
+  FAILED line that says so.
+
+### Fixed (docs and website)
+
+- Docs: every copyable `tapeapi-verify 42.1013.tape` / `tapeapi-mcp 42.1013.tape` command (both READMEs, the SDK README,
+  the homepage, the AI providers and MCP guides, the new-api sidecar README) now says that 42.1013.tape is an example name
+  to replace with your service's. The MCP guide's `createMcpEndpoint` example uses the public service's name,
+  `11.1013.tape`. The SDK README and the holder console use `1.2.230.tape`, which exists on X Layer, instead of
+  `1.2.344.tape`, which does not.
+- Channels guide: `node conformance/relay.mjs --url` takes the relay's site root (`https://relay.tapeapi.fun`), not the
+  `/tapeapi/v1` address used in an invite's `relays[].url`.
+- Upgrading to 1.0: the error-code table now lists `METHOD_NOT_ALLOWED` (a provider's unsigned HTTP 405 for a non-POST
+  request, a transport failure to clients) and `NAME_TAKEN` (WebMCP, in `handle.skipped[].code` when `registerTool`
+  fails). The Experimental list now names `MAX_CONTRIBUTION_BPS`, `RECOMMENDED_CONTRIBUTION_BPS` and `MAINNET.bem`, as
+  tagged in the type declarations.
+- The Chinese "Call a service" guide links to the upgrade guide's error-code table, like the English one.
+- The link from the MCP guide to "Go live from a phone" in the provider guide now works on GitHub as well as on the
+  site: the heading reads "Cloudflare and holder console" (no `+`), so both produce the same anchor.
+- Homepage and status page: `<html lang>` and the tab title follow the language switch (on first load and on toggle).
+- The site now serves `/favicon.ico` (16/32/48 px, generated from `favicon.svg`) instead of a 404.
+
+### Tests
+
+- **Three timing-dependent tests no longer fail on a loaded machine (FIXED P101-1).** `bus-fuzz`, the fallback scenario
+  of `bus-privacy` and R8-S1 in `review-arch` ran on the real clock (budgets of 200 ms and 20 s, a 60 ms back-off), so a
+  busy machine or CI runner sometimes failed them. They now run on a virtual clock (`sdk/test/helpers/clock.mjs`):
+  simulated node latency is the only time that passes, so each asserts what it always did, on the idle machine it was
+  written for; tiny-budget fuzz seeds now replay too. Each also runs once more on a clock going 50 times fast, which
+  failed before the change.
+
 ## [1.0.0] — 2026-09-29
 
 TapeAPI 1.0.0, the first stable release. Nothing on the wire and nothing in the interfaces of `@tapeapi/sdk` and
@@ -721,7 +787,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.5...v1.0.0
 [1.0.0-rc.5]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.3...v1.0.0-rc.4

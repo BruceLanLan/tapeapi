@@ -1,7 +1,7 @@
 // AI format adapter: OpenAI Chat Completions (POST /v1/chat/completions). See ai.js for the adapter interface.
 // Stream: server-sent events, one JSON chunk per `data:` line, ended by `data: [DONE]` (the final event: the receipt goes
-// right before it, and it is left out of the hash). Usage arrives in a last chunk with `choices: []`, but only when the
-// request set stream_options.include_usage; the sidecar therefore always asks the upstream for it and, when the client
+// right before it, and it is left out of the hash). Usage arrives in a last chunk with `choices: []` (LiteLLM: choices
+// with an empty delta), but only when the request set stream_options.include_usage; the sidecar therefore always asks the upstream for it and, when the client
 // did not, strips that one chunk from what the client receives (prepareUpstream / isInjectedEvent).
 // Complete: some choice reached a finish_reason and no chunk carried an `error`.
 // 完整：某个 choice 有了 finish_reason，且没有带 error 的块。
@@ -14,6 +14,9 @@
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
 const str = (v) => (typeof v === 'string' ? v : null)
 const num = (v) => (typeof v === 'number' ? v : undefined)
+const EMPTY_CHOICE_KEYS = new Set(['index', 'delta', 'finish_reason', 'logprobs'])
+const carriesNothing = (c) => isObj(c) && isObj(c.delta) && Object.values(c.delta).every((v) => v === null)
+  && (c.finish_reason ?? null) === null && (c.logprobs ?? null) === null && Object.keys(c).every((k) => EMPTY_CHOICE_KEYS.has(k))
 
 // OpenAI counts -> the receipt's buckets: prompt_tokens already includes the cached tokens and completion_tokens the
 // reasoning tokens (both are subsets), which is the receipt's convention too. DeepSeek reports cache hits its own way.
@@ -46,7 +49,12 @@ export const openaiChat = Object.freeze({
     if (so.include_usage === true) return null
     return { body: { ...body, stream_options: { ...so, include_usage: true } }, strip: true }
   },
-  isInjectedEvent: (json) => isObj(json) && isObj(json.usage) && Array.isArray(json.choices) && json.choices.length === 0,
+  // The chunk the added include_usage causes: a usage object and choices that carry nothing -- `[]` (OpenAI), or entries
+  // with an empty delta and nothing else (LiteLLM: `[{ index: 0, delta: {} }]`, FIXED P101-b). A choice with any content,
+  // a finish_reason, logprobs or any other member makes it a real chunk, never taken out.
+  // 加上 include_usage 所引起的块：有 usage 对象、choices 里什么都没有——`[]`（OpenAI），或只有空 delta 的条目（LiteLLM：
+  // `[{ index: 0, delta: {} }]`，FIXED P101-b）。choice 里有任何内容、finish_reason、logprobs 或其它成员，就是真实的块，绝不去掉。
+  isInjectedEvent: (json) => isObj(json) && isObj(json.usage) && Array.isArray(json.choices) && json.choices.every(carriesNothing),
   response: (json) => (isObj(json) ? { id: str(json.id), model: str(json.model), usage: openaiUsage(json.usage) } : { id: null, model: null, usage: null }),
   streamState() {
     const s = { id: null, model: null, usage: null }
