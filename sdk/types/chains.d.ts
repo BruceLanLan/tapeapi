@@ -27,6 +27,8 @@ export interface TapeOutChain {
   readonly pin: string
   readonly finality: string
   readonly maxPinLagBlocks: number
+  /** @experimental (security 1.1) The oldest pinned block, in seconds of its timestamp, a pinned resolution accepts. */
+  readonly maxPinAgeS: number
   /** Whether TapeAPI payments (escrow, BEM) run on this chain: BNB Smart Chain only. */
   readonly payments: boolean
 }

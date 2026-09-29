@@ -50,6 +50,13 @@ const L2 = {
   // 读取与 BNB 一样钉在 latest；"已确认"以 safe 区块为准（L2 的最新块在提交到以太坊之前只是排序器一家之言）。
   pin: 'latest', finality: 'safe', payments: false, nameSuffix: 'tape',
 }
+// Security 1.1, read at runtime only when a client opts in to pinning (createTapeAPI({ pin: true })): `finality` is the
+// tag a pinned resolution starts from, and `maxPinAgeS` the oldest block (by its timestamp against the client's clock) it
+// accepts, about maxPinLagBlocks block times. Measured 2026-09-30 on the default nodes: BSC finalized was 2 s old,
+// X Layer safe 94 s, Base safe 84-188 s. `pin: 'latest'` stays the default: reads are unpinned unless the client asks.
+// 安全加固 1.1：只有客户端选择钉块时（createTapeAPI({ pin: true })）运行时才读取：`finality` 是钉块的起点标签，`maxPinAgeS`
+// 是可接受的最旧区块（按区块时间戳对照客户端时钟），约为 maxPinLagBlocks 个出块时间。2026-09-30 默认节点实测：BSC finalized
+// 落后 2 秒，X Layer safe 94 秒，Base safe 84–188 秒。默认仍为 `pin: 'latest'`：客户端不要求就不钉块。
 
 const deepFreeze = (o) => { for (const v of Object.values(o)) if (v && typeof v === 'object') deepFreeze(v); return Object.freeze(o) }
 
@@ -73,21 +80,21 @@ export const CHAINS = deepFreeze({
     },
     // The delegation domain: EIP712Domain("TapeAPI", "1", chainId, verifyingContract) (TAP-20 §3.4)
     delegation: { chainId: 56, verifyingContract: HUB },
-    pin: 'latest', finality: 'finalized', maxPinLagBlocks: 400, payments: true,
+    pin: 'latest', finality: 'finalized', maxPinLagBlocks: 400, maxPinAgeS: 180, payments: true,   // 0.45 s a block / 约 0.45 秒一块
   },
   196: {
     chainId: 196, key: 'xlayer', name: 'X Layer', currency: 'OKB', area: 2, ...L2, hub: HUB,
     erc6551Registry: ERC6551_REGISTRY,
     expectedImpl: { ...L2.expectedImpl, '0xe61a9c7213a6aa616c246a2b569e555b417b25ee': ['0xdcc57797089ebd9f26e686379a4323f353a3f9c6'] },
     delegation: { chainId: 196, verifyingContract: HUB },
-    maxPinLagBlocks: 300,   // about one block a second: 5 minutes / 约 1 秒一块
+    maxPinLagBlocks: 300, maxPinAgeS: 300,   // about one block a second: 5 minutes / 约 1 秒一块
   },
   8453: {
     chainId: 8453, key: 'base', name: 'Base', currency: 'ETH', area: 3, ...L2, hub: HUB,
     erc6551Registry: ERC6551_REGISTRY,
     expectedImpl: { ...L2.expectedImpl, '0xe61a9c7213a6aa616c246a2b569e555b417b25ee': ['0x38a2d320b8984bbac9b0a2691b6c0fd829a23867'] },
     delegation: { chainId: 8453, verifyingContract: HUB },
-    maxPinLagBlocks: 150,   // two seconds a block / 2 秒一块
+    maxPinLagBlocks: 150, maxPinAgeS: 300,   // two seconds a block / 2 秒一块
   },
 })
 

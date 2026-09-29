@@ -123,6 +123,8 @@ client codes are raised by the SDK (§3.4).
 | `ATTEST_DISAGREE` | client | An attested read disagrees | no |
 | `NOT_FOUND` | client | No service there: an unregistered label, a processor number past the last, or no channel record (a missing manifest file is `MANIFEST_INVALID`) | no |
 | `RPC_UNAVAILABLE` | client | Too few nodes answered | yes |
+| `RPC_STALE` | client | Since 1.2, with the experimental `pin` option: the block the nodes confirm is older than `maxPinAgeS`, or ahead of this client's clock (`data.ageS`) | yes |
+| `CONTRACT_UNKNOWN` | client | Since 1.2, with the experimental `sentinel: 'strict'`: a TapeOut identity contract runs an implementation this SDK does not know, which means it was upgraded (`data.role`, `data.implementation`) | no: update the SDK or check the upgrade |
 | `RPC_ERROR` | client | Every node returned the same JSON-RPC error (`data.rpcCode`, `data.rpcRevert`) | a revert: no |
 | `CANON_INVALID` | client | JSON with no canonical form, duplicate or forbidden keys | no |
 | `ABI_INVALID` | client | ABI data that does not decode | no |

@@ -1,6 +1,7 @@
 // 进程内假链：按 selector 解码 eth_call / In-process fake chain answering eth_call by selector.
 import { sha256 } from '@noble/hashes/sha256'
 import { functionBySelector, decodeCall, encodeReturn, eqAddr, ZERO_ADDRESS, labelToBytes32, toHex, utf8ToBytes, decodeParams, encodeParams, hexToBytes, bytesToHex } from '../../src/abi.js'
+import { CHAINS, IMPL_SLOT } from '../../src/chains.js'
 
 export const ZERO_HASH = '0x' + '00'.repeat(32)
 
@@ -36,8 +37,16 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
     //   | 'history:N' (eth_getLogs only for the last N blocks, as publicnode: arch A4 / 只提供最近 N 个区块的日志)
     faults: new Map(),
     notCPU: new Set(),  // circuits contracts the factory does not know (counterfeits) / 工厂不认识的电路合约（仿冒）
+    codes: new Set(),   // addresses that have code (an opened container), besides contract holders / 有代码的地址（已开通的容器）
     contractHolders: new Map(),  // address -> Set of digests it accepts under EIP-1271 / 按 EIP-1271 认可的摘要
     logs: [],   // ChannelBus Wire logs: { address, topics, data, blockNumber, logIndex } / ChannelBus 日志
+    // Security 1.1: blocks and storage. Block n has a hash derived from n (a node with the 'fork' fault reports another),
+    // and a timestamp headTime − (head − n) (headTime: the test's value, or Date.now in seconds). finalized is head − 2 and
+    // safe head − 40 unless tagLags says otherwise for a node. Storage: ERC-1967 implementation slots answer chains.js
+    // expectedImpl for this chain's proxies unless set. `reads` logs the block parameter of every state read.
+    // 安全加固 1.1：区块与存储。块 n 的哈希由 n 推出（带 'fork' 故障的节点报另一个），时间戳为 headTime − (head − n)。
+    // finalized 为 head − 2、safe 为 head − 40，除非 tagLags 为某节点另设。存储：本链代理的实现槽默认答 expectedImpl。
+    headTime: null, tagLags: new Map(), storage: new Map(), reads: [],
   }
   const k2 = (a, b) => `${a.toLowerCase()}:${b.toLowerCase()}`
   // Files are stored under the bare registry key, as every TapeKit uploader does (SPEC §6 step 3), but LOOKED UP
@@ -103,7 +112,25 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
     },
     // 该地址上的 contributionOf/treasury 调用会 revert / contributionOf & treasury revert at this escrow address.
     markLegacyEscrow(a) { st.legacyEscrows.add(a.toLowerCase()) },
+    // An address with code, as an opened (deployed) container has. / 有代码的地址，如已开通（已部署）的容器。
+    setCode(address, yes = true) { if (yes) st.codes.add(address.toLowerCase()); else st.codes.delete(address.toLowerCase()) },
     setFault(url, kind) { if (kind) st.faults.set(url, kind); else st.faults.delete(url) },
+    /** a node's own lag behind head for a tag: setTagLag('http://rpc3', 'finalized', 5000) / 某节点某标签落后 head 的块数 */
+    setTagLag(url, tag, lag) { st.tagLags.set(`${url}:${tag}`, lag) },
+    setStorage(address, slot, word) { st.storage.set(`${address.toLowerCase()}:${slot.toLowerCase()}`, word) },
+    setImplementation(proxy, impl) { api.setStorage(proxy, IMPL_SLOT, '0x' + '00'.repeat(12) + impl.slice(2).toLowerCase()) },
+    blockHash: (n, url) => blockOf(n, url).hash,
+  }
+  const headTime = () => st.headTime ?? Math.floor(Date.now() / 1000)
+  function blockOf(n, url) {
+    const fork = st.faults.get(url) === 'fork'
+    return { number: '0x' + n.toString(16), hash: '0x' + (fork ? 'f0' : 'b1') + n.toString(16).padStart(62, '0'), parentHash: '0x' + 'b1' + (n - 1).toString(16).padStart(62, '0'), timestamp: '0x' + (headTime() - (st.block - n)).toString(16), miner: url }
+  }
+  function storageAt(address, slot) {
+    const set = st.storage.get(`${String(address).toLowerCase()}:${String(slot).toLowerCase()}`)
+    if (set) return set
+    const allowed = String(slot).toLowerCase() === IMPL_SLOT ? CHAINS[chainId]?.expectedImpl?.[String(address).toLowerCase()] : null
+    return '0x' + '00'.repeat(12) + (allowed ? allowed[0].slice(2) : '00'.repeat(20))
   }
   function ethCall(to, data) {
     // EIP-1271: a contract holder accepts exactly the digests it was given / 合约持有人只认可给定的摘要
@@ -198,8 +225,29 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
   async function answer(url, fault, req) {
     const reply = (result) => json({ jsonrpc: '2.0', id: req.id, result })
     if (fault === 'rpcerror') return json({ jsonrpc: '2.0', id: req.id, error: { code: -32000, message: 'node says no' } })
+    const blockArg = { eth_call: 1, eth_getCode: 1, eth_getStorageAt: 2 }[req.method]
+    if (blockArg !== undefined) st.reads.push({ url, method: req.method, block: req.params?.[blockArg] ?? 'latest', fn: req.method === 'eth_call' ? functionBySelector(req.params[0].data) : null })
+    // 'lag:N': the node's head is N blocks behind (security 1.1, review SECR-3): its tags are N blocks lower, a block above
+    // its head is null, and a state read at such a block (EIP-1898 blockHash or number) is geth's "header not found".
+    // 'lag:N'：节点的 head 落后 N 块：标签低 N 块，高于其 head 的区块为 null，在这样的区块上的状态读取答 geth 的 "header not found"。
+    const lagging = /^lag:(\d+)$/.exec(fault ?? '')
+    const head = st.block - (lagging ? Number(lagging[1]) : 0)
+    if (lagging && blockArg !== undefined) {
+      const b = req.params?.[blockArg]
+      const n = b && typeof b === 'object' ? (b.blockHash ? parseInt(b.blockHash.slice(4), 16) : Number(BigInt(b.blockNumber))) : (/^0x[0-9a-f]+$/i.test(String(b)) ? Number(BigInt(b)) : null)
+      if (n !== null && n > head) return json({ jsonrpc: '2.0', id: req.id, error: { code: -32000, message: b?.blockHash ? `header for hash ${b.blockHash} not found` : 'header not found' } })
+    }
     try {
       switch (req.method) {
+        case 'eth_getBlockByNumber': {
+          const tag = req.params[0]
+          const lag = { latest: 0, finalized: 2, safe: 40 }
+          const n = tag in lag ? head - (st.tagLags.get(`${url}:${tag}`) ?? lag[tag]) : Number(BigInt(tag))
+          return reply(n > head ? null : blockOf(n, url))
+        }
+        case 'eth_getStorageAt':
+          if (fault === 'nostorage') return json({ jsonrpc: '2.0', id: req.id, error: { code: -32601, message: 'the method eth_getStorageAt does not exist' } })
+          return reply(storageAt(req.params[0], req.params[1]))
         case 'eth_chainId': return reply('0x' + chainId.toString(16))
         case 'eth_blockNumber': return reply('0x' + (st.block + (fault === 'disagree' ? 7 : 0)).toString(16))
         case 'eth_call': {
@@ -207,7 +255,7 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
           return reply(fault === 'disagree' ? out.replace(/.$/, (c) => (c === '0' ? '1' : '0')) : out)
         }
         case 'eth_getCode':
-          return reply(st.contractHolders.has(String(req.params[0]).toLowerCase()) ? '0x60006000fd' : '0x')
+          return reply(st.contractHolders.has(String(req.params[0]).toLowerCase()) || st.codes.has(String(req.params[0]).toLowerCase()) ? '0x60006000fd' : '0x')
         case 'eth_getLogs': {
           // the BNB Chain dataseed nodes answer every other method but refuse eth_getLogs for any range
           // BNB 链的 dataseed 节点其它方法都答，唯独对任何区间的 eth_getLogs 报错

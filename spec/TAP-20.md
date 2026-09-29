@@ -5,6 +5,7 @@
 | Status | Stable (v1) since 2026-09-29 (TapeAPI 1.0.0); §3.5 (ServiceDirectory) is Experimental |
 | Implementation | Live without a directory (2026-09-27): on BNB Chain, `api.tapeapi.fun` (`11.1013.tape`, source `examples/public-api/`) and `relay.tapeapi.fun` (`12.1013.tape`) publish TAP-20 manifests with holder delegations, and the SDK resolves containers, `(circuits, tokenId)` pairs and names `<#ID>.<processor>.tape`; read-only resolution on X Layer and Base (area-coded names) since 2026-09-28. ServiceDirectory (§3.5) is not deployed, so labels do not resolve on mainnet. No third-party audit. |
 | Type | Standards |
+| Revision | 2026-09-30 (security 1.1), additions only under TAP-1 §4.1 rule 2: §3.10 (the optional manifest content signature `contentSig`) and its row in §3.3; informative notes on pinned reads (§3.2) and on the upgradeable identity root and rolled-back manifests (§8); vectors §6.4. No existing field, domain, type string or rule changed. |
 | Created | 2026-09-20 |
 | Requires | TAP-1 |
 | License | CC0-1.0 |
@@ -52,6 +53,7 @@ TapeAPI closes this gap without changing the protocol: identity is the existing 
 - SiteRegistry keys carry **no leading slash** (TapeKit SPEC §6 step 3 strips it before lookup; on mainnet `4246.0.tape` stores `index.html`, and `fileInfo(container, "/index.html")` answers size 0). The registry key of the manifest is therefore `.well-known/tapeapi.json`. Clients MUST strip leading slashes before every `read` / `fileInfo` call.
 - Clients MUST read it with `SiteRegistry.read(container, ".well-known/tapeapi.json")` on the SiteRegistry of the service's chain (§3.1) and MUST verify the returned bytes against `SiteRegistry.fileInfo(container, path)` of the same registry: byte length MUST equal `size` and `sha256(bytes)` MUST equal `sha256Hash`.
 - All `eth_call`s in this TAP MUST be issued to at least `quorum` independently configured RPC nodes (RECOMMENDED `quorum ≥ 2`) and accepted only if all results are byte-identical. Disagreement MUST be treated as failure (`RPC_DISAGREE`), never resolved by majority. A node that fails in transport (timeout, HTTP error, oversize body) has not answered and is not a disagreement, but at least `quorum` nodes MUST answer. A revert on one node and a value on another is a disagreement. A JSON-RPC error in which the node describes ITSELF -- rate limiting (`-32005`), a method it does not implement (`-32601`), or a refusal to scan the range asked for -- is a node failure, exactly like a timeout: the node has not answered. Concretely, `-32005` and `-32601` are node failures, and a `-32000` whose message describes a range, result or size limit, a timeout or an unsupported method is a node failure unless the message mentions a revert, gas or an allowance (those are answers about the chain). Any other JSON-RPC error, a revert in particular, is an answer about the chain: it is a result, compared across nodes by its `code` and by whether it reports a revert (code `3`, or a message that mentions a revert; message texts otherwise differ between node implementations and are not compared), so that a revert and a `-32000` "header not found" never count as the same answer, and an error agreed by every answering node surfaces as `RPC_ERROR`. A client MAY re-ask all nodes once to absorb a race across a block boundary on `latest`; the re-ask MUST itself be unanimous. `eth_blockNumber` is not an `eth_call`: honest nodes differ by a block or two, so clients use the lowest head among at least `quorum` answers and SHOULD refuse (`RPC_DISAGREE`) a spread wider than a configured bound (reference: 64 blocks). Clients MUST NOT fetch node lists from a server at runtime.
+- **Pinned reads (informative, 2026-09-30).** A client MAY pin every `eth_call` of one resolution to one block. The reference SDK, with `createTapeAPI({ pin: true })`, asks each node for its block at the chain's finality tag (`finalized` on BNB Smart Chain, `safe` on an L2), takes the highest block number that nodes of `quorum` operators have reached, requires every node that answers for that number to report the same hash, refuses a block whose timestamp is older than a configured bound (client-side code `RPC_STALE`), and then makes every read of the resolution with the EIP-1898 parameter `{ "blockHash": …, "requireCanonical": true }`, recording the block in its result. The tag is never used for the reads themselves: what a node calls `finalized` is that node's own claim (one public BSC node answered `latest − 5000`, and four Base nodes differed by 178 blocks, measured 2026-09-29). A node that has not yet reached the pinned block answers a pinned read with an error such as `header not found`, `unknown block` or code `-32001`; the reference SDK counts that node as not answering, as it would a timeout, so every node that does answer still has to agree and nodes of `quorum` operators still have to answer. Unpinned reads at `latest` remain the default.
 - The manifest MUST NOT exceed 65 536 bytes.
 - A development mode that accepts a manifest object or URL directly MAY exist in SDKs; it MUST be opt-in (`dev: true`) and MUST NOT be reachable from a default configuration.
 
@@ -90,6 +92,7 @@ TapeAPI closes this gap without changing the protocol: identity is the existing 
 | `methods` | array | MUST | Non-empty. Method names MUST be unique. |
 | `mcp` | object | MAY | The service's tools as an MCP server, pinned by digest; see §3.8. |
 | `ai` | object | MAY | The service's AI API endpoints and its published price table, whose answers carry signed usage receipts (TAP-21 §3.5); see §3.9. |
+| `contentSig` | hex | MAY | The holder's signature over the rest of the manifest; see §3.10. |
 | `payment` | object | MUST* | `{ "escrow": address, "unit": "BEM", "decimals": 8 }`. *REQUIRED if any `priceBEM != "0"`, and then `escrow` is a non-zero address (a zero escrow can settle nothing). `unit` and `decimals` carry no information, since both are fixed: either may be omitted and is then read as `"BEM"` and `8`; any other value is invalid. |
 
 Method descriptor:
@@ -299,6 +302,22 @@ amount = sum / 1 000 000, rounded up to 8 decimals
 - Per-use counts (`other`) have no token price: they add 0 and are named in the receipt's `unpriced`.
 - A matched entry gives one amount per price entry, in the entry's order. No matched entry, or no usage, gives no amount. An answer that did not complete is priced from the usage it reported.
 
+### 3.10 Manifest Content Signature (`contentSig`)
+
+> Added 2026-09-30. OPTIONAL content under TAP-1 §4.1 freeze rule 2: a client or provider that ignores this section stays conformant, and a manifest without the field is exactly as before.
+
+The delegation (§3.4) covers `container`, `signer` and `expires` only. Whoever can write the container's site (the holder, an operator the holder authorised, or an upgrade of the SiteRegistry) can change `endpoints`, the `ai` binding or prices under a delegation that stays valid, and an `ai` caller's upstream credentials reach `ai.baseUrl` before any receipt can be checked. A holder MAY therefore also sign the content of the manifest:
+
+- Field: `contentSig`, at the top level of the manifest, a `0x` hex signature.
+- Domain: the delegation domain of §3.4 (`name "TapeAPI"`, `version "1"`, the service's `chainId`, the DeWebHub of that chain).
+- Primary type: `ManifestContent(address container,bytes32 contentHash)`; `MANIFEST_CONTENT_TYPEHASH = keccak256("ManifestContent(address container,bytes32 contentHash)") = 0x809c1147faa2cda8716cdc72c000b05406f238cb127fea6f0abed585c02aea1c`; `structHash = keccak256(abi.encode(MANIFEST_CONTENT_TYPEHASH, container, contentHash))`; `digest` as in §3.4.
+- `contentHash = keccak256(UTF-8(canonicalJSON(M)))`, where `M` is the manifest object exactly as published, with its top-level `contentSig` member removed, and `canonicalJSON` is the canonical form of TAP-21 §3.3. A manifest with no canonical form cannot carry a content signature.
+- The signature is checked as a delegation is: a 65-byte ECDSA signature that recovers to the holder read in §3.6 step 4, or, for a contract holder, a signature of up to 1024 bytes that the holder accepts under EIP-1271.
+- A client MAY verify `contentSig` when present and MAY offer a setting that refuses a manifest without a valid one as `MANIFEST_INVALID` (the reference SDK: `requireContentSig: true`; without it, an invalid signature is reported as a warning and the manifest is used as before). A client that does not implement this section ignores the field (§3.3).
+- Limits, stated plainly: without that setting the field protects nothing, since a site writer can delete it; with it, it proves that the holder approved this content, not that the content is the newest the holder approved (an older holder-signed manifest put back still verifies; see §8). The type name differs from `Delegation` (§3.4) and `ChannelKeys` (TAP-26 §3.1), so none of these signatures can be taken for another.
+
+Test vectors: §6.4.
+
 ## 4. Rationale
 
 - **Circuit as identity.** A circuit is transferable, already has a container, a DeWEB site and a TapeSend inbox, and is the unit users already recognise. Every service therefore consumes a circuit, which aligns provider incentives with the protocol rather than with a parallel registry. Alternatives (bare EOA, ENS-like names) would create a second identity system and a second name grammar.
@@ -377,6 +396,10 @@ Worked amount (case `openai-chat-json`, model `gpt-x`): usage `prompt_tokens` 12
 
 Without a `reasoning` price, the BEM entry prices all 300 output tokens as `output`.
 
+### 6.4 Manifest content signature (§3.10)
+
+`spec/vectors/tap-20-content.json` holds two manifests signed by a public **test** holder key (`0x11…11`) in the chainId 56 domain, each with its canonical form, `contentHash`, `structHash`, `digest`, signature and the published form (with `contentSig`, which hashes to the same `contentHash`); the second changes only the endpoint and so has another `contentHash`, and the first signature moved onto the second content recovers to another address. Generated by `scripts/gen-vectors.mjs`, checked by `sdk/test/security-1.1.test.mjs` and independently by `spec/vectors/verify.py`.
+
 ## 7. Reference Implementation
 
 - SDK: `sdk/` in this repository (`sdk/src/index.js` `resolve` for every input form including names, and `verifyDelegation` for the §3.4 checks against the holder; `sdk/src/manifest.js` schema validation; `sdk/src/sig.js` delegation digest and signature recovery; `sdk/src/rpc.js` quorum reads).
@@ -384,6 +407,7 @@ Without a `reasoning` price, the BEM entry prices all 300 output tokens as `outp
 - Contract: `contracts/src/ServiceDirectory.sol`, tests in `contracts/test/`.
 - Live (2026-09-27): `https://api.tapeapi.fun` (`11.1013.tape`, source `examples/public-api/`, on `server/`) and `https://relay.tapeapi.fun` (`12.1013.tape`, source `examples/cloudflare-worker/relay-worker.js`) publish TAP-20 manifests with holder delegations; each resolves by name, container or pair.
 - ServiceDirectory is not deployed, and nothing here has a third-party audit. Resolution needs no directory: every input form except a label reads only TapeOut's own deployed contracts.
+- Security 1.1 (2026-09-30, experimental in the SDK): pinned reads (`sdk/src/rpc.js` `confirmedBlock`, `createTapeAPI({ pin })`), the identity-root sentinel and the local ERC-6551 derivation (`sdk/src/index.js`, `sdk/src/security.js`), §3.10 (`sdk/src/sig.js` `manifestContentDigest`) and the delegation floor; tests in `sdk/test/security-1.1.test.mjs`.
 
 ## 8. Security Considerations
 
@@ -395,6 +419,8 @@ Without a `reasoning` price, the BEM entry prices all 300 output tokens as `outp
 - **Directory trust.** Clients MUST NOT trust the directory alone. `serviceOf`, `manifestPath`, and events are hints; the manifest, holder, and delegation are always re-derived on-chain.
 - **RPC trust.** A single malicious RPC node cannot forge a manifest because of quorum agreement and SHA-256; it can only cause a denial of service. Clients SHOULD use nodes from independent operators.
 - **Manifest size and JSON parsing.** The 64 KiB cap and strict schema validation bound parser exposure. Clients SHOULD reject duplicate keys.
+- **Upgradeable identity root (informative, 2026-09-30).** The DeWebHub and the SiteRegistry are upgradeable proxies whose owners are single keys (read on chain 2026-09-29). An upgrade changes real chain state, which every honest node, every quorum and every Merkle proof then agree on; nothing in this TAP can prevent it. A client MAY notice it: compare each proxy's ERC-1967 implementation slot with the implementations it knows, and re-derive the container locally (ERC-6551 `CREATE2` through the ERC-6551 registry with salt 0, which is how `accountOf` derives it today) and compare it with `accountOf`. The reference SDK does both on every resolution on a chain's own contracts, in the same request as the manifest read, and by default only warns (`sentinel: 'strict'` refuses). It notices an upgrade; it does not prevent one.
+- **Rolled-back manifests (informative, 2026-09-30).** Re-publishing the manifest is how a holder replaces a signer (above), but whoever can write the site can put an older holder-signed manifest back until its delegation expires, and a client's caches keep an old manifest for their lifetime. A client MAY remember, per container, holder and signer, the highest delegation `expires` it has accepted and refuse a lower one (the reference SDK: `delegationFloor`). Keyed by signer, a holder who replaces the signer with a shorter-lived delegation is not refused: the new signer starts its own floor. This protects only a client that saw the newer manifest, and it has limits: whoever can write the site can still put back an older holder-signed manifest whose delegation names an earlier signer (its `expires` is not below that signer's floor) until that delegation lapses; a holder who shortens `expires` for the same signer on purpose is refused by such a client until the longer delegation lapses or the client clears that floor (the reference SDK: `api.clearDelegationFloor`); and a later holder starts a new floor.
 
 ## 9. Copyright
 
@@ -449,6 +475,7 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 - SiteRegistry 的键**不带前导斜杠**（TapeKit SPEC §6 第 3 步在查找前去掉它；主网 `4246.0.tape` 存的是 `index.html`，`fileInfo(container, "/index.html")` 返回 size 0）。因此清单的注册表键是 `.well-known/tapeapi.json`。客户端 MUST 在每次 `read` / `fileInfo` 前去掉前导斜杠。
 - 客户端 MUST 通过服务所在链（§3.1）的 SiteRegistry 调用 `SiteRegistry.read(container, ".well-known/tapeapi.json")` 读取，并 MUST 依据同一注册表的 `SiteRegistry.fileInfo(container, path)` 校验返回字节：字节长度 MUST 等于 `size`，`sha256(bytes)` MUST 等于 `sha256Hash`。
 - 本 TAP 中所有 `eth_call` MUST 发往至少 `quorum` 个独立配置的 RPC 节点（RECOMMENDED `quorum ≥ 2`），且仅当所有结果逐字节一致时才接受。不一致 MUST 视为失败（`RPC_DISAGREE`），永不以多数决解决。传输失败的节点（超时、HTTP 错误、响应体超限）视为未作答，不算不一致，但 MUST 至少有 `quorum` 个节点作答。一个节点回滚而另一个节点返回值，属于不一致。节点在描述**它自己**的 JSON-RPC 错误——限流（`-32005`）、不支持该方法（`-32601`）、拒绝扫描所要求的区间——属于节点故障，与超时完全一样：该节点没有作答。具体而言，`-32005` 与 `-32601` 是节点故障；`-32000` 的消息若描述区间、结果或大小限制、超时或不支持的方法，也是节点故障，除非消息提到 revert、gas 或 allowance（这些是关于链的回答）。其它 JSON-RPC 错误（尤其是回滚）说的是链，属于结果，节点之间按其 `code` 以及它是否报告回滚（code `3`，或消息提到 revert；除此之外不同节点实现的消息文本各不相同，不参与比较）来比较，使回滚与 `-32000` "header not found" 绝不被当作同一个回答，所有作答节点一致的错误以 `RPC_ERROR` 呈现。为吸收 `latest` 跨区块边界的竞态，客户端 MAY 向全部节点重问一次；重问本身 MUST 全体一致。`eth_blockNumber` 不是 `eth_call`：诚实节点之间会相差一两个区块，因此客户端取至少 `quorum` 个答案中最低的链头，且 SHOULD 拒绝（`RPC_DISAGREE`）超过配置上限的分散（参考实现：64 个区块）。客户端 MUST NOT 在运行时从服务器获取节点列表。
+- **钉块读取（说明性，2026-09-30）。** 客户端 MAY 把一次解析的全部 `eth_call` 钉在同一个区块上。参考 SDK 在 `createTapeAPI({ pin: true })` 时，向每个节点询问其在本链最终性标签处的区块（BNB Smart Chain 为 `finalized`，L2 为 `safe`），取 `quorum` 家运营方都已到达的最高块号，要求对该块号作答的每个节点报告同一个哈希，拒绝时间戳旧于所配置时限的区块（客户端错误码 `RPC_STALE`），然后以 EIP-1898 参数 `{ "blockHash": …, "requireCanonical": true }` 进行本次解析的全部读取，并在结果中记录该区块。标签本身绝不用于读取：节点所说的 `finalized` 只是该节点自己的说法（2026-09-29 实测：一个公共 BSC 节点答 `latest − 5000`，四个 Base 节点相差 178 块）。尚未到达所钉区块的节点，会以 `header not found`、`unknown block` 或错误码 `-32001` 之类的错误回答钉块读取；参考 SDK 把该节点视为未作答（与超时相同），因此作答的每个节点仍须一致，作答的仍须有 `quorum` 家运营方。不钉块、在 `latest` 读取仍是默认行为。
 - 清单 MUST NOT 超过 65 536 字节。
 - SDK MAY 提供直接接受清单对象或 URL 的开发模式；该模式 MUST 为显式开启（`dev: true`），且 MUST NOT 能从默认配置到达。
 
@@ -487,6 +514,7 @@ TapeAPI 在不修改协议的前提下填补这一空白：身份是既有容器
 | `methods` | array | MUST | 非空。方法名 MUST 唯一。 |
 | `mcp` | object | MAY | 服务作为 MCP 服务器提供的工具，以摘要钉住；见 §3.8。 |
 | `ai` | object | MAY | 服务的 AI 接口端点与公示价目表，其回答带签名的用量回执（TAP-21 §3.5）；见 §3.9。 |
+| `contentSig` | hex | MAY | 持有人对清单其余内容的签名；见 §3.10。 |
 | `payment` | object | MUST* | `{ "escrow": address, "unit": "BEM", "decimals": 8 }`。*任一 `priceBEM != "0"` 时 REQUIRED，此时 `escrow` 为非零地址（零地址托管结算不了任何东西）。`unit` 与 `decimals` 都是固定值，不携带信息：二者均可省略，省略时按 `"BEM"` 与 `8` 读取；任何其它值无效。 |
 
 方法描述符：
@@ -695,6 +723,22 @@ amount = sum / 1 000 000，向上取整到 8 位小数
 - 按次计费的计数（`other`）没有 token 价：计 0，并在回执的 `unpriced` 中列出名称。
 - 匹配到的条目为每个价格条目给出一个金额，顺序与条目相同。没有匹配条目或没有用量，就没有金额。没有完成的回答按它报告的用量定价。
 
+### 3.10 清单内容签名（`contentSig`）
+
+> 2026-09-30 新增。按 TAP-1 §4.1 冻结规则第 2 条属于 OPTIONAL 内容：忽略本节的客户端或提供者仍然合规，不带该字段的清单与以前完全相同。
+
+委托（§3.4）只覆盖 `container`、`signer` 与 `expires`。能写容器站点的人（持有人、持有人授权的操作员，或 SiteRegistry 的升级者）可以在委托依然有效的情况下改动 `endpoints`、`ai` 绑定或价格，而 `ai` 调用方的上游凭证在任何回执能被核验之前就已发往 `ai.baseUrl`。因此持有人 MAY 同时签署清单的内容：
+
+- 字段：`contentSig`，位于清单顶层，`0x` 十六进制签名。
+- 域：§3.4 的委托域（`name "TapeAPI"`、`version "1"`、服务所在链的 `chainId`、该链的 DeWebHub）。
+- 主类型：`ManifestContent(address container,bytes32 contentHash)`；`MANIFEST_CONTENT_TYPEHASH = keccak256("ManifestContent(address container,bytes32 contentHash)") = 0x809c1147faa2cda8716cdc72c000b05406f238cb127fea6f0abed585c02aea1c`；`structHash = keccak256(abi.encode(MANIFEST_CONTENT_TYPEHASH, container, contentHash))`；`digest` 同 §3.4。
+- `contentHash = keccak256(UTF-8(canonicalJSON(M)))`，其中 `M` 是按发布原样的清单对象去掉顶层 `contentSig` 成员，`canonicalJSON` 为 TAP-21 §3.3 的规范形式。没有规范形式的清单无法带内容签名。
+- 签名的核验方式与委托相同：65 字节 ECDSA 签名恢复出 §3.6 第 4 步读到的持有人；合约持有人则为至多 1024 字节、持有人按 EIP-1271 认可的签名。
+- 客户端 MAY 在字段出现时核验 `contentSig`，并 MAY 提供一项设置，把没有有效签名的清单以 `MANIFEST_INVALID` 拒绝（参考 SDK：`requireContentSig: true`；不开启时，无效签名作为警告报告，清单照旧使用）。未实现本节的客户端忽略该字段（§3.3）。
+- 如实说明其局限：不开启那项设置时，该字段什么也保护不了，因为能写站点的人可以直接删掉它；开启时，它证明持有人认可过这份内容，但不证明这是持有人认可过的最新内容（放回一份持有人签过的旧清单仍能通过；见 §8）。类型名与 `Delegation`（§3.4）及 `ChannelKeys`（TAP-26 §3.1）不同，这几种签名互相不能冒充。
+
+测试向量：§6.4。
+
 ## 4. 原理
 
 - **以电路为身份。** 电路可转让，已经拥有容器、DeWEB 站点与 TapeSend 收件箱，且是用户已经认识的单位。因此每个服务都消耗一个电路，这使提供者的激励与协议对齐，而非与一个平行注册表对齐。替代方案（裸 EOA、类 ENS 名称）会产生第二套身份系统与第二套名称语法。
@@ -773,6 +817,10 @@ amount = sum / 1 000 000，向上取整到 8 位小数
 
 没有 `reasoning` 价格，BEM 条目把全部 300 个输出 token 都按 `output` 计价。
 
+### 6.4 清单内容签名（§3.10）
+
+`spec/vectors/tap-20-content.json` 含两份由公开的**测试**持有人密钥（`0x11…11`）在链号 56 的域中签署的清单，每份都给出规范形式、`contentHash`、`structHash`、`digest`、签名，以及发布形式（带 `contentSig`，其哈希仍是同一个 `contentHash`）；第二份只改了端点，因此 `contentHash` 不同，把第一份的签名搬到第二份内容上会恢复出另一个地址。由 `scripts/gen-vectors.mjs` 生成，由 `sdk/test/security-1.1.test.mjs` 检查，并由 `spec/vectors/verify.py` 独立核对。
+
 ## 7. 参考实现
 
 - SDK：本仓库 `sdk/`（`sdk/src/index.js` 中的 `resolve` 处理包括名称在内的每种输入形式，`verifyDelegation` 对照持有者执行 §3.4 的检查；`sdk/src/manifest.js` 结构校验；`sdk/src/sig.js` 委托摘要与签名恢复；`sdk/src/rpc.js` 法定人数读取）。
@@ -780,6 +828,7 @@ amount = sum / 1 000 000，向上取整到 8 位小数
 - 合约：`contracts/src/ServiceDirectory.sol`，测试位于 `contracts/test/`。
 - 运行中（2026-09-27）：`https://api.tapeapi.fun`（`11.1013.tape`，源码 `examples/public-api/`，基于 `server/`）与 `https://relay.tapeapi.fun`（`12.1013.tape`，源码 `examples/cloudflare-worker/relay-worker.js`）发布了带持有者委托的 TAP-20 清单；二者均可按名称、容器或二元组解析。
 - ServiceDirectory 未部署，以上均未经第三方审计。解析不需要目录：除标签外的每种输入形式都只读取 TapeOut 自己已部署的合约。
+- 安全加固 1.1（2026-09-30，在 SDK 中为实验性）：钉块读取（`sdk/src/rpc.js` 的 `confirmedBlock`、`createTapeAPI({ pin })`）、身份根哨兵与本地 ERC-6551 推导（`sdk/src/index.js`、`sdk/src/security.js`）、§3.10（`sdk/src/sig.js` 的 `manifestContentDigest`）以及委托下限；测试见 `sdk/test/security-1.1.test.mjs`。
 
 ## 8. 安全考量
 
@@ -791,6 +840,8 @@ amount = sum / 1 000 000，向上取整到 8 位小数
 - **目录信任。** 客户端 MUST NOT 仅信任目录。`serviceOf`、`manifestPath` 与事件都是提示；清单、持有者与委托始终在链上重新推导。
 - **RPC 信任。** 由于法定人数一致与 SHA-256，单个恶意 RPC 节点无法伪造清单，只能造成拒绝服务。客户端 SHOULD 使用来自独立运营者的节点。
 - **清单大小与 JSON 解析。** 64 KiB 上限与严格的结构校验限制了解析器的暴露面。客户端 SHOULD 拒绝重复键。
+- **可升级的身份根（说明性，2026-09-30）。** DeWebHub 与 SiteRegistry 都是可升级代理，其 owner 为单个密钥（2026-09-29 链上读取）。升级改的是真实的链上状态，此后每个诚实节点、每个法定数、每个默克尔证明都会一致为它背书；本 TAP 中没有任何机制能阻止它。客户端 MAY 发现它：把各代理的 ERC-1967 实现槽与自己已知的实现比对，并在本地重新推导容器（经 ERC-6551 注册表、salt 为 0 的 ERC-6551 `CREATE2`，即 `accountOf` 目前的推导方式），与 `accountOf` 比对。参考 SDK 对本链自己的合约在每次解析时都做这两项，与清单读取在同一个请求里发出，默认只警告（`sentinel: 'strict'` 则拒绝）。它能发现升级，但阻止不了升级。
+- **被放回的旧清单（说明性，2026-09-30）。** 重新发布清单是持有人更换签名者的方式（见上），但能写站点的人可以在旧委托到期前把一份持有人签过的旧清单放回去，客户端的缓存也会在其有效期内保留旧清单。客户端 MAY 按容器、持有人与签名者记住已接受过的最大委托 `expires`，并拒绝更低的（参考 SDK：`delegationFloor`）。按签名者区分后，持有人以有效期更短的委托更换签名者不会被拒：新签名者从自己的下限开始。这只保护见过新清单的客户端，且有局限：能写站点的人仍可把一份持有人签过、委托给**以前**签名者的旧清单放回去（其 `expires` 不低于该签名者的下限），直到那份委托到期；持有人为同一签名者有意缩短 `expires` 时，这样的客户端会拒绝较短的委托，直到较长的那份到期或客户端清除该下限（参考 SDK：`api.clearDelegationFloor`）；电路的下一任持有人从新的下限开始。
 
 ## 9. 版权
 

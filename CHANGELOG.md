@@ -7,6 +7,80 @@ interfaces.
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-09-30
+
+### Added
+
+- **Larger groups (experimental): TAP-27 §3.8 format 2, up to 128 members in one wire message.** Binary roster
+  (104 bytes a member), a marker in the epoch field that every format-1 client refuses (`GROUP_INVALID`, tested
+  against the released 1.1.0 code), lazy member checks (`open().verified`, `openVerified`, `verifyMembers`,
+  `verifyReuseS`, at most 86,400 s, counted from the start of the check), `channelKeysVerifier` (use it, not
+  `api.groupVerifier()`, for format 2), vectors `spec/vectors/tap-27-group-v2.json`. Only positive verdicts are reused;
+  a negative one lasts at most 60 s (`VERIFY_NEGATIVE_S`), is confirmed by a fresh read and never refuses an epoch.
+  On-demand and background checks share the `verifyConcurrency` limit. Format 1 stays the default and its bytes are
+  unchanged (`joinGroup` without `format` ignores `verifyMember`, as before); one group never mixes formats. TAP-27 §8 states what format 2 weakens (a
+  verdict reused for up to a day; senders checked on demand) and what it keeps.
+- **A path for AI relays, from nothing to live, with a check at every step.**
+  - `examples/relay-trial/`: a one-command local trial (`node examples/relay-trial/trial.mjs`): the signing sidecar,
+    a fake upstream and a throwaway identity, then verified calls (OpenAI Chat, streaming, Anthropic), the
+    `tapeapi-verify` proxy and a tamper demo. No key, no circuit, no cost.
+  - `tapeapi-doctor` (experimental, new bin in `@tapeapi/sdk`): checks an AI service in order (name, circuit,
+    container, manifest file and format, delegation and days left, `ai` field, prices, endpoints, TLS and sidecar
+    readiness, CORS, a verifiable receipt, receipt lookup) and gives each failure a fix in English and Chinese. The
+    receipt check sends a request with an invalid key, which the gateway refuses and the sidecar still signs, so it
+    normally costs nothing (a gateway that accepts any key spends a few input tokens and 1 output token, 16 on
+    OpenAI Responses); `--key-env` makes one real, billed call on the operator's own key, sent only to the checked host
+    over https (`--allow-http` for a loopback sidecar) and shown as `***` in every output, echoes included. Exit status 0 / 1 / 2 / 3 (3: the chain or the network could not be
+    reached, retry) for CI; `--json`, `--strict`, `--offline`, and an address mode to check before publishing.
+  - The AI providers guide opens with "From zero to live": each step, who pays, the command that checks it and what it
+    should print.
+- **Security hardening, learned from Polkadot's shared-security ideas (experimental; every option off or warn-only by
+  default, 1.0 behaviour unchanged).** On `createTapeAPI`:
+  - `pin`: every read of one resolution is pinned (EIP-1898 `blockHash`) to one block that nodes of `quorum` operators
+    confirm at the chain's finality tag (`finalized` on BNB Smart Chain, `safe` on an L2); a block older than
+    `maxPinAgeS` is refused as the new client code `RPC_STALE`. `svc.pinned` records the block. `rpc.confirmedBlock()`.
+  - `sentinel` (`'warn'` default, `'strict'`, `'off'`): on the chain's own TapeOut contracts, resolve reads the ERC-1967
+    implementation slots of the DeWebHub and the SiteRegistry and compares them with the known implementations, and
+    derives the container locally (ERC-6551 CREATE2) to cross-check `accountOf`. It notices an upgrade; it cannot
+    prevent one. `'warn'` reports in `svc.warnings` and `onWarning` (default: `console.warn` once); `'strict'` refuses
+    with the new code `CONTRACT_UNKNOWN` or `MANIFEST_INVALID`. A failed slot read only warns.
+  - `requireContentSig`: refuse a manifest without a valid holder content signature (TAP-20 §3.10). Without it, a
+    content signature is only reported (`svc.contentSig`, warnings), and an error while checking it is the warning
+    `CONTENT_SIG_UNCHECKED`: it never fails a resolve.
+  - `delegationFloor`: remember the highest delegation `expires` seen per chain, container, holder and signer, and
+    refuse an older one put back (a rollback of a re-published manifest); a new signer starts its own floor, and
+    `api.clearDelegationFloor(error.data)` forgets one. A site writer can still put back an older holder-signed
+    delegation with a higher `expires`.
+  - `onWarning`, `clock`.
+- **TAP-20 §3.10: optional holder-signed manifest content** (`contentSig`,
+  `ManifestContent(address container,bytes32 contentHash)` in the delegation domain), so that whoever can write the
+  site cannot silently change `ai.baseUrl` or prices under a valid delegation when the client requires it.
+  `sig.manifestContent*` helpers, vectors `spec/vectors/tap-20-content.json` (checked by `verify.py`).
+- **`security` namespace**: `erc6551Account`; ContradictionRecord v1 (`contradictionRecord`, `contradictionsOf`,
+  `verifyContradiction`): evidence anyone can check when providers sign conflicting answers to the same request at the
+  same block (`verifyContradiction` says `valid` only when `signerOf` confirms every signer as the provider's
+  delegated signer, otherwise `signaturesConsistent: true`; the block-pinned form suits methods whose result is
+  deterministic); `withSpotCheck`, a wrapper that re-asks an independent provider at a given rate (0, off, by default).
+
+### Changed
+
+- Groups: the TAP-27 §3.3 step 6 member checks run in parallel (`verifyConcurrency`, default 8), with the same outcome
+  and errors as before. A 32-member cold start at 280 ms per request: about 45 s before, about 6 s now.
+- Every `42.1013.tape` example says it is an example name (it has no manifest, so a command run as written stops
+  with "no file at /.well-known/tapeapi.json") and points to the local trial; `tapeapi-verify` adds a hint to
+  `tapeapi-doctor` and the trial when it cannot use a name.
+- `ATTEST_DISAGREE` errors carry the verified signed envelopes and the request in `error.data` (`envelopes`,
+  `request`), so the disagreement can be kept as evidence.
+- A cold resolve on the chain's own contracts sends the sentinel's two ERC-1967 slot reads to each node alone, in the
+  same round as the batch (never batched, so the `eth_call` batches stay those of 1.1.0): still 4 rounds, 18 requests
+  instead of 12, cached for 300 s. `pin` adds one round.
+- A read pinned to a block (an EIP-1898 object or a hex block number, for `eth_call`, `eth_getCode`,
+  `eth_getStorageAt`) that a node answers with "header not found", "unknown block" or `-32001` counts as that node not
+  answering, not as a disagreement: a node that lags behind the pinned block no longer makes the read fail with
+  `RPC_DISAGREE`. The nodes that have the block must still agree, and `quorum` operators must still answer (otherwise
+  `RPC_UNAVAILABLE`). This applies to `rpc.call` / `rpc.ethCall` with a hex block number too.
+
+
 ## [1.1.0] — 2026-09-30
 
 ### Added
@@ -787,7 +861,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.5...v1.0.0
 [1.0.0-rc.5]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.4...v1.0.0-rc.5

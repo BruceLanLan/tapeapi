@@ -173,7 +173,18 @@ Nothing needs saving to stay **safe**; these keep a restart **smooth**:
 
 ## Limits
 
-- At most 32 members per group.
+- At most 32 members per group. An experimental format 2 (TAP-27 §3.8, `createGroup({ format: 2 })`) carries up to
+  128 in one wire message, with a binary roster and member checks done lazily: a message from a sender not yet checked
+  comes with `verified: false`, so show it as unverified or use `openVerified`. Its members' entries carry no X25519
+  key, so check them with `group.channelKeysVerifier(api)`, **not** `api.groupVerifier()`, which compares both keys
+  and would find every member a mismatch. A member found to match is trusted for up to 24 hours (`verifyReuseS`, from
+  the start of the check); one found not to match is refused for at most 60 seconds and then checked again, and that
+  "no" always comes from a read past the client's cache, so a record a lagging node could not find does not silence
+  anyone for long. An RPC failure is never a verdict. `joinGroup` of a format-1 group ignores `verifyMember` and
+  `verifyReuseS`, so code for both formats can pass them to every invite. Format 1 clients (every SDK before
+  1.2) refuse a format-2 group with `GROUP_INVALID`, and one group never mixes formats. Past about 64 members, run
+  your own relay (the public one is for testing and small groups), and for 100 or more keep the owner on an
+  always-on host or in a Web Worker: building an epoch for 128 members takes seconds on a phone.
 - The owner is a single point: only the owner adds, removes and rotates, and there is no owner transfer. A group that
   needs a new owner is a new group.
 - Metadata is visible: a relay sees room ids, frame sizes, timing and the IP addresses that post and poll; anyone

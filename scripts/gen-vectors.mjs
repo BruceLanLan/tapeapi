@@ -115,6 +115,44 @@ write('tap-20-delegation.json', {
   }),
 })
 
+// ---------- TAP-20 §3.10 manifest content signature (OPTIONAL, security 1.1) ----------
+// The holder signs keccak256(UTF-8(canonicalJSON(manifest without contentSig))) as ManifestContent(container, contentHash)
+// in the delegation's domain. / 持有人在委托的域中签署 ManifestContent(container, contentHash)。
+{
+  const signer = sig.privateKeyToAddress(SIGNER_KEY)
+  const dsig = sig.signDigest(sig.delegationDigest(CHAIN_ID, HUB, { container: CONTAINER, signer, expires: 1789000000 + 30 * 86400 }), HOLDER_KEY)
+  const base = {
+    tapeapi: '0.1', name: 'Content-signed service', circuits: '0x50a994e71615474b55559ff4f500928fbc339dd9', tokenId: '4246',
+    container: CONTAINER, signer, delegation: { expires: 1789000000 + 30 * 86400, sig: dsig },
+    endpoints: { live: ['https://api.example.com/tapeapi/v1'], async: false },
+    methods: [{ name: 'ping', priceBEM: '0', params: {}, returns: { pong: 'boolean' } }],
+  }
+  const swapped = { ...base, endpoints: { live: ['https://attacker.example/tapeapi/v1'], async: false } }
+  const one = (name, manifest) => {
+    const canonical = canonicalJSON(manifest)
+    const contentHash = toHex(sig.manifestContentHash(manifest))
+    const structHash = toHex(sig.hashManifestContent({ container: CONTAINER, contentHash }))
+    const digest = sig.manifestContentDigest(CHAIN_ID, HUB, { container: CONTAINER, contentHash })
+    const signature = sig.signDigest(digest, HOLDER_KEY)
+    return { name, manifest, canonical, contentHash, structHash, digest: toHex(digest), sig: signature, recoversTo: sig.recoverAddress(digest, signature), published: { ...manifest, contentSig: signature } }
+  }
+  const a = one('holder signs the content of a manifest', base)
+  const b = one('another endpoint is another content hash', swapped)
+  write('tap-20-content.json', {
+    tap: 'TAP-20 §3.10 (OPTIONAL)', note,
+    domain: { name: 'TapeAPI', version: '1', chainId: CHAIN_ID, verifyingContract: HUB, comment: 'The TAP-20 delegation domain; the type name differs, so a delegation and a content signature can never be taken for each other.' },
+    typeHash: sig.MANIFEST_CONTENT_TYPE,
+    field: sig.MANIFEST_CONTENT_FIELD,
+    contentHashRule: 'keccak256(UTF-8(canonicalJSON(M))) where M is the published manifest object with its top-level contentSig member removed (TAP-21 §3.3 canonical JSON)',
+    holderKey: HOLDER_KEY,
+    holderAddress: sig.privateKeyToAddress(HOLDER_KEY),
+    cases: [a, b],
+    // Moving a's signature onto b's content: it recovers to some other address, so a client refuses it.
+    // 把 a 的签名搬到 b 的内容上：恢复出别的地址，客户端因此拒绝。
+    moved: { sig: a.sig, content: b.name, recoversTo: sig.recoverAddress(sig.manifestContentDigest(CHAIN_ID, HUB, { container: CONTAINER, contentHash: b.contentHash }), a.sig) },
+  })
+}
+
 // ---------- TAP-22 voucher ----------
 const vCases = [
   { name: 'first voucher on a channel', consumer: sig.privateKeyToAddress(CONSUMER_KEY), provider: CONTAINER, cumulative: '10000', expires: 1789003600 },
@@ -271,6 +309,7 @@ console.log('done')
 
   // ---------- TAP-27 group: one epoch of three members, and two messages ----------
   const G = await import('../sdk/src/group.js')
+  const { sha256: G_sha256 } = await import('@noble/hashes/sha256')
   const idOf = (tag) => { const r = seq(tag); const xs = r(32), es = r(32); return { x25519: { secretKey: xs, publicKey: x25519.getPublicKey(xs) }, ed25519: { secretKey: es, publicKey: ed25519.getPublicKey(es) } } }
   const people = ['owner', 'member-1', 'member-2'].map((tag, i) => ({ tag, container: '0x' + (0xa11 + i).toString(16).padStart(40, '0'), chainId: 56, identity: idOf(tag) }))
   const ent = (p) => ({ container: p.container, chainId: 56, x25519: toHex(p.identity.x25519.publicKey), ed25519: toHex(p.identity.ed25519.publicKey) })
@@ -301,5 +340,49 @@ console.log('done')
     epochWire: toHex(epochWire),
     senderKeys: [0, 1, 2].map((i) => toHex(G.senderKey(Kb, gidB, 0, i))),
     messages: msgs.map((m) => ({ sender: m.sender, seq: (BigInt(T0 * 1000) << 16n).toString(), nonce: toHex(m.nonce), plaintext: m.plaintext, wire: toHex(m.wire) })),
+  })
+
+  // ---------- TAP-27 §3.8 format 2 (Experimental): the same three members, epochs 0 and 1, two messages ----------
+  // A separate file, so the format-1 vectors above stay byte for byte what they were. / 单独成文件，上面格式 1 的向量逐字节不变。
+  const draws = []
+  const rec = (r) => (n) => { const b = r(n); draws.push(b.slice()); return b }   // a copy: the builder zeroes e after use / 存副本：构造器用完会把 e 清零
+  const random2 = rec(seq('group-v2'))
+  const relays2 = [{ url: 'https://relay.example/tapeapi/v1', container: '0x3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a' }]
+  const bus2 = '0xcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcb'
+  const { group: o2, epochWire: ew0 } = await G.createGroup({ format: 2, self: people[0], identity: people[0].identity, members: [ent(people[1]), ent(people[2])], relays: relays2, bus: bus2, verifyMember: 'trust-roster', random: random2, clock: () => T0 })
+  const roster0 = o2._held().rosterBytes
+  const up1 = await o2.rotate({ verifyMember: 'trust-roster' })
+  const roster1 = o2._held().rosterBytes
+  const [gid2, K0, e0, N0, K1, e1, N1] = draws
+  const m1 = G.joinGroup({ self: people[1], identity: people[1].identity, invite: { gid: o2.gid, owner: { container: people[0].container, chainId: 56 }, format: 2 }, ownerKeys: ent(people[0]), verifyMember: 'trust-roster', clock: () => T0 })
+  await m1.acceptEpoch(ew0)
+  await m1.acceptEpoch(up1.epochWire)
+  const msgs2 = [
+    { sender: 0, plaintext: 'hello, format 2', nonce: seq('msg2-0')(24), wire: o2.seal('hello, format 2', { random: nonceOf('msg2-0') }) },
+    { sender: 1, plaintext: '第二版 from member 1', nonce: seq('msg2-1')(24), wire: m1.seal('第二版 from member 1', { random: nonceOf('msg2-1') }) },
+  ]
+  const ef = (n) => '54470200' + n.toString(16).padStart(8, '0')
+  write('tap-27-group-v2.json', {
+    tap: 'TAP-27 §3.8 (format 2, Experimental)', note,
+    layout: {
+      epochField: 'uint32be(0x54470200) || uint32be(n): the high half is the format-2 mark, which format 1 requires to be zero',
+      epochHeader: '0x04 || gid(16) || epochField(8) || E(32) || N(24) || commit(32) || uint16be(count); commit = sha256("TAP-27/commit/v2" || K)',
+      slot: 'XChaCha20-Poly1305(HKDF-SHA256(X25519(e, R), salt = "TAP-27/wrap/v2", info = E || R || gid || epochField, 32), N, aad = header).encrypt(K)   (48 bytes, no fingerprint)',
+      roster: '"TGR2" || uint64be(issued) || prev(32) || uint16be(count) || count x ( container(20) || uint32be(chainId) || ed25519(32) ) || uint16be(L) || utf8(canonicalJSON({ relays, bus? }))(L); prev = sha256(roster bytes of epoch n - 1) or 32 zero bytes',
+      epochWire: 'header || slots || uint32be(len) || XChaCha20-Poly1305(K, N, aad = header || slots).encrypt(roster) || Ed25519(owner, "TAP-27/epoch/v2" || everything before)',
+      message: 'header = 0x05 || gid || epochField(8) || uint32be(sender) || uint64be(seq) || nonce(24, random); ct = XChaCha20-Poly1305(senderKey, nonce, aad = header).encrypt(pt); wire = header || ct || Ed25519(sender, "TAP-27/msg/v2" || header || ct)',
+      senderKey: 'HKDF-SHA256(K, salt = gid || epochField, info = "TAP-27/sender/v2" || uint32be(sender), 32)',
+      invite: 'the format-1 invite object plus "format": 2',
+    },
+    members: people.map((p) => ({ tag: p.tag, container: p.container, chainId: 56, x25519Secret: toHex(p.identity.x25519.secretKey), ed25519Secret: toHex(p.identity.ed25519.secretKey), x25519: toHex(p.identity.x25519.publicKey), ed25519: toHex(p.identity.ed25519.publicKey) })),
+    gid: toHex(gid2), issued: T0, relays: relays2, bus: bus2,
+    epochs: [
+      { epoch: 0, epochField: ef(0), K: toHex(K0), ephemeralSecret: toHex(e0), nonce: toHex(N0), prev: '00'.repeat(32), roster: toHex(roster0), epochWire: toHex(ew0) },
+      { epoch: 1, epochField: ef(1), K: toHex(K1), ephemeralSecret: toHex(e1), nonce: toHex(N1), prev: toHex(G_sha256(roster0)).slice(2), roster: toHex(roster1), epochWire: toHex(up1.epochWire) },
+    ],
+    senderKeys: [0, 1, 2].map((i) => toHex(G.senderKeyV2(K1, gid2, 1, i))),
+    // seq as sent: a member that installed two epochs at one clock reading counts on from the first (§3.4) / 按实际发送的 seq
+    messages: msgs2.map((m) => ({ epoch: 1, sender: m.sender, seq: new DataView(m.wire.buffer, m.wire.byteOffset + 29, 8).getBigUint64(0).toString(), nonce: toHex(m.nonce), plaintext: m.plaintext, wire: toHex(m.wire) })),
+    format1Refuses: 'A format-1 receiver refuses every wire above: the epoch field exceeds 2^32 - 1 (TAP-27 §3.3), and the reference format-1 parser also reads count = 0 at offset 113. Reference code: GROUP_INVALID.',
   })
 }

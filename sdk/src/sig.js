@@ -169,6 +169,53 @@ export function voucherTypedData(chainId, escrow, v) {
   }
 }
 
+// ---------- TAP-20 §3.10 manifest content signature (security 1.1, OPTIONAL) / 清单内容签名（可选） ----------
+// A delegation covers (container, signer, expires) only: whoever can write the site can change endpoints, `ai.baseUrl`
+// or prices under a valid delegation, and a caller's API key goes to `ai.baseUrl` before any receipt is checked. The
+// holder MAY sign the manifest's content too, in the delegation's domain under a new type name (so neither signature can
+// be replayed as the other). contentHash = keccak256(UTF-8(canonicalJSON(manifest without its top-level `contentSig`))),
+// over the manifest object exactly as published (not a client's normalised copy).
+// 委托只覆盖 (container, signer, expires)：能写站点的人可以在有效委托下改端点、`ai.baseUrl` 或价格，而调用方的 API 密钥在核验
+// 回执之前就已发往 `ai.baseUrl`。持有人 MAY 同时签署清单内容：与委托同域、类型名不同（两种签名不能互相重放）。
+// contentHash = keccak256(UTF-8(canonicalJSON(去掉顶层 `contentSig` 的清单)))，按发布的原样对象计算（不是客户端规范化后的副本）。
+/** @experimental security 1.1 */
+export const MANIFEST_CONTENT_FIELD = 'contentSig'
+/** @experimental security 1.1 */
+export const MANIFEST_CONTENT_TYPE = 'ManifestContent(address container,bytes32 contentHash)'
+/** @experimental security 1.1 */
+export const MANIFEST_CONTENT_TYPEHASH = keccak_256(utf8ToBytes(MANIFEST_CONTENT_TYPE))
+/** @experimental security 1.1: keccak256 of the canonical manifest without `contentSig`, 32 bytes. */
+export function manifestContentHash(manifest) {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new TapeAPIError('MANIFEST_INVALID', 'manifest must be a JSON object')
+  const rest = {}
+  for (const [k, v] of Object.entries(manifest)) if (k !== MANIFEST_CONTENT_FIELD) rest[k] = v
+  return keccak_256(utf8ToBytes(canonicalJSON(rest)))
+}
+const hash32 = (h) => (h instanceof Uint8Array ? h : hexToBytes(h))
+/** @experimental security 1.1 */
+export function hashManifestContent({ container, contentHash }) {
+  return keccak_256(encodeParams(['bytes32', 'address', 'bytes32'], [MANIFEST_CONTENT_TYPEHASH, container, hash32(contentHash)]))
+}
+/** @experimental security 1.1: the digest the holder signs (TAP-20 delegation domain). */
+export function manifestContentDigest(chainId, hub, { container, contentHash }) {
+  return typedDigest(delegationDomain(chainId, hub), hashManifestContent({ container, contentHash }))
+}
+/** @experimental security 1.1: the eth_signTypedData_v4 payload; `manifest` is the object to publish (without contentSig). */
+export function manifestContentTypedData(chainId, hub, { container, manifest }) {
+  return {
+    domain: delegationDomain(chainId, hub),
+    types: {
+      EIP712Domain: [
+        { name: 'name', type: 'string' }, { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' }, { name: 'verifyingContract', type: 'address' },
+      ],
+      ManifestContent: [{ name: 'container', type: 'address' }, { name: 'contentHash', type: 'bytes32' }],
+    },
+    primaryType: 'ManifestContent',
+    message: { container, contentHash: toHex(manifestContentHash(manifest)) },
+  }
+}
+
 // ---------- 响应信封摘要 TAP-21 / response envelope digest ----------
 function uint64BE(n) {
   const b = new Uint8Array(8); let x = BigInt(n)

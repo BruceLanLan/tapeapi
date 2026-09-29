@@ -2,7 +2,7 @@
 """A second, independent implementation of the TapeAPI digests, in pure Python with no dependencies.
 
 Its only job is to disagree with the reference SDK if the specification is ambiguous. Everything here was
-written from the specifications (TAP-20, TAP-21, TAP-22, TAP-23, TAP-26, TAP-27) and checked against spec/vectors/*.json;
+written from the specifications (TAP-20, TAP-21, TAP-22, TAP-23, TAP-26, TAP-27 with its §3.8) and checked against spec/vectors/*.json;
 nothing is imported from the JavaScript. X25519, HKDF, (X)ChaCha20-Poly1305 and Ed25519 follow their RFCs. If this file and the SDK ever disagree, the specification is the thing that is wrong.
 
 用纯 Python、零依赖写的第二个独立实现。它唯一的职责，是在规范存在歧义时与参考 SDK 产生分歧。
@@ -551,6 +551,62 @@ for m in gv['messages']:
     sg = ed25519_sign(bh(people[i]['ed25519Secret']), b'TAP-27/msg/v1' + hdr + ct)
     check('tap27/message from %d %r' % (i, m['plaintext']), '0x' + (hdr + ct + sg).hex(), m['wire'])
 
+# ---------- TAP-27 §3.8 format 2 (Experimental): rebuild both epochs and the messages from the secrets alone ----------
+# Written from §3.8 only: the epoch field carries the format-2 mark in its high half, the roster is binary, every label
+# is "…/v2". A format-1 reader (§3.3: n at most 2^32 - 1) must refuse every format-2 wire, and a format-2 reader the
+# format-1 epoch message above. / 只按 §3.8 的文字实现；格式 1 读者必须拒收每条格式 2 线路消息，格式 2 读者必须拒收上面的格式 1 纪元消息。
+g2 = json.loads((HERE / 'tap-27-group-v2.json').read_text())
+MARK2 = 0x54470200
+gid = bh(g2['gid'])
+ef2 = lambda n: MARK2.to_bytes(4, 'big') + n.to_bytes(4, 'big')
+tail2 = canonical({'relays': g2['relays'], 'bus': g2['bus']}).encode('utf-8')
+people2 = g2['members']
+check('tap27v2/same people as format 1', [p_['ed25519'] for p_ in people2], [p_['ed25519'] for p_ in people])
+roster_prev = None
+for ep in g2['epochs']:
+    n = ep['epoch']
+    check('tap27v2/epoch %d field' % n, ef2(n).hex(), ep['epochField'])
+    K = bh(ep['K']); e = bh(ep['ephemeralSecret']); N = bh(ep['nonce']); E = x25519_pub(e)
+    prev = bytes(32) if roster_prev is None else hashlib.sha256(roster_prev).digest()
+    check('tap27v2/epoch %d prev' % n, prev.hex(), ep['prev'])
+    entries = b''.join(bh(p_['container']) + p_['chainId'].to_bytes(4, 'big') + bh(p_['ed25519']) for p_ in people2)
+    roster = b'TGR2' + g2['issued'].to_bytes(8, 'big') + prev + len(people2).to_bytes(2, 'big') + entries + len(tail2).to_bytes(2, 'big') + tail2
+    check('tap27v2/epoch %d roster bytes' % n, '0x' + roster.hex(), ep['roster'])
+    check('tap27v2/epoch %d roster is 104 bytes a member with the slot' % n, len(entries) // len(people2) + 48, 104)
+    commit = hashlib.sha256(b'TAP-27/commit/v2' + K).digest()
+    header = b'\x04' + gid + ef2(n) + E + N + commit + len(people2).to_bytes(2, 'big')
+    slots = b''
+    for p_ in people2:
+        R = bh(p_['x25519'])
+        kek = hkdf_sha256(x25519(e, R), b'TAP-27/wrap/v2', E + R + gid + ef2(n), 32)
+        slots += xchacha20poly1305_seal(kek, N, header, K)
+    ct = xchacha20poly1305_seal(K, N, header + slots, roster)
+    body = header + slots + len(ct).to_bytes(4, 'big') + ct
+    sg = ed25519_sign(bh(people2[0]['ed25519Secret']), b'TAP-27/epoch/v2' + body)
+    check('tap27v2/epoch %d message' % n, '0x' + (body + sg).hex(), ep['epochWire'])
+    wire = bh(ep['epochWire'])
+    # format 1 (§3.3): n = uint64be at offset 17 must be at most 2^32 - 1; the format-1 count byte (offset 113) is 0
+    # 格式 1：偏移 17 的 uint64be 必须 ≤ 2^32 − 1；格式 1 的 count 字节（偏移 113）为 0
+    check('tap27v2/epoch %d refused by format 1 (epoch field)' % n, int.from_bytes(wire[17:25], 'big') > 2 ** 32 - 1, True)
+    check('tap27v2/epoch %d refused by format 1 (count byte)' % n, wire[113], 0)
+    roster_prev = roster
+K1 = bh(g2['epochs'][1]['K'])
+for i, want in enumerate(g2['senderKeys']):
+    check('tap27v2/sender key %d' % i, '0x' + hkdf_sha256(K1, gid + ef2(1), b'TAP-27/sender/v2' + i.to_bytes(4, 'big'), 32).hex(), want)
+for m in g2['messages']:
+    i, sq, n = m['sender'], int(m['seq']), m['epoch']
+    nonce = bh(m['nonce'])
+    hdr = b'\x05' + gid + ef2(n) + i.to_bytes(4, 'big') + sq.to_bytes(8, 'big') + nonce
+    ct = xchacha20poly1305_seal(bh(g2['senderKeys'][i]), nonce, hdr, m['plaintext'].encode('utf-8'))
+    sg = ed25519_sign(bh(people2[i]['ed25519Secret']), b'TAP-27/msg/v2' + hdr + ct)
+    check('tap27v2/message from %d %r' % (i, m['plaintext']), '0x' + (hdr + ct + sg).hex(), m['wire'])
+    check('tap27v2/message from %d refused by format 1' % i, int.from_bytes(bh(m['wire'])[17:25], 'big') > 2 ** 32 - 1, True)
+# and back: the format-1 epoch message and messages carry a zero high half, which a format-2 reader refuses
+# 反过来：格式 1 的纪元消息与消息高半部分为零，格式 2 读者拒收
+check('tap27v2/format-1 epoch message refused by format 2', int.from_bytes(bh(gv['epochWire'])[17:21], 'big') == MARK2, False)
+for m in gv['messages']:
+    check('tap27v2/format-1 message refused by format 2', int.from_bytes(bh(m['wire'])[17:21], 'big') == MARK2, False)
+
 # ======================================================= TAP-21 §3.5 / TAP-20 §3.9 AI usage receipts ====
 # The receipt vectors of the reference sidecar (sdk/test/fixtures/ai-receipt-vectors.json), checked from the text of
 # TAP-21 §3.5 and TAP-20 §3.9 alone: the request hash, the stream hash by the event-stream rules of §3.5 (parsed here on
@@ -788,6 +844,35 @@ for c in AR['cases']:
     got = 'agree' if agree(c['a']['envelope']['result'], c['b']['envelope']['result']) else 'ATTEST_DISAGREE'
     check('tap23/%s verdict' % c['name'], got, c['expect'])
 check('tap23/at least one agreeing and one disagreeing case', {c['expect'] for c in AR['cases']}, {'agree', 'ATTEST_DISAGREE'})
+
+# ======================================================= TAP-20 §3.10 manifest content signature ====
+# contentHash = keccak256(UTF-8(canonicalJSON(manifest without contentSig))); ManifestContent(address container,bytes32
+# contentHash) in the delegation's EIP-712 domain; the holder's ECDSA signature recovers to the holder.
+# contentHash 为去掉 contentSig 的清单的规范 JSON 的 keccak256；在委托的 EIP-712 域中签署 ManifestContent。
+CS = json.loads((HERE / 'tap-20-content.json').read_text())
+d = CS['domain']
+dom = eip712_domain(d['name'], d['version'], d['chainId'], d['verifyingContract'])
+th = keccak256(CS['typeHash'].encode())
+check('content/type string', CS['typeHash'], 'ManifestContent(address container,bytes32 contentHash)')
+def content_hash(m):
+    return keccak256(canonical({k: v for k, v in m.items() if k != CS['field']}).encode())
+for c in CS['cases']:
+    m = c['manifest']
+    check('content/%s canonical' % c['name'], canonical(m), c['canonical'])
+    ch = content_hash(m)
+    check('content/%s contentHash' % c['name'], h(ch), c['contentHash'])
+    check('content/%s contentSig is outside the hash' % c['name'], h(content_hash(c['published'])), c['contentHash'])
+    sh = keccak256(th + addr32(m['container']) + ch)
+    check('content/%s structHash' % c['name'], h(sh), c['structHash'])
+    dg = typed_digest(dom, sh)
+    check('content/%s digest' % c['name'], h(dg), c['digest'])
+    check('content/%s signer' % c['name'], recover_address(dg, c['sig']), CS['holderAddress'].lower())
+check('content/cases differ', CS['cases'][0]['contentHash'] != CS['cases'][1]['contentHash'], True)
+mv = CS['moved']
+moved_digest = typed_digest(dom, keccak256(th + addr32(CS['cases'][1]['manifest']['container']) + bytes.fromhex(CS['cases'][1]['contentHash'][2:])))
+got = recover_address(moved_digest, mv['sig'])
+check('content/moved signature recovers elsewhere', got, mv['recoversTo'].lower())
+check('content/moved signature is not the holder', got != CS['holderAddress'].lower(), True)
 
 if fail:
     print('FAIL: %d of %d checks disagreed with the reference implementation\n' % (len(fail), checked))

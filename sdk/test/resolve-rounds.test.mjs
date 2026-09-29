@@ -4,7 +4,7 @@
 // 每次解析仍做 TAP-20 §3.6 的每一项检查。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createTapeAPI, MANIFEST_KEY } from '../src/index.js'
+import { createTapeAPI, MANIFEST_KEY, MAINNET, CHAINS, security } from '../src/index.js'
 import { functionBySelector } from '../src/abi.js'
 import * as sig from '../src/sig.js'
 import { createFakeChain, ADDR } from './helpers/fake-chain.mjs'
@@ -70,6 +70,77 @@ test('resolve(name): 4 rounds and 12 HTTP requests cold (was 7 and 21), 2 rounds
   // cpuAt and accountOf are cached facts, isCPU true was already remembered; ownerOf and the file are read every time
   // cpuAt 与 accountOf 是缓存的事实，isCPU 为真本来就记住；ownerOf 与文件每次都读
   for (const u of RPC) assert.deepEqual(m.of(u), [['ownerOf', 'fileInfo'], ['read']], u)
+})
+
+// Security 1.1 budget. The default client above is unchanged: unpinned, and no sentinel for contracts chains.js does not
+// list. A client on the chain's own contracts (the default configuration) also reads the two ERC-1967 slots, sent alone
+// in the same turn as read() (never inside an eth_call batch, FIXED SECR-5): the same rounds, 2 more requests and calls
+// per node, cached like facts. A pinning client (opt-in) pays one more round
+// and one more request per node for the pin, two when the nodes' tagged blocks differ.
+// 安全加固 1.1 的预算。上面的默认客户端不变：不钉块；chains.js 不认识的合约不启用哨兵。用本链自己合约的客户端（默认配置）另读两个
+// ERC-1967 槽，与 read() 同一轮单独发出（绝不进 eth_call 批量，FIXED SECR-5）：轮数不变，每节点多 2 个请求与调用，像事实一样缓存。钉块的客户端（需显式开启）为钉块多付一轮、每节点
+// 多一个请求；各节点标签所指的区块不同时多付两轮。
+function mainnetService(chain = createFakeChain()) {
+  const c = CHAINS[56]
+  const container = security.erc6551Account({ registry: c.erc6551Registry, implementation: c.accountImplementation, chainId: 56, tokenContract: ADDR.circuits, tokenId: 4246 })
+  const expires = nowS() + 30 * 86400
+  const m = {
+    tapeapi: '0.1', name: 'Rounds', circuits: ADDR.circuits, tokenId: '4246', container, signer,
+    delegation: { expires, sig: sig.signDigest(sig.delegationDigest(56, MAINNET.hub, { container, signer, expires }), HOLDER_KEY) },
+    endpoints: { live: ['https://api.example.com/tapeapi/v1'], async: false },
+    methods: [{ name: 'ping', priceBEM: '0', params: {}, returns: {} }],
+  }
+  chain.setOwner(4246, holder); chain.setAccount(4246, container)
+  chain.writeFile(container, MANIFEST_KEY, JSON.stringify(m))
+  return chain
+}
+
+test('FIXED SEC11-2 / FIXED SECR-5 budget: on the chain\'s own contracts the sentinel costs no round: 4 rounds, 18 HTTP requests (the two slots alone, never in an eth_call batch), 24 calls cold; the slots are cached like facts', async () => {
+  const chain = mainnetService()
+  const m = meter(chain.fetch)
+  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, fetch: m.fetch, onWarning: (w) => assert.fail(w.message) })
+  const svc = await api.resolve(NAME)
+  assert.equal(svc.sentinel.container, 'match')
+  assert.deepEqual(svc.sentinel.implementations.map((x) => x.expected), [true, true])
+  assert.equal(m.rounds, 4)
+  assert.equal(m.http.length, 18)
+  assert.equal(m.calls(), 24, 'six reads per node, and two ERC-1967 slots')
+  // the eth_call batches are exactly those of the default client above (1.1.0); the slots go out alone in read()'s round
+  // eth_call 批量与上面默认客户端（1.1.0）完全相同；实现槽在 read() 那一轮单独发出
+  for (const u of RPC) {
+    assert.deepEqual(m.of(u).slice(0, 3), [['cpuAt'], ['accountOf', 'isCPU', 'ownerOf'], ['fileInfo']], u)
+    assert.deepEqual(m.of(u).slice(3).map((f) => f.join(',')).sort(), ['eth_getStorageAt', 'eth_getStorageAt', 'read'], u)
+  }
+  assert.ok(!m.http.some((h) => h.batch && h.fns.includes('eth_getStorageAt')), 'no batch holds a storage read')
+  m.reset()
+  await api.resolve(NAME)
+  assert.equal(m.rounds, 2)
+  assert.equal(m.http.length, 6)
+  for (const u of RPC) assert.deepEqual(m.of(u), [['ownerOf', 'fileInfo'], ['read']], u)
+})
+
+test('FIXED SEC11-1 budget: a pinning client pays one round and one request per node for the pin (5 rounds, 15 requests), two when the tagged blocks differ (6 and 18)', async () => {
+  const chain = service()
+  const m = meter(chain.fetch)
+  const svc = await client(m.fetch, { pin: true }).resolve(NAME)
+  assert.equal(svc.pinned.tag, 'finalized')
+  assert.equal(m.rounds, 5)
+  assert.equal(m.http.length, 15)
+  for (const u of RPC) assert.deepEqual(m.of(u), [['eth_getBlockByNumber'], ['cpuAt'], ['accountOf', 'isCPU', 'ownerOf'], ['fileInfo'], ['read']], u)
+  // One node far behind (1rpc's finalized was latest − 5000 on BSC) does not matter while two operators agree.
+  // 一个节点远远落后（1rpc 在 BSC 上的 finalized 曾是 latest − 5000）无关紧要，只要有两家运营方一致。
+  chain.setTagLag('http://rpc3', 'finalized', 5000)
+  m.reset(); await client(m.fetch, { pin: true }).resolve(NAME)
+  assert.equal(m.rounds, 5)
+  assert.equal(m.http.length, 15)
+  // Three different answers: the second-highest is asked of every node, in a second round.
+  // 三个不同的回答：向每个节点询问第二高的块号，多一轮。
+  chain.setTagLag('http://rpc2', 'finalized', 3)
+  m.reset(); const again = await client(m.fetch, { pin: true }).resolve(NAME)
+  assert.equal(again.pinned.number, chain.state.block - 3)
+  assert.equal(m.rounds, 6)
+  assert.equal(m.http.length, 18)
+  for (const u of RPC) assert.deepEqual(m.of(u).slice(0, 2), [['eth_getBlockByNumber'], ['eth_getBlockByNumber']], u)
 })
 
 test('resolve(container) and resolve({ circuits, tokenId }): steps 3-5 go out as one round', async () => {

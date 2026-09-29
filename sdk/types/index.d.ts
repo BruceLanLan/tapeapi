@@ -33,6 +33,8 @@ export * as tapesend from './tapesend.js'
 export * as webmcp from './webmcp.js'
 export * as mcp from './mcp.js'
 export * as ai from './ai.js'
+/** @experimental security 1.1: local container derivation, ContradictionRecord v1, random second opinions. */
+export * as security from './security.js'
 
 /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export declare const MAX_CONTRIBUTION_BPS: number
@@ -90,7 +92,7 @@ export interface CreateTapeAPIOptions {
   chainId?: number
   /** Nodes for the other TapeOut chains, used when a target names one (a name with an area code, or { chainId }).
    *  Without an entry, that chain's SDK defaults (rpcUrlsFor) are used. */
-  chains?: Record<number, { rpcUrls?: string[]; quorum?: number; rpcTimeoutMs?: number; allowSingleNode?: boolean; hub?: Address; factory?: Address; siteRegistry?: Address }>
+  chains?: Record<number, { rpcUrls?: string[]; quorum?: number; rpcTimeoutMs?: number; allowSingleNode?: boolean; hub?: Address; factory?: Address; siteRegistry?: Address; pin?: CreateTapeAPIOptions['pin'] }>
   hub?: Address
   siteRegistry?: Address
   /** TapeOut processor factory; required with hub and siteRegistry on a chain not in CHAINS. */
@@ -99,6 +101,36 @@ export interface CreateTapeAPIOptions {
   directory?: Address
   /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   escrow?: Address
+  /** @experimental (security 1.1) A function returning Unix seconds; every `now` of this client reads it (default Date.now). */
+  clock?: () => number
+  /** @experimental (security 1.1) Pin every read of one resolution to one block that nodes of `quorum` operators confirm
+   *  and that is at most `maxAgeS` old (by its timestamp against `clock`). `true` uses the chain's settings (chains.js
+   *  `finality`: BSC 'finalized', L2 'safe'; `maxPinAgeS`). Reads go by EIP-1898 blockHash (`by: 'hash'`, default) or
+   *  block number. Costs one more round per resolution (two when the nodes' tagged blocks differ), unless `cacheS`
+   *  reuses a pin. Default: unpinned (chains.js `pin: 'latest'`). A stale block is RPC_STALE. */
+  pin?: boolean | 'latest' | { tag?: 'finalized' | 'safe' | 'latest'; maxAgeS?: number; by?: 'hash' | 'number'; cacheS?: number }
+  /** @experimental (security 1.1) Identity-root sentinel: compare the DeWebHub's and the SiteRegistry's ERC-1967
+   *  implementations with chains.js `expectedImpl`, and re-derive the container locally (ERC-6551). 'warn' (default)
+   *  reports in `svc.warnings` and `onWarning`; 'strict' refuses (CONTRACT_UNKNOWN, MANIFEST_INVALID); 'off' skips.
+   *  It notices an upgrade; it cannot prevent one. */
+  sentinel?: 'warn' | 'strict' | 'off'
+  /** @experimental (security 1.1) Refuse a manifest without a valid holder `contentSig` (TAP-20 §3.10) (default false). */
+  requireContentSig?: boolean
+  /** @experimental (security 1.1) Refuse a delegation whose signed `expires` is below the highest seen for the same
+   *  container, holder and signer (a delegation to another signer starts its own floor). `true` keeps it in memory; a
+   *  { get, set, delete? } store keeps it across restarts (default off). Limits: it cannot refuse an older holder-signed
+   *  delegation to an earlier signer put back by whoever can write the site; a holder who shortens `expires` for the same
+   *  signer is refused until `api.clearDelegationFloor`. */
+  delegationFloor?: boolean | { get(key: string): unknown; set(key: string, value: unknown): unknown; delete?(key: string): unknown }
+  /** @experimental (security 1.1) Receives each warning of a resolution (default: console.warn once per warning). */
+  onWarning?: (warning: ResolveWarning) => void
+}
+
+/** @experimental (security 1.1) A finding that did not stop a resolution. */
+export interface ResolveWarning {
+  code: 'IMPL_UNKNOWN' | 'IMPL_UNREAD' | 'CONTAINER_MISMATCH' | 'CONTENT_SIG_INVALID' | 'CONTENT_SIG_UNCHECKED' | string
+  message: string
+  [key: string]: unknown
 }
 
 /** What api.resolve() accepts: a TapeOut name ('11.1013.tape' on BNB Smart Chain, '1.2.344.tape' on X Layer), a
@@ -124,6 +156,19 @@ export interface ResolvedService {
   fetchedAt: number
   /** Why the manifest's `ai` field was dropped (TAP-20 §3.9: an invalid field is refused, the rest of the manifest is kept). */
   aiProblems?: string[]
+  /** @experimental (security 1.1) The block every read of this resolution was made at (only with `pin`). */
+  pinned?: { number: number; hash: Hex; timestamp: number; tag: string; by: 'hash' | 'number' }
+  /** @experimental (security 1.1) What the identity-root sentinel saw (absent when it did not run). */
+  sentinel?: {
+    mode: 'warn' | 'strict'
+    implementations: Array<{ role: string; proxy: Address; implementation: Address; expected: boolean }> | null
+    container: 'match' | 'mismatch' | 'unchecked'
+  }
+  /** @experimental (security 1.1) Present when the manifest carries a contentSig or the client requires one.
+   *  `checked: false`: an error prevented the check (warning CONTENT_SIG_UNCHECKED; only without requireContentSig). */
+  contentSig?: { valid: boolean; checked?: false }
+  /** @experimental (security 1.1) Findings that did not stop the resolution (absent when there were none). */
+  warnings?: ResolveWarning[]
 }
 
 export interface CallOptions {
@@ -295,6 +340,9 @@ export interface TapeAPI {
   forChain(chainId: number): TapeAPI
   /** Which supported chain a container address lives on, or null. */
   chainOfContainer(container: Address): Promise<number | null>
+  /** @experimental (security 1.1) Forget the delegation floor of one container, holder and signer (`chainId` defaults to
+   *  this client's). Takes the `data` of a floor DELEGATION_INVALID error as it is. Resolves to true when there was one. */
+  clearDelegationFloor(who: { chainId?: number; container: Address; holder: Address; signer: Address }): Promise<boolean>
 }
 
 export declare function createTapeAPI(opts?: CreateTapeAPIOptions): TapeAPI

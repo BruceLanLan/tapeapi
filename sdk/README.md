@@ -4,12 +4,12 @@ JavaScript SDK for [TapeAPI](https://tapeapi.fun): find a service on BNB Smart C
 answer whose signature is checked against the key the service's holder delegated on chain. Paid methods use
 EIP-712 vouchers against an escrow; nothing is signed or sent without you.
 
-> **1.1.0.** Semantic versioning from 1.0 on: breaking changes come only in 2.0. See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md).
+> **1.2.0.** Semantic versioning from 1.0 on: breaking changes come only in 2.0. See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md).
 
 ## Install
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz
 ```
 
 Not on the npm registry yet: each GitHub release carries the package file. Built from https://github.com/BruceLanLan/tapeapi
@@ -63,11 +63,11 @@ The package ships a command that exposes any TapeAPI service's free methods as M
 Cursor, any MCP client), and verifies every answer in your own process before the model sees it:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ```json
-{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
+{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
 ```
 
 - **Identity from the chain.** Each service (a TapeOut name like `11.1013.tape` or a container address) is resolved
@@ -96,9 +96,14 @@ forwards every request to a TapeAPI AI service resolved on chain and checks the 
 
 ```bash
 # 42.1013.tape is an example name: put your AI provider's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1
 ```
+
+Run as written, `tapeapi-verify 42.1013.tape` stops with "no file at /.well-known/tapeapi.json": the name is an example.
+No service of your own yet? The repository's local trial, `node examples/relay-trial/trial.mjs`, runs a sidecar, a fake
+upstream and this proxy on your machine with no key and no cost. Providers check their own service, step by step, with
+`tapeapi-doctor` (experimental; from a checkout of the repository for now: `node sdk/bin/tapeapi-doctor.js <name>`).
 
 With `--strict` a receipt that does not verify becomes an error to the client. `tapeapi-verify --help` lists every
 option. In your own code, `createVerifyingFetch` from `@tapeapi/sdk/ai` does the same without a proxy

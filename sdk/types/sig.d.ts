@@ -53,3 +53,18 @@ export declare function responseBodyHash(body: unknown): string
 /** The TAP-21 digest rebuilt from the two inner hashes (a hash-only receipt); the same 32 bytes as responseDigest. */
 export declare function responseDigestFromHashes(env: { container: string; id: string; requestHash: string; ok: boolean; bodyHash: string; ts: number }): Uint8Array
 export declare function recoverResponseSignerFromHashes(env: { container: string; id: string; requestHash: string; ok: boolean; bodyHash: string; ts: number }, sig: string): Address
+
+/** @experimental (security 1.1, TAP-20 §3.10) The OPTIONAL manifest field that carries the holder's content signature. */
+export declare const MANIFEST_CONTENT_FIELD: 'contentSig'
+/** @experimental (security 1.1) 'ManifestContent(address container,bytes32 contentHash)' */
+export declare const MANIFEST_CONTENT_TYPE: string
+/** @experimental (security 1.1) */
+export declare const MANIFEST_CONTENT_TYPEHASH: Uint8Array
+/** @experimental (security 1.1) keccak256(UTF-8(canonicalJSON(manifest without its top-level contentSig))). */
+export declare function manifestContentHash(manifest: Record<string, unknown>): Uint8Array
+/** @experimental (security 1.1) */
+export declare function hashManifestContent(c: { container: Address; contentHash: Uint8Array | string }): Uint8Array
+/** @experimental (security 1.1) The digest the holder signs, in the TAP-20 delegation domain. */
+export declare function manifestContentDigest(chainId: number, hub: Address, c: { container: Address; contentHash: Uint8Array | string }): Uint8Array
+/** @experimental (security 1.1) Typed data for eth_signTypedData_v4; `manifest` is the manifest to publish, without contentSig. */
+export declare function manifestContentTypedData(chainId: number, hub: Address, c: { container: Address; manifest: Record<string, unknown> }): TypedData

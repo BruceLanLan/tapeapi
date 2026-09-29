@@ -314,4 +314,10 @@ test('arguments: a service or --dev, not both; bad names refused before anything
   assert.match((await run(['not-a-name'])).e, /not a TapeOut name/)
   assert.match((await run(['11.1013.tape', '--dev', 'http://127.0.0.1:1'])).e, /not both/)
   assert.match((await run(['--dev', 'http://127.0.0.1:1'])).e, /cannot use/)
+  // A name that cannot be used points its operator at tapeapi-doctor and the local trial (no network: the nodes are dead).
+  // 用不了的名字给运营者指向 tapeapi-doctor 与本地试跑（不联网：节点都不通）。
+  const named = await run(['--rpc', 'http://127.0.0.1:1,http://127.0.0.2:1', '42.1013.tape'])
+  assert.match(named.e, /cannot use 42\.1013\.tape/)
+  assert.match(named.e, /tapeapi-doctor\.js 42\.1013\.tape/)
+  assert.match(named.e, /relay-trial\/trial\.mjs/)
 })

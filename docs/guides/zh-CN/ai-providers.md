@@ -7,6 +7,34 @@
 
 本指南面向在上游服务商条款范围内合规经营的服务方（见[合规](#合规)）。
 
+## 从零到上线
+
+从什么都没有（没有电路、没有容器）开始，每一步都先检查通过再做下一步。每一步的费用与运行都由你自己承担：TapeAPI 不托管任何人的
+旁路，也不代付电路、容器或 gas。本指南里的 `42.1013.tape` 是示例名，链上没有以它发布的服务。命令里请换成你自己的 TapeOut 名字和
+旁路地址。
+
+| # | 步骤 | 在哪里做（谁付费） | 检查 | 你应该看到 |
+|---|---|---|---|---|
+| 0 | 在本机看整条路径跑通：不需要密钥、电路，也不花钱 | 本仓库 | `node examples/relay-trial/trial.mjs` | 打印“试跑通过。” |
+| 1 | 取得一枚 TapeOut 电路 | [tapeout.net](https://tapeout.net)（由你购买） | `node sdk/bin/tapeapi-doctor.js <你的名字>` | `name`、`circuit` 通过 |
+| 2 | 开通它的容器 | tapeout.net（一笔交易，gas 由你支付） | 同上 | `container` 通过；`manifest-file` 失败，第 5 步之前本该如此 |
+| 3 | 在你的服务器上、你的 HTTPS 反向代理后面，把旁路放在你的网关前面运行 | [见下文](#选择旁路的运行方式)（你的服务器） | `node sdk/bin/tapeapi-doctor.js --offline https://api.example.com` | 报告列出设置模式下还缺的变量 |
+| 4 | 服务密钥与委托；把值填进 `.env` 并重启旁路 | [持有人操作台](https://tapeapi.fun/console/)第 3、4 步（不收费、不花 gas） | `node sdk/bin/tapeapi-doctor.js https://api.example.com` | `delegation`、`reach`、`receipt` 通过；`manifest-file` 警告“尚未发布上链” |
+| 5 | 发布清单（含价目表） | 操作台第 5 步（一笔交易，gas 由你支付） | `node sdk/bin/tapeapi-doctor.js <你的名字>` | 全部通过：退出码 0 |
+| 6 | 告诉你的用户 | [你的用户要做什么](#你的用户要做什么) | 在用户机器上运行 `tapeapi-verify <你的名字>` | 每次调用一行 `OK` |
+| 7 | 每 90 天续期委托 | 操作台第 4 步“续期” | `tapeapi-doctor <你的名字>`，在你的 CI 里每天跑 | 到期前 30 天起 `delegation` 警告 |
+
+`tapeapi-doctor` 按顺序检查：名字能解析、电路存在、容器已开通、链上有清单文件、清单格式、委托（及剩余天数）、`ai` 字段、价目表、
+端点、端点可访问（TLS、旁路已退出设置模式、它签名用的密钥）、CORS、真实请求拿到可核验的回执、按 id 取回执。那次请求不花钱：
+它带一个不可能有效的密钥，你的网关拒绝它，旁路对这个拒绝同样签回执。如果你的网关接受任意密钥，它就会真的作答，每次运行每个端点
+会花掉你几个输入 token 加 1 个输出 token（`openai-responses` 为 16 个，这是它的下限），`receipt` 检查随之警告你修好网关鉴权。
+`--key-env VAR` 会用你自己的密钥在每个端点再做一次同样大小的真实调用，费用按你的网关计。这把密钥只发往被检查的主机（你给出的 URL；
+名字则为其已签名 `endpoints.live` 的主机），绝不发往清单指定的其它主机，且只走 https（仅对回环地址上的旁路、并加 `--allow-http`
+时允许 http）；报告里的每段文字（含 `--json`）都把它显示为 `***`，即使网关把它回显出来。每项失败都用中英双语说明缺什么、去哪改、
+下一条命令。退出码：0 通过（允许警告；`--strict` 时警告也算失败），1 有检查失败，2 用法错误，3 链或网络读不到（超时、拒绝连接、
+DNS：请重试）；`--json` 输出供 CI 使用的报告。它只读：不签任何东西、不发交易。
+目前从本仓库的检出运行（`git clone` 后在根目录 `npm install`），1.1.0 的发布包里还没有它。
+
 ## 你得到什么
 
 - **链上身份。** 服务就是一枚 TapeOut 电路的容器。谁在回答，查链就知道；换域名、换服务器，用户按链上记录自动跟随。
@@ -118,7 +146,7 @@ import OpenAI from 'openai'
 import { createTapeAPI, rpcUrlsFor, ai } from '@tapeapi/sdk'
 
 const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })            // 不同运营方的 BNB Chain 节点，两家一致才算
-const svc = await api.resolve('42.1013.tape')                    // 你的服务的 TapeOut 名字
+const svc = await api.resolve('42.1013.tape')                    // 你的服务的 TapeOut 名字（这里是示例名）
 const fetch = ai.createVerifyingFetch({ api, service: svc })
 const baseURL = svc.manifest.ai.endpoints.find((e) => e.format === 'openai-chat').baseUrl
 const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
@@ -138,9 +166,12 @@ const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
 
 ```sh
 # 42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
+
+照原样用示例名运行会停在 “no file at /.well-known/tapeapi.json”：链上没有以 `42.1013.tape` 发布的服务。还没有自己的服务？
+先跑本地试跑（[从零到上线](#从零到上线)第 0 步）：它会让这个代理对着本地旁路跑一遍。
 
 它在链上解析你的服务，回答原样透传，每次调用打印一行结论；加 `--strict` 时，核验失败会变成客户端看得到的错误。单份回执也可以贴到
 [核验页](https://tapeapi.fun/verify/)。这些都需要你的清单已经上链（操作台第 5 步，见上文）。

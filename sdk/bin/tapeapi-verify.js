@@ -224,7 +224,13 @@ async function main() {
     // resolve() validated the field (TAP-20 §3.9) and dropped it when invalid. / resolve() 已校验该字段，无效则已丢弃。
     if (svc.aiProblems) throw new Error(`its ${ai.MANIFEST_FIELD} field is invalid: ${svc.aiProblems.join('; ')}`)
     routes = routesOf(svc.manifest)
-  } catch (e) { process.stderr.write(`tapeapi-verify: cannot use ${opts.dev ?? opts.target}: ${e.message}\n`); process.exit(1) }
+  } catch (e) {
+    process.stderr.write(`tapeapi-verify: cannot use ${opts.dev ?? opts.target}: ${e.message}\n`)
+    // The operator of that service, or someone trying a documentation example (42.1013.tape is one), needs the next step.
+    // 该服务的运营者，或照着文档示例（42.1013.tape 就是示例名）试的人，需要知道下一步。
+    if (opts.target) process.stderr.write(`  Your own service? tapeapi-doctor checks it step by step and says what is missing: node sdk/bin/tapeapi-doctor.js ${opts.target} (in a checkout of https://github.com/BruceLanLan/tapeapi)\n  No service yet? See it work locally first: node examples/relay-trial/trial.mjs\n  是你自己的服务？tapeapi-doctor 逐项检查并说明缺什么：node sdk/bin/tapeapi-doctor.js ${opts.target}（在上面仓库的检出里）；还没有服务？先跑本地试跑：node examples/relay-trial/trial.mjs\n`)
+    process.exit(1)
+  }
   if (!svc.verified || (svc.verified.delegation !== true && svc.verified.dev !== true)) { process.stderr.write('tapeapi-verify: the service delegation did not verify\n'); process.exit(1) }
 
   const stats = { calls: 0, ok: 0, failed: 0, passThrough: 0, sidecarErrors: 0 }

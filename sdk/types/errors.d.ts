@@ -7,7 +7,8 @@
  * Top-level fields are fixed for 1.x: `name`, `code`, `message`, `data`, `signed`, `httpStatus`, `cause`, and on a
  * signed provider error the TAP-21 envelope fields `ts`, `block`, `id`, `sig`, `error`. Every other detail is in `data`
  * (for example `data.tooLarge`, `data.rpcCode`, `data.rpcRevert`, `data.rpcData`, and for `QUORUM_FAILED` /
- * `ATTEST_DISAGREE` `data.quorum`, `data.agreed`, `data.disagreed`, `data.failed`, `data.groups`).
+ * `ATTEST_DISAGREE` `data.quorum`, `data.agreed`, `data.disagreed`, `data.failed`, `data.groups`; for
+ * `ATTEST_DISAGREE` also the verified envelopes and the request, `data.envelopes`, `data.request`).
  */
 export declare class TapeAPIError extends Error {
   constructor(code: string, message?: string, extra?: TapeAPIErrorExtra)

@@ -6,6 +6,40 @@ SDKs and change only the base URL.
 
 This guide is for providers that operate within their upstream providers' terms (see [Compliance](#compliance)).
 
+## From zero to live
+
+Start from nothing (no circuit, no container) and check every step before the next one. Every step is yours to pay for
+and to run: TapeAPI hosts no one's sidecar and pays for no circuit, container or gas. `42.1013.tape` in this guide is an
+example name; no service is published under it. In the commands, put your own TapeOut name and your sidecar's address.
+
+| # | Step | Where (who pays) | Check | What you should see |
+|---|---|---|---|---|
+| 0 | See the whole path work on your machine: no key, no circuit, no cost | this repository | `node examples/relay-trial/trial.mjs` | it prints "The trial passed." |
+| 1 | Get a TapeOut circuit | [tapeout.net](https://tapeout.net) (you buy it) | `node sdk/bin/tapeapi-doctor.js <your name>` | `name` and `circuit` pass |
+| 2 | Open its container | tapeout.net (one transaction, your gas) | the same command | `container` passes; `manifest-file` fails, as it should until step 5 |
+| 3 | Run the sidecar in front of your gateway, on your server, behind your HTTPS reverse proxy | [below](#choose-how-to-run-the-sidecar) (your server) | `node sdk/bin/tapeapi-doctor.js --offline https://api.example.com` | the report names the setup-mode variables still missing |
+| 4 | Service key and delegation; put the values in `.env` and restart the sidecar | [holder console](https://tapeapi.fun/console/) steps 3 and 4 (no fee, no gas) | `node sdk/bin/tapeapi-doctor.js https://api.example.com` | `delegation`, `reach` and `receipt` pass; `manifest-file` warns "not published on chain yet" |
+| 5 | Publish the manifest, price table included | console step 5 (one transaction, your gas) | `node sdk/bin/tapeapi-doctor.js <your name>` | every check passes: exit status 0 |
+| 6 | Tell your users | [What your users do](#what-your-users-do) | `tapeapi-verify <your name>` on a user's machine | one `OK` line per call |
+| 7 | Renew the delegation every 90 days | console step 4, "Renew" | `tapeapi-doctor <your name>`, daily in your CI | `delegation` warns from 30 days before expiry |
+
+`tapeapi-doctor` checks, in order: the name resolves, the circuit exists, the container is opened, the manifest file is
+on chain, its format, the delegation (and the days left), the `ai` field, the price table, the endpoints, that they are
+reachable (TLS, sidecar out of setup mode, the key it signs with), CORS, that a real request gets a receipt that
+verifies, and the receipt lookup. That request costs nothing: it carries a key that cannot be valid, your gateway
+refuses it, and the sidecar signs a receipt for the refusal too. If your gateway accepts any key, it answers instead,
+and each run costs you a few input tokens and 1 output token per endpoint (16 on `openai-responses`, whose minimum is
+16); the `receipt` check then warns you to fix the gateway's authentication. `--key-env VAR` adds one real call per
+endpoint with your own key, of the same size, at whatever your gateway charges. That key goes only to the host you are
+checking (the URL you give, or, for a name, the hosts of its signed `endpoints.live`), never to another host a manifest
+names, and only over https (plain http only to a loopback sidecar with `--allow-http`); every text in the report,
+`--json` included, shows it as `***`, even when a gateway echoes it back. Every check that fails says what is missing,
+where to fix it and the next command, in English and Chinese. Exit status: 0 passed (warnings allowed; `--strict` counts
+them), 1 a check failed, 2 a usage mistake, 3 the chain or the network could not be read (a timeout, a refused
+connection, DNS: run it again); `--json` prints the report for CI. It
+reads only: it signs nothing and sends no transaction. For now it runs from a checkout of this repository
+(`git clone`, then `npm install` at the root); it is not in the 1.1.0 package.
+
 ## What you get
 
 - **An on-chain identity.** The service is a TapeOut circuit's container. Who answered is a chain lookup; move to
@@ -138,7 +172,7 @@ import OpenAI from 'openai'
 import { createTapeAPI, rpcUrlsFor, ai } from '@tapeapi/sdk'
 
 const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })            // BNB Chain nodes of distinct operators, 2 must agree
-const svc = await api.resolve('42.1013.tape')                    // your service's TapeOut name
+const svc = await api.resolve('42.1013.tape')                    // your service's TapeOut name (this one is an example)
 const fetch = ai.createVerifyingFetch({ api, service: svc })
 const baseURL = svc.manifest.ai.endpoints.find((e) => e.format === 'openai-chat').baseUrl
 const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
@@ -163,9 +197,13 @@ and point the client at it:
 
 ```sh
 # 42.1013.tape is an example name: put your service's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
+
+With the example name as written it stops with "no file at /.well-known/tapeapi.json": nothing is published under
+`42.1013.tape`. No service of your own yet? Run the local trial first ([From zero to live](#from-zero-to-live), step 0):
+it runs this proxy against a local sidecar.
 
 It resolves your service on chain, passes the answers through unchanged, prints one verdict per call, and with
 `--strict` turns a failed receipt into an error the client sees. A single receipt can also be pasted into the

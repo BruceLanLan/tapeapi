@@ -127,7 +127,7 @@ async function groups(): Promise<void> {
   const up: group.GroupUpdate = await owner.rotate()
   const invite: Uint8Array = owner.inviteFor({ container: MAINNET.hub, chainId: 56 })
   const snap: group.GroupSnapshot = owner.snapshot()
-  const member: group.GroupHandle = group.joinGroup({ self: { container: MAINNET.factory }, identity: me, invite: { gid: owner.gid, owner: { container: MAINNET.hub, chainId: 56 } }, ownerKeys: {}, lastSeq: snap.lastSeq })
+  const member: group.GroupHandle = group.joinGroup({ self: { container: MAINNET.factory }, identity: me, invite: { gid: owner.gid, owner: { container: MAINNET.hub, chainId: 56 } }, ownerKeys: {}, lastSeq: snap.lastSeq, verifyConcurrency: group.VERIFY_CONCURRENCY })
   const accepted = await member.acceptEpoch(up.epochWire, { verifyMember: 'trust-roster' })
   const msg = member.open(owner.seal('hi'), { text: true })
   const epochNow: number | null = member.epoch
@@ -137,6 +137,29 @@ async function groups(): Promise<void> {
   await deliverGroupUpdate({ group: owner, invite: 'all', busClients: [{ address: MAINNET.channelBus, sendTx: async (tx) => tx.data }], throwOnError: false })
   const found: GroupInviteCheck = await checkGroupInvites({ self: { container: MAINNET.factory, chainId: 56 }, identity: me, relayClients: [{ api, service: relay }], cursors: new Map(), checkSelf: true })
   void [added, d?.room, d?.i, d?.error?.rateLimited, found.invites[0]?.invite.gid, found.skipped, found.room]
+}
+
+// @experimental TAP-27 §3.8: a format-2 group (up to 128), lazy member checks / 格式 2 群（至多 128 人），惰性核验
+async function groupsV2(): Promise<void> {
+  const api = createTapeAPI({})
+  const me = generateIdentity()
+  const verify: group.MemberVerifierV2 = group.channelKeysVerifier(api)
+  const created = await group.createGroup({ format: 2, self: { container: MAINNET.hub }, identity: me, members: [], verifyMember: verify })
+  const owner: group.OwnerGroupV2 = created.group
+  const f: 2 = owner.format
+  const member: group.GroupHandleV2 = group.joinGroup({ format: 2, self: { container: MAINNET.factory }, identity: me, invite: { gid: owner.gid, owner: { container: MAINNET.hub, chainId: 56 }, format: 2 }, ownerKeys: {}, verifyMember: verify, verifyReuseS: group.VERIFY_REUSE_S })
+  const r = await member.acceptEpoch(created.epochWire)
+  const m = member.open(owner.seal('hi'), { text: true })
+  const shown: boolean = m.own ? true : m.verified
+  const checked = await member.openVerified(owner.seal('again'))
+  const scan = await member.verifyMembers({ concurrency: 4 })
+  const who: group.RosterMemberV2 | undefined = member.members[0]
+  // GRPR-4: a format-2 snapshot resumes to a format-2 owner handle / 格式 2 快照恢复为格式 2 群主句柄
+  const resumed = await group.resumeGroup({ self: { container: MAINNET.hub }, identity: me, snapshot: owner.snapshot(), verifyMember: verify })
+  const owner2: group.OwnerGroupV2 = resumed.group
+  // GRPR-5: format-2 options on a format-1 invite are accepted (and ignored) / 格式 1 邀请上的格式 2 选项被接受（并忽略）
+  const v1: group.GroupHandle = group.joinGroup({ self: { container: MAINNET.factory }, identity: me, invite: { gid: owner.gid, owner: { container: MAINNET.hub, chainId: 56 } }, ownerKeys: {}, verifyMember: verify })
+  void [f, r.unverified, shown, checked, scan.failed[0]?.error.code, who?.verified, group.MAX_MEMBERS_V2, group.FORMAT_V2_MARK, group.VERIFY_NEGATIVE_S, owner2.format, v1.format]
 }
 
 // MCP: the SDK core, the provider's remote endpoint and the signing proxy (review G1 M12). / MCP：SDK 核心、远程端点、签名代理。
@@ -212,3 +235,39 @@ async function documentedUsages(myContainer: string, myIdentity: ReturnType<type
   void busRpc
 }
 void documentedUsages
+
+// Security 1.1 (@experimental): pinning, sentinel, content signature, delegation floor, evidence, second opinions.
+async function security11(): Promise<void> {
+  const { security } = await import('@tapeapi/sdk')
+  const { manifestContentTypedData, manifestContentDigest, MANIFEST_CONTENT_FIELD } = await import('@tapeapi/sdk/sig')
+  const api = createTapeAPI({
+    rpcUrls: rpcUrlsFor(56), clock: () => Date.now() / 1000, pin: { maxAgeS: 120, by: 'hash' }, sentinel: 'strict',
+    requireContentSig: true, delegationFloor: new Map(), onWarning: (w) => { const c: string = w.code; void c },
+  })
+  const svc = await api.resolve('11.1013.tape')
+  const at: number | undefined = svc.pinned?.number
+  const seen: 'match' | 'mismatch' | 'unchecked' | undefined = svc.sentinel?.container
+  const ok: boolean | undefined = svc.contentSig?.valid
+  const block = await api.rpc!.confirmedBlock('finalized')
+  const n: number = block.number
+  const local: string = security.erc6551Account({ registry: MAINNET.hub, implementation: MAINNET.hub, chainId: 56, tokenContract: MAINNET.factory, tokenId: 1n })
+  const td = manifestContentTypedData(56, MAINNET.hub, { container: local, manifest: { tapeapi: '0.1' } })
+  const d: Uint8Array = manifestContentDigest(56, MAINNET.hub, { container: local, contentHash: '0x' + '00'.repeat(32) })
+  const field: 'contentSig' = MANIFEST_CONTENT_FIELD
+  try { await api.callQuorum([svc], 'read', {}) } catch (e) {
+    for (const rec of security.contradictionsOf(e)) {
+      const check = await security.verifyContradiction(rec, { signerOf: async (c) => (await api.resolve(c)).manifest.signer })
+      if (check.valid) { const kind: 'self' | 'cross' = check.kind; const yes: true = check.signersChecked; void kind; void yes }
+      else if (check.signaturesConsistent) { const kind: 'self' | 'cross' = check.kind; const no: false = check.signersChecked; void kind; void no }
+      else { const why: string = check.reason; void why }
+    }
+  }
+  try { await api.resolve('11.1013.tape') } catch (e) {
+    if (e instanceof TapeAPIError && e.code === 'DELEGATION_INVALID' && e.data?.floor) { const had: boolean = await api.clearDelegationFloor(e.data as { container: string; holder: string; signer: string }); void had }
+  }
+  const unchecked: false | undefined = svc.contentSig?.checked
+  const checked = security.withSpotCheck(api, { rate: 0.05, alternates: [svc], onMismatch: (o) => { const same: boolean = o.same; void same }, onError: async (e) => { void e } })
+  const r = await checked.call(svc, 'bnbUsd', {})
+  void [at, seen, ok, n, td, d, field, r.spotCheck, unchecked]
+}
+void security11

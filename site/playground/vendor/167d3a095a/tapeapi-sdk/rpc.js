@@ -68,6 +68,23 @@ export function isNodeLimit(error) {
 // 报告执行回滚的 JSON-RPC 错误：geth 的 code 3，或消息如此说（-32000 "execution reverted"）。
 const revertShaped = (err) => Number(err?.code) === 3 || /revert/i.test(String(err?.message ?? ''))
 
+// A state read pinned to one block (security 1.1): eth_call, eth_getCode or eth_getStorageAt whose block parameter is an
+// EIP-1898 object or a hex block number, never a tag. eth_getLogs is not one (its filter may carry a blockHash too).
+// 钉在某个区块上的状态读取（安全加固 1.1）：区块参数为 EIP-1898 对象或十六进制块号（绝不是标签）的 eth_call、eth_getCode、
+// eth_getStorageAt。eth_getLogs 不算（它的过滤器也可能带 blockHash）。
+const PINNABLE = { eth_call: 1, eth_getCode: 1, eth_getStorageAt: 2 }
+const pinnedRead = (method, params) => {
+  const b = Array.isArray(params) && PINNABLE[method] !== undefined ? params[PINNABLE[method]] : undefined
+  return (typeof b === 'string' && /^0x[0-9a-fA-F]+$/.test(b)) || (!!b && typeof b === 'object' && ('blockHash' in b || 'blockNumber' in b))
+}
+// A node saying it does not have that block (it lags behind the pinned block): -32001 "resource not found" (EIP-1898),
+// or a message naming a missing block/header, and never a revert. "not currently canonical" is not this: it is what the
+// node says about the chain, and stays an answer.
+// 节点表示它没有该区块（落后于所钉区块）：-32001 "resource not found"（EIP-1898），或消息说区块/区块头不存在，且绝不是回滚。
+// "not currently canonical" 不属此类：那是节点对链的陈述，仍算作答。
+const blockMissing = (err) => !revertShaped(err) && !/canonical/i.test(String(err?.message ?? '')) &&
+  (Number(err?.code) === -32001 || /header.*not found|block.*not found|unknown block|not found.*block/i.test(String(err?.message ?? '')))
+
 // Node sets already warned about, once per process (arch A5) / 已警告过的节点集合，每个进程一次
 const warnedSets = new Set()
 // An https URL on a host that can resolve: not plain http, not a reserved name (RFC 6761: .invalid, .example, .test,
@@ -204,7 +221,13 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
   const queues = new Map()       // url -> calls waiting for this turn's flush / 等待本轮发出的调用
   // Only eth_call is batched: resolve and the identity reads are eth_calls, and the other methods keep the exact wire
   // behaviour each node was measured with (publicnode refuses old eth_getLogs as HTTP 403 per request, review R4-1).
+  // The identity-root sentinel's eth_getStorageAt reads (security 1.1) go out alone, in the same turn as the batch they
+  // would have joined (no extra round): a node that answers "no" to a batch holding them would otherwise be taken as a
+  // node that refuses batches, and stop getting eth_call batches for the client's lifetime (FIXED SECR-5); and the
+  // eth_call batches of a resolution stay exactly those of 1.1.0.
   // 只批量 eth_call：解析与身份读取都是 eth_call；其它方法保持各节点实测时的原样（publicnode 按请求以 HTTP 403 拒绝旧日志）。
+  // 身份根哨兵的 eth_getStorageAt（安全加固 1.1）单独发出，与它本会加入的批量在同一轮（不多一轮）：否则节点对含有它们的批量说
+  // "不"，会被当成不接受批量的节点，在客户端生命周期内不再收到 eth_call 批量（FIXED SECR-5）；解析的 eth_call 批量也与 1.1.0 完全相同。
   function ask(url, method, params) {
     if (method !== 'eth_call') return one(url, method, params)
     if (!batching(url)) return alone(url, method, params)
@@ -275,8 +298,15 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
   async function round(method, params, project) {
     const settled = await Promise.allSettled(urls.map(u => ask(u, method, params)))
     const buckets = new Map(); const failures = []; const refusals = []; const answeredIdx = []; let tooLarge = 0
+    const pinned = pinnedRead(method, params)
     settled.forEach((s, i) => {
       if (s.status === 'rejected') { failures.push(`${describeUrl(urls[i], i)}: ${s.reason?.message || s.reason}`); if (s.reason?.refusal) refusals.push(s.reason.refusal); if (s.reason?.data?.tooLarge) tooLarge++; return }
+      // A pinned read that a node answers with "no such block" (it has not reached the pinned block yet): that node did
+      // not answer, as a timeout would not (FIXED SECR-3). Nodes that have the block still all have to agree, and at least
+      // `need` operators still have to answer. Not a refusal: channel.js reads `refusals` as what a node will not do.
+      // 钉块读取中节点答"没有该区块"（尚未到达所钉区块）：该节点没有作答，与超时相同（FIXED SECR-3）。持有该块的节点仍须全体一致，
+      // 作答的运营方仍须 ≥ need。不记为 refusal：channel.js 把 `refusals` 读作节点不肯做的事。
+      if (pinned && s.value.kind === 'error' && blockMissing(s.value.value)) { failures.push(`${describeUrl(urls[i], i)}: does not have the pinned block (${s.value.value.code}: ${s.value.value.message.slice(0, 80)})`); return }
       // 错误按 code 与是否回滚形态分桶，不按原文（各实现 revert 文本不同，M-12；R3-4）/ errors bucket by code and revert
       // shape, never by text: revert texts differ per client (review M-12, R3-4)
       // `project` keeps only the fields that are facts about the chain: nodes decorate some answers differently
@@ -342,6 +372,66 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     return lo
   }
 
+  /**
+   * @experimental (security 1.1) A block that nodes of at least `need` operators confirm, for pinning every read of one
+   * resolution to it. `tag` ('finalized', 'safe' or 'latest') is only where to start: "finalized" is what each NODE says
+   * it is (1rpc answered latest − 5000 on BSC; four Base nodes differed by 178 blocks, measured 2026-09-29), so the tag
+   * is never used for a read. Each node is asked for its block at `tag`; the candidate is the highest number that nodes
+   * of `need` operators have reached (each operator counted once, at its highest answer). When those nodes already gave
+   * one identical block, that is the answer (one round); otherwise every node is asked for the candidate number and all
+   * that answer must report the same block (a second round, unanimous as any read, TAP-20 §3.2). Two answers for one
+   * number with different hashes are RPC_DISAGREE. Returns { number, hash, timestamp, tag, operators }; freshness is the
+   * caller's check (it needs the caller's clock). A later read pinned to the block (an EIP-1898 blockHash or a hex number)
+   * that a lagging node answers with "header not found" / "unknown block" / -32001 counts as that node not answering.
+   * @experimental（安全加固 1.1）至少 `need` 家运营方确认的区块，用于把一次解析的全部读取钉在它上面。`tag` 只是起点：
+   * "finalized" 是每个**节点**自己说的，因此标签绝不用于读取。先问每个节点它在 `tag` 处的区块；候选为 `need` 家运营方都已到达的
+   * 最高块号（每家运营方只计一次、取其最高的回答）。若这些节点给出的已是同一个区块，即为结果（一轮）；否则向每个节点问候选块号，
+   * 作答者必须报告同一个区块（第二轮，与任何读取一样须全体一致）。同一块号出现两个不同哈希即 RPC_DISAGREE。新鲜度由调用方检查。
+   * 之后钉在该块上的读取（EIP-1898 blockHash 或十六进制块号），落后节点答 "header not found" / "unknown block" / -32001 的，
+   * 按该节点未作答处理。
+   */
+  const BLOCK_TAGS = new Set(['finalized', 'safe', 'latest'])
+  const blockFacts = (b) => {
+    if (!b || typeof b !== 'object') throw new Error('no such block')
+    const number = Number(BigInt(b.number)), timestamp = Number(BigInt(b.timestamp))
+    if (typeof b.hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(b.hash) || !Number.isSafeInteger(number) || !Number.isSafeInteger(timestamp)) throw new Error('malformed block')
+    return { number, hash: b.hash.toLowerCase(), timestamp }
+  }
+  async function confirmedBlock(tag = 'finalized') {
+    if (!BLOCK_TAGS.has(tag)) throw new TapeAPIError('INVALID_ARGUMENT', `confirmedBlock takes 'finalized', 'safe' or 'latest', not ${String(tag).slice(0, 32)}`)
+    const settled = await Promise.allSettled(urls.map((u) => one(u, 'eth_getBlockByNumber', [tag, false])))
+    const got = []; const failures = []
+    settled.forEach((s, i) => {
+      if (s.status === 'fulfilled' && s.value.kind === 'ok') { try { got.push({ i, ...blockFacts(s.value.value) }); return } catch (e) { failures.push(`${describeUrl(urls[i], i)}: ${e.message}`); return } }
+      failures.push(`${describeUrl(urls[i], i)}: ${s.status === 'rejected' ? (s.reason?.message || s.reason) : `error ${s.value.value.code}`}`)
+    })
+    const answered = operatorsOf(got.map((g) => g.i))
+    if (answered < need) throw new TapeAPIError('RPC_UNAVAILABLE', `eth_getBlockByNumber(${tag}): only ${answered}/${need} operators answered (${failures.join('; ')})`)
+    const hashAt = new Map()
+    for (const g of got) {
+      const h = hashAt.get(g.number)
+      if (h && h !== g.hash) throw new TapeAPIError('RPC_DISAGREE', `eth_getBlockByNumber(${tag}): nodes report two different hashes for block ${g.number}`)
+      hashAt.set(g.number, g.hash)
+    }
+    const best = new Map()   // operator -> its highest answer / 每家运营方最高的回答
+    for (const g of got) { const op = opOf[g.i]; if (!best.has(op) || best.get(op).number < g.number) best.set(op, g) }
+    const ranked = [...best.values()].sort((a, b) => b.number - a.number)
+    const target = ranked[need - 1].number
+    const top = ranked.slice(0, need)
+    if (top.every((g) => g.number === target)) {
+      const g = top[0]
+      if (top.some((x) => x.timestamp !== g.timestamp)) throw new TapeAPIError('RPC_DISAGREE', `eth_getBlockByNumber(${tag}): nodes report two timestamps for block ${target}`)
+      return { number: target, hash: g.hash, timestamp: g.timestamp, tag, operators: need }
+    }
+    // A node that has not reached the block answers null: that is no answer, not a disagreement.
+    // 尚未到达该块的节点答 null：那是没有作答，不是分歧。
+    const b = await call('eth_getBlockByNumber', ['0x' + target.toString(16), false], { project: blockFacts })
+    if (b.number !== target) throw new TapeAPIError('RPC_DISAGREE', `eth_getBlockByNumber: asked for block ${target}, nodes answered block ${b.number}`)
+    return { number: b.number, hash: b.hash, timestamp: b.timestamp, tag, operators: need }
+  }
+
+  // `block`: a tag, a hex number, or an EIP-1898 object ({ blockHash, requireCanonical } or { blockNumber })
+  // `block`：标签、十六进制块号，或 EIP-1898 对象
   async function ethCall(to, data, block = 'latest') { return call('eth_call', [{ to, data }, block]) }
   async function chainId() { return Number(BigInt(await call('eth_chainId', []))) }
   // A client for ONE node, with this client's fetch and timeout. Data that authenticates itself (a TAP-26 frame,
@@ -355,5 +445,5 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     return createRpc({ urls: [url], quorum: 1, timeoutMs, fetch: fetchImpl, bodyLimit: o.bodyLimit ?? bodyLimit, disagreeRetryMs, maxHeadSpread })
   }
   // `operators`: the distinct operators behind `urls`, in first-seen order / `urls` 背后的不同运营方
-  return { call, ethCall, blockNumber, chainId, urls, operators, quorum: need, degraded, single, bodyLimit }
+  return { call, ethCall, blockNumber, confirmedBlock, chainId, urls, operators, quorum: need, degraded, single, bodyLimit }
 }

@@ -115,6 +115,8 @@
 | `ATTEST_DISAGREE` | 客户端 | 见证读取不一致 | 否 |
 | `NOT_FOUND` | 客户端 | 那里没有服务：标签未注册、处理器编号超出范围，或没有通道记录（清单文件缺失为 `MANIFEST_INVALID`） | 否 |
 | `RPC_UNAVAILABLE` | 客户端 | 作答节点过少 | 是 |
+| `RPC_STALE` | 客户端 | 1.2 起，开启实验性的 `pin` 选项时：节点共同确认的区块旧于 `maxPinAgeS`，或比本机时钟超前（`data.ageS`） | 是 |
+| `CONTRACT_UNKNOWN` | 客户端 | 1.2 起，开启实验性的 `sentinel: 'strict'` 时：TapeOut 身份合约运行着本 SDK 不认识的实现，即合约已被升级（`data.role`、`data.implementation`） | 否：升级 SDK 或核实这次升级 |
 | `RPC_ERROR` | 客户端 | 所有节点返回同一个 JSON-RPC 错误（`data.rpcCode`、`data.rpcRevert`） | 回滚：否 |
 | `CANON_INVALID` | 客户端 | JSON 没有规范形式、有重复键或禁用键 | 否 |
 | `ABI_INVALID` | 客户端 | ABI 数据无法解码 | 否 |

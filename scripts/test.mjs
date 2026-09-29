@@ -13,9 +13,10 @@ const walk = (dir) => readdirSync(dir).flatMap((n) => {
   const p = join(dir, n)
   return statSync(p).isDirectory() ? walk(p) : [p]
 })
-// hosting/ is only in the internal repository until it ships. / hosting/ 上线前只在内部仓库。
+// hosting/ is only in the internal repository until it ships; so is directory/ (the provider directory draft).
+// hosting/ 上线前只在内部仓库；directory/（服务方目录草稿）也是。
 const files = [
-  ...['sdk/test', 'server/test', 'examples', 'conformance', 'hosting'].filter((d) => existsSync(join(root, d))).flatMap((d) => walk(join(root, d))).filter((p) => p.endsWith('.test.mjs')),
+  ...['sdk/test', 'server/test', 'examples', 'conformance', 'hosting', 'directory'].filter((d) => existsSync(join(root, d))).flatMap((d) => walk(join(root, d))).filter((p) => p.endsWith('.test.mjs')),
   ...readdirSync(join(root, 'scripts')).filter((n) => n.endsWith('.test.mjs')).map((n) => join(root, 'scripts', n)),
 ].map((p) => relative(root, p)).sort()
 const r = spawnSync(process.execPath, ['--test', ...process.argv.slice(2), ...files], { cwd: root, stdio: 'inherit' })

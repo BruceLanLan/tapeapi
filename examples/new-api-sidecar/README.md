@@ -29,6 +29,10 @@ new-api:3000            渠道、令牌、额度、倍率、计费全部照旧
 
 ### 5 分钟上线
 
+还没准备好花钱？先在本机跑一遍本地试跑（不需要密钥、电路，也不花钱）：在仓库根目录 `npm install` 后运行
+`node examples/relay-trial/trial.mjs`。下面每一步做完都可以用 `node sdk/bin/tapeapi-doctor.js` 检查，它会说清缺什么、去哪做、
+下一条命令；逐步清单见 [AI 服务方指南 · 从零到上线](../../docs/guides/zh-CN/ai-providers.md#从零到上线)。
+
 前提：一台装了 Docker 与 Docker Compose 2.17 或更高版本的服务器；一个域名和你已有的 HTTPS 反向代理（Nginx、Caddy、1Panel、宝塔都行）；
 一枚已开通容器的 TapeOut 电路（在 tapeout.net 购买）；本仓库的检出（镜像由它构建）：
 
@@ -108,9 +112,12 @@ compose 文件，放在同一个网络里，`UPSTREAM_BASE_URL` 指向你的 new
 
 ```sh
 # 42.1013.tape 是示例名：换成你的 TapeOut 名字（即 .env 里的 TAPE_NAME）
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.1.0/tapeapi-sdk-1.1.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz tapeapi-verify 42.1013.tape
 ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
 ```
+
+照原样用示例名运行会停在 “no file at /.well-known/tapeapi.json”：链上没有以 `42.1013.tape` 发布的服务。你的清单发布之后，
+先自己跑一遍 `node sdk/bin/tapeapi-doctor.js <你的名字>`，全部通过（退出码 0）再告诉用户。
 
 在 `.env` 里设 `TAPE_NAME=<你的 TapeOut 名字>`，旁路启动时会打印这条提示。用 SDK 的开发者可以用 `ai.createVerifyingFetch` 包裹官方 SDK 的 fetch。
 
@@ -214,6 +221,11 @@ your users' API keys, so only you run it.
 
 ### Live in 5 minutes
 
+Not ready to pay for anything yet? Run the local trial on your machine first (no key, no circuit, no cost):
+`npm install` at the repository root, then `node examples/relay-trial/trial.mjs`. After each step below,
+`node sdk/bin/tapeapi-doctor.js` checks it and says what is missing, where to fix it and the next command; the
+step-by-step checklist is [AI providers · From zero to live](../../docs/guides/ai-providers.md#from-zero-to-live).
+
 You need a server with Docker and Docker Compose 2.17 or later; a domain and your existing HTTPS reverse proxy (Nginx,
 Caddy, 1Panel, ...); a TapeOut circuit with its container opened (bought on tapeout.net); and a checkout of this
 repository (the image is built from it): `git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi/examples/new-api-sidecar`.
@@ -259,7 +271,8 @@ repository (the image is built from it): `git clone https://github.com/BruceLanL
    verifying proxy `tapeapi-verify <your TapeOut name>` (it needs the manifest on chain, see the note above) and point
    their client at it (`ANTHROPIC_BASE_URL=http://127.0.0.1:8790`, or `OPENAI_BASE_URL=http://127.0.0.1:8790/v1`); set
    `TAPE_NAME` in `.env` and the sidecar prints that hint at start. SDK users can wrap the official SDK's fetch with
-   `ai.createVerifyingFetch`.
+   `ai.createVerifyingFetch`. Before telling anyone, run `node sdk/bin/tapeapi-doctor.js <your TapeOut name>` yourself
+   and wait for exit status 0 (the documentation's `42.1013.tape` is an example name: nothing is published under it).
 
 ### What users see
 
