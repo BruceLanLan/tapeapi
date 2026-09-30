@@ -210,7 +210,7 @@ responses) and [#12](https://github.com/TapeOutProtocol/TAPs/pull/12) (private c
 | [TAPI-27](spec/TAPI-27.md) | Private groups of up to 32 containers (up to 128 in the experimental format 2) | Stable (v1) |
 
 The specs are bilingual; English is authoritative. **TAPI-1 and TAPI-20 to TAPI-27 are TapeAPI's own document names,
-not TAP numbers** (they were called TAP-1 and TAP-20 to TAP-27 until 2026-09-30): TAPs are numbered by the editors of
+not TAP numbers**: TAPs are numbered by the editors of
 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01. Frozen constants that contain an old name, such as the
 `TAP-26/…` and `TAP-27/…` labels, never change.
 

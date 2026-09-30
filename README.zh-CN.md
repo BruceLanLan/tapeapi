@@ -199,7 +199,7 @@ flowchart LR
 | [TAPI-26](spec/TAPI-26.md) | 容器间的私密通道 | Stable (v1)（稳定） |
 | [TAPI-27](spec/TAPI-27.md) | 最多 32 个容器的私密群聊（实验性的格式 2 最多 128 个） | Stable (v1)（稳定） |
 
-规范中英双语，以英文为准。**TAPI-1 与 TAPI-20 至 TAPI-27 是 TapeAPI 自己的文档名，不是 TAP 编号**（2026-09-30 之前叫 TAP-1 与 TAP-20 至 TAP-27）：TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 编号。含有旧名字的冻结常量（例如 `TAP-26/…`、`TAP-27/…` 标签）永不改变。
+规范中英双语，以英文为准。**TAPI-1 与 TAPI-20 至 TAPI-27 是 TapeAPI 自己的文档名，不是 TAP 编号**：TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 编号。含有旧名字的冻结常量（例如 `TAP-26/…`、`TAP-27/…` 标签）永不改变。
 
 ## 仓库
 
