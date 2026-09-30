@@ -13,7 +13,7 @@
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
 
-> **Placeholder number.** TAP-24 is a placeholder number proposed in [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8). TapeKit has no numbered-proposal process yet (changes to TapeOut itself follow TapeKit `SPEC.md` §15), so the maintainers may assign another number or move this document to another process; see [TAP-1](TAP-1.md).
+> **Not a TAP number.** "TAP-24" is this document's name inside the TapeAPI repository. It is not a TAP: TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01 §6.1, and the numbers ending in 0 are reserved for core standards. Parts of these specifications may be submitted as TAP drafts under that process by their author; until an editor assigns a number, the name here is only a local name. Frozen constants that contain it (labels, for example) are historical and never change.
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
@@ -153,7 +153,7 @@ Copyright and related rights waived via CC0-1.0.
 
 > 英文为权威文本，本译文与英文章节一一对应。
 
-> **占位编号。** TAP-24 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
+> **不是 TAP 编号。** “TAP-24”只是本文档在 TapeAPI 仓库里的名字，不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配，以 0 结尾的编号保留给核心标准。这些规范的部分内容可能由作者按该流程作为 TAP 草稿提交；在编辑分配编号之前，这里的名字只是本地名称。含有这个名字的冻结常量（例如标签）是历史常量，永不改变。
 
 > **实现状态（2026-09-28）：** 已撤回（2026-09-28），此前自 2026-09-21 起冻结（见状态说明）；不是构建目标：`IntentEscrow` 不存在，也未部署。`examples/defi-rfq-solver` 只构造并签署报价（§3.2），不移动任何资金。
 

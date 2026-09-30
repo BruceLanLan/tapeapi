@@ -30,7 +30,7 @@ the [changelog](../CHANGELOG.md).
   [`docs/guides/`](guides/).
 - **Holder console** at [tapeapi.fun/console](https://tapeapi.fun/console/): take a service live, publish its manifest
   and sign its delegation from a phone wallet.
-- **Specifications** TAP-20 to TAP-27 (proposed numbers), the SDK and the provider runtime, used from this repository.
+- **Specifications** "TAP-20" to "TAP-27" (names inside this repository, not TAP numbers; TAPs are numbered by the editors of TapeOutProtocol/TAPs), the SDK and the provider runtime, used from this repository.
   Since 1.0.0, TAP-20, TAP-21, TAP-23, TAP-26 and TAP-27 are Stable (v1) (TAP-20 §3.5, the service directory, is
   Experimental); TAP-22 and TAP-25 are Experimental.
 
@@ -43,8 +43,9 @@ the [changelog](../CHANGELOG.md).
   for its own request; the reviewer must itself be a container. A review then costs a real call and a real circuit.
 - **npm packages** `@tapeapi/sdk` and `@tapeapi/server`. Today both install from each GitHub release (the SDK first,
   then the server), or are used from a clone of this repository.
-- **TAP review with the TapeOut maintainers.** The TAP numbers are proposals until the maintainers assign them; the
-  discussion is in [TapeKit#8](https://github.com/TapeOutProtocol/TapeKit/issues/8).
+- **TAP drafts in the official process.** TapeOut's TAP process ([TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs),
+  TAP-01) is where parts of these specs go as TAP drafts, starting with the service identity and manifest, built on
+  TAP-10. Editors assign the numbers.
 
 ## 3. Later
 
@@ -90,7 +91,7 @@ specification starts as a *spec proposal (TAP)* issue; see [CONTRIBUTING.md](../
   自动开 GitHub issue。
 - **手册** [tapeapi.fun/docs](https://tapeapi.fun/docs/)，中英双语，由 [`docs/guides/`](guides/) 生成。
 - **持有人控制台** [tapeapi.fun/console](https://tapeapi.fun/console/)：用手机钱包让服务上线、发布清单、签署委托。
-- **规范** TAP-20 至 TAP-27（编号提议中），以及 SDK 与提供者运行时，目前从本仓库使用。自 1.0.0 起，TAP-20、TAP-21、
+- **规范** “TAP-20”至“TAP-27”（本仓库内的名字，不是 TAP 编号；TAP 由 TapeOutProtocol/TAPs 的编辑编号），以及 SDK 与提供者运行时，目前从本仓库使用。自 1.0.0 起，TAP-20、TAP-21、
   TAP-23、TAP-26 与 TAP-27 为 Stable (v1)（稳定；TAP-20 §3.5 服务目录为实验性）；TAP-22 与 TAP-25 为实验性。
 
 ## 2. 接下来
@@ -100,8 +101,8 @@ specification starts as a *spec proposal (TAP)* issue; see [CONTRIBUTING.md](../
 - **凭回执的信誉。** 只有调用方才能评价一个服务，而且必须持有该服务为它自己的请求签发的回执；评价者本身也必须是一个容器。
   这样每条评价都要付出一次真实调用和一个真实电路的代价。
 - **npm 包** `@tapeapi/sdk` 与 `@tapeapi/server`。目前 SDK 从每个 GitHub Release 安装，服务端包在本仓库的克隆目录里使用。
-- **与 TapeOut 维护者评审 TAP。** 在维护者分配编号之前，TAP 编号都只是提议；讨论在
-  [TapeKit#8](https://github.com/TapeOutProtocol/TapeKit/issues/8)。
+- **按官方流程提交 TAP 草稿。** TapeOut 的 TAP 流程（[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)，TAP-01）
+  是这些规范的部分内容作为 TAP 草稿提交的地方，先从建立在 TAP-10 之上的服务身份与清单开始。编号由编辑分配。
 
 ## 3. 更远
 

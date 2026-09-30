@@ -38,7 +38,7 @@ DeWEB 是网站，TapeSend 是消息，TapeAPI 是服务。
 
 正式版，版本 1.3.0。1.0 起遵循语义化版本：按 1.0 文档写的代码在所有 1.x 版本里都能继续工作，破坏性修改只在 2.0
 （[1.0 承诺什么](upgrade-1.0.md)）。免费层运行在 TapeOut 已部署的合约之上。我们自己的合约未经第三方审计；付费调用的
-托管合约尚未部署。TAP 编号是向 TapeKit 维护者提议的编号，尚未正式分配。
+托管合约尚未部署。“TAP-20”到“TAP-27”只是这些规范在本仓库里的名字，不是 TAP 编号：TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑编号。
 
 ## 链上地址
 

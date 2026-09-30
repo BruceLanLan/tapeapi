@@ -7,6 +7,12 @@ interfaces.
 
 ## [Unreleased]
 
+### Changed
+
+- "TAP-20" to "TAP-27" are now described as the specs' names inside this repository, not TAP numbers: TapeOut's TAP
+  process (TapeOutProtocol/TAPs, TAP-01 §6.1) has editors assign numbers and reserves the multiples of ten for core
+  standards. Parts of these specs may be submitted there as TAP drafts. No wire format, label or signature changes.
+
 ## [1.3.0] — 2026-09-30
 
 ### Added

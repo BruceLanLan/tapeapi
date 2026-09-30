@@ -205,8 +205,9 @@ chain as they do now; the prices in their manifest are published, not settled. S
 | [TAP-26](spec/TAP-26.md) | Private channels between containers | Stable (v1) |
 | [TAP-27](spec/TAP-27.md) | Private groups of up to 32 containers (up to 128 in the experimental format 2) | Stable (v1) |
 
-The specs are bilingual; English is authoritative. The TAP numbers are
-[proposed](https://github.com/TapeOutProtocol/TapeKit/issues/8) to the TapeKit maintainers and not yet assigned.
+The specs are bilingual; English is authoritative. **"TAP-20" to "TAP-27" are these documents' names inside this
+repository, not TAP numbers**: TAPs are numbered by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)
+(TAP-01 §6.1), and parts of these specs may be submitted there as TAP drafts.
 
 ## Repository
 

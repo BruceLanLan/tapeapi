@@ -13,7 +13,7 @@
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
 
-> **Placeholder number.** TAP-26 is a placeholder number proposed in [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8). TapeKit has no numbered-proposal process yet (changes to TapeOut itself follow TapeKit `SPEC.md` §15), so the maintainers may assign another number or move this document to another process; see [TAP-1](TAP-1.md).
+> **Not a TAP number.** "TAP-26" is this document's name inside the TapeAPI repository. It is not a TAP: TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01 §6.1, and the numbers ending in 0 are reserved for core standards. Parts of these specifications may be submitted as TAP drafts under that process by their author; until an editor assigns a number, the name here is only a local name. Frozen constants that contain it (labels, for example) are historical and never change.
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
@@ -211,7 +211,7 @@ Copyright and related rights waived via [CC0](https://creativecommons.org/public
 
 > 以英文为准。章节编号与上半部分一一对应。
 
-> **占位编号。** TAP-26 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
+> **不是 TAP 编号。** “TAP-26”只是本文档在 TapeAPI 仓库里的名字，不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配，以 0 结尾的编号保留给核心标准。这些规范的部分内容可能由作者按该流程作为 TAP 草稿提交；在编辑分配编号之前，这里的名字只是本地名称。含有这个名字的冻结常量（例如标签）是历史常量，永不改变。
 
 > **实现状态（2026-09-27）：** 运行中：ChannelBus 已部署于 BNB Chain `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`（代码与参考构建逐字节一致）；免费公共中继运行于 `relay.tapeapi.fun`（`12.1013.tape`，源码 `examples/cloudflare-worker/relay-worker.js`）；SDK 实现了经中继与 ChannelBus 的通道，并导出一组实测的总线节点 `BUS_RPC_URLS`（§3.7）。未经第三方审计。
 

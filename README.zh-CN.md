@@ -196,7 +196,7 @@ flowchart LR
 | [TAP-26](spec/TAP-26.md) | 容器间的私密通道 | Stable (v1)（稳定） |
 | [TAP-27](spec/TAP-27.md) | 最多 32 个容器的私密群聊（实验性的格式 2 最多 128 个） | Stable (v1)（稳定） |
 
-规范中英双语，以英文为准。TAP 编号已[提交给 TapeKit 维护者](https://github.com/TapeOutProtocol/TapeKit/issues/8)，尚未正式分配。
+规范中英双语，以英文为准。**“TAP-20”到“TAP-27”只是这些文档在本仓库里的名字，不是 TAP 编号**：TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑编号（TAP-01 §6.1），这些规范的部分内容可能作为 TAP 草稿提交到那里。
 
 ## 仓库
 

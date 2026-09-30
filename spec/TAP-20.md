@@ -14,7 +14,7 @@
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
 
-> **Placeholder number.** TAP-20 is a placeholder number proposed in [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8). TapeKit has no numbered-proposal process yet (changes to TapeOut itself follow TapeKit `SPEC.md` §15), so the maintainers may assign another number or move this document to another process; see [TAP-1](TAP-1.md).
+> **Not a TAP number.** "TAP-20" is this document's name inside the TapeAPI repository. It is not a TAP: TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01 §6.1, and the numbers ending in 0 are reserved for core standards. Parts of these specifications may be submitted as TAP drafts under that process by their author; until an editor assigns a number, the name here is only a local name. Frozen constants that contain it (labels, for example) are historical and never change.
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
@@ -438,7 +438,7 @@ Copyright and related rights waived via CC0-1.0.
 
 > 英文为权威文本，本译文与英文章节一一对应。
 
-> **占位编号。** TAP-20 是在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提议的占位编号。TapeKit 目前还没有编号提案流程（对 TapeOut 本身的修改遵循 TapeKit `SPEC.md` §15），因此维护者可能另行分配编号，或把本文档移入其它流程；见 [TAP-1](TAP-1.md)。
+> **不是 TAP 编号。** “TAP-20”只是本文档在 TapeAPI 仓库里的名字，不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配，以 0 结尾的编号保留给核心标准。这些规范的部分内容可能由作者按该流程作为 TAP 草稿提交；在编辑分配编号之前，这里的名字只是本地名称。含有这个名字的冻结常量（例如标签）是历史常量，永不改变。
 
 > **实现状态（2026-09-27）：** 无目录运行中：在 BNB Chain 上，`api.tapeapi.fun`（`11.1013.tape`，源码 `examples/public-api/`）与 `relay.tapeapi.fun`（`12.1013.tape`）发布了带持有者委托的 TAP-20 清单，SDK 可按容器、`(circuits, tokenId)` 二元组与名称 `<#ID>.<processor>.tape` 解析。ServiceDirectory（§3.5）未部署，因此标签在主网上无法解析。未经第三方审计。
 
