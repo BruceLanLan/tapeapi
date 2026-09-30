@@ -1,6 +1,6 @@
 # 文档地图 / Documents
 
-**从这里开始 / Start here:** [`README.md`](../README.md)（[中文](../README.zh-CN.md)）→ [`docs/guides/`](guides/) → [`DESIGN.md`](../DESIGN.md) → [`spec/TAP-20.md`](../spec/TAP-20.md) → [`examples/README.md`](../examples/README.md).
+**从这里开始 / Start here:** [`README.md`](../README.md)（[中文](../README.zh-CN.md)）→ [`docs/guides/`](guides/) → [`DESIGN.md`](../DESIGN.md) → [`spec/TAPI-20.md`](../spec/TAPI-20.md) → [`examples/README.md`](../examples/README.md).
 
 ## 指南 / Guides
 
@@ -20,15 +20,15 @@
 
 | 文件 | 是什么 / What |
 |---|---|
-| [`spec/TAP-1.md`](../spec/TAP-1.md) | TAP 流程：类型、状态、编号、必需章节。The TAP process. |
-| [`spec/TAP-20.md`](../spec/TAP-20.md) | **实现者的入口。** 服务身份与清单：服务 = 电路，`.well-known/tapeapi.json`，持有人 EIP-712 委托，解析算法。Service identity and manifest. |
-| [`spec/TAP-21.md`](../spec/TAP-21.md) | 签名响应信封、规范 JSON、错误码。Signed response envelope, canonical JSON, error codes. |
-| [`spec/TAP-22.md`](../spec/TAP-22.md) | 计量支付：累计凭证、托管合约、无强制协议费（默认 1% 维护贡献，提供者可设为 0）。Metered payment. |
-| [`spec/TAP-23.md`](../spec/TAP-23.md) | 块锚定的跨链读取。Attested Read. |
-| [`spec/TAP-24.md`](../spec/TAP-24.md) | 无桥跨链兑换（已撤回）。Intent RFQ (withdrawn). |
-| [`spec/TAP-25.md`](../spec/TAP-25.md) | 链上 `eval()` 裁决的方法。Circuit-Verified Methods. |
-| [`spec/TAP-26.md`](../spec/TAP-26.md) | **Tape Channel：** 两个容器之间的端到端加密通道（持有人授权的通道密钥、收件房间、中继 / ChannelBus / TapeSend）。Private channels between containers. |
-| [`spec/TAP-27.md`](../spec/TAP-27.md) | **Tape Group：** 至多 32 个容器的加密群聊（实验性的格式 2 最多 128 个；群主管理的纪元、加密名单、发送者签名）。Private groups of up to 32 containers (up to 128 in the experimental format 2). |
+| [`spec/TAPI-1.md`](../spec/TAPI-1.md) | TapeAPI 的文档流程：类型、状态、编号、必需章节。TapeAPI's own document process (TapeOut's is TAP-01). |
+| [`spec/TAPI-20.md`](../spec/TAPI-20.md) | **实现者的入口。** 服务身份与清单：服务 = 电路，`.well-known/tapeapi.json`，持有人 EIP-712 委托，解析算法。Service identity and manifest. |
+| [`spec/TAPI-21.md`](../spec/TAPI-21.md) | 签名响应信封、规范 JSON、错误码。Signed response envelope, canonical JSON, error codes. |
+| [`spec/TAPI-22.md`](../spec/TAPI-22.md) | 计量支付：累计凭证、托管合约、无强制协议费（默认 1% 维护贡献，提供者可设为 0）。Metered payment. |
+| [`spec/TAPI-23.md`](../spec/TAPI-23.md) | 块锚定的跨链读取。Attested Read. |
+| [`spec/TAPI-24.md`](../spec/TAPI-24.md) | 无桥跨链兑换（已撤回）。Intent RFQ (withdrawn). |
+| [`spec/TAPI-25.md`](../spec/TAPI-25.md) | 链上 `eval()` 裁决的方法。Circuit-Verified Methods. |
+| [`spec/TAPI-26.md`](../spec/TAPI-26.md) | **Tape Channel：** 两个容器之间的端到端加密通道（持有人授权的通道密钥、收件房间、中继 / ChannelBus / TapeSend）。Private channels between containers. |
+| [`spec/TAPI-27.md`](../spec/TAPI-27.md) | **Tape Group：** 至多 32 个容器的加密群聊（实验性的格式 2 最多 128 个；群主管理的纪元、加密名单、发送者签名）。Private groups of up to 32 containers (up to 128 in the experimental format 2). |
 | [`spec/vectors/`](../spec/vectors/) | 测试向量与独立的 Python 实现 `verify.py`。Test vectors and an independent Python implementation. |
 
 ## 设计与说明 / Design and explainers
@@ -38,7 +38,7 @@
 | [`DESIGN.md`](../DESIGN.md) | 设计契约：外部合约地址、身份模型、信封、凭证、合约接口。The design contract. |
 | [`docs/FEES.md`](FEES.md) | 费用模型：无强制协议费；默认 1% 维护贡献，提供者可设为 0；运营方没有费率开关。Fees. |
 | [`BUSINESS.md`](../BUSINESS.md) | 收入模型与我们在协议里的位置。How TapeAPI makes money. |
-| [`docs/CROSSCHAIN.md`](CROSSCHAIN.md) | 跨链、流动性、可验证计算；TAP-23/24/25 的动机。Cross-chain rationale. |
+| [`docs/CROSSCHAIN.md`](CROSSCHAIN.md) | 跨链、流动性、可验证计算；TAPI-23/24/25 的动机。Cross-chain rationale. |
 | [`docs/CHEAPEST-CIRCUIT.md`](CHEAPEST-CIRCUIT.md) | 最便宜拿到"电路 + 已激活容器"的实测路径。Getting a circuit cheaply. |
 | [`docs/ROADMAP.md`](ROADMAP.md) | 路线图：现在、接下来、更远，以及不会做的事。Roadmap: now, next, later, and what we will not do. |
 | [`docs/OPERATING.md`](OPERATING.md) | 运营者手册：密钥、监控、计量、RPC、限流、中继容量。Running a service or relay. |

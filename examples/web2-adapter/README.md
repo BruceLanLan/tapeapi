@@ -2,7 +2,7 @@
 
 **给谁**：已经有一个 REST API 和一套 API Key 的 Web2 公司（SaaS、数据商、AI 商）。
 **做什么**：一个通用适配器。读 `adapter.config.json`，把每个 TapeAPI 方法映射到一个上游 HTTP 端点；
-签名信封（TAP-21）、按次计费（TAP-22）、清单（TAP-20）全部由 `@tapeapi/server` 完成，公司只写配置。
+签名信封（TAPI-21）、按次计费（TAPI-22）、清单（TAPI-20）全部由 `@tapeapi/server` 完成，公司只写配置。
 上游 API Key 从环境变量注入（`${UPSTREAM_API_KEY}`），永远不会出现在清单或响应里。
 配置里的 `${NAME}` 只能展开成 `index.mjs` 显式交给适配器的值（这里只有 `UPSTREAM_API_KEY`），读不到进程里的其它环境变量。
 替别人运行配置的平台应传 `policy: HOSTED_POLICY`：只许 443 端口的 https、不许 IP 与本地主机、最多 3 个主机、不跟随跳转、头部白名单、响应体上限 256 KiB。
@@ -48,7 +48,7 @@ curl -s -X POST http://127.0.0.1:8788/tapeapi/v1/spotPrice -H 'content-type: app
 ```
 
 `consumer.mjs` 先 `api.resolve({ dev: url })`，再 `api.call(svc, 'fxRate')`（SDK 校验签名后才返回），
-然后用随机 session key 生成一张 TAP-22 voucher 调 `fxConvert`。dev 模式下清单里的 escrow 是零地址占位，
+然后用随机 session key 生成一张 TAPI-22 voucher 调 `fxConvert`。dev 模式下清单里的 escrow 是零地址占位，
 provider 查不到链上余额/授权，所以付费调用会得到一个**签了名的错误信封**（`INTERNAL`），脚本会把 voucher 和信封原样打印并解释；
 本地想把付费方法也跑通，启动 provider 时加 `FREE_ALL=1`（仅 dev 生效）。
 
@@ -66,7 +66,7 @@ provider 查不到链上余额/授权，所以付费调用会得到一个**签�
 
 **For**: Web2 companies that already have a REST API and an API-key scheme.
 **What**: a generic adapter. It reads `adapter.config.json`, maps each TapeAPI method to one upstream HTTP endpoint,
-and lets `@tapeapi/server` do the signed envelopes (TAP-21), per-call metering (TAP-22) and the manifest (TAP-20).
+and lets `@tapeapi/server` do the signed envelopes (TAPI-21), per-call metering (TAPI-22) and the manifest (TAPI-20).
 The upstream API key comes from the environment (`${UPSTREAM_API_KEY}`) and never appears in the manifest or responses.
 A `${NAME}` in the config expands only to values `index.mjs` passes to the adapter explicitly (here only `UPSTREAM_API_KEY`),
 never to other variables of the process. A platform running other people's configs passes `policy: HOSTED_POLICY`: https
@@ -103,7 +103,7 @@ curl -s -X POST http://127.0.0.1:8788/tapeapi/v1/spotPrice -H 'content-type: app
 ```
 
 `consumer.mjs` resolves with `api.resolve({ dev: url })`, calls `fxRate` (the SDK verifies the envelope signature before returning),
-then signs a TAP-22 voucher with a random session key and calls `fxConvert`. In dev mode the manifest points at a zero-address escrow,
+then signs a TAPI-22 voucher with a random session key and calls `fxConvert`. In dev mode the manifest points at a zero-address escrow,
 so the provider cannot check balance/allowance on-chain and answers with a *signed error envelope* (`INTERNAL`); the script prints the voucher
 and envelope and explains. To exercise paid methods locally start the provider with `FREE_ALL=1` (dev only).
 

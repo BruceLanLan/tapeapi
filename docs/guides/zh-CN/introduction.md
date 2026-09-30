@@ -38,7 +38,7 @@ DeWEB 是网站，TapeSend 是消息，TapeAPI 是服务。
 
 正式版，版本 1.3.0。1.0 起遵循语义化版本：按 1.0 文档写的代码在所有 1.x 版本里都能继续工作，破坏性修改只在 2.0
 （[1.0 承诺什么](upgrade-1.0.md)）。免费层运行在 TapeOut 已部署的合约之上。我们自己的合约未经第三方审计；付费调用的
-托管合约尚未部署。“TAP-20”到“TAP-27”只是这些规范在本仓库里的名字，不是 TAP 编号：TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑编号。
+托管合约尚未部署。TAPI-20 到 TAPI-27 是 TapeAPI 自己的规范，不是 TAP（2026-09-30 之前叫 TAP-20 到 TAP-27）：TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑编号，这些规范的部分内容已作为 TAP 草稿提交到那里。
 
 ## 链上地址
 
@@ -68,18 +68,19 @@ BNB Smart Chain，chainId 56。
 
 ## 规范
 
-协议以 TAP 的形式写成，中英双语（以英文为准），采用 CC0。
+协议以 TapeAPI 自己的规范（TAPI）写成，中英双语（以英文为准），采用 CC0。
+这些规范不是 TAP；部分内容已作为 TAP 草稿提交到 TapeOutProtocol/TAPs：[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)、[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)、[#12](https://github.com/TapeOutProtocol/TAPs/pull/12)。
 
-| TAP | 标题 |
+| 规范 | 标题 |
 |---|---|
-| [TAP-20](../../../spec/TAP-20.md) | 服务身份与清单 |
-| [TAP-21](../../../spec/TAP-21.md) | 签名响应信封 |
-| [TAP-22](../../../spec/TAP-22.md) | 计量支付 |
-| [TAP-23](../../../spec/TAP-23.md) | 带证明的跨链读取 |
-| [TAP-24](../../../spec/TAP-24.md) | 意图询价（已撤回） |
-| [TAP-25](../../../spec/TAP-25.md) | 可由电路验证的方法 |
-| [TAP-26](../../../spec/TAP-26.md) | 私密通道 |
-| [TAP-27](../../../spec/TAP-27.md) | 私密群聊 |
+| [TAPI-20](../../../spec/TAPI-20.md) | 服务身份与清单 |
+| [TAPI-21](../../../spec/TAPI-21.md) | 签名响应信封 |
+| [TAPI-22](../../../spec/TAPI-22.md) | 计量支付 |
+| [TAPI-23](../../../spec/TAPI-23.md) | 带证明的跨链读取 |
+| [TAPI-24](../../../spec/TAPI-24.md) | 意图询价（已撤回） |
+| [TAPI-25](../../../spec/TAPI-25.md) | 可由电路验证的方法 |
+| [TAPI-26](../../../spec/TAPI-26.md) | 私密通道 |
+| [TAPI-27](../../../spec/TAPI-27.md) | 私密群聊 |
 
 源代码、示例和一致性测试套件都在 [GitHub](https://github.com/BruceLanLan/tapeapi) 上。
 

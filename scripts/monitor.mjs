@@ -48,8 +48,8 @@ export const SERVICES = [
   {
     name: 'relay', label: '12.1013.tape', base: 'https://relay.tapeapi.fun', circuits: PROCESSOR, tokenId: 12,
     probe: {
-      // A random room nobody posted to: TAP-26 says the answer is no frames and epoch null, and it creates nothing.
-      // 一个没人发过消息的随机房间：TAP-26 规定答案是无帧、epoch 为 null，且不会创建房间。
+      // A random room nobody posted to: TAPI-26 says the answer is no frames and epoch null, and it creates nothing.
+      // 一个没人发过消息的随机房间：TAPI-26 规定答案是无帧、epoch 为 null，且不会创建房间。
       method: 'relayRecv', params: () => ({ room: randomRoom(), after: -1, waitMs: 0 }),
       check: (r) => Array.isArray(r?.frames) && r.frames.length === 0,
       detail: (r) => `empty room, ${Array.isArray(r?.frames) ? r.frames.length : '?'} frames`,
@@ -129,7 +129,7 @@ export function asyncWaitMs({ argv = process.argv, env = process.env } = {}) {
 }
 
 /**
- * A random test frame the relay accepts: wire type 0x03 (a sealed invite, TAP-26), then random bytes, 64 to 200 bytes
+ * A random test frame the relay accepts: wire type 0x03 (a sealed invite, TAPI-26), then random bytes, 64 to 200 bytes
  * in all, base64. 0x03 is what RELAY-1 lost first (invites) and sits in the relay's protected ring, so a busy room
  * could not push it out. / 中继接受的随机测试帧：线路类型 0x03（密封邀请），其后是随机字节，共 64 到 200 字节，base64。
  * 0x03 正是 RELAY-1 最先丢的东西（邀请），且放在中继的受保护环里，不会被繁忙房间挤掉。

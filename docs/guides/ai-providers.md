@@ -68,10 +68,10 @@ guarantee or an audit; your service works the same without one.
 
 - **An on-chain identity.** The service is a TapeOut circuit's container. Who answered is a chain lookup; move to
   another domain or server and users follow the on-chain record.
-- **A price list pinned on chain.** The manifest's `ai` field ([TAP-20 §3.9](../../spec/TAP-20.md)) lists one endpoint
+- **A price list pinned on chain.** The manifest's `ai` field ([TAPI-20 §3.9](../../spec/TAPI-20.md)) lists one endpoint
   per API format and your price table: per model, one price per currency, per 1M tokens, with cache and reasoning
   prices where you charge them. Anyone can recompute what a call should cost.
-- **A signed usage receipt for every call** ([TAP-21 §3.5](../../spec/TAP-21.md)): the model, the token counts, the
+- **A signed usage receipt for every call** ([TAPI-21 §3.5](../../spec/TAPI-21.md)): the model, the token counts, the
   amount per currency, whether the answer completed, and the hashes of the exact request and response bytes, signed by
   the key your circuit's holder delegated. Receipts ride along with the answer (a response header, or an SSE comment the
   official SDKs ignore), so nothing breaks for clients that do not read them.
@@ -158,7 +158,7 @@ Step 5 of the console publishes the sidecar's manifest, `ai` field included:
    a bare array of models), the `ai` field itself, or a whole manifest. A `models.json` has no addresses, so the page adds
    one endpoint per format on the service URL of step 4, exactly as the sidecar does (`/v1` for the OpenAI formats, the
    root itself for Anthropic Messages). The page checks the field with the same rules as the SDK's `validateAIField`
-   (TAP-20 §3.9) and shows it as tables: every API format with its address, then every model with its aliases and, per
+   (TAPI-20 §3.9) and shows it as tables: every API format with its address, then every model with its aliases and, per
    currency, the input, output, cache read, cache write, 1-hour cache write and reasoning prices, per 1M tokens. A price
    the manifest does not state is shown in grey italics with the value the spec gives it (cache prices default to
    `input`, 1-hour cache writes to `cacheWrite`, reasoning to `output`).
@@ -174,7 +174,7 @@ Step 5 of the console publishes the sidecar's manifest, `ai` field included:
    (length and SHA-256 against the SiteRegistry) and confirms the bytes, price table included, are the ones it sent.
 
 Prices are published, not settled, on every chain. The console publishes on BNB Chain, X Layer and Base; on X Layer and
-Base payments are not open, and the page says so: the table is for display only there. Under TAP-20 §3.9 the currencies
+Base payments are not open, and the page says so: the table is for display only there. Under TAPI-20 §3.9 the currencies
 `BNB`, `USDT`, `USDC`, `ETH` and `USD1` name the tokens on BNB Chain.
 
 **Renewal.** Renew the delegation in its last 30 days: console step 4, "Renew" (same service key), set the new

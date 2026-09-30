@@ -92,16 +92,16 @@ const passed = (results, id) => results.some((r) => r.id === id && r.status === 
 
 // Every relay check that must actually run (not skip) against a free reference relay. / 免费参考中继上必须实际执行的检查。
 const FREE_RELAY_IDS = [
-  'tap26.relay.manifest.methods', 'tap26.relay.manifest.handshake-free', 'tap26.relay.manifest.recv-free',
-  'tap26.relay.recv.unknown-room', 'tap26.relay.recv.no-create', 'tap26.relay.recv.next', 'tap26.relay.recv.result-shape',
-  'tap26.relay.post.result-shape', 'tap26.relay.epoch.format', 'tap26.relay.epoch.every-method', 'tap26.relay.epoch.length', 'tap26.relay.epoch.random',
-  'tap26.relay.epoch.mismatch-resets', 'tap26.relay.index.increasing', 'tap26.relay.recv.order', 'tap26.relay.recv.content', 'tap26.relay.recv.after',
-  'tap26.relay.envelope.bound', 'tap26.relay.request.bad-params',
-  'tap26.relay.send.max-wire', 'tap26.relay.send.oversize', 'tap26.relay.send.oversize.code', 'tap26.relay.recv.fits-cap', 'tap26.relay.recv.progress', 'tap26.relay.recv.paging-order',
-  'tap26.relay.longpoll.bounded', 'tap26.relay.longpoll.holds', 'tap26.relay.longpoll.wakes', 'tap26.relay.longpoll.full-length',
-  'tap26.relay.handshake.accept', 'tap26.relay.handshake.refuse-other', 'tap26.relay.handshake.refuse-code', 'tap26.relay.handshake.size', 'tap26.relay.handshake.room-limit',
-  'tap26.relay.kept.survives-flood', 'tap26.relay.kept.order', 'tap26.relay.kept.source-cap',
-  'tap21.envelope.sig-recovers', 'tap21.envelope.id-echo', 'tap21.response.size-cap',
+  'tapi26.relay.manifest.methods', 'tapi26.relay.manifest.handshake-free', 'tapi26.relay.manifest.recv-free',
+  'tapi26.relay.recv.unknown-room', 'tapi26.relay.recv.no-create', 'tapi26.relay.recv.next', 'tapi26.relay.recv.result-shape',
+  'tapi26.relay.post.result-shape', 'tapi26.relay.epoch.format', 'tapi26.relay.epoch.every-method', 'tapi26.relay.epoch.length', 'tapi26.relay.epoch.random',
+  'tapi26.relay.epoch.mismatch-resets', 'tapi26.relay.index.increasing', 'tapi26.relay.recv.order', 'tapi26.relay.recv.content', 'tapi26.relay.recv.after',
+  'tapi26.relay.envelope.bound', 'tapi26.relay.request.bad-params',
+  'tapi26.relay.send.max-wire', 'tapi26.relay.send.oversize', 'tapi26.relay.send.oversize.code', 'tapi26.relay.recv.fits-cap', 'tapi26.relay.recv.progress', 'tapi26.relay.recv.paging-order',
+  'tapi26.relay.longpoll.bounded', 'tapi26.relay.longpoll.holds', 'tapi26.relay.longpoll.wakes', 'tapi26.relay.longpoll.full-length',
+  'tapi26.relay.handshake.accept', 'tapi26.relay.handshake.refuse-other', 'tapi26.relay.handshake.refuse-code', 'tapi26.relay.handshake.size', 'tapi26.relay.handshake.room-limit',
+  'tapi26.relay.kept.survives-flood', 'tapi26.relay.kept.order', 'tapi26.relay.kept.source-cap',
+  'tapi21.envelope.sig-recovers', 'tapi21.envelope.id-echo', 'tapi21.response.size-cap',
 ]
 
 test('reference relay (free, native listen()) passes every MUST and every SHOULD, and every relay check ran', async () => {
@@ -111,22 +111,22 @@ test('reference relay (free, native listen()) passes every MUST and every SHOULD
   assert.equal(summary.conformant, true)
   for (const id of FREE_RELAY_IDS) assert.ok(passed(results, id), `${id} did not pass:\n${show(results.filter((r) => r.id === id))}`)
   // The protected-ring check was exercised: frames really were evicted around the invite. / 受保护环确实被检验到：邀请周围确有帧被挤掉。
-  assert.match(results.find((r) => r.id === 'tap26.relay.kept.survives-flood').message, /frames evicted, invite and epoch message kept/)
-  assert.match(results.find((r) => r.id === 'tap26.relay.kept.source-cap').message, /^refused after 8$/)
-  assert.match(results.find((r) => r.id === 'tap26.relay.handshake.room-limit').message, /^refused after 8$/)
+  assert.match(results.find((r) => r.id === 'tapi26.relay.kept.survives-flood').message, /frames evicted, invite and epoch message kept/)
+  assert.match(results.find((r) => r.id === 'tapi26.relay.kept.source-cap').message, /^refused after 8$/)
+  assert.match(results.find((r) => r.id === 'tapi26.relay.handshake.room-limit').message, /^refused after 8$/)
 })
 
 test('reference relay, priced relaySend: handshake still free, paid checks skipped with a reason, 0 MUST / 0 SHOULD failures', async () => {
   const { results } = await runRelaySuite({ slackMs: SLACK, url: await serveNative(mkRelay({ priceBEM: '0.00001' })) })
   assert.deepEqual(mustFails(results), [], show(results))
   assert.deepEqual(shouldFails(results), [], show(results))
-  assert.ok(passed(results, 'tap26.relay.handshake.no-payment'))
-  for (const id of ['tap26.relay.recv.fits-cap', 'tap26.relay.kept.survives-flood', 'tap26.relay.kept.source-cap']) {
+  assert.ok(passed(results, 'tapi26.relay.handshake.no-payment'))
+  for (const id of ['tapi26.relay.recv.fits-cap', 'tapi26.relay.kept.survives-flood', 'tapi26.relay.kept.source-cap']) {
     const r = results.find((x) => x.id === id)
     assert.equal(r?.status, 'skip', id); assert.match(r.message, /relaySend costs 0\.00001 BEM/)
   }
   // Rooms, indices, epochs and long-poll still ran, over the free handshake path. / 房间、序号、纪元与长轮询仍经免费握手通道执行。
-  for (const id of ['tap26.relay.index.increasing', 'tap26.relay.recv.order', 'tap26.relay.epoch.mismatch-resets', 'tap26.relay.longpoll.wakes', 'tap26.relay.longpoll.full-length']) assert.ok(passed(results, id), id)
+  for (const id of ['tapi26.relay.index.increasing', 'tapi26.relay.recv.order', 'tapi26.relay.epoch.mismatch-resets', 'tapi26.relay.longpoll.wakes', 'tapi26.relay.longpoll.full-length']) assert.ok(passed(results, id), id)
 })
 
 test('reference relay behind a rate limit: the suite waits out each 429, checks it, and still passes', async () => {
@@ -135,68 +135,68 @@ test('reference relay behind a rate limit: the suite waits out each 429, checks 
   // 用并发突发（checkRateLimit）确保出现 429。窗口用 4 秒而非 1 秒：CI 机器较慢时，155 次突发会跨过 1 秒窗口边界，从而看不到 429。
   const { results } = await runRelaySuite({ slackMs: SLACK, url: await serveNative(mkRelay({ provider: { rateLimit: { free: 150, windowMs: 4000 } } })), checkRateLimit: 150 })
   assert.deepEqual(mustFails(results), [], show(results))
-  for (const id of ['tap21.ratelimit.unsigned', 'tap21.ratelimit.retry-after', 'tap21.ratelimit.code', 'tap21.ratelimit.retryAfterS']) assert.ok(passed(results, id), `${id}:\n${show(results)}`)
-  assert.ok(passed(results, 'tap26.relay.kept.survives-flood'))
+  for (const id of ['tapi21.ratelimit.unsigned', 'tapi21.ratelimit.retry-after', 'tapi21.ratelimit.code', 'tapi21.ratelimit.retryAfterS']) assert.ok(passed(results, id), `${id}:\n${show(results)}`)
+  assert.ok(passed(results, 'tapi26.relay.kept.survives-flood'))
 })
 
 // ---- deliberately broken relays / 故意做坏的中继 ----
 
-test('BROKEN: returns frames newest-first (validly signed) -> tap26.relay.recv.order fails', async () => {
+test('BROKEN: returns frames newest-first (validly signed) -> tapi26.relay.recv.order fails', async () => {
   const url = await serveWrapped(mkRelay(), onResult('relayRecv', (x) => ({ ...x, frames: [...x.frames].reverse() })))
   const { results, summary } = await runRelaySuite({ slackMs: SLACK, url })
   assert.equal(summary.conformant, false)
-  assert.ok(failIds(results).includes('tap26.relay.recv.order'), show(results))
-  assert.equal(results.filter((r) => r.id === 'tap21.envelope.sig-recovers' && r.status === 'fail').length, 0, 'every envelope is validly signed')
+  assert.ok(failIds(results).includes('tapi26.relay.recv.order'), show(results))
+  assert.equal(results.filter((r) => r.id === 'tapi21.envelope.sig-recovers' && r.status === 'fail').length, 0, 'every envelope is validly signed')
 })
 
-test('BROKEN: drops the epoch from post answers -> tap26.relay.post.result-shape fails', async () => {
+test('BROKEN: drops the epoch from post answers -> tapi26.relay.post.result-shape fails', async () => {
   const drop = ({ epoch, ...rest }) => rest
   const url = await serveWrapped(mkRelay(), (a) => onResult('relaySend', drop)(a) || onResult('relayHandshake', drop)(a))
   const { results } = await runRelaySuite({ slackMs: SLACK, url })
-  assert.ok(failIds(results).includes('tap26.relay.post.result-shape'), show(results))
+  assert.ok(failIds(results).includes('tapi26.relay.post.result-shape'), show(results))
 })
 
-test('BROKEN: ignores the client\'s epoch (answers a stale cursor as if it were current) -> only tap26.relay.epoch.mismatch-resets fails', async () => {
+test('BROKEN: ignores the client\'s epoch (answers a stale cursor as if it were current) -> only tapi26.relay.epoch.mismatch-resets fails', async () => {
   const url = await serveNative(mkRelay({ methods: (c) => ({ relayRecv: async ({ room, after = -1, waitMs = 0, epoch }) => c.recv(room, after, waitMs, EPOCH_RE.test(epoch ?? '0') ? undefined : epoch) }) }))
   const { results } = await runRelaySuite({ slackMs: SLACK, url })
-  assert.deepEqual(failIds(results), ['tap26.relay.epoch.mismatch-resets'], show(results))
+  assert.deepEqual(failIds(results), ['tapi26.relay.epoch.mismatch-resets'], show(results))
   assert.deepEqual(shouldFails(results), [], show(results))
 })
 
-test('BROKEN: relayHandshake is a free relaySend (carries anything) -> tap26.relay.handshake.refuse-other fails', async () => {
+test('BROKEN: relayHandshake is a free relaySend (carries anything) -> tapi26.relay.handshake.refuse-other fails', async () => {
   const url = await serveNative(mkRelay({ methods: (c) => ({ relayHandshake: async ({ room, frame }, ctx) => c.send(room, frame, { source: sourceOf(ctx) }) }) }))
   const { results } = await runRelaySuite({ slackMs: SLACK, url })
-  assert.deepEqual(failIds(results), ['tap26.relay.handshake.refuse-other'], show(results))
+  assert.deepEqual(failIds(results), ['tapi26.relay.handshake.refuse-other'], show(results))
 })
 
-test('BROKEN: returns the whole backlog (no byte budget) -> tap26.relay.recv.fits-cap fails (the answer exceeds 1 MiB and becomes INTERNAL)', async () => {
+test('BROKEN: returns the whole backlog (no byte budget) -> tapi26.relay.recv.fits-cap fails (the answer exceeds 1 MiB and becomes INTERNAL)', async () => {
   const url = await serveNative(mkRelay({ core: { maxRecvBytes: 64 * 1024 * 1024 } }))
   const { results } = await runRelaySuite({ slackMs: SLACK, url })
-  assert.ok(failIds(results).includes('tap26.relay.recv.fits-cap'), show(results))
-  assert.ok(failIds(results).includes('tap26.relay.recv.progress'), 'the cursor never advances')
+  assert.ok(failIds(results).includes('tapi26.relay.recv.fits-cap'), show(results))
+  assert.ok(failIds(results).includes('tapi26.relay.recv.progress'), 'the cursor never advances')
 })
 
-test('BROKEN: waitMs cap above the handler deadline -> tap26.relay.longpoll.full-length fails (INTERNAL instead of an empty answer)', async () => {
+test('BROKEN: waitMs cap above the handler deadline -> tapi26.relay.longpoll.full-length fails (INTERNAL instead of an empty answer)', async () => {
   const url = await serveNative(mkRelay({ core: { maxWaitMs: 3000 }, provider: { handlerTimeoutMs: 1500 } }))
   const { results } = await runRelaySuite({ slackMs: SLACK, url })
-  assert.deepEqual(failIds(results), ['tap26.relay.longpoll.full-length'], show(results))
-  assert.match(results.find((r) => r.id === 'tap26.relay.longpoll.full-length' && r.status === 'fail').message, /INTERNAL/)
+  assert.deepEqual(failIds(results), ['tapi26.relay.longpoll.full-length'], show(results))
+  assert.match(results.find((r) => r.id === 'tapi26.relay.longpoll.full-length' && r.status === 'fail').message, /INTERNAL/)
 })
 
-test('BROKEN: a flood evicts sealed invites and epoch messages (no protected ring) -> tap26.relay.kept.survives-flood fails', async () => {
+test('BROKEN: a flood evicts sealed invites and epoch messages (no protected ring) -> tapi26.relay.kept.survives-flood fails', async () => {
   // Simulated by hiding every 0x03 / 0x04 frame whose index is older than the newest 256. / 以隐藏最新 256 条之前的 0x03 / 0x04 模拟。
   const url = await serveWrapped(mkRelay(), onResult('relayRecv', (x) => {
     const kept = (f) => [3, 4].includes(Buffer.from(f.frame, 'base64')[0])
     return { ...x, frames: x.frames.filter((f) => !(kept(f) && x.frames.length > 256)) }
   }))
   const { results } = await runRelaySuite({ slackMs: SLACK, url })
-  assert.deepEqual(failIds(results), ['tap26.relay.kept.survives-flood'], show(results))
+  assert.deepEqual(failIds(results), ['tapi26.relay.kept.survives-flood'], show(results))
 })
 
-test('BROKEN: relayRecv on an unknown room invents an epoch -> tap26.relay.recv.unknown-room fails', async () => {
+test('BROKEN: relayRecv on an unknown room invents an epoch -> tapi26.relay.recv.unknown-room fails', async () => {
   const url = await serveWrapped(mkRelay(), onResult('relayRecv', (x) => (x.epoch === null ? { ...x, epoch: 'deadbeef' } : x)))
   const { results } = await runRelaySuite({ slackMs: SLACK, url })
-  assert.ok(failIds(results).includes('tap26.relay.recv.unknown-room'), show(results))
+  assert.ok(failIds(results).includes('tapi26.relay.recv.unknown-room'), show(results))
 })
 
 test('CLI: exit 0 + JUnit for the reference relay, exit 1 for a broken one', async () => {
@@ -214,7 +214,7 @@ test('CLI: exit 0 + JUnit for the reference relay, exit 1 for a broken one', asy
   assert.match(readFileSync(join(dir, 'good.xml'), 'utf8'), /<testsuites name="tapeapi-relay-conformance" tests="\d+" failures="0">/)
   assert.equal(JSON.parse(readFileSync(join(dir, 'good.xml.json'), 'utf8')).summary.conformant, true)
   const b = await run(bad, join(dir, 'bad.xml'))
-  assert.equal(b.code, 1, b.out); assert.match(b.out, /FAIL  MUST   tap26\.relay\.epoch\.mismatch-resets/)
+  assert.equal(b.code, 1, b.out); assert.match(b.out, /FAIL  MUST   tapi26\.relay\.epoch\.mismatch-resets/)
   assert.match(readFileSync(join(dir, 'bad.xml'), 'utf8'), /<failure type="MUST"/)
   assert.equal(spawnSync(process.execPath, [RELAY]).status, 2) // no --url: usage error / 缺 --url：用法错误
 })

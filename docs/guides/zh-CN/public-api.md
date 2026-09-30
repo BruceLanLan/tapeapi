@@ -17,7 +17,7 @@ TapeAPI 在 `https://api.tapeapi.fun` 运行一个免费的公共服务：对 BN
 
 - **免费，无需密钥。** 每个方法都是 0 BEM，直接调用即可。
 - **有签名。** 每个回答（包括错误）都是一个信封，由 `11.1013.tape` 的持有者在链上授权的密钥签名
-  （[TAP-21](../../../spec/TAP-21.md)）。SDK 核对签名、委托和持有者之后才返回结果。
+  （[TAPI-21](../../../spec/TAPI-21.md)）。SDK 核对签名、委托和持有者之后才返回结果。
 - **锚定区块。** 除 `blockNumber` 外，每个方法都在同一个区块上读取链（默认是最新的 `finalized` 区块），并在
   `blockPinned { blockNumber, blockHash, blockRef }` 中说明是哪个区块。服务通过三家 BNB Chain 节点运营方读取，至少两家
   一致才算数。
@@ -78,7 +78,7 @@ curl -s -X POST https://api.tapeapi.fun/tapeapi/v1/bnbUsd \
 
 这里出现两个区块号。`result.blockPinned.blockNumber` 是读取所在的区块（默认是最终确定的区块）；信封的 `block` 是服务
 签名时看到的链头。`blockRef: "hash"` 表示节点正是在那个 `blockHash` 上求值；若为 `"number"`，则表示有节点拒绝了按哈希
-求值，读取只按区块号进行，[TAP-23](../../../spec/TAP-23.md) 把它视为更弱的证据。
+求值，读取只按区块号进行，[TAPI-23](../../../spec/TAPI-23.md) 把它视为更弱的证据。
 
 失败的调用同样有签名：
 
@@ -138,7 +138,7 @@ console.log(q.result.bnbUsd, 'agreed by', q.agreed)   // 否则抛出 TapeAPIErr
 
 ## 公共中继
 
-中继承载 [TAP-26](../../../spec/TAP-26.md) 私密通道：两个容器通过中继上的房间交换端到端加密的帧，中继只存储密文，
+中继承载 [TAPI-26](../../../spec/TAPI-26.md) 私密通道：两个容器通过中继上的房间交换端到端加密的帧，中继只存储密文，
 永远看不到内容或身份（它能看到房间名、大小和时间）。公共中继位于 `https://relay.tapeapi.fun`，身份 `12.1013.tape`，
 容器 `0x9cD838625251576c199B2DeF7A17e50266843185`，提供 `relaySend`、`relayHandshake` 和 `relayRecv`，每条消息零费用。
 
@@ -178,5 +178,5 @@ await link.send(channel.encodeWire(session.seal('hello')))
 
 - 两个服务都免费，尽力而为地运行，没有 SLA，也不保证可用性。方法可能增加；方法列表的变化会作为新的清单
   发布到链上。
-- 中继可能丢帧或下线；TAP-26 能发现空缺，但无法补回。如果通道很重要，在邀请中列出不止一种传输。
+- 中继可能丢帧或下线；TAPI-26 能发现空缺，但无法补回。如果通道很重要，在邀请中列出不止一种传输。
 - 对你所依赖的东西，也运行你自己的提供者或中继，并做交叉核对。

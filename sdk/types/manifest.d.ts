@@ -1,4 +1,4 @@
-/** A TAP-20 manifest method descriptor. Loose on purpose: see spec/TAP-20. */
+/** A TAPI-20 manifest method descriptor. Loose on purpose: see spec/TAPI-20. */
 export interface ManifestMethod {
   name: string
   priceBEM?: string
@@ -9,7 +9,7 @@ export interface ManifestMethod {
   [key: string]: unknown
 }
 
-/** A TAP-20 service manifest (`/.well-known/tapeapi.json`). Loose on purpose: see spec/TAP-20. */
+/** A TAPI-20 service manifest (`/.well-known/tapeapi.json`). Loose on purpose: see spec/TAPI-20. */
 export interface Manifest {
   container: string
   circuits: string

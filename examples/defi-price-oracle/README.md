@@ -11,7 +11,7 @@
 每次读取都通过 SDK 的 `createRpc({ quorum: 2 })` 向多个公共 BSC 节点发 `eth_call`，**至少两个节点结果一致**才返回；
 并**锚定到一个区块**：省略 `block` 时钉 **`finalized`**（各节点该标签高度的最小值；节点不支持该标签时退到 head − `BLOCK_LAG`，默认 15），
 要求 quorum 个节点对该块 hash 一致，再**按该 blockHash**（EIP-1898 `{ blockHash, requireCanonical: true }`）读储备——节点拒绝时才退回块号并在结果里标 `blockRef: "number"`。
-调用方也可传 `block`（区块号 / `'latest'`）指定锚点。结果里**总是**带 `blockPinned: { blockNumber, blockHash, blockRef }`，整个响应由 provider 签名（TAP-21 v2）。
+调用方也可传 `block`（区块号 / `'latest'`）指定锚点。结果里**总是**带 `blockPinned: { blockNumber, blockHash, blockRef }`，整个响应由 provider 签名（TAPI-21 v2）。
 
 ## 三步运行
 
@@ -35,7 +35,7 @@ curl -s -X POST http://127.0.0.1:8789/tapeapi/v1/bnbUsd -H 'content-type: applic
 单个服务只是一个签名者。DeFi 前端应当解析**两个互不相关的**价格服务（不同 holder、不同 RPC 节点），
 用 SDK 的 `callQuorum` 要求两者结果一致。`callQuorum` 的规则是 **canonicalJSON 逐字节相同**，所以要让两个提供者读**同一个块**：
 先向任一家免费调一次 `bnbUsd`（它会钉 `finalized` 并把块写进 `blockPinned`），再把这个 `blockNumber` 作为 `block` 显式传给两家
-（TAP-23 §3.4：法定人数轮 MUST 用显式区块号；否则各自锚定的 `blockPinned` 不同，永远不会一致）。第一家无法左右结果：第二家会独立核对该块的 hash 并在该 hash 上读。
+（TAPI-23 §3.4：法定人数轮 MUST 用显式区块号；否则各自锚定的 `blockPinned` 不同，永远不会一致）。第一家无法左右结果：第二家会独立核对该块的 hash 并在该 hash 上读。
 
 ```js
 import { createTapeAPI } from '@tapeapi/sdk'
@@ -80,7 +80,7 @@ Every read goes through the SDK's `createRpc({ quorum: 2 })` against several pub
 and is **pinned to one block**: `finalized` when `block` is omitted (min across nodes; falls back to head − `BLOCK_LAG`, default 15, if a node lacks the tag),
 with `quorum` nodes agreeing on that block's hash, then reserves are read **at that blockHash** (EIP-1898 `{ blockHash, requireCanonical: true }`; only if a node
 rejects that does it fall back to the number, reported as `blockRef: "number"`). Callers may pass `block` (number / `'latest'`) to choose the anchor.
-Results **always** carry `blockPinned: { blockNumber, blockHash, blockRef }` and the whole envelope is signed (TAP-21 v2).
+Results **always** carry `blockPinned: { blockNumber, blockHash, blockRef }` and the whole envelope is signed (TAPI-21 v2).
 
 ## Run in three steps
 
@@ -97,7 +97,7 @@ curl -s -X POST http://127.0.0.1:8789/tapeapi/v1/bnbUsd -H 'content-type: applic
 One service is one signer. A DeFi front-end should resolve **two unrelated** price services (different holders, different RPC nodes)
 and require agreement with the SDK's `callQuorum` (JS above). `callQuorum` accepts only **byte-identical canonicalJSON** results, so pass the same `block`
 to both providers: probe one of them (free `bnbUsd`, which pins `finalized` and returns `blockPinned`) and re-send its `blockNumber` explicitly
-(TAP-23 §3.4: the quorum round MUST use an explicit block); otherwise their `blockPinned` differ and they can never agree. The probed provider cannot bias
+(TAPI-23 §3.4: the quorum round MUST use an explicit block); otherwise their `blockPinned` differ and they can never agree. The probed provider cannot bias
 the result: the other one independently checks that block's hash and reads at that hash.
 On disagreement it throws `TapeAPIError('QUORUM_FAILED')` with `agreed`/`disagreed`/`failed`. If `api.callQuorum` is missing (SDK < 0.2) call both and compare yourself. No majority vote, no committee: two independent signed
 results that agree are accepted, anything else is rejected — the same rule the TapeKit kernel uses.

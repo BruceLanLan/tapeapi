@@ -1,6 +1,6 @@
 {
   "tapeapi": "0.1",
-  "name": "DeFi Portfolio Read (TAP-23 multi-chain)",
+  "name": "DeFi Portfolio Read (TAPI-23 multi-chain)",
   "circuits": "0x0000000000000000000000000000000000000000",
   "tokenId": "0",
   "container": "0x0000000000000000000000000000000000000000",

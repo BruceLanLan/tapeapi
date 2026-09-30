@@ -1,7 +1,7 @@
 // The holder console's logic, with no dependency: chain reads through any eth_call function, the delegation the holder
-// signs (EIP-712, TAP-20), the manifest check and the SiteRegistry.putFile call that publishes it. sdk/test/console.test.mjs
+// signs (EIP-712, TAPI-20), the manifest check and the SiteRegistry.putFile call that publishes it. sdk/test/console.test.mjs
 // checks every byte of it against the SDK, so the page cannot build something the SDK would not.
-// 持有人操作台的逻辑，不依赖任何库：经任意 eth_call 函数读链、持有人签的委托（EIP-712，TAP-20）、清单核对，以及发布清单的
+// 持有人操作台的逻辑，不依赖任何库：经任意 eth_call 函数读链、持有人签的委托（EIP-712，TAPI-20）、清单核对，以及发布清单的
 // SiteRegistry.putFile 调用。sdk/test/console.test.mjs 逐字节对照 SDK 检查，页面构造不出 SDK 不会构造的东西。
 
 export const CHAIN_ID = 56
@@ -33,7 +33,7 @@ let pageChain = CHAIN_ID
 export function useChain(chainId) { pageChain = chainOf(chainId).chainId; return chainOf(pageChain) }
 export const MANIFEST_KEY = '.well-known/tapeapi.json'                       // no leading slash (TapeKit SPEC §6) / 不带前导斜杠
 export const MANIFEST_LIMIT = 24_000                                         // one putFile / 一笔 putFile
-export const READ_LIMIT = 64 * 1024                                         // TAP-20: a manifest read is at most 64 KiB / 读取上限
+export const READ_LIMIT = 64 * 1024                                         // TAPI-20: a manifest read is at most 64 KiB / 读取上限
 export const SEL = { cpuAt: '0x4bc7cbbd', isCPU: '0x5f5a364f', accountOf: '0x0c1905e5', ownerOf: '0x6352211e', putFile: '0xfab2ed82', fileInfo: '0x6c609107', read: '0xccaa7afb' }
 const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n   // secp256k1 order / 阶
 
@@ -53,7 +53,7 @@ export async function readCircuit(call, { processor, tokenId, chainId = pageChai
   if (/^0x[0-9a-fA-F]{40}$/.test(processor)) throw new Error('这里填处理器编号（一个数字，例如 11.1013.tape 里的 1013），不是合约地址 / enter the processor number, not a contract address')
   if (!/^\d{1,15}$/.test(processor)) throw new Error('处理器编号必须是整数 / processor number must be a whole number')
   if (!/^\d{1,15}$/.test(tokenId) || BigInt(tokenId) < 1n) throw new Error('circuit number (#ID) must be 1 or more')
-  tokenId = String(BigInt(tokenId))   // "01" -> "1": the manifest's tokenId has no leading zeros (TAP-20) / 去掉前导零
+  tokenId = String(BigInt(tokenId))   // "01" -> "1": the manifest's tokenId has no leading zeros (TAPI-20) / 去掉前导零
   const circuits = addrOf(await call(factory, SEL.cpuAt + word(processor)))
   if (BigInt(await call(factory, SEL.isCPU + addrWord(circuits))) !== 1n) throw new Error(`${circuits} is not a TapeOut processor`)
   const container = addrOf(await call(hub, SEL.accountOf + addrWord(circuits) + word(tokenId)))
@@ -220,11 +220,11 @@ export function prefillFromQuery(search) {
 const METHODS = [{ name: 'blockNumber', priceBEM: '0', params: {}, returns: { blockNumber: 'number' } }]
 const NAME_OK = (n) => typeof n === 'string' && n.length >= 1 && n.length <= 64 && !/[\u0000-\u001f\u007f]/.test(n)
 
-// The method list is the one part a service may choose (examples/public-api has many), under rules stricter than TAP-20:
-// every method free (this page never writes a payment section, so a price could never be settled), only the TAP-20
+// The method list is the one part a service may choose (examples/public-api has many), under rules stricter than TAPI-20:
+// every method free (this page never writes a payment section, so a price could never be settled), only the TAPI-20
 // method fields, plain-string notations, bounded sizes. The holder sees every method name before signing.
-// 方法列表是服务唯一可以自选的部分（如 examples/public-api），规则比 TAP-20 更严：每个方法都免费（本页从不写 payment，
-// 价格根本无法结算）、只有 TAP-20 的方法字段、记法是普通字符串、大小有界。持有人签名前能看到每个方法名。
+// 方法列表是服务唯一可以自选的部分（如 examples/public-api），规则比 TAPI-20 更严：每个方法都免费（本页从不写 payment，
+// 价格根本无法结算）、只有 TAPI-20 的方法字段、记法是普通字符串、大小有界。持有人签名前能看到每个方法名。
 const METHOD_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
 const METHOD_KEYS = new Set(['name', 'priceBEM', 'params', 'returns', 'description'])
 const FORBIDDEN = new Set(['__proto__', 'constructor', 'prototype'])
@@ -260,7 +260,7 @@ export function methodsProblems(methods) {
  *  页面发布的清单：由持有人读到和签过的内容构造，不取自服务；字段和顺序与 worker.js build() 相同（有测试保证一致）。
  *  只有显示名称和免费方法列表（methodsProblems）可以来自服务，持有人签名前能看到两者；形状完全符合的 `mcp` 字段也可以
  *  （mcpProblems），它的工具由页面自己读取并计算摘要（第 5 步）。
- *  An AI service's `ai` field (TAP-20 §3.9) may come too, when sdk ai.validateAIField accepts it (aiProblems); the page
+ *  An AI service's `ai` field (TAPI-20 §3.9) may come too, when sdk ai.validateAIField accepts it (aiProblems); the page
  *  publishes its normalised copy, which is what the sidecar serves, and shows the price table before the wallet asks.
  *  AI 服务的 ai 字段也可以来自服务，前提是 SDK 的 validateAIField 接受它（aiProblems）；页面发布它的规范化副本（即旁路提供的
  *  内容），并在钱包请求之前展示价目表。 */
@@ -312,11 +312,11 @@ export function mcpProblems(mcp, { local = false } = {}) {
 }
 
 // ---------------------------------------------------------------- an AI service: endpoints and price table ----
-// An AI service (the signing sidecar in front of an AI API) publishes `ai: { endpoints, models }` (TAP-20 §3.9, frozen).
+// An AI service (the signing sidecar in front of an AI API) publishes `ai: { endpoints, models }` (TAPI-20 §3.9, frozen).
 // The page loads no library, so the SDK's ai.validateAIField is ported here line for line: the same checks in the same
 // order, the same first message, the same normalised copy (known keys only, fixed key order, baseUrl without trailing
 // slashes). sdk/test/console-ai.test.mjs runs every valid and invalid sample through both and requires identical answers.
-// AI 服务（AI 接口前的签名旁路）发布 `ai: { endpoints, models }`（TAP-20 §3.9，已冻结）。页面不加载库，所以把 SDK 的
+// AI 服务（AI 接口前的签名旁路）发布 `ai: { endpoints, models }`（TAPI-20 §3.9，已冻结）。页面不加载库，所以把 SDK 的
 // ai.validateAIField 逐行移植到这里：同样的检查、同样的顺序、同样的第一条消息、同样的规范化副本。console-ai.test.mjs
 // 把每个合法与非法样例同时交给两边，要求结果逐条相同。
 /** The built-in formats and the suffix a client's base URL adds to the service root (sdk ai.FORMATS). / 内置格式及其后缀。 */

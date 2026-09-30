@@ -1,7 +1,7 @@
 // resolve() round trips (rc review O-1 / P2-1): how many HTTP requests and serial rounds a resolve costs, the JSON-RPC
-// batch and its fallback, and the cache of immutable facts -- with every check of TAP-20 §3.6 still made on every resolve.
+// batch and its fallback, and the cache of immutable facts -- with every check of TAPI-20 §3.6 still made on every resolve.
 // resolve() 的往返次数（RC 审查 O-1 / P2-1）：一次解析的 HTTP 请求数与串行轮数、JSON-RPC 批量及其退回、不可变事实的缓存——
-// 每次解析仍做 TAP-20 §3.6 的每一项检查。
+// 每次解析仍做 TAPI-20 §3.6 的每一项检查。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createTapeAPI, MANIFEST_KEY, MAINNET, CHAINS, security } from '../src/index.js'
@@ -59,7 +59,7 @@ test('resolve(name): 4 rounds and 12 HTTP requests cold (was 7 and 21), 2 rounds
   assert.equal(m.rounds, 4)
   assert.equal(m.http.length, 12)
   assert.equal(m.calls(), 18, 'six reads per node: accountOf is read once, not twice')
-  // Per node: cpuAt; then accountOf with steps 3 and 4 read ahead; fileInfo; read (still after fileInfo, TAP-20 §3.6 step 2)
+  // Per node: cpuAt; then accountOf with steps 3 and 4 read ahead; fileInfo; read (still after fileInfo, TAPI-20 §3.6 step 2)
   // 每个节点：cpuAt；accountOf 与提前读的第 3、4 步；fileInfo；read（仍在 fileInfo 之后）
   for (const u of RPC) assert.deepEqual(m.of(u), [['cpuAt'], ['accountOf', 'isCPU', 'ownerOf'], ['fileInfo'], ['read']], u)
   m.reset()

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// relay.tape: the first TapeAPI service anyone needs. It forwards TAP-26 ciphertext between two peers who cannot
+// relay.tape: the first TapeAPI service anyone needs. It forwards TAPI-26 ciphertext between two peers who cannot
 // reach each other directly, and cannot read a byte of it. Anyone may run one.
-// relay.tape：人人都用得上的第一个 TapeAPI 服务。它在无法直连的两端之间转发 TAP-26 密文，自己一个字节也读不了。
+// relay.tape：人人都用得上的第一个 TapeAPI 服务。它在无法直连的两端之间转发 TAPI-26 密文，自己一个字节也读不了。
 // 任何人都可以架一个。
 import { readFile } from 'node:fs/promises'
 import { createProvider } from '@tapeapi/server'
@@ -14,7 +14,7 @@ const PORT = Number(process.env.PORT || 8788)
 const HOST = process.env.HOST || '127.0.0.1'
 const PRICE = process.env.RELAY_PRICE_BEM || '0'
 const PROD = !!(process.env.DELEGATION_SIG && process.env.DELEGATION_EXPIRES)
-if (PROD && !process.env.PUBLIC_URL) { console.error('[relay] going live needs PUBLIC_URL=https://... (TAP-20 requires an https endpoint)'); process.exit(1) }
+if (PROD && !process.env.PUBLIC_URL) { console.error('[relay] going live needs PUBLIC_URL=https://... (TAPI-20 requires an https endpoint)'); process.exit(1) }
 const SIGNER_KEY = process.env.SIGNER_KEY || sig.randomPrivateKey()
 
 const base = JSON.parse(await readFile(new URL('manifest.json', import.meta.url), 'utf8'))

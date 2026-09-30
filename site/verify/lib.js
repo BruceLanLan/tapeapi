@@ -7,19 +7,19 @@
 // 回执核验页的纯函数部分：从用户手里的任何形式（核验链接、它的片段、base64url、回执 JSON、整个 MCP 工具结果或 JSON-RPC 回应）
 // 取出回执，严格检查结构，再把页面收集到的事实（恢复出的签名者、链上解析出的服务）变成结论。不碰 DOM、网络与存储。
 // 回执是不可信输入：它对自己的任何说法都不采信。签名者从签名恢复，服务密钥从链上读取，两者一起才构成结论。
-// AI usage receipts (a TAP-21 envelope with its method and params; x-tapeapi-receipt header, `: tapeapi-receipt` SSE
+// AI usage receipts (a TAPI-21 envelope with its method and params; x-tapeapi-receipt header, `: tapeapi-receipt` SSE
 // comment, or the `receipt` method's answer) are read too. They carry no circuit and #ID, so the service is resolved from
 // the container; their hashes bind the exact request and response bytes, checked only when those are pasted as well.
-// 也读 AI 用量回执（带 method 与 params 的 TAP-21 信封；来自响应头、SSE 注释或 receipt 方法的回答）。它不带电路与 #ID，
+// 也读 AI 用量回执（带 method 与 params 的 TAPI-21 信封；来自响应头、SSE 注释或 receipt 方法的回答）。它不带电路与 #ID，
 // 所以按容器解析服务；它的两个哈希绑定确切的请求与回应字节，只有一并粘贴了这些字节才核对。
-// Two forms of MCP / TAP-21 receipt (sdk mcp.js): v 1 carries the params and the result in clear; v 2, what verify links
+// Two forms of MCP / TAPI-21 receipt (sdk mcp.js): v 1 carries the params and the result in clear; v 2, what verify links
 // carry by default, carries only the two hashes the signature is computed over (requestHash, bodyHash), and is checked
-// by rebuilding the digest from them. / MCP / TAP-21 回执有两种形态：v 1 带明文参数与结果；v 2（核验链接默认的形态）只带签名
+// by rebuilding the digest from them. / MCP / TAPI-21 回执有两种形态：v 1 带明文参数与结果；v 2（核验链接默认的形态）只带签名
 // 所依据的两个哈希，按它们重建摘要来核对。
-import { fromBase64Url, RECEIPT_META_KEY } from '../playground/vendor/50e6c9f635/tapeapi-sdk/mcp.js'
-import { findDuplicateKey, FORBIDDEN_KEYS } from '../playground/vendor/50e6c9f635/tapeapi-sdk/canon.js'
-import { envelopeProblems, priceProblems, formatOfMethod, validateAIField, MANIFEST_FIELD, sha256Hex, scanSse } from '../playground/vendor/50e6c9f635/tapeapi-sdk/ai.js'
-import { parseTapeName } from '../playground/vendor/50e6c9f635/tapeapi-sdk/chains.js'
+import { fromBase64Url, RECEIPT_META_KEY } from '../playground/vendor/e82062b118/tapeapi-sdk/mcp.js'
+import { findDuplicateKey, FORBIDDEN_KEYS } from '../playground/vendor/e82062b118/tapeapi-sdk/canon.js'
+import { envelopeProblems, priceProblems, formatOfMethod, validateAIField, MANIFEST_FIELD, sha256Hex, scanSse } from '../playground/vendor/e82062b118/tapeapi-sdk/ai.js'
+import { parseTapeName } from '../playground/vendor/e82062b118/tapeapi-sdk/chains.js'
 
 export { RECEIPT_META_KEY }
 export const MAX_INPUT = 64 * 1024   // bytes of pasted text or link / 粘贴文本或链接的字节上限
@@ -184,7 +184,7 @@ export function readAny(input) {
   return isUsageShape(raw) ? { kind: 'usage', raw, receipt: parseUsageReceipt(raw) } : { kind: 'receipt', raw, receipt: parseReceipt(raw) }
 }
 
-/** The TAP-21 fields an AI receipt's signature covers. / AI 回执签名覆盖的 TAP-21 字段。 */
+/** The TAPI-21 fields an AI receipt's signature covers. / AI 回执签名覆盖的 TAPI-21 字段。 */
 export const usageEnvelopeOf = (r) => ({ container: r.container, id: r.id, method: r.method, params: r.params, ok: true, body: r.result, ts: r.ts })
 
 /**
@@ -236,7 +236,7 @@ export async function verifyUsage(r, { recover, resolve, now, request, response 
   return { recovered, recoverError, svc, resolveError, ...usageVerdictOf({ receipt: r, recovered, recoverError, svc, resolveError, now, request, response }) }
 }
 
-/** The TAP-21 envelope fields the signature covers (sdk sig.responseDigest). block and service.name are NOT among them.
+/** The TAPI-21 envelope fields the signature covers (sdk sig.responseDigest). block and service.name are NOT among them.
  *  签名覆盖的信封字段；block 与 service.name 不在其中。 */
 export const envelopeOf = (r) => ({ container: r.service.container, id: r.id, method: r.method, params: r.params, ok: r.ok, body: r.ok ? r.result : r.error, ts: r.ts })
 /** The same for a hash-only (v 2) receipt, for sdk sig.recoverResponseSignerFromHashes: the two inner hashes of the

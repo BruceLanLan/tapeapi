@@ -6,7 +6,7 @@
 1. **链上身份**：一枚 TapeOut 电路的容器。谁在回答，查链就知道。
 2. **钉在链上的工具定义**：清单里的 `mcp.toolsSha256` 是全部工具定义（name、title、description、inputSchema、outputSchema、annotations）
    规范 JSON 的 sha256。工具被偷偷改掉（MCP 的 "rug pull"），客户端一比对就发现，代理自己也会拒绝服务。
-3. **每个结果都签名**：每次 tools/call 的结果都是 TAP-21 信封，由链上委托的密钥签名，附带任何人事后都能核验的回执。
+3. **每个结果都签名**：每次 tools/call 的结果都是 TAPI-21 信封，由链上委托的密钥签名，附带任何人事后都能核验的回执。
 
 代理由 `@tapeapi/server/mcp-proxy` 的 `createMcpProxy` 实现。每个上游工具变成一个免费的清单方法，方法的处理函数把 tools/call
 转发给上游，所以签名信封、限流、健康检查和 `/.well-known/tapeapi.json` 都来自 `createProvider`。对外有三条路由：
@@ -14,7 +14,7 @@
 | 路由 | 是什么 |
 |---|---|
 | `GET /.well-known/tapeapi.json` | 清单：身份字段 + 由工具生成的 `methods` + `mcp: { endpoint, toolsSha256 }` |
-| `POST /tapeapi/v1/<工具名>` | 签名调用：`{ id, params }` → TAP-21 信封，`result` 是上游的 CallToolResult 去掉 `_meta` |
+| `POST /tapeapi/v1/<工具名>` | 签名调用：`{ id, params }` → TAPI-21 信封，`result` 是上游的 CallToolResult 去掉 `_meta` |
 | `POST /mcp` | 远程 MCP（Streamable HTTP，无状态）：`tools/list` 原样返回上游工具；`tools/call` 返回上游内容，加一行来源说明，`_meta` 里放回执 |
 
 ## 本地运行
@@ -75,7 +75,7 @@ curl -s -X POST http://127.0.0.1:8796/mcp -H 'content-type: application/json' -H
   sampling、elicitation、进度通知都不转发；上游的 `instructions` 不转发（它不在摘要里，不能让它悄悄影响模型）。
 - 上游必须说 Streamable HTTP（或在 Node 里以进程内 `{ call }` 接入）；stdio 服务器需要先桥接成 HTTP。
 - 工具名必须符合 `[A-Za-z_][A-Za-z0-9_]{0,63}`。不符合的工具仍出现在 tools/list 里（摘要覆盖全部上游工具），但不能经代理调用，启动日志和 `stats().skipped` 会列出。
-- 清单里方法的 `description` 合成一行并截到 256 个码点（TAP-20 的上限），完整文本由 `toolsSha256` 钉住；`params` 只是说明，
+- 清单里方法的 `description` 合成一行并截到 256 个码点（TAPI-20 的上限），完整文本由 `toolsSha256` 钉住；`params` 只是说明，
   名字不是普通字段（`[A-Za-z_][A-Za-z0-9_]{0,63}`）的属性和第 32 个之后的属性不写进去（启动日志会列出），以 MCP 的 inputSchema 为准。
   整个清单不超过 64 KiB；持有人操作台一笔交易最多发布 24 000 字节、64 个方法，超出时启动日志会提醒。
 - 上游单次回答上限 1 MiB、20 秒；签名信封上限 1 MiB。限流按进程（Worker 按隔离实例）计。
@@ -92,7 +92,7 @@ curl -s -X POST http://127.0.0.1:8796/mcp -H 'content-type: application/json' -H
 2. **Tool definitions pinned on chain**: the manifest's `mcp.toolsSha256` is the sha256 of the canonical JSON of every
    tool definition (name, title, description, inputSchema, outputSchema, annotations). A tool changed behind the users'
    backs (an MCP "rug pull") shows up as a mismatch for every client, and the proxy itself stops serving.
-3. **Every result signed**: each tools/call result is a TAP-21 envelope signed by the on-chain delegated key, with a
+3. **Every result signed**: each tools/call result is a TAPI-21 envelope signed by the on-chain delegated key, with a
    receipt anyone can verify later.
 
 The proxy is `createMcpProxy` from `@tapeapi/server/mcp-proxy`. Each upstream tool becomes a free manifest method whose
@@ -102,7 +102,7 @@ handler forwards tools/call upstream, so signed envelopes, rate limits, health a
 | route | what it is |
 |---|---|
 | `GET /.well-known/tapeapi.json` | the manifest: identity fields + `methods` generated from the tools + `mcp: { endpoint, toolsSha256 }` |
-| `POST /tapeapi/v1/<tool>` | signed call: `{ id, params }` → TAP-21 envelope whose `result` is the upstream CallToolResult minus `_meta` |
+| `POST /tapeapi/v1/<tool>` | signed call: `{ id, params }` → TAPI-21 envelope whose `result` is the upstream CallToolResult minus `_meta` |
 | `POST /mcp` | remote MCP (Streamable HTTP, stateless): `tools/list` returns the upstream tools verbatim; `tools/call` returns the upstream content plus a provenance line, with the receipt in `_meta` |
 
 ## Run it locally
@@ -173,7 +173,7 @@ list, so the console cannot publish.
   bridge first.
 - Tool names must match `[A-Za-z_][A-Za-z0-9_]{0,63}`. Other tools still appear in tools/list (the digest covers every
   upstream tool) but cannot be called through the proxy; the start-up log and `stats().skipped` name them.
-- A method's `description` in the manifest is made one line and clipped to 256 code points (TAP-20's limit); the full
+- A method's `description` in the manifest is made one line and clipped to 256 code points (TAPI-20's limit); the full
   text is pinned by `toolsSha256`. `params` are informative: a property whose name is not a plain field
   (`[A-Za-z_][A-Za-z0-9_]{0,63}`), and any past the 32nd, is left out (the start-up log names them); the MCP inputSchema
   is authoritative. The whole manifest stays under 64 KiB; the holder console publishes at most 24 000 bytes and 64

@@ -8,7 +8,7 @@
 // A check that cannot run because an earlier one failed is `skip`, naming that one. / 因前项失败而无法运行的检查记为 skip。
 //
 // The receipt check sends each endpoint one request with a key that cannot be valid: the sidecar signs the refusal too
-// (TAP-21 §3.5), which proves the path at no cost (a gateway that accepts any key answers, at a few tokens; it warns).
+// (TAPI-21 §3.5), which proves the path at no cost (a gateway that accepts any key answers, at a few tokens; it warns).
 // The operator's own `key` goes only to the host being checked, over https, and shows as *** in the report.
 // 回执检查用无效密钥：旁路为拒绝同样签回执，不花钱即证明整条路径。运营者自己的 key 只发往被检查的主机、只走 https、报告里为 ***。
 
@@ -57,9 +57,9 @@ const TITLES = {
   circuit: T('Circuit exists (has a holder)', '电路存在（有持有人）'),
   container: T('Container is opened', '容器已开通'),
   'manifest-file': T('Manifest file on chain', '链上有清单文件'),
-  'manifest-format': T('Manifest format (TAP-20)', '清单格式合规（TAP-20）'),
+  'manifest-format': T('Manifest format (TAPI-20)', '清单格式合规（TAPI-20）'),
   delegation: T('Delegation valid', '委托有效'),
-  'ai-field': T('ai field (TAP-20 §3.9)', 'ai 字段（TAP-20 §3.9）'),
+  'ai-field': T('ai field (TAPI-20 §3.9)', 'ai 字段（TAPI-20 §3.9）'),
   prices: T('Price table', '价目表'),
   endpoints: T('AI endpoints', 'AI 端点'),
   reach: T('Endpoint reachable (TLS, sidecar ready)', '端点可访问（TLS、旁路就绪）'),
@@ -279,7 +279,7 @@ export async function diagnose(input, o = {}) {
     const until = new Date(Number(m.delegation.expires) * 1000).toISOString().slice(0, 10)
     const renew = T(`Renew: console step 4 "Renew" (same service key), set DELEGATION_EXPIRES and DELEGATION_SIG, restart the sidecar, publish again (step 5).`, '续期：操作台第 4 步“续期”（服务密钥不变），填入新的 DELEGATION_EXPIRES 与 DELEGATION_SIG，重启旁路，再发布一次（第 5 步）。')
     if (left <= 0) return { status: 'fail', detail: T(`expired on ${until}`, `已于 ${until} 过期`), fix: renew }
-    if (left > MAX_DELEGATION_S) return { status: 'fail', detail: T(`expires ${until}, more than 366 days ahead: clients refuse it (TAP-20 §3.4)`, `${until} 到期，超过 366 天：客户端会拒绝（TAP-20 §3.4）`), fix: T('Sign a delegation of at most 366 days (the console signs 90).', '签一份不超过 366 天的委托（操作台签 90 天）。') }
+    if (left > MAX_DELEGATION_S) return { status: 'fail', detail: T(`expires ${until}, more than 366 days ahead: clients refuse it (TAPI-20 §3.4)`, `${until} 到期，超过 366 天：客户端会拒绝（TAPI-20 §3.4）`), fix: T('Sign a delegation of at most 366 days (the console signs 90).', '签一份不超过 366 天的委托（操作台签 90 天）。') }
     if (days < RENEW_DAYS) return { status: 'warn', detail: T(`${days} day(s) left, until ${until}`, `还剩 ${days} 天，到 ${until}`), fix: renew, days }
     return { status: 'pass', detail: T(`${days} days left, until ${until}`, `还剩 ${days} 天，到 ${until}`), days }
   }

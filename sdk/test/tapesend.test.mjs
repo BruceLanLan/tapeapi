@@ -36,7 +36,7 @@ test('public payloads, rejected recipient keys and message ids match the referen
   for (const m of V.messageIds) assert.equal(tapesend.messageId(m), m.id)
 })
 
-test('a TAP-26 invite rides a sealed TapeSend message; a TapeSend client sees an unsupported kind, B opens it', () => {
+test('a TAPI-26 invite rides a sealed TapeSend message; a TapeSend client sees an unsupported kind, B opens it', () => {
   const ka = channel.generateKeyPair(), kb = channel.generateKeyPair()
   const A = { container: '0x86DDaEF00401E3F10418398D67D7189fc458eA95', chainId: 56 }
   const B = { container: '0x19366c3c69ffeb3b286d9fa6cc5e616375baafd3', chainId: 56 }

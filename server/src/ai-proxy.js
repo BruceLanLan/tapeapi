@@ -1,7 +1,7 @@
 // A signing sidecar in front of an AI API (the 2026 Q4 plan, A3). The provider keeps its upstream, its keys and its
 // billing; the sidecar passes /v1/* through byte for byte and signs every answer a format adapter recognises (sdk
 // ai.FORMATS: OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, OpenAI Embeddings) as an AI usage receipt
-// (A2): a TAP-21 envelope by the service's delegated key over { path, requestSha256 } and { model, usage,
+// (A2): a TAPI-21 envelope by the service's delegated key over { path, requestSha256 } and { model, usage,
 // responseSha256, stream, complete, status, prices, modelMatchedBy?, unpriced?, usageInjected? } (sdk ai.js states the
 // rules). Whole answers carry it in `x-tapeapi-receipt`; in an event
 // stream the format's final event (`data: [DONE]`, `response.completed`, `message_stop`) is held back, the receipt is
@@ -11,7 +11,7 @@
 // chain (A1). Manifest, /.well-known, health and `receipt` are createProvider's. Nothing here knows a vendor's JSON:
 // adapters do (one small module per API format, in the SDK, where the verifiers use the same ones).
 // 放在 AI 接口前面的签名旁路。服务方保留自己的上游、密钥与计费；旁路把 /v1/* 原样透传，并把格式适配器认得的每个回答签成 AI
-// 用量回执（TAP-21 信封）。整体回答放在 x-tapeapi-receipt 响应头；事件流里先扣住格式的最终事件，签名，以一个 SSE 注释块发出
+// 用量回执（TAPI-21 信封）。整体回答放在 x-tapeapi-receipt 响应头；事件流里先扣住格式的最终事件，签名，以一个 SSE 注释块发出
 // 回执（客户端忽略注释），再放出最终事件；没有最终事件则把注释追加在末尾。所有回执另在内存保留一小时，由免费方法 receipt 提供。
 // 清单的 AI 字段把每种格式的端点与价目表钉在链上。本文件不认识任何厂商的 JSON：那是适配器的事。
 //
@@ -87,9 +87,9 @@ const enc = new TextEncoder()
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
 const byteLength = (s) => enc.encode(s).length
 
-// The one free method the sidecar adds: a receipt by response id (A2). Its manifest entry names `id` only, as TAP-21
+// The one free method the sidecar adds: a receipt by response id (A2). Its manifest entry names `id` only, as TAPI-21
 // §3.5 fixes it; the optional `requestSha256` (§3.5, MAY) is accepted on the wire. The description states the lifetime.
-// 旁路添加的唯一免费方法：按响应 id 取回执。清单条目只写 id（TAP-21 §3.5 规定如此）；可选的 requestSha256 在请求里接受。
+// 旁路添加的唯一免费方法：按响应 id 取回执。清单条目只写 id（TAPI-21 §3.5 规定如此）；可选的 requestSha256 在请求里接受。
 // 说明里写明保留时长。
 const RECEIPT_METHOD = Object.freeze({
   name: ai.RECEIPT_METHOD, priceBEM: '0', params: { id: 'string' },
@@ -142,7 +142,7 @@ function concat(parts) {
   for (const p of parts) { out.set(p, o); o += p.length }
   return out
 }
-const goodId = ai.isAnswerId   // TAP-21 §3.5: the answer's id when it is 1 to 128 characters in U+0021–U+007E / 回答自己的 id
+const goodId = ai.isAnswerId   // TAPI-21 §3.5: the answer's id when it is 1 to 128 characters in U+0021–U+007E / 回答自己的 id
 function newId() {
   const b = new Uint8Array(12); crypto.getRandomValues(b)
   return 'tapeapi-' + [...b].map((x) => x.toString(16).padStart(2, '0')).join('')
@@ -203,7 +203,7 @@ function validFormat(f) {
  * @param {Function} [o.log]
  * @param {object|false} [o.rateLimit]  passed to createProvider; its `ip` budget (default free + paid) also bounds /v1/* per IP
  * @param {number} [o.receiptTtlMs=3600000]  how long receipts stay retrievable; shorter narrows what a guessed id reaches
- *        (TAP-21 §3.5 recommends at least an hour) / 回执可取回的时长；越短，猜中的 id 能拿到的越少（规范建议至少一小时）
+ *        (TAPI-21 §3.5 recommends at least an hour) / 回执可取回的时长；越短，猜中的 id 能拿到的越少（规范建议至少一小时）
  * @param {number} [o.maxReceipts=50000]
  * @param {{ ip?: number, windowMs?: number }|false} [o.receiptRateLimit]  the `receipt` method's own budget per client IP
  *        (default 10 per 60 000 ms), answered with an unsigned 429 like every rate limit; false: off
@@ -213,7 +213,7 @@ function validFormat(f) {
  *        the upstream cannot tie a caller's requests into one session by them (it still sees the caller's key)
  *        / 是否把客户端的会话头转发给上游（默认转发）；false 则不转发，上游无法凭它们把同一调用方的请求串成一段会话（仍看得到密钥）
  * @param {boolean} [o.requireRequestHash=false]  answer a `receipt` lookup only when it names `requestSha256` too
- *        (TAP-21 §3.5 MAY): a stranger who guesses an id does not have the hash. For an upstream with guessable ids.
+ *        (TAPI-21 §3.5 MAY): a stranger who guesses an id does not have the hash. For an upstream with guessable ids.
  *        / 取回执时必须同时给出 requestSha256：猜中 id 的陌生人没有这个哈希。适用于 id 可猜的上游。
  * @param {string} [o.publicUrl]  the service root the endpoints are built on; default endpoints.live[0] without /tapeapi/v1
  * @param {boolean} [o.allowHttp]  http endpoints (local testing)
@@ -265,7 +265,7 @@ export function createAIProxy(opts = {}) {
   // An operator key sent on every request means the sidecar serves anyone who reaches it with that key: it does no
   // authentication of its own. Said out loud. / 运营者密钥随每个请求发送，意味着任何能访问旁路的人都在用这把密钥：旁路自己不做鉴权。
   for (const k of ['authorization', 'x-api-key']) if (operatorHeaders.has(k)) log(`upstream.headers sets ${k}: every caller's request goes upstream with the operator's key (callers' own ${k} is replaced) and this sidecar authenticates no one; put your own gateway in front, or let callers' keys through`)
-  if (receiptTtlMs < RECEIPT_TTL_MS) log(`receipts are kept for ${lifetime(receiptTtlMs)}, less than the hour TAP-21 §3.5 recommends: a client that looks one up later may find it gone (the copy delivered with each answer is unaffected)`)
+  if (receiptTtlMs < RECEIPT_TTL_MS) log(`receipts are kept for ${lifetime(receiptTtlMs)}, less than the hour TAPI-21 §3.5 recommends: a client that looks one up later may find it gone (the copy delivered with each answer is unaffected)`)
 
   // ---- the manifest: one endpoint per format on the service root / 清单：每种格式一个端点，建在服务根上 ----
   const { tapeapi = '0.1', ...base } = manifestBase
@@ -276,7 +276,7 @@ export function createAIProxy(opts = {}) {
   const rootPath = new URL(root).pathname.replace(/\/+$/, '')
   const manifest = { tapeapi, ...base, signer, methods: [{ ...RECEIPT_METHOD, params: { ...RECEIPT_METHOD.params }, returns: { ...RECEIPT_METHOD.returns }, description: receiptDescription(receiptTtlMs) }], [ai.MANIFEST_FIELD]: field }
   const size = byteLength(JSON.stringify(manifest))
-  if (size > MANIFEST_LIMIT) throw new TapeAPIError('MANIFEST_INVALID', `the manifest would be ${size} bytes, over TAP-20's ${MANIFEST_LIMIT}; shorten the price table`)
+  if (size > MANIFEST_LIMIT) throw new TapeAPIError('MANIFEST_INVALID', `the manifest would be ${size} bytes, over TAPI-20's ${MANIFEST_LIMIT}; shorten the price table`)
   if (size > CONSOLE_MANIFEST_LIMIT) log(`the manifest is ${size} bytes; the holder console publishes at most ${CONSOLE_MANIFEST_LIMIT} in one transaction`)
 
   const st = { requests: 0, receipts: 0, streams: 0, passThrough: 0, upstreamErrors: 0, upstreamFailures: 0, timeouts: 0, idleTimeouts: 0, tooLarge: 0, redirects: 0, rateLimited: 0, duplicateIds: 0, lookups: 0, misses: 0, usageInjected: 0, appended: 0, incomplete: 0, receiptRateLimited: 0, guessableIds: 0 }
@@ -299,7 +299,7 @@ export function createAIProxy(opts = {}) {
 
   // ---- the receipt store: insertion-ordered, bounded, each entry dated / 回执存储：按插入排序、有界、逐条带期限 ----
   // Keyed by (id, requestSha256): two answers that share an id (an upstream reusing ids, or ids drawn from a small set)
-  // keep a receipt each. An id-only lookup gets the later one (TAP-21 §3.5); one that also names requestSha256 gets the
+  // keep a receipt each. An id-only lookup gets the later one (TAPI-21 §3.5); one that also names requestSha256 gets the
   // receipt of that request. The same id for the same request bytes is a replay: the later receipt replaces the earlier.
   // 按 (id, requestSha256) 存：共用一个 id 的两个回答（上游重复使用 id，或 id 取自很小的集合）各留一份回执。只给 id 的取回得到
   // 后一个；同时给出 requestSha256 的得到那个请求的回执。同一 id、同样的请求字节是重放：后一份替换前一份。
@@ -345,7 +345,7 @@ export function createAIProxy(opts = {}) {
         st.lookups++
         const id = params?.id
         if (typeof id !== 'string' || !id || id.length > 256) throw new TapeAPIError('BAD_REQUEST', 'params.id must be the response id (the id of the answer, or of the receipt)')
-        // TAP-21 §3.5: the optional requestSha256 picks the receipt of that request among answers that share the id.
+        // TAPI-21 §3.5: the optional requestSha256 picks the receipt of that request among answers that share the id.
         // 可选的 requestSha256 在共用 id 的回答里挑出那个请求的回执。
         const hash = params?.requestSha256
         if (hash !== undefined && (typeof hash !== 'string' || !HEX64_RE.test(hash))) throw new TapeAPIError('BAD_REQUEST', 'params.requestSha256, when given, must be 64 lowercase hex digits: the SHA-256 of the request body you sent')
@@ -651,7 +651,7 @@ export function createAIProxy(opts = {}) {
 
   // The `receipt` method's own budget, checked before the provider reads the body, and refused like every rate limit:
   // an unsigned HTTP 429 with Retry-After and { ok: false, error: { code: RATE_LIMITED, data: { retryAfterS } } }
-  // (TAP-21 §3.4). / receipt 方法自己的预算，在提供者读正文之前检查；超出时与所有限流一样回未签名的 429。
+  // (TAPI-21 §3.4). / receipt 方法自己的预算，在提供者读正文之前检查；超出时与所有限流一样回未签名的 429。
   const RECEIPT_PATH = `/tapeapi/v1/${ai.RECEIPT_METHOD}`
   function receiptRefusal(request, pathname, path, clientIp) {
     if (!receiptRl || request.method !== 'POST') return null

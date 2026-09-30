@@ -1,6 +1,6 @@
 {
   "tapeapi": "0.1",
-  "name": "DeFi RFQ Solver (TAP-24 skeleton)",
+  "name": "DeFi RFQ Solver (TAPI-24 skeleton)",
   "circuits": "0x0000000000000000000000000000000000000000",
   "tokenId": "0",
   "container": "0x0000000000000000000000000000000000000000",

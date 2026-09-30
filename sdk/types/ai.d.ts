@@ -9,7 +9,7 @@ export declare const RECEIPT_METHOD: 'receipt'
 export declare const SIDECAR_ERROR_HEADER: 'x-tapeapi-sidecar-error'
 /** The header (value RECEIPT_INVALID) on the HTTP 502 a strict createVerifyingFetch answers in place of a whole answer whose receipt fails. */
 export declare const VERIFY_ERROR_HEADER: 'x-tapeapi-verify-error'
-/** An answer id a sidecar uses as the receipt id: 1 to 128 characters in U+0021–U+007E (TAP-21 §3.5). @internal */
+/** An answer id a sidecar uses as the receipt id: 1 to 128 characters in U+0021–U+007E (TAPI-21 §3.5). @internal */
 export declare function isAnswerId(v: unknown): v is string
 /** @internal Used by the reference sidecar or the website; not part of the API. */
 export declare const MODEL_ID_MAX: number
@@ -84,12 +84,12 @@ export interface TokenPrice { currency: Currency; unit: '1M tokens'; input: stri
  * one of `aliases` exactly; `formats` limits it to some endpoints; `prices` has one entry per currency (1 to 7).
  */
 export interface ModelPrice { id: string; aliases?: string[]; formats?: string[]; prices: TokenPrice[] }
-/** The manifest's AI field (TAP-20 extension). */
+/** The manifest's AI field (TAPI-20 extension). */
 export interface AIField { endpoints: Array<{ format: string; baseUrl: string }>; models: ModelPrice[] }
 /** One amount of a receipt: 8 decimals, rounded up. */
 export interface ReceiptPrice { currency: Currency; amount: string }
 
-/** An AI usage receipt: a TAP-21 envelope, with the method and params it is signed over. */
+/** An AI usage receipt: a TAPI-21 envelope, with the method and params it is signed over. */
 export interface UsageReceipt {
   id: string
   ok: true

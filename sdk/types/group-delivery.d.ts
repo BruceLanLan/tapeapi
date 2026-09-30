@@ -1,4 +1,4 @@
-// TAP-27 delivery in one call (sdk/src/group-delivery.js). A group uses TWO kinds of room: the group room
+// TAPI-27 delivery in one call (sdk/src/group-delivery.js). A group uses TWO kinds of room: the group room
 // (group.room) for epoch messages, and each member's inbox room (channel.inboxRoom(container, chainId)) for its
 // invite. deliverGroupUpdate posts both; checkGroupInvites reads the member's inbox. See docs/guides/groups.md.
 import type { Address, TxRequest } from './common.js'
@@ -14,13 +14,13 @@ export interface RelayCarrier {
   api: Pick<TapeAPI, 'call'> & Partial<Pick<TapeAPI, 'chain' | 'chainId'>>
   /** The resolved relay service. Renamed from `svc` in 1.0. */
   service: ResolvedService
-  /** @experimental For a priced relay: the payment channel relaySend is paid from (TAP-22). */
+  /** @experimental For a priced relay: the payment channel relaySend is paid from (TAPI-22). */
   payer?: Payer
 }
 /**
  * A ChannelBus to post to. The SDK holds no wallet: sendTx sends the transaction and returns its hash.
  * (`bus` elsewhere in the SDK: in busTransport / busReader / busPrivacyReader it is the ChannelBus contract ADDRESS; in
- * createInvite / createGroup and a channel record's `inbox.bus` it is the TAP-26 bus DESCRIPTOR. Here it is a carrier.)
+ * createInvite / createGroup and a channel record's `inbox.bus` it is the TAPI-26 bus DESCRIPTOR. Here it is a carrier.)
  */
 export interface BusCarrier {
   address: Address

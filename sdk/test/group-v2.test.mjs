@@ -1,7 +1,7 @@
-// TAP-27 §3.8 format 2 (Experimental): up to 128 members in one wire message, a binary roster, and lazy §3.3 step 6.
+// TAPI-27 §3.8 format 2 (Experimental): up to 128 members in one wire message, a binary roster, and lazy §3.3 step 6.
 // Every finding of the review of the large-group design is a test here: FIXED GRP-<n> (it now holds) or CONFIRMED GRP-<n>
 // (a property that was attacked and held).
-// TAP-27 §3.8 格式 2（实验性）：单条线路消息至多 128 人、二进制名单、惰性第 6 步。大群设计审查的每一项都写成测试。
+// TAPI-27 §3.8 格式 2（实验性）：单条线路消息至多 128 人、二进制名单、惰性第 6 步。大群设计审查的每一项都写成测试。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -90,7 +90,7 @@ function released(file = 'sdk/src/group.js', rev = '2b76f45') {
   try { src = execFileSync('git', ['show', `${rev}:${file}`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch { return null }
   src = src.replace(/from '\.\/([a-z-]+\.js)'/g, (_, f) => `from '${pathToFileURL(join(root, 'sdk/src', f)).href}'`)
     .replace(/from '(@noble\/[^']+)'/g, (_, f) => `from '${import.meta.resolve(f)}'`)
-  const dir = mkdtempSync(join(tmpdir(), 'tap27-1.1.0-'))
+  const dir = mkdtempSync(join(tmpdir(), 'tapi27-1.1.0-'))
   writeFileSync(join(dir, 'group.mjs'), src)
   return pathToFileURL(join(dir, 'group.mjs')).href
 }
@@ -139,7 +139,7 @@ test('FIXED GRP-7: one group, one format: a format-2 handle refuses format-1 fra
   // 同一 gid 的格式 1 群不存在，于是用本群 gid 伪造格式 1 帧
   const v1 = await G.createGroup({ self: ms[0], identity: ms[0].identity, members: ms.slice(1).map(entry), ...TRUST, random: ((gid) => { let first = true; return (n) => { if (first && n === 16) { first = false; return gid.slice() } return crypto.getRandomValues(new Uint8Array(n)) } })(unhex(owner.gid)) })
   assert.equal(v1.group.gid, owner.gid)
-  await assert.rejects(g.acceptEpoch(v1.epochWire, TRUST), (e) => isGroupErr(/format 1 \(TAP-27 v1\); this group is format 2/)(e) && e.data.format === 1)
+  await assert.rejects(g.acceptEpoch(v1.epochWire, TRUST), (e) => isGroupErr(/format 1 \(TAPI-27 v1\); this group is format 2/)(e) && e.data.format === 1)
   assert.throws(() => g.open(v1.group.seal('v1 words')), (e) => isGroupErr(/this group message is format 1/)(e) && e.data.format === 1)
   const odd = owner.seal('odd mark'); odd[20] = 0x01
   assert.throws(() => g.open(odd), isGroupErr(/unknown format/))
@@ -350,8 +350,8 @@ test('FIXED GRP-11: channelKeysVerifier checks a format-2 entry (no x25519) agai
   void owner
 })
 
-test('FIXED GRP-12: the SDK reproduces spec/vectors/tap-27-group-v2.json, and a member opens it with the fixed clock', async () => {
-  const v = JSON.parse(readFileSync(new URL('../../spec/vectors/tap-27-group-v2.json', import.meta.url), 'utf8'))
+test('FIXED GRP-12: the SDK reproduces spec/vectors/tapi-27-group-v2.json, and a member opens it with the fixed clock', async () => {
+  const v = JSON.parse(readFileSync(new URL('../../spec/vectors/tapi-27-group-v2.json', import.meta.url), 'utf8'))
   const ids = v.members.map((m) => ({ container: m.container, chainId: 56, identity: { x25519: { secretKey: unhex(m.x25519Secret), publicKey: unhex(m.x25519) }, ed25519: { secretKey: unhex(m.ed25519Secret), publicKey: unhex(m.ed25519) } } }))
   let prev = '00'.repeat(32)
   for (const ep of v.epochs) {
@@ -370,7 +370,7 @@ test('FIXED GRP-12: the SDK reproduces spec/vectors/tap-27-group-v2.json, and a 
   }
   v.senderKeys.forEach((k, i) => assert.equal(hex(G.senderKeyV2(unhex(v.epochs[1].K), unhex(v.gid), 1, i)), k))
   // the format-1 file is untouched by format 2: its epoch message still opens with format 1 / 格式 1 向量不受影响
-  const v1 = JSON.parse(readFileSync(new URL('../../spec/vectors/tap-27-group.json', import.meta.url), 'utf8'))
+  const v1 = JSON.parse(readFileSync(new URL('../../spec/vectors/tapi-27-group.json', import.meta.url), 'utf8'))
   assert.deepEqual([...unhex(v1.epochWire).subarray(17, 21)], [0, 0, 0, 0])
 })
 
@@ -412,7 +412,7 @@ test('FIXED GRP-14: deliverGroupUpdate and checkGroupInvites carry a format-2 gr
   assert.equal(g.epoch, 0)
 })
 
-test('FIXED GRP-15: format 1 stays the default: createGroup without `format` builds a TAP-27 v1 epoch message and invite, byte layout unchanged', async () => {
+test('FIXED GRP-15: format 1 stays the default: createGroup without `format` builds a TAPI-27 v1 epoch message and invite, byte layout unchanged', async () => {
   const ms = people(3, 0x8300)
   const { group, epochWire } = await G.createGroup({ self: ms[0], identity: ms[0].identity, members: ms.slice(1).map(entry), ...TRUST })
   assert.equal(group.format, 1)

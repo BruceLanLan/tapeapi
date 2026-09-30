@@ -1,5 +1,5 @@
-// Review of a5f5638 (parallel member checks, TAP-27 §3.8 format 2): every finding is a test here, FIXED GRPR-<n>.
-// a5f5638（并行成员核验、TAP-27 §3.8 格式 2）的审查：每一项都写成测试，FIXED GRPR-<n>。
+// Review of a5f5638 (parallel member checks, TAPI-27 §3.8 format 2): every finding is a test here, FIXED GRPR-<n>.
+// a5f5638（并行成员核验、TAPI-27 §3.8 格式 2）的审查：每一项都写成测试，FIXED GRPR-<n>。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { x25519, ed25519 } from '@noble/curves/ed25519'

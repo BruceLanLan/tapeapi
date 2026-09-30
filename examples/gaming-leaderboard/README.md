@@ -18,7 +18,7 @@
 现在存档存在 provider 这里。TapeOut 里每个电路 NFT 都有一个 ERC-6551 容器和一个 DeWEB 站点；
 下一步是让 `saveState` 把存档写到**玩家自己的容器**的站点路径（例如 `/.games/<gameId>/save.json`），provider 只做签名与索引：
 存档随玩家 NFT 转移，另一款游戏可以（经玩家授权）读取同一份存档，工作室关服也不会丢。排行榜同理可以按容器地址而不是钱包地址记账。
-回合结算规则未来可作为 TAP-25 电路校验方法上链重算，作弊可举证。
+回合结算规则未来可作为 TAPI-25 电路校验方法上链重算，作弊可举证。
 
 ## 三步运行
 
@@ -71,7 +71,7 @@ clients and provider; on the wallet side it is plain `personal_sign(hexDigest)`,
 Today the save lives with the provider. In TapeOut every circuit NFT has an ERC-6551 container with a DeWEB site; the next step is for `saveState`
 to write the save into the **player's own container** (e.g. `/.games/<gameId>/save.json`) with the provider only signing and indexing.
 The save then travels with the player's NFT, another game can read it (with the player's consent), and it survives the studio shutting down.
-Round settlement rules can later become TAP-25 circuit-verified methods, making cheating provable.
+Round settlement rules can later become TAPI-25 circuit-verified methods, making cheating provable.
 
 ## Run in three steps
 

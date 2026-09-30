@@ -9,9 +9,9 @@
 //     HOLDER_KEY=0x... node sign-delegation.mjs --container 0x.. --signer 0x.. --expires <unix> [--hub 0x..] [--chain-id 56]
 //
 // EIP-712 域锚定在 **DeWebHub**（verifyingContract = hub），不是 ServiceDirectory：委托只是"持有人授权了
-// 这个签名者"，在任何目录部署之前就成立（TAP-20 §3.4）。`--hub` 省略时用主网中枢。
+// 这个签名者"，在任何目录部署之前就成立（TAPI-20 §3.4）。`--hub` 省略时用主网中枢。
 // The EIP-712 domain is anchored on the **DeWebHub** (verifyingContract = hub), never on a ServiceDirectory:
-// a delegation is holder consent and holds before any directory exists (TAP-20 §3.4). `--hub` defaults to
+// a delegation is holder consent and holds before any directory exists (TAPI-20 §3.4). `--hub` defaults to
 // the mainnet hub.
 import { sig, abi, MAINNET } from '@tapeapi/sdk'
 

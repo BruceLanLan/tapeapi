@@ -3,7 +3,7 @@
 // The resolve-level tests replay a real resolution of 11.1013.tape on BNB Smart Chain with no network
 // (fixtures/mainnet-11-1013-proof.json, recorded read-only by scripts/record-mainnet-proof.mjs): the pinned block and its
 // stateRoot, every eth_call and eth_getStorageAt the resolution made, and the eth_getProof answers of the one default node
-// that serves proofs (Alchemy). spec/vectors/tap-20-proof.json carries the same proofs, and Ethereum trie-test cases, for
+// that serves proofs (Alchemy). spec/vectors/tapi-20-proof.json carries the same proofs, and Ethereum trie-test cases, for
 // the independent Python checker (spec/vectors/verify.py).
 // 安全加固 1.2 的默克尔证明模式：每项发现写成测试。解析级测试无网络地回放 11.1013.tape 在 BSC 上的一次真实解析（只读录制）：钉住的
 // 区块及其 stateRoot、解析所做的每个 eth_call 与 eth_getStorageAt，以及唯一提供证明的默认节点（Alchemy）的 eth_getProof 回答。
@@ -18,7 +18,7 @@ import { buildTrie, trieBytes, rlpEncode } from './helpers/trie.mjs'
 
 const { verifyAccountProof, verifyMptProof, rlpDecode, STORAGE, addressOfWord } = proof
 const fx = JSON.parse(readFileSync(new URL('./fixtures/mainnet-11-1013-proof.json', import.meta.url), 'utf8'))
-const vectors = JSON.parse(readFileSync(new URL('../../spec/vectors/tap-20-proof.json', import.meta.url), 'utf8'))
+const vectors = JSON.parse(readFileSync(new URL('../../spec/vectors/tapi-20-proof.json', import.meta.url), 'utf8'))
 const ET = JSON.parse(readFileSync(new URL('./fixtures/ethereum-trie-tests.json', import.meta.url), 'utf8'))
 const clone = (x) => JSON.parse(JSON.stringify(x))
 const code = (c) => (e) => e instanceof TapeAPIError && e.code === c
@@ -208,7 +208,7 @@ test('FIXED PROOF-6: the Ethereum trie tests: built roots equal ethereum/tests\'
   assert.ok(absent > 0)
 })
 
-test('FIXED PROOF-7: spec/vectors/tap-20-proof.json matches the SDK, and verify.py checks it independently (three-way agreement)', () => {
+test('FIXED PROOF-7: spec/vectors/tapi-20-proof.json matches the SDK, and verify.py checks it independently (three-way agreement)', () => {
   for (const c of vectors.trie) for (const p of c.proofs) {
     const got = verifyMptProof(c.root, p.path, p.proof, { secure: c.secure })
     assert.equal(got === null ? null : '0x' + Buffer.from(got).toString('hex'), p.value, `${c.file}/${c.name} ${p.key}`)

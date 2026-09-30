@@ -96,9 +96,9 @@ const liveEndpoint = (publicUrl, port) => (publicUrl || `http://127.0.0.1:${port
  *        onShutdown: 关闭前要等的事情（例如把盘上的存档写完）/ awaited before closing (e.g. flush a save file)
  */
 export async function startProvider(provider, { tag, PORT, HOST, env = process.env }, { lines = [], onShutdown } = {}) {
-  // TAP-22 §3.3.1: a paid provider must settle before a consumer's withdraw request becomes executable and
+  // TAPI-22 §3.3.1: a paid provider must settle before a consumer's withdraw request becomes executable and
   // before a voucher or its session key expires. Nothing else does this for it.
-  // TAP-22 §3.3.1：收费提供者必须在消费者的提现请求可执行之前、在凭证或会话密钥过期之前完成结算。没有别人代劳。
+  // TAPI-22 §3.3.1：收费提供者必须在消费者的提现请求可执行之前、在凭证或会话密钥过期之前完成结算。没有别人代劳。
   let settler = null
   const priced = (provider.manifest.methods || []).some((m) => (m.priceBEM ?? '0') !== '0')
   if (env.SETTLER_KEY) {

@@ -1,8 +1,8 @@
 // "Tape out your MCP server": a signing proxy in front of an existing MCP server. The author keeps their server and
 // their domain; the proxy gives it an on-chain identity (a TapeOut circuit's container), pins its tool definitions in
-// the manifest (`mcp.toolsSha256`), and signs every tool result as a TAP-21 envelope.
+// the manifest (`mcp.toolsSha256`), and signs every tool result as a TAPI-21 envelope.
 // "Tape out 你的 MCP 服务器"：放在现有 MCP 服务器前面的签名代理。作者保留自己的服务器和域名；代理给它链上身份（TapeOut
-// 电路的容器），把工具定义钉进清单（`mcp.toolsSha256`），并把每个工具结果签成 TAP-21 信封。
+// 电路的容器），把工具定义钉进清单（`mcp.toolsSha256`），并把每个工具结果签成 TAPI-21 信封。
 //
 // Each upstream tool becomes a free manifest method whose handler forwards tools/call upstream, so envelopes, rate
 // limits, health and /.well-known/tapeapi.json are createProvider's own. /mcp serves the digest-covered fields of the
@@ -204,11 +204,11 @@ function createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall }) {
   return { listTools, callTool: (name, args) => request('tools/call', { name, arguments: args }), label: url ? url.origin + url.pathname : 'in-process' }
 }
 
-// An upstream tool -> a TAP-20 method (the MCP plan, "阶段 2 接口约定"): params from inputSchema, each property's
+// An upstream tool -> a TAPI-20 method (the MCP plan, "阶段 2 接口约定"): params from inputSchema, each property's
 // `type` name, `?` when not required; fixed returns; free. The result passes the holder console's methodsProblems
 // (site/console/lib.js): params are informative (the MCP inputSchema stays authoritative), so a property whose name is
 // not a plain field is left out of them, as is any beyond the 32nd; the description is one line of at most 256 code points.
-// 上游工具 -> TAP-20 方法。结果能通过持有人操作台的 methodsProblems：params 只是说明（以 MCP 的 inputSchema 为准），名字不是
+// 上游工具 -> TAPI-20 方法。结果能通过持有人操作台的 methodsProblems：params 只是说明（以 MCP 的 inputSchema 为准），名字不是
 // 普通字段的属性、以及第 32 个之后的属性都不写进去；描述是一行，至多 256 个码点。
 const PARAMS_MAX = 32
 const CONTROL_RUN = /[\u0000-\u001f\u007f-\u009f\p{Cf}]+/gu   // controls and invisible format characters (review MCP-R7) / 控制字符与不可见格式字符
@@ -325,7 +325,7 @@ export function createMcpProxy(opts = {}) {
     for (const t of tools) {
       const name = t.name
       const skip = (reason) => { st.skipped.push({ name: String(name).slice(0, 80), reason }); log(`tool ${JSON.stringify(String(name).slice(0, 80))} is not proxied: ${reason}`) }
-      if (!METHOD_NAME_RE.test(name) || FORBIDDEN_KEYS.has(name)) { skip('not a TAP-20 method name ([A-Za-z_][A-Za-z0-9_]{0,63}, not a prototype key)'); continue }
+      if (!METHOD_NAME_RE.test(name) || FORBIDDEN_KEYS.has(name)) { skip('not a TAPI-20 method name ([A-Za-z_][A-Za-z0-9_]{0,63}, not a prototype key)'); continue }
       const m = methodOf(t)
       if (m.left.length) log(`tool ${name}: ${m.left.length} input propert${m.left.length === 1 ? 'y is' : 'ies are'} left out of the manifest params (not a plain field name, or past ${PARAMS_MAX}): ${m.left.map((k) => JSON.stringify(k.slice(0, 64))).join(', ')}; the MCP inputSchema still describes them`)
       methods.push(m.method)
@@ -344,7 +344,7 @@ export function createMcpProxy(opts = {}) {
     // the holder console reads this manifest to republish. / 清单给出"现在该发布什么"；钉住的摘要不匹配时调用仍被拒绝。
     manifest = { tapeapi, ...base, signer, methods, mcp: { endpoint, toolsSha256: digest } }
     const size = byteLength(JSON.stringify(manifest))
-    if (size > MANIFEST_LIMIT) throw new TapeAPIError('MANIFEST_INVALID', `the manifest would be ${size} bytes, over TAP-20's ${MANIFEST_LIMIT}; shorten the tool descriptions`)
+    if (size > MANIFEST_LIMIT) throw new TapeAPIError('MANIFEST_INVALID', `the manifest would be ${size} bytes, over TAPI-20's ${MANIFEST_LIMIT}; shorten the tool descriptions`)
     // The holder console publishes with one SiteRegistry.putFile (24 000 bytes) and at most 64 methods (site/console/lib.js).
     // 持有人操作台用一笔 putFile 发布（24 000 字节），至多 64 个方法。
     if (size > CONSOLE_MANIFEST_LIMIT) log(`the manifest is ${size} bytes; the holder console publishes at most ${CONSOLE_MANIFEST_LIMIT} in one transaction`)
@@ -361,7 +361,7 @@ export function createMcpProxy(opts = {}) {
 
   // The handler behind every method: forward tools/call, sign what came back. / 每个方法背后的处理函数。
   async function forward(name, params) {
-    // TAP-21 provider code TOOLS_CHANGED (HTTP 409), signed by the provider like any refusal. / TAP-21 的 TOOLS_CHANGED，照常签名。
+    // TAPI-21 provider code TOOLS_CHANGED (HTTP 409), signed by the provider like any refusal. / TAPI-21 的 TOOLS_CHANGED，照常签名。
     if (drift) { st.driftRefusals++; throw new TapeAPIError('TOOLS_CHANGED', 'the upstream MCP server changed its tool definitions since the manifest was published; the holder must republish the manifest before calls are served again', { data: { published, current } }) }
     // Invisible characters in the tool definitions: refused, signed as a generic INTERNAL (the log and /mcp say why).
     // 工具定义里有不可见字符：拒绝，签名为泛化的 INTERNAL（原因见日志和 /mcp）。

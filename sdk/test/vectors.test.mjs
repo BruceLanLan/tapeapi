@@ -13,8 +13,8 @@ import { toHex, keccak256, utf8ToBytes } from '../src/abi.js'
 const load = (n) => JSON.parse(readFileSync(new URL(`../../spec/vectors/${n}`, import.meta.url), 'utf8'))
 const k = (s) => toHex(keccak256(utf8ToBytes(s)))
 
-test('TAP-21 §3.3 canonical JSON vectors', () => {
-  const v = load('tap-21-canon.json')
+test('TAPI-21 §3.3 canonical JSON vectors', () => {
+  const v = load('tapi-21-canon.json')
   assert.ok(v.positive.length >= 10)
   for (const c of v.positive) {
     assert.equal(canonicalJSON(c.input), c.canonical, c.name)
@@ -32,8 +32,8 @@ test('TAP-21 §3.3 canonical JSON vectors', () => {
   }
 })
 
-test('TAP-21 §3.2 envelope digest vectors, including every intermediate hash', () => {
-  const v = load('tap-21-envelope.json')
+test('TAPI-21 §3.2 envelope digest vectors, including every intermediate hash', () => {
+  const v = load('tapi-21-envelope.json')
   assert.equal(privateKeyToAddress(v.signerKey), v.signerAddress)
   for (const c of v.cases) {
     const i = c.intermediate
@@ -44,7 +44,7 @@ test('TAP-21 §3.2 envelope digest vectors, including every intermediate hash', 
     assert.equal(k(i.canonicalBody), i.keccakBody, c.name)
     const d = responseDigest({ container: v.container, id: c.id, method: c.method, params: c.params, ok: c.ok, body: c.body, ts: c.ts })
     assert.equal(toHex(d), c.digest, c.name)
-    // EIP-191 personal_sign over the digest (TAP-21 §3.3), exactly as signResponse does. / 与 signResponse 相同的 EIP-191 签名。
+    // EIP-191 personal_sign over the digest (TAPI-21 §3.3), exactly as signResponse does. / 与 signResponse 相同的 EIP-191 签名。
     const pd = personalDigest(d)
     assert.equal(toHex(pd), c.personalDigest, c.name)
     assert.equal(signDigest(pd, v.signerKey), c.sig, c.name)
@@ -58,14 +58,14 @@ test('TAP-21 §3.2 envelope digest vectors, including every intermediate hash', 
   assert.notEqual(toHex(flipped), e.digest)
 })
 
-test('TAP-20 §3.4 delegation and TAP-22 §3.1 voucher digest vectors', () => {
-  const d = load('tap-20-delegation.json')
+test('TAPI-20 §3.4 delegation and TAPI-22 §3.1 voucher digest vectors', () => {
+  const d = load('tapi-20-delegation.json')
   for (const c of d.cases) {
     const digest = delegationDigest(d.domain.chainId, d.domain.verifyingContract, c)
     assert.equal(toHex(digest), c.digest, c.name)
     assert.equal(recoverAddress(digest, c.sig).toLowerCase(), d.holderAddress.toLowerCase(), c.name)
   }
-  const v = load('tap-22-voucher.json')
+  const v = load('tapi-22-voucher.json')
   for (const c of v.cases) {
     const digest = voucherDigest(v.domain.chainId, v.domain.verifyingContract, c)
     assert.equal(toHex(digest), c.digest, c.name)
@@ -84,9 +84,9 @@ test('an independent Python implementation, written from the spec alone, agrees'
   assert.match(out, /^ok: \d+ checks/, out)
 })
 
-test('TAP-26 channel vectors: the real handshake, driven with the fixed secrets, reproduces every value', async () => {
+test('TAPI-26 channel vectors: the real handshake, driven with the fixed secrets, reproduces every value', async () => {
   const channel = await import('../src/channel.js')   // the implementation module (toHex, fromHex) / 实现模块
-  const v = load('tap-26-channel.json')
+  const v = load('tapi-26-channel.json')
   const hx = (h) => channel.fromHex(h)
   // A random source that replays the vector's secrets in the order createInvite / acceptInvite draw them.
   // 按 createInvite / acceptInvite 的抽取顺序回放向量中的秘密值。

@@ -19,7 +19,7 @@ const handle = await exposeTapeAPI(api, '0x<container>')     // free methods onl
 
 ## Money
 
-> **Experimental.** Payments (TAP-22 payment channels and the escrow contract) are not deployed or audited and are not covered by the 1.0 stability promise: the names below may change in a 1.x minor release. See [Upgrading to 1.0](upgrade-1.0.md#what-10-promises).
+> **Experimental.** Payments (TAPI-22 payment channels and the escrow contract) are not deployed or audited and are not covered by the 1.0 stability promise: the names below may change in a 1.x minor release. See [Upgrading to 1.0](upgrade-1.0.md#what-10-promises).
 
 Paid methods are not exposed unless the page passes a budget:
 

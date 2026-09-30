@@ -18,7 +18,7 @@
 //   later eth_call is evaluated at that hash (EIP-1898), so a reorg cannot silently change what was read.
 import { createRpc, abi, TapeAPIError, operatorOf } from '@tapeapi/sdk'
 
-/** 调用方的输入错误 / the caller's input is wrong (TAP-21 BAD_REQUEST). */
+/** 调用方的输入错误 / the caller's input is wrong (TAPI-21 BAD_REQUEST). */
 export const bad = (msg) => { throw new TapeAPIError('BAD_REQUEST', msg) }
 
 /** 块号 → `eth_*` 的十六进制块参数 / a block number as the hex block parameter the `eth_*` methods take. */
@@ -30,7 +30,7 @@ export const blockTag = (n) => '0x' + BigInt(n).toString(16)
 export const rejectsBlockObject = (e) =>
   e instanceof TapeAPIError && e.code === 'RPC_ERROR' && e.data?.rpcCode !== 3 && !/revert/i.test(e.message)
 
-/** BSC 本链示例的区块字段（TAP-23 §3.4）/ the block fields the BSC-local examples return. */
+/** BSC 本链示例的区块字段（TAPI-23 §3.4）/ the block fields the BSC-local examples return. */
 export const blockPinnedOf = (pinned, blockRef) => ({ blockNumber: pinned.blockNumber, blockHash: pinned.blockHash, blockRef })
 
 /**
@@ -97,7 +97,7 @@ export function createChainReader({ name = 'chain', urls = [], quorum = 2, lag =
     const tag = blockTag(blockNumber)
     const answers = (await perNodeAt((r) => r.call('eth_getBlockByNumber', [tag, false]))).filter((a) => a.value?.hash)
     const blocks = answers.map((a) => a.value)
-    // Every node that answered must report the same hash (TAP-20 §3.2 / TAP-23 §3.4: never a majority). At a pinned
+    // Every node that answered must report the same hash (TAPI-20 §3.2 / TAPI-23 §3.4: never a majority). At a pinned
     // height a split means a reorg in flight or a lying node; either way nothing should be attested.
     // 所有作答节点的 hash 必须一致（绝不少数服从多数）。钉定高度上出现分歧意味着正在重组或有节点撒谎，都不该出证明。
     const hashes = new Set(blocks.map((b) => b.hash))

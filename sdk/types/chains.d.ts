@@ -22,7 +22,7 @@ export interface TapeOutChain {
   readonly accountImplementation: Address
   /** Proxy (lowercase) -> audited implementations (lowercase), read from the ERC-1967 slot. */
   readonly expectedImpl: Readonly<Record<string, readonly string[]>>
-  /** The TAP-20 delegation domain's chainId and verifyingContract on this chain. */
+  /** The TAPI-20 delegation domain's chainId and verifyingContract on this chain. */
   readonly delegation: { readonly chainId: number; readonly verifyingContract: Address }
   readonly pin: string
   readonly finality: string

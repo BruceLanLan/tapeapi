@@ -88,7 +88,7 @@ test('FIXED B2: the relay methods key the 0x03 budget on the proven consumer, el
 })
 
 test('FIXED R3-epoch-null: a client echoing the null epoch it saw for a room that did not exist yet is served from the start', async () => {
-  // TAP-26 §3.5: a client MUST send the epoch it last saw; for a missing room that is null. Found by the relay
+  // TAPI-26 §3.5: a client MUST send the epoch it last saw; for a missing room that is null. Found by the relay
   // conformance suite, 2026-09-25. / 客户端必须带上上次看到的纪元；房间不存在时就是 null。由中继一致性套件发现。
   const core = createRelayCore()
   const room = 'ab'.repeat(32)

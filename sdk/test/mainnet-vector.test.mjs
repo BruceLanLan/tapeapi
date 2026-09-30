@@ -44,7 +44,7 @@ test('mainnet vector: fileInfo("index.html") decodes 756 bytes / text/html / the
   assert.equal(fi.sha256Hash.toLowerCase(), '0xec444c899bd9229f9173082fff362da66dd297179482a58b30b6f53ce9f7a0b6')
 })
 
-test('mainnet vector: read("index.html") bytes hash to fileInfo.sha256Hash (the TAP-20 §3.2 check on real data)', async () => {
+test('mainnet vector: read("index.html") bytes hash to fileInfo.sha256Hash (the TAPI-20 §3.2 check on real data)', async () => {
   const a = api()
   const fi = await a.chain.fileInfo(fx.container, 'index.html')
   const hex = await a.chain.readFile(fx.container, 'index.html')

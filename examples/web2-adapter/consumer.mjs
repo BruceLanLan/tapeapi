@@ -47,7 +47,7 @@ const res = await fetch(`${svc.manifest.endpoints.live[0]}/${paidDef.name}`, {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, method: paidDef.name, params, voucher }),
 })
 const env = await res.json()
-// TAP-21 v2：摘要覆盖 {method, params} 与 ok，验签时用自己发出的请求重算 / v2 digest covers the request and ok
+// TAPI-21 v2：摘要覆盖 {method, params} 与 ok，验签时用自己发出的请求重算 / v2 digest covers the request and ok
 const recovered = sig.recoverResponseSigner({ container: svc.container, id, method: paidDef.name, params, ok: env.ok, body: env.ok ? env.result : env.error, ts: env.ts }, env.sig)
 const signedByProvider = abi.eqAddr(recovered, svc.manifest.signer)
 console.log(`http ${res.status}  envelope signed by ${recovered}  matches manifest.signer: ${signedByProvider}`)
@@ -61,7 +61,7 @@ if (env.ok) {
     console.log(`
   ^ expected in dev mode: the provider checks vouchers against TapeAPIEscrow on-chain (balance, allowance, session key),
     and this manifest points at a placeholder escrow, so the paid path cannot succeed without a chain.
-    What was demonstrated: the SDK built a TAP-22 voucher (cumulative ${voucher.cumulative} wei = ${paidDef.priceBEM} BEM, signed by
+    What was demonstrated: the SDK built a TAPI-22 voucher (cumulative ${voucher.cumulative} wei = ${paidDef.priceBEM} BEM, signed by
     the session key), sent it, and the provider answered with a *signed* error envelope you can verify offline.
   On mainnet the consumer does once: api.tx.fund(${svc.container}, amount),
     api.tx.authorizeSession(${payer.signer}, expires) — then api.call(svc, '${paidDef.name}', params, { payer }) just works.`)

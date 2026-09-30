@@ -29,7 +29,7 @@ const out = {
   chainId: 56,
   creation: art.bytecode.object,
   runtime: art.deployedBytecode.object,
-  // cast sig "MAX_WIRE()" / "MAX_BATCH()"; the values TAP-26 §3.7 fixes / TAP-26 §3.7 规定的常量
+  // cast sig "MAX_WIRE()" / "MAX_BATCH()"; the values TAPI-26 §3.7 fixes / TAPI-26 §3.7 规定的常量
   checks: [{ call: '0x1d5cb38c', name: 'MAX_WIRE', expect: 16448 }, { call: '0x950bff9f', name: 'MAX_BATCH', expect: 16 }],
 }
 writeFileSync(`${root}site/console/channelbus.json`, JSON.stringify(out, null, 2) + '\n')

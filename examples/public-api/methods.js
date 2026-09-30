@@ -5,7 +5,7 @@
 // 测试用假链，Worker 或 Node 提供真链。
 //
 // Every answer carries blockPinned { blockNumber, blockHash, blockRef }: a caller who wants a second opinion passes the
-// same blockNumber to another provider (callQuorum) and compares bytes (TAP-23 §3.4).
+// same blockNumber to another provider (callQuorum) and compares bytes (TAPI-23 §3.4).
 // 每个回答都带 blockPinned：要第二意见的调用方把同一个 blockNumber 交给另一家提供者（callQuorum）逐字节比较。
 import { abi, formatUnits, MAINNET, registryKey } from '@tapeapi/sdk'
 import { blockPinnedOf, bad } from '../_lib/chain.mjs'

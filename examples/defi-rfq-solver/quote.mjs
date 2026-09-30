@@ -1,9 +1,9 @@
-// TAP-24 Solver 的纯函数核心：定价、EIP-712 结构哈希/摘要、参数校验、报价簿。
+// TAPI-24 Solver 的纯函数核心：定价、EIP-712 结构哈希/摘要、参数校验、报价簿。
 // 这里**没有** HTTP、没有时钟、没有随机数：`now` 与 `quoteId` 都由调用方注入，
 // 所以 `quote.test.mjs` 能对固定输入断言固定的 digest 与 signature，且永远不开套接字。
 // 与 `examples/web2-adapter/adapter.mjs` 同一个分层方式。
 //
-// The pure core of the TAP-24 Solver: pricing, the EIP-712 struct hash / digest, parameter validation and the
+// The pure core of the TAPI-24 Solver: pricing, the EIP-712 struct hash / digest, parameter validation and the
 // quote book. There is **no** HTTP, no clock and no randomness in this file: `now` and `quoteId` are injected by
 // the caller, so `quote.test.mjs` can assert a fixed digest and a fixed signature for fixed inputs and never opens
 // a socket. Same layering as `examples/web2-adapter/adapter.mjs`.
@@ -14,10 +14,10 @@ const { isAddress, eqAddr, checksumAddress, encodeParams, toHex } = abi
 const bad = (msg) => { throw new TapeAPIError('BAD_REQUEST', msg) }
 const noRoute = (msg) => { throw new TapeAPIError('METHOD_NOT_FOUND', msg) }
 
-// ---------- TAP-24 §3.3 的常量 / the constants of TAP-24 §3.3 ----------
-// 主类型字符串一字不差地抄自 spec/TAP-24.md §3.3；typehash 是该文件 §6 测试向量里的常量，
+// ---------- TAPI-24 §3.3 的常量 / the constants of TAPI-24 §3.3 ----------
+// 主类型字符串一字不差地抄自 spec/TAPI-24.md §3.3；typehash 是该文件 §6 测试向量里的常量，
 // 不是这里算出来再写死的——`selfCheck()` 在启动时把两者对上，不等就拒绝启动。
-// The primary-type string is copied verbatim from spec/TAP-24.md §3.3; the typehash is the constant from that
+// The primary-type string is copied verbatim from spec/TAPI-24.md §3.3; the typehash is the constant from that
 // file's §6 test-vector table, not something computed here and pasted. `selfCheck()` recomputes it at start-up
 // and refuses to run on a mismatch.
 export const QUOTE_TYPE_STRING =
@@ -45,7 +45,7 @@ export const QUOTE_ENCODE_TYPES = [
 // The field names and order of `result.quote` must match the primary type (spec §3.4).
 export const QUOTE_FIELDS = ['quoteId', 'fromChain', 'fromToken', 'amountIn', 'toChain', 'toToken', 'amountOut', 'recipient', 'expires', 'solver']
 
-// TAP-24 §3.3：Solver SHOULD 用 30–120 秒 / TAP-24 §3.3: Solvers SHOULD use 30–120 s
+// TAPI-24 §3.3：Solver SHOULD 用 30–120 秒 / TAPI-24 §3.3: Solvers SHOULD use 30–120 s
 export const TTL_MIN = 30
 export const TTL_MAX = 120
 export const TTL_DEFAULT = 60
@@ -57,25 +57,25 @@ const HEX32_RE = /^0x[0-9a-fA-F]{64}$/
 const UINT_DEC_RE = /^[1-9][0-9]*$/
 
 /**
- * 启动自检：把主类型字符串重新 keccak 一遍，与 spec/TAP-24.md §6 的两个常量比对。
+ * 启动自检：把主类型字符串重新 keccak 一遍，与 spec/TAPI-24.md §6 的两个常量比对。
  * 不等就抛——宁可拒绝启动，也不要签出一份 escrow 永远验不过的报价。
  * Start-up self-check: re-hash the primary-type string and compare against the two constants in
- * spec/TAP-24.md §6. A mismatch throws: better to refuse to start than to sign quotes an escrow can never verify.
+ * spec/TAPI-24.md §6. A mismatch throws: better to refuse to start than to sign quotes an escrow can never verify.
  */
 export function selfCheck() {
   const typehash = toHex(abi.keccak256(QUOTE_TYPE_STRING))
   if (typehash !== QUOTE_TYPEHASH) {
-    throw new Error(`QUOTE_TYPEHASH self-check failed: keccak256(typeString) = ${typehash}, spec/TAP-24.md §6 says ${QUOTE_TYPEHASH}`)
+    throw new Error(`QUOTE_TYPEHASH self-check failed: keccak256(typeString) = ${typehash}, spec/TAPI-24.md §6 says ${QUOTE_TYPEHASH}`)
   }
   const nameHash = toHex(abi.keccak256(ESCROW_NAME))
   if (nameHash !== ESCROW_NAME_HASH) {
-    throw new Error(`keccak256("${ESCROW_NAME}") self-check failed: got ${nameHash}, spec/TAP-24.md §6 says ${ESCROW_NAME_HASH}`)
+    throw new Error(`keccak256("${ESCROW_NAME}") self-check failed: got ${nameHash}, spec/TAPI-24.md §6 says ${ESCROW_NAME_HASH}`)
   }
   return { typehash, nameHash }
 }
 
 // ---------- EIP-712（不是 personal_sign）/ EIP-712, not personal_sign ----------
-/** TAP-24 §3.3 的域：`chainId` 是 `fromChain`，`verifyingContract` 是该链上的 IntentEscrow。 */
+/** TAPI-24 §3.3 的域：`chainId` 是 `fromChain`，`verifyingContract` 是该链上的 IntentEscrow。 */
 export function quoteDomain(fromChain, escrow) {
   if (!isAddress(escrow)) throw new TapeAPIError('INTERNAL', `escrow for chain ${fromChain} is not an address`)
   return { name: ESCROW_NAME, version: DOMAIN_VERSION, chainId: Number(fromChain), verifyingContract: checksumAddress(escrow) }
@@ -90,9 +90,9 @@ export function quoteStructHash(q) {
 /**
  * `digest = keccak256(0x1901 ‖ DOMAIN_SEPARATOR ‖ structHash)`。
  * 用 SDK 的 `sig.typedDigest`，它就是这个式子；**不要**加 `\x19Ethereum Signed Message` 前缀，
- * 那是 TAP-21 信封用的 EIP-191，与本报价无关。
+ * 那是 TAPI-21 信封用的 EIP-191，与本报价无关。
  * Uses the SDK's `sig.typedDigest`, which is exactly that formula. Do **not** add the
- * `\x19Ethereum Signed Message` prefix — that is the EIP-191 used by the TAP-21 envelope, not by this quote.
+ * `\x19Ethereum Signed Message` prefix — that is the EIP-191 used by the TAPI-21 envelope, not by this quote.
  */
 export function quoteDigest(domain, q) {
   return sig.typedDigest(domain, quoteStructHash(q))
@@ -155,9 +155,9 @@ export function validateConfig(config) {
 }
 
 /**
- * 找路线。TAP-24 §3.2：不服务该路线的 Solver MUST 回 `METHOD_NOT_FOUND`——
+ * 找路线。TAPI-24 §3.2：不服务该路线的 Solver MUST 回 `METHOD_NOT_FOUND`——
  * 注意是 `METHOD_NOT_FOUND` 而不是 `BAD_REQUEST`，因为「这条路线我不做」等于「我没有这个方法」。
- * TAP-24 §3.2: a Solver that does not serve the route MUST answer `METHOD_NOT_FOUND`.
+ * TAPI-24 §3.2: a Solver that does not serve the route MUST answer `METHOD_NOT_FOUND`.
  */
 export function findPair(config, { fromChain, toChain, fromToken, toToken }) {
   const route = config.routes.find((r) => r.fromChain === fromChain && r.toChain === toChain)
@@ -183,7 +183,7 @@ export function validateQuoteParams(params, config) {
   if (BigInt(amountIn) > BigInt(pair.maxAmountIn)) bad(`amountIn exceeds maxAmountIn ${pair.maxAmountIn} for this pair`)
 
   const ttl = params.ttl === undefined || params.ttl === null ? TTL_DEFAULT : params.ttl
-  if (!Number.isInteger(ttl) || ttl < TTL_MIN || ttl > TTL_MAX) bad(`ttl must be an integer in ${TTL_MIN}..${TTL_MAX} seconds (TAP-24 §3.3)`)
+  if (!Number.isInteger(ttl) || ttl < TTL_MIN || ttl > TTL_MAX) bad(`ttl must be an integer in ${TTL_MIN}..${TTL_MAX} seconds (TAPI-24 §3.3)`)
 
   return { fromChain, toChain, fromToken, toToken, recipient, amountIn, ttl, route, pair }
 }

@@ -1,4 +1,4 @@
-// The holder console publishes an AI service's `ai` field (TAP-20 §3.9: endpoints and price table). The page loads no
+// The holder console publishes an AI service's `ai` field (TAPI-20 §3.9: endpoints and price table). The page loads no
 // library, so its check (site/console/lib.js aiProblems / normalizeAI) is a port of the SDK's ai.validateAIField; here
 // every valid and invalid sample, and a few thousand random mutations of them, go through both, and the answers must be
 // identical: accepted by both or refused by both with the same message, and the same normalised bytes.
@@ -28,7 +28,7 @@ const P0 = { currency: 'USDT', unit: '1M tokens', input: '1', output: '2' }
 const OK = { endpoints: [{ format: 'openai-chat', baseUrl: 'https://ai.example/v1/' }, { format: 'future-format', baseUrl: 'https://ai.example' }],
   models: ai.CURRENCIES.map((currency, i) => ({ id: `m${i}`, extra: 1, ...(i ? {} : { formats: ['openai-chat'], aliases: ['m0-2026'] }), prices: [{ currency, unit: '1M tokens', input: '1', output: '2.12345678', cacheRead: '0.5', junk: 1 }] })) }
 OK.models[1].prices = ai.CURRENCIES.map((currency) => ({ reasoning: '3', cacheWrite1h: '2', cacheWrite: '1', cacheRead: '0.5', output: '2', input: '1', unit: '1M tokens', currency }))
-// The example of TAP-20 §3.9, as the spec writes it. / TAP-20 §3.9 的示例。
+// The example of TAPI-20 §3.9, as the spec writes it. / TAPI-20 §3.9 的示例。
 const SPEC = { endpoints: [{ format: 'openai-chat', baseUrl: 'https://ai.example/v1' }, { format: 'anthropic-messages', baseUrl: 'https://ai.example' }],
   models: [
     { id: 'gpt-x', aliases: ['gpt-x-2026-09-01'], formats: ['openai-chat'], prices: [
@@ -41,7 +41,7 @@ const one = (m) => ({ ...OK, models: [{ id: 'a', prices: [P0], ...m }] })
 const VALID = {
   'the receipt vectors\' ai field': V.manifest.ai,
   'ai.test.mjs ok': OK,
-  'the TAP-20 §3.9 example': SPEC,
+  'the TAPI-20 §3.9 example': SPEC,
   'models.example.json on the sidecar\'s endpoints': { endpoints: ai.FORMATS.map((f) => ({ format: f.name, baseUrl: BASE + f.baseSuffix })), models: EXAMPLE_MODELS },
   '16 aliases': one({ aliases: Array.from({ length: 16 }, (_, i) => `a${i}`) }),
   '256 models': { ...OK, models: Array.from({ length: 256 }, (_, i) => ({ id: `m${i}`, prices: [P0] })) },
@@ -189,7 +189,7 @@ test('the new-api sidecar\'s manifest, ai field included, is publishable as serv
   const mine = C.manifestText({ ...S, name: m.name, methods: m.methods, ai: m.ai })
   assert.deepEqual(JSON.parse(mine), m, 'the page publishes exactly what the sidecar serves')
   assert.deepEqual(JSON.parse(mine).ai, C.normalizeAI(C.modelsToAIField(EXAMPLE_MODELS, BASE)), 'which is the imported models.json, converted')
-  assert.doesNotThrow(() => validateManifest(JSON.parse(mine), { requireDelegation: true }), 'a valid TAP-20 manifest')
+  assert.doesNotThrow(() => validateManifest(JSON.parse(mine), { requireDelegation: true }), 'a valid TAPI-20 manifest')
   assert.equal(Object.keys(JSON.parse(mine)).at(-1), 'ai', 'ai comes last')
   const svc = await createTapeAPI({ dev: true }).resolve({ dev: JSON.parse(mine) })
   assert.equal(svc.aiProblems, undefined, 'a client keeps the field')

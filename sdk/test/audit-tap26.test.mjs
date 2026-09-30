@@ -1,4 +1,4 @@
-// Independent adversarial audit of TAP-26 (Tape Channel). Every test either demonstrates that an attack is refused
+// Independent adversarial audit of TAPI-26 (Tape Channel). Every test either demonstrates that an attack is refused
 // ("CONFIRMED: ...") or demonstrates a defect ("FINDING <id>: ..."). FINDING tests PASS when the defect is present,
 // so the suite stays green while documenting the current behaviour; each one says what a fixed build would do.
 // Report: docs/AUDIT-tap26.md.

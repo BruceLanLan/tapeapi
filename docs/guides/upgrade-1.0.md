@@ -16,7 +16,7 @@ the methods and result shapes of the public services (api.tapeapi.fun, relay.tap
 | **Experimental** | May be renamed, reshaped or removed in a 1.x minor release; each change is in the changelog. | `@experimental` in the type declarations |
 | **Internal** | Not part of the API; may change in any release. | `@internal`, or not exported at all |
 
-**Experimental in 1.0:** everything that pays. TAP-22 payment channels and the escrow contract are not deployed or
+**Experimental in 1.0:** everything that pays. TAPI-22 payment channels and the escrow contract are not deployed or
 audited, and neither is the ServiceDirectory. That covers `api.payer()`, `api.acceptPrice()` / `api.acceptedPrice()`,
 the `payer` and `maxPrice` call options, the channel builders `api.tx.approve / fund / requestWithdraw / cancelWithdraw /
 withdraw / authorizeSession / settle / setContribution / register`, `api.chain.escrow.*`, `api.chain.resolve()` and
@@ -49,14 +49,14 @@ Search your code for the name in the first column.
 | `channel.toHex`, `channel.fromHex`, `channel.toBase64`, `channel.fromBase64` | `abi.toHex` (with `0x`), `abi.bytesToHex` (without), `abi.hexToBytes`; base64 from your platform | `channel.toHex` returned hex without `0x` while `abi.toHex` returns it with: the same name with two meanings. |
 | `channel._keySchedule`, `channel._busMerge`, `channel._busKindOf` | removed | Test hooks, not API. |
 | `channel.relayTransport({ api, svc, ... })` | `channel.relayTransport({ api, service, ... })` | One name for a resolved service everywhere. `svc` is refused with a pointer here. |
-| `deliverGroupUpdate({ relay, bus })`, `checkGroupInvites({ relay })` | `deliverGroupUpdate({ relayClients: [...], busClients: [...] })`, `checkGroupInvites({ relayClients: [...] })` | Always lists. These are clients to send and read through: `relayClients` holds `{ api, service, payer? }` (a TapeAPI client and the resolved relay service), `busClients` holds `{ address, sendTx }`. `relays` is something else: the list of relay references `{ url, container }` that `createGroup`, `resumeGroup` and `channel.createInvite` put into a roster or an invite, a protocol field (TAP-26, TAP-27) that keeps its name. `relay`, `bus`, `relays` and `buses` are refused here with a pointer to this page. |
+| `deliverGroupUpdate({ relay, bus })`, `checkGroupInvites({ relay })` | `deliverGroupUpdate({ relayClients: [...], busClients: [...] })`, `checkGroupInvites({ relayClients: [...] })` | Always lists. These are clients to send and read through: `relayClients` holds `{ api, service, payer? }` (a TapeAPI client and the resolved relay service), `busClients` holds `{ address, sendTx }`. `relays` is something else: the list of relay references `{ url, container }` that `createGroup`, `resumeGroup` and `channel.createInvite` put into a roster or an invite, a protocol field (TAPI-26, TAPI-27) that keeps its name. `relay`, `bus`, `relays` and `buses` are refused here with a pointer to this page. |
 | a relay client (`relayClients`) `{ api, svc, payer }` | `{ api, service, payer }` | As above. |
 | `G.createGroup({ now })`, `G.joinGroup({ now })` (a function returning milliseconds) | `clock`, a function returning Unix **seconds** (fractional allowed); `resumeGroup` takes it too | Every `now` in the SDK is a Unix-seconds number (channel handshakes, `validateManifest`, `verifyUsageReceipt`); a group's long-lived clock is `clock`, in the same unit. `now` on a group is refused, and so is a `clock` that returns milliseconds (above 1e11, e.g. `Date.now`). |
 | WebMCP `handle.svc` | `handle.service` | As above. |
 | `sig.keccak256`, `sig.toHex`, `sig.bytesToHex`, `sig.hexToBytes` | `abi.keccak256`, `abi.toHex`, ... | One home for byte helpers. |
 | `readJsonBounded`, `describeUrl`, `isNodeLimit` from `@tapeapi/sdk/rpc` | removed | Internal helpers. `@tapeapi/sdk/rpc` exports `createRpc` and `RPC_BODY_LIMIT`. |
-| `ai.amountOf`, `ai.pricesOf`, `ai.sseDigestOfPayloads`, `ai.sentinelOf`, `ai.rootOf`, `ai.saltRequestBody`, `ai.SALT_LENGTH`, `ai.CURRENCIES`, `ai.PRICE_UNIT`, `ai.MODELS_MAX`, `ai.ENDPOINTS_MAX`, `ai.ALIASES_MAX`, `ai.PRICES_MAX`, `ai.AMOUNT_DECIMALS`, `ai.EVENT_PARSE_LIMIT`, `ai.FORWARD_PREFIXES`, `ai.SSE_RECEIPT_PREFIX` | removed | Used only inside the SDK and its tests. `verifyUsageReceipt` does the price arithmetic and the hashing; the limits are in TAP-20 §3.9. |
-| `group.senderKey`, `group.buildEpoch` | removed | The key derivation and epoch builder behind the group handles; the TAP-27 vectors document them. |
+| `ai.amountOf`, `ai.pricesOf`, `ai.sseDigestOfPayloads`, `ai.sentinelOf`, `ai.rootOf`, `ai.saltRequestBody`, `ai.SALT_LENGTH`, `ai.CURRENCIES`, `ai.PRICE_UNIT`, `ai.MODELS_MAX`, `ai.ENDPOINTS_MAX`, `ai.ALIASES_MAX`, `ai.PRICES_MAX`, `ai.AMOUNT_DECIMALS`, `ai.EVENT_PARSE_LIMIT`, `ai.FORWARD_PREFIXES`, `ai.SSE_RECEIPT_PREFIX` | removed | Used only inside the SDK and its tests. `verifyUsageReceipt` does the price arithmetic and the hashing; the limits are in TAPI-20 §3.9. |
+| `group.senderKey`, `group.buildEpoch` | removed | The key derivation and epoch builder behind the group handles; the TAPI-27 vectors document them. |
 | the `openai-proxy` subpath of `@tapeapi/server`, `createOpenAIProxy` | `@tapeapi/server/ai-proxy`, `createAIProxy` | An alias whose name was wrong: the sidecar speaks Anthropic too. |
 | `createMcpEndpoint(...).handle(request)` | `.handleRequest(request)` | Like `createProvider`, `createAIProxy` and `createMcpProxy`. |
 | `createMcpEndpoint({ identity: { name } })`, `createMcpProxy({ identity: { name } })` | `{ name }` | `identity` means a key pair elsewhere in the SDK. `identity` is refused. |
@@ -95,13 +95,13 @@ from you or from the network. Protocol refusals of `callQuorum` (fewer than two 
 holder or an origin, an attested read without a block) stay `QUORUM_FAILED`.
 
 Three modules keep their own code for a caller's mistake throughout 1.x, so match these as well: the channel module
-(`channel.*`, TAP-26) reports `CHANNEL_INVALID`, the group module (`group.*`, TAP-27) reports `GROUP_INVALID`, and the
+(`channel.*`, TAPI-26) reports `CHANNEL_INVALID`, the group module (`group.*`, TAPI-27) reports `GROUP_INVALID`, and the
 checks `api.call()` makes on `params` and `id` before sending report `BAD_REQUEST`, the code a provider would answer
 for the same request. None of them is worth retrying.
 
 ## Error codes
 
-The full list. Provider codes travel in signed envelopes and never change meaning ([TAP-21](../../spec/TAP-21.md) §3.2);
+The full list. Provider codes travel in signed envelopes and never change meaning ([TAPI-21](../../spec/TAPI-21.md) §3.2);
 client codes are raised by the SDK (§3.4).
 
 | Code | Kind | Meaning | Retry? |
@@ -131,8 +131,8 @@ client codes are raised by the SDK (§3.4).
 | `CANON_INVALID` | client | JSON with no canonical form, duplicate or forbidden keys | no |
 | `ABI_INVALID` | client | ABI data that does not decode | no |
 | `BAD_KEY` | client | A key or key address that cannot be used | no |
-| `CHANNEL_INVALID` | client | TAP-26 data invalid or not authorised by the current holder | no |
-| `GROUP_INVALID`, `GROUP_EQUIVOCATION` | client | TAP-27 data invalid; the owner signed two epochs with one number | no |
+| `CHANNEL_INVALID` | client | TAPI-26 data invalid or not authorised by the current holder | no |
+| `GROUP_INVALID`, `GROUP_EQUIVOCATION` | client | TAPI-27 data invalid; the owner signed two epochs with one number | no |
 | `GROUP_DELIVERY` | client | Some group post failed after every post was tried (`data` is the delivery result) | depends |
 | `BAD_RESPONSE` | client | A relay or your wallet's `sendTx` answered something unusable | no |
 | `BUS_PRIVACY`, `BUS_BUDGET` | client | Too few cover rooms; a contract-wide read over its budget | no |

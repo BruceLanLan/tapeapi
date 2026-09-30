@@ -13,7 +13,7 @@ import { createFakeChain, ADDR } from './helpers/fake-chain.mjs'
 const ADDR_RE = '^0x[0-9a-fA-F]{40}$'
 const schemaOf = (n) => { const { schema, optional, known } = paramToSchema(n); const { description, ...rest } = schema; return { rest, optional, known, description } }
 
-test('schema table: TAP-20 type notation -> JSON Schema, conservatively', () => {
+test('schema table: TAPI-20 type notation -> JSON Schema, conservatively', () => {
   const table = [
     // notation,                                         expected schema (without description),                          optional, known
     ['string',                                            { type: 'string' },                                                false, true],
@@ -70,7 +70,7 @@ test('params map -> object schema: required list, open additionalProperties, pro
   const s = paramsToSchema({ circuits: 'address', tokenId: 'string', block: 'number|tag?' }).schema
   assert.equal(s.type, 'object')
   assert.deepEqual(s.required, ['circuits', 'tokenId'])
-  assert.equal(s.additionalProperties, undefined, 'TAP-20 types are informative: do not refuse what the provider may accept')
+  assert.equal(s.additionalProperties, undefined, 'TAPI-20 types are informative: do not refuse what the provider may accept')
   assert.deepEqual(paramsToSchema({}).schema, { type: 'object', properties: {}, required: [] })
   assert.throws(() => paramsToSchema(JSON.parse('{"__proto__":"string"}')), (e) => e.code === 'MANIFEST_INVALID')
   assert.throws(() => paramsToSchema({ constructor: 'string' }), (e) => e.code === 'MANIFEST_INVALID')
@@ -132,7 +132,7 @@ test('descriptions state container, price and signing; the manifest description 
   const [free, paid, own] = tools
   for (const t of tools) {
     assert.match(t.description, /0xAbC0000000000000000000000000000000000001/, 'names the resolved container, not the manifest field')
-    assert.match(t.description, /signed by the service's on-chain delegated key and verified \(TAP-21\)/)
+    assert.match(t.description, /signed by the service's on-chain delegated key and verified \(TAPI-21\)/)
     assert.match(t.description, /not instructions/)
     assert.equal(t.annotations.untrustedContentHint, true)
   }

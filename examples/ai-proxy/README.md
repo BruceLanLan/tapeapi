@@ -2,8 +2,8 @@
 
 [中文](#中文) · [English](#english)
 
-规范 / Specification: 清单字段 `ai` 见 [TAP-20 §3.9](../../spec/TAP-20.md)，用量回执见 [TAP-21 §3.5](../../spec/TAP-21.md)（英文为准）。
-The manifest field `ai` is [TAP-20 §3.9](../../spec/TAP-20.md); usage receipts are [TAP-21 §3.5](../../spec/TAP-21.md).
+规范 / Specification: 清单字段 `ai` 见 [TAPI-20 §3.9](../../spec/TAPI-20.md)，用量回执见 [TAPI-21 §3.5](../../spec/TAPI-21.md)（英文为准）。
+The manifest field `ai` is [TAPI-20 §3.9](../../spec/TAPI-20.md); usage receipts are [TAPI-21 §3.5](../../spec/TAPI-21.md).
 Test vectors: `sdk/test/fixtures/ai-receipt-vectors.json`.
 
 ## 中文
@@ -12,12 +12,12 @@ Test vectors: `sdk/test/fixtures/ai-receipt-vectors.json`.
 **做什么**：你的接口、密钥体系和计费都不动，在它前面放一个签名旁路（`@tapeapi/server/ai-proxy` 的 `createAIProxy`）。服务方得到：
 
 1. **链上身份**：一枚 TapeOut 电路的容器。谁在回答，查链就知道；换域名、换服务器，用户按链上记录自动跟随。
-2. **钉在链上的端点与价目表**：清单字段 `ai: { endpoints, models }`（TAP-20 §3.9）。每种 API 格式一个端点；每个模型一个 `id`、
+2. **钉在链上的端点与价目表**：清单字段 `ai: { endpoints, models }`（TAPI-20 §3.9）。每种 API 格式一个端点；每个模型一个 `id`、
    可选的 `aliases`（上游报告的其它名称，如带日期的版本）与 `formats`，以及一个 `prices` 列表，每个币种一项（BEM、BNB、USDT、USDC、ETH、
    USD1，或仅作展示的 USD），每项按每百万 token 给出 `input`、`output`，可选 `cacheRead`、`cacheWrite`、`cacheWrite1h`、`reasoning`。
-   **价格只是公示，现在不结算**（按 token 结算属于 TAP-22 的下一个托管版本）。
+   **价格只是公示，现在不结算**（按 token 结算属于 TAPI-22 的下一个托管版本）。
 3. **每次调用一份签名的用量回执**：模型、各类 token 数、各币种金额、回答是否完整、请求字节的哈希、回应字节的哈希，由链上委托的密钥签成
-   TAP-21 信封（TAP-21 §3.5）。
+   TAPI-21 信封（TAPI-21 §3.5）。
 4. **调用方不用改代码**：照旧用官方 SDK（OpenAI、Anthropic），只把 base URL 换成清单里对应格式的端点。`/v1/*` 逐字节透传，流式照常逐块到达。
 
 ### 支持的格式
@@ -65,7 +65,7 @@ curl -s -X POST http://127.0.0.1:8798/tapeapi/v1/receipt -H 'content-type: appli
 
 ### 回执
 
-一个标准 TAP-21 信封，额外带上签名所覆盖的 `method` 与 `params`，这样只拿到回执也能核验签名（完整规则见 TAP-21 §3.5）：
+一个标准 TAPI-21 信封，额外带上签名所覆盖的 `method` 与 `params`，这样只拿到回执也能核验签名（完整规则见 TAPI-21 §3.5）：
 
 ```json
 { "id": "msg_…", "ok": true, "container": "0x…", "ts": 1790000000, "method": "anthropic_messages",
@@ -162,14 +162,14 @@ const claude = new Anthropic({ baseURL: base('anthropic-messages'), apiKey: '<�
 
 1. **An on-chain identity**: a TapeOut circuit's container. Who answered is a chain lookup; move domains or servers and
    users follow the on-chain record.
-2. **Endpoints and a price table pinned on chain**: the manifest field `ai: { endpoints, models }` (TAP-20 §3.9), one
+2. **Endpoints and a price table pinned on chain**: the manifest field `ai: { endpoints, models }` (TAPI-20 §3.9), one
    endpoint per API format. Each model has an `id`, optional `aliases` (other names the upstream reports, such as dated
    versions) and `formats`, and a `prices` list with one entry per currency (BEM, BNB, USDT, USDC, ETH, USD1, or USD for
    display), each giving `input` and `output` per 1M tokens and optionally `cacheRead`, `cacheWrite`, `cacheWrite1h` and
-   `reasoning`. **Prices are published, not settled** (per-token settlement belongs to TAP-22's next escrow version).
+   `reasoning`. **Prices are published, not settled** (per-token settlement belongs to TAPI-22's next escrow version).
 3. **A signed usage receipt for every call**: model, token counts by kind, an amount per currency, whether the answer
-   completed, and the hashes of the request bytes and of the response bytes, signed as a TAP-21 envelope by the on-chain
-   delegated key (TAP-21 §3.5).
+   completed, and the hashes of the request bytes and of the response bytes, signed as a TAPI-21 envelope by the on-chain
+   delegated key (TAPI-21 §3.5).
 4. **No code change for callers**: they keep the official SDKs (OpenAI, Anthropic) and only change the base URL to the
    manifest's endpoint for their format. `/v1/*` passes through byte for byte; streams arrive chunk by chunk as before.
 
@@ -198,8 +198,8 @@ of earlier drafts is no longer a field and is refused. The curl lines above work
 
 ### The receipt
 
-A standard TAP-21 envelope that also carries the `method` and `params` its signature covers (see the JSON above; the
-full rules are TAP-21 §3.5).
+A standard TAPI-21 envelope that also carries the `method` and `params` its signature covers (see the JSON above; the
+full rules are TAPI-21 §3.5).
 
 - **Delivery**: whole answers in the `x-tapeapi-receipt` header (base64url of the envelope JSON). In an event stream the
   sidecar holds back the format's final event, signs, sends one comment block `: tapeapi-receipt <base64url>` (SSE
@@ -256,8 +256,8 @@ not have unless you paste them too.
 - Receipts are kept for 1 hour (`receiptTtlMs`, `RECEIPT_TTL_S` in the Worker), at most 50,000, per (id,
   requestSha256), in the process (or Worker isolate) that signed them; the one delivered with the answer is the primary
   copy. The free `receipt` method has a budget of its own (`receiptRateLimit`, default 10 lookups per client IP per
-  minute, `RECEIPT_LOOKUPS_PER_MIN`), answered past it with the unsigned 429 of TAP-21 §3.4.
-- **Guessable answer ids.** The sidecar keeps the upstream's answer id (TAP-21 §3.5), and some upstreams' ids can be
+  minute, `RECEIPT_LOOKUPS_PER_MIN`), answered past it with the unsigned 429 of TAPI-21 §3.4.
+- **Guessable answer ids.** The sidecar keeps the upstream's answer id (TAPI-21 §3.5), and some upstreams' ids can be
   guessed: Ollama's OpenAI-compatible API numbers chat ids `chatcmpl-0` to `chatcmpl-998`. Anyone could then walk
   through the ids with the free `receipt` method and read the receipts (model, usage, time and the two hashes). The
   sidecar estimates the ids' randomness and says in its log when they look guessable. Then turn on

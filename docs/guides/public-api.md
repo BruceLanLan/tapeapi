@@ -15,7 +15,7 @@ Both circuits are on processor 1013, contract `0xe02c26c7432A7121168AA9B610DE24e
 
 - **Free, no key.** Every method costs 0 BEM. You just call it.
 - **Signed.** Every answer, errors included, is an envelope signed by the key that the holder of `11.1013.tape`
-  authorised on chain ([TAP-21](../../spec/TAP-21.md)). The SDK checks the signature, the delegation and the holder
+  authorised on chain ([TAPI-21](../../spec/TAPI-21.md)). The SDK checks the signature, the delegation and the holder
   before it returns a result.
 - **Block-pinned.** Every method except `blockNumber` reads the chain at one block, by default the latest `finalized`
   one, and says which in `blockPinned { blockNumber, blockHash, blockRef }`. The service reads through three BNB
@@ -82,7 +82,7 @@ A real answer (hashes and the signature shortened):
 Two block numbers appear. `result.blockPinned.blockNumber` is the block the read was evaluated at (the finalized
 block by default); the envelope's `block` is the chain head the service saw when it signed. `blockRef: "hash"` means
 the nodes evaluated the read at that exact `blockHash`; `"number"` would mean a node refused that and the read was
-made by block number only, which [TAP-23](../../spec/TAP-23.md) treats as weaker evidence.
+made by block number only, which [TAPI-23](../../spec/TAPI-23.md) treats as weaker evidence.
 
 A failed call is signed too:
 
@@ -146,7 +146,7 @@ you or someone else, from [`examples/public-api/`](../../examples/public-api/) o
 
 ## The public relay
 
-A relay carries [TAP-26](../../spec/TAP-26.md) private channels: two containers exchange end-to-end encrypted frames
+A relay carries [TAPI-26](../../spec/TAPI-26.md) private channels: two containers exchange end-to-end encrypted frames
 through rooms on the relay, which stores ciphertext and never sees content or identities (it does see room names,
 sizes and timing). The public relay at `https://relay.tapeapi.fun`, identity `12.1013.tape`, container
 `0x9cD838625251576c199B2DeF7A17e50266843185`, offers `relaySend`, `relayHandshake` and `relayRecv`, all at zero
@@ -190,6 +190,6 @@ to `scripts/channel-keys.mjs`. The full handshake, the other transports and runn
 
 - Both services are free and run on a best-effort basis, with no SLA and no guarantee of uptime. Methods
   may be added; a change to the list is published on chain as a new manifest.
-- A relay can drop frames or go offline; TAP-26 detects gaps but cannot refill them. Name more than one transport in
+- A relay can drop frames or go offline; TAPI-26 detects gaps but cannot refill them. Name more than one transport in
   an invite if the channel matters.
 - For anything you depend on, run your own provider or relay as well, and cross-check.

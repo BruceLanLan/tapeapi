@@ -5,7 +5,7 @@ import type { TapeAPI, ResolvedService, CallOptions, CallResult } from './index.
 /** @experimental The ERC-6551 account (container) address derived locally: CREATE2 by `registry`, salt 0 by default. */
 export declare function erc6551Account(p: { registry: Address; implementation: Address; chainId: BigNumberish; tokenContract: Address; tokenId: BigNumberish; salt?: BigNumberish | Hex }): Address
 
-/** The block a signed result names inside itself: TAP-23 { chainId, blockNumber, blockHash }, or a blockPinned { blockNumber, blockHash }. */
+/** The block a signed result names inside itself: TAPI-23 { chainId, blockNumber, blockHash }, or a blockPinned { blockNumber, blockHash }. */
 export interface SignedBlock { chainId?: number; blockNumber: number; blockHash: Hex }
 /** @experimental */
 export declare function signedBlockOf(result: unknown): SignedBlock | null
@@ -14,9 +14,9 @@ export declare function signedBlockOf(result: unknown): SignedBlock | null
  *  (a varying field such as `fetchedAt` makes two honest answers differ). */
 export declare function statementHash(result: unknown): Hex
 
-/** One verified TAP-21 ok envelope, as a ContradictionRecord carries it. */
+/** One verified TAPI-21 ok envelope, as a ContradictionRecord carries it. */
 export interface RecordEnvelope { container: Address; signer: Address; id: string; ts: number; ok: true; result: unknown; sig: Hex; resultHash?: Hex }
-/** @experimental ContradictionRecord v1 (TAP-23 §8, informative). */
+/** @experimental ContradictionRecord v1 (TAPI-23 §8, informative). */
 export interface ContradictionRecord {
   tapeapiContradiction: 1
   request: { method: string; params: unknown }
@@ -52,7 +52,7 @@ export interface SpotCheckOutcome {
 export interface SpotCheckOptions {
   /** Probability of a second opinion per call, 0..1 (default 0: off). */
   rate?: number
-  /** Resolved services to pick the second opinion from; only those independent of the one called (TAP-23 §3.5) are used. */
+  /** Resolved services to pick the second opinion from; only those independent of the one called (TAPI-23 §3.5) are used. */
   alternates?: ResolvedService[]
   /** Uniform [0, 1) (default: crypto.getRandomValues). */
   random?: () => number

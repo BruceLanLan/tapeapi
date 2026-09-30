@@ -1,8 +1,8 @@
-// TAP-27 delivery in one call: deliverGroupUpdate (owner) and checkGroupInvites (member), over the reference relay's
+// TAPI-27 delivery in one call: deliverGroupUpdate (owner) and checkGroupInvites (member), over the reference relay's
 // in-memory core. Covers the four ways an application lost its invites (TAPQQ, 2026-09-28): the wallet or a wrong
 // chainId instead of the container, a cursor from another room without its epoch, a relay that forgot an idle room,
 // and the per-source limit on invites / epoch messages.
-// TAP-27 一步投递：群主端 deliverGroupUpdate、成员端 checkGroupInvites，基于参考中继的内存核心。覆盖应用丢失邀请的
+// TAPI-27 一步投递：群主端 deliverGroupUpdate、成员端 checkGroupInvites，基于参考中继的内存核心。覆盖应用丢失邀请的
 // 四种方式：用了钱包地址或错的 chainId、拿别的房间的游标又不带 epoch、中继遗忘空闲房间、按来源的邀请 / 纪元消息限流。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'

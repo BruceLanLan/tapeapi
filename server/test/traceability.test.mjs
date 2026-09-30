@@ -78,7 +78,7 @@ test('D10: a result over 1 MiB is a signed INTERNAL, and the caller is not bille
   assert.equal((await p2.invoke({ id: 'f', method: 'wide', params: {}, voucher: voucher(PRICE) })).env.error.code, 'INTERNAL')
 })
 
-test('D4: an INTERNAL may carry revert bytes (chain state, TAP-23 §3.3) and nothing else', async () => {
+test('D4: an INTERNAL may carry revert bytes (chain state, TAPI-23 §3.3) and nothing else', async () => {
   const { p } = setup({
     reverts: async () => { throw new TapeAPIError('INTERNAL', 'upstream https://rpc.example/KEY said revert', { data: { revert: '0x08C379A0' } }) },
     leaky: async () => { throw new TapeAPIError('INTERNAL', 'https://rpc.example/KEY', { data: { revert: 'not hex', url: 'https://rpc.example/KEY' } }) },

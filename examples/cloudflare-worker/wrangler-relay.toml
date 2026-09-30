@@ -1,7 +1,7 @@
-# A TAP-26 relay on its own Worker and its own hostname: the template a fork deploys with `npm run deploy:my-relay`
+# A TAPI-26 relay on its own Worker and its own hostname: the template a fork deploys with `npm run deploy:my-relay`
 # (from the repository root; the wrangler version is pinned in package.json). Rename the Worker if you like. The
 # project's own public relay (relay.tapeapi.fun) deploys from examples/public-api/wrangler-relay.toml.
-# 独立 Worker、独立主机名上的 TAP-26 中继：fork 用 `npm run deploy:my-relay` 部署的模板（在仓库根目录运行；wrangler 版本
+# 独立 Worker、独立主机名上的 TAPI-26 中继：fork 用 `npm run deploy:my-relay` 部署的模板（在仓库根目录运行；wrangler 版本
 # 写死在 package.json）。Worker 名字可以改。本项目的公共中继（relay.tapeapi.fun）从 examples/public-api/wrangler-relay.toml 部署。
 name = "my-tapeapi-relay"
 main = "relay-worker.js"

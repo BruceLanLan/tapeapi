@@ -46,7 +46,7 @@ naming rules.
 | --- | --- |
 | `@tapeapi/sdk` | `createTapeAPI`, `createRpc`, `TapeAPIError`, `MAINNET`, `BUS_RPC_URLS`, `RPC_DEFAULTS` / `rpcUrlsFor` / `operatorOf` (default nodes per chain and who runs them; quorums count operators, not URLs), `deliverGroupUpdate` / `checkGroupInvites`, and the `abi`, `sig`, `channel`, `busPrivacy`, `group`, `tapesend`, `webmcp`, `mcp`, `ai` namespaces |
 | `@tapeapi/sdk/webmcp` | `exposeTapeAPI`, `manifestToTools`: a service's methods as WebMCP tools for in-browser agents |
-| `@tapeapi/sdk/channel` | TAP-26 private channels (invites, relay and ChannelBus transports) |
+| `@tapeapi/sdk/channel` | TAPI-26 private channels (invites, relay and ChannelBus transports) |
 | `@tapeapi/sdk/bus-privacy` | `busPrivacyReader`: ChannelBus reads that hide your rooms among cover rooms (`@experimental`) |
 | `@tapeapi/sdk/ai` | AI usage receipts: `createVerifyingFetch` (a `fetch` for the official OpenAI and Anthropic SDKs that checks every answer's receipt), `verifyUsageReceipt`, the format adapters |
 | `@tapeapi/sdk/mcp` | the MCP server core behind `tapeapi-mcp` and `@tapeapi/server/mcp`: tools with signed results and receipts |

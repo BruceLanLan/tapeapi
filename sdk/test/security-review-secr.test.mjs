@@ -207,7 +207,7 @@ test('FIXED SECR-4: a { get, set } store without delete is cleared by setting 0;
   await api.resolve(NAME)
   put(chain, manifestFor({ expires: t + 30 * 86400, signerAddr: signer2 }))
   await api.resolve(NAME)
-  // documented limit (TAP-20 §8): whoever writes the site can put signer A's manifest back / 已写明的局限
+  // documented limit (TAPI-20 §8): whoever writes the site can put signer A's manifest back / 已写明的局限
   put(chain, oldA)
   assert.equal((await api.resolve(NAME)).manifest.signer, signer)
   put(chain, manifestFor({ expires: t + 10 * 86400 }))

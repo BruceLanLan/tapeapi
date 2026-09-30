@@ -134,7 +134,7 @@ export function readConfig(rawEnv = process.env, profile = NEW_API_PROFILE) {
 
 /**
  * The price table from a file: the models array, or a sentence saying what is wrong with it (file, JSON, or the rules
- * of TAP-20 §3.9 checked exactly as clients check them). / 从文件读价目表：返回数组，或一句说明哪里不对的话。
+ * of TAPI-20 §3.9 checked exactly as clients check them). / 从文件读价目表：返回数组，或一句说明哪里不对的话。
  */
 export function readModels(file, publicUrl = 'https://sidecar.invalid') {
   let text

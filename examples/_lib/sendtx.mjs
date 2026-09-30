@@ -97,10 +97,10 @@ export function createSender({ rpcUrl, privateKey, chainId = 56, fetch: fetchImp
 }
 
 /**
- * The settler loop TAP-22 §3.3.1 asks every paid provider to run: settle what is due before a consumer's
+ * The settler loop TAPI-22 §3.3.1 asks every paid provider to run: settle what is due before a consumer's
  * withdraw request becomes executable, and before a voucher or its session key expires.
  * `provider.dueSettlements()` decides what is due; this only sends it and reports.
- * TAP-22 §3.3.1 要求每个收费提供者运行的结算循环：在消费者的提现请求可执行之前、在凭证或会话密钥过期之前，把该收的收掉。
+ * TAPI-22 §3.3.1 要求每个收费提供者运行的结算循环：在消费者的提现请求可执行之前、在凭证或会话密钥过期之前，把该收的收掉。
  * 由 `provider.dueSettlements()` 判断该结算什么，这里只负责发送与汇报。
  */
 export function createSettler({ provider, sender, intervalMs = 60_000, marginS, log = () => {} }) {

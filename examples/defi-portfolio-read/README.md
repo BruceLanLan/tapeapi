@@ -1,25 +1,25 @@
-# defi-portfolio-read — TAP-23 多链组合读取 / TAP-23 multi-chain portfolio reads
+# defi-portfolio-read — TAPI-23 多链组合读取 / TAPI-23 multi-chain portfolio reads
 
 > 中文在前，English below in each section.
 
 ## 这是什么 / What this is
 
-**中文**：TAP-23 §3.1 `attestedRead` 方法档案的**领域特化**。不是通用的 `read(chainId, call)`（那是
+**中文**：TAPI-23 §3.1 `attestedRead` 方法档案的**领域特化**。不是通用的 `read(chainId, call)`（那是
 `examples/chain-attested-read/` 的活），而是把「某个地址在某条链上持有什么」做成四个具体方法：原生币与
 ERC-20 余额、跨链组合、UniswapV2/PancakeV2 的 LP 份额、PancakeSwap V3 的 NFT 仓位。
 **每条链各自锚定一个区块**，默认 `finalized`，一律按 EIP-1898 的 `{ blockHash, requireCanonical: true }` 求值，
-整个 `result` 由提供者按 TAP-21 签名。
+整个 `result` 由提供者按 TAPI-21 签名。
 
-本示例真正想讲的不是「怎么查余额」，而是 **TAP-23 §3.4 的五步法定人数模式**——见下面那一节，那是主戏。
+本示例真正想讲的不是「怎么查余额」，而是 **TAPI-23 §3.4 的五步法定人数模式**——见下面那一节，那是主戏。
 
-**EN**: A domain specialisation of the TAP-23 §3.1 `attestedRead` method profile. Rather than a generic
+**EN**: A domain specialisation of the TAPI-23 §3.1 `attestedRead` method profile. Rather than a generic
 `read(chainId, call)` (that is `examples/chain-attested-read/`'s job), it turns "what does this address hold on
 this chain" into four concrete methods: native and ERC-20 balances, a cross-chain portfolio, a
 UniswapV2/PancakeV2 LP share, and PancakeSwap V3 NFT positions. **Each chain is pinned to its own block**,
 `finalized` by default, always evaluated at the EIP-1898 block object `{ blockHash, requireCanonical: true }`,
-with the whole `result` signed by the provider under TAP-21.
+with the whole `result` signed by the provider under TAPI-21.
 
-The real subject of this example is not balance lookup — it is **the five-step quorum pattern of TAP-23 §3.4**,
+The real subject of this example is not balance lookup — it is **the five-step quorum pattern of TAPI-23 §3.4**,
 which has its own section below and is the main event.
 
 ---
@@ -32,7 +32,7 @@ which has its own section below and is the main event.
 # 1) 起服务（dev 模式，所有方法免费）
 cd <repo>/tapeapi
 FREE_ALL=1 node examples/defi-portfolio-read/index.mjs
-# [portfolio] DeFi Portfolio Read (TAP-23 multi-chain) listening on http://127.0.0.1:8795
+# [portfolio] DeFi Portfolio Read (TAPI-23 multi-chain) listening on http://127.0.0.1:8795
 
 # 2) 问一次（免费方法，无需 voucher）
 curl -s -X POST http://127.0.0.1:8795/tapeapi/v1/balances -H 'content-type: application/json' \
@@ -69,10 +69,10 @@ comparable block at the top level**: three chains each pin their own `finalized`
 land on the same three blocks at the same instant. For a quorum, call `balances` **per chain** with that
 chain's explicit block number. Each `chains[i]` entry is itself fully pinned, so it quorums fine once split out.
 
-`lpV3` 对 `chainId !== 56` 回 `METHOD_NOT_FOUND`（TAP-23 §3.1 要求「未列出的链」如此），而其它方法对
+`lpV3` 对 `chainId !== 56` 回 `METHOD_NOT_FOUND`（TAPI-23 §3.1 要求「未列出的链」如此），而其它方法对
 未配置的链回 `BAD_REQUEST`（house `chainOf()` 的约定）。这个不对称是有意的：前者是方法档案
 `attestedRead.chains` 的语义，后者是服务没配那条链。
-`lpV3` answers `METHOD_NOT_FOUND` for `chainId !== 56` as TAP-23 §3.1 requires for a chain outside the
+`lpV3` answers `METHOD_NOT_FOUND` for `chainId !== 56` as TAPI-23 §3.1 requires for a chain outside the
 method's `attestedRead.chains`, while the other methods answer `BAD_REQUEST` for an unconfigured chain (the
 house `chainOf()` convention). The asymmetry is deliberate: the first is the method profile's semantics, the
 second is "this deployment does not serve that chain".
@@ -81,10 +81,10 @@ second is "this deployment does not serve that chain".
 
 ## 字段命名：为什么这里是扁平的 `blockNumber`，而隔壁是 `blockPinned` / Field naming
 
-**中文**：TAP-23 §3.3 规定通用 `read` 的 `result` **只能**有
+**中文**：TAPI-23 §3.3 规定通用 `read` 的 `result` **只能**有
 `{ chainId, blockNumber, blockHash, stateRoot?, blockRef?, result }`，并且明文写着
 *"Providers MUST NOT add other fields"*。本示例的四个方法是**领域方法而不是通用 `read`**，所以允许带自有
-字段（`native`、`tokens`、`positions` …），但那四个锚定字段**必须保持 TAP-23 的名字并且是顶层扁平的**：
+字段（`native`、`tokens`、`positions` …），但那四个锚定字段**必须保持 TAPI-23 的名字并且是顶层扁平的**：
 
 ```jsonc
 { "chainId": 56, "blockNumber": 123018562, "blockHash": "0xa0a2eb…", "blockRef": "hash",
@@ -98,34 +98,34 @@ second is "this deployment does not serve that chain".
 ```
 
 **这是一处真实的不一致，不是笔误。** 原因：那三个示例是 **BSC 本链**的读取，`blockPinned` 是本仓库的本链
-约定；本示例是 **TAP-23 的跨链读取**，消费者会按 TAP-23 §3.4 第 4 步逐字段比较
-`chainId` / `blockNumber` / `blockHash`，字段名必须和规范一致，否则通用的 TAP-23 客户端读不懂。
+约定；本示例是 **TAPI-23 的跨链读取**，消费者会按 TAPI-23 §3.4 第 4 步逐字段比较
+`chainId` / `blockNumber` / `blockHash`，字段名必须和规范一致，否则通用的 TAPI-23 客户端读不懂。
 `portfolio` 的**每个 `chains[i]` 也各自带这同样四个扁平字段**——因为每条链是各自独立锚定的。
 
-**EN**: TAP-23 §3.3 restricts a generic `read`'s `result` to exactly
+**EN**: TAPI-23 §3.3 restricts a generic `read`'s `result` to exactly
 `{ chainId, blockNumber, blockHash, stateRoot?, blockRef?, result }` and states that providers MUST NOT add
 other fields. The four methods here are **domain methods, not a generic `read`**, so they may carry their own
-fields — but the four anchoring fields **keep their TAP-23 names and stay flat at the top level**. The sibling
+fields — but the four anchoring fields **keep their TAPI-23 names and stay flat at the top level**. The sibling
 DeFi examples instead nest them under `blockPinned`. **This is a real inconsistency, not a typo**: those
 examples read BSC, this repo's home chain, where `blockPinned` is the local convention, whereas this one is a
-TAP-23 cross-chain read whose consumers compare `chainId` / `blockNumber` / `blockHash` field by field per
-§3.4 step 4. A generic TAP-23 client would not find them under another name. **Every `chains[i]` entry of
+TAPI-23 cross-chain read whose consumers compare `chainId` / `blockNumber` / `blockHash` field by field per
+§3.4 step 4. A generic TAPI-23 client would not find them under another name. **Every `chains[i]` entry of
 `portfolio` carries the same four flat fields**, because each chain is pinned independently.
 
 ---
 
-## 主戏：TAP-23 §3.4 的五步法定人数 / The main event: the five-step quorum
+## 主戏：TAPI-23 §3.4 的五步法定人数 / The main event: the five-step quorum
 
-**中文**：TAP-23 §3.4 是一条**客户端规则**。提供者签名只证明「我这么说」，把「这是真的」变成可依赖的结论，
+**中文**：TAPI-23 §3.4 是一条**客户端规则**。提供者签名只证明「我这么说」，把「这是真的」变成可依赖的结论，
 靠的是调用方把两家独立提供者的字节比一比。下面五步逐条对应真实代码。
 
-**EN**: TAP-23 §3.4 is a **client-side rule**. A provider's signature only proves "I said this"; turning that
+**EN**: TAPI-23 §3.4 is a **client-side rule**. A provider's signature only proves "I said this"; turning that
 into "this is true" is the caller's job, done by comparing the bytes from two independent providers. The five
 steps below map to real code.
 
 ### 第 1 步：挑 N ≥ 2 家**独立**提供者 / Step 1: select N ≥ 2 independent providers
 
-**中文**：TAP-23 §3.5 的独立性有两个条件，**必须同时成立**：
+**中文**：TAPI-23 §3.5 的独立性有两个条件，**必须同时成立**：
 
 1. **持有人不同**：`IERC721(circuits).ownerOf(tokenId)` 不同 → SDK 解析后放在 `svc.verified.holder`。
 2. **来源不同**：实际使用的 `endpoints.live` URL 的 scheme/host/port 不同 → `new URL(svc.manifest.endpoints.live[0]).origin`。
@@ -136,7 +136,7 @@ const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), chainId: 56 })
 
 const [a, b] = await Promise.all([api.resolve('<#123>.4.tape'), api.resolve('<#987>.2.tape')])
 
-// TAP-23 §3.5 的独立性检查——**你自己做，SDK 不做**
+// TAPI-23 §3.5 的独立性检查——**你自己做，SDK 不做**
 function assertIndependent(x, y) {
   const originOf = (s) => new URL(s.manifest.endpoints.live[0]).origin
   if (!x.verified.holder || !y.verified.holder) throw new Error('holder unknown; cannot judge independence')
@@ -190,7 +190,7 @@ const r = await api.callQuorum([a, b], 'balances', { ...params, block }, { quoru
 
 **中文**：这三步 `callQuorum` 替你做了，但你要知道它做的是什么：
 
-- **第 3 步 验签**：每份信封各自按 TAP-21 验签。验不过或没收到的，算**传输失败**（进 `failed`），
+- **第 3 步 验签**：每份信封各自按 TAPI-21 验签。验不过或没收到的，算**传输失败**（进 `failed`），
   **不算分歧**——这个区分很重要，一个连不上的提供者不应该被当成一个说谎的提供者。
 - **第 4 步 比较**：两份信封**一致**当且仅当 `chainId`、`blockNumber`、`blockHash`、`result` **逐字节相同**
   （`canonicalJSON` 递归排序后比较）。注意块也在比较范围内——**值一样但块不一样，依然是分歧**。
@@ -212,7 +212,7 @@ try {
 成功时 `callQuorum` 返回 `{ result, agreed, disagreed, failed, verified, quorum, responses, groups }`。
 
 **EN**: `callQuorum` performs steps 3–5, but know what it is doing. **Step 3 verify**: each envelope is
-TAP-21-verified on its own; envelopes that fail verification or never arrive are **transport failures**
+TAPI-21-verified on its own; envelopes that fail verification or never arrive are **transport failures**
 (reported in `failed`), **not disagreement** — an unreachable provider must not be treated as a lying one.
 **Step 4 compare**: two envelopes agree iff `chainId`, `blockNumber`, `blockHash` and `result` are
 byte-identical. The block is part of the comparison, so **the same value at a different block is still a
@@ -280,7 +280,7 @@ PORT=8805 FREE_ALL=1 CONTAINER=0x2222…2222 BLOCK_LAG=50 \
 
 ```
 code   : QUORUM_FAILED
-message: balances: 2 distinct verified answers; TAP-23 rejects on any disagreement
+message: balances: 2 distinct verified answers; TAPI-23 rejects on any disagreement
          (pass onDissent:'quorum' to accept a dominant group instead)
 groups : [
   { "blockNumber": 123020121, "blockHash": "0xfde02fc3fa25c82bf5…",
@@ -324,7 +324,7 @@ is not a transport failure. This is precisely why step 2 exists.
   （`"0.000000000661605533"`）。同一个 result 里两种风格并存，是规范要求的，不是疏忽。
 - **数组顺序 == 入参顺序**，重复入参照样重复，**不去重、不重排**，也绝不依赖 `Promise.all` 的完成顺序。
 - **签名 `result` 里没有**本地时钟、耗时、provider 名字/URL/版本、RPC 主机名、随机数。信封的 `ts` 是
-  TAP-21 的信封字段，不是 result 字段。
+  TAPI-21 的信封字段，不是 result 字段。
 
 **EN**: Byte-for-byte comparison makes number formatting load-bearing. All arithmetic is BigInt truncated
 toward zero; `Number` appears only for small integers like `blockNumber`, array indices and `decimals`, never
@@ -338,7 +338,7 @@ decimals)` for continuity with the existing examples: so `formatted` is *not* fi
 `"142.2445"`) while `share` is (`"0.000000000661605533"`). Both styles coexist in one result by specification,
 not by oversight. Arrays come back in caller order with duplicates preserved, never deduped, reordered, or
 ordered by `Promise.all` completion. The signed `result` contains no local clock, elapsed time, provider
-name/URL/version, RPC hostname or randomness; the envelope's `ts` is a TAP-21 envelope field, not a result field.
+name/URL/version, RPC hostname or randomness; the envelope's `ts` is a TAPI-21 envelope field, not a result field.
 
 ### `TOKEN_READ_FAILED`：只标记数据本身的问题 / only a fault in the data
 
@@ -395,7 +395,7 @@ not be read as a negative.
 **永远不会**悄悄来自另一条分叉：最坏情况是报错。
 
 只有当上游节点**拒绝块对象本身**（不是调用 revert）时，才退回按块号求值，并在结果里把 `blockRef` 置为
-`"number"`。按 TAP-23 §3.2 第 3 条，**`blockRef === "number"` 是更弱的证据**：块号与 hash 之间存在重组窗口，
+`"number"`。按 TAPI-23 §3.2 第 3 条，**`blockRef === "number"` 是更弱的证据**：块号与 hash 之间存在重组窗口，
 签名的 `result` 不一定属于它所声明的 `blockHash`。**消费者可以直接拒绝这种结果**，这是规范明确允许的：
 
 ```js
@@ -407,7 +407,7 @@ if (r.result.blockRef === 'number') throw new Error('weaker evidence than blockH
 **EN**: The default is `finalized`, and every read is evaluated at `{ blockHash, requireCanonical: true }`, so a
 result can never be silently taken from a different fork — the worst case is an error. Only when an upstream
 node **rejects the block object itself** (not when the call reverts) does the provider fall back to evaluating
-by number and set `blockRef: "number"`. Per TAP-23 §3.2.3 that is **weaker evidence** — a reorg can occur
+by number and set `blockRef: "number"`. Per TAPI-23 §3.2.3 that is **weaker evidence** — a reorg can occur
 between the number and the hash, so the signed `result` may not belong to the `blockHash` it names — and a
 **consumer may simply reject it**. A `blockHash` on a non-final block can still be orphaned; request blocks
 inside the target chain's finality window and re-read later if it matters.
@@ -423,10 +423,10 @@ inside the target chain's finality window and re-read later if it matters.
 |---|---|
 | `SIGNER_KEY` | 固定的签名私钥。不设会用临时 signer（**私钥不打印**）；设了 `DELEGATION_SIG` 却不设它会**直接退出**，因为委托指名了一个固定 signer。 |
 | `DELEGATION_SIG` + `DELEGATION_EXPIRES` | 由电路持有人签发的委托。**两个都设上 `dev` 自动变 `false`**，`delegation` 随之填好。 |
-| `CIRCUITS` + `TOKEN_ID` | 你的电路合约与 token id，决定 `ownerOf` 查出来的持有人——TAP-23 §3.5 独立性的第一个条件。 |
+| `CIRCUITS` + `TOKEN_ID` | 你的电路合约与 token id，决定 `ownerOf` 查出来的持有人——TAPI-23 §3.5 独立性的第一个条件。 |
 | `CONTAINER` | 链上容器地址，必须与 manifest 对得上。 |
-| `ESCROW` | TAP-22 托管合约地址（收费才需要）。 |
-| `PUBLIC_URL` | 对外的 `https://` 地址，写进 `endpoints.live`——TAP-23 §3.5 独立性的第二个条件。**两家提供者的 origin 必须不同。** |
+| `ESCROW` | TAPI-22 托管合约地址（收费才需要）。 |
+| `PUBLIC_URL` | 对外的 `https://` 地址，写进 `endpoints.live`——TAPI-23 §3.5 独立性的第二个条件。**两家提供者的 origin 必须不同。** |
 | RPC 组 | 换成你自己的付费/自建节点。公共 RPC 会限流也会掉线（见下）。`RPC_56` / `RPC_1` / `RPC_8453` 覆盖 `chains.json`。 |
 | `FREE_ALL` | **主网不要设**。它只在 `dev` 下把所有 `priceBEM` 清零。 |
 
@@ -451,13 +451,13 @@ inside the target chain's finality window and re-read later if it matters.
 1. **单提供者的签名响应，不能当借贷协议的主价格喂价。不是"调一调就行"，是结构上不行。**
    一个 TapeAPI 提供者就是一个 **single-source feed**，你拿到的全部保证就是那一把私钥。
 
-2. **TAP-23 的法定人数规则是一条 *客户端* 规则，没有任何链上合约会执行它。**
+2. **TAPI-23 的法定人数规则是一条 *客户端* 规则，没有任何链上合约会执行它。**
    §3.4 那五步写给的是 JS/后端调用方。`Comptroller.liquidateBorrowAllowed` 里没有 `callQuorum`，
    合约能验证的只有它自己能算的东西。所以真正的问题从来不是"要几个签名"，而是**链上消费者到底验证了什么**。
    在出现"链上多见证验证"合约（≥threshold 份逐字节一致、有分歧就 revert、**绝不取多数**）之前，
    这条规则保护的只是你的后端进程。
 
-3. **没有质押，没有罚没。** TAP-23 §3.6 明文把 stake/slash 留给未来的 TAP，并且要求
+3. **没有质押，没有罚没。** TAPI-23 §3.6 明文把 stake/slash 留给未来的 TAP，并且要求
    *"clients MUST NOT assume any provider is staked"*。一个签了错数据的提供者，今天损失的上限是**声誉**。
    对面站着的可能是一次几百万美元的清算。
 
@@ -485,11 +485,11 @@ inside the target chain's finality window and re-read later if it matters.
 1. **A single-provider signed response is not a lending protocol's primary price feed** — not "after some
    tuning", but structurally. One TapeAPI provider is a **single-source feed**; your entire assurance is that
    one key.
-2. **TAP-23's quorum rule is a *client-side* rule that no on-chain contract enforces.** The five steps address
+2. **TAPI-23's quorum rule is a *client-side* rule that no on-chain contract enforces.** The five steps address
    a JS/backend caller. There is no `callQuorum` inside `Comptroller.liquidateBorrowAllowed`. Until an on-chain
    multi-witness verifier exists (≥threshold byte-identical envelopes, revert on any disagreement, **never a
    majority**), this rule protects your backend process and nothing else.
-3. **There is no stake and no slashing.** TAP-23 §3.6 defers both to a future TAP and states that *clients MUST
+3. **There is no stake and no slashing.** TAPI-23 §3.6 defers both to a future TAP and states that *clients MUST
    NOT assume any provider is staked*. A provider that signs bad data risks its reputation, against an
    incentive that can be millions of dollars in one liquidation.
 4. **Chainlink does not accept this responsibility either** — see the two quoted lines above. By Chainlink's
@@ -629,12 +629,12 @@ from the static `chains.json` config and is never inferred over the network.
 | `portfolio.mjs` | **纯函数**：校验、解码、金额换算、结果组装。不碰网络。 |
 | `portfolio.test.mjs` | `node:test`，**不联网**（纯函数全在 `portfolio.mjs`，所以一个 socket 都不开）。 |
 | `chains.json` | 每条链的 `name` / `symbol` / `lag` / `quorum` / `rpcUrls`。`RPC_<chainId>` 与 `BLOCK_LAG` 可覆盖。 |
-| `manifest.json` | TAP-20 清单。`balances` / `lpV2` / `lpV3` 三个方法带 TAP-23 §3.1 的 `attestedRead` 档案字段。 |
+| `manifest.json` | TAPI-20 清单。`balances` / `lpV2` / `lpV3` 三个方法带 TAPI-23 §3.1 的 `attestedRead` 档案字段。 |
 
-**为什么 `portfolio` 没有 `attestedRead`**：TAP-23 §3.1 规定客户端*「以 `attestedRead` 的存在而非名称来发现
+**为什么 `portfolio` 没有 `attestedRead`**：TAPI-23 §3.1 规定客户端*「以 `attestedRead` 的存在而非名称来发现
 见证读取服务」*。给一个 `[no-quorum]` 方法挂上这个字段，等于邀请通用客户端把它选进法定人数轮，而那必然
 `QUORUM_FAILED`。所以只有三个真正可 quorum 的方法带它；`lpV3` 的 `chains` 只有 `[56]`，与它实际服务的链一致。
-**Why `portfolio` has no `attestedRead`**: TAP-23 §3.1 has clients *discover Attested Read services by the
+**Why `portfolio` has no `attestedRead`**: TAPI-23 §3.1 has clients *discover Attested Read services by the
 presence of `attestedRead`, not by name*. Advertising it on a `[no-quorum]` method would invite a generic
 client to select it for a quorum round, which is guaranteed to `QUORUM_FAILED`. Only the three genuinely
 quorumable methods carry it, and `lpV3`'s `chains` is `[56]` to match the chain it actually serves.

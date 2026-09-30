@@ -14,7 +14,7 @@
 | **Experimental（实验性）** | 可能在 1.x 的次版本里改名、改形状或删除，每次修改都写进更新日志。 | 类型声明里的 `@experimental` |
 | **Internal（内部）** | 不属于公开接口，任何版本都可能改变。 | `@internal`，或者根本不导出 |
 
-**1.0 中的实验性部分：** 所有与付费有关的接口。TAP-22 付费通道与托管合约尚未部署、未经审计，ServiceDirectory 也未部署。
+**1.0 中的实验性部分：** 所有与付费有关的接口。TAPI-22 付费通道与托管合约尚未部署、未经审计，ServiceDirectory 也未部署。
 包括 `api.payer()`、`api.acceptPrice()` / `api.acceptedPrice()`、调用选项 `payer` 与 `maxPrice`、通道构造器
 `api.tx.approve / fund / requestWithdraw / cancelWithdraw / withdraw / authorizeSession / settle / setContribution / register`、
 `api.chain.escrow.*`、`api.chain.resolve()` 与 `api.chain.serviceOf()`（以及按目录标签解析；`labelToBytes32`，以及 `abi` 的 `LABEL_RE` / `bytes32ToLabel`）、选项 `directory` 与 `escrow`、
@@ -44,14 +44,14 @@
 | `channel.toHex`、`channel.fromHex`、`channel.toBase64`、`channel.fromBase64` | `abi.toHex`（带 `0x`）、`abi.bytesToHex`（不带）、`abi.hexToBytes`；base64 用平台自带的 | `channel.toHex` 不带 `0x`，`abi.toHex` 带：同一个名字两种含义。 |
 | `channel._keySchedule`、`channel._busMerge`、`channel._busKindOf` | 删除 | 测试钩子，不是接口。 |
 | `channel.relayTransport({ api, svc, ... })` | `channel.relayTransport({ api, service, ... })` | 已解析的服务在所有地方都叫 `service`。传 `svc` 会被拒绝，并指向本页。 |
-| `deliverGroupUpdate({ relay, bus })`、`checkGroupInvites({ relay })` | `deliverGroupUpdate({ relayClients: [...], busClients: [...] })`、`checkGroupInvites({ relayClients: [...] })` | 一律是列表。它们是用来发送和读取的客户端：`relayClients` 的元素是 `{ api, service, payer? }`（TapeAPI 客户端与解析出的中继服务），`busClients` 的元素是 `{ address, sendTx }`。`relays` 是另一回事：`createGroup`、`resumeGroup` 与 `channel.createInvite` 写进名单或邀请里的中继引用列表 `{ url, container }`，这是协议字段（TAP-26、TAP-27），名字不变。在这两个投递函数里传 `relay`、`bus`、`relays` 或 `buses` 都会被拒绝，并指向本页。 |
+| `deliverGroupUpdate({ relay, bus })`、`checkGroupInvites({ relay })` | `deliverGroupUpdate({ relayClients: [...], busClients: [...] })`、`checkGroupInvites({ relayClients: [...] })` | 一律是列表。它们是用来发送和读取的客户端：`relayClients` 的元素是 `{ api, service, payer? }`（TapeAPI 客户端与解析出的中继服务），`busClients` 的元素是 `{ address, sendTx }`。`relays` 是另一回事：`createGroup`、`resumeGroup` 与 `channel.createInvite` 写进名单或邀请里的中继引用列表 `{ url, container }`，这是协议字段（TAPI-26、TAPI-27），名字不变。在这两个投递函数里传 `relay`、`bus`、`relays` 或 `buses` 都会被拒绝，并指向本页。 |
 | 中继客户端（`relayClients`）`{ api, svc, payer }` | `{ api, service, payer }` | 同上。 |
 | `G.createGroup({ now })`、`G.joinGroup({ now })`（返回毫秒的函数） | `clock`：返回 Unix **秒**的函数（可带小数）；`resumeGroup` 也接受 | SDK 里所有的 `now` 都是 Unix 秒数字（通道握手、`validateManifest`、`verifyUsageReceipt`）；群句柄长期存在，它的时钟叫 `clock`，单位相同。群的 `now` 会被拒绝；返回毫秒（大于 1e11，比如 `Date.now`）的 `clock` 同样会被拒绝。 |
 | WebMCP 的 `handle.svc` | `handle.service` | 同上。 |
 | `sig.keccak256`、`sig.toHex`、`sig.bytesToHex`、`sig.hexToBytes` | `abi.keccak256`、`abi.toHex`…… | 字节工具只有一个出处。 |
 | `@tapeapi/sdk/rpc` 的 `readJsonBounded`、`describeUrl`、`isNodeLimit` | 删除 | 内部辅助函数。`@tapeapi/sdk/rpc` 导出 `createRpc` 与 `RPC_BODY_LIMIT`。 |
-| `ai.amountOf`、`ai.pricesOf`、`ai.sseDigestOfPayloads`、`ai.sentinelOf`、`ai.rootOf`、`ai.saltRequestBody`、`ai.SALT_LENGTH`、`ai.CURRENCIES`、`ai.PRICE_UNIT`、`ai.MODELS_MAX`、`ai.ENDPOINTS_MAX`、`ai.ALIASES_MAX`、`ai.PRICES_MAX`、`ai.AMOUNT_DECIMALS`、`ai.EVENT_PARSE_LIMIT`、`ai.FORWARD_PREFIXES`、`ai.SSE_RECEIPT_PREFIX` | 删除 | 只在 SDK 内部与测试中使用。价格运算与哈希由 `verifyUsageReceipt` 完成；各项上限见 TAP-20 §3.9。 |
-| `group.senderKey`、`group.buildEpoch` | 删除 | 群句柄背后的密钥派生与纪元构造；TAP-27 的测试向量记录了它们。 |
+| `ai.amountOf`、`ai.pricesOf`、`ai.sseDigestOfPayloads`、`ai.sentinelOf`、`ai.rootOf`、`ai.saltRequestBody`、`ai.SALT_LENGTH`、`ai.CURRENCIES`、`ai.PRICE_UNIT`、`ai.MODELS_MAX`、`ai.ENDPOINTS_MAX`、`ai.ALIASES_MAX`、`ai.PRICES_MAX`、`ai.AMOUNT_DECIMALS`、`ai.EVENT_PARSE_LIMIT`、`ai.FORWARD_PREFIXES`、`ai.SSE_RECEIPT_PREFIX` | 删除 | 只在 SDK 内部与测试中使用。价格运算与哈希由 `verifyUsageReceipt` 完成；各项上限见 TAPI-20 §3.9。 |
+| `group.senderKey`、`group.buildEpoch` | 删除 | 群句柄背后的密钥派生与纪元构造；TAPI-27 的测试向量记录了它们。 |
 | `@tapeapi/server` 的 `openai-proxy` 子路径、`createOpenAIProxy` | `@tapeapi/server/ai-proxy`、`createAIProxy` | 名不副实的别名：这个旁路也说 Anthropic 的格式。 |
 | `createMcpEndpoint(...).handle(request)` | `.handleRequest(request)` | 与 `createProvider`、`createAIProxy`、`createMcpProxy` 一致。 |
 | `createMcpEndpoint({ identity: { name } })`、`createMcpProxy({ identity: { name } })` | `{ name }` | SDK 其它地方的 `identity` 指密钥对。传 `identity` 会被拒绝。 |
@@ -88,13 +88,13 @@
 编解码层不变：无论字节来自你还是来自网络，`abi` 报 `ABI_INVALID`，`canon` 报 `CANON_INVALID`。`callQuorum` 的协议性拒绝
 （少于两个提供者、两个服务共用持有人或来源、见证读取没有区块号）仍是 `QUORUM_FAILED`。
 
-有三个模块在整个 1.x 里保留自己的"调用方错误"错误码，处理错误时请一并匹配：通道模块（`channel.*`，TAP-26）报
-`CHANNEL_INVALID`，群聊模块（`group.*`，TAP-27）报 `GROUP_INVALID`，`api.call()` 在发送前对 `params` 与 `id` 的检查报
+有三个模块在整个 1.x 里保留自己的"调用方错误"错误码，处理错误时请一并匹配：通道模块（`channel.*`，TAPI-26）报
+`CHANNEL_INVALID`，群聊模块（`group.*`，TAPI-27）报 `GROUP_INVALID`，`api.call()` 在发送前对 `params` 与 `id` 的检查报
 `BAD_REQUEST`（与提供者对同一请求的回答相同）。这些错误都不值得重试。
 
 ## 错误码
 
-完整列表。提供者错误码在签名信封里传递，含义永不改变（[TAP-21](../../../spec/TAP-21.md) §3.2）；客户端错误码由 SDK 报出（§3.4）。
+完整列表。提供者错误码在签名信封里传递，含义永不改变（[TAPI-21](../../../spec/TAPI-21.md) §3.2）；客户端错误码由 SDK 报出（§3.4）。
 
 | 错误码 | 类别 | 含义 | 可重试 |
 |---|---|---|---|
@@ -123,8 +123,8 @@
 | `CANON_INVALID` | 客户端 | JSON 没有规范形式、有重复键或禁用键 | 否 |
 | `ABI_INVALID` | 客户端 | ABI 数据无法解码 | 否 |
 | `BAD_KEY` | 客户端 | 无法使用的密钥或密钥地址 | 否 |
-| `CHANNEL_INVALID` | 客户端 | TAP-26 数据不合格，或未经当前持有人授权 | 否 |
-| `GROUP_INVALID`、`GROUP_EQUIVOCATION` | 客户端 | TAP-27 数据不合格；群主对同一纪元号签了两个纪元 | 否 |
+| `CHANNEL_INVALID` | 客户端 | TAPI-26 数据不合格，或未经当前持有人授权 | 否 |
+| `GROUP_INVALID`、`GROUP_EQUIVOCATION` | 客户端 | TAPI-27 数据不合格；群主对同一纪元号签了两个纪元 | 否 |
 | `GROUP_DELIVERY` | 客户端 | 全部尝试之后仍有群投递失败（`data` 是投递结果） | 视情况 |
 | `BAD_RESPONSE` | 客户端 | 中继或你钱包的 `sendTx` 回答了无法使用的内容 | 否 |
 | `BUS_PRIVACY`、`BUS_BUDGET` | 客户端 | 掩护房间不足；按合约读取超出预算 | 否 |

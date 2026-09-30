@@ -1,4 +1,4 @@
-# group-chat — 最小群聊（TAP-27）
+# group-chat — 最小群聊（TAPI-27）
 
 **给谁**：要在自己的应用里加群聊的开发者。
 **做什么**：用公共中继 `12.1013.tape` 走完一次群聊：两个临时身份（群主 Alice、成员 Bob），各用自己的 TapeAPI 客户端。
@@ -46,7 +46,7 @@ node examples/group-chat/index.mjs
 
 ---
 
-# group-chat — a minimal group chat (TAP-27)
+# group-chat — a minimal group chat (TAPI-27)
 
 **For**: developers adding group chat to their application.
 **What it does**: one group chat over the public relay `12.1013.tape`, with two throwaway identities (Alice the owner,

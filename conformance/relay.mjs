@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// TapeAPI RELAY conformance suite (black-box, TAP-26 §3.5). / TapeAPI 中继一致性测试套件（黑盒，TAP-26 §3.5）。
+// TapeAPI RELAY conformance suite (black-box, TAPI-26 §3.5). / TapeAPI 中继一致性测试套件（黑盒，TAPI-26 §3.5）。
 //
-// A relay is itself a TapeAPI service: relaySend / relayHandshake / relayRecv are TAP-21 calls answered with signed
+// A relay is itself a TapeAPI service: relaySend / relayHandshake / relayRecv are TAPI-21 calls answered with signed
 // envelopes. This suite tests ANY relay by URL. Every answer goes through the provider suite's envelope checks
 // (conformance/lib.mjs), and every relay check has a stable id, a level (MUST / SHOULD) and a spec citation.
-// 中继本身就是 TapeAPI 服务：relaySend / relayHandshake / relayRecv 都是以签名信封作答的 TAP-21 调用。本套件按 URL
+// 中继本身就是 TapeAPI 服务：relaySend / relayHandshake / relayRecv 都是以签名信封作答的 TAPI-21 调用。本套件按 URL
 // 测试任意中继；每个回答都经过提供者套件的信封检查，每一项中继检查都有稳定 id、级别（MUST / SHOULD）与规范出处。
 //
 //   node conformance/relay.mjs --url http://127.0.0.1:8788 [--manifest trusted.json]
@@ -25,9 +25,9 @@ import { createHarness, summarize, formatText, formatJUnit, parseArgs, isPlainOb
 
 export { summarize, failed, formatText, formatJUnit } from './lib.mjs'
 
-const S = 'TAP-26 §3.5'
+const S = 'TAPI-26 §3.5'
 const EPOCH_RE = /^[0-9a-f]{1,32}$/
-const MAX_WIRE = 16_448            // largest wire message (TAP-26 §3.2: a sealed invite) / 最大线路消息
+const MAX_WIRE = 16_448            // largest wire message (TAPI-26 §3.2: a sealed invite) / 最大线路消息
 // Reference-relay figures, used when the operator does not state its own (and then only at SHOULD level).
 // 参考中继的数值；运营方未声明自己的数值时使用（此时只按 SHOULD 判定）。
 const REF = { maxFrameB64: 22_000, handshakeB64: 2_048, roomFrames: 256 }
@@ -84,8 +84,8 @@ export async function runRelaySuite(opts = {}) {
     skip: () => {}, rec: () => {},
   }
 
-  // ---- one relay call. 429s are waited out (Retry-After) and kept for the TAP-21 §3.4 checks. ----
-  // ---- 一次中继调用。429 按 Retry-After 等待后重试，并留作 TAP-21 §3.4 检查。----
+  // ---- one relay call. 429s are waited out (Retry-After) and kept for the TAPI-21 §3.4 checks. ----
+  // ---- 一次中继调用。429 按 Retry-After 等待后重试，并留作 TAPI-21 §3.4 检查。----
   async function call(method, params, { ctx, bulk = false, timeoutMs } = {}) {
     for (let attempt = 0; ; attempt++) {
       const reqId = `relay-${randomUUID()}`
@@ -129,7 +129,7 @@ export async function runRelaySuite(opts = {}) {
     // 只判定 ok:true 的回答；拒绝由期待回答的那项检查负责。
     if (!res.limited && res.env?.ok === true) {
       const err = recvShapeErr(res)
-      ;(bulk ? bulkR : H).check(!err, 'tap26.relay.recv.result-shape', 'MUST', `${S} (table)`, ctx, err)
+      ;(bulk ? bulkR : H).check(!err, 'tapi26.relay.recv.result-shape', 'MUST', `${S} (table)`, ctx, err)
     }
     return res
   }
@@ -156,15 +156,15 @@ export async function runRelaySuite(opts = {}) {
   // ======================================================================================================
   const mr = await http(`${origin}/.well-known/tapeapi.json`)
   let manifest = null
-  if (mr.status === 200 && isPlainObject(mr.json)) { pass('tap20.manifest.fetch', 'MUST', 'TAP-20 §3.2', 'discovery'); manifest = mr.json }
-  else fail('tap20.manifest.fetch', 'MUST', 'TAP-20 §3.2', 'discovery', `GET /.well-known/tapeapi.json: ${describe(mr)}`)
+  if (mr.status === 200 && isPlainObject(mr.json)) { pass('tapi20.manifest.fetch', 'MUST', 'TAPI-20 §3.2', 'discovery'); manifest = mr.json }
+  else fail('tapi20.manifest.fetch', 'MUST', 'TAPI-20 §3.2', 'discovery', `GET /.well-known/tapeapi.json: ${describe(mr)}`)
   let ref = manifest
   if (opts.manifest) {
     ref = opts.manifest
     if (manifest) {
       let same = false
       try { same = canonicalJSON(manifest) === canonicalJSON(opts.manifest) } catch { same = false }
-      check(same, 'tap20.manifest.matches-trusted', 'SHOULD', 'TAP-20 §3.6', 'discovery', 'served /.well-known/tapeapi.json differs from the trusted (on-chain) manifest')
+      check(same, 'tapi20.manifest.matches-trusted', 'SHOULD', 'TAPI-20 §3.6', 'discovery', 'served /.well-known/tapeapi.json differs from the trusted (on-chain) manifest')
     }
   }
   if (!ref || !isAddress(ref.signer) || !isAddress(ref.container) || !Array.isArray(ref.methods)) {
@@ -179,9 +179,9 @@ export async function runRelaySuite(opts = {}) {
   // 2. Manifest: three methods, handshake and recv free / 清单：三个方法，握手与接收免费
   // ======================================================================================================
   const missing = ['relaySend', 'relayHandshake', 'relayRecv'].filter((n) => !byName.has(n))
-  check(!missing.length, 'tap26.relay.manifest.methods', 'MUST', `${S} (table)`, 'manifest', `manifest does not list ${missing.join(', ')}`)
-  if (byName.has('relayHandshake')) check(priceOf('relayHandshake') === 0n, 'tap26.relay.manifest.handshake-free', 'MUST', `${S} (table: relayHandshake MUST be 0)`, 'manifest', `relayHandshake priceBEM ${JSON.stringify(byName.get('relayHandshake').priceBEM)}`)
-  if (byName.has('relayRecv')) check(priceOf('relayRecv') === 0n, 'tap26.relay.manifest.recv-free', 'MUST', `${S} (table)`, 'manifest', `relayRecv priceBEM ${JSON.stringify(byName.get('relayRecv').priceBEM)}`)
+  check(!missing.length, 'tapi26.relay.manifest.methods', 'MUST', `${S} (table)`, 'manifest', `manifest does not list ${missing.join(', ')}`)
+  if (byName.has('relayHandshake')) check(priceOf('relayHandshake') === 0n, 'tapi26.relay.manifest.handshake-free', 'MUST', `${S} (table: relayHandshake MUST be 0)`, 'manifest', `relayHandshake priceBEM ${JSON.stringify(byName.get('relayHandshake').priceBEM)}`)
+  if (byName.has('relayRecv')) check(priceOf('relayRecv') === 0n, 'tapi26.relay.manifest.recv-free', 'MUST', `${S} (table)`, 'manifest', `relayRecv priceBEM ${JSON.stringify(byName.get('relayRecv').priceBEM)}`)
   if (!byName.has('relayRecv') || (!byName.has('relaySend') && !byName.has('relayHandshake'))) {
     fail('suite.prerequisites', 'MUST', '', 'manifest', 'relayRecv and a posting method are needed for the remaining checks')
     return finish()
@@ -208,17 +208,17 @@ export async function runRelaySuite(opts = {}) {
   {
     const U = hex(32), ctx = 'unknown-room'
     const a = await recv(U, -1, { ctx })
-    if (usable(a, 'tap26.relay.recv.unknown-room', 'MUST', ctx)) {
+    if (usable(a, 'tapi26.relay.recv.unknown-room', 'MUST', ctx)) {
       const x = okResult(a)
-      check(x && Array.isArray(x.frames) && x.frames.length === 0 && x.epoch === null, 'tap26.relay.recv.unknown-room', 'MUST', `${S} (Epoch: null from relayRecv for a room that does not exist)`, ctx,
+      check(x && Array.isArray(x.frames) && x.frames.length === 0 && x.epoch === null, 'tapi26.relay.recv.unknown-room', 'MUST', `${S} (Epoch: null from relayRecv for a room that does not exist)`, ctx,
         `expected { frames: [], epoch: null }, got ${outcome(a)}`)
-      check(x && x.next === -1, 'tap26.relay.recv.next', 'MUST', `${S} (next: after unchanged when nothing was returned)`, `${ctx}:after=-1`, `next ${JSON.stringify(x?.next)} != -1`)
+      check(x && x.next === -1, 'tapi26.relay.recv.next', 'MUST', `${S} (next: after unchanged when nothing was returned)`, `${ctx}:after=-1`, `next ${JSON.stringify(x?.next)} != -1`)
     }
     const b = await recv(U, 5, { ctx: `${ctx}:again` })
-    if (usable(b, 'tap26.relay.recv.no-create', 'MUST', ctx)) {
+    if (usable(b, 'tapi26.relay.recv.no-create', 'MUST', ctx)) {
       const x = okResult(b)
-      check(x && x.epoch === null && Array.isArray(x.frames) && !x.frames.length, 'tap26.relay.recv.no-create', 'MUST', `${S} (Rooms: only a post creates a room)`, ctx, `a second relayRecv on the same unposted room got ${outcome(b)}: relayRecv created or pinned it`)
-      check(x && x.next === 5, 'tap26.relay.recv.next', 'MUST', `${S} (next: after unchanged when nothing was returned)`, `${ctx}:after=5`, `next ${JSON.stringify(x?.next)} != 5`)
+      check(x && x.epoch === null && Array.isArray(x.frames) && !x.frames.length, 'tapi26.relay.recv.no-create', 'MUST', `${S} (Rooms: only a post creates a room)`, ctx, `a second relayRecv on the same unposted room got ${outcome(b)}: relayRecv created or pinned it`)
+      check(x && x.next === 5, 'tapi26.relay.recv.next', 'MUST', `${S} (next: after unchanged when nothing was returned)`, `${ctx}:after=5`, `next ${JSON.stringify(x?.next)} != 5`)
     }
   }
 
@@ -232,17 +232,17 @@ export async function runRelaySuite(opts = {}) {
     const posts = []
     for (let k = 0; k < 4; k++) posts.push(await postAny(P, `${ctx}#${k}`))
     const ok = posts.every(({ res }) => !res.limited && res.env)
-    if (!ok) for (const { res } of posts) usable(res, 'tap26.relay.post.result-shape', 'MUST', ctx)
+    if (!ok) for (const { res } of posts) usable(res, 'tapi26.relay.post.result-shape', 'MUST', ctx)
     else {
       const bad = posts.find(({ res }) => !postShapeOk(res))
-      check(!bad, 'tap26.relay.post.result-shape', 'MUST', `${S} (table: { i, epoch })`, ctx, `expected ok:true { i: integer >= 0, epoch: string }, got ${bad && outcome(bad.res)}`)
+      check(!bad, 'tapi26.relay.post.result-shape', 'MUST', `${S} (table: { i, epoch })`, ctx, `expected ok:true { i: integer >= 0, epoch: string }, got ${bad && outcome(bad.res)}`)
       if (!bad) {
         const res = posts.map(({ res }) => okResult(res))
         pIdx = res.map((x) => x.i); pEpoch = res[0].epoch
-        check(EPOCH_RE.test(pEpoch), 'tap26.relay.epoch.format', 'MUST', `${S} (Epoch: MUST match ^[0-9a-f]{1,32}$)`, ctx, `epoch ${JSON.stringify(pEpoch)}`)
-        check(res.every((x) => x.epoch === pEpoch), 'tap26.relay.epoch.every-method', 'MUST', `${S} (Epoch: returned from every method)`, `${ctx}:same-room`, `one room answered several epochs: ${res.map((x) => x.epoch).join(', ')}`)
-        check(pIdx.every((i, k) => k === 0 || i > pIdx[k - 1]), 'tap26.relay.index.increasing', 'MUST', `${S} (i strictly increasing within the room)`, ctx, `indices ${pIdx.join(', ')}`)
-        check(pEpoch.length >= 16, 'tap26.relay.epoch.length', 'SHOULD', `${S} (Epoch: RECOMMENDED 8 bytes)`, ctx, `epoch ${pEpoch} is ${pEpoch.length / 2} bytes`)
+        check(EPOCH_RE.test(pEpoch), 'tapi26.relay.epoch.format', 'MUST', `${S} (Epoch: MUST match ^[0-9a-f]{1,32}$)`, ctx, `epoch ${JSON.stringify(pEpoch)}`)
+        check(res.every((x) => x.epoch === pEpoch), 'tapi26.relay.epoch.every-method', 'MUST', `${S} (Epoch: returned from every method)`, `${ctx}:same-room`, `one room answered several epochs: ${res.map((x) => x.epoch).join(', ')}`)
+        check(pIdx.every((i, k) => k === 0 || i > pIdx[k - 1]), 'tapi26.relay.index.increasing', 'MUST', `${S} (i strictly increasing within the room)`, ctx, `indices ${pIdx.join(', ')}`)
+        check(pEpoch.length >= 16, 'tapi26.relay.epoch.length', 'SHOULD', `${S} (Epoch: RECOMMENDED 8 bytes)`, ctx, `epoch ${pEpoch} is ${pEpoch.length / 2} bytes`)
       }
     }
     if (pEpoch !== undefined) {
@@ -251,54 +251,54 @@ export async function runRelaySuite(opts = {}) {
       const show = (fs) => fs.map((f) => `${f.i}:${f.frame.slice(0, 12)}`).join(' ')
       // after = -1, no epoch: everything, in posting order, byte-identical / 全部帧，按投递顺序，逐字节一致
       const all = await recv(P, -1, { ctx: 'recv:after=-1' })
-      if (usable(all, 'tap26.relay.recv.order', 'MUST', 'recv:after=-1')) {
+      if (usable(all, 'tapi26.relay.recv.order', 'MUST', 'recv:after=-1')) {
         const x = okResult(all)
         const frames = Array.isArray(x?.frames) ? x.frames : []
         const idx = frames.map((f) => f.i)
-        check(idx.every((i, k) => k === 0 || i > idx[k - 1]) && JSON.stringify(idx) === JSON.stringify(pIdx), 'tap26.relay.recv.order', 'MUST', `${S} (relayRecv returns stored frames with i > after, in posting order)`, 'recv:after=-1', `posted ${pIdx.join(',')}, got ${idx.join(',')}`)
-        check(same(frames, sent), 'tap26.relay.recv.content', 'MUST', `${S} (frame is returned as posted)`, 'recv:after=-1', `posted ${show(sent)} / got ${show(frames)}`)
-        check(x?.epoch === pEpoch, 'tap26.relay.epoch.every-method', 'MUST', `${S} (Epoch: returned from every method)`, 'relayRecv', `relayRecv epoch ${JSON.stringify(x?.epoch)} != post epoch ${pEpoch}`)
-        check(x?.next === pIdx[3], 'tap26.relay.recv.next', 'MUST', `${S} (next: the last returned i)`, 'recv:after=-1', `next ${JSON.stringify(x?.next)} != last i ${pIdx[3]}`)
+        check(idx.every((i, k) => k === 0 || i > idx[k - 1]) && JSON.stringify(idx) === JSON.stringify(pIdx), 'tapi26.relay.recv.order', 'MUST', `${S} (relayRecv returns stored frames with i > after, in posting order)`, 'recv:after=-1', `posted ${pIdx.join(',')}, got ${idx.join(',')}`)
+        check(same(frames, sent), 'tapi26.relay.recv.content', 'MUST', `${S} (frame is returned as posted)`, 'recv:after=-1', `posted ${show(sent)} / got ${show(frames)}`)
+        check(x?.epoch === pEpoch, 'tapi26.relay.epoch.every-method', 'MUST', `${S} (Epoch: returned from every method)`, 'relayRecv', `relayRecv epoch ${JSON.stringify(x?.epoch)} != post epoch ${pEpoch}`)
+        check(x?.next === pIdx[3], 'tapi26.relay.recv.next', 'MUST', `${S} (next: the last returned i)`, 'recv:after=-1', `next ${JSON.stringify(x?.next)} != last i ${pIdx[3]}`)
       }
       // after = i1 with the right epoch: only the frames after it / 正确纪元下 after = i1：只返回其后的帧
       const mid = await recv(P, pIdx[1], { epoch: pEpoch, ctx: `recv:after=${pIdx[1]}` })
-      if (usable(mid, 'tap26.relay.recv.after', 'MUST', 'recv:after=i1')) {
+      if (usable(mid, 'tapi26.relay.recv.after', 'MUST', 'recv:after=i1')) {
         const x = okResult(mid)
-        check(same(Array.isArray(x?.frames) ? x.frames : [], sent.slice(2)), 'tap26.relay.recv.after', 'MUST', `${S} (relayRecv returns the frames with i > after)`, `recv:after=${pIdx[1]}`, `expected ${show(sent.slice(2))}, got ${outcome(mid)}`)
-        check(x?.next === pIdx[3], 'tap26.relay.recv.next', 'MUST', `${S} (next: the last returned i)`, `recv:after=${pIdx[1]}`, `next ${JSON.stringify(x?.next)} != ${pIdx[3]}`)
+        check(same(Array.isArray(x?.frames) ? x.frames : [], sent.slice(2)), 'tapi26.relay.recv.after', 'MUST', `${S} (relayRecv returns the frames with i > after)`, `recv:after=${pIdx[1]}`, `expected ${show(sent.slice(2))}, got ${outcome(mid)}`)
+        check(x?.next === pIdx[3], 'tapi26.relay.recv.next', 'MUST', `${S} (next: the last returned i)`, `recv:after=${pIdx[1]}`, `next ${JSON.stringify(x?.next)} != ${pIdx[3]}`)
       }
       // after = last: nothing, next unchanged / after = 最后一个：空，next 不变
       const tail = await recv(P, pIdx[3], { epoch: pEpoch, ctx: 'recv:after=last' })
-      if (usable(tail, 'tap26.relay.recv.after', 'MUST', 'recv:after=last')) {
+      if (usable(tail, 'tapi26.relay.recv.after', 'MUST', 'recv:after=last')) {
         const x = okResult(tail)
-        check(Array.isArray(x?.frames) && !x.frames.length, 'tap26.relay.recv.after', 'MUST', `${S} (relayRecv returns the frames with i > after)`, 'recv:after=last', `expected no frames, got ${outcome(tail)}`)
-        check(x?.next === pIdx[3], 'tap26.relay.recv.next', 'MUST', `${S} (next: after unchanged when nothing was returned)`, 'recv:after=last', `next ${JSON.stringify(x?.next)} != ${pIdx[3]}`)
+        check(Array.isArray(x?.frames) && !x.frames.length, 'tapi26.relay.recv.after', 'MUST', `${S} (relayRecv returns the frames with i > after)`, 'recv:after=last', `expected no frames, got ${outcome(tail)}`)
+        check(x?.next === pIdx[3], 'tapi26.relay.recv.next', 'MUST', `${S} (next: after unchanged when nothing was returned)`, 'recv:after=last', `next ${JSON.stringify(x?.next)} != ${pIdx[3]}`)
       }
       // A cursor from another epoch: answered as if after were -1 / 另一个纪元的游标：按 after = -1 作答
       const wrong = pEpoch === '0' ? '1' : '0'
       const stale = await recv(P, pIdx[3], { epoch: wrong, ctx: `recv:stale-epoch=${wrong}` })
-      if (usable(stale, 'tap26.relay.epoch.mismatch-resets', 'MUST', 'stale-epoch')) {
+      if (usable(stale, 'tapi26.relay.epoch.mismatch-resets', 'MUST', 'stale-epoch')) {
         const x = okResult(stale)
-        check(same(Array.isArray(x?.frames) ? x.frames : [], sent) && x?.epoch === pEpoch, 'tap26.relay.epoch.mismatch-resets', 'MUST', `${S} (Epoch: when the relay's epoch differs it MUST answer as if after were -1)`, `recv:after=${pIdx[3]},epoch=${wrong}`,
+        check(same(Array.isArray(x?.frames) ? x.frames : [], sent) && x?.epoch === pEpoch, 'tapi26.relay.epoch.mismatch-resets', 'MUST', `${S} (Epoch: when the relay's epoch differs it MUST answer as if after were -1)`, `recv:after=${pIdx[3]},epoch=${wrong}`,
           `expected all ${sent.length} frames and epoch ${pEpoch}, got ${outcome(stale)}`)
       }
       // The signature binds the answer to the room and cursor asked about: it cannot be replayed for another.
       // 签名把回答绑定到所问的房间与游标：不能挪用到别处。
       if (okResult(all)) {
         const other = { ...all.params, room: hex(32) }, moved = { ...all.params, after: pIdx[0] }
-        check(!verifies(all.env, all.reqId, 'relayRecv', other).ok && !verifies(all.env, all.reqId, 'relayRecv', moved).ok, 'tap26.relay.envelope.bound', 'MUST', `${S} (a relay's claim to have delivered or not delivered a frame is signed) / TAP-21 §3.3`, 'relayRecv',
+        check(!verifies(all.env, all.reqId, 'relayRecv', other).ok && !verifies(all.env, all.reqId, 'relayRecv', moved).ok, 'tapi26.relay.envelope.bound', 'MUST', `${S} (a relay's claim to have delivered or not delivered a frame is signed) / TAPI-21 §3.3`, 'relayRecv',
           'the relayRecv envelope also verifies for another room or cursor')
       }
       const p0 = posts[0].res
-      if (p0.env) check(!verifies(p0.env, p0.reqId, postVia, { room: P, frame: wire(0x02, 40) }).ok, 'tap26.relay.envelope.bound', 'MUST', 'TAP-21 §3.3', postVia, `the ${postVia} envelope also verifies for another frame`)
+      if (p0.env) check(!verifies(p0.env, p0.reqId, postVia, { room: P, frame: wire(0x02, 40) }).ok, 'tapi26.relay.envelope.bound', 'MUST', 'TAPI-21 §3.3', postVia, `the ${postVia} envelope also verifies for another frame`)
     }
     // A second room gets its own random epoch / 第二个房间有自己的随机纪元
     const Q = hex(32)
     const q = (await postAny(Q, 'post:second-room')).res
     const qe = okResult(q)?.epoch
-    if (pEpoch === undefined || typeof qe !== 'string') skip('tap26.relay.epoch.random', 'MUST', S, 'two-rooms', `no epochs to compare (${outcome(q)})`)
-    else if (Math.min(pEpoch.length, qe.length) < 8) skip('tap26.relay.epoch.random', 'MUST', S, 'two-rooms', `epochs shorter than 4 bytes (${pEpoch}, ${qe}) can collide by chance`)
-    else check(pEpoch !== qe, 'tap26.relay.epoch.random', 'MUST', `${S} (Epoch: a random epoch per room)`, 'two-rooms', `two new rooms got the same epoch ${qe}`)
+    if (pEpoch === undefined || typeof qe !== 'string') skip('tapi26.relay.epoch.random', 'MUST', S, 'two-rooms', `no epochs to compare (${outcome(q)})`)
+    else if (Math.min(pEpoch.length, qe.length) < 8) skip('tapi26.relay.epoch.random', 'MUST', S, 'two-rooms', `epochs shorter than 4 bytes (${pEpoch}, ${qe}) can collide by chance`)
+    else check(pEpoch !== qe, 'tapi26.relay.epoch.random', 'MUST', `${S} (Epoch: a random epoch per room)`, 'two-rooms', `two new rooms got the same epoch ${qe}`)
   }
 
   // ======================================================================================================
@@ -307,8 +307,8 @@ export async function runRelaySuite(opts = {}) {
   {
     const bad = async (ctx, method, params) => {
       const res = await call(method, params, { ctx })
-      if (res.limited) return skip('tap26.relay.request.bad-params', 'SHOULD', S, ctx, 'rate limited')
-      check(errCode(res) === 'BAD_REQUEST', 'tap26.relay.request.bad-params', 'SHOULD', `${S} / TAP-21 §3.2 (caller errors are BAD_REQUEST)`, ctx, `expected BAD_REQUEST, got ${outcome(res)}`)
+      if (res.limited) return skip('tapi26.relay.request.bad-params', 'SHOULD', S, ctx, 'rate limited')
+      check(errCode(res) === 'BAD_REQUEST', 'tapi26.relay.request.bad-params', 'SHOULD', `${S} / TAPI-21 §3.2 (caller errors are BAD_REQUEST)`, ctx, `expected BAD_REQUEST, got ${outcome(res)}`)
     }
     await bad('recv:room-not-hex', 'relayRecv', { room: 'zz'.repeat(32), after: -1, waitMs: 0 })
     await bad('recv:after=-2', 'relayRecv', { room: hex(32), after: -2, waitMs: 0 })
@@ -321,26 +321,26 @@ export async function runRelaySuite(opts = {}) {
   // 6. Frame size and answer size / 帧大小与回答大小
   // ======================================================================================================
   let maxWireOk = false
-  if (!canSend) for (const [id, lv] of [['tap26.relay.send.max-wire', 'SHOULD'], ['tap26.relay.send.oversize', opts.maxFrameB64 ? 'MUST' : 'SHOULD'], ['tap26.relay.recv.fits-cap', 'MUST']]) skipPriced(id, lv, 'size')
+  if (!canSend) for (const [id, lv] of [['tapi26.relay.send.max-wire', 'SHOULD'], ['tapi26.relay.send.oversize', opts.maxFrameB64 ? 'MUST' : 'SHOULD'], ['tapi26.relay.recv.fits-cap', 'MUST']]) skipPriced(id, lv, 'size')
   else {
     const R0 = hex(32), big = wire(0x02, MAX_WIRE - 1)
     const a = await call('relaySend', { room: R0, frame: big }, { ctx: `send:${MAX_WIRE}B` })
     if (!a.limited) {
       maxWireOk = postShapeOk(a)
-      check(maxWireOk, 'tap26.relay.send.max-wire', 'SHOULD', `${S} (the frame cap holds the largest wire message, ${MAX_WIRE} bytes)`, `send:${MAX_WIRE}B=${big.length}b64`, `a ${MAX_WIRE}-byte wire message was refused: ${outcome(a)}`)
+      check(maxWireOk, 'tapi26.relay.send.max-wire', 'SHOULD', `${S} (the frame cap holds the largest wire message, ${MAX_WIRE} bytes)`, `send:${MAX_WIRE}B=${big.length}b64`, `a ${MAX_WIRE}-byte wire message was refused: ${outcome(a)}`)
     }
     const overBytes = Math.floor(maxFrameB64 / 4) * 3 + 3
     const over = wire(0x02, overBytes - 1)
     const level = opts.maxFrameB64 ? 'MUST' : 'SHOULD'
     const o = await call('relaySend', { room: R0, frame: over }, { ctx: `send:${over.length}b64` })
     if (!o.limited) {
-      check(o.env && o.env.ok === false, 'tap26.relay.send.oversize', level, `${S} (a relay caps the size of a frame)`, `send:${over.length}b64>cap ${maxFrameB64}`,
+      check(o.env && o.env.ok === false, 'tapi26.relay.send.oversize', level, `${S} (a relay caps the size of a frame)`, `send:${over.length}b64>cap ${maxFrameB64}`,
         `a ${over.length}-character frame was not refused (${outcome(o)})${opts.maxFrameB64 ? '' : '; pass --max-frame-b64 if your cap is larger than the reference 22,000'}`)
-      if (o.env?.ok === false) check(errCode(o) === 'BAD_REQUEST', 'tap26.relay.send.oversize.code', 'SHOULD', `${S} / TAP-21 §3.2 (a caller error)`, `send:${over.length}b64`, `refused with ${errCode(o)}, expected BAD_REQUEST`)
+      if (o.env?.ok === false) check(errCode(o) === 'BAD_REQUEST', 'tapi26.relay.send.oversize.code', 'SHOULD', `${S} / TAPI-21 §3.2 (a caller error)`, `send:${over.length}b64`, `refused with ${errCode(o)}, expected BAD_REQUEST`)
     }
     // A backlog above 1 MiB is handed over in pages that each fit, in order, never skipping.
     // 超过 1 MiB 的积压分页交付：每页都放得下，按顺序，不跳帧。
-    if (!maxWireOk) skip('tap26.relay.recv.fits-cap', 'MUST', S, 'backlog', `the relay refused a ${MAX_WIRE}-byte frame, so no backlog above 1 MiB can be built`)
+    if (!maxWireOk) skip('tapi26.relay.recv.fits-cap', 'MUST', S, 'backlog', `the relay refused a ${MAX_WIRE}-byte frame, so no backlog above 1 MiB can be built`)
     else {
       const R1 = hex(32), k = Math.ceil((ENVELOPE_LIMIT * 1.25) / big.length)
       const posted = []
@@ -354,21 +354,21 @@ export async function runRelaySuite(opts = {}) {
         posted.push({ i: x.i, frame: f })
       }
       const ctx = `backlog:${posted.length}x${big.length}b64`
-      if (posted.length < k) fail('tap26.relay.recv.fits-cap', 'MUST', S, ctx, `could not build the backlog: only ${posted.length}/${k} frames accepted`)
+      if (posted.length < k) fail('tapi26.relay.recv.fits-cap', 'MUST', S, ctx, `could not build the backlog: only ${posted.length}/${k} frames accepted`)
       else {
         const { got, pages } = await drain(R1, epoch, 'backlog', { lastPosted: posted[posted.length - 1].i })
         const tooBig = pages.filter((p) => p.r.size > ENVELOPE_LIMIT || (p.env && p.env.ok !== true) || !p.env)
-        check(!tooBig.length, 'tap26.relay.recv.fits-cap', 'MUST', `${S} (an answer MUST fit the TAP-21 response cap, 1 MiB)`, ctx,
+        check(!tooBig.length, 'tapi26.relay.recv.fits-cap', 'MUST', `${S} (an answer MUST fit the TAPI-21 response cap, 1 MiB)`, ctx,
           `${tooBig.length}/${pages.length} pages over 1 MiB or not ok:true; first: ${tooBig[0] ? `${tooBig[0].r.size} bytes, ${outcome(tooBig[0])}` : ''}`, `${pages.length} pages, largest ${Math.max(...pages.map((p) => p.r.size))} bytes`)
         const last = posted[posted.length - 1].i
         const reached = got.length && got[got.length - 1].i === last
-        check(reached, 'tap26.relay.recv.progress', 'MUST', `${S} (as many frames as fit, always at least one; next says where to continue)`, ctx,
+        check(reached, 'tapi26.relay.recv.progress', 'MUST', `${S} (as many frames as fit, always at least one; next says where to continue)`, ctx,
           `paging stalled at ${got.length ? got[got.length - 1].i : 'nothing'} before the last posted index ${last} (a cursor that never advances kills the channel)`)
         const byI = new Map(posted.map((p) => [p.i, p.frame]))
         const idx = got.map((f) => f.i)
         const firstKept = posted.findIndex((p) => p.i === idx[0])
         const suffix = firstKept >= 0 && got.length === posted.length - firstKept && got.every((f, j) => f.i === posted[firstKept + j].i && f.frame === byI.get(f.i))
-        check(suffix, 'tap26.relay.recv.paging-order', 'MUST', `${S} (posting order; only the oldest frames MAY be dropped)`, ctx,
+        check(suffix, 'tapi26.relay.recv.paging-order', 'MUST', `${S} (posting order; only the oldest frames MAY be dropped)`, ctx,
           `across pages got ${got.length} frames (${idx.slice(0, 6).join(',')}…) that are not an in-order suffix of the ${posted.length} posted`)
       }
     }
@@ -397,29 +397,29 @@ export async function runRelaySuite(opts = {}) {
     }
     if (holds) {
       const h = await holds
-      if (usable(h, 'tap26.relay.longpoll.bounded', 'MUST', 'longpoll')) {
+      if (usable(h, 'tapi26.relay.longpoll.bounded', 'MUST', 'longpoll')) {
         const x = okResult(h)
-        check(x && Array.isArray(x.frames) && !x.frames.length && h.ms <= HOLD + slackMs, 'tap26.relay.longpoll.bounded', 'MUST', `${S} (MAY hold the request for up to waitMs)`, `longpoll:waitMs=${HOLD}`,
+        check(x && Array.isArray(x.frames) && !x.frames.length && h.ms <= HOLD + slackMs, 'tapi26.relay.longpoll.bounded', 'MUST', `${S} (MAY hold the request for up to waitMs)`, `longpoll:waitMs=${HOLD}`,
           `an empty poll with waitMs ${HOLD} answered after ${h.ms} ms: ${outcome(h)}`)
-        check(h.ms >= HOLD - 300, 'tap26.relay.longpoll.holds', 'SHOULD', `${S} (MAY hold for up to waitMs; TAP-26 §4 long-poll)`, `longpoll:waitMs=${HOLD}`,
+        check(h.ms >= HOLD - 300, 'tapi26.relay.longpoll.holds', 'SHOULD', `${S} (MAY hold for up to waitMs; TAPI-26 §4 long-poll)`, `longpoll:waitMs=${HOLD}`,
           `answered an empty poll after ${h.ms} ms: the relay does not hold polls (or caps waitMs below ${HOLD} ms), so peers busy-poll`)
       }
-    } else skip('tap26.relay.longpoll.bounded', 'MUST', S, 'longpoll', 'no room to poll (posting failed above)')
-    if (!wake) skip('tap26.relay.longpoll.wakes', 'SHOULD', S, 'longpoll:wake', `could not create a room: ${outcome(w0)}`)
-    else if (wake.res.limited) skip('tap26.relay.longpoll.wakes', 'SHOULD', S, 'longpoll:wake', 'rate limited')
+    } else skip('tapi26.relay.longpoll.bounded', 'MUST', S, 'longpoll', 'no room to poll (posting failed above)')
+    if (!wake) skip('tapi26.relay.longpoll.wakes', 'SHOULD', S, 'longpoll:wake', `could not create a room: ${outcome(w0)}`)
+    else if (wake.res.limited) skip('tapi26.relay.longpoll.wakes', 'SHOULD', S, 'longpoll:wake', 'rate limited')
     else {
       const x = okResult(wake.res)
       const got = Array.isArray(x?.frames) ? x.frames : []
-      if (wake.at < postedAt && !got.length) skip('tap26.relay.longpoll.wakes', 'SHOULD', S, 'longpoll:wake', `the poll returned empty after ${wake.at - wake.t0} ms, before a frame was posted: the relay does not hold polls`)
-      else check(got.some((f) => f.frame === wakeFrame) && wake.at - postedAt <= slackMs, 'tap26.relay.longpoll.wakes', 'SHOULD', `${S} (answer as soon as one arrives)`, 'longpoll:wake',
+      if (wake.at < postedAt && !got.length) skip('tapi26.relay.longpoll.wakes', 'SHOULD', S, 'longpoll:wake', `the poll returned empty after ${wake.at - wake.t0} ms, before a frame was posted: the relay does not hold polls`)
+      else check(got.some((f) => f.frame === wakeFrame) && wake.at - postedAt <= slackMs, 'tapi26.relay.longpoll.wakes', 'SHOULD', `${S} (answer as soon as one arrives)`, 'longpoll:wake',
         `a poll waiting 5000 ms answered ${wake.at - postedAt} ms after a frame was posted, with ${got.length} frame(s): ${outcome(wake.res)}`, `woke ${wake.at - postedAt} ms after the post`)
     }
     for (const [pr, ctx] of [[fullTail, 'longpoll:full:existing-room'], [fullNone, 'longpoll:full:unknown-room']]) {
-      if (!pr) { skip('tap26.relay.longpoll.full-length', 'MUST', S, ctx, 'no room to poll'); continue }
+      if (!pr) { skip('tapi26.relay.longpoll.full-length', 'MUST', S, ctx, 'no room to poll'); continue }
       const f = await pr
-      if (f.limited) { skip('tap26.relay.longpoll.full-length', 'MUST', S, ctx, 'rate limited'); continue }
+      if (f.limited) { skip('tapi26.relay.longpoll.full-length', 'MUST', S, ctx, 'rate limited'); continue }
       const x = okResult(f)
-      check(!!x && Array.isArray(x.frames) && !x.frames.length, 'tap26.relay.longpoll.full-length', 'MUST', `${S} (a relay caps waitMs below its own response deadline, or a full-length poll is answered with INTERNAL instead of an empty result)`, `${ctx}:waitMs=${fullWaitMs}`,
+      check(!!x && Array.isArray(x.frames) && !x.frames.length, 'tapi26.relay.longpoll.full-length', 'MUST', `${S} (a relay caps waitMs below its own response deadline, or a full-length poll is answered with INTERNAL instead of an empty result)`, `${ctx}:waitMs=${fullWaitMs}`,
         `a poll asking for ${fullWaitMs} ms got, after ${f.ms} ms: ${outcome(f)}`, `empty answer after ${f.ms} ms (the relay's effective cap)`)
     }
   }
@@ -428,24 +428,24 @@ export async function runRelaySuite(opts = {}) {
   // 8. relayHandshake: the free path carries 0x01 accept / ready only / 免费握手通道只承载 0x01 accept / ready
   // ======================================================================================================
   if (!canHandshake) {
-    for (const id of ['tap26.relay.handshake.accept', 'tap26.relay.handshake.refuse-other']) skip(id, 'MUST', S, 'handshake', byName.has('relayHandshake') ? 'relayHandshake is priced (see tap26.relay.manifest.handshake-free)' : 'the manifest lists no relayHandshake')
+    for (const id of ['tapi26.relay.handshake.accept', 'tapi26.relay.handshake.refuse-other']) skip(id, 'MUST', S, 'handshake', byName.has('relayHandshake') ? 'relayHandshake is priced (see tapi26.relay.manifest.handshake-free)' : 'the manifest lists no relayHandshake')
   } else {
     const Hs = hex(32)
     const acc = await call('relayHandshake', { room: Hs, frame: handshakeWire('accept') }, { ctx: 'handshake:accept' })
     const rdy = await call('relayHandshake', { room: Hs, frame: handshakeWire('ready') }, { ctx: 'handshake:ready' })
     for (const [res, t] of [[acc, 'accept'], [rdy, 'ready']]) {
-      if (!usable(res, 'tap26.relay.handshake.accept', 'MUST', `handshake:${t}`)) continue
+      if (!usable(res, 'tapi26.relay.handshake.accept', 'MUST', `handshake:${t}`)) continue
       const x = okResult(res)
-      check(postShapeOk(res) && EPOCH_RE.test(x.epoch), 'tap26.relay.handshake.accept', 'MUST', `${S} (relayHandshake carries 0x01 + { t: accept | ready }, result { i, epoch })`, `handshake:${t}`, `refused or malformed: ${outcome(res)}`)
+      check(postShapeOk(res) && EPOCH_RE.test(x.epoch), 'tapi26.relay.handshake.accept', 'MUST', `${S} (relayHandshake carries 0x01 + { t: accept | ready }, result { i, epoch })`, `handshake:${t}`, `refused or malformed: ${outcome(res)}`)
     }
-    if (sendPrice > 0n && okResult(acc)) pass('tap26.relay.handshake.no-payment', 'MUST', `${S} (a priced relay MUST carry the handshake for free)`, 'handshake:accept', 'accepted without a voucher')
-    else if (sendPrice > 0n) fail('tap26.relay.handshake.no-payment', 'MUST', `${S} (a priced relay MUST carry the handshake for free)`, 'handshake:accept', `a priced relay refused a free handshake message: ${outcome(acc)}`)
+    if (sendPrice > 0n && okResult(acc)) pass('tapi26.relay.handshake.no-payment', 'MUST', `${S} (a priced relay MUST carry the handshake for free)`, 'handshake:accept', 'accepted without a voucher')
+    else if (sendPrice > 0n) fail('tapi26.relay.handshake.no-payment', 'MUST', `${S} (a priced relay MUST carry the handshake for free)`, 'handshake:accept', `a priced relay refused a free handshake message: ${outcome(acc)}`)
     const ax = okResult(acc), rx = okResult(rdy)
     if (ax && rx) {
-      check(ax.epoch === rx.epoch && rx.i > ax.i, 'tap26.relay.index.increasing', 'MUST', `${S} (i strictly increasing; epoch returned from every method)`, 'handshake', `accept ${ax.i}/${ax.epoch}, ready ${rx.i}/${rx.epoch}`)
+      check(ax.epoch === rx.epoch && rx.i > ax.i, 'tapi26.relay.index.increasing', 'MUST', `${S} (i strictly increasing; epoch returned from every method)`, 'handshake', `accept ${ax.i}/${ax.epoch}, ready ${rx.i}/${rx.epoch}`)
       const back = await recv(Hs, -1, { ctx: 'handshake:recv' })
       const bx = okResult(back)
-      check(bx?.epoch === ax.epoch, 'tap26.relay.epoch.every-method', 'MUST', `${S} (Epoch: returned from every method)`, 'relayHandshake/relayRecv', `relayRecv epoch ${JSON.stringify(bx?.epoch)} != relayHandshake epoch ${ax.epoch}`)
+      check(bx?.epoch === ax.epoch, 'tapi26.relay.epoch.every-method', 'MUST', `${S} (Epoch: returned from every method)`, 'relayHandshake/relayRecv', `relayRecv epoch ${JSON.stringify(bx?.epoch)} != relayHandshake epoch ${ax.epoch}`)
     }
     // Anything but 0x01 + { t: accept | ready } is refused / 其余一律拒绝
     const others = [
@@ -460,9 +460,9 @@ export async function runRelaySuite(opts = {}) {
     for (const [what, frame] of others) {
       const ctx = `handshake:refuse:${what}`
       const res = await call('relayHandshake', { room: hex(32), frame }, { ctx })
-      if (!usable(res, 'tap26.relay.handshake.refuse-other', 'MUST', ctx)) continue
-      check(res.env.ok === false, 'tap26.relay.handshake.refuse-other', 'MUST', `${S} (relayHandshake MUST decode to 0x01 + { t: accept | ready }; the relay refuses anything else)`, ctx, `accepted: ${outcome(res)}`)
-      if (res.env.ok === false) check(errCode(res) === 'BAD_REQUEST', 'tap26.relay.handshake.refuse-code', 'SHOULD', `${S} / TAP-21 §3.2 (a caller error)`, ctx, `refused with ${errCode(res)}, expected BAD_REQUEST`)
+      if (!usable(res, 'tapi26.relay.handshake.refuse-other', 'MUST', ctx)) continue
+      check(res.env.ok === false, 'tapi26.relay.handshake.refuse-other', 'MUST', `${S} (relayHandshake MUST decode to 0x01 + { t: accept | ready }; the relay refuses anything else)`, ctx, `accepted: ${outcome(res)}`)
+      if (res.env.ok === false) check(errCode(res) === 'BAD_REQUEST', 'tapi26.relay.handshake.refuse-code', 'SHOULD', `${S} / TAPI-21 §3.2 (a caller error)`, ctx, `refused with ${errCode(res)}, expected BAD_REQUEST`)
     }
     // A handshake message is small / 握手消息很小
     {
@@ -470,7 +470,7 @@ export async function runRelaySuite(opts = {}) {
       const level = opts.handshakeB64 ? 'MUST' : 'SHOULD'
       const ctx = `handshake:${padded.length}b64>cap ${handshakeB64}`
       const res = await call('relayHandshake', { room: hex(32), frame: padded }, { ctx })
-      if (usable(res, 'tap26.relay.handshake.size', level, ctx)) check(res.env.ok === false, 'tap26.relay.handshake.size', level, `${S} (the relayHandshake frame is small)`, ctx,
+      if (usable(res, 'tapi26.relay.handshake.size', level, ctx)) check(res.env.ok === false, 'tapi26.relay.handshake.size', level, `${S} (the relayHandshake frame is small)`, ctx,
         `a ${padded.length}-character handshake message was accepted${opts.handshakeB64 ? '' : '; pass --handshake-b64 if your cap is larger than the reference 2,048'}`)
     }
     // Per-room limit (MAY); when present it is a caller error / 每房间上限（MAY）；有则为调用方错误
@@ -482,15 +482,15 @@ export async function runRelaySuite(opts = {}) {
         if (res.limited || !res.env) break
         if (res.env.ok === false) { refused = res; break }
       }
-      if (!refused) skip('tap26.relay.handshake.room-limit', 'SHOULD', S, ctx, `no per-room limit within ${n} handshake messages (a relay MAY refuse more than N)`)
-      else check(errCode(refused) === 'BAD_REQUEST', 'tap26.relay.handshake.room-limit', 'SHOULD', `${S} (MAY refuse more than N per room) / TAP-21 §3.2`, ctx, `message ${n + 1} refused with ${errCode(refused)}, expected BAD_REQUEST`, `refused after ${n}`)
+      if (!refused) skip('tapi26.relay.handshake.room-limit', 'SHOULD', S, ctx, `no per-room limit within ${n} handshake messages (a relay MAY refuse more than N)`)
+      else check(errCode(refused) === 'BAD_REQUEST', 'tapi26.relay.handshake.room-limit', 'SHOULD', `${S} (MAY refuse more than N per room) / TAPI-21 §3.2`, ctx, `message ${n + 1} refused with ${errCode(refused)}, expected BAD_REQUEST`, `refused after ${n}`)
     }
   }
 
   // ======================================================================================================
   // 9. Invites and epoch messages are kept apart (arch B2) / 邀请与纪元消息单独保存
   // ======================================================================================================
-  if (!canSend) for (const [id, lv] of [['tap26.relay.kept.survives-flood', 'MUST'], ['tap26.relay.kept.order', 'MUST'], ['tap26.relay.kept.source-cap', 'SHOULD']]) skipPriced(id, lv, 'kept')
+  if (!canSend) for (const [id, lv] of [['tapi26.relay.kept.survives-flood', 'MUST'], ['tapi26.relay.kept.order', 'MUST'], ['tapi26.relay.kept.source-cap', 'SHOULD']]) skipPriced(id, lv, 'kept')
   else {
     const K = hex(32), ctx = `kept:flood=${roomFrames + 44}`
     const posted = []
@@ -505,7 +505,7 @@ export async function runRelaySuite(opts = {}) {
     const epm = await put(wire(0x04, 200), 'kept:0x04', false)
     for (let j = 0; j < roomFrames + 44; j++) if (!(await put(wire(j % 2 ? 0x05 : 0x02, 30), `kept:flood#${j}`, true))) break
     if (!inv || !epm || posted.length < roomFrames + 47) {
-      fail('tap26.relay.kept.survives-flood', 'MUST', S, ctx, `could not post the flood: ${posted.length}/${roomFrames + 47} accepted (invite ${!!inv}, epoch message ${!!epm})`)
+      fail('tapi26.relay.kept.survives-flood', 'MUST', S, ctx, `could not post the flood: ${posted.length}/${roomFrames + 47} accepted (invite ${!!inv}, epoch message ${!!epm})`)
     } else {
       const { got } = await drain(K, posted[0].epoch, 'kept', { lastPosted: posted[posted.length - 1].i })
       const byI = new Map(posted.map((p) => [p.i, p]))
@@ -513,10 +513,10 @@ export async function runRelaySuite(opts = {}) {
       const floodBack = got.filter((f) => byI.get(f.i) && (byI.get(f.i).type === 0x02 || byI.get(f.i).type === 0x05)).length
       const keptBack = ['0x03', '0x04'].map((t, j) => [t, [inv, epm][j]]).filter(([, x]) => got.some((f) => f.i === x.i && f.frame === byI.get(x.i).frame))
       const idx = got.map((f) => f.i)
-      check(idx.every((i, j) => (j === 0 || i > idx[j - 1]) && byI.get(i)?.frame === got[j].frame), 'tap26.relay.kept.order', 'MUST', `${S} (relayRecv MUST still return messages of every type in posting order under one index sequence)`, ctx,
+      check(idx.every((i, j) => (j === 0 || i > idx[j - 1]) && byI.get(i)?.frame === got[j].frame), 'tapi26.relay.kept.order', 'MUST', `${S} (relayRecv MUST still return messages of every type in posting order under one index sequence)`, ctx,
         `drained indices are not increasing or do not match what was posted: ${idx.slice(0, 8).join(',')}…`)
-      if (floodBack === flood.length) skip('tap26.relay.kept.survives-flood', 'MUST', S, ctx, `no frame was evicted (all ${flood.length} came back), so the protected ring was not exercised; pass --room-frames with your per-room frame bound`)
-      else check(keptBack.length === 2, 'tap26.relay.kept.survives-flood', 'MUST', `${S} (a relay MUST hold 0x03 and 0x04 under a bound of their own that 0x02 / 0x05 cannot evict)`, ctx,
+      if (floodBack === flood.length) skip('tapi26.relay.kept.survives-flood', 'MUST', S, ctx, `no frame was evicted (all ${flood.length} came back), so the protected ring was not exercised; pass --room-frames with your per-room frame bound`)
+      else check(keptBack.length === 2, 'tapi26.relay.kept.survives-flood', 'MUST', `${S} (a relay MUST hold 0x03 and 0x04 under a bound of their own that 0x02 / 0x05 cannot evict)`, ctx,
         `after ${flood.length - floodBack} frames were evicted, missing: ${['0x03', '0x04'].filter((t) => !keptBack.some(([k]) => k === t)).join(', ')}`, `${flood.length - floodBack} frames evicted, invite and epoch message kept`)
     }
     // Per source per room: further 0x03 / 0x04 refused as BAD_REQUEST (SHOULD) / 每来源每房间上限
@@ -527,8 +527,8 @@ export async function runRelaySuite(opts = {}) {
       if (res.limited || !res.env) break
       if (res.env.ok === false) { refused = res; break }
     }
-    if (!refused) fail('tap26.relay.kept.source-cap', 'SHOULD', `${S} (SHOULD cap 0x03 / 0x04 posts per room per source)`, sctx, `${n} sealed invites from one source were all accepted`)
-    else check(errCode(refused) === 'BAD_REQUEST', 'tap26.relay.kept.source-cap', 'SHOULD', `${S} (refuse further ones as a caller error, BAD_REQUEST)`, sctx, `invite ${n + 1} refused with ${errCode(refused)}: ${outcome(refused)}`, `refused after ${n}`)
+    if (!refused) fail('tapi26.relay.kept.source-cap', 'SHOULD', `${S} (SHOULD cap 0x03 / 0x04 posts per room per source)`, sctx, `${n} sealed invites from one source were all accepted`)
+    else check(errCode(refused) === 'BAD_REQUEST', 'tapi26.relay.kept.source-cap', 'SHOULD', `${S} (refuse further ones as a caller error, BAD_REQUEST)`, sctx, `invite ${n + 1} refused with ${errCode(refused)}: ${outcome(refused)}`, `refused after ${n}`)
   }
 
   // ======================================================================================================
@@ -542,7 +542,7 @@ export async function runRelaySuite(opts = {}) {
     H.setRatePhase(false)
   }
   if (seen429.length) H.checkRateLimited(seen429, `observed:${seen429.length}x429`)
-  else for (const id of ['tap21.ratelimit.unsigned', 'tap21.ratelimit.retry-after', 'tap21.ratelimit.code']) skip(id, 'MUST', 'TAP-21 §3.4', 'observed', `no 429 seen${opts.checkRateLimit ? ` within ${Number(opts.checkRateLimit) + 5} rapid calls` : ' (pass --check-rate-limit N to provoke one)'} (rate limiting is MAY)`)
+  else for (const id of ['tapi21.ratelimit.unsigned', 'tapi21.ratelimit.retry-after', 'tapi21.ratelimit.code']) skip(id, 'MUST', 'TAPI-21 §3.4', 'observed', `no 429 seen${opts.checkRateLimit ? ` within ${Number(opts.checkRateLimit) + 5} rapid calls` : ' (pass --check-rate-limit N to provoke one)'} (rate limiting is MAY)`)
 
   return finish()
 

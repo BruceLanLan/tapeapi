@@ -2,7 +2,7 @@
 
 [中文](#中文) · [English](#english)
 
-规范 / Specification: 清单字段 `ai` 见 [TAP-20 §3.9](../../spec/TAP-20.md)，用量回执见 [TAP-21 §3.5](../../spec/TAP-21.md)（英文为准）。
+规范 / Specification: 清单字段 `ai` 见 [TAPI-20 §3.9](../../spec/TAPI-20.md)，用量回执见 [TAPI-21 §3.5](../../spec/TAPI-21.md)（英文为准）。
 旁路本身的说明（格式、回执、哈希、金额算法）见 [examples/ai-proxy](../ai-proxy/README.md)。
 
 ## 中文
@@ -48,7 +48,7 @@ cp env.example .env && chmod 600 .env        # SESSION_SECRET 刻意留空，用
 cp models.example.json models.json           # 改成你自己的模型与价格
 ```
 
-`models.json` 是发布到链上的价目表（TAP-20 §3.9 冻结的 `prices[]` 格式）：每个模型一个 `id`，可选 `aliases`（上游报告的其它名称，
+`models.json` 是发布到链上的价目表（TAPI-20 §3.9 冻结的 `prices[]` 格式）：每个模型一个 `id`，可选 `aliases`（上游报告的其它名称，
 如带日期的版本）和 `formats`（限定 API 格式），`prices` 按币种各一项（BEM、BNB、USDT、USDC、ETH、USD1，或仅作展示的 USD），
 价格按每百万 token 给出 `input`、`output`，可选 `cacheRead`、`cacheWrite`、`cacheWrite1h`、`reasoning`。示例里的价格只是示例，
 不是任何厂商的真实价格。回执按**上游报告的** model 精确匹配 `id` 或别名：如果你在 new-api 里设了“模型重定向”，上游报告的可能是
@@ -246,7 +246,7 @@ repository (the image is built from it): `git clone https://github.com/BruceLanL
 
 1. **Fill in `.env` and the price table.** `cp env.example .env && chmod 600 .env` (generate `SESSION_SECRET`, left empty on purpose, with
    `openssl rand -hex 32`; set `PUBLIC_URL` to the sidecar's https origin, no path) and `cp models.example.json models.json`,
-   then edit it. `models.json` is the price table published on chain, in the frozen `prices[]` shape of TAP-20 §3.9: per
+   then edit it. `models.json` is the price table published on chain, in the frozen `prices[]` shape of TAPI-20 §3.9: per
    model an `id`, optional `aliases` and `formats`, and one `prices` entry per currency (BEM, BNB, USDT, USDC, ETH, USD1,
    or USD for display) with `input` and `output` per 1M tokens and optional `cacheRead`, `cacheWrite`, `cacheWrite1h`,
    `reasoning`. The example prices are examples, not any vendor's real prices. Receipts match the model the upstream

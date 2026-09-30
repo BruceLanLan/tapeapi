@@ -282,8 +282,8 @@ test('FIXED SEC11-3: a contract holder signs the content under EIP-1271, and eve
   for (const r of chain.state.reads) assert.deepEqual(r.block, at)
 })
 
-test('FIXED SEC11-3: spec/vectors/tap-20-content.json matches the SDK (verify.py checks it independently)', () => {
-  const v = JSON.parse(readFileSync(new URL('../../spec/vectors/tap-20-content.json', import.meta.url), 'utf8'))
+test('FIXED SEC11-3: spec/vectors/tapi-20-content.json matches the SDK (verify.py checks it independently)', () => {
+  const v = JSON.parse(readFileSync(new URL('../../spec/vectors/tapi-20-content.json', import.meta.url), 'utf8'))
   assert.equal(v.typeHash, sig.MANIFEST_CONTENT_TYPE)
   assert.equal(v.field, 'contentSig')
   for (const c of v.cases) {
@@ -300,9 +300,9 @@ test('FIXED SEC11-3: spec/vectors/tap-20-content.json matches the SDK (verify.py
 })
 
 // ---------------------------------------------------------------- SEC11-4 contradiction evidence ----
-const AV = JSON.parse(readFileSync(new URL('../../spec/vectors/tap-23-attested.json', import.meta.url), 'utf8'))
+const AV = JSON.parse(readFileSync(new URL('../../spec/vectors/tapi-23-attested.json', import.meta.url), 'utf8'))
 const attestedManifest = (p) => ({
-  tapeapi: '0.1', name: `TAP-23 vector provider ${p.tag}`, circuits: '0x0000000000000000000000000000000000000c1c', tokenId: p.tag === 'A' ? '1' : '2',
+  tapeapi: '0.1', name: `TAPI-23 vector provider ${p.tag}`, circuits: '0x0000000000000000000000000000000000000c1c', tokenId: p.tag === 'A' ? '1' : '2',
   container: p.container, signer: p.signerAddress, endpoints: { live: [p.endpoint], async: false }, methods: [AV.descriptor], payment: { escrow: null, unit: 'BEM', decimals: 8 },
 })
 async function quorumError(c) {
@@ -414,7 +414,7 @@ test('FIXED SEC11-5: rate 0 (the default) never asks twice; rate p asks one inde
   const on = security.withSpotCheck(api, { rate: 0.25, random: () => 0.1, alternates: [b, c], onMismatch: (o) => mismatches.push(o), wait: true })
   const r = await on.call(a, 'price')
   assert.deepEqual(r.result, { v: 1, blockPinned: pin }, 'the caller\'s answer is never changed')
-  // C shares A's holder (TAP-23 §3.5), so only B is independent / C 与 A 同一持有人，只有 B 独立
+  // C shares A's holder (TAPI-23 §3.5), so only B is independent / C 与 A 同一持有人，只有 B 独立
   assert.deepEqual(t.calls, ['A', 'B'])
   assert.equal(r.spotCheck.same, false)
   assert.equal(r.spotCheck.checked, b.container)
@@ -493,7 +493,7 @@ test('security namespace: IMPL_SLOT is the ERC-1967 slot, and the local derivati
     // processor 0, #1, recorded on chain 2026-09-28 / 链上记录的 0 号处理器 #1
     assert.equal(security.erc6551Account({ registry: c.erc6551Registry, implementation: c.accountImplementation, chainId: Number(id), tokenContract: f.processor0, tokenId: 1 }).toLowerCase(), f.hubAccountOf, id)
   }
-  // TAP-20 §6.1: 11.1013.tape / TAP-20 §6.1 的主网向量
+  // TAPI-20 §6.1: 11.1013.tape / TAPI-20 §6.1 的主网向量
   assert.equal(security.erc6551Account({ registry: C56.erc6551Registry, implementation: C56.accountImplementation, chainId: 56, tokenContract: '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', tokenId: 11 }), '0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8')
   assert.throws(() => security.erc6551Account({ registry: 'x' }), invalid(/registry/))
 })

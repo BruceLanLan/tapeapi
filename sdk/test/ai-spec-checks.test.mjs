@@ -1,4 +1,4 @@
-// The client checks of TAP-21 §3.5 and the resolve rules of TAP-20 §3.9, as the spec states them (2026-09-28):
+// The client checks of TAPI-21 §3.5 and the resolve rules of TAPI-20 §3.9, as the spec states them (2026-09-28):
 // - the answer's id is compared with the receipt's only when it is one the sidecar would use (1 to 128 characters in
 //   U+0021–U+007E); an envelope id is at most 128 characters;
 // - holding the answer, the client re-reads model, usage and complete from it with the format's own adapter and requires
@@ -8,7 +8,7 @@
 //   verifying fetch uses only validated endpoints;
 // - an answer the sidecar made itself (x-tapeapi-sidecar-error) is a transport failure (PROVIDER_UNAVAILABLE, or
 //   RATE_LIMITED for its 429), not RECEIPT_INVALID, and never a verified answer.
-// TAP-21 §3.5 的客户端检查与 TAP-20 §3.9 的解析规则，按规范原文逐条检验。
+// TAPI-21 §3.5 的客户端检查与 TAPI-20 §3.9 的解析规则，按规范原文逐条检验。
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'

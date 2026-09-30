@@ -139,8 +139,8 @@
       <div class="pb">
         <h3><span lang="zh">公共中继</span><span lang="en">Public relay</span></h3>
         <div class="where"><a href="https://relay.tapeapi.fun/.well-known/tapeapi.json">relay.tapeapi.fun</a> · 12.1013.tape</div>
-        <p lang="zh">3 个方法，承载容器之间的加密通道（TAP-26）与群聊（TAP-27）：</p>
-        <p lang="en">Three methods that carry encrypted channels (TAP-26) and groups (TAP-27) between containers:</p>
+        <p lang="zh">3 个方法，承载容器之间的加密通道（TAPI-26）与群聊（TAPI-27）：</p>
+        <p lang="en">Three methods that carry encrypted channels (TAPI-26) and groups (TAPI-27) between containers:</p>
         <p class="meth"><span>relaySend ·</span> <span>relayHandshake ·</span> <span>relayRecv</span></p>
         <p lang="zh">中继只存密文，看不到内容；房间、时间和帧的大小它看得到。</p>
         <p lang="en">The relay stores ciphertext and never sees content; it does see rooms, timing and frame sizes.</p>
@@ -318,8 +318,8 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude     <span class="c"># <span lang
   </figure>
 
   <div class="panel pad ai-panel">
-    <p class="tcap" lang="zh">一张回执证明什么（TAP-21 的 AI 用量回执）</p>
-    <p class="tcap" lang="en">What one receipt proves (TAP-21 AI usage receipts)</p>
+    <p class="tcap" lang="zh">一张回执证明什么（TAPI-21 的 AI 用量回执）</p>
+    <p class="tcap" lang="en">What one receipt proves (TAPI-21 AI usage receipts)</p>
     <div class="tw">
       <table>
         <thead><tr>
@@ -374,7 +374,7 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude     <span class="c"># <span lang
       <p lang="en">In MCP a tool result is whatever the server sent, and a tool definition can change after you approved it. TapeAPI signs every result, attaches a receipt and pins the hash of the tool definitions on chain. Use the public endpoint, put the signing proxy in front of your own server, or run <code>tapeapi-mcp</code> locally to check every answer before the model sees it.</p>
     </div>
     <div class="app">
-      <div class="no">TAP-26 · TAP-27</div>
+      <div class="no">TAPI-26 · TAPI-27</div>
       <h3 lang="zh">私密通道与群聊</h3><h3 lang="en">Private channels and groups</h3>
       <p lang="zh">两个容器之间的端到端加密通道：双向认证、前向保密、防重放和乱序。群聊最多 32 个容器（实验性的格式 2 最多 128 个），群主管理成员，每条消息单独签名。载体可以是公共中继、你自己的中继或链上的 ChannelBus，都只看到密文。</p>
       <p lang="en">End-to-end encrypted channels between two containers: mutual authentication, forward secrecy, replay and reorder protection. Groups of up to 32 containers (up to 128 in the experimental format 2), with an owner who manages members and a signature on every message. Carried by the public relay, your own relay or ChannelBus on chain, each of which sees ciphertext only.</p>
@@ -497,12 +497,12 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
           <th><span lang="zh">依据</span><span lang="en">Source</span></th>
         </tr></thead>
         <tbody>
-          <tr><td class="sym">MANIFEST_LIMIT</td><td class="dim"><span lang="zh">服务清单，含 AI 价目表</span><span lang="en">Service manifest, AI price table included</span></td><td class="val">64 <span class="u">KiB</span></td><td class="sym">TAP-20</td></tr>
+          <tr><td class="sym">MANIFEST_LIMIT</td><td class="dim"><span lang="zh">服务清单，含 AI 价目表</span><span lang="en">Service manifest, AI price table included</span></td><td class="val">64 <span class="u">KiB</span></td><td class="sym">TAPI-20</td></tr>
           <tr><td class="sym">CHUNK</td><td class="dim"><span lang="zh">一次上链写入（操作台一笔交易）</span><span lang="en">One on-chain write (one console transaction)</span></td><td class="val">24 000 <span class="u">B</span></td><td class="sym">SPEC B.5</td></tr>
-          <tr><td class="sym">ENVELOPE_LIMIT</td><td class="dim"><span lang="zh">签名响应信封</span><span lang="en">Signed response envelope</span></td><td class="val">1 <span class="u">MiB</span></td><td class="sym">TAP-21</td></tr>
-          <tr><td class="sym">DEFAULT_MAX_SKEW_S</td><td class="dim"><span lang="zh">签名时间与本地时钟之差</span><span lang="en">Signature time against the local clock</span></td><td class="val">≤ 300 <span class="u">s</span></td><td class="sym">TAP-21</td></tr>
-          <tr><td class="sym">MAX_MEMBERS</td><td class="dim"><span lang="zh">群成员（实验性的格式 2 最多 128）</span><span lang="en">Group members (up to 128 in the experimental format 2)</span></td><td class="val">32</td><td class="sym">TAP-27</td></tr>
-          <tr><td class="sym">CHANNEL_KEYS_LIMIT</td><td class="dim"><span lang="zh">通道密钥记录</span><span lang="en">Channel key record</span></td><td class="val">4 <span class="u">KiB</span></td><td class="sym">TAP-26</td></tr>
+          <tr><td class="sym">ENVELOPE_LIMIT</td><td class="dim"><span lang="zh">签名响应信封</span><span lang="en">Signed response envelope</span></td><td class="val">1 <span class="u">MiB</span></td><td class="sym">TAPI-21</td></tr>
+          <tr><td class="sym">DEFAULT_MAX_SKEW_S</td><td class="dim"><span lang="zh">签名时间与本地时钟之差</span><span lang="en">Signature time against the local clock</span></td><td class="val">≤ 300 <span class="u">s</span></td><td class="sym">TAPI-21</td></tr>
+          <tr><td class="sym">MAX_MEMBERS</td><td class="dim"><span lang="zh">群成员（实验性的格式 2 最多 128）</span><span lang="en">Group members (up to 128 in the experimental format 2)</span></td><td class="val">32</td><td class="sym">TAPI-27</td></tr>
+          <tr><td class="sym">CHANNEL_KEYS_LIMIT</td><td class="dim"><span lang="zh">通道密钥记录</span><span lang="en">Channel key record</span></td><td class="val">4 <span class="u">KiB</span></td><td class="sym">TAPI-26</td></tr>
         </tbody>
       </table>
     </div>
@@ -539,8 +539,8 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
   <div class="shead"><span class="idx">09</span><h2 lang="zh">实验性：付费通道</h2><h2 lang="en">Experimental: Paid Channels</h2><span class="line"></span></div>
   <div class="badges exp">
     <span class="stamp">EXPERIMENTAL · NOT DEPLOYED</span>
-    <span class="meta" lang="zh">TAP-22 · 不在 1.0 的稳定承诺内 · 部署前须经独立审计</span>
-    <span class="meta" lang="en">TAP-22 · outside the 1.0 stability promise · audited before any deployment</span>
+    <span class="meta" lang="zh">TAPI-22 · 不在 1.0 的稳定承诺内 · 部署前须经独立审计</span>
+    <span class="meta" lang="en">TAPI-22 · outside the 1.0 stability promise · audited before any deployment</span>
   </div>
   <p class="plain" lang="zh">付费调用的设计：调用方离线签发累计凭证，钱进一条只属于这个服务的托管通道，服务方攒够了再上链结算一次，调用本身不花 gas。合约代码和测试在仓库里，但<b>没有部署</b>；下面的数字是本地实测，只说明这个设计的成本。</p>
   <p class="plain" lang="en">The design for paid calls: the caller signs cumulative vouchers off chain into an escrow channel that belongs to that service alone, and the provider settles once on chain when it is worth doing, so a call itself costs no gas. The contracts and their tests are in the repository but <b>not deployed</b>; the figures below are local measurements that only show what the design costs.</p>
@@ -578,8 +578,8 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
     <div class="app">
       <div class="no yes">DONE</div>
       <h3 lang="zh">1.0：接口稳定</h3><h3 lang="en">1.0: stable interfaces</h3>
-      <p lang="zh">SDK 与规范的接口已冻结：TAP-20、21、23、26、27 为 Stable (v1)，测试数据由独立的 Python 验证器核对。1.0 起遵循语义化版本：按文档写的代码不会因为我们升级而坏掉，破坏性修改只在 2.0；标为实验性的部分（付费、ServiceDirectory、bus-privacy）除外。</p>
-      <p lang="en">The SDK and spec interfaces are frozen: TAP-20, 21, 23, 26 and 27 are Stable (v1), with test vectors checked by the independent Python verifier. From 1.0 on, TapeAPI follows semantic versioning: code written to the docs does not break when we upgrade, and breaking changes come only in 2.0, except in what is marked experimental (payments, the ServiceDirectory, bus-privacy).</p>
+      <p lang="zh">SDK 与规范的接口已冻结：TAPI-20、21、23、26、27 为 Stable (v1)，测试数据由独立的 Python 验证器核对。1.0 起遵循语义化版本：按文档写的代码不会因为我们升级而坏掉，破坏性修改只在 2.0；标为实验性的部分（付费、ServiceDirectory、bus-privacy）除外。</p>
+      <p lang="en">The SDK and spec interfaces are frozen: TAPI-20, 21, 23, 26 and 27 are Stable (v1), with test vectors checked by the independent Python verifier. From 1.0 on, TapeAPI follows semantic versioning: code written to the docs does not break when we upgrade, and breaking changes come only in 2.0, except in what is marked experimental (payments, the ServiceDirectory, bus-privacy).</p>
     </div>
     <div class="app">
       <div class="no">NEXT</div>
@@ -596,8 +596,8 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
     <div class="app">
       <div class="no nope">AFTER AUDIT</div>
       <h3 lang="zh">付费调用</h3><h3 lang="en">Paid calls</h3>
-      <p lang="zh">按次计费的凭证支付（TAP-22）需要托管合约，托管合约要先通过独立审计才会部署。在此之前所有调用都免费。</p>
-      <p lang="en">Metered voucher payment (TAP-22) needs the escrow contract, which is deployed only after an independent audit. Until then every call is free.</p>
+      <p lang="zh">按次计费的凭证支付（TAPI-22）需要托管合约，托管合约要先通过独立审计才会部署。在此之前所有调用都免费。</p>
+      <p lang="en">Metered voucher payment (TAPI-22) needs the escrow contract, which is deployed only after an independent audit. Until then every call is free.</p>
     </div>
   </div>
 </section>
@@ -605,18 +605,18 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
 <section id="specs">
   <div class="shead"><span class="idx">11</span><h2 lang="zh">规范索引</h2><h2 lang="en">Specification Index</h2><span class="line"></span></div>
   <div class="specs">
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-1.md">TAP-1</a></span><span><span lang="zh">TAP 流程与编号</span><span lang="en">TAP purpose and process</span></span><span class="st">Draft</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-20.md">TAP-20</a></span><span><span lang="zh">服务身份与清单，含 AI 价目表（ai 字段）与多链</span><span lang="en">Service identity and manifest, with the AI price table (the ai field) and multi-chain</span></span><span class="st">Stable (v1) · §3.5 Experimental</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md">TAP-21</a></span><span><span lang="zh">签名响应信封，含 AI 用量回执</span><span lang="en">Signed response envelope, with AI usage receipts</span></span><span class="st">Stable (v1)</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-22.md">TAP-22</a></span><span><span lang="zh">计量支付凭证与托管</span><span lang="en">Metered vouchers and escrow</span></span><span class="st">Experimental</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-23.md">TAP-23</a></span><span><span lang="zh">多家交叉验证的读取</span><span lang="en">Attested read, cross-checked by independent providers</span></span><span class="st">Stable (v1)</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-24.md">TAP-24</a></span><span><span lang="zh">跨链意图询价</span><span lang="en">Intent RFQ</span></span><span class="st">Withdrawn</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-25.md">TAP-25</a></span><span><span lang="zh">可由电路验证的方法</span><span lang="en">Circuit-verified methods</span></span><span class="st">Experimental</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-26.md">TAP-26</a></span><span><span lang="zh">容器间的私密通道</span><span lang="en">Private channels between containers</span></span><span class="st">Stable (v1)</span></div>
-    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-27.md">TAP-27</a></span><span><span lang="zh">容器间的私密群聊</span><span lang="en">Private groups between containers</span></span><span class="st">Stable (v1)</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-1.md">TAPI-1</a></span><span><span lang="zh">TapeAPI 的文档流程与状态</span><span lang="en">TapeAPI's document process and statuses</span></span><span class="st">Draft</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-20.md">TAPI-20</a></span><span><span lang="zh">服务身份与清单，含 AI 价目表（ai 字段）与多链</span><span lang="en">Service identity and manifest, with the AI price table (the ai field) and multi-chain</span></span><span class="st">Stable (v1) · §3.5 Experimental</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-21.md">TAPI-21</a></span><span><span lang="zh">签名响应信封，含 AI 用量回执</span><span lang="en">Signed response envelope, with AI usage receipts</span></span><span class="st">Stable (v1)</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-22.md">TAPI-22</a></span><span><span lang="zh">计量支付凭证与托管</span><span lang="en">Metered vouchers and escrow</span></span><span class="st">Experimental</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-23.md">TAPI-23</a></span><span><span lang="zh">多家交叉验证的读取</span><span lang="en">Attested read, cross-checked by independent providers</span></span><span class="st">Stable (v1)</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-24.md">TAPI-24</a></span><span><span lang="zh">跨链意图询价</span><span lang="en">Intent RFQ</span></span><span class="st">Withdrawn</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-25.md">TAPI-25</a></span><span><span lang="zh">可由电路验证的方法</span><span lang="en">Circuit-verified methods</span></span><span class="st">Experimental</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-26.md">TAPI-26</a></span><span><span lang="zh">容器间的私密通道</span><span lang="en">Private channels between containers</span></span><span class="st">Stable (v1)</span></div>
+    <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-27.md">TAPI-27</a></span><span><span lang="zh">容器间的私密群聊</span><span lang="en">Private groups between containers</span></span><span class="st">Stable (v1)</span></div>
   </div>
-  <p class="note" lang="zh"><b>这些名字不是 TAP 编号。</b>“TAP-20”到“TAP-27”只是这些规范在 TapeAPI 仓库里的名字；TAP 由 <a href="https://github.com/TapeOutProtocol/TAPs">TapeOutProtocol/TAPs</a> 的编辑编号，部分内容可能作为 TAP 草稿提交到那里。规范中英双语，以英文为准。</p>
-  <p class="note" lang="en"><b>These names are not TAP numbers.</b> "TAP-20" to "TAP-27" are these specs' names inside the TapeAPI repository; TAPs are numbered by the editors of <a href="https://github.com/TapeOutProtocol/TAPs">TapeOutProtocol/TAPs</a>, and parts of these specs may be submitted there as TAP drafts. The specs are bilingual; English is authoritative.</p>
+  <p class="note" lang="zh"><b>这些是 TapeAPI 自己的规范，不是 TAP。</b>TAPI-1 与 TAPI-20 至 TAPI-27 是 TapeAPI 自己的文档名（2026-09-30 之前叫 TAP-1 与 TAP-20 至 TAP-27）；TAP 由 <a href="https://github.com/TapeOutProtocol/TAPs">TapeOutProtocol/TAPs</a> 的编辑按 TAP-01 编号。部分内容已作为 TAP 草稿提交：<a href="https://github.com/TapeOutProtocol/TAPs/pull/8">#8</a>（服务身份与清单）、<a href="https://github.com/TapeOutProtocol/TAPs/pull/10">#10</a>（签名响应）、<a href="https://github.com/TapeOutProtocol/TAPs/pull/12">#12</a>（私密通道）。规范中英双语，以英文为准。</p>
+  <p class="note" lang="en"><b>These are TapeAPI's own specs, not TAPs.</b> TAPI-1 and TAPI-20 to TAPI-27 are TapeAPI's own document names (TAP-1 and TAP-20 to TAP-27 until 2026-09-30); TAPs are numbered by the editors of <a href="https://github.com/TapeOutProtocol/TAPs">TapeOutProtocol/TAPs</a> under TAP-01. Parts have been submitted as TAP drafts: <a href="https://github.com/TapeOutProtocol/TAPs/pull/8">#8</a> (service identity and manifest), <a href="https://github.com/TapeOutProtocol/TAPs/pull/10">#10</a> (signed responses), <a href="https://github.com/TapeOutProtocol/TAPs/pull/12">#12</a> (private channels). The specs are bilingual; English is authoritative.</p>
 </section>
 
 <footer>
@@ -637,8 +637,8 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
   </div>
   <div>
     <h4 lang="zh">许可与仓库</h4><h4 lang="en">Licence and repository</h4>
-    <p lang="zh">规范 CC0-1.0，代码 MIT。<br><a href="https://github.com/BruceLanLan/tapeapi"><code>github.com/BruceLanLan/tapeapi</code></a><br><a href="docs/">手册</a> · <a href="playground/">调试台</a> · <a href="verify/">回执核验</a> · <a href="dashboard/">我的服务</a> · <a href="status/">服务状态</a> · <a href="directory/">服务方目录</a> · <a href="console/">持有人操作台</a> · <a href="https://github.com/TapeOutProtocol/TapeKit/issues/8">TAP 提案</a></p>
-    <p lang="en">Specs CC0-1.0, code MIT.<br><a href="https://github.com/BruceLanLan/tapeapi"><code>github.com/BruceLanLan/tapeapi</code></a><br><a href="docs/">Docs</a> · <a href="playground/">Playground</a> · <a href="verify/">Receipt checker</a> · <a href="dashboard/">Dashboard</a> · <a href="status/">Status</a> · <a href="directory/">Provider directory</a> · <a href="console/">Holder console</a> · <a href="https://github.com/TapeOutProtocol/TapeKit/issues/8">TAP proposal</a></p>
+    <p lang="zh">规范 CC0-1.0，代码 MIT。<br><a href="https://github.com/BruceLanLan/tapeapi"><code>github.com/BruceLanLan/tapeapi</code></a><br><a href="docs/">手册</a> · <a href="playground/">调试台</a> · <a href="verify/">回执核验</a> · <a href="dashboard/">我的服务</a> · <a href="status/">服务状态</a> · <a href="directory/">服务方目录</a> · <a href="console/">持有人操作台</a> · <a href="https://github.com/TapeOutProtocol/TAPs">TapeOut TAP 流程</a></p>
+    <p lang="en">Specs CC0-1.0, code MIT.<br><a href="https://github.com/BruceLanLan/tapeapi"><code>github.com/BruceLanLan/tapeapi</code></a><br><a href="docs/">Docs</a> · <a href="playground/">Playground</a> · <a href="verify/">Receipt checker</a> · <a href="dashboard/">Dashboard</a> · <a href="status/">Status</a> · <a href="directory/">Provider directory</a> · <a href="console/">Holder console</a> · <a href="https://github.com/TapeOutProtocol/TAPs">TapeOut TAPs</a></p>
   </div>
 </footer>
 

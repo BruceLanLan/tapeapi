@@ -1,4 +1,4 @@
-# chain-attested-read — TAP-23 Attested Read：无桥读外链
+# chain-attested-read — TAPI-23 Attested Read：无桥读外链
 
 **给谁**：公链 / L2（有 RPC 节点，想让 TapeOut 生态的应用无桥读你的链）。
 **做什么**：一个 Attested Read 服务。对 `chains.json` 里配置的外链做 `eth_call`，每条链 **quorum 2**（SDK `createRpc`），
@@ -6,12 +6,12 @@
 
 | 方法 | 价格 | 返回 |
 |---|---|---|
-| `read({chainId, to, data, block?})`（也接受 TAP-23 的 `call: {to, data}`） | 0.0001 BEM | `{ chainId, blockNumber, blockHash, blockRef, result }` — 任意 eth_call |
+| `read({chainId, to, data, block?})`（也接受 TAPI-23 的 `call: {to, data}`） | 0.0001 BEM | `{ chainId, blockNumber, blockHash, blockRef, result }` — 任意 eth_call |
 | `balance({chainId, address, block?})` | 免费 | `{ chainId, address, wei, ether, blockNumber, blockHash, blockRef }` |
 | `nftOwner({chainId, contract, tokenId, block?})` | 免费 | `{ chainId, contract, tokenId, owner, blockNumber, blockHash, blockRef }` — ERC-721 `ownerOf` |
 
 `block` 可选：**省略 = `'finalized'`**（各节点该标签高度的最小值；节点不支持时退到 head − `lag`）；`'safe'`/`'finalized'`；`'latest'` = min(head) − `lag`；或具体区块号。
-无论哪种，provider 都先要求 quorum 个节点对该块 **hash** 一致，然后**按该 blockHash** 读（EIP-1898 `{ blockHash, requireCanonical: true }`，TAP-23 §3.2）；
+无论哪种，provider 都先要求 quorum 个节点对该块 **hash** 一致，然后**按该 blockHash** 读（EIP-1898 `{ blockHash, requireCanonical: true }`，TAPI-23 §3.2）；
 只有节点拒绝该参数时才退回按块号读并标 `blockRef: "number"`。所以 `blockHash` 是可核对的锚点，`result` 一定属于它。
 `chains.json`：`{ "<chainId>": { "name", "rpcUrls": [...], "quorum": 2, "lag": 1 } }`，环境变量 `RPC_<chainId>=url1,url2` 可覆盖。
 
@@ -35,7 +35,7 @@ curl -s -X POST http://127.0.0.1:8791/tapeapi/v1/nftOwner -H 'content-type: appl
 
 游戏在 BSC，门票是 Ethereum 上的一个 NFT。前端不需要桥，向**两个独立**的 Attested Read 提供者各要一份签名读取，两者一致才放行。
 `callQuorum` 要求结果 **canonicalJSON 逐字节相同**，而省略 `block` 时每家各自钉 `finalized`（时刻不同就会不同），所以先向任一提供者免费问一次拿到 `blockNumber`，
-再把同一个 `block` 显式传给两家（TAP-23 §3.4 MUST），它们返回的 `blockHash`、`owner` 就必须完全一致；被探测的那家无法左右结果，另一家会独立核对该块 hash 并在该 hash 上读：
+再把同一个 `block` 显式传给两家（TAPI-23 §3.4 MUST），它们返回的 `blockHash`、`owner` 就必须完全一致；被探测的那家无法左右结果，另一家会独立核对该块 hash 并在该 hash 上读：
 
 ```js
 import { createTapeAPI } from '../../sdk/src/index.js'          // DeWEB 站点：相对路径
@@ -68,13 +68,13 @@ if (owner.toLowerCase() !== wallet.toLowerCase()) throw new Error('not a holder'
 
 ---
 
-# chain-attested-read — TAP-23 Attested Read: bridge-less reads of foreign chains
+# chain-attested-read — TAPI-23 Attested Read: bridge-less reads of foreign chains
 
 **For**: public chains / L2s that run RPC nodes and want TapeOut apps to read their chain without a bridge.
 **What**: an Attested Read service. It performs `eth_call` on the chains configured in `chains.json` with **quorum 2 per chain** (SDK `createRpc`),
-pins the result to a block and signs it. Defaults: Ethereum (`1`) and Base (`8453`). Methods: `read` (paid, arbitrary eth_call → `{chainId, blockNumber, blockHash, blockRef, result}`; also accepts TAP-23's `call: {to, data}`),
+pins the result to a block and signs it. Defaults: Ethereum (`1`) and Base (`8453`). Methods: `read` (paid, arbitrary eth_call → `{chainId, blockNumber, blockHash, blockRef, result}`; also accepts TAPI-23's `call: {to, data}`),
 `balance` and `nftOwner` (free). `block` is optional: **omitted = `'finalized'`** (min across nodes; falls back to head − `lag` if a node lacks the tag); `'safe'`/`'finalized'`; `'latest'` = min(head) − `lag`; or a number.
-In every case the provider first requires `quorum` nodes to agree on that block's **hash**, then evaluates **at that blockHash** (EIP-1898 `{ blockHash, requireCanonical: true }`, TAP-23 §3.2);
+In every case the provider first requires `quorum` nodes to agree on that block's **hash**, then evaluates **at that blockHash** (EIP-1898 `{ blockHash, requireCanonical: true }`, TAPI-23 §3.2);
 only if a node rejects that parameter does it fall back to the number and report `blockRef: "number"`. So `blockHash` is a checkable anchor and `result` provably belongs to it.
 `chains.json`: `{ "<chainId>": { "name", "rpcUrls": [...], "quorum": 2, "lag": 1 } }`; `RPC_<chainId>=url1,url2` overrides it.
 
@@ -93,7 +93,7 @@ curl -s -X POST http://127.0.0.1:8791/tapeapi/v1/nftOwner -H 'content-type: appl
 
 The game runs on BSC; the ticket is an NFT on Ethereum. No bridge: the front-end asks **two independent** Attested Read providers for a signed read and
 admits the player only if both agree — see the JS above. `callQuorum` accepts only byte-identical canonicalJSON results, and without `block` each provider pins
-`finalized` on its own, so probe one provider (free) for a block number and pass that same `block` explicitly to both (TAP-23 §3.4 MUST); then `owner` and
+`finalized` on its own, so probe one provider (free) for a block number and pass that same `block` explicitly to both (TAPI-23 §3.4 MUST); then `owner` and
 `blockHash` must match exactly. The probed provider cannot bias the result: the other one independently verifies that block's hash and evaluates at it. With `api.callQuorum` (SDK ≥ 0.2) that is one call with
 `{ quorum: 2 }` (throws `QUORUM_FAILED` otherwise); on older SDKs call both and compare.
 Trust model: one service is one signer; two independent agreeing signers are accepted, disagreement is rejected, never a majority vote.

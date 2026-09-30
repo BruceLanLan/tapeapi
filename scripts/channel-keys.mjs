@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// A container's channel identity (TAP-26 §3.1), in three steps, with the holder's key never leaving the wallet.
-// 容器的通道身份（TAP-26 §3.1），分三步完成，持有人的私钥始终不离开钱包。
+// A container's channel identity (TAPI-26 §3.1), in three steps, with the holder's key never leaving the wallet.
+// 容器的通道身份（TAPI-26 §3.1），分三步完成，持有人的私钥始终不离开钱包。
 //
 //   1. node scripts/channel-keys.mjs new --container 0x.. [--identity ./identity.json] [--days 180]
 //                                        [--relay https://host/tapeapi/v1@0xRelayContainer] [--bus 0xChannelBus]

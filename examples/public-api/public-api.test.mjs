@@ -127,7 +127,7 @@ test('tapeName: a name resolves to its circuit, container, holder, and what the 
   await assert.rejects(publicMethods(fakeChain(fake)).tapeName({ name: '11.1013.tape' }), /not a TapeOut processor/)
 })
 
-test('the manifest lists every implemented method, is valid TAP-20, and the holder console publishes it as served', async () => {
+test('the manifest lists every implemented method, is valid TAPI-20, and the holder console publishes it as served', async () => {
   const impl = publicMethods(fakeChain({}))
   assert.deepEqual(MANIFEST_METHODS.map((m) => m.name).sort(), Object.keys(impl).sort())
   const SIGNER_KEY = '0x' + '22'.repeat(32), HOLDER_KEY = '0x' + '11'.repeat(32)

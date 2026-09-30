@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Read-only live probe of the TAP-20 resolve path on BNB Chain (chainId 56). Sends no transactions.
+// Read-only live probe of the TAPI-20 resolve path on BNB Chain (chainId 56). Sends no transactions.
 // Usage: node scripts/probe-mainnet.mjs [circuits tokenId]   (default: TapeKit SPEC vector 4246 on processor #0)
 // 只读主网探针：走 SDK 的真实解析路径。不发送任何交易。
 import { createTapeAPI, createRpc, MANIFEST_PATH, MANIFEST_KEY, rpcUrlsFor } from '../sdk/src/index.js'
@@ -28,7 +28,7 @@ try {
 } catch (e) { console.log('read(index.html) failed:', e.code, e.message.slice(0, 100)) }
 try { const svc = await api.resolve({ circuits, tokenId }); console.log('resolve    OK', svc.container, svc.manifest?.name) }
 catch (e) { console.log('resolve    ', e.code, '-', e.message.slice(0, 160)) }
-// TAP-26 §3.1: the container's TapeSend key, the identity a Tape Channel authenticates against.
-// TAP-26 §3.1：容器的 TapeSend 密钥，Tape Channel 认证所依据的身份。
+// TAPI-26 §3.1: the container's TapeSend key, the identity a Tape Channel authenticates against.
+// TAPI-26 §3.1：容器的 TapeSend 密钥，Tape Channel 认证所依据的身份。
 try { const k = await api.chain.tapeSendKey(container); console.log('tapeSendKey', k.staticPublic, 'suite 1, index', k.keyIndex, 'holder', k.holder) }
 catch (e) { console.log('tapeSendKey', e.code, '-', e.message.slice(0, 120)) }

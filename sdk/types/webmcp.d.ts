@@ -23,7 +23,7 @@ export interface ManifestToToolsOptions {
   prefix?: string
   container?: string
   dev?: boolean
-  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
+  /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   paid?: { maxPriceBEM: string | number; methods?: string[] }
   accepted?: Record<string, bigint | string | number>
   taken?: Set<string>
@@ -31,14 +31,14 @@ export interface ManifestToToolsOptions {
   trust?: string
 }
 
-/** Pure: a TAP-20 manifest -> WebMCP tool descriptors (no execute, no DOM). */
+/** Pure: a TAPI-20 manifest -> WebMCP tool descriptors (no execute, no DOM). */
 export declare function manifestToTools(manifest: Manifest | Record<string, unknown>, opts?: ManifestToToolsOptions): { tools: ToolDescriptor[]; skipped: SkippedMethod[] }
 
 export interface ExposeOptions {
   /** Explicit model context (tests, polyfills); default document.modelContext ?? navigator.modelContext. */
   modelContext?: unknown
   prefix?: string
-  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. Absent: priced methods are NOT exposed. */
+  /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. Absent: priced methods are NOT exposed. */
   paid?: {
     payer: Payer
     maxPriceBEM: string | number
@@ -60,7 +60,7 @@ export interface ExposeHandle {
   service: ResolvedService | null
   tools: ToolDescriptor[]
   skipped: SkippedMethod[]
-  /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
+  /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   spentBEM(): string
   refresh(): Promise<ExposeHandle>
   dispose(): void

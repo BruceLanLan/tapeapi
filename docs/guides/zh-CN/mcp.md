@@ -183,7 +183,7 @@ claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeap
 | `id`、`ts` | 请求 id，以及服务签名的时间（Unix 秒） |
 | `ok` 以及 `result` 或 `error` | 回答；拒绝也有签名 |
 | `block` | 服务签名时看到的链头 |
-| `sig` | 服务对以上所有内容的签名（[TAP-21](../../../spec/TAP-21.md)） |
+| `sig` | 服务对以上所有内容的签名（[TAPI-21](../../../spec/TAPI-21.md)） |
 
 ### 在浏览器里核验
 
@@ -193,7 +193,7 @@ claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeap
 ### 链接的两种形态
 
 - **只带哈希（默认）。** 链接里的回执把 `params` 与 `result`（或 `error`）换成签名所依据的两个哈希：`requestHash` 是规范化
-  `{ method, params }` 的 keccak256，`bodyHash` 是规范化结果的 keccak256。核验页由它们重建 TAP-21 摘要，所以能核对谁签的、
+  `{ method, params }` 的 keccak256，`bodyHash` 是规范化结果的 keccak256。核验页由它们重建 TAPI-21 摘要，所以能核对谁签的、
   哪个服务、什么时间，但拿到链接的人看不到问了什么、答了什么。`method` 按回执所写展示：它只经 `requestHash` 与参数一起绑定。
 - **带原文**（`verifyLink(receipt, base, { content: true })`、服务端 `linkContent: true`、`tapeapi-mcp --link-content`）。
   整份回执都在链接里：核验页显示参数与结果，链接转给谁，谁也看得到。
@@ -282,9 +282,9 @@ export default {
 
 - **链上身份。** 代理代表一个 TapeOut 电路的容器作答，所以谁在回答是一次链上查询，而不是一句自我声明。
 - **钉在链上的工具定义。** 你容器链上站点里的清单带有 `mcp.toolsSha256`：对每个工具的名称、标题、说明、输入与输出
-  schema 和 annotations 计算的 SHA-256（[TAP-20 §3.8](../../../spec/TAP-20.md)）。工具在用户批准之后被改掉（MCP 的
+  schema 和 annotations 计算的 SHA-256（[TAPI-20 §3.8](../../../spec/TAPI-20.md)）。工具在用户批准之后被改掉（MCP 的
   "rug pull"）时，核对摘要的客户端会拒绝它们，代理自己也会停止服务。
-- **每个结果都有签名。** 每次工具调用都得到一个签名的 TAP-21 信封；经 `/mcp` 调用时还附带回执和核验链接，和上面的公共服务
+- **每个结果都有签名。** 每次工具调用都得到一个签名的 TAPI-21 信封；经 `/mcp` 调用时还附带回执和核验链接，和上面的公共服务
   一样。
 
 代理以及控制台对它的支持现在就能用。目前还没有任何第三方 MCP 服务器被 tape out。这些包还没有发布到 npm，所以请在仓库的
@@ -313,7 +313,7 @@ curl -s -X POST http://127.0.0.1:8796/mcp -H 'content-type: application/json' -H
 | 路由 | 是什么 |
 |---|---|
 | `GET /.well-known/tapeapi.json` | 清单：你的身份字段、每个工具对应的一个免费方法，以及 `mcp: { endpoint, toolsSha256 }` |
-| `POST /tapeapi/v1/<工具名>` | 签名调用：传入 `{ id, params }`，返回 TAP-21 信封，其中 `result` 是你的服务器给出的工具结果去掉 `_meta` |
+| `POST /tapeapi/v1/<工具名>` | 签名调用：传入 `{ id, params }`，返回 TAPI-21 信封，其中 `result` 是你的服务器给出的工具结果去掉 `_meta` |
 | `POST /mcp` | 远程 MCP（Streamable HTTP，无状态）：`tools/list` 按你的服务器列出的样子返回工具；`tools/call` 返回你的服务器给出的内容，加一行来源说明，回执放在 `_meta` 里 |
 
 要包裹你自己的服务器，把 `UPSTREAM_URL` 指向它的 Streamable HTTP 端点。服务器需要密钥时，设置
@@ -396,7 +396,7 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
 - **只支持 Streamable HTTP 服务器。** 你的服务器必须通过 Streamable HTTP 提供 MCP；stdio 服务器需要先桥接成 HTTP。
   只代理工具：不代理 resources 和 prompts，没有服务器到客户端的推送流（对 `/mcp` 的 GET 得到 HTTP 405），sampling、
   elicitation 和进度通知都不转发。你的服务器的 `instructions` 也不转发，因为它不在摘要覆盖范围内。
-- **工具名必须是 TAP-20 的方法名**（`[A-Za-z_][A-Za-z0-9_]{0,63}`）。其他名字的工具仍会出现在 `tools/list` 里（摘要覆盖
+- **工具名必须是 TAPI-20 的方法名**（`[A-Za-z_][A-Za-z0-9_]{0,63}`）。其他名字的工具仍会出现在 `tools/list` 里（摘要覆盖
   全部工具），但不能经代理调用。代理的启动日志会列出这些工具。
 - **目前只有免费工具。** 每个工具都成为一个免费方法。付费调用要等托管合约通过审计（[路线图](../../ROADMAP.md)）。
 - **控制台这一步需要 CORS。** 控制台在你的浏览器里从 `mcp.endpoint` 读取 `tools/list`，所以这个端点必须允许来自

@@ -52,16 +52,16 @@ export async function runSuite(opts = {}) {
   const mr = await http(`${origin}/.well-known/tapeapi.json`)
   let manifest = null
   if (mr.status === 200 && isPlainObject(mr.json)) {
-    pass('tap20.manifest.fetch', 'MUST', 'TAP-20 §3.2', 'discovery')
+    pass('tapi20.manifest.fetch', 'MUST', 'TAPI-20 §3.2', 'discovery')
     manifest = mr.json
-  } else fail('tap20.manifest.fetch', 'MUST', 'TAP-20 §3.2', 'discovery', `GET /.well-known/tapeapi.json: ${describe(mr)}`)
+  } else fail('tapi20.manifest.fetch', 'MUST', 'TAPI-20 §3.2', 'discovery', `GET /.well-known/tapeapi.json: ${describe(mr)}`)
   if (manifest) {
-    check(mr.size <= MANIFEST_LIMIT, 'tap20.manifest.size', 'MUST', 'TAP-20 §3.2', 'discovery', `${mr.size} bytes > ${MANIFEST_LIMIT}`)
-    check(/^application\/json\b/i.test(mr.headers.get('content-type') || ''), 'tap20.manifest.content-type', 'SHOULD', 'TAP-20 §3.2', 'discovery', `content-type ${mr.headers.get('content-type')}`)
+    check(mr.size <= MANIFEST_LIMIT, 'tapi20.manifest.size', 'MUST', 'TAPI-20 §3.2', 'discovery', `${mr.size} bytes > ${MANIFEST_LIMIT}`)
+    check(/^application\/json\b/i.test(mr.headers.get('content-type') || ''), 'tapi20.manifest.content-type', 'SHOULD', 'TAPI-20 §3.2', 'discovery', `content-type ${mr.headers.get('content-type')}`)
     try {
       validateManifest(manifest, { requireDelegation: true, allowHttp: true })
-      pass('tap20.manifest.schema', 'MUST', 'TAP-20 §3.3', 'discovery')
-    } catch (e) { fail('tap20.manifest.schema', 'MUST', 'TAP-20 §3.3', 'discovery', e.message) }
+      pass('tapi20.manifest.schema', 'MUST', 'TAPI-20 §3.3', 'discovery')
+    } catch (e) { fail('tapi20.manifest.schema', 'MUST', 'TAPI-20 §3.3', 'discovery', e.message) }
   }
   // A trusted manifest (resolved on-chain by the operator) overrides the served one as the source of truth.
   // 受信清单（运营方从链上解析所得）优先于端点自报的清单。
@@ -71,7 +71,7 @@ export async function runSuite(opts = {}) {
     if (manifest) {
       let same = false
       try { same = canonicalJSON(manifest) === canonicalJSON(opts.manifest) } catch { same = false }
-      check(same, 'tap20.manifest.matches-trusted', 'SHOULD', 'TAP-20 §3.6', 'discovery', 'served /.well-known/tapeapi.json differs from the trusted (on-chain) manifest')
+      check(same, 'tapi20.manifest.matches-trusted', 'SHOULD', 'TAPI-20 §3.6', 'discovery', 'served /.well-known/tapeapi.json differs from the trusted (on-chain) manifest')
     }
   }
   if (!ref || !isAddress(ref.signer) || !isAddress(ref.container) || !Array.isArray(ref.methods)) {
@@ -87,11 +87,11 @@ export async function runSuite(opts = {}) {
 
   const hr = await http(`${live}/health`)
   let health = null
-  if (hr.status === 200 && isPlainObject(hr.json) && hr.json.ok === true) { pass('tap21.health.fetch', 'SHOULD', 'reference convention', 'discovery'); health = hr.json }
-  else fail('tap21.health.fetch', 'SHOULD', 'reference convention', 'discovery', `GET /tapeapi/v1/health: ${describe(hr)}`)
+  if (hr.status === 200 && isPlainObject(hr.json) && hr.json.ok === true) { pass('tapi21.health.fetch', 'SHOULD', 'reference convention', 'discovery'); health = hr.json }
+  else fail('tapi21.health.fetch', 'SHOULD', 'reference convention', 'discovery', `GET /tapeapi/v1/health: ${describe(hr)}`)
   if (health) {
-    if (health.signer !== undefined) check(isAddress(health.signer) && eqAddr(health.signer, trusted.signer), 'tap21.health.signer', 'SHOULD', 'reference convention', 'discovery', `health.signer ${health.signer} != manifest.signer ${trusted.signer}`)
-    if (health.minVoucherLifeS !== undefined) check(Number.isInteger(health.minVoucherLifeS) && health.minVoucherLifeS >= 0, 'tap22.health.minVoucherLifeS', 'SHOULD', 'TAP-22 §3.2(2)', 'discovery', `minVoucherLifeS ${JSON.stringify(health.minVoucherLifeS)} is not a non-negative integer`)
+    if (health.signer !== undefined) check(isAddress(health.signer) && eqAddr(health.signer, trusted.signer), 'tapi21.health.signer', 'SHOULD', 'reference convention', 'discovery', `health.signer ${health.signer} != manifest.signer ${trusted.signer}`)
+    if (health.minVoucherLifeS !== undefined) check(Number.isInteger(health.minVoucherLifeS) && health.minVoucherLifeS >= 0, 'tapi22.health.minVoucherLifeS', 'SHOULD', 'TAPI-22 §3.2(2)', 'discovery', `minVoucherLifeS ${JSON.stringify(health.minVoucherLifeS)} is not a non-negative integer`)
   }
   const probeMethod = (free[0] || methods[0])?.name || 'x'
 
@@ -118,16 +118,16 @@ export async function runSuite(opts = {}) {
   // 3. Free methods: full envelope battery / 免费方法：完整信封检查
   // ======================================================================================================
   let sample = null // { env, reqId, method, params }
-  if (!free.length) skip('tap21.free.ok', 'SHOULD', 'TAP-21 §3.2', 'free', 'manifest lists no free methods')
+  if (!free.length) skip('tapi21.free.ok', 'SHOULD', 'TAPI-21 §3.2', 'free', 'manifest lists no free methods')
   for (const m of free) {
     const params = isPlainObject(userParams[m.name]) ? userParams[m.name] : {}
     const reqId = `conf-${randomUUID()}`
     const r = await post(m.name, { id: reqId, method: m.name, params })
     const ctx = `free:${m.name}`
-    if (limited(r, 'tap21.envelope.parse', 'MUST', 'TAP-21 §3.2', ctx)) continue
+    if (limited(r, 'tapi21.envelope.parse', 'MUST', 'TAPI-21 §3.2', ctx)) continue
     const env = checkEnvelope(r, { reqId, method: m.name, params, context: ctx })
     if (env) {
-      check(env.ok === true, 'tap21.free.ok', 'SHOULD', 'TAP-21 §3.2', ctx, `free method answered ok:false ${env.error?.code}: ${env.error?.message} (supply params with --params if it needs them)`)
+      check(env.ok === true, 'tapi21.free.ok', 'SHOULD', 'TAPI-21 §3.2', ctx, `free method answered ok:false ${env.error?.code}: ${env.error?.message} (supply params with --params if it needs them)`)
       if (!sample || (env.ok && !sample.env.ok)) sample = { env, reqId, method: m.name, params }
     }
     if (env && isPlainObject(r.json) && r.headers.get('access-control-allow-origin') === null) fail('http.cors-on-response', 'SHOULD', 'reference convention', ctx, 'POST response carries no Access-Control-Allow-Origin')
@@ -141,9 +141,9 @@ export async function runSuite(opts = {}) {
     const reqId = `conf-${randomUUID()}`
     const r = await post(UNKNOWN_METHOD, { id: reqId, method: UNKNOWN_METHOD, params: {} })
     const ctx = 'unknown-method'
-    if (!limited(r, 'tap21.method-not-found', 'MUST', 'TAP-21 §3.2', ctx)) {
+    if (!limited(r, 'tapi21.method-not-found', 'MUST', 'TAPI-21 §3.2', ctx)) {
       const env = checkEnvelope(r, { reqId, method: UNKNOWN_METHOD, params: {}, context: ctx })
-      check(env && env.ok === false && env.error?.code === 'METHOD_NOT_FOUND', 'tap21.method-not-found', 'MUST', 'TAP-21 §3.2', ctx,
+      check(env && env.ok === false && env.error?.code === 'METHOD_NOT_FOUND', 'tapi21.method-not-found', 'MUST', 'TAPI-21 §3.2', ctx,
         env ? `expected signed METHOD_NOT_FOUND, got ok=${env.ok} code=${env.error?.code}` : 'no verifiable envelope for an unknown method')
       if (!sample && env) sample = { env, reqId, method: UNKNOWN_METHOD, params: {} }
     }
@@ -154,17 +154,17 @@ export async function runSuite(opts = {}) {
   //    篡改检查：签名必须绑定 ok、body、请求、id 与 ts
   // ======================================================================================================
   if (!sample) {
-    for (const id of ['tap21.tamper.ok-flip', 'tap21.tamper.body', 'tap21.tamper.request', 'tap21.tamper.id', 'tap21.tamper.ts']) skip(id, 'MUST', 'TAP-21 §3.3', 'tamper', 'no verified envelope to tamper with')
+    for (const id of ['tapi21.tamper.ok-flip', 'tapi21.tamper.body', 'tapi21.tamper.request', 'tapi21.tamper.id', 'tapi21.tamper.ts']) skip(id, 'MUST', 'TAPI-21 §3.3', 'tamper', 'no verified envelope to tamper with')
   } else {
     const { env, reqId, method, params } = sample
     const body = env.ok ? env.result : env.error
     const flipped = { ok: !env.ok, [env.ok ? 'error' : 'result']: body }
-    check(!verifies(env, reqId, method, params, flipped).ok, 'tap21.tamper.ok-flip', 'MUST', 'TAP-21 §3.3', 'tamper', 'flipping ok still verifies: ok is not covered by the signature')
+    check(!verifies(env, reqId, method, params, flipped).ok, 'tapi21.tamper.ok-flip', 'MUST', 'TAPI-21 §3.3', 'tamper', 'flipping ok still verifies: ok is not covered by the signature')
     const mutated = mutate(body)
-    check(!verifies(env, reqId, method, params, env.ok ? { result: mutated } : { error: mutated }).ok, 'tap21.tamper.body', 'MUST', 'TAP-21 §3.3', 'tamper', 'changing the result/error still verifies')
-    check(!verifies(env, reqId, method, { ...params, conformanceTamper: 1 }).ok, 'tap21.tamper.request', 'MUST', 'TAP-21 §3.3', 'tamper', 'a different request {method, params} still verifies')
-    check(!verifies(env, reqId + 'x', method, params).ok, 'tap21.tamper.id', 'MUST', 'TAP-21 §3.3', 'tamper', 'a different id still verifies')
-    check(!verifies(env, reqId, method, params, { ts: env.ts + 1 }).ok, 'tap21.tamper.ts', 'MUST', 'TAP-21 §3.3', 'tamper', 'a different ts still verifies')
+    check(!verifies(env, reqId, method, params, env.ok ? { result: mutated } : { error: mutated }).ok, 'tapi21.tamper.body', 'MUST', 'TAPI-21 §3.3', 'tamper', 'changing the result/error still verifies')
+    check(!verifies(env, reqId, method, { ...params, conformanceTamper: 1 }).ok, 'tapi21.tamper.request', 'MUST', 'TAPI-21 §3.3', 'tamper', 'a different request {method, params} still verifies')
+    check(!verifies(env, reqId + 'x', method, params).ok, 'tapi21.tamper.id', 'MUST', 'TAPI-21 §3.3', 'tamper', 'a different id still verifies')
+    check(!verifies(env, reqId, method, params, { ts: env.ts + 1 }).ok, 'tapi21.tamper.ts', 'MUST', 'TAPI-21 §3.3', 'tamper', 'a different ts still verifies')
   }
 
   // ======================================================================================================
@@ -176,11 +176,11 @@ export async function runSuite(opts = {}) {
     const reqId = `conf-${randomUUID()}`
     const r = await post(method, { id: reqId, method, params: CANON_PARAMS })
     const ctx = 'canon'
-    if (!limited(r, 'tap21.canon.request-hash', 'MUST', 'TAP-21 §3.3', ctx)) {
-      if (r.transportError || !isPlainObject(r.json) || typeof r.json.sig !== 'string') fail('tap21.canon.request-hash', 'MUST', 'TAP-21 §3.3', ctx, `no signed envelope: ${describe(r)}`)
+    if (!limited(r, 'tapi21.canon.request-hash', 'MUST', 'TAPI-21 §3.3', ctx)) {
+      if (r.transportError || !isPlainObject(r.json) || typeof r.json.sig !== 'string') fail('tapi21.canon.request-hash', 'MUST', 'TAPI-21 §3.3', ctx, `no signed envelope: ${describe(r)}`)
       else {
         const v = verifies(r.json, reqId, method, CANON_PARAMS)
-        check(v.ok, 'tap21.canon.request-hash', 'MUST', 'TAP-21 §3.3', ctx, `envelope for params ${canonicalJSON(CANON_PARAMS)} recovers to ${v.got}: the provider does not canonicalise {method, params} with JCS (RFC 8785) + TAPI restrictions`)
+        check(v.ok, 'tapi21.canon.request-hash', 'MUST', 'TAPI-21 §3.3', ctx, `envelope for params ${canonicalJSON(CANON_PARAMS)} recovers to ${v.got}: the provider does not canonicalise {method, params} with JCS (RFC 8785) + TAPI restrictions`)
       }
     }
   }
@@ -197,73 +197,73 @@ export async function runSuite(opts = {}) {
     return r
   }
   {
-    const r = await rejectCheck('tap21.request.malformed-json', 'MUST', 'TAP-21 §3.1/§3.2', '{not json', { context: 'malformed' })
+    const r = await rejectCheck('tapi21.request.malformed-json', 'MUST', 'TAPI-21 §3.1/§3.2', '{not json', { context: 'malformed' })
     // No id can be echoed for an unparseable body, so the signature is checked against what the envelope claims.
     // 无法解析的请求体没有 id 可回显，因此按信封自述的 id 验签。
     if (isPlainObject(r.json) && typeof r.json.sig === 'string') {
       const v = verifies(r.json, String(r.json.id ?? ''), probeMethod, {})
-      check(v.ok, 'tap21.request.malformed-signed', 'SHOULD', 'TAP-21 §3.2', 'malformed', `BAD_REQUEST envelope carries a sig that does not verify under (id=${JSON.stringify(r.json.id)}, method=${probeMethod}, params={}): ${v.got}`)
+      check(v.ok, 'tapi21.request.malformed-signed', 'SHOULD', 'TAPI-21 §3.2', 'malformed', `BAD_REQUEST envelope carries a sig that does not verify under (id=${JSON.stringify(r.json.id)}, method=${probeMethod}, params={}): ${v.got}`)
     }
   }
-  await rejectCheck('tap21.request.proto-key', 'MUST', 'TAP-21 §3.1', '{"id":"conf-proto","params":{"__proto__":{"polluted":true}}}', { context: 'proto:__proto__' })
-  await rejectCheck('tap21.request.proto-key', 'MUST', 'TAP-21 §3.1', '{"id":"conf-ctor","constructor":1,"params":{}}', { context: 'proto:constructor' })
-  await rejectCheck('tap21.request.proto-key', 'MUST', 'TAP-21 §3.1', '{"id":"conf-prot","params":{"a":[{"prototype":1}]}}', { context: 'proto:prototype' })
+  await rejectCheck('tapi21.request.proto-key', 'MUST', 'TAPI-21 §3.1', '{"id":"conf-proto","params":{"__proto__":{"polluted":true}}}', { context: 'proto:__proto__' })
+  await rejectCheck('tapi21.request.proto-key', 'MUST', 'TAPI-21 §3.1', '{"id":"conf-ctor","constructor":1,"params":{}}', { context: 'proto:constructor' })
+  await rejectCheck('tapi21.request.proto-key', 'MUST', 'TAPI-21 §3.1', '{"id":"conf-prot","params":{"a":[{"prototype":1}]}}', { context: 'proto:prototype' })
   for (const [ctx, text] of [['dup:top', '{"id":"conf-dup","id":"conf-dup2","params":{}}'], ['dup:nested', '{"id":"conf-dup3","params":{"a":1,"a":2}}']]) {
-    const r = await rejectCheck('tap21.request.duplicate-key', 'MUST', 'TAP-21 §3.3(1)', text, { codes: ['BAD_REQUEST', 'CANON_INVALID'], statuses: [400], context: ctx })
-    if (r.json?.error?.code) check(r.json.error.code === 'BAD_REQUEST', 'tap21.request.duplicate-key.code', 'SHOULD', 'TAP-21 §3.2 (error code list)', ctx, `rejected with ${r.json.error.code}; only the five TAP-21 codes may appear on the wire`)
+    const r = await rejectCheck('tapi21.request.duplicate-key', 'MUST', 'TAPI-21 §3.3(1)', text, { codes: ['BAD_REQUEST', 'CANON_INVALID'], statuses: [400], context: ctx })
+    if (r.json?.error?.code) check(r.json.error.code === 'BAD_REQUEST', 'tapi21.request.duplicate-key.code', 'SHOULD', 'TAPI-21 §3.2 (error code list)', ctx, `rejected with ${r.json.error.code}; only the five TAPI-21 codes may appear on the wire`)
   }
   {
     // Non-empty params beside the missing id: the refusal is bound to ("", {}), not to params the provider
-    // could not attribute to any id (TAP-21 §3.2, spec review SD-1). / 缺失 id 旁边带非空 params：拒绝必须绑定 ("", {})。
-    const r = await rejectCheck('tap21.request.missing-id', 'SHOULD', 'TAP-21 §3.1', JSON.stringify({ params: { conf: 1 } }), { context: 'missing-id' })
+    // could not attribute to any id (TAPI-21 §3.2, spec review SD-1). / 缺失 id 旁边带非空 params：拒绝必须绑定 ("", {})。
+    const r = await rejectCheck('tapi21.request.missing-id', 'SHOULD', 'TAPI-21 §3.1', JSON.stringify({ params: { conf: 1 } }), { context: 'missing-id' })
     if (isPlainObject(r.json) && typeof r.json.sig === 'string') {
       const v = verifies(r.json, '', probeMethod, {})
-      check(v.ok, 'tap21.request.missing-id-signed', 'SHOULD', 'TAP-21 §3.2', 'missing-id', `BAD_REQUEST for a missing id does not verify under (id="", method=${probeMethod}, params={}): ${v.got}`)
+      check(v.ok, 'tapi21.request.missing-id-signed', 'SHOULD', 'TAPI-21 §3.2', 'missing-id', `BAD_REQUEST for a missing id does not verify under (id="", method=${probeMethod}, params={}): ${v.got}`)
     }
   }
-  await rejectCheck('tap21.request.params-not-object', 'SHOULD', 'TAP-21 §3.1', JSON.stringify({ id: 'conf-arr', params: [1] }), { context: 'params-array' })
+  await rejectCheck('tapi21.request.params-not-object', 'SHOULD', 'TAPI-21 §3.1', JSON.stringify({ id: 'conf-arr', params: [1] }), { context: 'params-array' })
   {
     const limit = Number(opts.bodyLimit ?? ENVELOPE_LIMIT)
     const pad = 'x'.repeat(Math.max(0, limit + 1 - 40))
     const r = await post(probeMethod, JSON.stringify({ id: 'conf-big', params: { pad } }))
     const ctx = `oversize:${limit + 1}B`
-    if (!limited(r, 'tap21.request.oversize-413', 'SHOULD', 'TAP-21 §3.2', ctx)) {
-      if (r.transportError) fail('tap21.request.oversize-413', 'SHOULD', 'TAP-21 §3.2', ctx, `connection dropped instead of an HTTP answer (${r.transportError})`)
-      else check(r.status === 413, 'tap21.request.oversize-413', 'SHOULD', 'TAP-21 §3.2', ctx, `expected 413, got ${describe(r)}`)
-      if (!r.transportError) check(!(isPlainObject(r.json) && r.json.ok === true), 'tap21.request.oversize-not-served', opts.bodyLimit ? 'MUST' : 'SHOULD', 'provider body limit', ctx, `a ${limit + 1}-byte request was served ok:true`)
+    if (!limited(r, 'tapi21.request.oversize-413', 'SHOULD', 'TAPI-21 §3.2', ctx)) {
+      if (r.transportError) fail('tapi21.request.oversize-413', 'SHOULD', 'TAPI-21 §3.2', ctx, `connection dropped instead of an HTTP answer (${r.transportError})`)
+      else check(r.status === 413, 'tapi21.request.oversize-413', 'SHOULD', 'TAPI-21 §3.2', ctx, `expected 413, got ${describe(r)}`)
+      if (!r.transportError) check(!(isPlainObject(r.json) && r.json.ok === true), 'tapi21.request.oversize-not-served', opts.bodyLimit ? 'MUST' : 'SHOULD', 'provider body limit', ctx, `a ${limit + 1}-byte request was served ok:true`)
     }
   }
 
   // ======================================================================================================
-  // 8. TAP-22 without keys: a priced method with no voucher / 无密钥的 TAP-22：收费方法不带凭证
+  // 8. TAPI-22 without keys: a priced method with no voucher / 无密钥的 TAPI-22：收费方法不带凭证
   // ======================================================================================================
-  if (!paid.length) skip('tap22.payment-required', 'MUST', 'TAP-22 §3.2', 'paid', 'manifest lists no priced methods')
+  if (!paid.length) skip('tapi22.payment-required', 'MUST', 'TAPI-22 §3.2', 'paid', 'manifest lists no priced methods')
   else {
     const m = paid[0]
     const params = isPlainObject(userParams[m.name]) ? userParams[m.name] : {}
     const reqId = `conf-${randomUUID()}`
     const r = await post(m.name, { id: reqId, method: m.name, params })
     const ctx = `no-voucher:${m.name}`
-    if (!limited(r, 'tap22.payment-required', 'MUST', 'TAP-22 §3.2', ctx)) {
+    if (!limited(r, 'tapi22.payment-required', 'MUST', 'TAPI-22 §3.2', ctx)) {
       const env = checkEnvelope(r, { reqId, method: m.name, params, context: ctx })
-      check(env && env.ok === false && env.error?.code === 'PAYMENT_REQUIRED', 'tap22.payment-required', 'MUST', 'TAP-22 §3.2', ctx, env ? `expected PAYMENT_REQUIRED, got ok=${env.ok} code=${env.error?.code}` : 'no verifiable envelope')
+      check(env && env.ok === false && env.error?.code === 'PAYMENT_REQUIRED', 'tapi22.payment-required', 'MUST', 'TAPI-22 §3.2', ctx, env ? `expected PAYMENT_REQUIRED, got ok=${env.ok} code=${env.error?.code}` : 'no verifiable envelope')
       // data.price is BEM base units (10^-8), a decimal integer string. "0.0001" (BEM units) fails loudly: a client
       // that reads it as base units would refuse or deadlock (traceability D6).
       // data.price 是 BEM 基本单位（10^-8）的十进制整数串；"0.0001"（BEM 单位）会明确失败。
       if (env?.error?.code === 'PAYMENT_REQUIRED') {
         const dp = env.error.data?.price
-        check(isDecimalString(dp), 'tap22.payment-required.data.price', 'MUST', 'TAP-22 §3.2', ctx, `data.price must be a decimal string of base units, got ${JSON.stringify(dp)}`)
-        if (isDecimalString(dp)) check(BigInt(dp) === priceOf(m), 'tap22.payment-required.price-matches-manifest', 'SHOULD', 'TAP-22 §3.2', ctx, `data.price ${dp} != manifest price ${priceOf(m)} base units`)
+        check(isDecimalString(dp), 'tapi22.payment-required.data.price', 'MUST', 'TAPI-22 §3.2', ctx, `data.price must be a decimal string of base units, got ${JSON.stringify(dp)}`)
+        if (isDecimalString(dp)) check(BigInt(dp) === priceOf(m), 'tapi22.payment-required.price-matches-manifest', 'SHOULD', 'TAPI-22 §3.2', ctx, `data.price ${dp} != manifest price ${priceOf(m)} base units`)
       }
     }
   }
 
   // ======================================================================================================
-  // 9. TAP-22 with keys: stale vouchers and short-lived vouchers (never a voucher that could be served)
-  //    带密钥的 TAP-22：过期累计与寿命过短的凭证（绝不发送可能被服务的凭证）
+  // 9. TAPI-22 with keys: stale vouchers and short-lived vouchers (never a voucher that could be served)
+  //    带密钥的 TAPI-22：过期累计与寿命过短的凭证（绝不发送可能被服务的凭证）
   // ======================================================================================================
   if (opts.paidMethod) await paidChecks()
-  else for (const id of ['tap22.bad-voucher.data.lastCumulative', 'tap22.bad-voucher.data.onChainClaimed', 'tap22.bad-voucher.data.price', 'tap22.bad-voucher.minVoucherLifeS']) skip(id, 'MUST', 'TAP-22 §3.2', 'paid', 'no --paid-method/--consumer-key given')
+  else for (const id of ['tapi22.bad-voucher.data.lastCumulative', 'tapi22.bad-voucher.data.onChainClaimed', 'tapi22.bad-voucher.data.price', 'tapi22.bad-voucher.minVoucherLifeS']) skip(id, 'MUST', 'TAPI-22 §3.2', 'paid', 'no --paid-method/--consumer-key given')
 
   async function paidChecks() {
     const m = methods.find(x => x.name === opts.paidMethod)
@@ -284,7 +284,7 @@ export async function runSuite(opts = {}) {
     const call = async (voucher, ctx) => {
       const reqId = `conf-${randomUUID()}`
       const r = await post(m.name, { id: reqId, method: m.name, params, voucher })
-      if (limited(r, 'tap22.bad-voucher', 'MUST', 'TAP-22 §3.2', ctx)) return null
+      if (limited(r, 'tapi22.bad-voucher', 'MUST', 'TAPI-22 §3.2', ctx)) return null
       return checkEnvelope(r, { reqId, method: m.name, params, context: ctx })
     }
     const longLife = now() + Math.max(minLife ?? 0, 300) + 3600
@@ -292,13 +292,13 @@ export async function runSuite(opts = {}) {
       const isBV = env && env.ok === false && env.error?.code === 'BAD_VOUCHER'
       const data = isBV && isPlainObject(env.error.data) ? env.error.data : {}
       const why = isBV ? `BAD_VOUCHER "${env.error.message}" data=${JSON.stringify(env.error.data ?? null)}` : `expected BAD_VOUCHER, got ok=${env?.ok} code=${env?.error?.code} "${env?.error?.message}"`
-      check(isBV, 'tap22.bad-voucher', 'MUST', 'TAP-22 §3.2', ctx, why)
-      check(isBV && isDecimalString(data.lastCumulative), 'tap22.bad-voucher.data.lastCumulative', 'MUST', 'TAP-21 §3.2 / TAP-22 §3.2', ctx, `data.lastCumulative missing or not a decimal string: ${why}`)
-      check(isBV && isDecimalString(data.onChainClaimed), 'tap22.bad-voucher.data.onChainClaimed', 'MUST', 'TAP-22 §3.2', ctx, `data.onChainClaimed missing or not a decimal string: ${why}`)
-      check(isBV && isDecimalString(data.price), 'tap22.bad-voucher.data.price', 'MUST', 'TAP-22 §3.2', ctx, `data.price missing or not a decimal string: ${why}`)
-      if (isDecimalString(data.price)) check(BigInt(data.price) === price, 'tap22.bad-voucher.price-matches-manifest', 'SHOULD', 'TAP-20 §3.6 / TAP-22 §3.3', ctx, `data.price ${data.price} != manifest price ${price} (the consumer will re-read the manifest)`)
-      if (isDecimalString(data.lastCumulative) && isDecimalString(data.onChainClaimed)) check(BigInt(data.lastCumulative) >= BigInt(data.onChainClaimed), 'tap22.bad-voucher.last-ge-claimed', 'MUST', 'TAP-21 §3.2 (lastCumulative = max(stored, claimedOf))', ctx, `lastCumulative ${data.lastCumulative} < onChainClaimed ${data.onChainClaimed}`)
-      if (isPlainObject(data.voucher)) check(isDecimalString(data.voucher.cumulative) && typeof data.voucher.sig === 'string' && data.voucher.cumulative === data.lastCumulative, 'tap22.bad-voucher.data.voucher', 'MUST', 'TAP-22 §3.2', ctx, `data.voucher malformed or not for lastCumulative: ${JSON.stringify(data.voucher)}`)
+      check(isBV, 'tapi22.bad-voucher', 'MUST', 'TAPI-22 §3.2', ctx, why)
+      check(isBV && isDecimalString(data.lastCumulative), 'tapi22.bad-voucher.data.lastCumulative', 'MUST', 'TAPI-21 §3.2 / TAPI-22 §3.2', ctx, `data.lastCumulative missing or not a decimal string: ${why}`)
+      check(isBV && isDecimalString(data.onChainClaimed), 'tapi22.bad-voucher.data.onChainClaimed', 'MUST', 'TAPI-22 §3.2', ctx, `data.onChainClaimed missing or not a decimal string: ${why}`)
+      check(isBV && isDecimalString(data.price), 'tapi22.bad-voucher.data.price', 'MUST', 'TAPI-22 §3.2', ctx, `data.price missing or not a decimal string: ${why}`)
+      if (isDecimalString(data.price)) check(BigInt(data.price) === price, 'tapi22.bad-voucher.price-matches-manifest', 'SHOULD', 'TAPI-20 §3.6 / TAPI-22 §3.3', ctx, `data.price ${data.price} != manifest price ${price} (the consumer will re-read the manifest)`)
+      if (isDecimalString(data.lastCumulative) && isDecimalString(data.onChainClaimed)) check(BigInt(data.lastCumulative) >= BigInt(data.onChainClaimed), 'tapi22.bad-voucher.last-ge-claimed', 'MUST', 'TAPI-21 §3.2 (lastCumulative = max(stored, claimedOf))', ctx, `lastCumulative ${data.lastCumulative} < onChainClaimed ${data.onChainClaimed}`)
+      if (isPlainObject(data.voucher)) check(isDecimalString(data.voucher.cumulative) && typeof data.voucher.sig === 'string' && data.voucher.cumulative === data.lastCumulative, 'tapi22.bad-voucher.data.voucher', 'MUST', 'TAPI-22 §3.2', ctx, `data.voucher malformed or not for lastCumulative: ${JSON.stringify(data.voucher)}`)
       return isBV ? data : null
     }
     // (a) cumulative 0 is at or below claimedOf for every channel: stale by construction, never servable.
@@ -306,7 +306,7 @@ export async function runSuite(opts = {}) {
     const e0 = await call(mkVoucher(0, longLife), `stale:cumulative=0:${m.name}`)
     const d0 = e0 ? staleChecks(e0, `stale:cumulative=0:${m.name}`) : null
     // (b) lastCumulative + price − 1: one unit short of the next valid voucher. The figure comes from the
-    //     provider, so it is signed over ONLY when proven (TAP-22 §3.2): zero, or backed by an attached voucher
+    //     provider, so it is signed over ONLY when proven (TAPI-22 §3.2): zero, or backed by an attached voucher
     //     that recovers to our own consumer / session key. Signing an unproven figure is exactly the drain the
     //     spec warns about: a hostile provider names a huge lastCumulative and settles the voucher we sign.
     // (b) lastCumulative + price − 1：差一个单位。该数字来自提供者，只有被证明时才签（为 0，或附带的凭证能恢复出
@@ -322,7 +322,7 @@ export async function runSuite(opts = {}) {
         } catch { proven = false }
       }
       const below = last + price - 1n
-      if (!proven) skip('tap22.bad-voucher.below-last-plus-price', 'MUST', 'TAP-22 §3.2', ctx, `lastCumulative ${d0.lastCumulative} is not proven by an attached voucher signed by our key; refusing to sign a voucher above 0`)
+      if (!proven) skip('tapi22.bad-voucher.below-last-plus-price', 'MUST', 'TAPI-22 §3.2', ctx, `lastCumulative ${d0.lastCumulative} is not proven by an attached voucher signed by our key; refusing to sign a voucher above 0`)
       else if (below > 0n) {
         const e1 = await call(mkVoucher(below, longLife), `stale:last+price-1=${below}:${m.name}`)
         if (e1) staleChecks(e1, `stale:last+price-1=${below}:${m.name}`)
@@ -330,18 +330,18 @@ export async function runSuite(opts = {}) {
     }
     // (c) minimum voucher life, when the provider advertises one. Cumulative 0 keeps it unservable even if
     //     the provider ignores the floor. / 提供者公布了最短寿命时检查；cumulative 0 保证即便无视下限也不会被服务。
-    if (minLife === null || minLife < 10) skip('tap22.bad-voucher.minVoucherLifeS', 'MUST', 'TAP-22 §3.2(2)', 'min-life', `provider does not advertise a minVoucherLifeS >= 10 in /health (got ${JSON.stringify(health?.minVoucherLifeS)})`)
+    if (minLife === null || minLife < 10) skip('tapi22.bad-voucher.minVoucherLifeS', 'MUST', 'TAPI-22 §3.2(2)', 'min-life', `provider does not advertise a minVoucherLifeS >= 10 in /health (got ${JSON.stringify(health?.minVoucherLifeS)})`)
     else {
       // Dated on the PROVIDER's clock (from its last envelope ts), so clock skew cannot turn this into "expired".
       // 以提供者的时钟（取自其最近信封的 ts）计时，避免时钟偏差把它变成"已过期"。
       const ctx = `min-life:expires=now+${Math.floor(minLife / 2)}:${m.name}`
       const env = await call(mkVoucher(0, now() + H.clockSkew + Math.floor(minLife / 2)), ctx)
       const d = env?.ok === false && env.error?.code === 'BAD_VOUCHER' && isPlainObject(env.error.data) ? env.error.data : null
-      // TAP-22 §3.2: EVERY BAD_VOUCHER and PAYMENT_REQUIRED carries data.price, stale or not (settled 2026-09-22).
-      // TAP-22 §3.2：每个 BAD_VOUCHER 与 PAYMENT_REQUIRED 都带 data.price，无论是否过期累计（2026-09-22 厘清）。
-      if (d) check(isDecimalString(d.price), 'tap22.bad-voucher.data.price.non-stale', 'MUST', 'TAP-22 §3.2', ctx, `min-life BAD_VOUCHER carries no data.price: data=${JSON.stringify(d)}`)
-      if (d && d.minVoucherLifeS === undefined && isDecimalString(d.lastCumulative)) skip('tap22.bad-voucher.minVoucherLifeS', 'MUST', 'TAP-22 §3.2(2)', ctx, 'inconclusive: provider checked the cumulative before the voucher life')
-      else check(d && d.minVoucherLifeS === minLife, 'tap22.bad-voucher.minVoucherLifeS', 'MUST', 'TAP-22 §3.2(2)', ctx,
+      // TAPI-22 §3.2: EVERY BAD_VOUCHER and PAYMENT_REQUIRED carries data.price, stale or not (settled 2026-09-22).
+      // TAPI-22 §3.2：每个 BAD_VOUCHER 与 PAYMENT_REQUIRED 都带 data.price，无论是否过期累计（2026-09-22 厘清）。
+      if (d) check(isDecimalString(d.price), 'tapi22.bad-voucher.data.price.non-stale', 'MUST', 'TAPI-22 §3.2', ctx, `min-life BAD_VOUCHER carries no data.price: data=${JSON.stringify(d)}`)
+      if (d && d.minVoucherLifeS === undefined && isDecimalString(d.lastCumulative)) skip('tapi22.bad-voucher.minVoucherLifeS', 'MUST', 'TAPI-22 §3.2(2)', ctx, 'inconclusive: provider checked the cumulative before the voucher life')
+      else check(d && d.minVoucherLifeS === minLife, 'tapi22.bad-voucher.minVoucherLifeS', 'MUST', 'TAPI-22 §3.2(2)', ctx,
         `a voucher expiring in ${Math.floor(minLife / 2)}s (< advertised ${minLife}s) must be BAD_VOUCHER with data.minVoucherLifeS=${minLife}; got ok=${env?.ok} code=${env?.error?.code} data=${JSON.stringify(env?.error?.data ?? null)}`)
     }
   }
@@ -357,7 +357,7 @@ export async function runSuite(opts = {}) {
     const limitedRs = rs.filter(r => r.status === 429)
     const ctx = `burst:${n}`
     if (!limitedRs.length) {
-      for (const id of ['tap21.ratelimit.unsigned', 'tap21.ratelimit.retry-after', 'tap21.ratelimit.code']) skip(id, 'MUST', 'TAP-21 §3.4', ctx, `no 429 within ${n} rapid calls (rate limiting is MAY)`)
+      for (const id of ['tapi21.ratelimit.unsigned', 'tapi21.ratelimit.retry-after', 'tapi21.ratelimit.code']) skip(id, 'MUST', 'TAPI-21 §3.4', ctx, `no 429 within ${n} rapid calls (rate limiting is MAY)`)
     } else {
       H.checkRateLimited(limitedRs, ctx)
     }
@@ -376,7 +376,7 @@ const USAGE = `usage: node conformance/run.mjs --url http://host:port [options]
   --manifest path.json        trusted manifest (resolved on-chain); default: the served /.well-known/tapeapi.json
   --params path.json          { "<method>": { ...params } } used when calling methods (default {})
   --live URL                  live base (default <url>/tapeapi/v1)
-  --paid-method name          enable TAP-22 checks against this priced method
+  --paid-method name          enable TAPI-22 checks against this priced method
   --consumer-key 0x..         consumer private key (address is derived; it is never sent)
   --session-key 0x..          sign vouchers with this authorised session key instead of the consumer key
   --chain-id 56               EIP-712 chain id for vouchers

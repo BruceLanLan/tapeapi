@@ -6,7 +6,7 @@
 
 ### 这是什么
 
-TapeAPI 的 AI 服务方在每次调用上签发**用量回执**（TAP-21 §3.5）：谁回答的、回答了哪些确切的字节、声称用了多少 token、收了多少钱。回执**不证明实际跑的是哪个模型**：`model` 只是上游自己报的名字。
+TapeAPI 的 AI 服务方在每次调用上签发**用量回执**（TAPI-21 §3.5）：谁回答的、回答了哪些确切的字节、声称用了多少 token、收了多少钱。回执**不证明实际跑的是哪个模型**：`model` 只是上游自己报的名字。
 
 抽检探针补上这一块。任何人都可以用它向服务方发送一组**固定的、带版本的测试请求**，逐张核验回执，然后把原始数据写成 JSON 行：
 
@@ -19,7 +19,7 @@ TapeAPI 的 AI 服务方在每次调用上签发**用量回执**（TAP-21 §3.5�
 
 **它只公开原始数据，不下结论。** 记录里没有"结论"字段，报告里没有评分和排名。TapeAPI 不做信任机构。数字意味着什么，由读者判断，服务方也可以回应。
 
-每个数字都附在服务方签过名的回执上，服务方事后无法否认自己报过这个数。这就是 TAP-21 所说的"替换可以追责"：签名让掺水留下证据，但并不让掺水变得不可能。
+每个数字都附在服务方签过名的回执上，服务方事后无法否认自己报过这个数。这就是 TAPI-21 所说的"替换可以追责"：签名让掺水留下证据，但并不让掺水变得不可能。
 
 ### 怎么运行
 
@@ -135,7 +135,7 @@ node examples/spot-check/tokenizers.mjs check            # 重算 probes.json �
 
 ### What it is
 
-A TapeAPI AI service signs a **usage receipt** for every call (TAP-21 §3.5). The receipt states:
+A TapeAPI AI service signs a **usage receipt** for every call (TAPI-21 §3.5). The receipt states:
 
 - who answered;
 - exactly which bytes were answered;
@@ -154,7 +154,7 @@ The most useful measurement is the service's reported `prompt_tokens`, placed ne
 
 **It publishes raw data only, never verdicts.** Records have no verdict field; the report has no score and no ranking. TapeAPI is not a trust authority. Readers decide what the numbers mean, and providers can respond.
 
-Every number sits on a receipt the service signed, so the service cannot later deny having reported it. This is what TAP-21 means by making substitution attributable: signatures turn a substitution into evidence, but they do not make substitution impossible.
+Every number sits on a receipt the service signed, so the service cannot later deny having reported it. This is what TAPI-21 means by making substitution attributable: signatures turn a substitution into evidence, but they do not make substitution impossible.
 
 ### How to run
 

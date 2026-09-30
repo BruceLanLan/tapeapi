@@ -1,5 +1,5 @@
 // Test-only Merkle-Patricia trie BUILDER: RLP encoding, the root of a set of keys and values, and a proof for one key.
-// The SDK only verifies proofs (sdk/src/proof.js); this builds them, so tests and spec/vectors/tap-20-proof.json can have
+// The SDK only verifies proofs (sdk/src/proof.js); this builds them, so tests and spec/vectors/tapi-20-proof.json can have
 // proofs of tries whose roots come from the Ethereum trie tests (ethereum/tests TrieTests), including embedded nodes.
 // 仅供测试的默克尔-帕特里夏树**构建器**：RLP 编码、一组键值的根、某个键的证明。SDK 只核验证明；这里构建证明，使测试与向量文件能用
 // 根值来自以太坊 trie 测试（ethereum/tests TrieTests）的树的证明，包括内嵌节点。

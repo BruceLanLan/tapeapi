@@ -155,7 +155,7 @@ test('names: BNB Smart Chain names carry no area code, other chains do (TapeKit 
 test('names: TapeKit rejections, and every non-canonical spelling, are errors, never labels', () => {
   // TapeKit kernel/test/unit.test.mjs rejects these; so do we / TapeKit 拒绝的写法，我们同样拒绝
   const tapekit = ['1.0.5', '1.1.5', '1.4.5', '1.02.5', '#1@1.5', '#1@9.5', '1.2.3.4', '0.2.5', '1.2.05']
-  // TapeKit accepts these address-bar spellings; TAP-20 §3.6 takes the canonical form only / 地址栏写法：规范只收规范形式
+  // TapeKit accepts these address-bar spellings; TAPI-20 §3.6 takes the canonical form only / 地址栏写法：规范只收规范形式
   const spellings = ['#1@2.344', '1@2.344', 'tape://1.2.344.tape/', 'web+tape://1.2.344.tape/a', '1.2.344.TAPE', '1.2.344.', '4246.0.', '04246.0', '#4246@0']
   for (const s of [...tapekit, ...spellings]) {
     assert.ok(isNameShaped(s), `${s} is name-shaped`)
@@ -254,11 +254,11 @@ test('FIXED MC-1: a delegation signed for another chain is refused: the domain c
   await assert.rejects(w3.api.resolve('4246.2.7.tape'), (e) => e.code === 'DELEGATION_INVALID')
 })
 
-test('delegation domain separators per chain (proposed TAP-20 §6.2 vectors)', () => {
+test('delegation domain separators per chain (TAPI-20 §6.2 vectors)', () => {
   const d = { container: '0x0000000000000000000000000000000000000002', signer: '0x0000000000000000000000000000000000000003', expires: 1790000000 }
   const got = CHAIN_IDS.map((id) => [id, toHex(domainSeparator(delegationDomain(id, CHAINS[id].delegation.verifyingContract))), toHex(delegationDigest(id, CHAINS[id].delegation.verifyingContract, d))])
   assert.deepEqual(got, [
-    [56, '0xa73ee348b5672f12dbc174f66a7d162c69e0d64befdba88475d9d7e3c0fd3ac7', '0xf0ef7315ef455303fb4a7d8a301ca84f25e9fbd0641e931cdb01e7f7e8bcaa9a'],   // TAP-20 §6.2 as published
+    [56, '0xa73ee348b5672f12dbc174f66a7d162c69e0d64befdba88475d9d7e3c0fd3ac7', '0xf0ef7315ef455303fb4a7d8a301ca84f25e9fbd0641e931cdb01e7f7e8bcaa9a'],   // TAPI-20 §6.2 as published
     [196, '0xf9c5be6dcd7d4cfdf9c57717c7d6a7e04bccd499d2a7f3fcfdc603cc7f1f3ad6', '0xf4f57ad38c3efd363cbd271e3fc9fa7a54a1302db7f6adcc202a53f8a7cd529a'],
     [8453, '0xab3b0c6f3cecceb9d441893c56616889d71cf893f74296dc2229a6f241238516', '0x741c7e6412012f5134d127404641a4eb294c77e30a7b19104aece30efe1be9b9'],
   ])

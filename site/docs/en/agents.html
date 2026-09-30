@@ -34,7 +34,7 @@ const api = createTapeAPI({
 const handle = await exposeTapeAPI(api, '0x&lt;container&gt;')     // free methods only, by default
 // handle.tools, handle.skipped, handle.refresh(), handle.dispose()</code></pre></div>
 <h2 id="money"><a class="anchor" href="#money" aria-hidden="true">#</a>Money</h2>
-<blockquote><p><strong>Experimental.</strong> Payments (TAP-22 payment channels and the escrow contract) are not deployed or audited and are not covered by the 1.0 stability promise: the names below may change in a 1.x minor release. See <a href="upgrade-1.0#what-10-promises">Upgrading to 1.0</a>.</p></blockquote>
+<blockquote><p><strong>Experimental.</strong> Payments (TAPI-22 payment channels and the escrow contract) are not deployed or audited and are not covered by the 1.0 stability promise: the names below may change in a 1.x minor release. See <a href="upgrade-1.0#what-10-promises">Upgrading to 1.0</a>.</p></blockquote>
 <p>Paid methods are not exposed unless the page passes a budget:</p>
 <div class="code"><pre data-lang="js"><code>await exposeTapeAPI(api, '0x&lt;container&gt;', {
   paid: { payer, maxPriceBEM: '0.001', budgetBEM: '0.05', confirm: async ({ method, priceBEM }) =&gt; window.confirm(`Pay ${priceBEM} BEM for ${method}?`) },

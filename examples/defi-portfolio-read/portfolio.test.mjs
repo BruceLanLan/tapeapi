@@ -256,7 +256,7 @@ test('the same input canonicalises to identical bytes twice — this is what mak
   }
 })
 
-test('the four TAP-23 §3.3 fields are flat and top-level, never wrapped in blockPinned', () => {
+test('the four TAPI-23 §3.3 fields are flat and top-level, never wrapped in blockPinned', () => {
   const r = buildBalancesResult({ chainId: 56, pinned: PINNED, blockRef: 'hash', address: A(1), native: nativeEntry('BNB', 0n), tokens: [] })
   assert.equal(r.chainId, 56)
   assert.equal(r.blockNumber, 123207091)

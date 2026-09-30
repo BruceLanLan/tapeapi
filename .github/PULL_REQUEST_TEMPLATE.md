@@ -4,7 +4,7 @@
 
 Closes #
 
-<!-- A PR touching spec/ MUST link a spec proposal (TAP) issue. 改动 spec/ 的 PR 必须关联一个 spec proposal issue。 -->
+<!-- A PR touching spec/ MUST link a spec proposal (TAPI) issue. 改动 spec/ 的 PR 必须关联一个 spec proposal issue。 -->
 
 ## Why / 为什么
 

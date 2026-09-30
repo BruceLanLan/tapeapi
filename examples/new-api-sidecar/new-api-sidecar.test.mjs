@@ -131,7 +131,7 @@ test('new-api-sidecar: a configuration createAIProxy refuses is setup mode with 
   const big = Array.from({ length: 256 }, (_, i) => ({ id: `model-${i}-${'x'.repeat(200)}`, prices: ['BEM', 'BNB', 'USDT', 'USDC', 'ETH', 'USD1', 'USD'].map((currency) => ({ currency, unit: '1M tokens', input: '1', output: '2', cacheRead: '0.1', cacheWrite: '1.25', cacheWrite1h: '2', reasoning: '2' })) }))
   const s = createSidecar(complete({ MODELS_FILE: file('big.json', JSON.stringify(big)) }), { log: () => {} })
   assert.equal(s.state.ok, false)
-  assert.match(s.state.problem, /over TAP-20's .* shorten the price table/)
+  assert.match(s.state.problem, /over TAPI-20's .* shorten the price table/)
   assert.equal(s.proxy, null)
 })
 

@@ -3,7 +3,7 @@
 > v0.2 变更：零协议费 + 提供者自设贡献比例（docs/FEES.md）；目录别名可选激活门槛；SDK `callQuorum` 多提供者一致模式（docs/CROSSCHAIN.md §1）。
 > v0.2.1（SDK 审查修复）：信封摘要升级为 `TAPI-1/resp/v2`（覆盖请求与 ok）；全线拒绝高 s 签名；payer 签发/确认分离 + `lastCumulative` 重同步；`dev`/`allowSingleNode`/`allowHttp`/`maxSkewS` 显式开关；原型键拒绝；错误消息不含 URL/密钥。
 >
-> 2026-09-28：费用模型改为 v0.3（无强制协议费；默认 1% 维护贡献，提供者可设为 0；运营方没有费率开关），由下一版托管实现。下文的 TapeAPIEscrow 描述的是仓库里现有的 v2 合约（贡献默认 0），见 docs/FEES.md 与 TAP-22 §3.4。
+> 2026-09-28：费用模型改为 v0.3（无强制协议费；默认 1% 维护贡献，提供者可设为 0；运营方没有费率开关），由下一版托管实现。下文的 TapeAPIEscrow 描述的是仓库里现有的 v2 合约（贡献默认 0），见 docs/FEES.md 与 TAPI-22 §3.4。
 
 链：BNB Smart Chain, chainId 56。测试：本地 mock RPC。
 
@@ -26,7 +26,7 @@
 开发模式允许 SDK 直接传入 manifest URL 或对象：只有 `createTapeAPI({ dev: true })` 才能 `resolve({ dev })`（否则 `MANIFEST_INVALID('dev resolve disabled')`）。
 dev 只放宽 **dev 来源** 的清单（可无委托、可 `http://` 端点）；链上来源的清单在 dev 下照常做全部校验。dev 客户端若配置了 `rpcUrls`，委托签名者仍与 `ownerOf` 比对（`verified.checked: true`）；只有没有 RPC 时才跳过（`checked: false`）。
 
-## 清单 tapeapi.json（TAP-20）
+## 清单 tapeapi.json（TAPI-20）
 ```json
 {
   "tapeapi": "0.1",
@@ -48,7 +48,7 @@ EIP-712 domain: { name: "TapeAPI", version: "1", chainId: 56, verifyingContract:
 type Delegation { address container; address signer; uint64 expires; }
 签名者必须 == circuits.ownerOf(tokenId)（SDK 验证时读链）。
 
-## 响应信封（TAP-21）
+## 响应信封（TAPI-21）
 HTTP: POST {live}/{method}，请求体 JSON:
 ```json
 { "id": "<client uuid>", "method": "circuitHolder", "params": {...}, "voucher": {可选，见下} }
@@ -59,14 +59,14 @@ HTTP: POST {live}/{method}，请求体 JSON:
   "sig": "0x..." }
 ```
 错误：`{ "id": "...", "ok": false, "error": { "code": "PAYMENT_REQUIRED"|"BAD_VOUCHER"|"METHOD_NOT_FOUND"|"BAD_REQUEST"|"INTERNAL", "message": "...", "data"?: {...} }, "container": "...", "ts":..., "sig": "0x..." }`
-签名内容（secp256k1, EIP-191 personal_sign over 32 字节 digest，TAP-21 v2）：
+签名内容（secp256k1, EIP-191 personal_sign over 32 字节 digest，TAPI-21 v2）：
 digest = keccak256( "TAPI-1/resp/v2" ‖ container(20B) ‖ keccak256(id utf8) ‖ keccak256(canonicalJSON({method, params})) ‖ uint8(ok ? 1 : 0) ‖ keccak256(canonicalJSON(ok ? result : error)) ‖ uint64BE(ts) )
 canonicalJSON = JSON.stringify，对象键按字典序递归排序，无空白；含自有键 `__proto__`/`constructor`/`prototype` 的对象没有规范形式（CANON_INVALID），请求/响应的 JSON 解析也拒绝这些键。
 客户端用**自己发出的** method/params 与**自己解析出的** container 重算摘要；`ok` 在签名内，签名的错误不能改标为成功。`|now − ts| ≤ maxSkewS`（默认 300）。
 签名 MUST 低 s、v ∈ {27,28}；`recoverAddress` 与合约 `ECDSA.recover` 一致地拒绝高 s（信封、委托、凭证都走同一函数）。
 `INTERNAL` 对外一律 `"internal error"`（细节进 provider 日志）；`BAD_VOUCHER` 因累计值过期时带 `data: { lastCumulative: "<decimal>" }`（= max(本地记录, claimedOf)），SDK 据此重同步并重试一次。
 
-## 支付凭证（TAP-22）
+## 支付凭证（TAPI-22）
 EIP-712 domain: { name: "TapeAPIEscrow", version: "1", chainId, verifyingContract: <Escrow 地址> }
 type Voucher { address consumer; address provider; uint256 cumulative; uint64 expires; }
 - provider = 服务容器地址（收款直接进容器）。
@@ -103,7 +103,7 @@ constructor(address hub, address factory, address domainBinding)   // hub、fact
 ### TapeAPIEscrow.sol（不可升级，零协议费；Ownable 仅能更换金库地址，两步转移）
 constructor(address bem, address hub, address treasury)   // 均非零；hub 用于 accountOf
 常量：WITHDRAW_COOLDOWN = 48h，WITHDRAW_WINDOW = 7d，MAX_SESSION = 30d，MAX_CONTRIBUTION_BPS = 5000。
-（v2，按提供者分账；决策理由见 spec/TAP-22.md §3.3。v1 归档于 contracts/archive/。）
+（v2，按提供者分账；决策理由见 spec/TAPI-22.md §3.3。v1 归档于 contracts/archive/。）
 
 - fund(address provider, uint256 amount)                         // transferFrom；channel[msg.sender][provider] += amount；provider 不得为零或托管自身
 - requestWithdraw(address provider, uint256 amount)              // amount ≤ channel；记录 {amount, now}，覆盖并重新计时旧请求；发出 WithdrawRequested

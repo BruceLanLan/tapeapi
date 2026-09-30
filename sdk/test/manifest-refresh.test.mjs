@@ -210,7 +210,7 @@ test('unsigned JSON (a CDN error page, an unsigned 404) is PROVIDER_UNAVAILABLE,
   await assert.rejects(cdn.call(svc, 'quote', {}, { payer, manifestTtlMs: 0 }), (e) => e.code === 'PROVIDER_UNAVAILABLE' && e.httpStatus === 404)
 })
 
-test('TAP-21 §3.2: an oversize request is a signed BAD_REQUEST bound to id "" and reported as the caller error, not BAD_SIGNATURE (D21)', async () => {
+test('TAPI-21 §3.2: an oversize request is a signed BAD_REQUEST bound to id "" and reported as the caller error, not BAD_SIGNATURE (D21)', async () => {
   await restart('0')
   const svc = await api.resolve(ADDR.container)
   // 70 KB of params: over the provider's 64 KiB body limit, so it answers 413 signed over id "" and params {}

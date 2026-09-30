@@ -146,7 +146,7 @@
   @media (max-width: 420px) { dl { grid-template-columns: 1fr; gap: 0 0; } dd { margin-bottom: 6px; } }
 </style>
 <script src="./lang.js?v=5f71b1c280"></script>
-<script type="module" src="./console.js?v=b2561b0fcc"></script>
+<script type="module" src="./console.js?v=057603405b"></script>
 </head>
 <body>
 <header class="hd-bar">
@@ -260,8 +260,8 @@
     </p>
     <div id="ai-box" class="stack">
       <p class="muted">
-        <span lang="zh"><b>AI 服务的价目表</b>（清单里有 <code>ai</code> 字段，例如 new-api 旁路）：发布时本页按 TAP-20 §3.9 核对它，并在钱包请求之前把每种接口格式的地址和每个模型的价格列成表。你也可以先在这里粘贴或上传价目表预览：<code>models.json</code>（只有模型，本页按第 4 步的服务网址补上四种格式的地址，与旁路的做法相同）、<code>ai</code> 字段本身，或整份清单。预览过的价目表必须与服务提供的一字不差才会发布。第 4 步的委托不覆盖价目表，写上链的那笔交易才覆盖。</span>
-        <span lang="en"><b>An AI service's price table</b> (the manifest has an <code>ai</code> field, as the new-api sidecar's does): when publishing, this page checks it against TAP-20 §3.9 and, before your wallet is asked, lists every API format's address and every model's prices in a table. You can also paste or upload the table here first to preview it: a <code>models.json</code> (models only; the page adds the four formats' addresses on the service URL of step 4, as the sidecar does), the <code>ai</code> field itself, or a whole manifest. A previewed table is published only if the service serves exactly the same one. The delegation of step 4 does not cover the price table; the transaction that writes it on chain does.</span>
+        <span lang="zh"><b>AI 服务的价目表</b>（清单里有 <code>ai</code> 字段，例如 new-api 旁路）：发布时本页按 TAPI-20 §3.9 核对它，并在钱包请求之前把每种接口格式的地址和每个模型的价格列成表。你也可以先在这里粘贴或上传价目表预览：<code>models.json</code>（只有模型，本页按第 4 步的服务网址补上四种格式的地址，与旁路的做法相同）、<code>ai</code> 字段本身，或整份清单。预览过的价目表必须与服务提供的一字不差才会发布。第 4 步的委托不覆盖价目表，写上链的那笔交易才覆盖。</span>
+        <span lang="en"><b>An AI service's price table</b> (the manifest has an <code>ai</code> field, as the new-api sidecar's does): when publishing, this page checks it against TAPI-20 §3.9 and, before your wallet is asked, lists every API format's address and every model's prices in a table. You can also paste or upload the table here first to preview it: a <code>models.json</code> (models only; the page adds the four formats' addresses on the service URL of step 4, as the sidecar does), the <code>ai</code> field itself, or a whole manifest. A previewed table is published only if the service serves exactly the same one. The delegation of step 4 does not cover the price table; the transaction that writes it on chain does.</span>
       </p>
       <p class="muted">
         <span lang="zh">价格只是公示：TapeAPI 不结算这些价格，你的用户照旧向你付费；回执里的金额是任何人都能重算的声明，不是付款。按规范，<code>BNB</code>、<code>USDT</code>、<code>USDC</code>、<code>ETH</code>、<code>USD1</code> 指 BNB Chain 上的代币，<code>USD</code> 只作展示。</span>
@@ -297,8 +297,8 @@
     <section id="s-bus">
       <h2><span lang="zh">A. 部署 ChannelBus</span><span lang="en">A. Deploy ChannelBus</span></h2>
       <p class="muted">
-        <span lang="zh">TAP-26 §3.7 的链上传输合约：没有管理员、没有状态、不能升级，只会发事件。部署一次，任何人都可以用。</span>
-        <span lang="en">The on-chain transport of TAP-26 §3.7: no owner, no state, no upgrade path; it only emits events. Deployed once, anyone can use it.</span>
+        <span lang="zh">TAPI-26 §3.7 的链上传输合约：没有管理员、没有状态、不能升级，只会发事件。部署一次，任何人都可以用。</span>
+        <span lang="en">The on-chain transport of TAPI-26 §3.7: no owner, no state, no upgrade path; it only emits events. Deployed once, anyone can use it.</span>
       </p>
       <dl id="bus-facts"><dt><span lang="zh">源码</span><span lang="en">Source</span></dt><dd><a id="bus-src" href="https://github.com/BruceLanLan/tapeapi/blob/main/contracts/src/ChannelBus.sol" rel="noopener">GitHub</a></dd></dl>
       <p id="bus-prev" class="warn" hidden></p>

@@ -119,7 +119,7 @@ test('a malicious relay that replays an old frame as new cannot fool the channel
   assert.throws(() => bob.open(decodeWire(again).frame), (e) => e.code === 'CHANNEL_INVALID' && /replayed/.test(e.message))
 })
 
-test('a priced relay meters one voucher per frame through TAP-22, and refuses an unpaid sender', async () => {
+test('a priced relay meters one voucher per frame through TAPI-22, and refuses an unpaid sender', async () => {
   srv.close(); await startRelay(PRICE)
   const payer = api.payer({ consumer: payerAddr, sessionKey: SESSION_KEY })
   const { alice, aliceLink } = await connect({ payer })
@@ -132,9 +132,9 @@ test('a priced relay meters one voucher per frame through TAP-22, and refuses an
 })
 
 test('a backlog larger than the 1 MiB response cap is handed over across polls instead of wedging the channel', async () => {
-  // Before the cap, 60 maximal frames made every relayRecv answer exceed TAP-21's 1 MiB limit: the provider
+  // Before the cap, 60 maximal frames made every relayRecv answer exceed TAPI-21's 1 MiB limit: the provider
   // replied INTERNAL, the cursor never advanced and the channel was dead for good, free for anyone to trigger.
-  // 加上限之前，60 个最大帧会让每次 relayRecv 的回答超过 TAP-21 的 1 MiB 上限：提供者回 INTERNAL、游标永不前进、通道彻底死掉。
+  // 加上限之前，60 个最大帧会让每次 relayRecv 的回答超过 TAPI-21 的 1 MiB 上限：提供者回 INTERNAL、游标永不前进、通道彻底死掉。
   const { alice, bob, aliceLink, bobLink } = await connect()
   const big = new Uint8Array(16 * 1024).fill(7)
   for (let i = 0; i < 60; i++) await aliceLink.send(encodeWire(alice.seal(big)))

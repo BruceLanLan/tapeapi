@@ -100,7 +100,7 @@ $('call').onclick = async () => {
     log(`POST ${svc.manifest.endpoints.live[0]}/blockNumber id=${id}`)
     const r = await api.call(svc, 'blockNumber', {}, { id })
     // 本地再算一次摘要并恢复签名者 / Recompute the digest and recover the signer locally for display.
-    // TAP-21 v2：用自己发出的 method/params 与 ok 重算摘要 / v2: recompute with our own method/params and the ok flag
+    // TAPI-21 v2：用自己发出的 method/params 与 ok 重算摘要 / v2: recompute with our own method/params and the ok flag
     const recovered = sig.recoverResponseSigner({ container: svc.container, id: r.id, method: 'blockNumber', params: {}, ok: true, body: r.result, ts: r.ts }, r.sig)
     const match = recovered.toLowerCase() === svc.manifest.signer.toLowerCase()
     kv($('verdict'), [

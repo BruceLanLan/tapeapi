@@ -27,7 +27,7 @@
         "blockHash": "bytes32",
         "result": "bytes"
       },
-      "description": "[quorum] TAP-23 Attested Read: eth_call on a listed chain, evaluated at the attested blockHash",
+      "description": "[quorum] TAPI-23 Attested Read: eth_call on a listed chain, evaluated at the attested blockHash",
       "attestedRead": {
         "kind": "eth_call",
         "chains": [
@@ -53,7 +53,7 @@
         "blockHash": "bytes32",
         "blockRef": "'hash'|'number'"
       },
-      "description": "[quorum] convenience read, block-pinned; not a TAP-23 attested read (adds address/wei/ether)"
+      "description": "[quorum] convenience read, block-pinned; not a TAPI-23 attested read (adds address/wei/ether)"
     },
     {
       "name": "nftOwner",
@@ -73,7 +73,7 @@
         "blockHash": "bytes32",
         "blockRef": "'hash'|'number'"
       },
-      "description": "[quorum] convenience read, block-pinned; not a TAP-23 attested read (adds contract/tokenId/owner)"
+      "description": "[quorum] convenience read, block-pinned; not a TAPI-23 attested read (adds contract/tokenId/owner)"
     }
   ],
   "payment": {

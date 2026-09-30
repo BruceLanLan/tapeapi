@@ -76,7 +76,7 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
     },
     // 文件 = 字节 + 真实 fileInfo（size / sha256 / contentType / updatedAt / chunkCount），模拟 SiteRegistry 的索引与内容两张表。
     // A file is bytes plus a genuine fileInfo record: the fake keeps the SiteRegistry's index and its content
-    // separately so tests can make them disagree, exactly the failure TAP-20 §3.2 is meant to catch.
+    // separately so tests can make them disagree, exactly the failure TAPI-20 §3.2 is meant to catch.
     writeFile(container, path, content, { contentType = 'application/json', updatedAt = 1n } = {}) {
       const bytes = typeof content === 'string' ? utf8ToBytes(content) : content
       st.files.set(fileKey(container, path), {

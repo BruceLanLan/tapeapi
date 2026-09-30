@@ -18,7 +18,7 @@ const voucher = (cumulative, key = SESSION_KEY, expires = nowS() + 3600) => {
   const v = { consumer, provider: ADDR.container, cumulative: cumulative.toString(), expires }
   return { ...v, sig: signDigest(voucherDigest(56, ADDR.escrow, v), key), signer: privateKeyToAddress(key) }
 }
-// TAP-21 v2：摘要含 method/params/ok / v2 digest covers the request and the ok flag
+// TAPI-21 v2：摘要含 method/params/ok / v2 digest covers the request and the ok flag
 const verify = (env, method, params = {}) => recoverResponseSigner({ container: env.container, id: env.id, method, params, ok: env.ok, body: env.ok ? env.result : env.error, ts: env.ts }, env.sig)
 const mk = (extra = {}) => createProvider({ minVoucherLifeS: 0,  manifest, signerKey: SIGNER_KEY, allowHttp: true, methods: { blockNumber() {}, circuitHolder() {}, leak() {} }, ...extra })
 
@@ -179,11 +179,11 @@ test('BAD_VOUCHER on bad signature, unauthorised session key, wrong provider, ex
   for (const [name, v] of cases) {
     const env = await (await post('circuitHolder', { id: name, params: {}, voucher: v })).json()
     assert.equal(env.error?.code, 'BAD_VOUCHER', name); assert.equal(verify(env, 'circuitHolder'), signer, name)
-    // TAP-22 §3.3: every BAD_VOUCHER carries data.price and, off the stale path, nothing else.
+    // TAPI-22 §3.3: every BAD_VOUCHER carries data.price and, off the stale path, nothing else.
     // 每个 BAD_VOUCHER 都带 data.price；非累计过期的拒绝只带它。
     assert.deepEqual(env.error.data, { price: PRICE.toString() }, name)
   }
-  // 4×price (0.0004) exceeds the channel 0.00025: the channel is the cap (TAP-22 §3.2(4)) / 超出通道余额
+  // 4×price (0.0004) exceeds the channel 0.00025: the channel is the cap (TAPI-22 §3.2(4)) / 超出通道余额
   const env = await (await post('circuitHolder', { id: 'bal', params: {}, voucher: voucher(4n * PRICE) })).json()
   assert.equal(env.error?.code, 'BAD_VOUCHER'); assert.match(env.error.message, /available channel/)
   assert.deepEqual(env.error.data, { price: PRICE.toString() })
@@ -472,7 +472,7 @@ test('FIXED P2-F7: createProvider({ dev: true }) boots with a zero escrow whethe
   for (const m of [plain, { ...plain, dev: true }]) {
     assert.throws(() => createProvider({ minVoucherLifeS: 0, manifest: m, signerKey: SIGNER_KEY, allowHttp: true, log: () => {}, methods }), (e) => e.code === 'MANIFEST_INVALID')
   }
-  // A priced method with no payment field at all is a TAP-20 manifest error, dev or not. / 完全没有 payment 字段是清单错误。
+  // A priced method with no payment field at all is a TAPI-20 manifest error, dev or not. / 完全没有 payment 字段是清单错误。
   const { payment: _, ...nopay } = plain
   assert.throws(() => createProvider({ minVoucherLifeS: 0, manifest: nopay, signerKey: SIGNER_KEY, dev: true, log: () => {}, methods }), (e) => e.code === 'MANIFEST_INVALID' && /payment\.escrow/.test(e.message))
 })

@@ -50,7 +50,7 @@ curl -s -X POST http://127.0.0.1:8792/tapeapi/v1/liquidationParams \
 | `accountHealthLatest` | 免费 | **`[no-quorum]`** | 在 `head − BLOCK_LAG` 上求值，给机器人用 |
 
 `[quorum]` 方法都接受显式 `block`，并且**结果里一定有 `blockPinned: { blockNumber, blockHash, blockRef }`**
-（TAP-23 §3.4）。做法定人数时：先向任一家要一次，从 `blockPinned.blockNumber` 取块号，再把**同一个数字块号**
+（TAPI-23 §3.4）。做法定人数时：先向任一家要一次，从 `blockPinned.blockNumber` 取块号，再把**同一个数字块号**
 显式发给每一家。
 
 **不要把 `accountHealthLatest` 放进 `callQuorum`，它必然 `QUORUM_FAILED`。** 两家提供者各自钉自己的
@@ -139,7 +139,7 @@ healthFactor          = borrowUsd == 0 ? null : weightedCollateralUsd / borrowUs
 真正的约束是**墙钟**，不是区块数。**实测（2026-09-20，`bsc-dataseed`）：同一个块在约 1 分钟时还能读到状态，
 到约 3 分钟就返回 `missing trie node`。** 公共 dataseed 的状态保留窗口是**分钟级**，不是"geth 默认 128 个区块"
 那句流传甚广的说法（128 个区块在 0.45 s 出块下只有 58 秒，两个数都远小于人们的直觉）。
-所以：只要调用方按 TAP-23 §3.4 第 2 步传一个稍早的显式 `block`（法定人数轮 **MUST** 这么做），一次 24 秒的
+所以：只要调用方按 TAPI-23 §3.4 第 2 步传一个稍早的显式 `block`（法定人数轮 **MUST** 这么做），一次 24 秒的
 串行扫描就有相当一部分落在窗口边缘 —— **同一次请求里的不同市场会来自不同的状态，签名的结果不再对应它声称的
 区块**。批量把这压到 2–3 次调用、墙钟百毫秒级，时序问题消失。
 同样的理由：法定人数轮把显式块号扇出给各家时要**尽快**，晚到的那家会直接失败，而不是给出不同的答案。
@@ -194,7 +194,7 @@ curl -s -X POST http://127.0.0.1:8792/tapeapi/v1/atRisk \
   -d '{"id":"ar-1","params":{"maxHealthFactor":"1.05"}}' | jq '{n: (.result.atRisk|length), scanned: .result.scanned}'
 ```
 
-## 跨两家提供者的 `callQuorum`（TAP-23 §3.4）
+## 跨两家提供者的 `callQuorum`（TAPI-23 §3.4）
 
 ```js
 import { createTapeAPI, TapeAPIError } from '../../sdk/src/index.js'
@@ -205,7 +205,7 @@ const [a, b] = await Promise.all([
   api.resolve({ dev: 'http://127.0.0.1:8802' }),   // 第二家一律取主端口 + 10 / the second instance is always +10
 ])
 
-// 第 1 步（TAP-23 §3.5）：持有人不同 **且** 端点 origin 不同，才算两个独立来源。SDK 不替你做这个检查。
+// 第 1 步（TAPI-23 §3.5）：持有人不同 **且** 端点 origin 不同，才算两个独立来源。SDK 不替你做这个检查。
 const origin = (s) => new URL(s.manifest.endpoints.live[0]).origin
 if (a.verified.holder === b.verified.holder || origin(a) === origin(b)) throw new Error('providers are not independent')
 
@@ -246,9 +246,9 @@ try {
 **不要把它当借贷协议的主价格喂价或主清算判据。** 理由不是"一个签名不够"，而是更硬的四条：
 
 
-1. **TAP-23 的法定人数规则是客户端规则，而清算逻辑在链上。** “≥2 家独立提供者逐字节一致，任何分歧即拒绝”
+1. **TAPI-23 的法定人数规则是客户端规则，而清算逻辑在链上。** “≥2 家独立提供者逐字节一致，任何分歧即拒绝”
    是写给 JS / 后端调用方的。`Comptroller.liquidateBorrowAllowed` 里没有 `callQuorum`。
-2. **没有经济担保。** TAP-23 §3.6 把 stake / slash 明确留给未来的 TAP，并要求 *“clients MUST NOT assume any
+2. **没有经济担保。** TAPI-23 §3.6 把 stake / slash 明确留给未来的 TAP，并要求 *“clients MUST NOT assume any
    provider is staked”*。一个签了错数的提供者今天损失的上限是声誉，对面站着的是一次几百万美元的清算激励。
 3. **连 Chainlink 都不承担这个责任。** docs.chain.link/data-feeds/selecting-data-feeds 原话：
    *“Ultimately you are responsible for identifying and assessing the accuracy, availability, and quality of
@@ -341,7 +341,7 @@ curl -s -X POST http://127.0.0.1:8792/tapeapi/v1/liquidationParams \
 | `accountHealthLatest` | free | **`[no-quorum]`** | evaluated at `head − BLOCK_LAG`, for bots |
 
 Every `[quorum]` method accepts an explicit `block` and **always returns `blockPinned: { blockNumber,
-blockHash, blockRef }`** (TAP-23 §3.4). To run a quorum: ask one provider first, take
+blockHash, blockRef }`** (TAPI-23 §3.4). To run a quorum: ask one provider first, take
 `blockPinned.blockNumber`, then send that **explicit number** to every provider.
 
 **Do not put `accountHealthLatest` in `callQuorum`; it will always `QUORUM_FAILED`.** Two providers each pin
@@ -437,7 +437,7 @@ The binding constraint is **wall-clock, not block count**. **Measured (2026-09-2
 state still read fine at ~1 minute old and returned `missing trie node` at ~3 minutes old.** The public
 dataseeds' retention window is a matter of **minutes** — not the widely repeated “geth keeps ~128 blocks”
 (which at 0.45 s blocks would be 58 seconds anyway; both numbers are far smaller than intuition suggests).
-So as soon as the caller passes a slightly older explicit `block` — which TAP-23 §3.4 step 2 says a quorum
+So as soon as the caller passes a slightly older explicit `block` — which TAPI-23 §3.4 step 2 says a quorum
 round **MUST** do — a good part of a 24-second serial scan lands on the edge of that window, and **different
 markets in one request would come from different states while the signed result claims a single block**.
 Batching collapses this to 2–3 calls and a few hundred milliseconds, and the problem disappears.
@@ -464,7 +464,7 @@ updates). This service is positioned for **monitoring / risk / front-ends**. To 
 
 See the Chinese section above; the same three commands, with real captured output.
 
-## Two-provider `callQuorum` (TAP-23 §3.4)
+## Two-provider `callQuorum` (TAPI-23 §3.4)
 
 See the JavaScript snippet in the Chinese section. The important parts: (1) check independence yourself —
 different `verified.holder` **and** different endpoint origin — because the SDK's `callQuorum` does not;
@@ -493,10 +493,10 @@ The correct use of tolerance is in `examples/defi-twap-oracle/README.md` and `ex
 **Do not use this as a lending protocol's primary price feed or primary liquidation criterion.** The reason is
 not “one signature isn't enough”; it is four harder things:
 
-1. **TAP-23's quorum rule is a client-side rule while liquidation logic lives on-chain.** “≥2 independent
+1. **TAPI-23's quorum rule is a client-side rule while liquidation logic lives on-chain.** “≥2 independent
    providers, byte-identical, reject on any disagreement” is a rule for JS and backend callers.
    `Comptroller.liquidateBorrowAllowed` contains no `callQuorum`.
-2. **There is no economic guarantee.** TAP-23 §3.6 defers stake and slashing to a future TAP and requires that
+2. **There is no economic guarantee.** TAPI-23 §3.6 defers stake and slashing to a future TAP and requires that
    *“clients MUST NOT assume any provider is staked”*. A provider that signs a wrong number risks its
    reputation; across the table sits a liquidation incentive worth millions.
 3. **Even Chainlink does not accept this responsibility.** docs.chain.link/data-feeds/selecting-data-feeds:

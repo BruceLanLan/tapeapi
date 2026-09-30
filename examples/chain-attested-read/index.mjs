@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// TAP-23 Attested Read 示例：对外链（Ethereum、Base）做 quorum eth_call，默认钉 `finalized`，按 blockHash（EIP-1898）读取，签名返回。
-// TAP-23 Attested Read example: quorum eth_call on foreign chains (Ethereum, Base), pinned to `finalized` by default,
+// TAPI-23 Attested Read 示例：对外链（Ethereum、Base）做 quorum eth_call，默认钉 `finalized`，按 blockHash（EIP-1898）读取，签名返回。
+// TAPI-23 Attested Read example: quorum eth_call on foreign chains (Ethereum, Base), pinned to `finalized` by default,
 // evaluated at the attested blockHash (EIP-1898), signed.
 import { readFile } from 'node:fs/promises'
 import { createProvider } from '@tapeapi/server'
@@ -23,24 +23,24 @@ applyEnvToManifest(manifest, env)
 // Pinning (default `finalized`), evaluation at the attested blockHash and the per-chain error messages all
 // live in `_lib/chain.mjs`, shared with `defi-portfolio-read`. `RPC_<chainId>` overrides chains.json.
 const chains = createChainReaders(chainsCfg, { allowSingleNode: !PROD })
-// TAP-23 §3.1: the attestedRead descriptor lists exactly the chains this instance serves (chains.json + env).
-// TAP-23 §3.1：attestedRead 描述符列出本实例实际服务的链。
+// TAPI-23 §3.1: the attestedRead descriptor lists exactly the chains this instance serves (chains.json + env).
+// TAPI-23 §3.1：attestedRead 描述符列出本实例实际服务的链。
 manifest.methods.find((m) => m.name === 'read').attestedRead.chains = [...chains.keys()]
 const { isAddress, checksumAddress, encodeCall, decodeReturn } = abi
 const chainOf = (chainId) => chainReaderOf(chains, chainId)
-// TAP-23 §3.3：链与区块的四个字段是顶层扁平字段 / the chain and block fields are flat and top-level.
+// TAPI-23 §3.3：链与区块的四个字段是顶层扁平字段 / the chain and block fields are flat and top-level.
 const attest = (chainId, pinned, blockRef, extra) => ({ chainId, blockNumber: pinned.blockNumber, blockHash: pinned.blockHash, blockRef, ...extra })
 
 const provider = createProvider({
   manifest, signerKey: SIGNER_KEY, dev: !PROD, rpcUrls: RPC_URLS, quorum: QUORUM, chainId: CHAIN_ID, allowSingleNode: !PROD, log, store,
   methods: {
-    // 收费：TAP-23 见证读取 / paid: the TAP-23 Attested Read, params exactly { chainId, call: { to, data }, block? }
+    // 收费：TAPI-23 见证读取 / paid: the TAPI-23 Attested Read, params exactly { chainId, call: { to, data }, block? }
     read: async ({ chainId, call, block }) => {
       // §3.1: a chain not listed is METHOD_NOT_FOUND, not BAD_REQUEST / 未列出的链是 METHOD_NOT_FOUND
       if (!Number.isInteger(chainId)) bad('chainId must be an integer')
       if (!chains.has(chainId)) throw new TapeAPIError('METHOD_NOT_FOUND', `chainId ${chainId} is not in attestedRead.chains [${[...chains.keys()].join(', ')}]`)
       const c = chainOf(chainId)
-      if (!call || typeof call !== 'object' || Array.isArray(call)) bad('call must be an object { to, data } (TAP-23 §3.2)')
+      if (!call || typeof call !== 'object' || Array.isArray(call)) bad('call must be an object { to, data } (TAPI-23 §3.2)')
       const { to, data } = call
       if (!isAddress(to)) bad('call.to must be an address')
       if (typeof data !== 'string' || !/^0x([0-9a-fA-F]{2})*$/.test(data)) bad('call.data must be 0x-prefixed, even-length hex')

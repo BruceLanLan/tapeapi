@@ -2,7 +2,7 @@
 
 [中文](#中文) · [English](#english)
 
-规范 / Specification: 清单字段 `ai` 见 [TAP-20 §3.9](../../spec/TAP-20.md)，用量回执见 [TAP-21 §3.5](../../spec/TAP-21.md)（英文为准）。
+规范 / Specification: 清单字段 `ai` 见 [TAPI-20 §3.9](../../spec/TAPI-20.md)，用量回执见 [TAPI-21 §3.5](../../spec/TAPI-21.md)（英文为准）。
 旁路本身的说明（格式、回执、哈希、金额算法）见 [examples/ai-proxy](../ai-proxy/README.md)；本包的入口复用
 [new-api 一键包](../new-api-sidecar/README.md)的入口，环境变量、设置模式、续期与安全说明两者相同。
 
@@ -53,7 +53,7 @@ cp models.example.json models.json           # 发布到链上的价目表：改
 规则只有一条：**`models.json` 里的每个 `id` 必须是 `config.yaml` 里的一个 `model_name`**。LiteLLM 1.103.0 会把回答里的 `model`
 改写成客户端请求的公开名字（`model_name`），旁路按这个名字精确匹配价目表。发生回退（fallback）时 LiteLLM 报告实际作答的模型组，
 所以回退目标也要按它自己的价格写进 `models.json`。没匹配上的回答照样有签名回执，只是 `prices` 为 `null`（旁路日志提示一次）。
-`models.json` 的格式（TAP-20 §3.9 冻结的 `prices[]`）与 new-api 包相同：每个模型一个 `id`，可选 `aliases`、`formats`，`prices` 按币种
+`models.json` 的格式（TAPI-20 §3.9 冻结的 `prices[]`）与 new-api 包相同：每个模型一个 `id`，可选 `aliases`、`formats`，`prices` 按币种
 各一项，价格按每百万 token。示例里的价格只是示例。表写错时旁路不会崩溃，而是进入设置模式，用一句话说明哪条规则不对。
 
 已经在跑 LiteLLM？不必用这里的 `config.yaml`：保留你自己的配置，照它的 `model_name` 写 `models.json` 即可。
@@ -127,7 +127,7 @@ LiteLLM 返回的失败（401 密钥无效、429 超出预算或限流……）�
   `x-litellm-tags`、`x-litellm-timeout` 这类请求头也不转发（在密钥或模型上配置它们）。
 - LiteLLM 看到的所有请求都来自旁路的地址：`allowed_ips`、`use_x_forwarded_for` 和按 IP 的日志只会看到一个地址；按密钥的预算与限流
   不受影响。旁路自己按客户端 IP 限流（`RATE_IP`，默认每分钟 600 次；设 `0` 则交给 LiteLLM）。
-- LiteLLM 的 Responses 回答 id 很长（把部署信息编码在里面，超过 TAP-21 的 128 个字符），这类回答的回执用旁路生成的 `tapeapi-…` id；
+- LiteLLM 的 Responses 回答 id 很长（把部署信息编码在里面，超过 TAPI-21 的 128 个字符），这类回答的回执用旁路生成的 `tapeapi-…` id；
   按 id 取回执时用回执里的 id，不是 LiteLLM 的 id。
 - 上限：请求体 32 MiB，非流式回答 16 MiB，非流式回答须在 600 秒内完成，流静默 300 秒即结束。
 
@@ -210,7 +210,7 @@ LITELLM_URL=http://127.0.0.1:4000 LITELLM_KEY=sk-... node examples/litellm-sidec
   `async_post_call_streaming_iterator_hook`、`async_post_call_response_headers_hook`）拿到的是解析、改写之后的 Python 对象：请求的 `model`
   已被路由改写，回答在钩子之后才被序列化，流式块在钩子之后才加上 `data: ` 分帧；响应头钩子运行时回答正文还不存在。插件只能重新序列化
   再猜字节，LiteLLM 的每次升级都可能让哈希对不上。SSE 注释形式的流内回执也无法经由返回对象的钩子写出。
-- 插件要在 Python 里重新实现 TAP-21 的信封签名、usage 归一化与金额算法，多出一份必须与 `spec/vectors` 对齐的实现；旁路用的就是已冻结的
+- 插件要在 Python 里重新实现 TAPI-21 的信封签名、usage 归一化与金额算法，多出一份必须与 `spec/vectors` 对齐的实现；旁路用的就是已冻结的
   `createAIProxy`，与 new-api 包、Cloudflare Worker 版是同一份代码。
 - 插件运行在 LiteLLM 进程里，签名密钥要交给 LiteLLM 的环境；旁路是独立的进程与容器。
 - 旁路的代价是两处：只签 `/v1/*`，以及 LiteLLM 看到的客户端地址变成旁路的地址（见“局限”）。都可以接受。
@@ -279,7 +279,7 @@ circuit with its container opened, and a checkout of this repository:
    `config.yaml`**. LiteLLM 1.103.0 restamps the answer's `model` to the public name the client asked for, and the
    sidecar prices by that name, exactly. After a fallback LiteLLM reports the model group that actually answered, so
    list fallback targets in `models.json` too, each with its own prices. An unmatched answer still gets a signed
-   receipt, with `prices: null` (logged once). The table's shape (the frozen `prices[]` of TAP-20 §3.9) is the new-api
+   receipt, with `prices: null` (logged once). The table's shape (the frozen `prices[]` of TAPI-20 §3.9) is the new-api
    package's. Already running LiteLLM? Keep your own config and write `models.json` after its `model_name`s.
 2. **Start.** `docker compose up -d`, then `docker compose logs -f tapeapi-sidecar` (SETUP MODE at first is expected).
    Three services: `litellm` (the official image `ghcr.io/berriai/litellm:v1.103.0`), its `db` (PostgreSQL: virtual
@@ -332,7 +332,7 @@ days; `RENEW` in the log at every start in the last 30; an expired delegation pu
 - LiteLLM sees every request coming from the sidecar: `allowed_ips`, `use_x_forwarded_for` and per-IP logs see one
   address; per-key budgets and limits are unaffected. The sidecar limits per client IP itself (`RATE_IP`, default 600
   per minute; `0` leaves it to LiteLLM).
-- LiteLLM's Responses ids are long (deployment details encoded in them, over TAP-21's 128 characters), so those
+- LiteLLM's Responses ids are long (deployment details encoded in them, over TAPI-21's 128 characters), so those
   receipts carry a `tapeapi-…` id of the sidecar's; look receipts up by the receipt's id, not LiteLLM's.
 - Caps: request body 32 MiB, non-stream answer 16 MiB and 600 s, a stream silent for 300 s is ended.
 
@@ -407,7 +407,7 @@ received. LiteLLM's callbacks ([`CustomLogger`](https://github.com/BerriAI/litel
 parsed and rewritten Python objects: the request's `model` already routed, the answer serialized after the hook, stream
 chunks framed with `data: ` after the hook, and the header hook runs before the body exists. A plugin could only
 re-serialize and guess the bytes, and any LiteLLM upgrade could break the hashes; an in-stream receipt comment cannot be
-written through hooks that yield objects. A plugin would also re-implement TAP-21 envelope signing, usage normalisation
+written through hooks that yield objects. A plugin would also re-implement TAPI-21 envelope signing, usage normalisation
 and the amount rules in Python, a second implementation to keep in line with `spec/vectors`; the sidecar is the frozen
 `createAIProxy`, the same code as the new-api package and the Cloudflare Worker. And a plugin runs inside LiteLLM's
 process, with the signing key in LiteLLM's environment. The sidecar's costs are two (only `/v1/*` is signed; LiteLLM

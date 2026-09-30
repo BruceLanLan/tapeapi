@@ -190,7 +190,7 @@ A receipt is a small JSON object:
 | `id`, `ts` | The request id and the time the service signed, in Unix seconds |
 | `ok` and `result` or `error` | The answer; a refusal is signed too |
 | `block` | The chain head the service saw when it signed |
-| `sig` | The service's signature over all of the above ([TAP-21](../../spec/TAP-21.md)) |
+| `sig` | The service's signature over all of the above ([TAPI-21](../../spec/TAPI-21.md)) |
 
 ### In the browser
 
@@ -202,7 +202,7 @@ signer from the signature, checks it against the holder's delegation, and shows 
 
 - **Hashes only (the default).** The link carries the receipt with `params` and `result` (or `error`) replaced by the
   two hashes the signature is computed over: `requestHash` = keccak256 of the canonical `{ method, params }`,
-  `bodyHash` = keccak256 of the canonical result. The page rebuilds the TAP-21 digest from them, so it checks who
+  `bodyHash` = keccak256 of the canonical result. The page rebuilds the TAPI-21 digest from them, so it checks who
   signed, for which service, and when, but whoever gets the link does not see what was asked or answered. `method` is
   shown as the receipt states it: it is bound only through `requestHash`, together with the params.
 - **With content** (`verifyLink(receipt, base, { content: true })`, `linkContent: true` on the server,
@@ -304,9 +304,9 @@ it adds what MCP lacks:
   not a claim.
 - **Tool definitions pinned on chain.** The manifest in your container's on-chain site carries `mcp.toolsSha256`, a
   SHA-256 over every tool's name, title, description, input and output schemas and annotations
-  ([TAP-20 §3.8](../../spec/TAP-20.md)). If the tools change after users approved them (an MCP "rug pull"), clients
+  ([TAPI-20 §3.8](../../spec/TAPI-20.md)). If the tools change after users approved them (an MCP "rug pull"), clients
   that check the digest refuse them, and the proxy itself stops serving.
-- **Every result signed.** Each tool call is answered with a signed TAP-21 envelope, and on `/mcp` with a receipt and a
+- **Every result signed.** Each tool call is answered with a signed TAPI-21 envelope, and on `/mcp` with a receipt and a
   verification link, as for the public service above.
 
 The proxy and the console support for it are available now. No third-party MCP server has been taped out yet. The
@@ -335,7 +335,7 @@ The proxy has three routes:
 | Route | What it is |
 |---|---|
 | `GET /.well-known/tapeapi.json` | The manifest: your identity fields, one free method per tool, and `mcp: { endpoint, toolsSha256 }` |
-| `POST /tapeapi/v1/<tool>` | A signed call: `{ id, params }` in, a TAP-21 envelope out, whose `result` is your server's tool result without `_meta` |
+| `POST /tapeapi/v1/<tool>` | A signed call: `{ id, params }` in, a TAPI-21 envelope out, whose `result` is your server's tool result without `_meta` |
 | `POST /mcp` | Remote MCP (Streamable HTTP, stateless): `tools/list` returns your tools as your server lists them; `tools/call` returns your server's content plus a provenance line, with the receipt in `_meta` |
 
 To wrap your own server, point `UPSTREAM_URL` at its Streamable HTTP endpoint. If it needs a key, set
@@ -433,7 +433,7 @@ once with `--allow-changed`. A new tool set reaches those users only with their 
   bridge first. Only tools are proxied: resources and prompts are not, there is no server-to-client stream (a GET on
   `/mcp` gets HTTP 405), and sampling, elicitation and progress notifications are not relayed. Your server's
   `instructions` are not relayed either, because they are not covered by the digest.
-- **Tool names must be TAP-20 method names** (`[A-Za-z_][A-Za-z0-9_]{0,63}`). A tool with another name is still listed
+- **Tool names must be TAPI-20 method names** (`[A-Za-z_][A-Za-z0-9_]{0,63}`). A tool with another name is still listed
   in `tools/list`, because the digest covers every tool, but it cannot be called through the proxy. The proxy's
   start-up log names such tools.
 - **Free tools only, for now.** Every tool becomes a free method. Paid calls wait for the escrow audit

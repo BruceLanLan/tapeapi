@@ -1,6 +1,6 @@
 // Shared machinery of the black-box conformance suites (provider: run.mjs, relay: relay.mjs): result recording,
-// the HTTP client, TAP-21 envelope verification, the rate-limit answer checks, and reporting.
-// 黑盒一致性套件（提供者 run.mjs、中继 relay.mjs）共用的部分：结果记录、HTTP 客户端、TAP-21 信封验证、限流回答检查与输出。
+// the HTTP client, TAPI-21 envelope verification, the rate-limit answer checks, and reporting.
+// 黑盒一致性套件（提供者 run.mjs、中继 relay.mjs）共用的部分：结果记录、HTTP 客户端、TAPI-21 信封验证、限流回答检查与输出。
 //
 // Imports are deliberately narrow (sig.js / canon.js / abi.js), not sdk/src/index.js, so the suites keep loading
 // while other SDK modules are being edited. / 导入刻意收窄，SDK 其他模块在修改时套件仍能加载。
@@ -10,8 +10,8 @@ import { eqAddr } from '../sdk/src/abi.js'
 
 export const PROVIDER_CODES = ['PAYMENT_REQUIRED', 'BAD_VOUCHER', 'METHOD_NOT_FOUND', 'BAD_REQUEST', 'INTERNAL', 'TOOLS_CHANGED']
 export const CODE_STATUS = { PAYMENT_REQUIRED: [402], BAD_VOUCHER: [402], METHOD_NOT_FOUND: [404], BAD_REQUEST: [400, 413], INTERNAL: [500], TOOLS_CHANGED: [409] }
-export const ENVELOPE_LIMIT = 1024 * 1024       // TAP-21 §3.2
-export const MANIFEST_LIMIT = 65536             // TAP-20 §3.2
+export const ENVELOPE_LIMIT = 1024 * 1024       // TAPI-21 §3.2
+export const MANIFEST_LIMIT = 65536             // TAPI-20 §3.2
 
 export const now = () => Math.floor(Date.now() / 1000)
 export const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -69,7 +69,7 @@ export function createHarness({ live, timeoutMs = 30_000, maxSkewS = 300, fetch:
     return false
   }
 
-  // ---- envelope verification (TAP-21 §3.2 / §3.3) ----
+  // ---- envelope verification (TAPI-21 §3.2 / §3.3) ----
   function recover(env, reqId, method, params, overrides = {}) {
     const e = { ...env, ...overrides }
     try {
@@ -89,19 +89,19 @@ export function createHarness({ live, timeoutMs = 30_000, maxSkewS = 300, fetch:
   // 对一个响应跑整套信封检查；验签通过则返回信封，否则 null。`R` 可把记录导向别处（中继套件用它汇总批量调用）。
   function checkEnvelope(r, { reqId, method, params, context, R: out = R }) {
     const { pass, fail, check } = out
-    const S = 'TAP-21 §3.2'
+    const S = 'TAPI-21 §3.2'
     if (r.transportError || !isPlainObject(r.json) || typeof r.json.sig !== 'string') {
-      fail('tap21.envelope.parse', 'MUST', 'TAP-21 §3.2/§3.4', context, `no signed JSON envelope: ${describe(r)}`)
+      fail('tapi21.envelope.parse', 'MUST', 'TAPI-21 §3.2/§3.4', context, `no signed JSON envelope: ${describe(r)}`)
       return null
     }
-    pass('tap21.envelope.parse', 'MUST', 'TAP-21 §3.2/§3.4', context)
+    pass('tapi21.envelope.parse', 'MUST', 'TAPI-21 §3.2/§3.4', context)
     const env = r.json
     if (Number.isInteger(env.ts)) clockSkew = env.ts - now()
-    check(env.id === reqId, 'tap21.envelope.id-echo', 'MUST', S, context, `id ${JSON.stringify(env.id)} != request id ${JSON.stringify(reqId)}`)
-    check(typeof env.ok === 'boolean', 'tap21.envelope.ok-boolean', 'MUST', S, context, `ok is ${JSON.stringify(env.ok)}`)
-    check(typeof env.container === 'string' && eqAddr(env.container, trusted.container), 'tap21.envelope.container', 'MUST', S, context, `container ${env.container} != manifest.container ${trusted.container}`)
+    check(env.id === reqId, 'tapi21.envelope.id-echo', 'MUST', S, context, `id ${JSON.stringify(env.id)} != request id ${JSON.stringify(reqId)}`)
+    check(typeof env.ok === 'boolean', 'tapi21.envelope.ok-boolean', 'MUST', S, context, `ok is ${JSON.stringify(env.ok)}`)
+    check(typeof env.container === 'string' && eqAddr(env.container, trusted.container), 'tapi21.envelope.container', 'MUST', S, context, `container ${env.container} != manifest.container ${trusted.container}`)
     const skew = Number.isInteger(env.ts) ? Math.abs(now() - env.ts) : null
-    check(skew !== null && skew <= maxSkewS, 'tap21.envelope.ts-window', 'MUST', S, context, skew === null ? `ts ${JSON.stringify(env.ts)} is not an integer` : `|now - ts| = ${skew}s > ${maxSkewS}s`)
+    check(skew !== null && skew <= maxSkewS, 'tapi21.envelope.ts-window', 'MUST', S, context, skew === null ? `ts ${JSON.stringify(env.ts)} is not an integer` : `|now - ts| = ${skew}s > ${maxSkewS}s`)
     let shapeOk = true, shapeMsg = ''
     if (env.ok === true) { if (!Object.prototype.hasOwnProperty.call(env, 'result')) { shapeOk = false; shapeMsg = 'ok:true without result' } }
     else if (env.ok === false) {
@@ -109,43 +109,43 @@ export function createHarness({ live, timeoutMs = 30_000, maxSkewS = 300, fetch:
       if (!isPlainObject(er) || typeof er.code !== 'string') { shapeOk = false; shapeMsg = 'ok:false without error {code}' }
       else if (er.data !== undefined && !isPlainObject(er.data)) { shapeOk = false; shapeMsg = 'error.data present but not an object' }
     }
-    check(shapeOk, 'tap21.envelope.body-shape', 'MUST', S, context, shapeMsg)
+    check(shapeOk, 'tapi21.envelope.body-shape', 'MUST', S, context, shapeMsg)
     if (env.ok === false && isPlainObject(env.error)) {
       const code = env.error.code
-      check(PROVIDER_CODES.includes(code), 'tap21.envelope.error-code', 'MUST', S, context, `error.code ${JSON.stringify(code)} is not one of ${PROVIDER_CODES.join(', ')}`)
+      check(PROVIDER_CODES.includes(code), 'tapi21.envelope.error-code', 'MUST', S, context, `error.code ${JSON.stringify(code)} is not one of ${PROVIDER_CODES.join(', ')}`)
       if (code === 'INTERNAL') {
         const leak = /https?:\/\/|wss?:\/\/|\b0x[0-9a-fA-F]{64}\b|\blocalhost\b|\b\d{1,3}(\.\d{1,3}){3}\b/.exec(String(env.error.message ?? '') + JSON.stringify(env.error.data ?? {}))
-        check(!leak, 'tap21.internal.no-leak', 'MUST', S, context, `INTERNAL error reveals upstream detail: ${leak?.[0]}`)
+        check(!leak, 'tapi21.internal.no-leak', 'MUST', S, context, `INTERNAL error reveals upstream detail: ${leak?.[0]}`)
       }
       const allowed = [200, ...(CODE_STATUS[code] || [])]
-      check(allowed.includes(r.status), 'tap21.envelope.http-status', 'SHOULD', S, context, `HTTP ${r.status} carrying ${code}; allowed ${allowed.join('/')}`)
+      check(allowed.includes(r.status), 'tapi21.envelope.http-status', 'SHOULD', S, context, `HTTP ${r.status} carrying ${code}; allowed ${allowed.join('/')}`)
     } else if (env.ok === true) {
-      check(r.status === 200, 'tap21.envelope.http-status', 'SHOULD', S, context, `ok:true envelope carried with HTTP ${r.status}`)
+      check(r.status === 200, 'tapi21.envelope.http-status', 'SHOULD', S, context, `ok:true envelope carried with HTTP ${r.status}`)
     }
-    check(/^application\/json\b/i.test(r.headers.get('content-type') || ''), 'tap21.envelope.content-type', 'SHOULD', 'TAP-21 §3.2', context, `content-type ${r.headers.get('content-type')}`)
+    check(/^application\/json\b/i.test(r.headers.get('content-type') || ''), 'tapi21.envelope.content-type', 'SHOULD', 'TAPI-21 §3.2', context, `content-type ${r.headers.get('content-type')}`)
     const v = verifies(env, reqId, method, params)
-    if (!v.ok) { fail('tap21.envelope.sig-recovers', 'MUST', 'TAP-21 §3.3', context, `signature over the v2 digest of OUR request recovers to ${v.got}, expected manifest.signer ${trusted.signer}`); return null }
-    pass('tap21.envelope.sig-recovers', 'MUST', 'TAP-21 §3.3', context)
+    if (!v.ok) { fail('tapi21.envelope.sig-recovers', 'MUST', 'TAPI-21 §3.3', context, `signature over the v2 digest of OUR request recovers to ${v.got}, expected manifest.signer ${trusted.signer}`); return null }
+    pass('tapi21.envelope.sig-recovers', 'MUST', 'TAPI-21 §3.3', context)
     return env
   }
 
-  // TAP-21 §3.4: every 429 is unsigned, carries Retry-After, and says RATE_LIMITED with data.retryAfterS.
-  // TAP-21 §3.4：每个 429 都不签名、带 Retry-After，并给出 RATE_LIMITED 与 data.retryAfterS。
+  // TAPI-21 §3.4: every 429 is unsigned, carries Retry-After, and says RATE_LIMITED with data.retryAfterS.
+  // TAPI-21 §3.4：每个 429 都不签名、带 Retry-After，并给出 RATE_LIMITED 与 data.retryAfterS。
   function checkRateLimited(limitedRs, ctx) {
     const signed = limitedRs.filter(r => isPlainObject(r.json) && r.json.sig !== undefined)
-    check(!signed.length, 'tap21.ratelimit.unsigned', 'MUST', 'TAP-21 §3.4', ctx, `${signed.length}/${limitedRs.length} 429 responses carry a sig`)
+    check(!signed.length, 'tapi21.ratelimit.unsigned', 'MUST', 'TAPI-21 §3.4', ctx, `${signed.length}/${limitedRs.length} 429 responses carry a sig`)
     const badRA = limitedRs.filter(r => !/^\d+$/.test(r.headers.get('retry-after') || '') && Number.isNaN(Date.parse(r.headers.get('retry-after') || '')))
-    check(!badRA.length, 'tap21.ratelimit.retry-after', 'MUST', 'TAP-21 §3.4 / RFC 9110 §10.2.3', ctx, `${badRA.length}/${limitedRs.length} 429 responses lack a valid Retry-After header`)
+    check(!badRA.length, 'tapi21.ratelimit.retry-after', 'MUST', 'TAPI-21 §3.4 / RFC 9110 §10.2.3', ctx, `${badRA.length}/${limitedRs.length} 429 responses lack a valid Retry-After header`)
     const badCode = limitedRs.filter(r => !(isPlainObject(r.json) && r.json.ok === false && r.json.error?.code === 'RATE_LIMITED'))
-    check(!badCode.length, 'tap21.ratelimit.code', 'MUST', 'TAP-21 §3.4', ctx, `${badCode.length}/${limitedRs.length} 429 bodies are not { ok:false, error:{ code:"RATE_LIMITED" } }: ${badCode[0] ? describe(badCode[0]) : ''}`)
+    check(!badCode.length, 'tapi21.ratelimit.code', 'MUST', 'TAPI-21 §3.4', ctx, `${badCode.length}/${limitedRs.length} 429 bodies are not { ok:false, error:{ code:"RATE_LIMITED" } }: ${badCode[0] ? describe(badCode[0]) : ''}`)
     const badData = limitedRs.filter(r => !(Number.isInteger(r.json?.error?.data?.retryAfterS) && r.json.error.data.retryAfterS >= 0))
-    check(!badData.length, 'tap21.ratelimit.retryAfterS', 'MUST', 'TAP-21 §3.4', ctx, `${badData.length}/${limitedRs.length} 429 bodies lack error.data.retryAfterS`)
+    check(!badData.length, 'tapi21.ratelimit.retryAfterS', 'MUST', 'TAPI-21 §3.4', ctx, `${badData.length}/${limitedRs.length} 429 bodies lack error.data.retryAfterS`)
     const noCors = limitedRs.filter(r => !r.headers.get('access-control-allow-origin'))
-    check(!noCors.length, 'tap21.ratelimit.cors', 'SHOULD', 'reference convention', ctx, `${noCors.length}/${limitedRs.length} 429 responses lack Access-Control-Allow-Origin (a browser client cannot read Retry-After)`)
+    check(!noCors.length, 'tapi21.ratelimit.cors', 'SHOULD', 'reference convention', ctx, `${noCors.length}/${limitedRs.length} 429 responses lack Access-Control-Allow-Origin (a browser client cannot read Retry-After)`)
   }
 
-  // Every response over the TAP-21 cap seen during the run. / 本次运行中所有超过 TAP-21 上限的响应。
-  const checkSizeCap = () => check(!sizeOffenders.length, 'tap21.response.size-cap', 'MUST', 'TAP-21 §3.2', 'all', `responses over 1 MiB: ${sizeOffenders.join('; ')}`)
+  // Every response over the TAPI-21 cap seen during the run. / 本次运行中所有超过 TAPI-21 上限的响应。
+  const checkSizeCap = () => check(!sizeOffenders.length, 'tapi21.response.size-cap', 'MUST', 'TAPI-21 §3.2', 'all', `responses over 1 MiB: ${sizeOffenders.join('; ')}`)
 
   return {
     results, R, rec, pass, fail, skip, check,

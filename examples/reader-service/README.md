@@ -8,7 +8,7 @@ A minimal provider built on `@tapeapi/server`. It exposes three methods:
 | `circuitHolder` | 0.0001 BEM   | `IERC721(circuits).ownerOf(tokenId)` read via RPC         |
 | `bemBalance`    | free         | BEM (ERC-20) balance of an address                        |
 
-Every response (and every error) is a TAP-21 envelope signed by the provider's signer key, so
+Every response (and every error) is a TAPI-21 envelope signed by the provider's signer key, so
 clients can verify it offline against `manifest.signer`.
 
 ## Run
@@ -61,7 +61,7 @@ The manifest must carry a `delegation` proving that the circuit holder authorise
 It is an EIP-712 signature (domain `TapeAPI` v1, chainId 56, **verifyingContract = DeWebHub**)
 over `Delegation{container, signer, expires}`, signed by `IERC721(circuits).ownerOf(tokenId)`.
 The domain is anchored on the hub, not on a ServiceDirectory: a delegation is just holder consent and
-is meaningful before any directory exists (TAP-20 §3.4). Signing against the wrong `verifyingContract`
+is meaningful before any directory exists (TAPI-20 §3.4). Signing against the wrong `verifyingContract`
 produces a signature that will never verify.
 
 1. Start the provider once with a fixed `SIGNER_KEY` and note the printed `signer` address (the key itself is

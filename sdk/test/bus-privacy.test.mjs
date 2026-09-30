@@ -384,7 +384,7 @@ test('maxTopics bounds each request: rooms beyond it get fewer covers, and the s
   assert.equal(warns.length, 1)
 })
 
-for (const mode of [undefined, 'cover']) test(`integration (${mode ?? 'default: contract'}): a whole TAP-26 channel where one side reads its inbox and channel room through busPrivacyReader and posts with busTransport`, async () => {
+for (const mode of [undefined, 'cover']) test(`integration (${mode ?? 'default: contract'}): a whole TAPI-26 channel where one side reads its inbox and channel room through busPrivacyReader and posts with busTransport`, async () => {
   const { chain, rec, rpc, start } = await world(30)
   const plain = createRpc({ urls: RPC, quorum: 2, fetch: chain.fetch })
   const A = { container: '0x86DDaEF00401E3F10418398D67D7189fc458eA95', chainId: 56 }

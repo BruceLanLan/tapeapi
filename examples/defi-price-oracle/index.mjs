@@ -53,7 +53,7 @@ async function readPair(pairAddr, block) {
     pair: checksumAddress(pairAddr), source: 'pancakeswap-v2', token0, token1,
     reserves: { reserve0: r0.toString(), reserve1: r1.toString(), blockTimestampLast: Number(ts) },
     price: { token0InToken1: formatUnits(token0InToken1, Number(P)), token1InToken0: formatUnits(token1InToken0, Number(P)) },
-    // 总是返回，调用方做 callQuorum 时把同一个 blockNumber 显式传给每一家（TAP-23 §3.4）。
+    // 总是返回，调用方做 callQuorum 时把同一个 blockNumber 显式传给每一家（TAPI-23 §3.4）。
     // Always present: a quorum caller passes this blockNumber explicitly to every provider.
     blockPinned: blockPinnedOf(pinned, blockRef),
   }

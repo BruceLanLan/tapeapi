@@ -1,28 +1,28 @@
-name: Spec proposal (TAP) / 规范提案
-description: Propose a new TAP or a change to an existing one. Required before any PR touching spec/. 新增 TAP 或修改现有 TAP；改 spec/ 的 PR 必须先有本 issue。
-title: "[TAP] "
+name: Spec proposal (TAPI) / 规范提案
+description: Propose a new TapeAPI spec (TAPI) or a change to an existing one. Required before any PR touching spec/. 新增 TapeAPI 规范（TAPI）或修改现有规范；改 spec/ 的 PR 必须先有本 issue。
+title: "[TAPI] "
 labels: ["spec"]
 body:
   - type: markdown
     attributes:
       value: |
-        A specification change **needs this issue first** — a PR editing `spec/` without a linked issue will be closed. See [CONTRIBUTING.md](https://github.com/BruceLanLan/tapeapi/blob/main/CONTRIBUTING.md) §1 and the TAP process in [TAP-1](https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-1.md). The TAPs are proposed to the TapeOut maintainers in [TapeKit#8](https://github.com/TapeOutProtocol/TapeKit/issues/8).
-        规范改动**必须先开本 issue**——没有关联 issue 而直接改 `spec/` 的 PR 会被关闭。见 [CONTRIBUTING.md](https://github.com/BruceLanLan/tapeapi/blob/main/CONTRIBUTING.md) §1 与 [TAP-1](https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-1.md) 规定的 TAP 流程。这些 TAP 正在 [TapeKit#8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 向 TapeOut 维护者提议。
+        A specification change **needs this issue first** — a PR editing `spec/` without a linked issue will be closed. See [CONTRIBUTING.md](https://github.com/BruceLanLan/tapeapi/blob/main/CONTRIBUTING.md) §1 and the process in [TAPI-1](https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-1.md). These are TapeAPI's own specs, not TAPs; a proposal for TapeOut itself goes through TAP-01 in [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs).
+        规范改动**必须先开本 issue**——没有关联 issue 而直接改 `spec/` 的 PR 会被关闭。见 [CONTRIBUTING.md](https://github.com/BruceLanLan/tapeapi/blob/main/CONTRIBUTING.md) §1 与 [TAPI-1](https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-1.md) 规定的流程。这些是 TapeAPI 自己的规范，不是 TAP；针对 TapeOut 本身的提案请按 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的 TAP-01 流程提交。
   - type: dropdown
     id: kind
     attributes:
       label: Kind / 类型
       options:
-        - "New TAP / 新 TAP"
-        - "Change to an existing TAP / 修改现有 TAP"
+        - "New spec / 新规范"
+        - "Change to an existing spec / 修改现有规范"
         - "Clarification only, no normative change / 仅澄清，不改规范性内容"
     validations:
       required: true
   - type: input
     id: tap
     attributes:
-      label: Affected TAP(s) / 涉及的 TAP
-      description: "e.g. TAP-22, or 'new' / 例：TAP-22，或填 new"
+      label: Affected spec(s) / 涉及的规范
+      description: "e.g. TAPI-22, or 'new' / 例：TAPI-22，或填 new"
     validations:
       required: true
   - type: textarea

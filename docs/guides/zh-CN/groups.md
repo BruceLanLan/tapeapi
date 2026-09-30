@@ -2,7 +2,7 @@
 
 # 群聊
 
-本指南面向已经接入 TapeAPI 的应用，讲怎样加上私密群聊（[TAP-27](../../../spec/TAP-27.md)）。一个群至多 32 个
+本指南面向已经接入 TapeAPI 的应用，讲怎样加上私密群聊（[TAPI-27](../../../spec/TAPI-27.md)）。一个群至多 32 个
 TapeOut 容器，其中一个是**群主**，负责维护成员名单。消息端到端加密并签名；承载它们的中继或 ChannelBus 只看得到密文。
 
 可以直接从示例起步：[`examples/group-chat/`](../../../examples/group-chat/)（`node examples/group-chat/index.mjs`，走公共中继）。
@@ -70,14 +70,14 @@ await deliverGroupUpdate({ group, update: await group.rotate(), relayClients: [r
 
 `deliverGroupUpdate` 做什么、返回什么：
 
-- **顺序。** 先把邀请投到各成员的收件房间，再把纪元消息投到群房间（TAP-27 §3.5）。
+- **顺序。** 先把邀请投到各成员的收件房间，再把纪元消息投到群房间（TAPI-27 §3.5）。
 - **邀请谁。** `invite: 'new'`（默认，即 `update.added`）、`'all'`（除群主外的所有成员）、`'none'`，或一组必须在当前名单里的
   容器地址。邀请一律用名单里（群主签过的）容器地址与 chainId。
 - **多种传输。** `relayClients` 与 `busClients` 都是列表，每条都投到两者的每一项上。每份邀请只密封一次，所以同时读两个传输的成员
   看到的是同一份邀请两次，而不是两份邀请。
 - **失败。** 每条都会尝试。只要有一条失败，调用随后抛出 `TapeAPIError('GROUP_DELIVERY')`：消息里写明第一个失败的房间，
   `data` 里有每条投递的结果；传 `throwOnError: false` 则改为返回 `{ ok: false, deliveries }`。绝不吞掉错误。
-- **重发。** 不传 `update` 时重发当前纪元消息（`group.epochWire`）。TAP-27 §3.5 建议：房间寿命 15 分钟的中继上每 10 分钟
+- **重发。** 不传 `update` 时重发当前纪元消息（`group.epochWire`）。TAPI-27 §3.5 建议：房间寿命 15 分钟的中继上每 10 分钟
   重发一次，经公共节点读取的 ChannelBus 上每 30 分钟一次：
 
 ```js
@@ -113,7 +113,7 @@ for (const { invite } of found.invites) {
 
 - `checkGroupInvites` 在每个中继上读取 `channel.inboxRoom(self.container, self.chainId)`，按中继和房间各存一个带房间纪元的
   游标（首次读取是 `after: -1, epoch: null`），返回 `{ room, invites, skipped, skippedBy, failed }`。不是发给本容器的
-  群邀请的帧会被跳过并计数；同一收件房间里的 TAP-26 通道邀请计为 `channelInvite`，留给你的通道代码处理。
+  群邀请的帧会被跳过并计数；同一收件房间里的 TAPI-26 通道邀请计为 `channelInvite`，留给你的通道代码处理。
 - `checkSelf: true` 先读取容器的通道记录，只有记录在这个 chainId 上发布了本身份的 X25519 公钥才继续：钱包地址、错的 chainId、
   过期的身份文件会立刻报错，而不是表现为一个空的收件房间。传入 `holder`（钱包地址），二者混用会被直接拒绝，不需要读链。
 - 读不了的中继列在 `failed` 里（`ok` 为 false）；所有中继都读不了时，调用抛出错误。
@@ -213,11 +213,11 @@ if (inv.format === 2 && !G.MAX_MEMBERS_V2) return askToUpdate(inv)
 `verifyReuseS`，默认 86,400 秒）。128 人时，移除一人或轮换**不读取**任何记录，加一人读取**一条**（新成员，只一次，绕过缓存），
 结论过期后的第一个纪元读取全部 127 条：按默认并发 8，约 2,300 个 HTTP 请求、27 秒（BSC 上每条记录约 18 个请求、1.7 秒），
 至多每天一次。SDK 1.2.0 每个纪元都这样全量读取，并且对新加入的成员读取两次。恢复出的群主没有任何结论，所以它的第一个纪元会读取
-所有人。`verifyReuseS: 0` 回到每个纪元都读取全部成员，适合必须在下一个纪元、而不是一天之内移除已出售电路的群主（TAP-27 §8）。
+所有人。`verifyReuseS: 0` 回到每个纪元都读取全部成员，适合必须在下一个纪元、而不是一天之内移除已出售电路的群主（TAPI-27 §8）。
 
 ## 局限
 
-- 每个群至多 32 人。实验性的格式 2（TAP-27 §3.8，`createGroup({ format: 2 })`）在一条线路消息里最多容纳 128 人：名单改为
+- 每个群至多 32 人。实验性的格式 2（TAPI-27 §3.8，`createGroup({ format: 2 })`）在一条线路消息里最多容纳 128 人：名单改为
   二进制，成员核验改为按需进行。尚未核验的发送者发来的消息带 `verified: false`，界面上要标为"未核验"，或改用 `openVerified`。
   格式 2 的成员条目不含 X25519 公钥，所以请用 `group.channelKeysVerifier(api)` 核验，**不要**用 `api.groupVerifier()`：
   它比较两把公钥，会把每个成员都判为不符。核验一致的成员至多被信任 24 小时（`verifyReuseS`，从核验开始时起算）；核验不符的

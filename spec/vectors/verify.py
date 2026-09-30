@@ -2,11 +2,11 @@
 """A second, independent implementation of the TapeAPI digests, in pure Python with no dependencies.
 
 Its only job is to disagree with the reference SDK if the specification is ambiguous. Everything here was
-written from the specifications (TAP-20, TAP-21, TAP-22, TAP-23, TAP-26, TAP-27 with its §3.8) and checked against spec/vectors/*.json;
+written from the specifications (TAPI-20, TAPI-21, TAPI-22, TAPI-23, TAPI-26, TAPI-27 with its §3.8) and checked against spec/vectors/*.json;
 nothing is imported from the JavaScript. X25519, HKDF, (X)ChaCha20-Poly1305 and Ed25519 follow their RFCs. If this file and the SDK ever disagree, the specification is the thing that is wrong.
 
 用纯 Python、零依赖写的第二个独立实现。它唯一的职责，是在规范存在歧义时与参考 SDK 产生分歧。
-这里的一切都是照着 TAP-20 与 TAP-21 写的，再对照向量文件核对，没有从 JavaScript 那边引入任何东西。
+这里的一切都是照着 TAPI-20 与 TAPI-21 写的，再对照向量文件核对，没有从 JavaScript 那边引入任何东西。
 如果本文件与 SDK 出现分歧，那么错的是规范。
 
     python3 spec/vectors/verify.py
@@ -63,7 +63,7 @@ def keccak256(data: bytes) -> bytes:
         out += a[i % 5][i // 5].to_bytes(8, 'little')
     return bytes(out[:32])
 
-# ------------------------------------------------------- canonicalJSON (TAP-21 §3.3) ----
+# ------------------------------------------------------- canonicalJSON (TAPI-21 §3.3) ----
 class CanonError(Exception):
     pass
 
@@ -204,7 +204,7 @@ def check(label, got, want):
     if got != want:
         fail.append('%s\n    got  %s\n    want %s' % (label, got, want))
 
-canon = json.loads((HERE / 'tap-21-canon.json').read_text())
+canon = json.loads((HERE / 'tapi-21-canon.json').read_text())
 for c in canon['positive']:
     try:
         got = canonical(c['input'])
@@ -224,7 +224,7 @@ def _reject_const(tok):
     raise CanonError('non-finite number ' + tok)
 
 def strict_parse(text):
-    """JSON as TAP-21 accepts it: duplicate keys, NaN/Infinity and -0 are refused, not silently normalised."""
+    """JSON as TAPI-21 accepts it: duplicate keys, NaN/Infinity and -0 are refused, not silently normalised."""
     def pint(t):
         if t == '-0':
             raise CanonError('negative zero')
@@ -251,14 +251,14 @@ for c in canon['negative']:
         except CanonError:
             checked += 1
 
-env = json.loads((HERE / 'tap-21-envelope.json').read_text())
+env = json.loads((HERE / 'tapi-21-envelope.json').read_text())
 for c in env['cases']:
     check('envelope-canonreq/' + c['name'], canonical({'method': c['method'], 'params': c['params']}), c['intermediate']['canonicalRequest'])
     check('envelope-canonbody/' + c['name'], canonical(c['body']), c['intermediate']['canonicalBody'])
     got = response_digest(env['prefix'], env['container'], c['id'], c['method'], c['params'], c['ok'], c['body'], c['ts'])
     check('envelope-digest/' + c['name'], h(got), c['digest'])
 
-dele = json.loads((HERE / 'tap-20-delegation.json').read_text())
+dele = json.loads((HERE / 'tapi-20-delegation.json').read_text())
 d = dele['domain']
 dom = eip712_domain(d['name'], d['version'], d['chainId'], d['verifyingContract'])
 th = keccak256(dele['typeHash'].encode())
@@ -266,7 +266,7 @@ for c in dele['cases']:
     sh = keccak256(th + addr32(c['container']) + addr32(c['signer']) + u64(c['expires']).rjust(32, b'\x00'))
     check('delegation/' + c['name'], h(typed_digest(dom, sh)), c['digest'])
 
-vou = json.loads((HERE / 'tap-22-voucher.json').read_text())
+vou = json.loads((HERE / 'tapi-22-voucher.json').read_text())
 d = vou['domain']
 dom = eip712_domain(d['name'], d['version'], d['chainId'], d['verifyingContract'])
 th = keccak256(vou['typeHash'].encode())
@@ -276,7 +276,7 @@ for c in vou['cases']:
     check('voucher/' + c['name'], h(typed_digest(dom, sh)), c['digest'])
 
 
-# ============================================================ TAP-26 channel ====
+# ============================================================ TAPI-26 channel ====
 # X25519 (RFC 7748), HKDF-SHA256 (RFC 5869) and ChaCha20-Poly1305 (RFC 8439), all written here from the RFCs.
 # X25519、HKDF-SHA256、ChaCha20-Poly1305 全部照 RFC 在此处实现。
 import hashlib, hmac as _hmac
@@ -364,36 +364,36 @@ def chacha20poly1305_seal(key, nonce, aad, pt):
     mac = aad + _pad16(aad) + ct + _pad16(ct) + len(aad).to_bytes(8, 'little') + len(ct).to_bytes(8, 'little')
     return ct + _poly1305(otk, mac)
 
-ch = json.loads((HERE / 'tap-26-channel.json').read_text())
+ch = json.loads((HERE / 'tapi-26-channel.json').read_text())
 I, R, X = ch['initiator'], ch['responder'], ch['intermediate']
 bx = bytes.fromhex
 sA, sB, eA, eB = bx(I['staticSecret']), bx(R['staticSecret']), bx(I['ephemeralSecret']), bx(R['ephemeralSecret'])
 SA, SB, EA, EB = x25519_pub(sA), x25519_pub(sB), x25519_pub(eA), x25519_pub(eB)
-check('tap26/static-A', SA.hex(), I['staticPublic']); check('tap26/static-B', SB.hex(), R['staticPublic'])
-check('tap26/ephemeral-A', EA.hex(), I['ephemeralPublic']); check('tap26/ephemeral-B', EB.hex(), R['ephemeralPublic'])
-check('tap26/invite.e', EA.hex(), ch['invite']['e']); check('tap26/accept.e', EB.hex(), ch['accept']['e'])
+check('tapi26/static-A', SA.hex(), I['staticPublic']); check('tapi26/static-B', SB.hex(), R['staticPublic'])
+check('tapi26/ephemeral-A', EA.hex(), I['ephemeralPublic']); check('tapi26/ephemeral-B', EB.hex(), R['ephemeralPublic'])
+check('tapi26/invite.e', EA.hex(), ch['invite']['e']); check('tapi26/accept.e', EB.hex(), ch['accept']['e'])
 # each DH computed from BOTH sides must agree, and match the vector / 每次 DH 从双方各算一遍必须一致
-check('tap26/dh1 initiator side', x25519(eA, SB).hex(), X['dh1']); check('tap26/dh1 responder side', x25519(sB, EA).hex(), X['dh1'])
-check('tap26/dh2 initiator side', x25519(sA, EB).hex(), X['dh2']); check('tap26/dh2 responder side', x25519(eB, SA).hex(), X['dh2'])
-check('tap26/dh3 initiator side', x25519(eA, EB).hex(), X['dh3']); check('tap26/dh3 responder side', x25519(eB, EA).hex(), X['dh3'])
+check('tapi26/dh1 initiator side', x25519(eA, SB).hex(), X['dh1']); check('tapi26/dh1 responder side', x25519(sB, EA).hex(), X['dh1'])
+check('tapi26/dh2 initiator side', x25519(sA, EB).hex(), X['dh2']); check('tapi26/dh2 responder side', x25519(eB, SA).hex(), X['dh2'])
+check('tapi26/dh3 initiator side', x25519(eA, EB).hex(), X['dh3']); check('tapi26/dh3 responder side', x25519(eB, EA).hex(), X['dh3'])
 def endpoint(container, chain_id):
     return bytes(4) + int(chain_id).to_bytes(8, 'big') + bytes.fromhex(container[2:])
 epA, epB = endpoint(I['container'], I['chainId']), endpoint(R['container'], R['chainId'])
-check('tap26/endpointA', epA.hex(), X['endpointA']); check('tap26/endpointB', epB.hex(), X['endpointB'])
+check('tapi26/endpointA', epA.hex(), X['endpointA']); check('tapi26/endpointB', epB.hex(), X['endpointB'])
 cid = bx(ch['invite']['cid'])
 ih = hashlib.sha256(canonical(ch['invite']).encode('utf-8')).digest()
-check('tap26/inviteHash', ih.hex(), X['inviteHash'])
+check('tapi26/inviteHash', ih.hex(), X['inviteHash'])
 th = hashlib.sha256(b'TAP-26/transcript/v1' + cid + epA + epB + SA + SB + EA + EB + int(ch['invite']['exp']).to_bytes(8, 'big') + ih).digest()
-check('tap26/transcript', th.hex(), X['transcript'])
+check('tapi26/transcript', th.hex(), X['transcript'])
 okm = hkdf_sha256(bx(X['dh1']) + bx(X['dh2']) + bx(X['dh3']), th, b'TAP-26/keys/v1', 128)
 kAB, kBA, cA, cB = okm[:32], okm[32:64], okm[64:96], okm[96:]
 for name, got in [('kAB', kAB), ('kBA', kBA), ('cA', cA), ('cB', cB)]:
-    check('tap26/' + name, got.hex(), X[name])
+    check('tapi26/' + name, got.hex(), X[name])
 cfA = _hmac.new(cA, b'TAP-26/confirm/initiator' + th, hashlib.sha256).digest()
 cfB = _hmac.new(cB, b'TAP-26/confirm/responder' + th, hashlib.sha256).digest()
-check('tap26/confirm initiator', cfA.hex(), ch['ready']['confirm']); check('tap26/confirm responder', cfB.hex(), ch['accept']['confirm'])
+check('tapi26/confirm initiator', cfA.hex(), ch['ready']['confirm']); check('tapi26/confirm responder', cfB.hex(), ch['accept']['confirm'])
 for d, key in [(0, 'toInitiator'), (1, 'toResponder')]:
-    check('tap26/room ' + key, hashlib.sha256(b'TAP-26/room/v1' + cid + bytes([d])).hexdigest(), X['rooms'][key])
+    check('tapi26/room ' + key, hashlib.sha256(b'TAP-26/room/v1' + cid + bytes([d])).hexdigest(), X['rooms'][key])
 seqs = {'initiator': 0, 'responder': 0}
 for f in ch['frames']:
     who = f['from']; sq = seqs[who]; seqs[who] += 1
@@ -401,9 +401,9 @@ for f in ch['frames']:
     nonce = bytes(4) + sq.to_bytes(8, 'big')
     aad = b'TAP-26/frame/v1' + cid + bytes([d]) + sq.to_bytes(8, 'big')
     got = sq.to_bytes(8, 'big') + chacha20poly1305_seal(key, nonce, aad, f['plaintext'].encode('utf-8'))
-    check('tap26/frame %s #%d %r' % (who, sq, f['plaintext']), got.hex(), f['frame'])
+    check('tapi26/frame %s #%d %r' % (who, sq, f['plaintext']), got.hex(), f['frame'])
 
-# ---------- TAP-26 §3.1 / §3.2: identity authorisation, inbox room, sealed invite ----------
+# ---------- TAPI-26 §3.1 / §3.2: identity authorisation, inbox room, sealed invite ----------
 # XChaCha20 = HChaCha20(key, nonce[:16]) as the subkey, then ChaCha20 with nonce 0^4 || nonce[16:24]
 # (draft-irtf-cfrg-xchacha). / XChaCha20：先用 HChaCha20 派生子密钥，再以 0^4 || nonce[16:24] 作 ChaCha20 随机数。
 def _hchacha20(key, nonce16):
@@ -429,7 +429,7 @@ check('xchacha/hchacha20 draft vector',
       _hchacha20(bytes(range(32)), bytes.fromhex('000000090000004a0000000031415927')).hex(),
       '82413b4227b27bfed30e42508a877d73a0f9e4d58a74a853c12ec41326d3ecdc')
 
-idv = json.loads((HERE / 'tap-26-identity.json').read_text())
+idv = json.loads((HERE / 'tapi-26-identity.json').read_text())
 ck = idv['channelKeys']
 d = ck['domain']
 dom = eip712_domain(d['name'], d['version'], d['chainId'], d['verifyingContract'])
@@ -438,20 +438,20 @@ k = ck['keys']
 inbox_norm = {'relays': [{'url': r['url'], 'container': r['container']} for r in k['inbox'].get('relays', [])]}
 if k['inbox'].get('bus'): inbox_norm['bus'] = k['inbox']['bus']
 ihash = keccak256(canonical(inbox_norm).encode('utf-8'))
-check('tap26/channelKeys inbox hash', '0x' + ihash.hex(), k['inboxHash'])
+check('tapi26/channelKeys inbox hash', '0x' + ihash.hex(), k['inboxHash'])
 sh = keccak256(th + addr32(k['container']) + bytes.fromhex(k['x25519'][2:]) + bytes.fromhex(k['ed25519'][2:]) + ihash + u64(k['issued']).rjust(32, b'\x00') + u64(k['expires']).rjust(32, b'\x00'))
-check('tap26/channelKeys digest', h(typed_digest(dom, sh)), ck['digest'])
-check('tap26/channelKeys typehash differs from Delegation', str(th != keccak256(b'Delegation(address container,address signer,uint64 expires)')), 'True')
+check('tapi26/channelKeys digest', h(typed_digest(dom, sh)), ck['digest'])
+check('tapi26/channelKeys typehash differs from Delegation', str(th != keccak256(b'Delegation(address container,address signer,uint64 expires)')), 'True')
 ib = idv['inbox']
 room = hashlib.sha256(b'TAP-26/inbox/v1' + endpoint(ib['container'], ib['chainId'])).digest()
-check('tap26/inbox room', room.hex(), ib['room'])
+check('tapi26/inbox room', room.hex(), ib['room'])
 si = idv['sealedInvite']
 R = x25519_pub(bytes.fromhex(si['recipientSecret'][2:]))
 e = bytes.fromhex(si['ephemeralSecret'][2:]); E = x25519_pub(e); N = bytes.fromhex(si['nonce'][2:])
 sroom = hashlib.sha256(b'TAP-26/inbox/v1' + endpoint(si['recipientContainer'], si['recipientChainId'])).digest()
 K = hkdf_sha256(x25519(e, R), b'TAP-26/inbox/v1', E + R + sroom, 32)
 wire = b'\x03' + E + N + xchacha20poly1305_seal(K, N, b'TAP-26/inbox/v1' + E + sroom, canonical(si['invite']).encode('utf-8'))
-check('tap26/sealed invite', '0x' + wire.hex(), si['wire'])
+check('tapi26/sealed invite', '0x' + wire.hex(), si['wire'])
 
 # ---------- Ed25519, RFC 8032 §5.1 (pure Python, following the RFC's own reference code in §6) ----------
 _P = 2 ** 255 - 19
@@ -518,13 +518,13 @@ for name, sk, pk, msg, sgn in [
     check('ed25519/' + name + ' signature', ed25519_sign(bytes.fromhex(sk), bytes.fromhex(msg)).hex(), sgn)
     check('ed25519/' + name + ' verifies', str(ed25519_verify(bytes.fromhex(pk), bytes.fromhex(msg), bytes.fromhex(sgn))), 'True')
 
-# ---------- TAP-27: rebuild the epoch message and the messages from the secrets alone ----------
-gv = json.loads((HERE / 'tap-27-group.json').read_text())
+# ---------- TAPI-27: rebuild the epoch message and the messages from the secrets alone ----------
+gv = json.loads((HERE / 'tapi-27-group.json').read_text())
 bh = lambda x: bytes.fromhex(x[2:] if x.startswith('0x') else x)
 people = gv['members']
 for p_ in people:
-    check('tap27/x25519 ' + p_['tag'], '0x' + x25519_pub(bh(p_['x25519Secret'])).hex(), p_['x25519'])
-    check('tap27/ed25519 ' + p_['tag'], '0x' + ed25519_pub(bh(p_['ed25519Secret'])).hex(), p_['ed25519'])
+    check('tapi27/x25519 ' + p_['tag'], '0x' + x25519_pub(bh(p_['x25519Secret'])).hex(), p_['x25519'])
+    check('tapi27/ed25519 ' + p_['tag'], '0x' + ed25519_pub(bh(p_['ed25519Secret'])).hex(), p_['ed25519'])
 gid = bh(gv['gid']); epoch = gv['epoch']; K = bh(gv['K']); e = bh(gv['ephemeralSecret']); N = bh(gv['nonce'])
 E = x25519_pub(e)
 commit = hashlib.sha256(b'TAP-27/commit/v1' + K).digest()
@@ -537,11 +537,11 @@ for m in gv['roster']['members']:
 roster_ct = xchacha20poly1305_seal(K, N, header + slots, canonical(gv['roster']).encode('utf-8'))
 body = header + slots + len(roster_ct).to_bytes(4, 'big') + roster_ct
 owner_sig = ed25519_sign(bh(people[0]['ed25519Secret']), b'TAP-27/epoch/v1' + body)
-check('tap27/epoch message', '0x' + (body + owner_sig).hex(), gv['epochWire'])
-check('tap27/epoch signature verifies', str(ed25519_verify(bh(people[0]['ed25519']), b'TAP-27/epoch/v1' + body, owner_sig)), 'True')
+check('tapi27/epoch message', '0x' + (body + owner_sig).hex(), gv['epochWire'])
+check('tapi27/epoch signature verifies', str(ed25519_verify(bh(people[0]['ed25519']), b'TAP-27/epoch/v1' + body, owner_sig)), 'True')
 for i, want in enumerate(gv['senderKeys']):
     sk_ = hkdf_sha256(K, gid + epoch.to_bytes(8, 'big'), b'TAP-27/sender/v1' + i.to_bytes(4, 'big'), 32)
-    check('tap27/sender key %d' % i, '0x' + sk_.hex(), want)
+    check('tapi27/sender key %d' % i, '0x' + sk_.hex(), want)
 for m in gv['messages']:
     i, sq = m['sender'], int(m['seq'])
     nonce = bh(m['nonce'])
@@ -549,30 +549,30 @@ for m in gv['messages']:
     key = bh(gv['senderKeys'][i])
     ct = xchacha20poly1305_seal(key, nonce, hdr, m['plaintext'].encode('utf-8'))
     sg = ed25519_sign(bh(people[i]['ed25519Secret']), b'TAP-27/msg/v1' + hdr + ct)
-    check('tap27/message from %d %r' % (i, m['plaintext']), '0x' + (hdr + ct + sg).hex(), m['wire'])
+    check('tapi27/message from %d %r' % (i, m['plaintext']), '0x' + (hdr + ct + sg).hex(), m['wire'])
 
-# ---------- TAP-27 §3.8 format 2 (Experimental): rebuild both epochs and the messages from the secrets alone ----------
+# ---------- TAPI-27 §3.8 format 2 (Experimental): rebuild both epochs and the messages from the secrets alone ----------
 # Written from §3.8 only: the epoch field carries the format-2 mark in its high half, the roster is binary, every label
 # is "…/v2". A format-1 reader (§3.3: n at most 2^32 - 1) must refuse every format-2 wire, and a format-2 reader the
 # format-1 epoch message above. / 只按 §3.8 的文字实现；格式 1 读者必须拒收每条格式 2 线路消息，格式 2 读者必须拒收上面的格式 1 纪元消息。
-g2 = json.loads((HERE / 'tap-27-group-v2.json').read_text())
+g2 = json.loads((HERE / 'tapi-27-group-v2.json').read_text())
 MARK2 = 0x54470200
 gid = bh(g2['gid'])
 ef2 = lambda n: MARK2.to_bytes(4, 'big') + n.to_bytes(4, 'big')
 tail2 = canonical({'relays': g2['relays'], 'bus': g2['bus']}).encode('utf-8')
 people2 = g2['members']
-check('tap27v2/same people as format 1', [p_['ed25519'] for p_ in people2], [p_['ed25519'] for p_ in people])
+check('tapi27v2/same people as format 1', [p_['ed25519'] for p_ in people2], [p_['ed25519'] for p_ in people])
 roster_prev = None
 for ep in g2['epochs']:
     n = ep['epoch']
-    check('tap27v2/epoch %d field' % n, ef2(n).hex(), ep['epochField'])
+    check('tapi27v2/epoch %d field' % n, ef2(n).hex(), ep['epochField'])
     K = bh(ep['K']); e = bh(ep['ephemeralSecret']); N = bh(ep['nonce']); E = x25519_pub(e)
     prev = bytes(32) if roster_prev is None else hashlib.sha256(roster_prev).digest()
-    check('tap27v2/epoch %d prev' % n, prev.hex(), ep['prev'])
+    check('tapi27v2/epoch %d prev' % n, prev.hex(), ep['prev'])
     entries = b''.join(bh(p_['container']) + p_['chainId'].to_bytes(4, 'big') + bh(p_['ed25519']) for p_ in people2)
     roster = b'TGR2' + g2['issued'].to_bytes(8, 'big') + prev + len(people2).to_bytes(2, 'big') + entries + len(tail2).to_bytes(2, 'big') + tail2
-    check('tap27v2/epoch %d roster bytes' % n, '0x' + roster.hex(), ep['roster'])
-    check('tap27v2/epoch %d roster is 104 bytes a member with the slot' % n, len(entries) // len(people2) + 48, 104)
+    check('tapi27v2/epoch %d roster bytes' % n, '0x' + roster.hex(), ep['roster'])
+    check('tapi27v2/epoch %d roster is 104 bytes a member with the slot' % n, len(entries) // len(people2) + 48, 104)
     commit = hashlib.sha256(b'TAP-27/commit/v2' + K).digest()
     header = b'\x04' + gid + ef2(n) + E + N + commit + len(people2).to_bytes(2, 'big')
     slots = b''
@@ -583,36 +583,36 @@ for ep in g2['epochs']:
     ct = xchacha20poly1305_seal(K, N, header + slots, roster)
     body = header + slots + len(ct).to_bytes(4, 'big') + ct
     sg = ed25519_sign(bh(people2[0]['ed25519Secret']), b'TAP-27/epoch/v2' + body)
-    check('tap27v2/epoch %d message' % n, '0x' + (body + sg).hex(), ep['epochWire'])
+    check('tapi27v2/epoch %d message' % n, '0x' + (body + sg).hex(), ep['epochWire'])
     wire = bh(ep['epochWire'])
     # format 1 (§3.3): n = uint64be at offset 17 must be at most 2^32 - 1; the format-1 count byte (offset 113) is 0
     # 格式 1：偏移 17 的 uint64be 必须 ≤ 2^32 − 1；格式 1 的 count 字节（偏移 113）为 0
-    check('tap27v2/epoch %d refused by format 1 (epoch field)' % n, int.from_bytes(wire[17:25], 'big') > 2 ** 32 - 1, True)
-    check('tap27v2/epoch %d refused by format 1 (count byte)' % n, wire[113], 0)
+    check('tapi27v2/epoch %d refused by format 1 (epoch field)' % n, int.from_bytes(wire[17:25], 'big') > 2 ** 32 - 1, True)
+    check('tapi27v2/epoch %d refused by format 1 (count byte)' % n, wire[113], 0)
     roster_prev = roster
 K1 = bh(g2['epochs'][1]['K'])
 for i, want in enumerate(g2['senderKeys']):
-    check('tap27v2/sender key %d' % i, '0x' + hkdf_sha256(K1, gid + ef2(1), b'TAP-27/sender/v2' + i.to_bytes(4, 'big'), 32).hex(), want)
+    check('tapi27v2/sender key %d' % i, '0x' + hkdf_sha256(K1, gid + ef2(1), b'TAP-27/sender/v2' + i.to_bytes(4, 'big'), 32).hex(), want)
 for m in g2['messages']:
     i, sq, n = m['sender'], int(m['seq']), m['epoch']
     nonce = bh(m['nonce'])
     hdr = b'\x05' + gid + ef2(n) + i.to_bytes(4, 'big') + sq.to_bytes(8, 'big') + nonce
     ct = xchacha20poly1305_seal(bh(g2['senderKeys'][i]), nonce, hdr, m['plaintext'].encode('utf-8'))
     sg = ed25519_sign(bh(people2[i]['ed25519Secret']), b'TAP-27/msg/v2' + hdr + ct)
-    check('tap27v2/message from %d %r' % (i, m['plaintext']), '0x' + (hdr + ct + sg).hex(), m['wire'])
-    check('tap27v2/message from %d refused by format 1' % i, int.from_bytes(bh(m['wire'])[17:25], 'big') > 2 ** 32 - 1, True)
+    check('tapi27v2/message from %d %r' % (i, m['plaintext']), '0x' + (hdr + ct + sg).hex(), m['wire'])
+    check('tapi27v2/message from %d refused by format 1' % i, int.from_bytes(bh(m['wire'])[17:25], 'big') > 2 ** 32 - 1, True)
 # and back: the format-1 epoch message and messages carry a zero high half, which a format-2 reader refuses
 # 反过来：格式 1 的纪元消息与消息高半部分为零，格式 2 读者拒收
-check('tap27v2/format-1 epoch message refused by format 2', int.from_bytes(bh(gv['epochWire'])[17:21], 'big') == MARK2, False)
+check('tapi27v2/format-1 epoch message refused by format 2', int.from_bytes(bh(gv['epochWire'])[17:21], 'big') == MARK2, False)
 for m in gv['messages']:
-    check('tap27v2/format-1 message refused by format 2', int.from_bytes(bh(m['wire'])[17:21], 'big') == MARK2, False)
+    check('tapi27v2/format-1 message refused by format 2', int.from_bytes(bh(m['wire'])[17:21], 'big') == MARK2, False)
 
-# ======================================================= TAP-21 §3.5 / TAP-20 §3.9 AI usage receipts ====
+# ======================================================= TAPI-21 §3.5 / TAPI-20 §3.9 AI usage receipts ====
 # The receipt vectors of the reference sidecar (sdk/test/fixtures/ai-receipt-vectors.json), checked from the text of
-# TAP-21 §3.5 and TAP-20 §3.9 alone: the request hash, the stream hash by the event-stream rules of §3.5 (parsed here on
+# TAPI-21 §3.5 and TAPI-20 §3.9 alone: the request hash, the stream hash by the event-stream rules of §3.5 (parsed here on
 # bytes), every amount in Decimal with ROUND_CEILING, the model match, and the §3.3 digest of each receipt with its
 # signer recovered by secp256k1 (SEC 1 §4.1.6, written here) over the EIP-191 message.
-# 参考旁路的回执向量，只按 TAP-21 §3.5 与 TAP-20 §3.9 的文字核对：请求哈希、按 §3.5 事件流规则（此处按字节解析）的流哈希、
+# 参考旁路的回执向量，只按 TAPI-21 §3.5 与 TAPI-20 §3.9 的文字核对：请求哈希、按 §3.5 事件流规则（此处按字节解析）的流哈希、
 # 用 Decimal 与 ROUND_CEILING 算的每个金额、模型匹配，以及每份回执的 §3.3 摘要和用 secp256k1 恢复出的签名者。
 import base64, re
 from decimal import Decimal, getcontext, ROUND_CEILING
@@ -645,7 +645,7 @@ def eip191(digest32):
     return keccak256(b'\x19Ethereum Signed Message:\n32' + digest32)
 
 def recover_address(digest32, sig_hex):
-    """The address whose key made the 65-byte r ‖ s ‖ v signature over digest32, or None. Refuses high s (TAP-21 §3.3)."""
+    """The address whose key made the 65-byte r ‖ s ‖ v signature over digest32, or None. Refuses high s (TAPI-21 §3.3)."""
     sig = bytes.fromhex(sig_hex[2:])
     if len(sig) != 65: return None
     r, s, v = int.from_bytes(sig[:32], 'big'), int.from_bytes(sig[32:64], 'big'), sig[64]
@@ -661,14 +661,14 @@ def recover_address(digest32, sig_hex):
     if Q is None: return None
     return '0x' + keccak256(Q[0].to_bytes(32, 'big') + Q[1].to_bytes(32, 'big'))[12:].hex()
 
-# TAP-21 §3.3: every envelope signature is an EIP-191 personal_sign over the 32-byte digest; recover each vector's signer.
+# TAPI-21 §3.3: every envelope signature is an EIP-191 personal_sign over the 32-byte digest; recover each vector's signer.
 # (Until 2026-09-28 the file was signed over the raw digest; regenerated.) / 每个信封签名都是对摘要的 EIP-191 签名；逐条恢复签名者。
 for c in env['cases']:
     d = bytes.fromhex(c['digest'][2:])
     check('envelope-personal/' + c['name'], h(eip191(d)), c['personalDigest'])
     check('envelope-signer/' + c['name'], recover_address(eip191(d), c['sig']), env['signerAddress'].lower())
 
-# ---------- TAP-21 §3.5 response hash of a stream, on bytes ----------
+# ---------- TAPI-21 §3.5 response hash of a stream, on bytes ----------
 def sse_digest(body, sentinel):
     if body.startswith(b'\xef\xbb\xbf'):
         body = body[3:]                                   # rule 1: one U+FEFF at the very start / 开头的一个 BOM
@@ -686,7 +686,7 @@ def sse_digest(body, sentinel):
     kept = [d for d in datas if sentinel is None or d != sentinel.encode()]
     return hashlib.sha256(b''.join(d + b'\n' for d in kept)).hexdigest()
 
-# ---------- TAP-20 §3.9 amounts and model matching ----------
+# ---------- TAPI-20 §3.9 amounts and model matching ----------
 FORMAT_OF = {'openai_chat': 'openai-chat', 'openai_responses': 'openai-responses', 'anthropic_messages': 'anthropic-messages', 'openai_embeddings': 'openai-embeddings'}
 SENTINEL = {'openai-chat': '[DONE]', 'openai-responses': '[DONE]', 'anthropic-messages': None}
 
@@ -709,7 +709,7 @@ def amount(p, u):
 
 AIV = json.loads((HERE.parent.parent / 'sdk' / 'test' / 'fixtures' / 'ai-receipt-vectors.json').read_text())
 AI_PREFIX = 'TAPI-1/resp/v2'
-check('ai/prefix is the TAP-21 §3.3 prefix', AI_PREFIX, env['prefix'])
+check('ai/prefix is the TAPI-21 §3.3 prefix', AI_PREFIX, env['prefix'])
 for c in AIV['cases']:
     e, name = c['expected'], 'ai/' + c['name']
     envl, res = e['envelope'], e['envelope']['result']
@@ -730,19 +730,19 @@ for c in AIV['cases']:
         check(name + '/header', json.loads(base64.urlsafe_b64decode(e['encoded'] + '=' * (-len(e['encoded']) % 4))), envl)
     else:
         check(name + '/comment', (': tapeapi-receipt ' + e['encoded'] + '\n').encode() in body, True)
-# The worked amount of TAP-20 §6.3. / TAP-20 §6.3 的算例。
+# The worked amount of TAPI-20 §6.3. / TAPI-20 §6.3 的算例。
 check('ai/§6.3 USDT', amount({'input': '1.25', 'cacheRead': '0.125', 'output': '10', 'reasoning': '12'}, {'prompt_tokens': 1200, 'cache_read_tokens': 1000, 'completion_tokens': 300, 'reasoning_tokens': 100}), '0.00357500')
 check('ai/§6.3 BEM', amount({'input': '12.5', 'cacheRead': '1.25', 'output': '100'}, {'prompt_tokens': 1200, 'cache_read_tokens': 1000, 'completion_tokens': 300, 'reasoning_tokens': 100}), '0.03375000')
 check('ai/rounded up once, on the sum', amount({'input': '0.00000001', 'output': '0.00000001'}, {'prompt_tokens': 500000, 'completion_tokens': 500000}), '0.00000001')
 check('ai/exact past float precision', amount({'input': '999999999999999999.99999999', 'output': '0'}, {'prompt_tokens': 9007199254740991, 'completion_tokens': 0}), '9007199254740990999999999909.92800746')
 
-# ======================================================= TAP-20 §6.1 mainnet manifest of 11.1013.tape ====
+# ======================================================= TAPI-20 §6.1 mainnet manifest of 11.1013.tape ====
 # The recorded mainnet answers (sdk/test/fixtures/mainnet-11-1013-manifest.json, BSC, one pinned block), checked from
-# TAP-20 §3.2-§3.6 alone: the calldata is re-encoded here, every result ABI-decoded here, the manifest bytes hashed and
+# TAPI-20 §3.2-§3.6 alone: the calldata is re-encoded here, every result ABI-decoded here, the manifest bytes hashed and
 # parsed, and the delegation's EIP-712 digest recomputed and recovered to the ownerOf answer (a raw EIP-712 digest, not
-# the EIP-191 message of TAP-21).
-# 录下的主网回答（BSC，钉在一个区块上），只按 TAP-20 §3.2-§3.6 的文字核对：调用数据在此重新编码，结果在此 ABI 解码，
-# 清单字节在此哈希并解析，委托的 EIP-712 摘要在此重算并恢复出 ownerOf 的回答（原始 EIP-712 摘要，不是 TAP-21 的 EIP-191）。
+# the EIP-191 message of TAPI-21).
+# 录下的主网回答（BSC，钉在一个区块上），只按 TAPI-20 §3.2-§3.6 的文字核对：调用数据在此重新编码，结果在此 ABI 解码，
+# 清单字节在此哈希并解析，委托的 EIP-712 摘要在此重算并恢复出 ownerOf 的回答（原始 EIP-712 摘要，不是 TAPI-21 的 EIP-191）。
 MF = json.loads((HERE.parent.parent / 'sdk' / 'test' / 'fixtures' / 'mainnet-11-1013-manifest.json').read_text())
 HUB, FACTORY, SITE_REGISTRY = '0xe61a9c7213a6aa616c246a2b569e555b417b25ee', '0x68224f668083c29e9800be2a646d42d18cedf7e2', '0xd006ffdd5ae313b17729621a00999cd3c71ce5e6'
 
@@ -779,53 +779,53 @@ want_calls = {
 R = {}
 for fn, (to, data) in want_calls.items():
     c = mf_call(h(data))
-    check('tap20-6.1/%s calldata re-encoded here is recorded exactly once' % fn, c is not None, True)
+    check('tapi20-6.1/%s calldata re-encoded here is recorded exactly once' % fn, c is not None, True)
     if c is None: continue
-    check('tap20-6.1/%s target' % fn, c['to'].lower(), to)
-    check('tap20-6.1/%s answered by >= quorum operators' % fn, len(set(c['operators'])) >= MF['rpc']['quorum'], True)
+    check('tapi20-6.1/%s target' % fn, c['to'].lower(), to)
+    check('tapi20-6.1/%s answered by >= quorum operators' % fn, len(set(c['operators'])) >= MF['rpc']['quorum'], True)
     R[fn] = bytes.fromhex(c['result'][2:])
-check('tap20-6.1/no unexplained calls', len(MF['calls']), len(want_calls))
-check('tap20-6.1/name', MF['name'], '%s.%d.tape' % (MF['tokenId'], MF['processor']))
-check('tap20-6.1/cpuAt(1013) is the circuits', h(R['cpuAt'][12:32]), MF['circuits'].lower())
-check('tap20-6.1/accountOf is the container', h(R['accountOf'][12:32]), MF['container'].lower())
-check('tap20-6.1/isCPU(circuits) is true', int.from_bytes(R['isCPU'], 'big'), 1)
-check('tap20-6.1/ownerOf is the holder', h(R['ownerOf'][12:32]), MF['holder'].lower())
+check('tapi20-6.1/no unexplained calls', len(MF['calls']), len(want_calls))
+check('tapi20-6.1/name', MF['name'], '%s.%d.tape' % (MF['tokenId'], MF['processor']))
+check('tapi20-6.1/cpuAt(1013) is the circuits', h(R['cpuAt'][12:32]), MF['circuits'].lower())
+check('tapi20-6.1/accountOf is the container', h(R['accountOf'][12:32]), MF['container'].lower())
+check('tapi20-6.1/isCPU(circuits) is true', int.from_bytes(R['isCPU'], 'big'), 1)
+check('tapi20-6.1/ownerOf is the holder', h(R['ownerOf'][12:32]), MF['holder'].lower())
 fi = R['fileInfo']
 fi_size, fi_hash = int.from_bytes(word(fi, 0), 'big'), h(word(fi, 2))
-check('tap20-6.1/fileInfo.size', fi_size, MF['manifest']['size'])
-check('tap20-6.1/fileInfo.contentType', dyn_bytes(fi, int.from_bytes(word(fi, 1), 'big')).decode(), MF['manifest']['contentType'])
-check('tap20-6.1/fileInfo.sha256Hash', fi_hash, MF['manifest']['sha256Hash'].lower())
+check('tapi20-6.1/fileInfo.size', fi_size, MF['manifest']['size'])
+check('tapi20-6.1/fileInfo.contentType', dyn_bytes(fi, int.from_bytes(word(fi, 1), 'big')).decode(), MF['manifest']['contentType'])
+check('tapi20-6.1/fileInfo.sha256Hash', fi_hash, MF['manifest']['sha256Hash'].lower())
 mbytes = dyn_bytes(R['read'], int.from_bytes(word(R['read'], 0), 'big'))
-check('tap20-6.1/read length equals fileInfo.size', len(mbytes), fi_size)
-check('tap20-6.1/sha256(read bytes) equals fileInfo.sha256Hash', '0x' + hashlib.sha256(mbytes).hexdigest(), fi_hash)
-check('tap20-6.1/bytesSha256 recorded', MF['manifest']['bytesSha256'], fi_hash)
+check('tapi20-6.1/read length equals fileInfo.size', len(mbytes), fi_size)
+check('tapi20-6.1/sha256(read bytes) equals fileInfo.sha256Hash', '0x' + hashlib.sha256(mbytes).hexdigest(), fi_hash)
+check('tapi20-6.1/bytesSha256 recorded', MF['manifest']['bytesSha256'], fi_hash)
 mj = strict_parse(mbytes.decode('utf-8'))
-check('tap20-6.1/manifest.circuits', mj['circuits'].lower(), MF['circuits'].lower())
-check('tap20-6.1/manifest.tokenId', mj['tokenId'], MF['tokenId'])
-check('tap20-6.1/manifest.container', mj['container'].lower(), MF['container'].lower())
-check('tap20-6.1/manifest.signer', mj['signer'], MF['manifest']['signer'])
-check('tap20-6.1/manifest.delegation', mj['delegation'], MF['manifest']['delegation'])
+check('tapi20-6.1/manifest.circuits', mj['circuits'].lower(), MF['circuits'].lower())
+check('tapi20-6.1/manifest.tokenId', mj['tokenId'], MF['tokenId'])
+check('tapi20-6.1/manifest.container', mj['container'].lower(), MF['container'].lower())
+check('tapi20-6.1/manifest.signer', mj['signer'], MF['manifest']['signer'])
+check('tapi20-6.1/manifest.delegation', mj['delegation'], MF['manifest']['delegation'])
 # §3.4: the digest names the container and the signer, anchored on the BNB Chain DeWebHub, and recovers to the holder.
 dom = eip712_domain('TapeAPI', '1', 56, HUB)
 sh = keccak256(keccak256(b'Delegation(address container,address signer,uint64 expires)') + addr32(mj['container']) + addr32(mj['signer']) + u64(mj['delegation']['expires']).rjust(32, b'\x00'))
-check('tap20-6.1/delegation recovers to ownerOf at the block', recover_address(typed_digest(dom, sh), mj['delegation']['sig']), MF['holder'].lower())
+check('tapi20-6.1/delegation recovers to ownerOf at the block', recover_address(typed_digest(dom, sh), mj['delegation']['sig']), MF['holder'].lower())
 exp, ts = mj['delegation']['expires'], MF['block']['timestamp']
-check('tap20-6.1/delegation live at the block, within 366 days', ts < exp <= ts + 366 * 86400, True)
-check('tap20-6.1/block hash is 32 bytes', len(bytes.fromhex(MF['block']['hash'][2:])), 32)
-# TAP-23 §6 cites this manifest: record that it offers no attestedRead method. / TAP-23 §6 引用此清单：它没有 attestedRead 方法。
-check('tap20-6.1/manifest offers no TAP-23 attestedRead method', any('attestedRead' in m for m in mj['methods']), False)
+check('tapi20-6.1/delegation live at the block, within 366 days', ts < exp <= ts + 366 * 86400, True)
+check('tapi20-6.1/block hash is 32 bytes', len(bytes.fromhex(MF['block']['hash'][2:])), 32)
+# TAPI-23 §6 cites this manifest: record that it offers no attestedRead method. / TAPI-23 §6 引用此清单：它没有 attestedRead 方法。
+check('tapi20-6.1/manifest offers no TAPI-23 attestedRead method', any('attestedRead' in m for m in mj['methods']), False)
 
-# ======================================================= TAP-23 §6 two providers, one attested read ====
-# Each envelope's TAP-21 digest is rebuilt here and its signer recovered; agreement is then decided by the text of
-# §3.4 step 4 alone and compared with each case's expectation. / 每个信封的 TAP-21 摘要在此重建并恢复签名者；
+# ======================================================= TAPI-23 §6 two providers, one attested read ====
+# Each envelope's TAPI-21 digest is rebuilt here and its signer recovered; agreement is then decided by the text of
+# §3.4 step 4 alone and compared with each case's expectation. / 每个信封的 TAPI-21 摘要在此重建并恢复签名者；
 # 然后只按 §3.4 第 4 步的文字判定一致，再与各用例的期望比较。
-AR = json.loads((HERE / 'tap-23-attested.json').read_text())
+AR = json.loads((HERE / 'tapi-23-attested.json').read_text())
 PA, PB = AR['providers']
-check('tap23/test keys are declared as such', 'TEST KEYS' in AR['testKeys'], True)
-check('tap23/different containers', PA['container'].lower() != PB['container'].lower(), True)
-check('tap23/different signers', PA['signerAddress'].lower() != PB['signerAddress'].lower(), True)
-check('tap23/different origins', PA['endpoint'].split('/')[2] != PB['endpoint'].split('/')[2], True)
-check('tap23/descriptor kind', AR['descriptor']['attestedRead'], {'kind': 'eth_call', 'chains': [AR['request']['params']['chainId']]})
+check('tapi23/test keys are declared as such', 'TEST KEYS' in AR['testKeys'], True)
+check('tapi23/different containers', PA['container'].lower() != PB['container'].lower(), True)
+check('tapi23/different signers', PA['signerAddress'].lower() != PB['signerAddress'].lower(), True)
+check('tapi23/different origins', PA['endpoint'].split('/')[2] != PB['endpoint'].split('/')[2], True)
+check('tapi23/descriptor kind', AR['descriptor']['attestedRead'], {'kind': 'eth_call', 'chains': [AR['request']['params']['chainId']]})
 RESULT_FIELDS = {'chainId', 'blockNumber', 'blockHash', 'stateRoot', 'blockRef', 'result'}
 
 def agree(x, y):
@@ -837,19 +837,19 @@ for c in AR['cases']:
     for side, p in (('a', PA), ('b', PB)):
         e = c[side]['envelope']
         d = response_digest('TAPI-1/resp/v2', p['container'], rq['id'], rq['method'], rq['params'], True, e['result'], e['ts'])
-        check('tap23/%s/%s digest' % (c['name'], side), h(d), c[side]['digest'])
-        check('tap23/%s/%s signer' % (c['name'], side), recover_address(eip191(d), e['sig']), p['signerAddress'].lower())
-        check('tap23/%s/%s only §3.3 fields' % (c['name'], side), set(e['result']) <= RESULT_FIELDS, True)
-        check('tap23/%s/%s echoes chainId and block' % (c['name'], side), (e['result']['chainId'], e['result']['blockNumber']), (rq['params']['chainId'], rq['params']['block']))
+        check('tapi23/%s/%s digest' % (c['name'], side), h(d), c[side]['digest'])
+        check('tapi23/%s/%s signer' % (c['name'], side), recover_address(eip191(d), e['sig']), p['signerAddress'].lower())
+        check('tapi23/%s/%s only §3.3 fields' % (c['name'], side), set(e['result']) <= RESULT_FIELDS, True)
+        check('tapi23/%s/%s echoes chainId and block' % (c['name'], side), (e['result']['chainId'], e['result']['blockNumber']), (rq['params']['chainId'], rq['params']['block']))
     got = 'agree' if agree(c['a']['envelope']['result'], c['b']['envelope']['result']) else 'ATTEST_DISAGREE'
-    check('tap23/%s verdict' % c['name'], got, c['expect'])
-check('tap23/at least one agreeing and one disagreeing case', {c['expect'] for c in AR['cases']}, {'agree', 'ATTEST_DISAGREE'})
+    check('tapi23/%s verdict' % c['name'], got, c['expect'])
+check('tapi23/at least one agreeing and one disagreeing case', {c['expect'] for c in AR['cases']}, {'agree', 'ATTEST_DISAGREE'})
 
-# ======================================================= TAP-20 §3.10 manifest content signature ====
+# ======================================================= TAPI-20 §3.10 manifest content signature ====
 # contentHash = keccak256(UTF-8(canonicalJSON(manifest without contentSig))); ManifestContent(address container,bytes32
 # contentHash) in the delegation's EIP-712 domain; the holder's ECDSA signature recovers to the holder.
 # contentHash 为去掉 contentSig 的清单的规范 JSON 的 keccak256；在委托的 EIP-712 域中签署 ManifestContent。
-CS = json.loads((HERE / 'tap-20-content.json').read_text())
+CS = json.loads((HERE / 'tapi-20-content.json').read_text())
 d = CS['domain']
 dom = eip712_domain(d['name'], d['version'], d['chainId'], d['verifyingContract'])
 th = keccak256(CS['typeHash'].encode())
@@ -874,7 +874,7 @@ got = recover_address(moved_digest, mv['sig'])
 check('content/moved signature recovers elsewhere', got, mv['recoversTo'].lower())
 check('content/moved signature is not the holder', got != CS['holderAddress'].lower(), True)
 
-# ============================================ TAP-20 §3.2 (informative) Merkle proofs, EIP-1186 ====
+# ============================================ TAPI-20 §3.2 (informative) Merkle proofs, EIP-1186 ====
 # Written from the Yellow Paper (appendices B and D) and EIP-1186. Nibble paths are hex strings here; a trie is rebuilt
 # from its key/value pairs to check ethereum/tests' roots, and proofs are walked against a root.
 # 照黄皮书附录 B、D 与 EIP-1186 编写。半字节路径在这里用十六进制字符串表示；由键值对重建树以核对 ethereum/tests 的根，再对照根走一遍证明。
@@ -1086,7 +1086,7 @@ def account_and_slots(state_root, acc):
         values['0x%x' % n] = '0x%x' % v
     return {'exists': exists, 'storageRoot': h(sroot), 'codeHash': h(chash), 'values': values}
 
-PV = json.loads((HERE / 'tap-20-proof.json').read_text())
+PV = json.loads((HERE / 'tapi-20-proof.json').read_text())
 def _tb(s):
     return bytes.fromhex(s[2:]) if s.startswith('0x') else s.encode('utf-8')
 for c in PV['trie']:

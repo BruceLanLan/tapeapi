@@ -141,7 +141,7 @@ generate a new key in step 3, sign for it in step 4 and publish in step 5 at onc
 
 ## 5. Paid methods
 
-> **Experimental.** Payments (TAP-22 payment channels and the escrow contract) are not deployed or audited and are not covered by the 1.0 stability promise: the names below may change in a 1.x minor release. See [Upgrading to 1.0](upgrade-1.0.md#what-10-promises).
+> **Experimental.** Payments (TAPI-22 payment channels and the escrow contract) are not deployed or audited and are not covered by the 1.0 stability promise: the names below may change in a 1.x minor release. See [Upgrading to 1.0](upgrade-1.0.md#what-10-promises).
 
 Set `priceBEM` on a method and name an escrow in `payment`. The runtime verifies each voucher, meters per consumer and
 refuses anything below the price. Every endpoint of one paid service must share one atomic meter store (D1 on

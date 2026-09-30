@@ -1,9 +1,9 @@
-// `quote.mjs` 的单测：不联网、不开套接字。测的是 TAP-24 §3.3 的 typehash / digest / 签名语义，
+// `quote.mjs` 的单测：不联网、不开套接字。测的是 TAPI-24 §3.3 的 typehash / digest / 签名语义，
 // 定价的截断方向，以及错误码。金值（digest、65 字节签名）由固定 `(key, quote, domain)` 生成：
 // noble 的 RFC6979 确定性 nonce 保证同样的输入永远给同样的签名。
 //
 // Unit tests for `quote.mjs`: no network, no socket. They cover the typehash / digest / signature semantics of
-// TAP-24 §3.3, the truncation direction of the pricing, and the error codes. The golden values (digest, 65-byte
+// TAPI-24 §3.3, the truncation direction of the pricing, and the error codes. The golden values (digest, 65-byte
 // signature) come from a fixed `(key, quote, domain)`: noble's RFC6979 deterministic nonce makes the signature
 // reproducible.
 import { test } from 'node:test'
@@ -48,15 +48,15 @@ const params = (over = {}) => ({
 })
 
 // ---------- §3.7：typehash 自检 / the typehash self-check ----------
-test('QUOTE_TYPEHASH is keccak256 of the primary type string in spec/TAP-24.md §3.3', () => {
+test('QUOTE_TYPEHASH is keccak256 of the primary type string in spec/TAPI-24.md §3.3', () => {
   assert.equal(abi.toHex(abi.keccak256(QUOTE_TYPE_STRING)), QUOTE_TYPEHASH)
-  assert.equal(QUOTE_TYPEHASH, '0xe7c18a58c429974068166f7c27b8ba2a9a13177c83aeb69cdcac7a4bc7592d59') // spec/TAP-24.md §6
+  assert.equal(QUOTE_TYPEHASH, '0xe7c18a58c429974068166f7c27b8ba2a9a13177c83aeb69cdcac7a4bc7592d59') // spec/TAPI-24.md §6
   // 字段名与顺序必须与主类型字符串一致 / field names and order must match the primary type string
   const parsed = QUOTE_TYPE_STRING.slice('Quote('.length, -1).split(',').map(s => s.trim().split(/\s+/)[1])
   assert.deepEqual(parsed, QUOTE_FIELDS)
   assert.equal(QUOTE_FIELDS.length, 10)
 })
-test('keccak256("IntentEscrow") matches the domain-name hash in spec/TAP-24.md §6', () => {
+test('keccak256("IntentEscrow") matches the domain-name hash in spec/TAPI-24.md §6', () => {
   assert.equal(abi.toHex(abi.keccak256(ESCROW_NAME)), ESCROW_NAME_HASH)
   assert.equal(ESCROW_NAME_HASH, '0x2043479336d59fcf0f30222e9c9f674b6a85c2fa5b5033d0c47e20469de7f0ba')
   // 启动自检本身也必须通过 / the start-up self-check itself must pass
@@ -81,7 +81,7 @@ test('a fixed (key, quote, domain) gives a fixed structHash, digest and 65-byte 
   const s = BigInt('0x' + signature.slice(2).slice(64, 128))
   assert.ok(s > 0n && s <= N >> 1n, 'signature must be low-s')
 
-  // 恢复必须等于 quote.solver（TAP-24 §3.3 的 MUST）/ recovery MUST equal quote.solver
+  // 恢复必须等于 quote.solver（TAPI-24 §3.3 的 MUST）/ recovery MUST equal quote.solver
   assert.equal(sig.recoverAddress(digest, signature), QUOTE.solver)
   assert.deepEqual(verifyQuote(QUOTE, DOMAIN, signature), { digest: GOLDEN.digest, recovered: SOLVER, ok: true })
   // 另一把钥匙签的同一份报价恢复不到 solver / the same quote signed by another key does not recover to solver
@@ -113,14 +113,14 @@ test('changing any one of the 10 Quote fields changes the digest', () => {
 })
 
 // ---------- §3.7：重放防护回归（域里的 chainId 与 verifyingContract）----------
-test('the same quote under a different chainId or verifyingContract yields a different digest (TAP-24 §8 replay)', () => {
+test('the same quote under a different chainId or verifyingContract yields a different digest (TAPI-24 §8 replay)', () => {
   const base = abi.toHex(quoteDigest(DOMAIN, QUOTE))
   assert.equal(base, GOLDEN.digest)
   assert.equal(abi.toHex(quoteDigest(quoteDomain(8453, ZERO), QUOTE)), '0x44d5e433efd52a47c2a4ff48b923a0b461ef65aaf7e974af6ce84105de4b43bd')
   assert.equal(abi.toHex(quoteDigest(quoteDomain(56, '0x00000000000000000000000000000000000000Ee'), QUOTE)), '0x48cf962be907df6e8fcb601d6396f7619537828283d98db9b25753d83c8438b7')
   assert.notEqual(abi.toHex(quoteDigest(quoteDomain(8453, ZERO), QUOTE)), base)
   assert.notEqual(abi.toHex(quoteDigest(quoteDomain(56, '0x00000000000000000000000000000000000000Ee'), QUOTE)), base)
-  // domain 的形状就是 TAP-24 §3.3 的四个字段 / the domain is exactly the four fields of TAP-24 §3.3
+  // domain 的形状就是 TAPI-24 §3.3 的四个字段 / the domain is exactly the four fields of TAPI-24 §3.3
   assert.deepEqual(DOMAIN, { name: 'IntentEscrow', version: '1', chainId: 56, verifyingContract: ZERO })
 })
 
@@ -153,7 +153,7 @@ test('ttl outside 30..120 is BAD_REQUEST, and the default is 60', () => {
   assert.equal(validateQuoteParams(params(), config).ttl, TTL_DEFAULT)
   assert.equal(TTL_DEFAULT, 60)
 })
-test('an unserved route is METHOD_NOT_FOUND, not BAD_REQUEST (TAP-24 §3.2)', () => {
+test('an unserved route is METHOD_NOT_FOUND, not BAD_REQUEST (TAPI-24 §3.2)', () => {
   const cases = [
     params({ fromChain: 1 }),                                                        // chain pair not served
     params({ toChain: 137 }),

@@ -1,7 +1,7 @@
-// TAP-23 §6 vectors (spec/vectors/tap-23-attested.json): two providers signed with TEST keys answer one attested read.
+// TAPI-23 §6 vectors (spec/vectors/tapi-23-attested.json): two providers signed with TEST keys answer one attested read.
 // The recorded envelopes are replayed, byte for byte, through the SDK's real callQuorum: the agreeing cases are accepted,
 // every counterexample is ATTEST_DISAGREE. spec/vectors/verify.py checks the same file independently.
-// TAP-23 §6 向量：两个用**测试密钥**签名的提供者回答同一次见证读取。录好的信封逐字节回放给 SDK 真正的 callQuorum：
+// TAPI-23 §6 向量：两个用**测试密钥**签名的提供者回答同一次见证读取。录好的信封逐字节回放给 SDK 真正的 callQuorum：
 // 一致的用例被接受，每个反例都是 ATTEST_DISAGREE。spec/vectors/verify.py 独立核对同一个文件。
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -9,9 +9,9 @@ import { readFileSync } from 'node:fs'
 import { createTapeAPI } from '../src/index.js'
 import { privateKeyToAddress, recoverResponseSigner } from '../src/sig.js'
 
-const v = JSON.parse(readFileSync(new URL('../../spec/vectors/tap-23-attested.json', import.meta.url), 'utf8'))
+const v = JSON.parse(readFileSync(new URL('../../spec/vectors/tapi-23-attested.json', import.meta.url), 'utf8'))
 const manifestOf = (p) => ({
-  tapeapi: '0.1', name: `TAP-23 vector provider ${p.tag}`,
+  tapeapi: '0.1', name: `TAPI-23 vector provider ${p.tag}`,
   circuits: '0x0000000000000000000000000000000000000c1c', tokenId: p.tag === 'A' ? '1' : '2',
   container: p.container, signer: p.signerAddress,
   endpoints: { live: [p.endpoint], async: false },
@@ -35,7 +35,7 @@ const run = async (c) => {
   return api.callQuorum(services, v.request.method, v.request.params, { id: v.request.id })
 }
 
-test('TAP-23 vectors: the providers are two TEST keys, two containers and two origins', () => {
+test('TAPI-23 vectors: the providers are two TEST keys, two containers and two origins', () => {
   assert.match(v.testKeys, /TEST KEYS/)
   const [a, b] = v.providers
   for (const p of v.providers) assert.equal(privateKeyToAddress(p.signerKey), p.signerAddress)
@@ -45,7 +45,7 @@ test('TAP-23 vectors: the providers are two TEST keys, two containers and two or
   assert.deepEqual(v.descriptor.attestedRead, { kind: 'eth_call', chains: [1] })
 })
 
-test('TAP-23 vectors: every envelope recovers to its provider over the vector request (TAP-21 §3.3)', () => {
+test('TAPI-23 vectors: every envelope recovers to its provider over the vector request (TAPI-21 §3.3)', () => {
   for (const c of v.cases) {
     for (const [side, p] of [[c.a, v.providers[0]], [c.b, v.providers[1]]]) {
       const e = side.envelope
@@ -60,7 +60,7 @@ test('TAP-23 vectors: every envelope recovers to its provider over the vector re
   }
 })
 
-test('TAP-23 vectors: callQuorum accepts the agreeing pairs and rejects each counterexample with ATTEST_DISAGREE', async () => {
+test('TAPI-23 vectors: callQuorum accepts the agreeing pairs and rejects each counterexample with ATTEST_DISAGREE', async () => {
   assert.ok(v.cases.filter((c) => c.expect === 'agree').length >= 1)
   assert.ok(v.cases.filter((c) => c.expect === 'ATTEST_DISAGREE').length >= 1)
   for (const c of v.cases) {
@@ -77,7 +77,7 @@ test('TAP-23 vectors: callQuorum accepts the agreeing pairs and rejects each cou
   }
 })
 
-test('TAP-23 vectors: an envelope moved to the other provider no longer verifies (the container is in the digest)', async () => {
+test('TAPI-23 vectors: an envelope moved to the other provider no longer verifies (the container is in the digest)', async () => {
   const c = v.cases[0]
   const swapped = { ...c, b: { ...c.b, envelope: { ...c.a.envelope, container: v.providers[1].container } } }
   await assert.rejects(run(swapped), (e) => e.code === 'QUORUM_FAILED' && e.failed.some((f) => f.code === 'BAD_SIGNATURE'))

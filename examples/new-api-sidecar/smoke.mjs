@@ -18,7 +18,7 @@ import { startFakeUpstream, DEMO_KEY } from '../ai-proxy/fake-upstream.mjs'
 import { startSidecar } from './server.mjs'
 
 export const EXAMPLE_MODELS = fileURLToPath(new URL('models.example.json', import.meta.url))
-const DEWEB_HUB = '0xe61A9C7213a6Aa616C246a2B569e555B417b25ee'   // BNB Chain DeWebHub: the delegation's EIP-712 domain (TAP-20 §3.4)
+const DEWEB_HUB = '0xe61A9C7213a6Aa616C246a2B569e555B417b25ee'   // BNB Chain DeWebHub: the delegation's EIP-712 domain (TAPI-20 §3.4)
 const randomAddress = () => sig.privateKeyToAddress(sig.randomPrivateKey())
 
 /** A complete, throwaway identity (no chain): the environment the holder console would give. / 一次性的完整身份（不上链）。 */

@@ -21,7 +21,7 @@ function canned(answers) {
 }
 const TO = '0x' + '11'.repeat(20)
 
-test('TAP-20 §3.2: a 2-vs-1 eth_call split is RPC_DISAGREE, never resolved by majority', async () => {
+test('TAPI-20 §3.2: a 2-vs-1 eth_call split is RPC_DISAGREE, never resolved by majority', async () => {
   const rpc = createRpc({ urls: URLS, quorum: 2, disagreeRetryMs: 0, fetch: canned({ 'http://rpc1': '0x01', 'http://rpc2': '0x01', 'http://rpc3': '0x02' }) })
   await assert.rejects(rpc.ethCall(TO, '0x'), (e) => e.code === 'RPC_DISAGREE')
   // the same with quorum 1: more nodes can only add refusals, never outvote / quorum 1 也一样：多出的节点只会增加拒绝

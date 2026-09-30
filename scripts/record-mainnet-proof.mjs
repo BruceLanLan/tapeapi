@@ -5,7 +5,7 @@
 // A wrapping fetch records every JSON-RPC answer the resolution got: the pinned block (with its stateRoot), each eth_call
 // and eth_getStorageAt (all at that block; the SDK accepted each only when every answering node agreed and two operators
 // answered), and each eth_getProof (from whichever node served it: proofs need no quorum). The fixture is public chain
-// data only. sdk/test/proof.test.mjs replays it offline; spec/vectors/tap-20-proof.json carries its proofs for verify.py.
+// data only. sdk/test/proof.test.mjs replays it offline; spec/vectors/tapi-20-proof.json carries its proofs for verify.py.
 // It also prints what the run cost: requests per host, busy spans (stretches with a request in flight: proofs overlap the
 // resolution's rounds, so this is not its number of serial rounds) and time.
 //

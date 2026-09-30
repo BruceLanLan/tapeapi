@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // tapeapi-mcp: a local MCP server (stdio) that exposes TapeAPI services' methods as tools and verifies every answer in
 // this process before the model sees it. Identity comes from the chain (the SDK resolves each service and checks the
-// holder's delegation); every answer is a TAP-21 envelope whose signature is checked against the delegated signer;
+// holder's delegation); every answer is a TAPI-21 envelope whose signature is checked against the delegated signer;
 // the tool definitions are pinned on first use, and a service whose definitions later change on chain is refused.
 // tapeapi-mcp：本地 MCP 服务器（stdio）。把 TapeAPI 服务的方法暴露为工具，每个回答在本进程里核验后才交给模型。
-// 身份来自链上（SDK 解析服务并核对持有人委托）；每个回答都是 TAP-21 信封，按委托的签名者验签；工具定义首次使用时钉住，
+// 身份来自链上（SDK 解析服务并核对持有人委托）；每个回答都是 TAPI-21 信封，按委托的签名者验签；工具定义首次使用时钉住，
 // 之后在链上被改动的服务一律拒绝调用。
 //
 //   npx -y --package=<release tgz> tapeapi-mcp 11.1013.tape
@@ -12,10 +12,10 @@
 // A "taped-out MCP server" is a service whose manifest has `mcp: { endpoint, toolsSha256 }`: its methods are the tools
 // of an MCP server behind a signing proxy. For those, the tools shown are the upstream tools themselves, fetched from
 // mcp.endpoint and accepted only if their toolsDigest equals the toolsSha256 the manifest pins on chain (and that
-// toolsSha256 is part of what is pinned here); every call still goes through the signed TAP-21 path.
+// toolsSha256 is part of what is pinned here); every call still goes through the signed TAPI-21 path.
 // “已 tape out 的 MCP 服务器”：清单带 `mcp: { endpoint, toolsSha256 }` 的服务，它的方法就是签名代理后面那个 MCP 服务器的工具。
 // 对这类服务，展示的是上游工具本身：从 mcp.endpoint 取来，只有 toolsDigest 与链上清单钉住的 toolsSha256 一致才接受
-// （toolsSha256 也在本地钉住的内容里）；每次调用仍走签名的 TAP-21 路径。
+// （toolsSha256 也在本地钉住的内容里）；每次调用仍走签名的 TAPI-21 路径。
 //
 // stdout carries JSON-RPC only (MCP stdio transport, one message per line); every log line goes to stderr.
 // stdout 只走 JSON-RPC（每行一条消息）；所有日志写 stderr。
@@ -157,8 +157,8 @@ function pinMaterial(m) {
 }
 const SHA256_RE = /^[0-9a-fA-F]{64}$/
 
-// Why a manifest's `mcp` field cannot be used (null when it can). Extra keys are ignored, as TAP-20 asks of clients.
-// 清单的 `mcp` 字段为何不能用（能用则为 null）。多余的键按 TAP-20 对客户端的要求忽略。
+// Why a manifest's `mcp` field cannot be used (null when it can). Extra keys are ignored, as TAPI-20 asks of clients.
+// 清单的 `mcp` 字段为何不能用（能用则为 null）。多余的键按 TAPI-20 对客户端的要求忽略。
 function mcpFieldProblem(mcp, dev) {
   if (!isObj(mcp)) return 'mcp must be an object { endpoint, toolsSha256 }'
   if (typeof mcp.toolsSha256 !== 'string' || !SHA256_RE.test(mcp.toolsSha256)) return 'mcp.toolsSha256 must be 64 hex characters'

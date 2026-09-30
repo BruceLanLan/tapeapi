@@ -35,9 +35,9 @@
 - 合约：Escrow 费率模型重做；Directory 增加激活门槛
 - SDK/Server：跟随合约改动；增加"多提供者仲裁"调用模式（`quorum: 2`）
 - 示例：web2-adapter、defi-price-oracle、gaming-leaderboard、chain-attested-read，每个含中英 README 与一条 curl
-- 规范：TAP-22 改费率条款；新增 TAP-23（Attested Read）、TAP-24（Intent RFQ）、TAP-25（Circuit-Verified Methods）草案
+- 规范：TAPI-22 改费率条款；新增 TAPI-23（Attested Read）、TAPI-24（Intent RFQ）、TAPI-25（Circuit-Verified Methods）草案
 - 官网：`site/` 静态站，纯相对路径，可直接作为 DeWEB 站点或放到 tapeout.work 子路径
 - README 中英重写
 
 ## 关于 TAP 编号
-TapeKit 仓库内部只用过 `TAP-10`（消息层）。不存在正式编号表。我们在 TAP-1 里提议 10–19 为消息、20–29 为服务，维护者最终分配。投稿时编号写"建议 TAP-20"，由他们定。
+TapeKit 仓库内部只用过 `TAP-10`（消息层）。不存在正式编号表。我们在 TAPI-1 里提议 10–19 为消息、20–29 为服务，维护者最终分配。投稿时编号写"建议 TAPI-20"，由他们定。

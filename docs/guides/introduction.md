@@ -45,7 +45,7 @@ trust with a signature anyone can check:
 Released, version 1.3.0. From 1.0 on, TapeAPI follows semantic versioning: code written against the 1.0 docs keeps
 working in every 1.x release, and breaking changes come only in 2.0 ([what 1.0 promises](upgrade-1.0.md)). The free
 tier runs on TapeOut's deployed contracts. Our own contracts have no third-party audit; the paid-call escrow is not
-deployed yet. "TAP-20" to "TAP-27" are the specs' names inside this repository, not TAP numbers: TAPs are numbered by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs).
+deployed yet. TAPI-20 to TAPI-27 are TapeAPI's own specs, not TAPs (they were called TAP-20 to TAP-27 until 2026-09-30): TAPs are numbered by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), where parts of these specs have been submitted as TAP drafts.
 
 ## On-chain addresses
 
@@ -75,18 +75,20 @@ Every result is signed and carries a receipt anyone can verify; see [MCP](mcp.md
 
 ## Specifications
 
-The protocol is written down as TAPs, in English and Chinese (English authoritative), under CC0.
+The protocol is written down as TapeAPI's own specs (TAPI), in English and Chinese (English authoritative), under CC0.
+They are not TAPs; parts have been submitted as TAP drafts to TapeOutProtocol/TAPs: [#8](https://github.com/TapeOutProtocol/TAPs/pull/8), [#10](https://github.com/TapeOutProtocol/TAPs/pull/10)
+and [#12](https://github.com/TapeOutProtocol/TAPs/pull/12).
 
-| TAP | Title |
+| Spec | Title |
 |---|---|
-| [TAP-20](../../spec/TAP-20.md) | Service identity and manifest |
-| [TAP-21](../../spec/TAP-21.md) | Signed response envelope |
-| [TAP-22](../../spec/TAP-22.md) | Metered payment |
-| [TAP-23](../../spec/TAP-23.md) | Attested cross-chain read |
-| [TAP-24](../../spec/TAP-24.md) | Intent RFQ (withdrawn) |
-| [TAP-25](../../spec/TAP-25.md) | Circuit-verified methods |
-| [TAP-26](../../spec/TAP-26.md) | Private channels |
-| [TAP-27](../../spec/TAP-27.md) | Private groups |
+| [TAPI-20](../../spec/TAPI-20.md) | Service identity and manifest |
+| [TAPI-21](../../spec/TAPI-21.md) | Signed response envelope |
+| [TAPI-22](../../spec/TAPI-22.md) | Metered payment |
+| [TAPI-23](../../spec/TAPI-23.md) | Attested cross-chain read |
+| [TAPI-24](../../spec/TAPI-24.md) | Intent RFQ (withdrawn) |
+| [TAPI-25](../../spec/TAPI-25.md) | Circuit-verified methods |
+| [TAPI-26](../../spec/TAPI-26.md) | Private channels |
+| [TAPI-27](../../spec/TAPI-27.md) | Private groups |
 
 Source code, examples and the conformance suite are on [GitHub](https://github.com/BruceLanLan/tapeapi).
 

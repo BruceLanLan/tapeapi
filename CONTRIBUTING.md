@@ -8,7 +8,7 @@ the [roadmap](docs/ROADMAP.md).
 
 ## 1. Before you open a pull request
 
-**A specification change needs an issue first.** Open a *spec proposal (TAP)* issue describing the problem, who is affected, and what breaks if we do nothing. Do not send a PR that edits `spec/` without a linked issue — it will be closed and asked to start as an issue. This is not bureaucracy: a TAP is a contract with implementers, and the discussion has to be findable later.
+**A specification change needs an issue first.** Open a *spec proposal (TAPI)* issue describing the problem, who is affected, and what breaks if we do nothing. Do not send a PR that edits `spec/` without a linked issue — it will be closed and asked to start as an issue. This is not bureaucracy: a TAP is a contract with implementers, and the discussion has to be findable later.
 
 Code fixes (`sdk/`, `server/`, `contracts/`, `examples/`, `conformance/`, `scripts/`, `site/`) and documentation fixes do **not** need an issue first. A small, tested PR is welcome directly. A bug report issue helps if you want to discuss the fix before writing it.
 
@@ -33,12 +33,12 @@ Every TAP is one file containing an English half and a Chinese half, in that ord
 
 **Every change to a TAP MUST update both halves in the same commit.** A PR that edits only one half is incomplete and will not be merged — not even for a typo, because a typo fix in one language silently desynchronises the two. If you cannot write the other half, say so in the PR and a maintainer will pair with you; do not guess.
 
-**The normative keywords must match.** The Chinese half keeps the RFC 2119 keywords in English (`MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, `MAY`), so each half must contain the same number of each. Each TAP has two top-level `# TAP-` headings, one per half; this counts the keywords on each side of the split (`MUST` includes `MUST NOT`, and so on):
+**The normative keywords must match.** The Chinese half keeps the RFC 2119 keywords in English (`MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, `MAY`), so each half must contain the same number of each. Each TAP has two top-level `# TAPI-` headings, one per half; this counts the keywords on each side of the split (`MUST` includes `MUST NOT`, and so on):
 
 ```sh
-f=spec/TAP-22.md
+f=spec/TAPI-22.md
 for k in 'MUST NOT' 'MUST' 'SHOULD NOT' 'SHOULD' 'MAY'; do
-  awk -v k="$k" '/^# TAP-/{h++} {c[h]+=gsub(k,"&")} END{printf "%-10s en %d  zh %d\n", k, c[1], c[2]}' "$f"
+  awk -v k="$k" '/^# TAPI-/{h++} {c[h]+=gsub(k,"&")} END{printf "%-10s en %d  zh %d\n", k, c[1], c[2]}' "$f"
 done
 ```
 
@@ -89,9 +89,9 @@ Some examples reach public BSC RPC nodes when you run them; the unit tests do no
 
 Three areas carry the security properties the whole standard rests on. A PR touching any of them gets a slower, harder review, needs a written argument in the PR body for why the property still holds, and **ships only after an audit of the changed code**:
 
-1. **Verification** — the response envelope digest and signature path (TAP-21; `sdk/src/sig.js`, `sdk/src/canon.js`, envelope construction in `server/src/index.js`), the delegation check (TAP-20 §3.4), and voucher signature recovery (TAP-22). Includes canonical JSON: a change to canonicalisation is a change to every signature ever produced.
-2. **Isolation** — anything that decides what a client trusts and from whom: the resolution algorithm (TAP-20 §3.6) including name resolution (`<#ID>.<processor>.tape`), the rule that a container is derived on-chain and never self-reported, the `dev` / `allowSingleNode` / `allowHttp` switches, and quorum behaviour (TAP-23). Weakening a default here is a breaking change even if no signature moves.
-3. **Agreement** — the escrow's accounting: cumulative vouchers, allowance and commitment accounting, session authorisation, withdraw delays and the settle path (TAP-22; `contracts/src/TapeAPIEscrow.sol`). Anything here can lose someone's money.
+1. **Verification** — the response envelope digest and signature path (TAPI-21; `sdk/src/sig.js`, `sdk/src/canon.js`, envelope construction in `server/src/index.js`), the delegation check (TAPI-20 §3.4), and voucher signature recovery (TAPI-22). Includes canonical JSON: a change to canonicalisation is a change to every signature ever produced.
+2. **Isolation** — anything that decides what a client trusts and from whom: the resolution algorithm (TAPI-20 §3.6) including name resolution (`<#ID>.<processor>.tape`), the rule that a container is derived on-chain and never self-reported, the `dev` / `allowSingleNode` / `allowHttp` switches, and quorum behaviour (TAPI-23). Weakening a default here is a breaking change even if no signature moves.
+3. **Agreement** — the escrow's accounting: cumulative vouchers, allowance and commitment accounting, session authorisation, withdraw delays and the settle path (TAPI-22; `contracts/src/TapeAPIEscrow.sol`). Anything here can lose someone's money.
 
 A change in these areas that only adds a test is of course fine and welcome.
 
@@ -111,7 +111,7 @@ Edit the markdown sources, never the generated HTML. `site/` uses relative paths
 
 We follow semver, applied to the standard and to the packages separately.
 
-- **Specs.** A TAP in `Draft` may change freely; record what changed and why in its own change log section. A TAP in `Stable (v1)` (TAP-1 §4.1) is frozen: every field, encoding, signature domain and error code keeps its meaning, a revision may add only optional content and non-normative text, and a change that can make a conforming v1 implementation non-conforming is a new version (v2) with its own wire markers. `Experimental` sections and TAPs may change in any release.
+- **Specs.** A TAP in `Draft` may change freely; record what changed and why in its own change log section. A TAP in `Stable (v1)` (TAPI-1 §4.1) is frozen: every field, encoding, signature domain and error code keeps its meaning, a revision may add only optional content and non-normative text, and a change that can make a conforming v1 implementation non-conforming is a new version (v2) with its own wire markers. `Experimental` sections and TAPs may change in any release.
 - **Packages.** `@tapeapi/sdk` and `@tapeapi/server` follow semantic versioning from 1.0.0: code written against the 1.0 documentation keeps working in every 1.x release, and a breaking change to a Stable interface is a major bump (2.0). Anything marked `@experimental` may change in a minor release, with a changelog entry. The packages ship as release assets on GitHub, not on npm.
 - Do not bump versions in a PR unless a maintainer asks. Releases are cut separately. Add a line under `[Unreleased]` in `CHANGELOG.md` for a user-visible change.
 
@@ -119,7 +119,7 @@ We follow semver, applied to the standard and to the packages separately.
 
 | Path | What it is |
 |---|---|
-| `spec/` | TAP-1 and TAP-20…27, plus test vectors and `verify.py` in `spec/vectors/`. Bilingual, English authoritative, CC0. |
+| `spec/` | TAPI-1 and TAPI-20…27, plus test vectors and `verify.py` in `spec/vectors/`. Bilingual, English authoritative, CC0. |
 | `contracts/` | `src/ServiceDirectory.sol`, `src/TapeAPIEscrow.sol`, `src/ChannelBus.sol`, Foundry tests in `test/`; forge-std is a submodule in `lib/`. |
 | `sdk/` | `@tapeapi/sdk` — ESM, Node 20+ and browser, depends only on `@noble/*`. |
 | `server/` | `@tapeapi/server` — the provider runtime (Node and the Fetch API). |
@@ -147,7 +147,7 @@ If you add a document, link it from `docs/README.md` and write both language hal
 
 所有参与者都应遵守[行为准则](CODE_OF_CONDUCT.md)。接下来要做什么见[路线图](docs/ROADMAP.md)。
 
-**规范改动必须先开 issue。** 用 *spec proposal (TAP)* 模板说明问题、受影响的人、以及不改会怎样。**不要直接提修改 `spec/` 的 PR**——没有关联 issue 的会被关闭并请你从 issue 重新开始。这不是流程主义：TAP 是与实现者之间的契约，讨论过程必须日后可查。
+**规范改动必须先开 issue。** 用 *spec proposal (TAPI)* 模板说明问题、受影响的人、以及不改会怎样。**不要直接提修改 `spec/` 的 PR**——没有关联 issue 的会被关闭并请你从 issue 重新开始。这不是流程主义：TAP 是与实现者之间的契约，讨论过程必须日后可查。
 
 代码修复（`sdk/`、`server/`、`contracts/`、`examples/`、`conformance/`、`scripts/`、`site/`）与文档修正**不需要**先开 issue，带测试的小 PR 直接提即可。想先讨论方案的话，开一个 bug report issue。
 
@@ -172,7 +172,7 @@ If you add a document, link it from `docs/README.md` and write both language hal
 
 **对 TAP 的任何改动 MUST 在同一个提交里更新两个半部。** 只改一半的 PR 属于未完成，不会被合并——**即使只是改错别字**，因为只改一种语言会让两半悄悄失同步。写不出另一半就在 PR 里说明，维护者会与你结对；不要猜着写。
 
-**规范性关键词数量必须一致。** 中文半部保留英文的 RFC 2119 关键词（`MUST`、`MUST NOT`、`SHOULD`、`SHOULD NOT`、`MAY`），所以两半中每个关键词的出现次数必须相同。每个 TAP 有两个一级标题 `# TAP-`，各属一个半部；推送前运行上面英文部分给出的 `awk` 命令，分别统计两半的数量。两列必须相等，不一致就是 PR 的 bug。
+**规范性关键词数量必须一致。** 中文半部保留英文的 RFC 2119 关键词（`MUST`、`MUST NOT`、`SHOULD`、`SHOULD NOT`、`MAY`），所以两半中每个关键词的出现次数必须相同。每个 TAP 有两个一级标题 `# TAPI-`，各属一个半部；推送前运行上面英文部分给出的 `awk` 命令，分别统计两半的数量。两列必须相等，不一致就是 PR 的 bug。
 
 **英文为准。** 两半冲突时以英文为准，中文半部即为 bug。发现不一致时请在 issue 里写明。
 
@@ -219,9 +219,9 @@ cd contracts && forge test        # Solidity
 
 以下三个领域承载着整个标准所依赖的安全性质。触及其中任何一项的 PR 会得到更慢更严的评审，需要在 PR 正文中用文字论证该性质为何仍然成立，且**必须在改动代码经过审计之后才能发布**：
 
-1. **验证（verification）**——响应信封摘要与签名路径（TAP-21；`sdk/src/sig.js`、`sdk/src/canon.js`、`server/src/index.js` 中的信封构造）、委托校验（TAP-20 §3.4）、凭证签名恢复（TAP-22）。包含规范 JSON：改规范化就是改所有已经产生过的签名。
-2. **隔离（isolation）**——一切决定"客户端信任什么、信任谁"的东西：解析算法（TAP-20 §3.6，包括名称解析 `<#ID>.<processor>.tape`）、容器必须链上推导且永不接受自报这一条、`dev` / `allowSingleNode` / `allowHttp` 开关，以及法定人数行为（TAP-23）。在这里放宽默认值属于破坏性变更，即使没有任何签名发生变化。
-3. **一致（agreement）**——托管合约的记账：累计凭证、额度与承诺记账、会话授权、提现延迟与结算路径（TAP-22；`contracts/src/TapeAPIEscrow.sol`）。这里的任何问题都可能让人损失资金。
+1. **验证（verification）**——响应信封摘要与签名路径（TAPI-21；`sdk/src/sig.js`、`sdk/src/canon.js`、`server/src/index.js` 中的信封构造）、委托校验（TAPI-20 §3.4）、凭证签名恢复（TAPI-22）。包含规范 JSON：改规范化就是改所有已经产生过的签名。
+2. **隔离（isolation）**——一切决定"客户端信任什么、信任谁"的东西：解析算法（TAPI-20 §3.6，包括名称解析 `<#ID>.<processor>.tape`）、容器必须链上推导且永不接受自报这一条、`dev` / `allowSingleNode` / `allowHttp` 开关，以及法定人数行为（TAPI-23）。在这里放宽默认值属于破坏性变更，即使没有任何签名发生变化。
+3. **一致（agreement）**——托管合约的记账：累计凭证、额度与承诺记账、会话授权、提现延迟与结算路径（TAPI-22；`contracts/src/TapeAPIEscrow.sol`）。这里的任何问题都可能让人损失资金。
 
 在这些领域**只增加测试**的改动当然没问题，非常欢迎。
 
@@ -241,7 +241,7 @@ GitHub Pages 不执行构建，所以 `site/` 下有些文件是生成后**提�
 
 遵循 semver，标准与软件包分别适用。
 
-- **规范。** 处于 `Draft` 的 TAP 可自由修改，在其自身的变更记录小节写清改了什么、为什么。处于 `Stable (v1)`（TAP-1 §4.1）的 TAP 已冻结：已定义的字段、编码、签名域与错误码保持含义，修订只能追加可选内容与非规范性文字；可能让合规的 v1 实现变得不合规的改动，要开新版本（v2），并使用自己的线上标记。标为 `Experimental` 的章节与 TAP 可以在任何版本里修改。
+- **规范。** 处于 `Draft` 的 TAP 可自由修改，在其自身的变更记录小节写清改了什么、为什么。处于 `Stable (v1)`（TAPI-1 §4.1）的 TAP 已冻结：已定义的字段、编码、签名域与错误码保持含义，修订只能追加可选内容与非规范性文字；可能让合规的 v1 实现变得不合规的改动，要开新版本（v2），并使用自己的线上标记。标为 `Experimental` 的章节与 TAP 可以在任何版本里修改。
 - **软件包。** `@tapeapi/sdk` 与 `@tapeapi/server` 自 1.0.0 起遵循语义化版本：按 1.0 文档写的代码在所有 1.x 版本里都能继续使用，Stable 接口的破坏性修改只能升 major（2.0）。标为 `@experimental` 的接口可以在 minor 版本里修改，并写进更新日志。两个包以 GitHub Release 附件的形式发布，不在 npm 上。
 - 除非维护者要求，PR 里不要改版本号，发版单独进行。用户可见的改动请在 `CHANGELOG.md` 的 `[Unreleased]` 下加一行。
 
@@ -249,7 +249,7 @@ GitHub Pages 不执行构建，所以 `site/` 下有些文件是生成后**提�
 
 | 路径 | 是什么 |
 |---|---|
-| `spec/` | TAP-1 与 TAP-20…27，测试向量与 `verify.py` 在 `spec/vectors/`。双语，英文为准，CC0。 |
+| `spec/` | TAPI-1 与 TAPI-20…27，测试向量与 `verify.py` 在 `spec/vectors/`。双语，英文为准，CC0。 |
 | `contracts/` | `src/ServiceDirectory.sol`、`src/TapeAPIEscrow.sol`、`src/ChannelBus.sol`，Foundry 测试在 `test/`；forge-std 是 `lib/` 下的子模块。 |
 | `sdk/` | `@tapeapi/sdk`——ESM，Node 20+ 与浏览器，仅依赖 `@noble/*`。 |
 | `server/` | `@tapeapi/server`——提供者运行时（Node 与 Fetch API）。 |

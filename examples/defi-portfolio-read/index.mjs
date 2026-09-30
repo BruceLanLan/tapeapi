@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// TAP-23 多链组合读取：某地址在 BSC / Ethereum / Base 上的原生币余额、ERC-20 余额与 LP 仓位，
+// TAPI-23 多链组合读取：某地址在 BSC / Ethereum / Base 上的原生币余额、ERC-20 余额与 LP 仓位，
 // **每条链各自锚定一个区块**（默认 `finalized`，按 blockHash 以 EIP-1898 求值），签名返回。
 // 钉块与按 blockHash 求值来自 `_lib/chain.mjs`（与 `chain-attested-read` 共用），
 // 所有纯逻辑在 `portfolio.mjs`，单测从那里 import，因此不开 socket。
 //
-// TAP-23 multi-chain portfolio read: an address's native balance, ERC-20 balances and LP positions on
+// TAPI-23 multi-chain portfolio read: an address's native balance, ERC-20 balances and LP positions on
 // BSC / Ethereum / Base, each chain pinned to its own block (default `finalized`, evaluated at the attested
 // blockHash per EIP-1898), signed. Pinning and blockHash evaluation come from `_lib/chain.mjs` (shared with
 // `chain-attested-read`); all pure logic lives in `portfolio.mjs`.
@@ -106,7 +106,7 @@ const provider = createProvider({
 
     // [no-quorum]：顶层没有单一区块，每条链各自锚定；要 quorum 就对每条链分别调 `balances`。
     // [no-quorum]: there is no single block at the top level — each chain is pinned on its own. For a quorum
-    // round, call `balances` per chain with that chain's explicit block number (TAP-23 §3.4).
+    // round, call `balances` per chain with that chain's explicit block number (TAPI-23 §3.4).
     portfolio: async ({ address, chains: req } = {}) => {
       if (!isAddress(address)) bad('address must be an address')
       const list = assertChainList(req)
@@ -114,7 +114,7 @@ const provider = createProvider({
         const c = chainOf(chainId)
         const pinned = await c.pinBlock(block)
         const { native, tokens: entries, blockRef } = await balancesAt(c, chainId, address, tokens, pinned)
-        // 每个 chains[i] 各自带 TAP-23 §3.3 的四个扁平字段 / each entry carries the same four flat fields
+        // 每个 chains[i] 各自带 TAPI-23 §3.3 的四个扁平字段 / each entry carries the same four flat fields
         return buildBalancesResult({ chainId, pinned, blockRef, address, native, tokens: entries })
       }))
       // 顺序 == 入参顺序（SPEC §0.3.5），不按完成顺序 / caller order, never Promise completion order
@@ -159,8 +159,8 @@ const provider = createProvider({
     // [quorum] PancakeSwap V3 NFT positions (chainId 56 only); raw position parameters only, never amounts.
     lpV3: async ({ chainId, address, limit, block } = {}) => {
       const c = chainOf(chainId)
-      // TAP-23 §3.1：请求 `attestedRead.chains` 之外的链回 METHOD_NOT_FOUND（此方法的档案里只有 56）。
-      // TAP-23 §3.1: a chain outside this method's `attestedRead.chains` is a METHOD_NOT_FOUND.
+      // TAPI-23 §3.1：请求 `attestedRead.chains` 之外的链回 METHOD_NOT_FOUND（此方法的档案里只有 56）。
+      // TAPI-23 §3.1: a chain outside this method's `attestedRead.chains` is a METHOD_NOT_FOUND.
       if (chainId !== 56) throw new TapeAPIError('METHOD_NOT_FOUND', `lpV3 serves chainId 56 only (attestedRead.chains = [56]), got ${chainId}`)
       if (!isAddress(address)) bad('address must be an address')
       const cap = assertPositionLimit(limit)

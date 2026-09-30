@@ -1,4 +1,4 @@
-// TAP-26 §3.7: a Tape Channel whose only transport is the chain (a ChannelBus `send` per wire message, the Wire log
+// TAPI-26 §3.7: a Tape Channel whose only transport is the chain (a ChannelBus `send` per wire message, the Wire log
 // read back). No relay, no server. / 只用链作为传输的 Tape Channel：每条线路消息一笔 ChannelBus send，读回 Wire 日志。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'

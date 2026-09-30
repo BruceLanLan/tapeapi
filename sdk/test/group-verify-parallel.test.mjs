@@ -1,8 +1,8 @@
-// TAP-27 §3.3 step 6 in parallel (1.1.x, no change to the specification): every member still checks every member
+// TAPI-27 §3.3 step 6 in parallel (1.1.x, no change to the specification): every member still checks every member
 // against its channel record, but up to `verifyConcurrency` checks (default 8) run at once. The outcome is the serial
 // loop's: the same roster, the same error (the first failing member in roster order), the same dropped list in the same
 // order, and a failure still leaves the group where it was.
-// TAP-27 §3.3 第 6 步并行化（1.1.x，不改规范）：每个成员仍对照通道记录核验每个成员，但至多 `verifyConcurrency` 个（默认 8）
+// TAPI-27 §3.3 第 6 步并行化（1.1.x，不改规范）：每个成员仍对照通道记录核验每个成员，但至多 `verifyConcurrency` 个（默认 8）
 // 同时进行。结果与串行循环一致：同样的名单、同样的错误（按名单顺序第一个失败的成员）、同样顺序的移除名单；失败仍不改变群的状态。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'

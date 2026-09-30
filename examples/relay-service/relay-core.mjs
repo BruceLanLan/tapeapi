@@ -5,14 +5,14 @@
 // （Cloudflare 的隔离实例之间不共享内存，那里的生产中继应把每个房间放进一个 Durable Object，里面跑的就是下面这套逻辑。）
 //
 // What the relay can see: room names (hashes that reveal no identity), frame sizes, timing, and the IP of whoever
-// polls or posts. What it cannot see: content, or who is talking -- frames are TAP-26 ciphertext end to end.
+// polls or posts. What it cannot see: content, or who is talking -- frames are TAPI-26 ciphertext end to end.
 // 中继能看到：房间名（不泄露身份的哈希）、帧大小、时间、以及收发方的 IP。看不到：内容，以及谁在和谁说话。
 const ROOM_RE = /^[0-9a-f]{64}$/
 const B64_RE = /^[A-Za-z0-9+/]*={0,2}$/
-// The first byte of a wire message: 0x01 handshake (accept / ready), 0x02 frame, 0x03 sealed invite (TAP-26),
-// 0x04 epoch message, 0x05 group message (TAP-27). The relay reads the handshake type, to keep its free path
+// The first byte of a wire message: 0x01 handshake (accept / ready), 0x02 frame, 0x03 sealed invite (TAPI-26),
+// 0x04 epoch message, 0x05 group message (TAPI-27). The relay reads the handshake type, to keep its free path
 // honest, and the type byte of 0x03 / 0x04, to keep them from being flushed; everything else is ciphertext to it.
-// 线路消息首字节：0x01 握手、0x02 帧、0x03 密封邀请（TAP-26）、0x04 纪元消息、0x05 群消息（TAP-27）。中继识别握手类型
+// 线路消息首字节：0x01 握手、0x02 帧、0x03 密封邀请（TAPI-26）、0x04 纪元消息、0x05 群消息（TAPI-27）。中继识别握手类型
 // 以守住免费通道，识别 0x03 / 0x04 的类型字节以免它们被冲掉；其余对它都是密文。
 const WIRE_HANDSHAKE = 0x01
 // Invites (0x03) and epoch messages (0x04) are what a peer needs to START reading: lose one and the channel or the
@@ -33,7 +33,7 @@ const isHandshake = (b64) => {
 }
 
 export function createRelayCore({
-  maxFrameB64 = 22_000,        // a 16 KiB TAP-26 frame plus framing, base64-encoded / 16 KiB 帧加封装后的 base64
+  maxFrameB64 = 22_000,        // a 16 KiB TAPI-26 frame plus framing, base64-encoded / 16 KiB 帧加封装后的 base64
   maxFramesPerRoom = 256,
   // The protected ring for 0x03 / 0x04, and how many of them one source may post to one room per window. The window
   // is an invite's RECOMMENDED lifetime, so flushing the ring within it takes maxKeptPerRoom / maxKeptPerSource
@@ -60,9 +60,9 @@ export function createRelayCore({
   // Below the provider runtime's handler timeout (25 s), or a full-length poll is answered with INTERNAL
   // instead of an empty result. / 必须低于运行时的处理超时（25 秒），否则满时长的轮询会得到 INTERNAL 而不是空结果。
   maxWaitMs = 20_000,
-  // One answer must fit the TAP-21 response cap (1 MiB): a room holding many full frames would otherwise make
+  // One answer must fit the TAPI-21 response cap (1 MiB): a room holding many full frames would otherwise make
   // every poll fail, the cursor never advance, and the channel die. The client polls again from `next`.
-  // 单次回答必须放得进 TAP-21 的 1 MiB 上限：否则攒了很多大帧的房间会让每次轮询都失败、游标永不前进、通道死掉。
+  // 单次回答必须放得进 TAPI-21 的 1 MiB 上限：否则攒了很多大帧的房间会让每次轮询都失败、游标永不前进、通道死掉。
   maxRecvBytes = 512 * 1024,
   now = () => Date.now(),
   // Optional storage adapter (FIXED RELAY-1). Called synchronously with what changed: `put` (a frame was taken, and
@@ -137,8 +137,8 @@ export function createRelayCore({
       checkName(roomName)
       if (typeof frame !== 'string' || !frame || frame.length % 4 || !B64_RE.test(frame)) throw bad('frame must be non-empty base64')
       if (frame.length > maxFrameB64) throw bad(`frame larger than ${maxFrameB64} base64 characters`)
-      // The free handshake path carries TAP-26 wire type 0x01 only (accept / ready), a few per room.
-      // 免费握手通道只承载 TAP-26 的 0x01 线路类型（accept / ready），每个房间只允许若干条。
+      // The free handshake path carries TAPI-26 wire type 0x01 only (accept / ready), a few per room.
+      // 免费握手通道只承载 TAPI-26 的 0x01 线路类型（accept / ready），每个房间只允许若干条。
       if (handshakeOnly) {
         if (frame.length > maxHandshakeB64) throw bad('a handshake message is small; this is not one')
         if (!isHandshake(frame)) throw bad('relayHandshake carries handshake messages only (0x01 + an accept/ready JSON object)')
@@ -176,7 +176,7 @@ export function createRelayCore({
       const ring = kept ? r.kept : r.frames
       const entry = pending ? { i, frame, pending: true } : { i, frame }
       ring.push(entry)
-      const out = ring.length > (kept ? maxKeptPerRoom : maxFramesPerRoom) ? ring.shift() : undefined   // oldest first; TAP-26 reports the gap / 丢最旧的，TAP-26 会报告空洞
+      const out = ring.length > (kept ? maxKeptPerRoom : maxFramesPerRoom) ? ring.shift() : undefined   // oldest first; TAPI-26 reports the gap / 丢最旧的，TAPI-26 会报告空洞
       if (pending) (r.staged ??= new Map()).set(i, { entry, ring, out, budget, created, adopted })
       if (onChange) onChange({ type: 'put', room: roomName, meta: meta(r), frame: { i, frame }, dropped: out?.i })
       if (!pending) wake(roomName)

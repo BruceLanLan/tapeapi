@@ -200,8 +200,8 @@ test('probeTx is byte for byte ChannelBus.send(room, wire) as the SDK encodes it
 })
 
 // The one amendment to F2 (2026-09-26, for the public service): a service may choose its method list, but only free
-// methods with the TAP-20 fields and plain notations; the page publishes that list, shows every name, and nothing else
-// in the manifest can come from the service. / F2 的唯一修订：服务可以自选方法列表，但只能是免费的、只含 TAP-20 字段的方法；
+// methods with the TAPI-20 fields and plain notations; the page publishes that list, shows every name, and nothing else
+// in the manifest can come from the service. / F2 的唯一修订：服务可以自选方法列表，但只能是免费的、只含 TAPI-20 字段的方法；
 // 页面发布这个列表并列出每个方法名，清单的其他部分仍不能来自服务。
 test('FIXED console-F2 (amended): a free method list may come from the service; everything else about it is checked', async () => {
   const { MANIFEST_METHODS } = await import('../../examples/public-api/methods.js')
@@ -209,7 +209,7 @@ test('FIXED console-F2 (amended): a free method list may come from the service; 
   const good = JSON.parse(C.manifestText({ ...S, methods: MANIFEST_METHODS }))
   assert.deepEqual(C.manifestProblems(JSON.stringify(good), S), [], 'the public service\'s own list is publishable')
   assert.deepEqual(good.methods, MANIFEST_METHODS)
-  assert.doesNotThrow(() => validateManifest(good, { requireDelegation: true }), 'and it is a valid TAP-20 manifest')
+  assert.doesNotThrow(() => validateManifest(good, { requireDelegation: true }), 'and it is a valid TAPI-20 manifest')
   const one = { name: 'x', priceBEM: '0', params: {}, returns: {} }
   const refused = {
     priced: [{ ...one, priceBEM: '0.00000001' }],
@@ -605,7 +605,7 @@ test('the manifest may carry exactly one new optional field, mcp, of exactly its
   assert.deepEqual(good.mcp, MCP)
   assert.deepEqual(Object.keys(good).at(-1), 'mcp', 'after methods')
   assert.deepEqual(C.manifestProblems(JSON.stringify(good), S), [], 'a served manifest with a valid mcp field is publishable')
-  assert.doesNotThrow(() => validateManifest(good, { requireDelegation: true }), 'and it is a valid TAP-20 manifest for the SDK')
+  assert.doesNotThrow(() => validateManifest(good, { requireDelegation: true }), 'and it is a valid TAPI-20 manifest for the SDK')
   assert.equal(JSON.parse(C.manifestText({ ...s, mcp: undefined })).mcp, undefined, 'no mcp: no field, as before')
   assert.equal(C.manifestText({ ...S }), C.manifestText({ ...S, mcp: undefined }), 'the text of every other manifest is unchanged')
   const refused = {

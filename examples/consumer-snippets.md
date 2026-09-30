@@ -30,11 +30,11 @@ const api = createTapeAPI({ dev: true })                       // dev: true 才�
                                                                // 主网 / mainnet: createTapeAPI({ rpcUrls: [≥2 urls], quorum: 2, directory, escrow })
 const svc = await api.resolve({ dev: 'http://127.0.0.1:8789' }) // 主网 / mainnet: api.resolve('price-a')
 
-// 免费方法：SDK 校验 TAP-21 信封签名后才 resolve / free: the SDK verifies the envelope before resolving
+// 免费方法：SDK 校验 TAPI-21 信封签名后才 resolve / free: the SDK verifies the envelope before resolving
 const { result, block, verified } = await api.call(svc, 'bnbUsd', {})
 console.log(result.bnbUsd, result.blockPinned, block, verified)
 
-// 收费方法：钱包签 EIP-712 voucher（TAP-22）/ paid: wallet signs the EIP-712 voucher
+// 收费方法：钱包签 EIP-712 voucher（TAPI-22）/ paid: wallet signs the EIP-712 voucher
 const [consumer] = await window.ethereum.request({ method: 'eth_requestAccounts' })
 const payer = api.payer({
   consumer,
@@ -43,10 +43,10 @@ const payer = api.payer({
 const paid = await api.call(svc, 'pairPrice', { pair: '0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE' }, { payer })
 
 // 多提供者一致：结果需逐字节相同。省略 block 时每家各自钉 `finalized` 并把块写进结果，
-// 所以先用上面那次调用返回的 blockPinned.blockNumber，再把同一个 block 传给每一家（TAP-23 §3.4：法定人数轮 MUST 用显式区块号）。
+// 所以先用上面那次调用返回的 blockPinned.blockNumber，再把同一个 block 传给每一家（TAPI-23 §3.4：法定人数轮 MUST 用显式区块号）。
 // multi-provider agreement: results must be byte-identical. Without `block` each provider pins `finalized`
 // on its own and returns the block, so reuse blockPinned.blockNumber from the call above and pass the same block to
-// every provider (TAP-23 §3.4: the quorum round MUST use an explicit block number).
+// every provider (TAPI-23 §3.4: the quorum round MUST use an explicit block number).
 const other = await api.resolve({ dev: 'http://127.0.0.1:8799' })
 const block = result.blockPinned.blockNumber                     // 复用上面那次调用的块号 / reuse the block from the call above
 const q = await api.callQuorum([svc, other], 'bnbUsd', { block }, { quorum: 2 })
@@ -110,10 +110,10 @@ cat envelope.json
 收费方法：在请求体里加 `"voucher": {"consumer","provider","cumulative","expires","sig","signer"}`（`api.payer(...).voucherFor(svc, price)` 生成，见 `web2-adapter/consumer.mjs`）。
 Paid methods: add `"voucher": {...}` to the body (produced by `api.payer(...).voucherFor(svc, price)`, see `web2-adapter/consumer.mjs`).
 
-TAP-21 v2 验签：`digest = keccak256("TAPI-1/resp/v2" ‖ container ‖ keccak256(id) ‖ keccak256(canonicalJSON({method, params})) ‖ uint8(ok) ‖ keccak256(canonicalJSON(result|error)) ‖ uint64BE(ts))`，
+TAPI-21 v2 验签：`digest = keccak256("TAPI-1/resp/v2" ‖ container ‖ keccak256(id) ‖ keccak256(canonicalJSON({method, params})) ‖ uint8(ok) ‖ keccak256(canonicalJSON(result|error)) ‖ uint64BE(ts))`，
 签名是对 digest 的 EIP-191 personal_sign（低 s）；恢复出的地址必须等于清单里的 `signer`（清单再由 holder 的委托签名背书）。
 注意 `method`/`params` 用**你发出的**请求（这里是 `bnbUsd` / `{}`），`container` 用你解析出的容器，`ok` 来自信封；还要检查 `|now − ts| ≤ 300`。
-Verify TAP-21 v2: recover the EIP-191 signer (low-s) of that digest and compare with `manifest.signer` (which the holder's delegation vouches for).
+Verify TAPI-21 v2: recover the EIP-191 signer (low-s) of that digest and compare with `manifest.signer` (which the holder's delegation vouches for).
 `method`/`params` are the request **you sent** (`bnbUsd` / `{}` here), `container` is the one you resolved, `ok` comes from the envelope; also check `|now − ts| <= 300`.
 
 ```sh
@@ -159,9 +159,9 @@ const [healthA, healthB, twapA, twapB] = await Promise.all([
   api.resolve({ dev: 'http://127.0.0.1:8793' }), api.resolve({ dev: 'http://127.0.0.1:8803' }),
 ])
 
-// ── 独立性前置检查（TAP-23 §3.5）。SDK 的 callQuorum **不替你做这个检查** ──
+// ── 独立性前置检查（TAPI-23 §3.5）。SDK 的 callQuorum **不替你做这个检查** ──
 // 它只拒绝重复的 container；"两家是不是真的独立"是调用方的责任。
-// The independence check (TAP-23 §3.5). callQuorum does NOT do this for you — it only rejects duplicate
+// The independence check (TAPI-23 §3.5). callQuorum does NOT do this for you — it only rejects duplicate
 // containers. Whether two providers are genuinely independent is the caller's problem.
 const origin = (s) => new URL(s.manifest.endpoints.live[0]).origin
 function independent(a, b) {
@@ -192,7 +192,7 @@ async function health() {
   const first = await api.call(healthA, 'accountHealth', { account })
   const block = first.result.blockPinned.blockNumber
 
-  // 第 2 步：同一个**显式数字块号**发给两家（TAP-23 §3.4 第 2 步，MUST）
+  // 第 2 步：同一个**显式数字块号**发给两家（TAPI-23 §3.4 第 2 步，MUST）
   // 第 3–5 步：各自验签 → 逐字节比较 → 任意两份已验签结果不同即拒绝，**不做多数表决**
   const q = await api.callQuorum([healthA, healthB], 'accountHealth', { account, block }, { quorum: 2 })
   return { ...q.result, agreedBy: q.agreed }
@@ -272,10 +272,10 @@ Measured at the same explicit block across two fee tiers: exact → `QUORUM_FAIL
 
 三点说明 / three notes:
 
-- **为什么拒绝渲染而不是显示多数结果**：TAP-23 §4「Reject on disagreement」—— 多数表决把 3 家变成一个
+- **为什么拒绝渲染而不是显示多数结果**：TAPI-23 §4「Reject on disagreement」—— 多数表决把 3 家变成一个
   2-of-3 委员会，那个门槛本身成为新的攻击面。拒绝的失败模式是**拒绝服务**，永远不是**错误答案**。
   `callQuorum` 的默认就是 `onDissent: 'reject'`：**只要出现两个不同的桶就失败**。
-  Why refuse instead of showing the majority: TAP-23 §4 “Reject on disagreement”. A majority vote turns three
+  Why refuse instead of showing the majority: TAPI-23 §4 “Reject on disagreement”. A majority vote turns three
   providers into a 2-of-3 committee, and that threshold becomes the new attack surface. Refusing fails as
   **denial of service**, never as a **wrong answer**. `callQuorum` defaults to `onDissent: 'reject'`.
 - **为什么块号要显式传**：不传的话每家各自钉自己的 `finalized`，块不同 → 结果天然不同 → 必然
@@ -284,12 +284,12 @@ Measured at the same explicit block across two fee tiers: exact → `QUORUM_FAIL
   differ and the results must differ. It is also why tolerance must never cover `blockPinned` — that would let
   answers from **different blocks** count as agreement.
 - **这个 UI 得到的保证边界**：两家**独立**提供者在**同一区块**上给出了（逐字节相同 / 在 ±1% 界内的）答案，
-  并各自签名。它**不保证**这个答案正确 —— 两家的上游节点若同源仍会一起错（TAP-23 §8「Upstream compromise」），
-  也**没有**质押或罚没（TAP-23 §3.6 明确把经济安全留给未来的 TAP）。按 Chainlink 自己对 single-source feed
+  并各自签名。它**不保证**这个答案正确 —— 两家的上游节点若同源仍会一起错（TAPI-23 §8「Upstream compromise」），
+  也**没有**质押或罚没（TAPI-23 §3.6 明确把经济安全留给未来的 TAP）。按 Chainlink 自己对 single-source feed
   的要求，用它的协议仍然必须外加界限、熔断、新鲜度检查和 kill switch。
   What this UI actually guarantees: two **independent** providers gave answers (byte-identical, or within
   ±1%) at the **same block**, each signed. It does **not** guarantee the answer is correct — if both upstream
-  node sets share an origin they fail together (TAP-23 §8 “Upstream compromise”) — and there is **no** stake
-  or slashing (TAP-23 §3.6 defers economic security to a future TAP). By Chainlink's own standard for
+  node sets share an origin they fail together (TAPI-23 §8 “Upstream compromise”) — and there is **no** stake
+  or slashing (TAPI-23 §3.6 defers economic security to a future TAP). By Chainlink's own standard for
   single-source feeds, a protocol consuming this must still add bounds, circuit breakers, freshness checks and
   a kill switch.

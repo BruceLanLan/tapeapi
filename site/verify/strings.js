@@ -1,7 +1,7 @@
 // Receipt checker: every string the script shows, in Chinese and English (the two must have the same keys:
 // scripts/verify-page.test.mjs). Plain text only: the page puts these in with textContent.
 // 回执核验页脚本显示的全部文字，中英两套键必须一致（由测试检查）。只是纯文本：页面用 textContent 放入。
-import { MAX_INPUT } from './lib.js?v=786e11708f'
+import { MAX_INPUT } from './lib.js?v=b5f531938f'
 
 export const T = {
   zh: {
@@ -29,7 +29,7 @@ export const T = {
     'x.invalid.name': '回执里的名字不属于这个服务：名字不在签名里，而链上查到它指向别的电路。',
     'x.unchecked': '没能读到链上数据，所以没有结论。可能是网络问题或公共节点限流，稍后重试。',
     'x.signerIs': (a) => `签名恢复出的地址：${a}`,
-    'c.sig': '签名成立', 'c.sig.how': '对回执字段的 TAP-21 v2 摘要做 EIP-191 恢复',
+    'c.sig': '签名成立', 'c.sig.how': '对回执字段的 TAPI-21 v2 摘要做 EIP-191 恢复',
     'c.resolve': '链上解析服务', 'c.resolve.how': (q, n) => `中枢推导容器；清单字节与 SiteRegistry 哈希一致；${n} 家运营方的节点中至少 ${q} 家一致`,
     'c.container': '容器一致', 'c.container.how': '链上推导的容器等于回执里的容器',
     'c.container.bad': (a, b) => `链上推导为 ${a}，回执写的是 ${b}`,
@@ -108,7 +108,7 @@ export const T = {
     'x.invalid.name': 'The name in the receipt does not belong to this service: the name is not signed, and on chain it points at a different circuit.',
     'x.unchecked': 'The chain could not be read, so there is no verdict. Probably a network problem or a rate-limited public node; try again shortly.',
     'x.signerIs': (a) => `The signature recovers to ${a}`,
-    'c.sig': 'Signature holds', 'c.sig.how': 'EIP-191 recovery over the TAP-21 v2 digest of the receipt\'s fields',
+    'c.sig': 'Signature holds', 'c.sig.how': 'EIP-191 recovery over the TAPI-21 v2 digest of the receipt\'s fields',
     'c.resolve': 'Service resolved on chain', 'c.resolve.how': (q, n) => `the hub derives the container; manifest bytes match the SiteRegistry hash; nodes of at least ${q} of ${n} operators agree`,
     'c.container': 'Container matches', 'c.container.how': 'the container derived on chain equals the receipt\'s',
     'c.container.bad': (a, b) => `the chain derives ${a}; the receipt says ${b}`,

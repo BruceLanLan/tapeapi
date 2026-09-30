@@ -97,11 +97,11 @@ export declare function createAIProxy(o: {
   log?: (...args: unknown[]) => void
   /** Passed to createProvider; its `ip` budget (default free + paid) also bounds /v1/* per IP. false: off. */
   rateLimit?: CreateProviderOptions['rateLimit']
-  /** How long receipts stay retrievable (default 3 600 000; TAP-21 §3.5 recommends at least an hour). */
+  /** How long receipts stay retrievable (default 3 600 000; TAPI-21 §3.5 recommends at least an hour). */
   receiptTtlMs?: number
   /** The `receipt` method's own budget per client IP (default { ip: 10, windowMs: 60 000 }); false: off. */
   receiptRateLimit?: { ip?: number; windowMs?: number } | false
-  /** Answer a `receipt` lookup only when it names requestSha256 too (TAP-21 §3.5 MAY); default false. */
+  /** Answer a `receipt` lookup only when it names requestSha256 too (TAPI-21 §3.5 MAY); default false. */
   requireRequestHash?: boolean
   /** Pass the clients' session headers (x-claude-code-session-id, session-id, thread-id) upstream; default true. */
   forwardSessionHeaders?: boolean

@@ -1,5 +1,5 @@
-// TAP-27 groups, second field review of 1.2.0 (GRP2): every finding is a test here, FIXED GRP2-<n>.
-// TAP-27 群聊 1.2.0 第二轮实测（GRP2）：每一项发现都写成测试。
+// TAPI-27 groups, second field review of 1.2.0 (GRP2): every finding is a test here, FIXED GRP2-<n>.
+// TAPI-27 群聊 1.2.0 第二轮实测（GRP2）：每一项发现都写成测试。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -42,7 +42,7 @@ function released(rev) {
   try { src = execFileSync('git', ['show', `${rev}:sdk/src/group.js`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch { return null }
   src = src.replace(/from '\.\/([a-z-]+\.js)'/g, (_, f) => `from '${pathToFileURL(join(root, 'sdk/src', f)).href}'`)
     .replace(/from '(@noble\/[^']+)'/g, (_, f) => `from '${import.meta.resolve(f)}'`)
-  const dir = mkdtempSync(join(tmpdir(), `tap27-${rev}-`))
+  const dir = mkdtempSync(join(tmpdir(), `tapi27-${rev}-`))
   writeFileSync(join(dir, 'group.mjs'), src)
   return pathToFileURL(join(dir, 'group.mjs')).href
 }

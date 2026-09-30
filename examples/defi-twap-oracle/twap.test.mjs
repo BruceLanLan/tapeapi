@@ -64,8 +64,8 @@ test('cardinality < 2 is a BAD_REQUEST that names the write this service cannot 
 })
 
 test('a window longer than the pool\'s observation history is BAD_REQUEST, not INTERNAL', () => {
-  // TAP-23 §3.3 把合约 revert 归为 INTERNAL，但 `OLD` 是**我们的参数**越界，调用方应当缩短窗口重试。
-  // TAP-23 §3.3 maps contract reverts to INTERNAL, but `OLD` means *our parameter* was out of range and the
+  // TAPI-23 §3.3 把合约 revert 归为 INTERNAL，但 `OLD` 是**我们的参数**越界，调用方应当缩短窗口重试。
+  // TAPI-23 §3.3 maps contract reverts to INTERNAL, but `OLD` means *our parameter* was out of range and the
   // caller should shorten the window and retry — so BAD_REQUEST is the accurate code.
   assert.throws(
     () => checkObservationWindow({ pool: '0xpool', window: 86400, observationCardinality: 4500, maxWindow: 24146 }),
@@ -173,6 +173,6 @@ test('the same inputs canonicalise to the same bytes twice, with no clock or hos
   for (const forbidden of ['http', 'dataseed', 'localhost', 'Date']) {
     assert.ok(!json.includes(forbidden), `signed result must not carry ${forbidden}`)
   }
-  // blockPinned 一定在 / blockPinned is always present (TAP-23 §3.4)
+  // blockPinned 一定在 / blockPinned is always present (TAPI-23 §3.4)
   assert.deepEqual(frozen().blockPinned, PINNED)
 })

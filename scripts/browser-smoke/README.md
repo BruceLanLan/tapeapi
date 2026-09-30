@@ -1,12 +1,12 @@
 # Browser smoke test / 浏览器冒烟测试
 
-Loads the **unbundled** SDK source into a real browser and runs the TAP-21 canonical-JSON and envelope vectors,
-the TAP-26 channel vectors, and a live TAP-26 handshake keyed from the browser's own CSPRNG. Then it loads the site's
+Loads the **unbundled** SDK source into a real browser and runs the TAPI-21 canonical-JSON and envelope vectors,
+the TAPI-26 channel vectors, and a live TAPI-26 handshake keyed from the browser's own CSPRNG. Then it loads the site's
 pages that run scripts ("My services", the playground, the receipt checker, the holder console, the status page) in
 iframes and fails if one throws while loading: `probe.mjs` re-imports a page's module script inside the page, which
 rejects with the page's own error.
-在真实浏览器里加载**未打包**的 SDK 源码，运行 TAP-21 规范 JSON 与信封向量、TAP-26 通道向量，以及一次用浏览器
-自身安全随机数完成的真实 TAP-26 握手。随后在 iframe 里加载站点上运行脚本的页面（我的服务、调试台、回执核验页、持有人
+在真实浏览器里加载**未打包**的 SDK 源码，运行 TAPI-21 规范 JSON 与信封向量、TAPI-26 通道向量，以及一次用浏览器
+自身安全随机数完成的真实 TAPI-26 握手。随后在 iframe 里加载站点上运行脚本的页面（我的服务、调试台、回执核验页、持有人
 操作台、状态页），任何一个在加载时抛错就失败：`probe.mjs` 在页面内重新导入它的模块脚本，以页面自己的错误拒绝。
 
 ```

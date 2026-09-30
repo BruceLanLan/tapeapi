@@ -38,7 +38,7 @@ const call = async (iso, method, params, ip = '1.2.3.4') => {
   const res = await iso.handleRequest(new Request(`https://relay.example/tapeapi/v1/${method}`, { method: 'POST', headers: { 'content-type': 'application/json', 'cf-connecting-ip': ip }, body: JSON.stringify({ id: `r${Math.random()}`, params }) }))
   const env_ = await res.json()
   const signerOk = recoverResponseSigner({ container: env_.container, id: env_.id, method, params, ok: env_.ok, body: env_.ok ? env_.result : env_.error, ts: env_.ts }, env_.sig)
-  assert.equal(signerOk.toLowerCase(), signer.toLowerCase(), 'every relay answer is a TAP-21 envelope signed by the relay')
+  assert.equal(signerOk.toLowerCase(), signer.toLowerCase(), 'every relay answer is a TAPI-21 envelope signed by the relay')
   return env_
 }
 const room = (n) => n.toString(16).padStart(64, '0')
@@ -68,7 +68,7 @@ test('a bad room name is a signed BAD_REQUEST, not a crash', async () => {
   assert.equal(bad.ok, false); assert.equal(bad.error.code, 'BAD_REQUEST')
 })
 
-test('a full TAP-26 channel runs through the Worker relay, with each side on a different isolate', async () => {
+test('a full TAPI-26 channel runs through the Worker relay, with each side on a different isolate', async () => {
   const ka = channel.generateKeyPair(), kb = channel.generateKeyPair()
   const A = { container: '0x0000000000000000000000000000000000000A11', chainId: 56 }, B = { container: '0x0000000000000000000000000000000000000B0B', chainId: 56 }
   const post = (iso, rm, wire) => call(iso, 'relaySend', { room: rm, frame: channel.toBase64(wire) })

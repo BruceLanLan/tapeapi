@@ -24,5 +24,5 @@ Before you start: Node.js 20 or later, and
 git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm install
 ```
 
-The protocol itself is specified in [`spec/`](../../spec/) (TAP-20 to TAP-27). The guides link to the relevant section
+The protocol itself is specified in [`spec/`](../../spec/) (TAPI-20 to TAPI-27). The guides link to the relevant section
 wherever a rule matters.

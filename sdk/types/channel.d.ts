@@ -1,4 +1,4 @@
-// TAP-26 real-time private channels. Shapes are deliberately loose: see docs/guides/channels.md and spec/TAP-26.
+// TAPI-26 real-time private channels. Shapes are deliberately loose: see docs/guides/channels.md and spec/TAPI-26.
 import type { Address, TxRequest } from './common.js'
 import type { Rpc } from './rpc.js'
 import type { ResolvedService, Payer } from './index.js'
@@ -43,7 +43,7 @@ export interface ReadyMessage { t: 'ready'; cid: string; confirm: string }
 /** Opaque initiator handle from createInvite; only the original object works in completeInvite. */
 export interface PendingInvite { readonly role: 'initiator'; readonly cid: string; readonly exp: number }
 
-/** An encrypted channel session (TAP-26 §3.4). */
+/** An encrypted channel session (TAPI-26 §3.4). */
 export interface ChannelSession {
   readonly role: 'initiator' | 'responder'
   readonly cid: string
@@ -91,14 +91,14 @@ export declare function acceptInvite(opts: {
 export declare function completeInvite(pending: PendingInvite, accept: AcceptMessage, opts?: { now?: number }): { ready: ReadyMessage; session: ChannelSession }
 
 /**
- * Relay transport over a TAP-26 relay service. `service` is the resolved relay (await api.resolve('12.1013.tape')).
+ * Relay transport over a TAPI-26 relay service. `service` is the resolved relay (await api.resolve('12.1013.tape')).
  * Renamed from `svc` in 1.0: passing `svc` throws INVALID_ARGUMENT.
  */
 export declare function relayTransport(opts: {
   /** A TapeAPI client (createTapeAPI), or anything with its `call`. */
   api: { call: (...args: any[]) => Promise<any> }
   service: ResolvedService
-  /** @experimental A payment channel for a priced relay (TAP-22). */
+  /** @experimental A payment channel for a priced relay (TAPI-22). */
   payer?: Payer
   inbound: string
   outbound: string
@@ -154,7 +154,7 @@ export declare function sealToInbox(content: unknown, opts: { to: Uint8Array | s
 export declare function openInvite(wire: Uint8Array, opts: { self: unknown }): Invite
 export declare function openFromInbox(wire: Uint8Array, opts: { self: unknown }): any
 export declare function encodeWire(x: Uint8Array | AcceptMessage | ReadyMessage): Uint8Array
-/** One of: a channel frame (0x01), a sealed invite, a handshake message, a group epoch message (0x04) or a group message (0x05, TAP-27). */
+/** One of: a channel frame (0x01), a sealed invite, a handshake message, a group epoch message (0x04) or a group message (0x05, TAPI-27). */
 export declare function decodeWire(b: Uint8Array): { frame?: Uint8Array; sealedInvite?: Uint8Array; handshake?: AcceptMessage | ReadyMessage; groupEpoch?: Uint8Array; groupMessage?: Uint8Array }
 export declare function checkRelays(relays: RelayRef[]): void
 export declare function checkBus(bus: unknown): void

@@ -3,7 +3,7 @@
 // "Advanced" (A deploy, B verify) is only for someone deploying their own ChannelBus.
 // 持有人操作台的页面脚本（模块，从 index.html 加载，使页面能在 script-src 'self' 下运行）。
 // 步骤：1 连接、2 读电路、3 服务密钥与变量、4 签委托、5 发布清单；“高级”（A 部署、B 核对）只给自己部署 ChannelBus 的人。
-import * as C from './lib.js?v=6ffd96295a'
+import * as C from './lib.js?v=97ef583782'
 
 const $ = (id) => document.getElementById(id)
 // ChannelBus (Advanced) runs on BNB Chain only (TapeAPI does not follow it to L2s). / ChannelBus（高级）只在 BNB Chain。
@@ -403,7 +403,7 @@ function showTools(out, mcp, tools) {
 }
 
 // ---------------------------------------------------------------- an AI service's price table ----
-// The `ai` field (TAP-20 §3.9): every API format's address and every model's prices, per currency, per 1M tokens, as the
+// The `ai` field (TAPI-20 §3.9): every API format's address and every model's prices, per currency, per 1M tokens, as the
 // holder must see them before the wallet writes them on chain. Stated prices in plain type; a price the spec fills in
 // (a cache price from input, reasoning from output) in grey italics; a hinted cell highlighted. Hints never block.
 // Everything is text (textContent), never markup: the model ids come from the service or the pasted file.
@@ -446,7 +446,7 @@ function showPriceTable(out, field) {
   }
   const w2 = cell('div', tbl, 'scroll')
   const models = tb.models.length, rows = tb.models.reduce((n, m) => n + m.prices.length, 0)
-  note(out, true, bi(`✓ 价目表符合 TAP-20 §3.9（与 SDK 的检查相同）：${tb.endpoints.length} 个接口地址，${models} 个模型，${rows} 行价格，单位都是每 1M tokens。`, `✓ The price table follows TAP-20 §3.9 (the SDK's own checks): ${tb.endpoints.length} API addresses, ${models} models, ${rows} price rows, every price per 1M tokens.`))
+  note(out, true, bi(`✓ 价目表符合 TAPI-20 §3.9（与 SDK 的检查相同）：${tb.endpoints.length} 个接口地址，${models} 个模型，${rows} 行价格，单位都是每 1M tokens。`, `✓ The price table follows TAPI-20 §3.9 (the SDK's own checks): ${tb.endpoints.length} API addresses, ${models} models, ${rows} price rows, every price per 1M tokens.`))
   if (CHAIN.chainId !== 56) note(out, null, bi(`本页在 ${CHAIN.name} 上：这里支付暂不开放，价格只作公示。`, `This page is on ${CHAIN.name}: payments are not open here yet; the prices are for display only.`))
   out.append(w1, w2)
   out.append(cell('p', bi('灰色斜体：清单里没有单列，按规范取另一列的价格（缓存读、缓存写取输入价，1 小时缓存写取缓存写价，推理取输出价）。高亮：下面有提示。', 'Grey italics: not stated in the manifest, so the spec prices it as another column (cache reads and writes as input, 1-hour cache writes as cache writes, reasoning as output). Highlighted: see the hints below.'), 'muted'))
@@ -469,7 +469,7 @@ function previewAI() {
   let field
   try { field = C.aiFieldOf(C.strictParseJSON(text), { base: aiBase() }) } catch (e) { note(out, false, bi(`读不懂这段价目表：${e.message}`, `Cannot read this price table: ${e.message}`)); return }
   const bad = C.aiProblems(field, { allowHttp: aiBase().startsWith('http:') })
-  if (bad.length) { note(out, false, bi(`价目表不符合 TAP-20 §3.9，客户端会拒绝它：${bad.join('；')}`, `The price table breaks TAP-20 §3.9, and clients would refuse it: ${bad.join('; ')}`)); return }
+  if (bad.length) { note(out, false, bi(`价目表不符合 TAPI-20 §3.9，客户端会拒绝它：${bad.join('；')}`, `The price table breaks TAPI-20 §3.9, and clients would refuse it: ${bad.join('; ')}`)); return }
   aiPreviewed = C.normalizeAI(field, { allowHttp: aiBase().startsWith('http:') })
   showPriceTable(out, aiPreviewed)
 }

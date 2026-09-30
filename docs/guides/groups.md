@@ -1,6 +1,6 @@
 # Group chat
 
-This guide adds a private group chat ([TAP-27](../../spec/TAP-27.md)) to an application that already uses TapeAPI. A
+This guide adds a private group chat ([TAPI-27](../../spec/TAPI-27.md)) to an application that already uses TapeAPI. A
 group is up to 32 TapeOut containers; one of them, the **owner**, keeps the member list. Messages are end-to-end
 encrypted and signed; whatever carries them (a relay or ChannelBus) sees ciphertext only.
 
@@ -74,7 +74,7 @@ await deliverGroupUpdate({ group, update: await group.rotate(), relayClients: [r
 
 What `deliverGroupUpdate` does and returns:
 
-- **Order.** Invites to each member's inbox room first, then the epoch message to the group room (TAP-27 §3.5).
+- **Order.** Invites to each member's inbox room first, then the epoch message to the group room (TAPI-27 §3.5).
 - **Who is invited.** `invite: 'new'` (the default: `update.added`), `'all'` (every member but the owner), `'none'`, or
   a list of containers that must be in the current roster. Invites always use the roster's container and chainId, the
   ones the owner signed.
@@ -83,7 +83,7 @@ What `deliverGroupUpdate` does and returns:
 - **Failures.** Every post is tried. If any failed, the call then throws `TapeAPIError('GROUP_DELIVERY')`, whose message
   names the first failed room and whose `data` holds every delivery; pass `throwOnError: false` to get `{ ok: false,
   deliveries }` instead. It never swallows an error.
-- **Reposts.** Without `update` it reposts the current epoch message (`group.epochWire`). TAP-27 §3.5 recommends a
+- **Reposts.** Without `update` it reposts the current epoch message (`group.epochWire`). TAPI-27 §3.5 recommends a
   repost every 10 minutes on a relay whose rooms live 15 minutes, and every 30 minutes on ChannelBus read through
   public nodes:
 
@@ -121,7 +121,7 @@ for (const { invite } of found.invites) {
 - `checkGroupInvites` reads `channel.inboxRoom(self.container, self.chainId)` on each relay, keeps one cursor per
   relay and room with the relay's room epoch (the first read is `after: -1, epoch: null`), and returns
   `{ room, invites, skipped, skippedBy, failed }`. Frames that are not a group invite for this container are skipped
-  and counted; a TAP-26 channel invite in the same inbox is counted as `channelInvite`, for your channel code.
+  and counted; a TAPI-26 channel invite in the same inbox is counted as `channelInvite`, for your channel code.
 - `checkSelf: true` reads the container's channel record first and refuses unless it publishes this identity's X25519
   key on this chainId: a wallet address, a wrong chainId or a stale identity file is reported at once instead of as an
   empty inbox. Pass `holder` (the wallet) and a mix-up of the two is refused without any chain read.
@@ -235,11 +235,11 @@ the verdicts age out reads all 127: about 2,300 HTTP requests and 27 seconds at 
 requests and 1.7 s a record on BSC), at most once a day. SDK 1.2.0 did that full read on every epoch, and read an
 added member twice. A resumed owner has no verdicts, so its first epoch reads everyone. `verifyReuseS: 0` goes back to
 reading every member on every epoch, for an owner that must drop a sold circuit at its next epoch rather than within a
-day (TAP-27 §8).
+day (TAPI-27 §8).
 
 ## Limits
 
-- At most 32 members per group. An experimental format 2 (TAP-27 §3.8, `createGroup({ format: 2 })`) carries up to
+- At most 32 members per group. An experimental format 2 (TAPI-27 §3.8, `createGroup({ format: 2 })`) carries up to
   128 in one wire message, with a binary roster and member checks done lazily: a message from a sender not yet checked
   comes with `verified: false`, so show it as unverified or use `openVerified`. Its members' entries carry no X25519
   key, so check them with `group.channelKeysVerifier(api)`, **not** `api.groupVerifier()`, which compares both keys

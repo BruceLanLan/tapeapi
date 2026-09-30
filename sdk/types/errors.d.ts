@@ -2,10 +2,10 @@
 
 /**
  * The one error type the SDK throws. `code` is machine-readable; the full table is in docs/guides/upgrade-1.0.md and
- * TAP-21 §3.4. `INVALID_ARGUMENT` means the caller's own options or arguments are wrong: never retry it.
+ * TAPI-21 §3.4. `INVALID_ARGUMENT` means the caller's own options or arguments are wrong: never retry it.
  *
  * Top-level fields are fixed for 1.x: `name`, `code`, `message`, `data`, `signed`, `httpStatus`, `cause`, and on a
- * signed provider error the TAP-21 envelope fields `ts`, `block`, `id`, `sig`, `error`. Every other detail is in `data`
+ * signed provider error the TAPI-21 envelope fields `ts`, `block`, `id`, `sig`, `error`. Every other detail is in `data`
  * (for example `data.tooLarge`, `data.rpcCode`, `data.rpcRevert`, `data.rpcData`, and for `QUORUM_FAILED` /
  * `ATTEST_DISAGREE` `data.quorum`, `data.agreed`, `data.disagreed`, `data.failed`, `data.groups`; for
  * `ATTEST_DISAGREE` also the verified envelopes and the request, `data.envelopes`, `data.request`; for the experimental
@@ -18,7 +18,7 @@ export declare class TapeAPIError extends Error {
   code: string
   /** Details that depend on the code. */
   data?: Record<string, any>
-  /** true when the error came in a signed TAP-21 envelope (a provider's statement, verified). */
+  /** true when the error came in a signed TAPI-21 envelope (a provider's statement, verified). */
   signed?: boolean
   /** The HTTP status the answer came with, when there was one. */
   httpStatus?: number

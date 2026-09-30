@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// TAP-24 Solver 参考骨架：用固定价格表 + 固定价差生成**格式合法**的 EIP-712 签名报价，
+// TAPI-24 Solver 参考骨架：用固定价格表 + 固定价差生成**格式合法**的 EIP-712 签名报价，
 // 并提供一个区块锚定的 `inventory` 读取。没有库存、没有做市、没有风控——详见 README 第一段。
 // 所有纯逻辑（定价、EIP-712、校验、报价簿）都在 `quote.mjs`，本文件只负责 env、链读与 HTTP。
 //
-// TAP-24 Solver reference skeleton: a fixed price table and a fixed spread produce **well-formed** EIP-712 signed
+// TAPI-24 Solver reference skeleton: a fixed price table and a fixed spread produce **well-formed** EIP-712 signed
 // quotes, plus one block-pinned `inventory` read. No inventory, no market making, no risk management — see the
 // first paragraph of the README. Every piece of pure logic (pricing, EIP-712, validation, the quote book) lives in
 // `quote.mjs`; this file only does env, chain reads and HTTP.
@@ -26,11 +26,11 @@ const config = JSON.parse(await readFile(new URL(process.env.QUOTE_CONFIG || 'qu
 // ---- env ----
 const env = exampleEnv('solver', { port: 8794 })
 const { RPC_URLS, QUORUM, CHAIN_ID, LAG, PROD, SIGNER_KEY, log, store } = env
-// SOLVER_KEY 与 SIGNER_KEY 是**两把不同的钥匙**（TAP-24 §4 第一条 Rationale）：
-// 信封由 `signer` 签、经 TAP-20 委托绑到容器；报价由 `solver` 签，因为 fromChain 上的 IntentEscrow
+// SOLVER_KEY 与 SIGNER_KEY 是**两把不同的钥匙**（TAPI-24 §4 第一条 Rationale）：
+// 信封由 `signer` 签、经 TAPI-20 委托绑到容器；报价由 `solver` 签，因为 fromChain 上的 IntentEscrow
 // 只会做一次 `ecrecover`，验不了任何委托。私钥同样不打印。
-// SOLVER_KEY is a **different key** from SIGNER_KEY (TAP-24 §4, first bullet): the envelope is signed by `signer`
-// and bound to the container through a TAP-20 delegation, while the quote is signed by `solver` because the
+// SOLVER_KEY is a **different key** from SIGNER_KEY (TAPI-24 §4, first bullet): the envelope is signed by `signer`
+// and bound to the container through a TAPI-20 delegation, while the quote is signed by `solver` because the
 // IntentEscrow on fromChain only does one `ecrecover` and cannot verify a delegation. This key is never printed.
 let SOLVER_KEY = process.env.SOLVER_KEY
 if (!SOLVER_KEY) {
@@ -38,7 +38,7 @@ if (!SOLVER_KEY) {
   console.log('[solver] no SOLVER_KEY set; quotes are signed by an ephemeral solver key for this run (set SOLVER_KEY to keep a stable solver address)')
 }
 const solver = sig.privateKeyToAddress(SOLVER_KEY)
-if (SOLVER_KEY === SIGNER_KEY) console.error('[solver] WARNING: SOLVER_KEY equals SIGNER_KEY; TAP-24 §4 wants the quote key and the manifest signer key to be separate')
+if (SOLVER_KEY === SIGNER_KEY) console.error('[solver] WARNING: SOLVER_KEY equals SIGNER_KEY; TAPI-24 §4 wants the quote key and the manifest signer key to be separate')
 
 applyEnvToManifest(manifest, env)
 
@@ -64,9 +64,9 @@ const tokenMeta = createTokenMeta(rpc, SEL)
 // 一个参数组的 hex（不带 0x），接在 selector 后面 / one encoded argument group as hex without 0x, appended to a selector
 const encodeParamsHex = (types, values) => toHex(encodeParams(types, values)).slice(2)
 
-// solver 地址在某链某块的余额。零地址 = 原生币（TAP-24 §3.2 的约定）。
+// solver 地址在某链某块的余额。零地址 = 原生币（TAPI-24 §3.2 的约定）。
 // Balances of the solver address on one chain at one pinned block. The zero address means the native coin
-// (the convention of TAP-24 §3.2). Results keep the caller's `tokens` order exactly: no dedup, no reorder.
+// (the convention of TAPI-24 §3.2). Results keep the caller's `tokens` order exactly: no dedup, no reorder.
 async function readInventory({ chainId, tokens, block } = {}) {
   const cid = chainId === undefined || chainId === null ? CHAIN_ID : chainId
   if (!Number.isInteger(cid) || cid <= 0) bad('chainId must be a positive integer')
@@ -93,7 +93,7 @@ async function readInventory({ chainId, tokens, block } = {}) {
 
 // ---- 报价簿（进程内存，不是链上事实）/ the quote book (process memory, not an on-chain fact) ----
 const book = createQuoteBook(QUOTE_BOOK_MAX)
-// TAP-24 §3.3 RECOMMENDED: quoteId = keccak256(solver ‖ random32)
+// TAPI-24 §3.3 RECOMMENDED: quoteId = keccak256(solver ‖ random32)
 const newQuoteId = () => toHex(abi.keccak256(solver.toLowerCase() + Buffer.from(randomBytes(32)).toString('hex')))
 
 const provider = createProvider({
@@ -134,10 +134,10 @@ const provider = createProvider({
 })
 
 await startProvider(provider, env, { lines: [
-  `solver   ${solver}   (quotes are signed by this key, NOT by the manifest signer \u2014 TAP-24 \u00a74)`,
-  `typehash ${checked.typehash} == spec/TAP-24.md \u00a76   keccak256("IntentEscrow") ${checked.nameHash}`,
+  `solver   ${solver}   (quotes are signed by this key, NOT by the manifest signer \u2014 TAPI-24 \u00a74)`,
+  `typehash ${checked.typehash} == spec/TAPI-24.md \u00a76   keccak256("IntentEscrow") ${checked.nameHash}`,
   `routes   ${config.routes.map(r => `${r.fromChain}->${r.toChain}`).join(', ')}   spread ${config.solverSpreadBps} bps   default ttl ${TTL_DEFAULT}s`,
-  `escrow   ${JSON.stringify(config.escrow)}   <- IntentEscrow is NOT deployed (TAP-24 \u00a76/\u00a77); these are placeholders`,
+  `escrow   ${JSON.stringify(config.escrow)}   <- IntentEscrow is NOT deployed (TAPI-24 \u00a76/\u00a77); these are placeholders`,
   rpcSummary(RPC_URLS, QUORUM, `, default block finalized, fallback lag ${LAG}`),
   ...(process.env.PRINT_TYPE_STRING === '1' ? [`type     ${QUOTE_TYPE_STRING}`] : []),
 ] })

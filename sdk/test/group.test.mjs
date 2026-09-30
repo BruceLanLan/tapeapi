@@ -1,5 +1,5 @@
-// TAP-27 Tape Group: a group over the chain alone, and every way it is supposed to refuse.
-// TAP-27 群聊：只经链上完成一次群聊，以及它应当拒绝的每一种情形。
+// TAPI-27 Tape Group: a group over the chain alone, and every way it is supposed to refuse.
+// TAPI-27 群聊：只经链上完成一次群聊，以及它应当拒绝的每一种情形。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createTapeAPI, channel, sig, TapeAPIError, CHANNEL_KEYS_KEY, canonicalJSON } from '../src/index.js'

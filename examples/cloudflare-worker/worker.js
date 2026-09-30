@@ -58,7 +58,7 @@ function build(env) {
   return createProvider({
     manifest,
     signerKey: env.SIGNER_KEY,
-    // http only for a loopback PUBLIC_URL (local testing); a real endpoint must be https (TAP-20)
+    // http only for a loopback PUBLIC_URL (local testing); a real endpoint must be https (TAPI-20)
     // 只有回环地址的 PUBLIC_URL 允许 http（本地测试）；真实端点必须是 https
     allowHttp: /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(env.PUBLIC_URL),
     // 2-of-3 operators (the SDK's defaults): one down, rate limiting or refusing a method still leaves a quorum (arch A5).

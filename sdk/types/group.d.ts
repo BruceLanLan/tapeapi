@@ -1,4 +1,4 @@
-// TAP-27 private group channels. Loose shapes: see docs/guides/channels.md and spec/TAP-27.
+// TAPI-27 private group channels. Loose shapes: see docs/guides/channels.md and spec/TAPI-27.
 import type { Address } from './common.js'
 import type { Identity, RelayRef, RandomBytes } from './channel.js'
 
@@ -15,20 +15,20 @@ export declare const WIRE_MESSAGE: number
 export declare const KEEP_PREVIOUS_MS: number
 /** How many §3.3 step 6 checks (one channel-record read each) run at once by default: 8. Since 1.1.x. */
 export declare const VERIFY_CONCURRENCY: number
-/** @experimental TAP-27 §3.8: the high half of a format-2 epoch field (0x54470200). */
+/** @experimental TAPI-27 §3.8: the high half of a format-2 epoch field (0x54470200). */
 export declare const FORMAT_V2_MARK: number
-/** @experimental TAP-27 §3.8: members of a format-2 group (128). */
+/** @experimental TAPI-27 §3.8: members of a format-2 group (128). */
 export declare const MAX_MEMBERS_V2: number
-/** @experimental TAP-27 §3.8: how long a POSITIVE verdict on a roster entry is reused, at most and by default (86,400 s), from the start of its check. */
+/** @experimental TAPI-27 §3.8: how long a POSITIVE verdict on a roster entry is reused, at most and by default (86,400 s), from the start of its check. */
 export declare const VERIFY_REUSE_S: number
-/** @experimental TAP-27 §3.8: how long a NEGATIVE verdict (definitively does not match) is kept, at most (60 s). */
+/** @experimental TAPI-27 §3.8: how long a NEGATIVE verdict (definitively does not match) is kept, at most (60 s). */
 export declare const VERIFY_NEGATIVE_S: number
 
 export interface GroupMember { container: Address; chainId?: number; x25519: string | Uint8Array; ed25519: string | Uint8Array; [key: string]: unknown }
 export type MemberVerifier = (member: GroupMember, opts?: { fresh?: boolean }) => Promise<boolean>
 /** One roster entry as a group handle reports it (lowercase hex keys). */
 export interface RosterMember { container: Address; chainId: number; x25519: string; ed25519: string }
-/** The signed roster of one epoch (TAP-27 §3.2); loose beyond the fields every client reads. */
+/** The signed roster of one epoch (TAPI-27 §3.2); loose beyond the fields every client reads. */
 export interface Roster { v?: number; gid: string; epoch: number; issued: number; owner: { container: Address; chainId: number }; members: RosterMember[]; relays?: RelayRef[]; bus?: unknown; [key: string]: unknown }
 /** What to keep across a restart (no secrets). `roster` is present for an owner, `lastSeq` once a message was sealed. */
 /** A format-1 snapshot (no `format`). */
@@ -41,17 +41,17 @@ export interface GroupSnapshot {
   v: 1 | 2; gid: string; owner: { container: Address; chainId: number }; epoch: number | null; role: 'owner' | 'member'; lastSeq?: string; roster?: string; /** @experimental format 2 only */ format?: 2; /** @experimental format 2 owner only: the roster bytes as sent (hex) */ rosterBin?: string }
 /** A message opened with group.open(): or { own: true, epoch, seq } for our own message coming back. */
 export type OpenedGroupMessage =
-  | { from: Address; index: number; epoch: number; seq: bigint; gap: number | null; data: Uint8Array | string; own?: undefined; /** @experimental Signed with this handle's own identity, but not sealed by this handle: the same identity on another device (TAP-27 §8: one identity is one device). */ otherDevice?: true }
+  | { from: Address; index: number; epoch: number; seq: bigint; gap: number | null; data: Uint8Array | string; own?: undefined; /** @experimental Signed with this handle's own identity, but not sealed by this handle: the same identity on another device (TAPI-27 §8: one identity is one device). */ otherDevice?: true }
   | { own: true; epoch: number; seq: bigint }
 
-/** A TAP-27 group handle, owner or member (joinGroup). */
+/** A TAPI-27 group handle, owner or member (joinGroup). */
 export interface GroupHandle {
   /** The group id: 16 bytes, lowercase hex. */
   readonly gid: string
   /** The group room (epoch messages and group messages go here). */
   readonly room: string
   readonly isOwner: boolean
-  /** 1 (TAP-27 v1, the default) or 2 (TAP-27 §3.8, @experimental). */
+  /** 1 (TAPI-27 v1, the default) or 2 (TAPI-27 §3.8, @experimental). */
   readonly format: 1 | 2
   /** The current epoch, or null before the first one was accepted. */
   readonly epoch: number | null
@@ -106,7 +106,7 @@ export interface GroupUpdate {
 }
 
 export declare function groupRoom(gid: Uint8Array | string): string
-/** @experimental Owner: create a format-2 group (TAP-27 §3.8, up to 128 members). Members still need x25519 (the owner wraps their slots). */
+/** @experimental Owner: create a format-2 group (TAPI-27 §3.8, up to 128 members). Members still need x25519 (the owner wraps their slots). */
 export declare function createGroup(opts: {
   format: 2
   self: { container: Address; chainId?: number }
@@ -218,7 +218,7 @@ export declare function joinGroup(opts: {
   verifyReuseS?: number
 }): GroupHandle
 
-// ---------------------------------------------------------------- @experimental: TAP-27 §3.8, format 2 ----
+// ---------------------------------------------------------------- @experimental: TAPI-27 §3.8, format 2 ----
 /** @experimental A format-2 roster entry: no x25519 (only the owner's own list keeps it), and its verification state. */
 export interface RosterMemberV2 { container: Address; chainId: number; ed25519: string; x25519?: string; verified: boolean; mismatch?: true }
 /** @experimental The roster of a format-2 epoch. */
@@ -231,7 +231,7 @@ export type OpenedGroupMessageV2 =
   | { from: Address; index: number; epoch: number; seq: bigint; gap: number | null; data: Uint8Array | string; verified: boolean; verifyError?: { code: string; message: string }; own?: undefined; otherDevice?: true }
   | { own: true; epoch: number; seq: bigint }
 /**
- * @experimental A format-2 group handle (TAP-27 §3.8). §3.3 step 6 is lazy: acceptEpoch checks only the owner's entry;
+ * @experimental A format-2 group handle (TAPI-27 §3.8). §3.3 step 6 is lazy: acceptEpoch checks only the owner's entry;
  * open() marks a sender not yet checked as verified: false (show it as unverified); openVerified() checks it first;
  * verifyMembers() checks the rest in the background.
  */

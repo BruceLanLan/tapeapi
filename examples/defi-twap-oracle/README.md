@@ -23,7 +23,7 @@ curl -s -X POST http://127.0.0.1:8793/tapeapi/v1/bnbUsdTwap \
 | `poolFor` | 免费 | **`[quorum]`** | `PancakeV3Factory.getPool` + `slot0` 摘要 |
 
 三个方法都接受显式 `block`，并且**结果里一定有 `blockPinned: { blockNumber, blockHash, blockRef }`**
-（TAP-23 §3.4）。本示例没有 `[no-quorum]` 方法。做法定人数时：先向任一家要一次，从
+（TAPI-23 §3.4）。本示例没有 `[no-quorum]` 方法。做法定人数时：先向任一家要一次，从
 `blockPinned.blockNumber` 取块号，再把**同一个数字块号**显式发给每一家 —— 不这么做的话每家各自钉自己的
 `finalized`，块不同 → 结果天然不同 → 必然 `QUORUM_FAILED`。
 
@@ -158,7 +158,7 @@ d. maxWindow = <锚定块的 timestamp> − obs.blockTimestamp
 - `observe()` 仍 revert 且原因含 `OLD` → 同样 `BAD_REQUEST`
 - 其余 revert → `INTERNAL`
 
-> **这个取舍要说明**：TAP-23 §3.3 把合约 revert 归为 `INTERNAL`。这里归 `BAD_REQUEST`，因为失败的其实是
+> **这个取舍要说明**：TAPI-23 §3.3 把合约 revert 归为 `INTERNAL`。这里归 `BAD_REQUEST`，因为失败的其实是
 > **本服务自己的参数校验** —— 调用方应当缩短窗口重试，而 `INTERNAL` 会让它以为是我们坏了。
 
 **实测的可用窗口（2026-09-20/21）**：fee-100 池 24,146–24,302 s（≈6.7 h），fee-500 池 30,516–31,159 s（≈8.5 h）。
@@ -217,7 +217,7 @@ console.log(q.result.bnbUsd, 'agreed by', q.agreed)
 **实测（两个本地实例，fee-100 与 fee-500，同一个显式块 123018935）：**
 
 ```
-exact                      -> QUORUM_FAILED: 2 distinct verified answers; TAP-23 rejects on any disagreement
+exact                      -> QUORUM_FAILED: 2 distinct verified answers; TAPI-23 rejects on any disagreement
   group A  bnbUsd 757.003999741106332524  meanTick -66297
   group B  bnbUsd 756.852621648250465948  meanTick -66295
 relTolBps 100 (±1%)        -> AGREED by 2 providers
@@ -225,7 +225,7 @@ relTolBps 1   (±0.01%)     -> QUORUM_FAILED（两家差约 2 bps）
 paths: ['deviates']        -> BAD_REQUEST（布尔不是数字）
 ```
 
-**不要把容差用在 TAP-23 的 Attested Read 或 `defi-lending-health` 的 `accountHealth` 上。** 那些是同一区块上
+**不要把容差用在 TAPI-23 的 Attested Read 或 `defi-lending-health` 的 `accountHealth` 上。** 那些是同一区块上
 同一次 `eth_call` 的确定性结果，两家**必须**逐字节相同；容差只会掩盖真正的分歧。
 
 `callQuorum` 的默认行为是 `onDissent: 'reject'`：**只要出现两个不同的桶就失败，不做多数表决**。
@@ -278,9 +278,9 @@ curl -s -X POST http://127.0.0.1:8793/tapeapi/v1/poolFor \
 但 main 源多数是 Chainlink，并由 `BoundValidator` 做 ±1% 的交叉校验）。更具体的四条（来自我们对 DeFi 需求的
 研究）：
 
-1. **TAP-23 的法定人数规则是客户端规则，清算逻辑在链上。** “≥2 家独立提供者逐字节一致，任何分歧即拒绝”
+1. **TAPI-23 的法定人数规则是客户端规则，清算逻辑在链上。** “≥2 家独立提供者逐字节一致，任何分歧即拒绝”
    是写给调用方的，链上合约里没有 `callQuorum`。
-2. **没有质押、没有罚没。** TAP-23 §3.6 把经济安全明确留给未来的 TAP，并要求
+2. **没有质押、没有罚没。** TAPI-23 §3.6 把经济安全明确留给未来的 TAP，并要求
    *“clients MUST NOT assume any provider is staked”*。
 3. **连 Chainlink 都不承担这个责任。** docs.chain.link/data-feeds/selecting-data-feeds 原话：
    *“Users of single-source feeds MUST implement additional safeguards such as value bounds, caps, circuit
@@ -330,7 +330,7 @@ curl -s -X POST http://127.0.0.1:8793/tapeapi/v1/bnbUsdTwap \
 | `poolFor` | free | **`[quorum]`** | `PancakeV3Factory.getPool` plus a `slot0` summary |
 
 All three accept an explicit `block` and **always return `blockPinned: { blockNumber, blockHash, blockRef }`**
-(TAP-23 §3.4). This example has no `[no-quorum]` methods. For a quorum: ask one provider first, take
+(TAPI-23 §3.4). This example has no `[no-quorum]` methods. For a quorum: ask one provider first, take
 `blockPinned.blockNumber`, then send that **explicit number** to everyone — otherwise each pins its own
 `finalized`, the blocks differ, the results differ, and `QUORUM_FAILED` is unavoidable.
 
@@ -440,7 +440,7 @@ obs.blockTimestamp`. The pinned block's timestamp costs **no extra request** —
 - An `observe()` that still reverts with `OLD` → also `BAD_REQUEST`.
 - Any other revert → `INTERNAL`.
 
-> **The trade-off, stated:** TAP-23 §3.3 maps contract reverts to `INTERNAL`. These are `BAD_REQUEST` because
+> **The trade-off, stated:** TAPI-23 §3.3 maps contract reverts to `INTERNAL`. These are `BAD_REQUEST` because
 > what actually failed is **this service's own parameter validation** — the caller should shorten the window
 > and retry, and `INTERNAL` would suggest we are broken instead.
 
@@ -489,7 +489,7 @@ explicit block number out to your providers promptly, or a late one fails rather
 tick `-66295`); `relTolBps: 100` → agreed by both; `relTolBps: 1` → failed (they are ~2 bps apart);
 `paths: ['deviates']` → `BAD_REQUEST`.
 
-**Do not use tolerance for TAP-23 Attested Reads or for `defi-lending-health`'s `accountHealth`.** Those are
+**Do not use tolerance for TAPI-23 Attested Reads or for `defi-lending-health`'s `accountHealth`.** Those are
 the deterministic results of one `eth_call` at one block; two providers **must** match byte for byte and a
 tolerance would only mask a real disagreement.
 
@@ -511,9 +511,9 @@ inside Venus's own pipeline (Venus periphery deploys `PancakeSwapOracle 0x44B720
 0x8FD05458…F23f`, but most assets' main source is Chainlink, cross-checked by `BoundValidator` at ±1%).
 Four reasons (from our research into DeFi needs):
 
-1. **TAP-23's quorum rule is a client-side rule while liquidation logic lives on-chain.** No contract contains
+1. **TAPI-23's quorum rule is a client-side rule while liquidation logic lives on-chain.** No contract contains
    `callQuorum`.
-2. **No stake, no slashing.** TAP-23 §3.6 defers economic security to a future TAP and requires that
+2. **No stake, no slashing.** TAPI-23 §3.6 defers economic security to a future TAP and requires that
    *“clients MUST NOT assume any provider is staked”*.
 3. **Even Chainlink does not accept this responsibility**: *“Users of single-source feeds MUST implement
    additional safeguards such as value bounds, caps, circuit breakers, freshness checks, fallback behavior,

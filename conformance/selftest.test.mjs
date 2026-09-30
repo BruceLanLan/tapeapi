@@ -107,15 +107,15 @@ test('reference provider (native listen(), paid + rate-limit checks) passes ever
   assert.deepEqual(mustFails(results), [], show(results))
   assert.equal(summary.conformant, true)
   // The checks that matter actually ran, rather than being skipped. / 关键检查确实执行了，而非被跳过。
-  for (const id of ['tap21.envelope.sig-recovers', 'tap21.canon.request-hash', 'tap21.tamper.ok-flip', 'tap21.tamper.body', 'tap21.method-not-found',
-    'tap21.request.malformed-json', 'tap21.request.missing-id-signed', 'tap21.request.duplicate-key', 'tap21.request.proto-key', 'tap22.payment-required', 'tap22.payment-required.data.price',
-    'tap22.payment-required.price-matches-manifest', 'tap22.bad-voucher.data.price.non-stale',
-    'tap22.bad-voucher.data.lastCumulative', 'tap22.bad-voucher.data.onChainClaimed', 'tap22.bad-voucher.data.price', 'tap22.bad-voucher.minVoucherLifeS',
-    'tap21.ratelimit.unsigned', 'tap21.ratelimit.retry-after', 'tap21.ratelimit.code']) {
+  for (const id of ['tapi21.envelope.sig-recovers', 'tapi21.canon.request-hash', 'tapi21.tamper.ok-flip', 'tapi21.tamper.body', 'tapi21.method-not-found',
+    'tapi21.request.malformed-json', 'tapi21.request.missing-id-signed', 'tapi21.request.duplicate-key', 'tapi21.request.proto-key', 'tapi22.payment-required', 'tapi22.payment-required.data.price',
+    'tapi22.payment-required.price-matches-manifest', 'tapi22.bad-voucher.data.price.non-stale',
+    'tapi22.bad-voucher.data.lastCumulative', 'tapi22.bad-voucher.data.onChainClaimed', 'tapi22.bad-voucher.data.price', 'tapi22.bad-voucher.minVoucherLifeS',
+    'tapi21.ratelimit.unsigned', 'tapi21.ratelimit.retry-after', 'tapi21.ratelimit.code']) {
     assert.ok(results.some(r => r.id === id && r.status === 'pass'), `${id} did not pass:\n${show(results.filter(r => r.id === id))}`)
   }
   // Both stale-voucher shapes were exercised: cumulative 0 and lastCumulative + price − 1.
-  assert.ok(results.some(r => r.id === 'tap22.bad-voucher.data.price' && /last\+price-1/.test(r.context) && r.status === 'pass'))
+  assert.ok(results.some(r => r.id === 'tapi22.bad-voucher.data.price' && /last\+price-1/.test(r.context) && r.status === 'pass'))
   // Record the SHOULD-level observations for the report. / 记录 SHOULD 级别的观察结果，供报告使用。
   const shouldFails = results.filter(r => r.level === 'SHOULD' && r.status === 'fail').map(r => `${r.id} [${r.context}] ${r.message}`)
   console.log('# reference SHOULD failures (native listen()):\n# ' + (shouldFails.join('\n# ') || '(none)'))
@@ -129,28 +129,28 @@ test('reference provider via its Fetch-API entry (handleRequest) passes every MU
   console.log('# reference SHOULD failures (handleRequest):\n# ' + (shouldFails.join('\n# ') || '(none)'))
 })
 
-test('BROKEN: signs with the wrong key -> tap21.envelope.sig-recovers fails', async () => {
+test('BROKEN: signs with the wrong key -> tapi21.envelope.sig-recovers fails', async () => {
   const base = await serveWrapped(mkProvider(), ({ obj, reqBody, pathMethod }) =>
     obj && typeof obj.sig === 'string' ? { obj: reSign(obj, reqBody, pathMethod, WRONG_KEY) } : null)
   const { results, summary } = await runSuite({ url: base, ...PAID })
   assert.equal(summary.conformant, false)
-  assert.ok(failed(results, 'tap21.envelope.sig-recovers').length > 0)
-  assert.equal(failed(results, 'tap21.envelope.id-echo').length, 0)      // only the signature is wrong / 只有签名错
-  assert.equal(failed(results, 'tap21.envelope.container').length, 0)
+  assert.ok(failed(results, 'tapi21.envelope.sig-recovers').length > 0)
+  assert.equal(failed(results, 'tapi21.envelope.id-echo').length, 0)      // only the signature is wrong / 只有签名错
+  assert.equal(failed(results, 'tapi21.envelope.container').length, 0)
 })
 
-test('BROKEN: signs its 429 -> tap21.ratelimit.unsigned fails (Retry-After and code still pass)', async () => {
+test('BROKEN: signs its 429 -> tapi21.ratelimit.unsigned fails (Retry-After and code still pass)', async () => {
   const base = await serveWrapped(mkProvider({ rateLimit: { free: 30, windowMs: 60_000 } }), ({ status, obj }) =>
     status === 429 ? { obj: { ...obj, sig: '0x' + 'ab'.repeat(65) } } : null)
   const { results, summary } = await runSuite({ url: base, checkRateLimit: 30 })
   assert.equal(summary.conformant, false)
-  assert.equal(failed(results, 'tap21.ratelimit.unsigned').length, 1, show(results))
-  assert.ok(results.some(r => r.id === 'tap21.ratelimit.retry-after' && r.status === 'pass'))
-  assert.ok(results.some(r => r.id === 'tap21.ratelimit.code' && r.status === 'pass'))
-  assert.deepEqual(mustFails(results).map(r => r.id), ['tap21.ratelimit.unsigned'])
+  assert.equal(failed(results, 'tapi21.ratelimit.unsigned').length, 1, show(results))
+  assert.ok(results.some(r => r.id === 'tapi21.ratelimit.retry-after' && r.status === 'pass'))
+  assert.ok(results.some(r => r.id === 'tapi21.ratelimit.code' && r.status === 'pass'))
+  assert.deepEqual(mustFails(results).map(r => r.id), ['tapi21.ratelimit.unsigned'])
 })
 
-test('BROKEN: BAD_VOUCHER without data.price (correctly re-signed) -> tap22.bad-voucher.data.price fails', async () => {
+test('BROKEN: BAD_VOUCHER without data.price (correctly re-signed) -> tapi22.bad-voucher.data.price fails', async () => {
   const base = await serveWrapped(mkProvider(), ({ obj, reqBody, pathMethod }) => {
     if (obj?.error?.code !== 'BAD_VOUCHER' || !obj.error.data) return null
     const error = { ...obj.error, data: { ...obj.error.data } }
@@ -159,23 +159,23 @@ test('BROKEN: BAD_VOUCHER without data.price (correctly re-signed) -> tap22.bad-
   })
   const { results, summary } = await runSuite({ url: base, ...PAID })
   assert.equal(summary.conformant, false)
-  assert.ok(failed(results, 'tap22.bad-voucher.data.price').length > 0)
-  assert.equal(failed(results, 'tap21.envelope.sig-recovers').length, 0) // the envelope itself is valid / 信封本身有效
-  assert.equal(failed(results, 'tap22.bad-voucher.data.lastCumulative').length, 0)
-  assert.deepEqual([...new Set(mustFails(results).map(r => r.id))].sort(), ['tap22.bad-voucher.data.price', 'tap22.bad-voucher.data.price.non-stale'])
+  assert.ok(failed(results, 'tapi22.bad-voucher.data.price').length > 0)
+  assert.equal(failed(results, 'tapi21.envelope.sig-recovers').length, 0) // the envelope itself is valid / 信封本身有效
+  assert.equal(failed(results, 'tapi22.bad-voucher.data.lastCumulative').length, 0)
+  assert.deepEqual([...new Set(mustFails(results).map(r => r.id))].sort(), ['tapi22.bad-voucher.data.price', 'tapi22.bad-voucher.data.price.non-stale'])
 })
 
-test('BROKEN: PAYMENT_REQUIRED quoting data.price in BEM units ("0.0001") -> tap22.payment-required.data.price fails', async () => {
+test('BROKEN: PAYMENT_REQUIRED quoting data.price in BEM units ("0.0001") -> tapi22.payment-required.data.price fails', async () => {
   const base = await serveWrapped(mkProvider(), ({ obj, reqBody, pathMethod }) => {
     if (obj?.error?.code !== 'PAYMENT_REQUIRED') return null
     return { obj: reSign({ ...obj, error: { ...obj.error, data: { price: '0.0001' } } }, reqBody, pathMethod, SIGNER_KEY) }
   })
   const { results, summary } = await runSuite({ url: base, ...PAID })
   assert.equal(summary.conformant, false)
-  assert.deepEqual([...new Set(mustFails(results).map(r => r.id))], ['tap22.payment-required.data.price'])
+  assert.deepEqual([...new Set(mustFails(results).map(r => r.id))], ['tapi22.payment-required.data.price'])
 })
 
-test('HOSTILE: inflated, unproven lastCumulative -> the suite refuses to sign above 0 (TAP-22 §3.2 drain)', async () => {
+test('HOSTILE: inflated, unproven lastCumulative -> the suite refuses to sign above 0 (TAPI-22 §3.2 drain)', async () => {
   const seen = []
   const base = await serveWrapped(mkProvider(), ({ obj, reqBody, pathMethod }) => {
     if (reqBody?.voucher) seen.push(BigInt(reqBody.voucher.cumulative))
@@ -186,10 +186,10 @@ test('HOSTILE: inflated, unproven lastCumulative -> the suite refuses to sign ab
   const { results } = await runSuite({ url: base, ...PAID })
   assert.ok(seen.length > 0)
   assert.deepEqual([...new Set(seen)], [0n], 'only cumulative-0 vouchers may be signed for an unproven figure')
-  assert.ok(results.some(r => r.id === 'tap22.bad-voucher.below-last-plus-price' && r.status === 'skip'), show(results))
+  assert.ok(results.some(r => r.id === 'tapi22.bad-voucher.below-last-plus-price' && r.status === 'skip'), show(results))
 })
 
-test('BROKEN: hashes the request with JSON.stringify instead of JCS -> tap21.canon.request-hash fails, nothing else', async () => {
+test('BROKEN: hashes the request with JSON.stringify instead of JCS -> tapi21.canon.request-hash fails, nothing else', async () => {
   // v2 digest with a non-canonical request hash; body hash stays canonical. / 请求哈希不规范的 v2 摘要。
   const badDigest = (e, method, params) => keccak256(concatBytes(
     utf8ToBytes('TAPI-1/resp/v2'), hexToBytes(e.container), keccak256(utf8ToBytes(e.id)),
@@ -201,24 +201,24 @@ test('BROKEN: hashes the request with JSON.stringify instead of JCS -> tap21.can
     return { obj: { ...obj, sig: signDigest(personalDigest(badDigest(obj, pathMethod, params)), SIGNER_KEY) } }
   })
   const { results } = await runSuite({ url: base, ...PAID })
-  assert.deepEqual([...new Set(mustFails(results).map(r => r.id))], ['tap21.canon.request-hash'], show(results))
+  assert.deepEqual([...new Set(mustFails(results).map(r => r.id))], ['tapi21.canon.request-hash'], show(results))
 })
 
-test('BROKEN: clock 1000 s behind (validly signed) -> tap21.envelope.ts-window fails', async () => {
+test('BROKEN: clock 1000 s behind (validly signed) -> tapi21.envelope.ts-window fails', async () => {
   const base = await serveWrapped(mkProvider(), ({ obj, reqBody, pathMethod }) =>
     obj && typeof obj.sig === 'string' ? { obj: reSign(obj, reqBody, pathMethod, SIGNER_KEY, { ts: obj.ts - 1000 }) } : null)
   const { results } = await runSuite({ url: base })
-  assert.deepEqual([...new Set(mustFails(results).map(r => r.id))], ['tap21.envelope.ts-window'], show(results))
+  assert.deepEqual([...new Set(mustFails(results).map(r => r.id))], ['tapi21.envelope.ts-window'], show(results))
 })
 
-test('BROKEN: METHOD_NOT_FOUND answered as a signed ok:true -> tap21.method-not-found fails', async () => {
+test('BROKEN: METHOD_NOT_FOUND answered as a signed ok:true -> tapi21.method-not-found fails', async () => {
   const base = await serveWrapped(mkProvider(), ({ obj, reqBody, pathMethod }) => {
     if (obj?.error?.code !== 'METHOD_NOT_FOUND') return null
     const { error, ...rest } = obj
     return { status: 200, obj: reSign({ ...rest, ok: true, result: { hello: 'world' } }, reqBody, pathMethod, SIGNER_KEY) }
   })
   const { results } = await runSuite({ url: base })
-  assert.ok(failed(results, 'tap21.method-not-found').length === 1, show(results))
+  assert.ok(failed(results, 'tapi21.method-not-found').length === 1, show(results))
 })
 
 test('CLI: exit 0 + JUnit for a conformant provider, exit 1 for a broken one', async () => {
@@ -239,7 +239,7 @@ test('CLI: exit 0 + JUnit for a conformant provider, exit 1 for a broken one', a
   const gx = readFileSync(join(dir, 'good.xml'), 'utf8')
   assert.match(gx, /<testsuites name="tapeapi-conformance" tests="\d+" failures="0">/)
   const b = await run(bad, join(dir, 'bad.xml'))
-  assert.equal(b.code, 1, b.out); assert.match(b.out, /FAIL  MUST   tap21\.envelope\.sig-recovers/)
+  assert.equal(b.code, 1, b.out); assert.match(b.out, /FAIL  MUST   tapi21\.envelope\.sig-recovers/)
   assert.match(readFileSync(join(dir, 'bad.xml'), 'utf8'), /<failure type="MUST"/)
   assert.equal(spawnSync(process.execPath, [RUN]).status, 2) // no --url: usage error / 缺 --url：用法错误
 })

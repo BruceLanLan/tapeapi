@@ -47,8 +47,8 @@ if (PROD) {
 // Local debugging: make the paid methods free so the call path works without a chain (dev manifests only).
 if (manifest.dev && process.env.FREE_ALL === '1') for (const m of manifest.methods) m.priceBEM = '0'
 
-// 上线时端点必须是 https://（TAP-20 §3.4）。默认的 http://127.0.0.1 在 PROD 下会被清单校验拒绝，
-// 与其抛一段栈，不如在这里说清楚要设什么。 / Going live requires an https:// endpoint (TAP-20 §3.4).
+// 上线时端点必须是 https://（TAPI-20 §3.4）。默认的 http://127.0.0.1 在 PROD 下会被清单校验拒绝，
+// 与其抛一段栈，不如在这里说清楚要设什么。 / Going live requires an https:// endpoint (TAPI-20 §3.4).
 // The default http://127.0.0.1 is refused by manifest validation once PROD is on; say what to set
 // instead of throwing a stack trace. (cold-start test 2026-09-21)
 if (PROD && !process.env.PUBLIC_URL) {

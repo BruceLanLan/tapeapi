@@ -88,7 +88,7 @@ A TapeOut name `<#ID>.<processor>.tape` is read from the chain too: the processo
 (`factory.cpuAt`), and that contract with `#ID` gives the container (`DeWebHub.accountOf`). It adds no trust beyond the
 `{ circuits, tokenId }` form; the three forms above reach the same checks.
 
-Resolution ([TAP-20 §3.6](../../spec/TAP-20.md)) does, in order:
+Resolution ([TAPI-20 §3.6](../../spec/TAPI-20.md)) does, in order:
 
 1. derives the container from the circuit (`DeWebHub.accountOf`) and checks the processor is a real TapeOut one
    (`factory.isCPU`), so a counterfeit NFT cannot pose as a service;
@@ -126,7 +126,7 @@ try {
 | `PRICE_CHANGED` | The price rose above what you accepted. | Ask your user, then `api.acceptPrice(svc, method)` or pass `{ maxPrice }`. |
 | `QUORUM_FAILED` | Providers in `callQuorum` did not agree. | Treat as no answer. |
 
-The full list is in [Upgrading to 1.0](upgrade-1.0.md#error-codes) and [TAP-21](../../spec/TAP-21.md). Errors sent by the service are signed too (`e.signed`).
+The full list is in [Upgrading to 1.0](upgrade-1.0.md#error-codes) and [TAPI-21](../../spec/TAPI-21.md). Errors sent by the service are signed too (`e.signed`).
 
 ## 4. Require agreement between providers
 
@@ -147,9 +147,9 @@ freshness checks and a circuit breaker.
 
 ## 5. Pay for calls
 
-> **Experimental.** Payments (TAP-22 payment channels and the escrow contract) are not deployed or audited and are not covered by the 1.0 stability promise: the names below may change in a 1.x minor release. See [Upgrading to 1.0](upgrade-1.0.md#what-10-promises).
+> **Experimental.** Payments (TAPI-22 payment channels and the escrow contract) are not deployed or audited and are not covered by the 1.0 stability promise: the names below may change in a 1.x minor release. See [Upgrading to 1.0](upgrade-1.0.md#what-10-promises).
 
-Free methods need nothing. Paid methods take a voucher signed by the consumer ([TAP-22](../../spec/TAP-22.md)):
+Free methods need nothing. Paid methods take a voucher signed by the consumer ([TAPI-22](../../spec/TAPI-22.md)):
 
 ```js
 const consumer = '0x<your address>'                             // the wallet account that signs the vouchers
@@ -191,5 +191,5 @@ digest = keccak256( "TAPI-1/resp/v2" ‖ c ‖ keccak256(id) ‖ keccak256(canon
 ```
 
 Recover the signer (low-s only), compare it with `manifest.signer`, check that the holder's delegation names that
-signer, and that `|now - ts| <= 300`. Canonical JSON is defined in [TAP-21](../../spec/TAP-21.md); test vectors and an
+signer, and that `|now - ts| <= 300`. Canonical JSON is defined in [TAPI-21](../../spec/TAPI-21.md); test vectors and an
 independent Python implementation are in [`spec/vectors/`](../../spec/vectors/).

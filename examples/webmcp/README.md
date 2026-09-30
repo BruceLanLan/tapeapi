@@ -2,11 +2,11 @@
 
 Any TapeAPI service becomes a set of tools an AI agent in the browser can call, through WebMCP's
 `document.modelContext`. The agent never gets what a page merely claims: each call goes through the SDK, so the
-answer is a TAP-21 envelope verified against the signer the circuit's holder delegated on chain (TAP-20). A tampered
+answer is a TAPI-21 envelope verified against the signer the circuit's holder delegated on chain (TAPI-20). A tampered
 or unsigned answer reaches the agent as an error, never as a result.
 
 任何 TapeAPI 服务都能变成浏览器里 AI 代理可调用的一组工具（WebMCP 的 `document.modelContext`）。代理拿到的永远不是页面的
-一面之词：每次调用都走 SDK，回答是按电路持有人在链上授权的签名者验过签的 TAP-21 信封。被篡改或未签名的回答对代理是错误，
+一面之词：每次调用都走 SDK，回答是按电路持有人在链上授权的签名者验过签的 TAPI-21 信封。被篡改或未签名的回答对代理是错误，
 绝不是结果。
 
 ## Use it in a page / 在页面里用

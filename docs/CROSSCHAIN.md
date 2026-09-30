@@ -8,26 +8,26 @@
 - 电路 NFT 只在 BSC 上铸造，但容器身份可以在任何 EVM 链上被承认（ERC-6551 地址可确定性推导）。一个服务一个身份，多链通用。
 - 电路可以在链上 `eval()`，约 2468 gas 每门，单次上限 1200 万 gas，约 4800 门。这是其它任何生态都没有的"链上可重算的小型逻辑"。
 
-## 1. TAP-23 Attested Read：无桥跨链读取
+## 1. TAPI-23 Attested Read：无桥跨链读取
 **问题**：BSC 上的 DeWEB 应用想知道 Ethereum、Base、Solana 上某个状态（余额、价格、NFT 归属、某笔交易是否确认）。传统答案是预言机委员会或轻客户端桥，都重。
-**TapeAPI 的答案**：任何持有电路的人都可以发布一个 Attested Read 服务，方法形如 `read(chainId, call)`，响应是 TAP-21 信封加两条额外字段：`{ chainId, blockNumber, blockHash, stateRoot? , result }`。
+**TapeAPI 的答案**：任何持有电路的人都可以发布一个 Attested Read 服务，方法形如 `read(chainId, call)`，响应是 TAPI-21 信封加两条额外字段：`{ chainId, blockNumber, blockHash, stateRoot? , result }`。
 **信任模型**：单个服务只是一个签名者。SDK 提供 `quorum` 模式：同一别名类别下选 N 个独立提供者，要求 ≥2 个结果一致才采用，不一致就拒绝。这与 TapeKit 内核"至少两家独立节点一致、永远没有多数投票"是同一条规则，评审者一看就懂。
-**经济安全**：提供者可在 Escrow 上质押（TAP-22 扩展 `stake()`），签了错误结果被另一个提供者用同一区块的 `blockHash` 加 Merkle 证明举证后罚没。第一版不做罚没，只做多提供者一致。
+**经济安全**：提供者可在 Escrow 上质押（TAPI-22 扩展 `stake()`），签了错误结果被另一个提供者用同一区块的 `blockHash` 加 Merkle 证明举证后罚没。第一版不做罚没，只做多提供者一致。
 **用途**：跨链余额门槛（持有 ETH 主网 NFT 才能进 BSC 游戏）、跨链价格、跨链身份、跨链事件触发。
 
-## 2. TAP-24 Intent RFQ：不做桥的跨链兑换
+## 2. TAPI-24 Intent RFQ：不做桥的跨链兑换
 **问题**：用户在链 A 有资产，想在链 B 得到资产。
 **流程**（全部是数据，没有资金池）：
 1. 用户通过 SDK 向多个"Solver"服务发出询价 `quote({ fromChain, fromToken, amount, toChain, toToken, recipient })`。Solver 是普通 TapeAPI 服务，任何做市商、跨链桥、CEX 都可以注册一个电路来当 Solver。
 2. Solver 返回**签名报价**：`{ quoteId, amountOut, expires, settlementContract, solverAddressOnA, solverAddressOnB }`。签名即承诺，有效期通常 30 到 120 秒。
 3. 用户在链 A 把资产锁进一个通用的 `IntentEscrow`（每链一份，地址统一），附上 `quoteId` 和 Solver 签名。
 4. Solver 在链 B 直接把 `amountOut` 打给 `recipient`。
-5. 任何一个 TAP-23 Attested Read 服务（或多个的仲裁）出具"链 B 上该转账已确认"的签名读取结果，提交到链 A 的 `IntentEscrow`，释放锁定资产给 Solver。超时未履约，用户取回。
+5. 任何一个 TAPI-23 Attested Read 服务（或多个的仲裁）出具"链 B 上该转账已确认"的签名读取结果，提交到链 A 的 `IntentEscrow`，释放锁定资产给 Solver。超时未履约，用户取回。
 **TapeAPI 在里面做了什么**：发现 Solver、传递报价、签名承诺、提供履约证明。**没有做什么**：没有托管跨链资金池、没有铸造包装资产、没有中继验证者集合。
 **流动性从哪来**：Solver 自带。UniswapX、Across、CoW 已经证明 intent + solver 模式能承载真实流量；TapeAPI 提供的是一个不属于任何单一协议的、身份和支付都在链上的 RFQ 网络。BEM 是 Solver 支付 TapeAPI 调用费、质押和贡献的单位。
 **对 TapeOut 的价值**：每个 Solver、每个 Attested Read 提供者都要持有电路。流动性方越多，电路需求越多。
 
-## 3. TAP-25 Circuit-Verified Methods：链上可重算的服务
+## 3. TAPI-25 Circuit-Verified Methods：链上可重算的服务
 **这是 TapeAPI 与所有其它 API 标准的分水岭。**
 服务清单里的方法可以声明一个验证电路：
 ```json
@@ -42,14 +42,14 @@
 ## 4. 多链支付：BEM 作为服务经济的结算单位
 - 每条支持的链部署一份 Escrow，用 CREATE2 保证地址统一（照搬 TAP-10 的"hub 地址统一"做法）。
 - BEM 本身只在 BSC。其它链上先用该链的稳定币或原生币计价结算，清单里 `payment.units` 列出每条链接受的币种。BEM 的角色：BSC 上的默认结算币、质押币、贡献币、Solver 的 TapeAPI 调用费。
-- 当 TAP-24 跑起来，Solver 会持续需要把其它链的收入换成 BEM 来质押和付费，这就是"流动性经由 TapeAPI 流向 TapeOut"的具体机制，不需要发行跨链 BEM。
+- 当 TAPI-24 跑起来，Solver 会持续需要把其它链的收入换成 BEM 来质押和付费，这就是"流动性经由 TapeAPI 流向 TapeOut"的具体机制，不需要发行跨链 BEM。
 
 ## 5. 分期
 | 期 | 内容 | 依赖 |
 |---|---|---|
-| v0.2 | SDK `quorum` 多提供者一致；Attested Read 示例服务（读 Ethereum/Base）；TAP-23 草案 | 无 |
-| v0.3 | TAP-25 清单字段 + SDK 本地重算（用 netlist 模拟器）+ 示例（一个 PoD 加法器当校验方法）| 拿到 `eval()` 的精确接口与编码 |
-| v0.4 | Escrow 质押与 `dispute()`；TAP-24 IntentEscrow 与 Solver 参考实现 | 审计 |
+| v0.2 | SDK `quorum` 多提供者一致；Attested Read 示例服务（读 Ethereum/Base）；TAPI-23 草案 | 无 |
+| v0.3 | TAPI-25 清单字段 + SDK 本地重算（用 netlist 模拟器）+ 示例（一个 PoD 加法器当校验方法）| 拿到 `eval()` 的精确接口与编码 |
+| v0.4 | Escrow 质押与 `dispute()`；TAPI-24 IntentEscrow 与 Solver 参考实现 | 审计 |
 | v1.0 | 多链 Escrow 部署；目录站按链筛选 | 各链部署预算 |
 
 ## 6. 一句话给不同的人

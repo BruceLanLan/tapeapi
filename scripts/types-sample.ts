@@ -115,8 +115,8 @@ async function aiSidecar(): Promise<void> {
   void [chat.method, base, fetch, receipt?.result.prices?.[0]?.amount, receipt?.result.unpriced, receipt?.result.complete, receipt?.result.modelMatchedBy, receipt?.result.usage?.cache_write_1h_tokens, ai.MANIFEST_FIELD]
 }
 
-// TAP-27 groups: the owner delivers epoch message and invites in one call; the member checks its inbox.
-// TAP-27 群聊：群主一步投递纪元消息与邀请；成员检查收件房间。
+// TAPI-27 groups: the owner delivers epoch message and invites in one call; the member checks its inbox.
+// TAPI-27 群聊：群主一步投递纪元消息与邀请；成员检查收件房间。
 async function groups(): Promise<void> {
   const api = createTapeAPI({})
   const relay = await api.resolve('12.1013.tape')
@@ -139,7 +139,7 @@ async function groups(): Promise<void> {
   void [added, d?.room, d?.i, d?.error?.rateLimited, found.invites[0]?.invite.gid, found.skipped, found.room]
 }
 
-// @experimental TAP-27 §3.8: a format-2 group (up to 128), lazy member checks / 格式 2 群（至多 128 人），惰性核验
+// @experimental TAPI-27 §3.8: a format-2 group (up to 128), lazy member checks / 格式 2 群（至多 128 人），惰性核验
 async function groupsV2(): Promise<void> {
   const api = createTapeAPI({})
   const me = generateIdentity()

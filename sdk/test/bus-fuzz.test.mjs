@@ -1,4 +1,4 @@
-// Randomised adversarial runs of the ChannelBus log reader (TAP-26 §3.7, "hold, never skip"). Each run draws a node set
+// Randomised adversarial runs of the ChannelBus log reader (TAPI-26 §3.7, "hold, never skip"). Each run draws a node set
 // (history windows, publicnode's recorded result cap and range hints -- right, single-block, garbage, inner, over,
 // under --, bodyLimit, nodes that serve no logs, missing receipts, transient failures, latency, a node that lies: a logs
 // node or a dataseed whose receipts omit logs, a noisy node adding other addresses' / rooms' / blocks' logs), a chain
@@ -263,7 +263,7 @@ async function runOn(clock, seed, ONLY) {
         const attributable = (k) => nodes.every((n, j) => j === k || n.liar || n.noLogs || gaveUp(j) || p.block < p.headAtPass - n.window || ((stuffed.get(p.block) || 0) + 1 > n.cap && !n.receipts))
         if (warns.some(({ d }) => d.abandoned != null && d.abandoned !== liarAt && !nodes[d.abandoned].noLogs && gaveUp(d.abandoned) && attributable(d.abandoned))) continue
         // A reorg deeper than confirmations that moves a frame below the cursor is read again only by the overlap; if the
-        // window then slides past it before an honest node re-reads it, it is lost (documented limit, TAP-26 §3.7).
+        // window then slides past it before an honest node re-reads it, it is lost (documented limit, TAPI-26 §3.7).
         // 比确认数更深、把帧挪到游标之下的重组只靠重叠区重读；窗口先滑过则丢失（已记录的限制）。
         if (p.movedBelow && nodes.every((n) => n.liar || n.noLogs || p.block < st.block - n.window)) continue
         const onlyLiar = junkOK && nodes.every((n, i) => i === liarAt || n.noLogs || p.block < st.block - n.window)

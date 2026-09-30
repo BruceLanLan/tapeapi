@@ -54,7 +54,7 @@ test('manifest over 24,000 bytes -> putFile + appendChunk(expectIndex = 1, 2, â€
   assert.equal(all.length, r.size); assert.equal(sha(all), hash.toLowerCase())
 })
 
-test('rejects: over the 64 KiB TAP-20 limit, wrong container, invalid manifest, non-JSON string', () => {
+test('rejects: over the 64 KiB TAPI-20 limit, wrong container, invalid manifest, non-JSON string', () => {
   const big = base(); big.description = 'y'.repeat(MANIFEST_LIMIT)
   assert.throws(() => api.tx.publishManifest({ container: ADDR.container, manifest: big }), (e) => e instanceof TapeAPIError && /exceeds/.test(e.message))
   assert.throws(() => api.tx.publishManifest({ container: ADDR.escrow, manifest: base() }), (e) => e.code === 'MANIFEST_INVALID' && /not the target container/.test(e.message))

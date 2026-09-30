@@ -221,7 +221,7 @@ async function main() {
   let svc, routes
   try {
     svc = await api.resolve(opts.dev ? { dev: opts.dev } : opts.target)
-    // resolve() validated the field (TAP-20 §3.9) and dropped it when invalid. / resolve() 已校验该字段，无效则已丢弃。
+    // resolve() validated the field (TAPI-20 §3.9) and dropped it when invalid. / resolve() 已校验该字段，无效则已丢弃。
     if (svc.aiProblems) throw new Error(`its ${ai.MANIFEST_FIELD} field is invalid: ${svc.aiProblems.join('; ')}`)
     routes = routesOf(svc.manifest)
   } catch (e) {

@@ -66,7 +66,7 @@ const byName = await api.resolve('11.1013.tape')                   // &lt;#ID&gt
 const byContainer = await api.resolve('0x&lt;container address&gt;')
 const byCircuit = await api.resolve({ circuits: '0x&lt;processor contract&gt;', tokenId: '11' })</code></pre></div>
 <p>TapeOut 名称 <code>&lt;#ID&gt;.&lt;processor&gt;.tape</code> 同样从链上读取：处理器编号给出处理器合约（<code>factory.cpuAt</code>），该合约加上 <code>#ID</code> 给出容器（<code>DeWebHub.accountOf</code>）。它不比 <code>{ circuits, tokenId }</code> 形式多引入任何信任；上面三种形式经过同样的检查。</p>
-<p>解析（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-20.md" rel="noopener">TAP-20 §3.6</a>）依次执行：</p>
+<p>解析（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-20.md" rel="noopener">TAPI-20 §3.6</a>）依次执行：</p>
 <ol><li>从电路推导出容器（<code>DeWebHub.accountOf</code>），并检查处理器确实是 TapeOut 的处理器（<code>factory.isCPU</code>），使伪造的 NFT 无法冒充服务；</li><li>从容器的站点读取 <code>.well-known/tapeapi.json</code>，并对照链上数据检查其长度和 SHA-256；</li><li>校验清单；</li><li>对照<strong>当前</strong>持有者，检查电路持有者对服务签名密钥的 EIP-712 委托。</li></ol>
 <p>解析出的服务会被缓存；SDK 大约每小时重读一次，并在签名或价格不再匹配时立即重读。<code>api.refresh(svc)</code> 可强制重读。</p>
 <h2 id="3-处理错误"><a class="anchor" href="#3-处理错误" aria-hidden="true">#</a>3. 处理错误</h2>
@@ -80,7 +80,7 @@ try {
   console.error(e.code, e.message, e.signed ? '(signed by the service)' : '')
 }</code></pre></div>
 <div class="table"><table><thead><tr><th>错误码</th><th>含义</th><th>应对</th></tr></thead><tbody><tr><td><code>INVALID_ARGUMENT</code></td><td>你自己的选项或参数有误（没配 <code>rpcUrls</code>、不支持的目标、选项不合法）。没有发出任何请求。</td><td>改正调用；绝不重试。</td></tr><tr><td><code>RPC_UNAVAILABLE</code></td><td>作答的 RPC 节点少于法定人数。</td><td>重试；增加节点。</td></tr><tr><td><code>RPC_DISAGREE</code></td><td>节点返回了不同的字节。</td><td>重试；若持续出现，说明某个节点落后或在说谎。</td></tr><tr><td><code>MANIFEST_INVALID</code></td><td>没有清单、清单有误，或其字节与链上不符。</td><td>该服务没有（正确地）发布。</td></tr><tr><td><code>DELEGATION_INVALID</code></td><td>签名密钥未获当前持有者授权，或委托已过期。</td><td>提供者必须续期。</td></tr><tr><td><code>BAD_SIGNATURE</code></td><td>回答不是由被委托的密钥签名的。</td><td>不要使用它。SDK 会重读一次清单，以防密钥已轮换。</td></tr><tr><td><code>METHOD_NOT_FOUND</code></td><td>清单中没有该方法。</td><td>检查 <code>svc.manifest.methods</code>。</td></tr><tr><td><code>PRICE_CHANGED</code></td><td>价格涨到了你已接受的价格之上。</td><td>先征询你的用户，再调用 <code>api.acceptPrice(svc, method)</code> 或传入 <code>{ maxPrice }</code>。</td></tr><tr><td><code>QUORUM_FAILED</code></td><td><code>callQuorum</code> 中的提供者未达成一致。</td><td>视为没有回答。</td></tr></tbody></table></div>
-<p>完整列表见<a href="upgrade-1.0#错误码">升级到 1.0</a>与 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md" rel="noopener">TAP-21</a>。服务发出的错误同样带签名（<code>e.signed</code>）。</p>
+<p>完整列表见<a href="upgrade-1.0#错误码">升级到 1.0</a>与 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-21.md" rel="noopener">TAPI-21</a>。服务发出的错误同样带签名（<code>e.signed</code>）。</p>
 <h2 id="4-要求多个提供者之间达成一致"><a class="anchor" href="#4-要求多个提供者之间达成一致" aria-hidden="true">#</a>4. 要求多个提供者之间达成一致</h2>
 <p>单个服务的签名回答只能证明是谁说的，不能证明它是真的。对于重要的数值，请向多个独立提供者询问同一个区块，只接受逐字节相同的结果：</p>
 <div class="code"><pre data-lang="js"><code>const [a, b] = await Promise.all([api.resolve('0x&lt;container A&gt;'), api.resolve('0x&lt;container B&gt;')])
@@ -90,8 +90,8 @@ const q = await api.callQuorum([a, b], 'bnbUsd', { block }, { quorum: 2 })
 console.log(q.result, 'agreed by', q.agreed)                  // 否则抛出 TapeAPIError('QUORUM_FAILED')</code></pre></div>
 <p>只有描述以 <code>[quorum]</code> 开头的方法才能这样比较；<code>[no-quorum]</code> 方法（带随机 id 的报价、<code>latest</code> 读取）按设计就会各不相同。使用单一来源数值的协议仍应施加边界检查、新鲜度检查和熔断机制。</p>
 <h2 id="5-为调用付费"><a class="anchor" href="#5-为调用付费" aria-hidden="true">#</a>5. 为调用付费</h2>
-<blockquote><p><strong>实验性。</strong> 付费功能（TAP-22 付费通道与托管合约）尚未部署、未经审计，不在 1.0 的稳定承诺之内：下面的名字可能在 1.x 的次版本里改变。见<a href="upgrade-1.0#10-承诺什么">升级到 1.0</a>。</p></blockquote>
-<p>免费方法无需任何东西。付费方法需要一张由消费者签名的凭证（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-22.md" rel="noopener">TAP-22</a>）：</p>
+<blockquote><p><strong>实验性。</strong> 付费功能（TAPI-22 付费通道与托管合约）尚未部署、未经审计，不在 1.0 的稳定承诺之内：下面的名字可能在 1.x 的次版本里改变。见<a href="upgrade-1.0#10-承诺什么">升级到 1.0</a>。</p></blockquote>
+<p>免费方法无需任何东西。付费方法需要一张由消费者签名的凭证（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-22.md" rel="noopener">TAPI-22</a>）：</p>
 <div class="code"><pre data-lang="js"><code>const consumer = '0x&lt;your address&gt;'                             // 签署凭证的钱包账户
 const payer = api.payer({
   consumer,
@@ -108,7 +108,7 @@ const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code><
 <p>任何语言都可以检查回答。对于发往容器 <code>c</code> 的方法 <code>m</code> 的请求 <code>{ id, params }</code>，服务使用 EIP-191 <code>personal_sign</code> 对以下内容签名：</p>
 <div class="code"><pre><code>digest = keccak256( &quot;TAPI-1/resp/v2&quot; ‖ c ‖ keccak256(id) ‖ keccak256(canonicalJSON({method: m, params}))
                     ‖ uint8(ok) ‖ keccak256(canonicalJSON(result or error)) ‖ uint64BE(ts) )</code></pre></div>
-<p>恢复出签名者（只接受低 s），将其与 <code>manifest.signer</code> 比较，检查持有者的委托指明的正是该签名者，并且 <code>|now - ts| &lt;= 300</code>。规范 JSON 的定义见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-21.md" rel="noopener">TAP-21</a>；测试向量和一个独立的 Python 实现位于 <a href="https://github.com/BruceLanLan/tapeapi/tree/main/spec/vectors" rel="noopener"><code>spec/vectors/</code></a>。</p>
+<p>恢复出签名者（只接受低 s），将其与 <code>manifest.signer</code> 比较，检查持有者的委托指明的正是该签名者，并且 <code>|now - ts| &lt;= 300</code>。规范 JSON 的定义见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-21.md" rel="noopener">TAPI-21</a>；测试向量和一个独立的 Python 实现位于 <a href="https://github.com/BruceLanLan/tapeapi/tree/main/spec/vectors" rel="noopener"><code>spec/vectors/</code></a>。</p>
 </article>
 <nav class="pn"><a class="prev" href="mcp"><span>上一篇</span>在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a><a class="next" href="provide"><span>下一篇</span>运行服务</a></nav>
 <p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/consume.md" rel="noopener">在 GitHub 上编辑此页</a></p>

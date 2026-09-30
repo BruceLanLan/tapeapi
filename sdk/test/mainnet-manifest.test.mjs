@@ -1,11 +1,11 @@
-// TAP-20 §6.1 mainnet vector: the live manifest of 11.1013.tape (api.tapeapi.fun), recorded read-only at one block by
+// TAPI-20 §6.1 mainnet vector: the live manifest of 11.1013.tape (api.tapeapi.fun), recorded read-only at one block by
 // scripts/record-mainnet-manifest.mjs (sdk/test/fixtures/mainnet-11-1013-manifest.json). The recorded answers are
 // replayed through the SDK's real resolve path with no network, with the clock set to that block's timestamp: the
 // fixture pins the state at that block, and the delegation it carries expires in December. spec/vectors/verify.py checks
-// the same fixture independently, and the TAP-20 §6.1 table must quote its values.
-// TAP-20 §6.1 主网向量：11.1013.tape 的线上清单，在一个区块上只读录制。录下的回答无网络地回放给 SDK 真正的解析路径，
+// the same fixture independently, and the TAPI-20 §6.1 table must quote its values.
+// TAPI-20 §6.1 主网向量：11.1013.tape 的线上清单，在一个区块上只读录制。录下的回答无网络地回放给 SDK 真正的解析路径，
 // 时钟设为该区块的时间戳：fixture 钉的是那个区块上的状态，其中的委托 12 月到期。verify.py 独立核对同一个 fixture，
-// TAP-20 §6.1 的表格必须引用它的数值。
+// TAPI-20 §6.1 的表格必须引用它的数值。
 import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto'
 import { createTapeAPI, abi, sig } from '../src/index.js'
 
 const fx = JSON.parse(readFileSync(new URL('./fixtures/mainnet-11-1013-manifest.json', import.meta.url), 'utf8'))
-const spec = readFileSync(new URL('../../spec/TAP-20.md', import.meta.url), 'utf8')
+const spec = readFileSync(new URL('../../spec/TAPI-20.md', import.meta.url), 'utf8')
 const byCall = new Map(Object.values(fx.calls).map((c) => [`${c.to.toLowerCase()}:${c.data.toLowerCase()}`, c]))
 const served = new Set()
 const replayFetch = async (url, init) => {
@@ -30,7 +30,7 @@ const at = async (unixS, fn) => {
 }
 const api = () => createTapeAPI({ rpcUrls: ['https://a.invalid', 'https://b.invalid'], quorum: 2, fetch: replayFetch })
 
-test('TAP-20 §6.1: the fixture was read under the operator quorum at one pinned block', () => {
+test('TAPI-20 §6.1: the fixture was read under the operator quorum at one pinned block', () => {
   assert.equal(fx.chainId, 56)
   assert.equal(fx.rpc.quorum, 2)
   assert.ok(fx.rpc.operators.length >= 2)
@@ -41,7 +41,7 @@ test('TAP-20 §6.1: the fixture was read under the operator quorum at one pinned
   for (const [name, c] of Object.entries(fx.calls)) assert.ok(c.operators.length >= fx.rpc.quorum, `${name}: answered by ${c.operators}`)
 })
 
-test('TAP-20 §6.1: resolve("11.1013.tape") replays offline to the recorded service, delegation verified against the holder', async () => {
+test('TAPI-20 §6.1: resolve("11.1013.tape") replays offline to the recorded service, delegation verified against the holder', async () => {
   served.clear()
   const svc = await at(fx.block.timestamp, () => api().resolve(fx.name))
   assert.equal(svc.container, fx.container)
@@ -57,7 +57,7 @@ test('TAP-20 §6.1: resolve("11.1013.tape") replays offline to the recorded serv
   assert.equal(served.size, byCall.size)
 })
 
-test('TAP-20 §6.1: the manifest bytes hash to fileInfo.sha256Hash, and the circuit is processor 1013 on the factory', () => {
+test('TAPI-20 §6.1: the manifest bytes hash to fileInfo.sha256Hash, and the circuit is processor 1013 on the factory', () => {
   const call = (fn) => Object.values(fx.calls).find((c) => c.data.startsWith(abi.selector(fn)))
   const bytes = Buffer.from(abi.decodeReturn('read', call('read').result).slice(2), 'hex')
   const info = abi.decodeReturn('fileInfo', call('fileInfo').result)
@@ -72,7 +72,7 @@ test('TAP-20 §6.1: the manifest bytes hash to fileInfo.sha256Hash, and the circ
   assert.equal(m.container.toLowerCase(), fx.container.toLowerCase())
 })
 
-test('TAP-20 §6.1: the delegation digest recovers to ownerOf at that block (§3.4, done here without resolve)', () => {
+test('TAPI-20 §6.1: the delegation digest recovers to ownerOf at that block (§3.4, done here without resolve)', () => {
   const d = { container: fx.container, signer: fx.manifest.signer, expires: fx.manifest.delegation.expires }
   const digest = sig.delegationDigest(56, '0xe61A9C7213a6Aa616C246a2B569e555B417b25ee', d)
   assert.equal(sig.recoverAddress(digest, fx.manifest.delegation.sig), fx.holder)
@@ -80,12 +80,12 @@ test('TAP-20 §6.1: the delegation digest recovers to ownerOf at that block (§3
   assert.equal(owner.toLowerCase(), fx.holder.toLowerCase())
 })
 
-test('TAP-20 §6.1: the pin is a block, not a date: past delegation.expires the same bytes are DELEGATION_INVALID', async () => {
+test('TAPI-20 §6.1: the pin is a block, not a date: past delegation.expires the same bytes are DELEGATION_INVALID', async () => {
   await assert.rejects(at(fx.manifest.delegation.expires + 1, () => api().resolve(fx.name)), (e) => e.code === 'DELEGATION_INVALID')
 })
 
-test('TAP-20 §6.1: both halves of the spec table quote the fixture', () => {
-  const i = spec.indexOf('\n---\n\n# TAP-20')
+test('TAPI-20 §6.1: both halves of the spec table quote the fixture', () => {
+  const i = spec.indexOf('\n---\n\n# TAPI-20')
   const halves = [spec.slice(spec.indexOf('### 6.1'), spec.indexOf('### 6.2')), spec.slice(spec.indexOf('### 6.1', i), spec.indexOf('### 6.2', i))]
   for (const t of halves) {
     for (const want of [fx.circuits, fx.container, fx.holder, fx.manifest.signer, fx.manifest.sha256Hash, fx.block.hash, String(fx.manifest.delegation.expires)]) {

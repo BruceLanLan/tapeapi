@@ -53,9 +53,9 @@ const registryReads = (chain) => chain.state.calls.filter((c) => c.to.toLowerCas
 
 // Both halves of a spec, split where the Chinese translation starts. / 规范的两半，从中文译文标题处切开。
 const spec = (n) => {
-  const text = readFileSync(new URL(`../../spec/TAP-${n}.md`, import.meta.url), 'utf8')
-  const [en, zh] = text.split(new RegExp(`^# TAP-${n}：`, 'm'))
-  assert.ok(zh, `TAP-${n} has a Chinese half`)
+  const text = readFileSync(new URL(`../../spec/TAPI-${n}.md`, import.meta.url), 'utf8')
+  const [en, zh] = text.split(new RegExp(`^# TAPI-${n}：`, 'm'))
+  assert.ok(zh, `TAPI-${n} has a Chinese half`)
   return { en, zh }
 }
 
@@ -76,11 +76,11 @@ test('FIXED SD-2: every BAD_SIGNATURE re-reads the manifest from step 2, not onl
   chain.writeFile(ADDR.container, MANIFEST_KEY, JSON.stringify(manifestFor(['http://svc2.test/tapeapi/v1'])))
   const before = registryReads(chain)
   await assert.rejects(api.call(svc, 'ping', {}), (e) => e.code === 'BAD_SIGNATURE' && /id mismatch/.test(e.message))
-  assert.ok(registryReads(chain) > before, 'TAP-21 §3.4: the manifest was re-read on BAD_SIGNATURE')
+  assert.ok(registryReads(chain) > before, 'TAPI-21 §3.4: the manifest was re-read on BAD_SIGNATURE')
   assert.equal(svc.manifest.endpoints.live[0], 'http://svc2.test/tapeapi/v1', 'the re-read updated the handle in place')
   const r = await api.call(svc, 'ping', {})
   assert.deepEqual(r.result, { v: 1 }, 'the next call reaches the new endpoint')
-  // Throttled per service (TAP-21 §3.4 SHOULD): a second failure within the window does not read again.
+  // Throttled per service (TAPI-21 §3.4 SHOULD): a second failure within the window does not read again.
   // 按服务限频：窗口内第二次失败不再读链。
   chain.writeFile(ADDR.container, MANIFEST_KEY, JSON.stringify(manifestFor(['http://svc.test/tapeapi/v1'])))
   svc.manifest.endpoints.live = ['http://svc.test/tapeapi/v1']
@@ -97,7 +97,7 @@ test('FIXED SD-3: a burned circuit is MANIFEST_INVALID (step 4) even when its de
   await assert.rejects(live.api.resolve(ADDR.container), (e) => e.code === 'DELEGATION_INVALID' && /expired/.test(e.message))
 })
 
-test('FIXED SD-4: a contract holder\'s delegation longer than 65 bytes (TAP-20 §3.3/§3.4) resolves through EIP-1271', async () => {
+test('FIXED SD-4: a contract holder\'s delegation longer than 65 bytes (TAPI-20 §3.3/§3.4) resolves through EIP-1271', async () => {
   const safe = '0x' + '99'.repeat(20)
   const long = '0x' + 'ab'.repeat(130)   // e.g. two owners' signatures of a Safe / 例如 Safe 两位所有者的签名
   const m = manifestFor(['http://svc.test/tapeapi/v1'], { delegation: { expires: EXPIRES, sig: long } })
@@ -114,7 +114,7 @@ test('FIXED SD-4: a contract holder\'s delegation longer than 65 bytes (TAP-20 �
   assert.throws(() => validateManifest({ ...m, delegation: { expires: EXPIRES, sig: long + 'a' } }), (e) => e.code === 'MANIFEST_INVALID')
   const { en, zh } = spec(20)
   assert.match(en, /passes a longer `sig`, up to 1024 bytes/)
-  assert.match(zh, /更长的 `sig`（与 TAP-26 通道记录相同，至多 1024 字节）直接交给 EIP-1271/)
+  assert.match(zh, /更长的 `sig`（与 TAPI-26 通道记录相同，至多 1024 字节）直接交给 EIP-1271/)
 })
 
 test('FIXED SD-5: HTTP 429 with a non-JSON body is RATE_LIMITED; the voucher is not carried on to the next endpoint', async () => {
@@ -126,7 +126,7 @@ test('FIXED SD-5: HTTP 429 with a non-JSON body is RATE_LIMITED; the voucher is 
   const { api, hits } = world({ manifest: manifestFor(['http://a.test/tapeapi/v1', 'http://b.test/tapeapi/v1']), routes })
   const svc = await api.resolve(ADDR.container)
   await assert.rejects(api.call(svc, 'ping', {}), (e) => e.code === 'RATE_LIMITED' && e.data?.retryAfterS === 7)
-  assert.deepEqual(hits, ['a.test'], 'TAP-21 §3.4: a 429 is the answer, not a transport failure')
+  assert.deepEqual(hits, ['a.test'], 'TAPI-21 §3.4: a 429 is the answer, not a transport failure')
 })
 
 test('FIXED SD-6: the 1 MiB cap is measured in UTF-8 bytes on the no-stream path too', async () => {
@@ -150,9 +150,9 @@ test('FIXED SD-7: a manifest read from the chain cannot switch off the zero-escr
   assert.equal(validateManifest(priced, { requireDelegation: false }).payment.escrow, ZERO)
 })
 
-test('FIXED SD-7: TAP-20 states what the code enforces (proto-key method names, optional unit/decimals, zero escrow, directory cross-check, error bucketing)', () => {
+test('FIXED SD-7: TAPI-20 states what the code enforces (proto-key method names, optional unit/decimals, zero escrow, directory cross-check, error bucketing)', () => {
   const { en, zh } = spec(20)
-  assert.match(en, /and not `__proto__`, `constructor` or `prototype`: TAP-21 §3\.1 forbids/)
+  assert.match(en, /and not `__proto__`, `constructor` or `prototype`: TAPI-21 §3\.1 forbids/)
   assert.match(zh, /且不得为 `__proto__`、`constructor` 或 `prototype`/)
   assert.throws(() => validateManifest(manifestFor(['https://s.example/v1'], { methods: [{ name: 'constructor', priceBEM: '0', params: {}, returns: {} }] })), (e) => e.code === 'MANIFEST_INVALID')
   assert.match(en, /`unit` and `decimals` carry no information[^|]*either may be omitted/)
@@ -167,7 +167,7 @@ test('FIXED SD-7: TAP-20 states what the code enforces (proto-key method names, 
   assert.match(zh, /节点之间按其 `code` 以及它是否报告回滚/)
 })
 
-test('FIXED SD-8: TAP-20 §3.5 says a burned circuit makes register/update revert with NotHolder, as the contract does', () => {
+test('FIXED SD-8: TAPI-20 §3.5 says a burned circuit makes register/update revert with NotHolder, as the contract does', () => {
   const { en, zh } = spec(20)
   assert.doesNotMatch(en, /not revert the transaction/)
   assert.match(en, /MUST be treated as "no holder", so the call is refused \(the reference contract reverts with `NotHolder\(\)`\)/)
@@ -177,7 +177,7 @@ test('FIXED SD-8: TAP-20 §3.5 says a burned circuit makes register/update rever
   assert.match(sol, /if \(_holderOf\(circuits, tokenId\) != msg\.sender\) revert NotHolder\(\);/)
 })
 
-test('FIXED SD-9: relayRecv always carries `epoch`, null until the relay has named one (TAP-26 §3.5)', async () => {
+test('FIXED SD-9: relayRecv always carries `epoch`, null until the relay has named one (TAPI-26 §3.5)', async () => {
   const sent = []
   let epoch = null
   const api = { call: async (svc, method, params) => { sent.push(params); return { result: { frames: [], next: -1, epoch } } } }
@@ -193,7 +193,7 @@ test('FIXED SD-9: relayRecv always carries `epoch`, null until the relay has nam
   assert.match(zh, /中继 SHOULD 同时接受不带 `epoch` 字段的请求/)
 })
 
-test('FIXED SD-10: TAP-23 §3.4 compares a signed revert like an answer (never accepted) and keeps other signed errors neutral', () => {
+test('FIXED SD-10: TAPI-23 §3.4 compares a signed revert like an answer (never accepted) and keeps other signed errors neutral', () => {
   const { en, zh } = spec(23)
   assert.match(en, /A verified error envelope that carries revert data \(§3\.3\) is also a statement about chain state/)
   assert.match(en, /a group of reverts is never accepted as a result\. Any other verified error envelope is a refusal/)
@@ -201,7 +201,7 @@ test('FIXED SD-10: TAP-23 §3.4 compares a signed revert like an answer (never a
   assert.match(zh, /一组回滚永远不会被接受为结果。其他已验证错误信封都是拒答/)
 })
 
-test('FIXED SD-11: TAP-24 §3.2 lets a Solver add informative fields beside { quote, sig, escrow }', () => {
+test('FIXED SD-11: TAPI-24 §3.2 lets a Solver add informative fields beside { quote, sig, escrow }', () => {
   const { en, zh } = spec(24)
   assert.match(en, /A Solver MAY add informative fields beside these three/)
   assert.match(zh, /Solver MAY 在这三个字段之外附加信息性字段/)
@@ -230,9 +230,9 @@ test('FIXED SD-13: stale code comments corrected', () => {
   assert.doesNotMatch(channel, /about 5,200 blocks/)
   assert.doesNotMatch(channel, /publicnode \(the default node set\)/)
   assert.doesNotMatch(index, /directory, escrow：合约地址，默认为主网/)
-  assert.doesNotMatch(index, /is what a provider following TAP-22 §3\.2 literally may send/)
-  assert.doesNotMatch(index, /TAP-27 §3\.3 step 5: a verifier for group rosters/)
-  assert.doesNotMatch(server, /TAP-22 §3\.3: every BAD_VOUCHER/)
-  assert.doesNotMatch(server, /TAP-21 §7 rather than papered over/)
+  assert.doesNotMatch(index, /is what a provider following TAPI-22 §3\.2 literally may send/)
+  assert.doesNotMatch(index, /TAPI-27 §3\.3 step 5: a verifier for group rosters/)
+  assert.doesNotMatch(server, /TAPI-22 §3\.3: every BAD_VOUCHER/)
+  assert.doesNotMatch(server, /TAPI-21 §7 rather than papered over/)
 })
 

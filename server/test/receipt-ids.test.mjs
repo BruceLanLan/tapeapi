@@ -1,9 +1,9 @@
 // Guessable answer ids (the 2026 Q4 plan, privacy item 1). Ollama's OpenAI-compatible API numbers its chat ids
-// "chatcmpl-" and 0..998 (ollama/ollama#18655); TAP-21 §3.5 makes the sidecar keep the upstream's id, and the free
+// "chatcmpl-" and 0..998 (ollama/ollama#18655); TAPI-21 §3.5 makes the sidecar keep the upstream's id, and the free
 // `receipt` method answers anyone who names an id. So: the sidecar estimates the ids' entropy and says so in its log;
 // receipts are stored per (id, requestSha256), so answers that share an id keep a receipt each; the `receipt` method has
 // its own per-IP budget (an unsigned 429 past it); the lifetime is configurable; and the optional `requestSha256`
-// parameter (TAP-21 §3.5, MAY) picks one receipt, or is required when the operator says so. The receipt itself is
+// parameter (TAPI-21 §3.5, MAY) picks one receipt, or is required when the operator says so. The receipt itself is
 // unchanged. No network.
 // 可猜的回答 id：Ollama 的 OpenAI 兼容接口把对话 id 编成 "chatcmpl-" 加 0..998；规范要求旁路沿用上游 id，而免费的 receipt 方法
 // 回应任何给出 id 的人。因此：旁路估计 id 的熵并在日志中说明；回执按 (id, requestSha256) 存储，共用 id 的回答各留一份；receipt
@@ -95,7 +95,7 @@ test('two answers that share an Ollama id keep a receipt each, told apart by req
   const gotB = await lookup(p, { id: 'chatcmpl-417', requestSha256: b.env.params.requestSha256 })
   assert.deepEqual(gotA.body.result, a.env, 'the first receipt is still there, not overwritten')
   assert.deepEqual(gotB.body.result, b.env)
-  assert.deepEqual((await lookup(p, { id: 'chatcmpl-417' })).body.result, b.env, 'id only: the later one (TAP-21 §3.5)')
+  assert.deepEqual((await lookup(p, { id: 'chatcmpl-417' })).body.result, b.env, 'id only: the later one (TAPI-21 §3.5)')
   // The answer to a lookup with the hash is signed over the params as sent, hash included. / 带哈希的查询，其回答按原样的参数签名。
   assert.equal(recoverResponseSigner({ container: gotA.body.container, id: 'q', method: 'receipt', params: { id: 'chatcmpl-417', requestSha256: a.env.params.requestSha256 }, ok: true, body: gotA.body.result, ts: gotA.body.ts }, gotA.body.sig), SIGNER)
   const miss = await lookup(p, { id: 'chatcmpl-417', requestSha256: 'ab'.repeat(32) })
@@ -119,7 +119,7 @@ test('an id seen twice within the receipt lifetime counts as guessable even when
   assert.ok(logs.some((l) => /came twice within 1 hour/.test(l)))
 })
 
-test('enumerating the 999 ids: the receipt method stops one IP after its own budget with an unsigned 429 (TAP-21 §3.4); another IP has its own', async () => {
+test('enumerating the 999 ids: the receipt method stops one IP after its own budget with an unsigned 429 (TAPI-21 §3.4); another IP has its own', async () => {
   const p = make(ollama(Array.from({ length: 20 }, (_, i) => i)).fetch)
   const victims = []
   for (let i = 0; i < 20; i++) victims.push(await ask(p, `private question ${i}`, `10.0.0.${i}`))
@@ -161,11 +161,11 @@ test('requireRequestHash: an id-only lookup is refused (signed BAD_REQUEST), so 
 test('the receipt lifetime is configurable: shorter is logged, the method description states it, and the default description is unchanged', async () => {
   const def = make(ollama().fetch)
   assert.equal((await def.ready).methods[0].description, 'The signed usage receipt of an AI response, by the response id (kept for 1 hour after the answer).')
-  assert.deepEqual((await def.ready).methods[0].params, { id: 'string' }, 'the manifest entry names id only (TAP-21 §3.5)')
+  assert.deepEqual((await def.ready).methods[0].params, { id: 'string' }, 'the manifest entry names id only (TAPI-21 §3.5)')
   const logs = []
   const p = make(ollama([1]).fetch, { receiptTtlMs: 150 }, logs)
   assert.match((await p.ready).methods[0].description, /kept for 150 ms after the answer/)
-  assert.ok(logs.some((l) => /less than the hour TAP-21 §3\.5 recommends/.test(l)))
+  assert.ok(logs.some((l) => /less than the hour TAPI-21 §3\.5 recommends/.test(l)))
   assert.match((await make(ollama().fetch, { receiptTtlMs: 900_000 }).ready).methods[0].description, /kept for 15 min/)
   assert.match((await make(ollama().fetch, { receiptTtlMs: 7_200_000 }).ready).methods[0].description, /kept for 2 hours/)
   const a = await ask(p, 'short-lived')
@@ -206,9 +206,9 @@ test('the Worker and the new-api sidecar pass the settings through (RECEIPT_TTL_
   assert.match(readConfig({ ...complete, RECEIPT_REQUIRE_HASH: 'yes' }).problem, /RECEIPT_REQUIRE_HASH/)
 })
 
-test('TAP-21 §3.5: the optional requestSha256 parameter is in both halves, and the two halves keep the same MUST/SHOULD/MAY counts', async () => {
+test('TAPI-21 §3.5: the optional requestSha256 parameter is in both halves, and the two halves keep the same MUST/SHOULD/MAY counts', async () => {
   const { readFileSync } = await import('node:fs')
-  const text = readFileSync(new URL('../../spec/TAP-21.md', import.meta.url), 'utf8')
+  const text = readFileSync(new URL('../../spec/TAPI-21.md', import.meta.url), 'utf8')
   const at = text.indexOf('\n## 1. 摘要')
   assert.ok(at > 0)
   const en = text.slice(0, at), zh = text.slice(at)

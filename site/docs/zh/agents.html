@@ -34,7 +34,7 @@ const api = createTapeAPI({
 const handle = await exposeTapeAPI(api, '0x&lt;container&gt;')     // 默认只暴露免费方法
 // handle.tools, handle.skipped, handle.refresh(), handle.dispose()</code></pre></div>
 <h2 id="费用"><a class="anchor" href="#费用" aria-hidden="true">#</a>费用</h2>
-<blockquote><p><strong>实验性。</strong> 付费功能（TAP-22 付费通道与托管合约）尚未部署、未经审计，不在 1.0 的稳定承诺之内：下面的名字可能在 1.x 的次版本里改变。见<a href="upgrade-1.0#10-承诺什么">升级到 1.0</a>。</p></blockquote>
+<blockquote><p><strong>实验性。</strong> 付费功能（TAPI-22 付费通道与托管合约）尚未部署、未经审计，不在 1.0 的稳定承诺之内：下面的名字可能在 1.x 的次版本里改变。见<a href="upgrade-1.0#10-承诺什么">升级到 1.0</a>。</p></blockquote>
 <p>除非页面传入预算，否则付费方法不会被暴露：</p>
 <div class="code"><pre data-lang="js"><code>await exposeTapeAPI(api, '0x&lt;container&gt;', {
   paid: { payer, maxPriceBEM: '0.001', budgetBEM: '0.05', confirm: async ({ method, priceBEM }) =&gt; window.confirm(`Pay ${priceBEM} BEM for ${method}?`) },

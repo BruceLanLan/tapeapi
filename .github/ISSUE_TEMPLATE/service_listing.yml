@@ -14,7 +14,7 @@ body:
         3. Its description pastes the doctor's last line and the confirmations at the end of this form.
         4. CI checks the format only (`node directory/recheck.mjs --validate`, no network). The daily recheck runs the doctor on every entry and shows the result on the page. An entry that stops passing is flagged, never removed automatically.
 
-        We list nobody on anyone's behalf and pay no one's costs. The directory has no ranking, no fees and no featured places. A listing only means the automated checks (tapeapi-doctor) passed; it is not a recommendation, a guarantee or an audit, and each provider answers for its own service quality, prices and compliance. Clients always derive the container on-chain and verify signatures themselves (TAP-20 §3.6).
+        We list nobody on anyone's behalf and pay no one's costs. The directory has no ranking, no fees and no featured places. A listing only means the automated checks (tapeapi-doctor) passed; it is not a recommendation, a guarantee or an audit, and each provider answers for its own service quality, prices and compliance. Clients always derive the container on-chain and verify signatures themselves (TAPI-20 §3.6).
         Use this form to tell people about a service (we may link shared services from the docs), or to ask about listing.
 
         服务的运行**不需要我们的许可，也不需要登记**：任何人都能用它的 TapeOut 名称（`<#ID>.<processor>.tape`，例如 `11.1013.tape`）解析它，SDK 会在链上核对一切。
@@ -25,7 +25,7 @@ body:
         3. 描述里贴上诊断的最后一行，以及本表末尾的确认项。
         4. CI 只检查格式（`node directory/recheck.mjs --validate`，不联网）。每日复核对每一条运行诊断，结果显示在页面上。不再通过的条目只标记，不自动删除。
 
-        我们不替任何人上架，也不代付任何费用。目录不排名、不收费、不设推荐位。只代表通过了 TapeAPI 的自动检查（tapeapi-doctor），不代表推荐、担保或审计；服务质量、价格与合规由服务方自己负责。客户端始终自行链上推导容器并验签（TAP-20 §3.6）。
+        我们不替任何人上架，也不代付任何费用。目录不排名、不收费、不设推荐位。只代表通过了 TapeAPI 的自动检查（tapeapi-doctor），不代表推荐、担保或审计；服务质量、价格与合规由服务方自己负责。客户端始终自行链上推导容器并验签（TAPI-20 §3.6）。
         本表用于介绍服务（我们可能在手册里链接分享的服务），或询问登记事宜。
   - type: input
     id: tapename

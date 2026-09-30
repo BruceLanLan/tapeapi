@@ -11,12 +11,12 @@
 // invites, group epochs and anything posted to a peer that was not polling at that moment were lost. Now a recreated
 // object restores its room -- same epoch, same indices, both rings -- so clients' cursors keep working, and only a
 // real expiry (15 minutes idle, 10 for a handshake-only room) clears the room and its storage. What is stored is what
-// the relay was given: TAP-26 / TAP-27 ciphertext, the room name, indices and timestamps. No source (IP address or
+// the relay was given: TAPI-26 / TAPI-27 ciphertext, the room name, indices and timestamps. No source (IP address or
 // paying consumer) is ever written to storage.
 // 帧写进对象的 Durable Object 存储（FIXED RELAY-1）。空闲对象几秒到十几秒内就会被 Cloudflare 回收，2026-09-29 之前帧随之
 // 消失：设计 15 分钟的房间实际只活十几秒，邀请、群纪元消息以及发给当时不在轮询的对端的一切都丢了。现在对象重建时恢复房间——
 // 纪元、序号、两个环都不变——客户端游标照常可用；只有真正过期（闲置 15 分钟，仅握手房间 10 分钟）才清除房间及其存储。
-// 存的就是中继收到的东西：TAP-26 / TAP-27 密文、房间名、序号与时间戳。来源（IP 地址或付费消费者）从不写入存储。
+// 存的就是中继收到的东西：TAPI-26 / TAPI-27 密文、房间名、序号与时间戳。来源（IP 地址或付费消费者）从不写入存储。
 //
 // Storage layout, one object = one room: `m` holds { room, epoch, next, touched, handshakeOnly }, and every frame has a
 // key of its own, `f:<i>` -> the base64 frame (a room holds up to 256 + 64 frames of ~22 KB, far past one value's

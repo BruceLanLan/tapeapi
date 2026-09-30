@@ -120,12 +120,12 @@ CREATE TABLE IF NOT EXISTS meter (
 
 ## relay.tape on Workers / 在 Workers 上跑 relay.tape
 
-`relay-worker.js` + `wrangler-relay.toml` host the TAP-26 relay (`examples/relay-service/`) on its own Worker.
+`relay-worker.js` + `wrangler-relay.toml` host the TAPI-26 relay (`examples/relay-service/`) on its own Worker.
 The TapeAPI side (identity, signed answers, metering, rate limits) runs in the Worker; **each room is a Durable
 Object**. That is not an optimisation: Worker isolates share no memory, so rooms kept in the isolate would split
 into several copies and a frame posted through one isolate would never reach a peer polling through another.
 A Durable Object is one instance per name, globally, so every isolate sees the same room.
-`relay-worker.js` 与 `wrangler-relay.toml` 把 TAP-26 中继放在独立 Worker 上。TapeAPI 那一面在 Worker 里，
+`relay-worker.js` 与 `wrangler-relay.toml` 把 TAPI-26 中继放在独立 Worker 上。TapeAPI 那一面在 Worker 里，
 **每个房间是一个 Durable Object**。这不是优化：隔离实例之间不共享内存，房间放在实例里会裂成好几份，
 经由一个实例发出的帧到不了经由另一个实例轮询的对端。Durable Object 按名字全局唯一，所有实例看到同一个房间。
 
@@ -147,7 +147,7 @@ Each room is written to its Durable Object's storage (SQLite-backed, `new_sqlite
 within seconds; the recreated object restores the room with the same epoch and indices, so clients' cursors keep
 working. The room and its storage are cleared once it has been idle 15 minutes (10 for a handshake-only room). What
 is stored is ciphertext: the relay holds no key and cannot read a byte of what it carries. Client IPs are not stored. `relay-worker.test.mjs` runs two isolates against one simulated
-namespace, including a full TAP-26 channel with each side on a different isolate.
+namespace, including a full TAPI-26 channel with each side on a different isolate.
 每个房间写进它的 Durable Object 存储（SQLite 后端，`new_sqlite_classes`）：每帧一个键（`f:<i>`），外加一个元数据键
 （`m`：房间、纪元、next、touched、是否仅握手）。Cloudflare 几秒内就会回收空闲对象；重建的对象以相同的纪元与序号恢复房间，
 客户端游标照常可用。房间闲置 15 分钟（仅握手房间 10 分钟）后连同存储一起清除。存的是密文：中继没有任何密钥，读不了它搬运的

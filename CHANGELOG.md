@@ -9,9 +9,13 @@ interfaces.
 
 ### Changed
 
-- "TAP-20" to "TAP-27" are now described as the specs' names inside this repository, not TAP numbers: TapeOut's TAP
-  process (TapeOutProtocol/TAPs, TAP-01 §6.1) has editors assign numbers and reserves the multiples of ten for core
-  standards. Parts of these specs may be submitted there as TAP drafts. No wire format, label or signature changes.
+- **The specs are renamed TAPI-1 and TAPI-20 to TAPI-27** (they were TAP-1 and TAP-20 to TAP-27). TAP numbers belong
+  to TapeOut's TAP process (TapeOutProtocol/TAPs, TAP-01 §6.1), where editors assign them and the multiples of ten are
+  reserved for core standards; TapeAPI no longer uses any TAP number, and TAP-20 is left free. Parts of these specs are
+  submitted there as TAP drafts: the service manifest (TapeOutProtocol/TAPs#8), signed responses (#10) and private
+  channels (#12). Labels and constants that contain the old names (`TAP-26/…`, `TAP-27/…`) are frozen wire constants
+  and do not change: no wire format or signature changes. Conformance check ids are now `tapi20.…` and so on. Earlier
+  entries below use the new names.
 
 ## [1.3.0] — 2026-09-30
 
@@ -26,7 +30,7 @@ interfaces.
   or `PROOF_INVALID`. It resists nodes that agree on false state, as long as the `stateRoot` comes from independent
   operators; it does not resist an upgrade of the contracts (that is real state) or all operators forging a header.
   RLP and Merkle-Patricia checks are the SDK's own (no new dependency), checked against ethereum/tests trie cases by
-  both the SDK and `verify.py`; vectors `spec/vectors/tap-20-proof.json`; TAP-20 §3.2 note, §6.5; `svc.proofs`, the
+  both the SDK and `verify.py`; vectors `spec/vectors/tapi-20-proof.json`; TAPI-20 §3.2 note, §6.5; `svc.proofs`, the
   `proof` namespace. Default unchanged. Which default nodes serve proofs (2026-09-30): Alchemy on BNB Smart Chain,
   dRPC on Base, none on X Layer at the `safe` block (add your own node to use `'strict'` there).
   A proven value that contradicts the quorum's answer is refused in both modes (`PROOF_INVALID`); `proofs: true` falls
@@ -82,7 +86,7 @@ interfaces.
     format-1 group and splitting it; the `v: 1` format-2 snapshots 1.2.0 wrote still resume.
   - One identity on two devices is no longer silent: `open()` returns a message signed with our identity that this
     handle did not seal, with `otherDevice: true`; `group.otherDevice` reports it; an "already seen" error carries
-    `data.mayBeOtherDevice`. One identity is still one device (TAP-27 §8).
+    `data.mayBeOtherDevice`. One identity is still one device (TAPI-27 §8).
   - "no key for epoch N" carries `data.reason` (`not-yet`, `expired`, `snapshot`) and `data.retryAfterEpoch`; an owner
     resumed from a snapshot no longer reports "fails authentication" for an epoch whose key it does not hold.
   - The groups guide says to check `invite.format` before joining (a client before 1.2.0 joins a format-2 group
@@ -93,14 +97,14 @@ interfaces.
 
 ### Added
 
-- **Larger groups (experimental): TAP-27 §3.8 format 2, up to 128 members in one wire message.** Binary roster
+- **Larger groups (experimental): TAPI-27 §3.8 format 2, up to 128 members in one wire message.** Binary roster
   (104 bytes a member), a marker in the epoch field that every format-1 client refuses (`GROUP_INVALID`, tested
   against the released 1.1.0 code), lazy member checks (`open().verified`, `openVerified`, `verifyMembers`,
   `verifyReuseS`, at most 86,400 s, counted from the start of the check), `channelKeysVerifier` (use it, not
-  `api.groupVerifier()`, for format 2), vectors `spec/vectors/tap-27-group-v2.json`. Only positive verdicts are reused;
+  `api.groupVerifier()`, for format 2), vectors `spec/vectors/tapi-27-group-v2.json`. Only positive verdicts are reused;
   a negative one lasts at most 60 s (`VERIFY_NEGATIVE_S`), is confirmed by a fresh read and never refuses an epoch.
   On-demand and background checks share the `verifyConcurrency` limit. Format 1 stays the default and its bytes are
-  unchanged (`joinGroup` without `format` ignores `verifyMember`, as before); one group never mixes formats. TAP-27 §8 states what format 2 weakens (a
+  unchanged (`joinGroup` without `format` ignores `verifyMember`, as before); one group never mixes formats. TAPI-27 §8 states what format 2 weakens (a
   verdict reused for up to a day; senders checked on demand) and what it keeps.
 - **A path for AI relays, from nothing to live, with a check at every step.**
   - `examples/relay-trial/`: a one-command local trial (`node examples/relay-trial/trial.mjs`): the signing sidecar,
@@ -126,7 +130,7 @@ interfaces.
     derives the container locally (ERC-6551 CREATE2) to cross-check `accountOf`. It notices an upgrade; it cannot
     prevent one. `'warn'` reports in `svc.warnings` and `onWarning` (default: `console.warn` once); `'strict'` refuses
     with the new code `CONTRACT_UNKNOWN` or `MANIFEST_INVALID`. A failed slot read only warns.
-  - `requireContentSig`: refuse a manifest without a valid holder content signature (TAP-20 §3.10). Without it, a
+  - `requireContentSig`: refuse a manifest without a valid holder content signature (TAPI-20 §3.10). Without it, a
     content signature is only reported (`svc.contentSig`, warnings), and an error while checking it is the warning
     `CONTENT_SIG_UNCHECKED`: it never fails a resolve.
   - `delegationFloor`: remember the highest delegation `expires` seen per chain, container, holder and signer, and
@@ -134,10 +138,10 @@ interfaces.
     `api.clearDelegationFloor(error.data)` forgets one. A site writer can still put back an older holder-signed
     delegation with a higher `expires`.
   - `onWarning`, `clock`.
-- **TAP-20 §3.10: optional holder-signed manifest content** (`contentSig`,
+- **TAPI-20 §3.10: optional holder-signed manifest content** (`contentSig`,
   `ManifestContent(address container,bytes32 contentHash)` in the delegation domain), so that whoever can write the
   site cannot silently change `ai.baseUrl` or prices under a valid delegation when the client requires it.
-  `sig.manifestContent*` helpers, vectors `spec/vectors/tap-20-content.json` (checked by `verify.py`).
+  `sig.manifestContent*` helpers, vectors `spec/vectors/tapi-20-content.json` (checked by `verify.py`).
 - **`security` namespace**: `erc6551Account`; ContradictionRecord v1 (`contradictionRecord`, `contradictionsOf`,
   `verifyContradiction`): evidence anyone can check when providers sign conflicting answers to the same request at the
   same block (`verifyContradiction` says `valid` only when `signerOf` confirms every signer as the provider's
@@ -146,7 +150,7 @@ interfaces.
 
 ### Changed
 
-- Groups: the TAP-27 §3.3 step 6 member checks run in parallel (`verifyConcurrency`, default 8), with the same outcome
+- Groups: the TAPI-27 §3.3 step 6 member checks run in parallel (`verifyConcurrency`, default 8), with the same outcome
   and errors as before. A 32-member cold start at 280 ms per request: about 45 s before, about 6 s now.
 - Every `42.1013.tape` example says it is an example name (it has no manifest, so a command run as written stops
   with "no file at /.well-known/tapeapi.json") and points to the local trial; `tapeapi-verify` adds a hint to
@@ -245,7 +249,7 @@ TapeAPI 1.0.0, the first stable release. Nothing on the wire and nothing in the 
   `tapeapi-verify`, and the methods and result shapes of the public services (api.tapeapi.fun, relay.tapeapi.fun),
   except what is marked otherwise.
 - **Experimental** (`@experimental`; may change in a 1.x minor release, each change in this changelog): everything that
-  pays (TAP-22 payment channels, the escrow, vouchers, `api.payer()`, `maxPrice`, the channel builders of `api.tx`,
+  pays (TAPI-22 payment channels, the escrow, vouchers, `api.payer()`, `maxPrice`, the channel builders of `api.tx`,
   `api.chain.escrow.*`), the ServiceDirectory (`api.chain.resolve()`, `api.chain.serviceOf()`, directory labels, the
   `directory` option, `labelToBytes32` and the label helpers of `abi`), and the whole `@tapeapi/sdk/bus-privacy`
   subpath. Reading prices from a manifest and the codes `PAYMENT_REQUIRED`, `BAD_VOUCHER` and `PRICE_CHANGED` are
@@ -255,20 +259,20 @@ TapeAPI 1.0.0, the first stable release. Nothing on the wire and nothing in the 
 The full lists, what changed from 0.x and the error-code table are in the upgrade guide:
 [docs/guides/upgrade-1.0.md](docs/guides/upgrade-1.0.md) (https://tapeapi.fun/docs/en/upgrade-1.0).
 
-### Specification statuses (TAP-1 §4.1)
+### Specification statuses (TAPI-1 §4.1)
 
-- **TAP-20, TAP-21, TAP-23, TAP-26 and TAP-27 are Stable (v1)** since 2026-09-29; their `Target` rows are gone. Every
+- **TAPI-20, TAPI-21, TAPI-23, TAPI-26 and TAPI-27 are Stable (v1)** since 2026-09-29; their `Target` rows are gone. Every
   field, encoding, signature domain and error code they define keeps its meaning; a revision may add only optional
   content and non-normative text; a breaking change is a v2 with its own wire markers, and v1 is not withdrawn earlier
   than 12 months after v2 becomes Stable.
-- **TAP-20 §3.5 (ServiceDirectory) is Experimental**, outside the freeze (TAP-1 §4.1, freeze rule 3), and so are the
+- **TAPI-20 §3.5 (ServiceDirectory) is Experimental**, outside the freeze (TAPI-1 §4.1, freeze rule 3), and so are the
   places that use it: a label as input to §3.6 step 1, the `serviceOf` cross-check and `verifyDelegation` in §3.4.
   Resolution by name, container or `(circuits, tokenId)` needs no directory.
-- **TAP-21's error codes, `PAYMENT_REQUIRED` and `BAD_VOUCHER` among them, are frozen with TAP-21**, although the
-  payment flow that uses them is in TAP-22, which is Experimental.
-- Unchanged: TAP-22 and TAP-25 Experimental, TAP-24 Withdrawn, TAP-1 Draft. No normative text changed. The TAP numbers
+- **TAPI-21's error codes, `PAYMENT_REQUIRED` and `BAD_VOUCHER` among them, are frozen with TAPI-21**, although the
+  payment flow that uses them is in TAPI-22, which is Experimental.
+- Unchanged: TAPI-22 and TAPI-25 Experimental, TAPI-24 Withdrawn, TAPI-1 Draft. No normative text changed. The TAP numbers
   are still proposals to the TapeKit maintainers ([TapeKit#8](https://github.com/TapeOutProtocol/TapeKit/issues/8)).
-- The Chinese halves of TAP-26 and TAP-27 gain the RFC 2119 keyword sentence their English halves already had
+- The Chinese halves of TAPI-26 and TAPI-27 gain the RFC 2119 keyword sentence their English halves already had
   (translation only; both halves now count the same keywords).
 
 ### Website and READMEs
@@ -301,7 +305,7 @@ The full lists, what changed from 0.x and the error-code table are in the upgrad
   fields (details in `e.data`, the old names deprecated until 2.0); `service`, `relayClients` / `busClients`,
   `rpcTimeoutMs`, `name` for MCP, `clock` in Unix seconds; `openai-proxy` removed; narrower public faces for `ai`,
   `channel`, `rpc` and `group`; `createVerifyingFetch` verifies streams the official SDKs read; provider dev mode only
-  through `opts.dev`; TAP-1 §4.1 statuses; the TAP-20 §6.1 mainnet manifest and TAP-23 §6 vectors (the Python
+  through `opts.dev`; TAPI-1 §4.1 statuses; the TAPI-20 §6.1 mainnet manifest and TAPI-23 §6 vectors (the Python
   verifier went from 159 to 249 checks).
 - **rc.2**: `api.resolve()` in 4 round trips and 12 requests instead of 7 and 21; the server could serve one voucher
   twice (fixed); the homepage's fonts are files.
@@ -326,7 +330,7 @@ The full lists, what changed from 0.x and the error-code table are in the upgrad
   Seen live on 2026-09-29: a frame posted to a room was read back at once, but every read from +30 s to +400 s found
   0 frames and `epoch: null`, with no redeploy in between. `RelayRoom` kept its room only in memory, and Cloudflare
   evicts an idle object within seconds, so a room designed to live 15 minutes lived about ten seconds and asynchronous
-  delivery (group invites, TAP-26 invites, messages to a peer that was not polling at that moment) mostly failed. The
+  delivery (group invites, TAPI-26 invites, messages to a peer that was not polling at that moment) mostly failed. The
   room is now written to the object's SQLite-backed Durable Object storage, one key per frame plus one meta key, and a
   recreated object restores it with the same epoch and indices, so clients' cursors keep working. `relaySend` answers
   only after its frame is stored; a frame a full ring drops is deleted from storage; the Durable Object alarm clears an
@@ -386,7 +390,7 @@ Fixes from the release-candidate review (P2 items, observation period): no inter
 ### Tests
 
 - The browser smoke test loads "My services", the playground, the receipt checker, the holder console and the status
-  page and fails if one throws while loading (RC-1 could not show there); its TAP-21 envelope checks sign EIP-191, as
+  page and fails if one throws while loading (RC-1 could not show there); its TAPI-21 envelope checks sign EIP-191, as
   the vectors have since 0.5.0.
 
 ## [1.0.0-rc.3] — 2026-09-29
@@ -412,7 +416,7 @@ Fixes from the release-candidate review (P2 items, observation period): no inter
   2.77 s to 1.79 s on a new client, and from 2.00 s (6 rounds, 18 requests) to 0.68 s (2 rounds, 6 requests) when the
   same client resolves it again (10 interleaved runs each). How: the second, identical `accountOf` is gone; reads that
   do not depend on each other go out together (a name's `isCPU` and `ownerOf` with `accountOf`, and for any target
-  steps 3-5 of TAP-20 §3.6 in one round), each still checked in its old place with the same error codes; `fileInfo`
+  steps 3-5 of TAPI-20 §3.6 in one round), each still checked in its old place with the same error codes; `fileInfo`
   still comes before `read`. `createRpc` sends concurrent `eth_call`s to one node as a JSON-RPC batch of at most 3 (all
   ten default nodes take one; dRPC's free plan refuses more than 3), each call still its own quorum round; a node that
   does not take a batch is asked call by call from then on, and a batch refused with an HTTP error is never read as
@@ -451,7 +455,7 @@ promises (Stable, Experimental, Internal) and the full error-code table are in
   `INVALID_ARGUMENT`, raised before anything is sent. It used to be `RPC_UNAVAILABLE`, `MANIFEST_INVALID`, `BAD_VOUCHER`,
   `ABI_INVALID`, `BAD_KEY`, `CHANNEL_INVALID`, `BAD_REQUEST`, `QUORUM_FAILED`, `METHOD_NOT_FOUND` or `GROUP_DELIVERY`,
   so a retry loop on `RPC_UNAVAILABLE` could spin on a missing `rpcUrls`. The codec layers (`abi`, `canon`) and the
-  protocol refusals of `callQuorum` are unchanged. TAP-21 §3.4 lists it, with `GROUP_DELIVERY`, `BAD_RESPONSE`,
+  protocol refusals of `callQuorum` are unchanged. TAPI-21 §3.4 lists it, with `GROUP_DELIVERY`, `BAD_RESPONSE`,
   `BUS_PRIVACY`, `BUS_BUDGET` and the MCP `error.data.code` values.
 - **`TapeAPIError` top-level fields are fixed**: `name`, `code`, `message`, `data`, `signed`, `httpStatus`, `cause`, and
   `ts`, `block`, `id`, `sig`, `error` on a signed provider error. Every other detail is in `data` (`e.data.tooLarge`,
@@ -470,7 +474,7 @@ promises (Stable, Experimental, Internal) and the full error-code table are in
   `channel.createInvite`); `relay`, `bus`, `relays` and `buses` are refused by the delivery functions.
 - **Every `now` is Unix seconds.** `createGroup`, `joinGroup` and `resumeGroup` take `clock`, a function returning Unix
   seconds; the 0.x `now` (a function of milliseconds) is refused, and so is a clock returning milliseconds (above 1e11,
-  e.g. `Date.now`), on the owner's side and the member's: `clock must return Unix seconds`. The TAP-27 vectors are
+  e.g. `Date.now`), on the owner's side and the member's: `clock must return Unix seconds`. The TAPI-27 vectors are
   unchanged.
 - **`channelRecordFloor`** is keyed `<chainId>:<container>` and shared with the other chains' clients (`forChain`), so the
   anti-rollback floor persists on X Layer and Base too; a 0.x entry is migrated on first read.
@@ -525,7 +529,7 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
   not). "Live now" adds the AI sidecar and new-api package (available, self-hosted only: it handles API keys),
   `tapeapi-verify`, the console's AI price tables, one-call group delivery, the spot-check probe and the receipt
   checker. Paid channels and their gas and amortisation figures move to "Experimental: paid channels" (not deployed);
-  the fee note uses the current wording, and says no call is charged today. Spec statuses follow TAP-1 §4.1. The
+  the fee note uses the current wording, and says no call is charged today. Spec statuses follow TAPI-1 §4.1. The
   examples use `rpcUrlsFor(56)`; a new one plugs `createVerifyingFetch` into the official OpenAI SDK. Every example was
   run against the v0.8.0 release package (the AI one against the reference sidecar in `examples/ai-proxy`, since no
   outside provider has published a price table yet).
@@ -534,33 +538,33 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
   Mermaid diagram of the layers, what a receipt proves, status and commitments, privacy, fees and the specs with their
   statuses. Contract addresses and repository detail now live in the guides.
 
-### Specification statuses toward 1.0 (TAP-1 §4.1)
+### Specification statuses toward 1.0 (TAPI-1 §4.1)
 
-- **TAP-1 §4.1 defines the interim statuses** this repository uses until TapeKit adopts a numbered-proposal process:
+- **TAPI-1 §4.1 defines the interim statuses** this repository uses until TapeKit adopts a numbered-proposal process:
   Draft, **Stable (v1)**, Experimental and Withdrawn. Stable (v1) freezes every field, encoding, signature domain and
   error code; a revision may only add optional content or non-normative text; a breaking change is a new version (v2)
   with its own wire markers, v1 stays valid beside it and is not withdrawn earlier than 12 months after v2 becomes
   Stable. When TapeKit assigns numbers or statuses, TapeKit's prevails and the front matter records the mapping.
   A new optional front-matter row, `Target`, names the status a Draft intends to reach.
-- **Status rows.** TAP-20, TAP-21, TAP-23, TAP-26 and TAP-27 stay Draft with `Target | Stable (v1) at TapeAPI 1.0`;
-  TAP-22 (metered payment and escrow) and TAP-25 (circuit-verified methods) are **Experimental**; TAP-24 (intent RFQ,
-  frozen since 2026-09-21) is **Withdrawn**. No normative text of TAP-20 to TAP-27 changed.
+- **Status rows.** TAPI-20, TAPI-21, TAPI-23, TAPI-26 and TAPI-27 stay Draft with `Target | Stable (v1) at TapeAPI 1.0`;
+  TAPI-22 (metered payment and escrow) and TAPI-25 (circuit-verified methods) are **Experimental**; TAPI-24 (intent RFQ,
+  frozen since 2026-09-21) is **Withdrawn**. No normative text of TAPI-20 to TAPI-27 changed.
 
 ### Test vectors
 
-- **TAP-20 §6.1 mainnet manifest filled in**: the live manifest of `11.1013.tape`, read only through `resolve` on the
+- **TAPI-20 §6.1 mainnet manifest filled in**: the live manifest of `11.1013.tape`, read only through `resolve` on the
   SDK's default BSC nodes (quorum 2 by operator, all three operators identical), every `eth_call` pinned to block
   124552456 by EIP-1898 `{ blockHash }`: size 3414, SHA-256 `0xee57f304…3b52c37a`, signer, delegation expiry and holder.
   Recorder `scripts/record-mainnet-manifest.mjs`, fixture `sdk/test/fixtures/mainnet-11-1013-manifest.json`, offline
   replay `sdk/test/mainnet-manifest.test.mjs` (clock pinned to the block; the table in the spec must quote the
   fixture). The delegation is renewed before 2026-12-10, so the fixture pins a block's state, not the current manifest.
-- **TAP-23 §6 vectors**: `spec/vectors/tap-23-attested.json` (from `scripts/gen-vectors.mjs`), two providers signing
+- **TAPI-23 §6 vectors**: `spec/vectors/tapi-23-attested.json` (from `scripts/gen-vectors.mjs`), two providers signing
   with public test keys, real Ethereum values for the example request (block 20000000, USDT `totalSupply()`), two
   agreeing cases and three `ATTEST_DISAGREE` counterexamples, replayed through `callQuorum` by
   `sdk/test/attested-vectors.test.mjs`. §6 now says plainly that no live service offers `attestedRead` yet
   (`11.1013.tape` does not) and what the smallest change would be.
 - **`spec/vectors/verify.py`** checks both independently: it re-encodes the mainnet calldata, ABI-decodes the answers,
-  hashes and parses the manifest and recovers the delegation to `ownerOf`; and it rebuilds each TAP-23 envelope digest,
+  hashes and parses the manifest and recovers the delegation to `ownerOf`; and it rebuilds each TAPI-23 envelope digest,
   recovers both signers and decides agreement from §3.4 alone. 159 checks before, 249 now.
 
 ## [0.8.0] — 2026-09-28
@@ -597,12 +601,12 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
   no existing call changes behaviour; `busReader` and `busTransport` still name your rooms. The guides now point bus
   readers to `busPrivacyReader`; `mode: 'plain'` gives busReader's behaviour through it.
 - Docs: "Read privacy" in `docs/guides/channels.md` and the Chinese guide (the default and why, the first read, falling
-  back and coming back, what `k` means, what it helps against and what it does not). TAP-26 §8 gains a non-normative
+  back and coming back, what `k` means, what it helps against and what it does not). TAPI-26 §8 gains a non-normative
   note, "Node correlation", in both languages; no MUST/SHOULD/MAY changed.
 
 ### Holder console: AI price tables
 
-- **The console publishes a manifest with an `ai` field** (TAP-20 §3.9). `site/console/lib.js` gains `aiProblems` and
+- **The console publishes a manifest with an `ai` field** (TAPI-20 §3.9). `site/console/lib.js` gains `aiProblems` and
   `normalizeAI`, a line-for-line port of the SDK's `validateAIField` (the page loads no library): the same verdict, the
   same first message and the same normalised bytes, checked in `sdk/test/console-ai.test.mjs` on every valid and invalid
   sample of the SDK tests, the receipt vectors' table, the spec's example, `models.example.json` and 4,000 random
@@ -635,17 +639,17 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
 
 ### Privacy hardening
 
-- **Guessable receipt ids.** The AI signing sidecar keeps the upstream's answer id (TAP-21 §3.5), and some upstreams'
+- **Guessable receipt ids.** The AI signing sidecar keeps the upstream's answer id (TAPI-21 §3.5), and some upstreams'
   ids can be guessed: Ollama's OpenAI-compatible API numbers chat ids `chatcmpl-0` to `chatcmpl-998`, so anyone could
   walk through the free `receipt` method and read every receipt kept. The sidecar now estimates the randomness of the
   ids it sees (`idEntropyBits`, threshold `ID_ENTROPY_MIN_BITS` = 64) and warns once in its log when they look
   guessable (a low estimate, or one id seen twice while kept); keeps receipts per (`id`, `requestSha256`), so answers
   that share an id no longer overwrite each other (an id-only lookup still serves the later one); gives the `receipt`
   method a budget of its own (`receiptRateLimit`, default 10 lookups per client IP per minute, refused with the unsigned
-  429 of TAP-21 §3.4); states the configurable lifetime (`receiptTtlMs`) in the method description (unchanged at the
+  429 of TAPI-21 §3.4); states the configurable lifetime (`receiptTtlMs`) in the method description (unchanged at the
   default); and, with `requireRequestHash` (off by default), answers only lookups that also name `requestSha256`.
   Worker variables `RECEIPT_TTL_S`, `RECEIPT_LOOKUPS_PER_MIN`, `RECEIPT_REQUIRE_HASH`; the new-api sidecar takes
-  `RECEIPT_TTL_S` and `RECEIPT_REQUIRE_HASH`. **TAP-21 §3.5** (both languages): the `receipt` method MAY take an optional
+  `RECEIPT_TTL_S` and `RECEIPT_REQUIRE_HASH`. **TAPI-21 §3.5** (both languages): the `receipt` method MAY take an optional
   `requestSha256` parameter that picks the receipt of that request among answers sharing an id, and a provider whose
   upstream's ids can be guessed MAY refuse a lookup without it; the manifest entry stays `params: { id: "string" }`.
   §8 describes the risk. The receipt shape and the frozen vectors are unchanged.
@@ -656,21 +660,21 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
   gateways route caches by them), no token is added, and prompt caches keyed on the parsed prompt are unaffected.
   Compressed bodies (`Content-Encoding` other than identity) and non-JSON bodies are sent as they are; an explicit
   `Content-Length` is dropped when the body grows; the receipt is checked over the bytes actually sent; reports carry
-  `salted`. New exports `ai.saltRequestBody` and `ai.SALT_LENGTH`. TAP-21 §8 and the AI provider guide explain why the
+  `salted`. New exports `ai.saltRequestBody` and `ai.SALT_LENGTH`. TAPI-21 §8 and the AI provider guide explain why the
   cache is unaffected. Acceptance by the live OpenAI and Anthropic APIs is not yet measured (the tests use the
   reference sidecar).
 - **Hash-only MCP receipts and verify links.** `verifyLink` used to put the whole receipt, params and result in clear,
   into the link, so sharing a link shared the call. It now carries the hash-only form by default (`mcp.hashReceipt`,
   receipt `v: 2`: `params` and `result`/`error` replaced by `requestHash` = keccak256(canonicalJSON({ method, params }))
-  and `bodyHash` = keccak256(canonicalJSON(result or error)), the two hashes the TAP-21 digest is built from, so the
+  and `bodyHash` = keccak256(canonicalJSON(result or error)), the two hashes the TAPI-21 digest is built from, so the
   signature still verifies). The whole receipt goes into the link only when asked: `verifyLink(r, base, { content: true
   })`, `toolResultOf({ linkContent: true })`, `linkContent` on `createMcpEndpoint` and `createMcpProxy` (`LINK_CONTENT=1`
   in the MCP proxy Worker), `tapeapi-mcp --link-content`. The provenance note says which form its link carries. The
   receipt in `_meta` stays whole. New `sig.responseRequestHash`, `sig.responseBodyHash`,
   `sig.responseDigestFromHashes`, `sig.recoverResponseSignerFromHashes` (the same digest, checked against every
-  published TAP-21 envelope vector). The verification page reads both forms, shows the hashes and says that
+  published TAPI-21 envelope vector). The verification page reads both forms, shows the hashes and says that
   low-entropy params (an address, a token id, a price pair) can still be guessed from their hash. The reputation design
-  now attaches hash-only receipts. The TAP-21 envelope and digest are
+  now attaches hash-only receipts. The TAPI-21 envelope and digest are
   unchanged.
 - **Honest labels.** The verification page has a "What a receipt does not prove" list in both languages: a receipt
   does not prove which model or program actually ran; a link with content (MCP receipt v 1) contains the conversation;
@@ -693,9 +697,9 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
   behaviour); `false` (`FORWARD_SESSION_HEADERS=0` in the Worker and the new-api sidecar) leaves out the clients'
   session headers (`ai.SESSION_HEADERS`: `x-claude-code-session-id`, `session-id`, `thread-id`), which let the upstream
   tie a caller's requests into one session. `tapeapi-verify --strip-session-headers` does the same on the client side.
-  TAP-21 §8 (both languages, no new keywords) and the AI provider guide say so. New `ai.isSessionHeader`.
+  TAPI-21 §8 (both languages, no new keywords) and the AI provider guide say so. New `ai.isSessionHeader`.
 
-### Group delivery (TAP-27)
+### Group delivery (TAPI-27)
 
 - **One call delivers a group update.** A group uses two kinds of room: the epoch message goes to the group room, and
   each new member's invite to that member's own inbox room. An application that posted only `epochWire` set up a group
@@ -711,7 +715,7 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
 - `createGroup`, `addMembers`, `removeMembers`, `rotate` and `resumeGroup` now also return `epoch` and `added` (the
   members that need an invite); the owner's handle has `epochWire`, the latest epoch message, for reposts. Nothing
   existing changed shape. The JSDoc and types of `createGroup`, `addMembers` and `inviteFor` say which room each part goes to.
-- **TAP-27 §3.5** (both languages): a non-normative note on the two rooms and on cursors. No requirement changed.
+- **TAPI-27 §3.5** (both languages): a non-normative note on the two rooms and on cursors. No requirement changed.
 - New guide **Group chat** (`docs/guides/groups.md`, `docs/guides/zh-CN/groups.md`): prerequisites, the owner and member
   flows, relay or ChannelBus, saving state, a troubleshooting checklist and the limits. New example
   `examples/group-chat/`: two throwaway identities over the public relay, with an end-to-end test against a local
@@ -743,7 +747,7 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
 
 ### Changed
 
-- **TAP-20 multi-chain text** (§3.1, §3.2, §3.4, §3.6 step 1 and step 3, §5, §6.2): a service lives on the chain of its
+- **TAPI-20 multi-chain text** (§3.1, §3.2, §3.4, §3.6 step 1 and step 3, §5, §6.2): a service lives on the chain of its
   circuit; the container, manifest, `isCPU` and delegation are all read on that chain; the delegation domain is
   (that chain's chainId, that chain's DeWebHub). The DeWebHub has one address on all three chains, so the chainId alone
   separates the domains and a delegation for one chain MUST NOT be accepted on another. Identity does not carry across
@@ -761,7 +765,7 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
   provider's share (the consumer's price does not change); any provider can set it to 0, or up to 50%. The default is a
   contract constant: the operator has no fee switch and cannot pause. Planned settlement tokens: BEM (primary), BNB,
   USDT, USDC, ETH, USD1. The permanent 10% of any TapeAPI revenue to @Theairresearch includes this contribution.
-  TAP-22 §3.4, docs/FEES.md, README, the site and the guides say so; the escrow code in the repository still starts at 0
+  TAPI-22 §3.4, docs/FEES.md, README, the site and the guides say so; the escrow code in the repository still starts at 0
   and changes with the next escrow version.
 
 ### Security
@@ -782,8 +786,8 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
   receipt readers and the price arithmetic (exact, BigInt). The manifest's `ai` field lists the endpoints and the price
   table (BEM, BNB, USDT, USDC, ETH or USD).
 - The verification page reads AI usage receipts.
-- **Frozen specification** of the AI layer: TAP-20 §3.9 (the `ai` manifest field: endpoints per format, models with
-  aliases and a price per currency, usage and the amount formula) and TAP-21 §3.5 (AI usage receipts: envelope, request
+- **Frozen specification** of the AI layer: TAPI-20 §3.9 (the `ai` manifest field: endpoints per format, models with
+  aliases and a price per currency, usage and the amount formula) and TAPI-21 §3.5 (AI usage receipts: envelope, request
   and stream hashes, delivery, retrieval, client checks, security). Test vectors in
   `sdk/test/fixtures/ai-receipt-vectors.json`, checked three ways (the sidecar, the SDK and `spec/vectors/verify.py`).
 - **`tapeapi-verify`**, a local verifying proxy in the SDK release tarball: point Claude Code (`ANTHROPIC_BASE_URL`)
@@ -795,7 +799,7 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
 
 ### Fixed
 
-- `spec/vectors/tap-21-envelope.json` was signed over the raw digest instead of the EIP-191 message TAP-21 §3.3 names;
+- `spec/vectors/tapi-21-envelope.json` was signed over the raw digest instead of the EIP-191 message TAPI-21 §3.3 names;
   regenerated, and `spec/vectors/verify.py` now recovers every vector's signer.
 
 ## [0.4.0] — 2026-09-28
@@ -805,12 +809,12 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
 - **Tape out your MCP server.** `@tapeapi/server/mcp-proxy` (`createMcpProxy`) puts a signing proxy in front of an
   existing MCP server (Streamable HTTP, JSON or SSE): the server keeps its own host and domain, gains an on-chain identity
   (a TapeOut circuit's container), its tool definitions are pinned by digest in the on-chain manifest, and every tool
-  result is a signed TAP-21 envelope with a receipt. A runnable example for Node and Cloudflare Workers is in
+  result is a signed TAPI-21 envelope with a receipt. A runnable example for Node and Cloudflare Workers is in
   `examples/mcp-proxy/`.
-- TAP-20 §3.8, the optional `mcp` binding: `{ endpoint, toolsSha256 }`, where `toolsSha256` is the SHA-256 of the RFC 8785
+- TAPI-20 §3.8, the optional `mcp` binding: `{ endpoint, toolsSha256 }`, where `toolsSha256` is the SHA-256 of the RFC 8785
   canonical JSON of the tools' model-facing fields (`sdk mcp.toolsDigest`). Clients compare it with the `tools/list`
   they receive and refuse a difference.
-- TAP-21: provider code `TOOLS_CHANGED` (HTTP 409): a service whose upstream tools no longer match its `toolsSha256`
+- TAPI-21: provider code `TOOLS_CHANGED` (HTTP 409): a service whose upstream tools no longer match its `toolsSha256`
   refuses every call, signed, until the holder republishes.
 - `tapeapi-mcp` checks `mcp.toolsSha256` against the service's live `tools/list`, shows the upstream tools exactly as
   pinned, returns upstream content with a verified receipt, and pins the tool set (a republished set is a change the
@@ -832,7 +836,7 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
 
 - **Remote MCP endpoint** `https://api.tapeapi.fun/mcp` (MCP Streamable HTTP, stateless): the eight public methods as MCP
   tools for Claude, Cursor and any MCP client, added by URL with nothing to install. Every tool result is the service's
-  signed TAP-21 envelope and carries a receipt (`_meta["fun.tapeapi/receipt"]`) and a verification link.
+  signed TAPI-21 envelope and carries a receipt (`_meta["fun.tapeapi/receipt"]`) and a verification link.
 - **Local MCP command** `tapeapi-mcp` in the SDK release tarball
   (`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.3.0/tapeapi-sdk-0.3.0.tgz tapeapi-mcp 11.1013.tape`):
   resolves any TapeOut service on chain, verifies every answer before the model sees it (a tampered answer is discarded),
@@ -868,7 +872,7 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
   A test message was read back through public nodes, and the deployment is recorded for a replay test.
 - **Public service** https://api.tapeapi.fun (`11.1013.tape`): eight free, signed, block-pinned methods: `blockNumber`,
   `balance`, `tokenInfo`, `tokenBalance`, `nftOwner`, `pairPrice`, `bnbUsd`, `tapeName` (source `examples/public-api`).
-- **Public relay** https://relay.tapeapi.fun (`12.1013.tape`) for TAP-26 channels.
+- **Public relay** https://relay.tapeapi.fun (`12.1013.tape`) for TAPI-26 channels.
 - **Playground** https://tapeapi.fun/playground/: resolve any service by name, see every check, call it, copy the code.
 - **Status page** https://tapeapi.fun/status/ and a monitor (`npm run monitor`: a GitHub workflow scheduled about every
   30 minutes, which GitHub may delay, that opens an issue when a service is down or a delegation has fewer than 14 days
@@ -889,7 +893,7 @@ timeout or abort; the CLI help lists `tapeapi-mcp --dev` and the exit status (0,
 ### Changed
 
 - Website: new logo and favicon, one header across all pages, redesigned homepage and social preview.
-- `callQuorum`: a signed revert (TAP-23 §3.3) counts as disagreement and is never an accepted result; other signed
+- `callQuorum`: a signed revert (TAPI-23 §3.3) counts as disagreement and is never an accepted result; other signed
   errors stay neutral. TapeOut names must be in canonical form (TapeKit SPEC §2.2): lowercase, no leading zeros.
 - The SDK is installable from each GitHub release: `npm install https://github.com/BruceLanLan/tapeapi/releases/download/v0.2.0/tapeapi-sdk-0.2.0.tgz`.
 - Default RPC nodes are bnbchain, defibit and ninicoin dataseeds (publicnode timed out on every request on
@@ -905,16 +909,16 @@ third-party audit.
 
 ### Protocol (proposed TAPs, bilingual, English authoritative)
 
-- **TAP-20** service identity: a service is a circuit, its container is the address, the manifest lives at
+- **TAPI-20** service identity: a service is a circuit, its container is the address, the manifest lives at
   `.well-known/tapeapi.json` in the container's site, and the holder authorises a signing key with an EIP-712
   delegation checked against the current holder.
-- **TAP-21** signed response envelope with the `TAPI-1/resp/v2` digest, bound to the container, the request id, the
+- **TAPI-21** signed response envelope with the `TAPI-1/resp/v2` digest, bound to the container, the request id, the
   method and parameters, the outcome and the timestamp; canonical JSON; stable error codes.
-- **TAP-22** metered payment: cumulative vouchers, per-provider escrow channels, session keys, a withdrawal cooldown,
+- **TAPI-22** metered payment: cumulative vouchers, per-provider escrow channels, session keys, a withdrawal cooldown,
   zero protocol fee and an optional voluntary contribution.
-- **TAP-23** attested reads of other chains, **TAP-24** intent RFQ (frozen), **TAP-25** circuit-verified methods.
-- **TAP-26** private channels between containers (mutual authentication, forward secrecy, ChaCha20-Poly1305) over
-  relays or ChannelBus; **TAP-27** private groups of up to 32 containers.
+- **TAPI-23** attested reads of other chains, **TAPI-24** intent RFQ (frozen), **TAPI-25** circuit-verified methods.
+- **TAPI-26** private channels between containers (mutual authentication, forward secrecy, ChaCha20-Poly1305) over
+  relays or ChannelBus; **TAPI-27** private groups of up to 32 containers.
 
 ### SDK (`@tapeapi/sdk`)
 

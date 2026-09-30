@@ -1,4 +1,4 @@
-// TAP-26 §3.1: a container's channel identity, authorised by the circuit's current holder and published in its site.
+// TAPI-26 §3.1: a container's channel identity, authorised by the circuit's current holder and published in its site.
 // It replaces the TapeSend key as the default identity, because deriving that key asks the holder to sign text that
 // says "only sign this on www.tapesend.com" -- which any third-party app would be training users to ignore.
 // 容器的通道身份：由电路当前持有人授权、发布在其站点里。它取代 TapeSend 密钥成为默认身份，因为派生那把密钥要求持有人
@@ -55,7 +55,7 @@ test('the identity lapses by itself when the circuit changes hands, and is refus
   await assert.rejects(api(c2).chain.channelKeys(A), (e) => e.code === 'CHANNEL_INVALID' && /current holder/.test(e.message))
 })
 
-test('a TAP-20 service delegation can never pass as a channel authorisation', async () => {
+test('a TAPI-20 service delegation can never pass as a channel authorisation', async () => {
   const chain = createFakeChain()
   publish(chain, A, 4246, { mutate: (r) => ({ ...r, sig: sig.signDigest(sig.delegationDigest(56, ADDR.hub, { container: A, signer: holder, expires: r.expires }), HOLDER_KEY) }) })
   await assert.rejects(api(chain).chain.channelKeys(A), (e) => e.code === 'CHANNEL_INVALID')

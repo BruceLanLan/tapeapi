@@ -26,7 +26,7 @@ before(async () => {
     }
     const p = createProvider({ minVoucherLifeS: 0,  manifest, signerKey: keys[i], dev: true, methods: { read: async () => {
       const a = answers[containers[i]]
-      // a signed revert (TAP-23 §3.3) or a signed refusal / 签名的回滚或签名的拒答
+      // a signed revert (TAPI-23 §3.3) or a signed refusal / 签名的回滚或签名的拒答
       if (a?.__revert) throw new TapeAPIError('INTERNAL', 'execution reverted', { data: { revert: a.__revert } })
       if (a?.__refuse) throw new TapeAPIError('BAD_REQUEST', 'block not available')
       return a
@@ -42,7 +42,7 @@ after(async () => { for (const p of providers) await p.close() })
 const set = (...vals) => vals.forEach((v, i) => { answers[containers[i]] = v })
 const three = () => services.slice(0, 3)
 
-test('strict by default (TAP-23 §3.4): 2 of 3 agree but one dissents -> rejected, not accepted', async () => {
+test('strict by default (TAPI-23 §3.4): 2 of 3 agree but one dissents -> rejected, not accepted', async () => {
   set({ value: '0xabc', block: 100 }, { block: 100, value: '0xabc' }, { value: '0xdef', block: 100 })
   await assert.rejects(api.callQuorum(three(), 'read', { chainId: 1 }), (e) => {
     assert.equal(e.code, 'QUORUM_FAILED')
@@ -124,7 +124,7 @@ test('argument validation: empty, too few providers, duplicates, bad quorum', as
   await assert.rejects(api.callQuorum([services[0], services[0]], 'read', {}), (e) => e.code === 'QUORUM_FAILED' && /duplicate/.test(e.message))
   await assert.rejects(api.callQuorum(three(), 'read', {}, { quorum: 0 }), (e) => /positive integer/.test(e.message))
   await assert.rejects(api.callQuorum(three(), 'nope', {}), (e) => e.code === 'QUORUM_FAILED' && e.failed.every(f => f.code === 'METHOD_NOT_FOUND'))
-  // TAP-23 §3.4(1): quorum 1 is refused unless spelled out / quorum 1 须显式开启
+  // TAPI-23 §3.4(1): quorum 1 is refused unless spelled out / quorum 1 须显式开启
   await assert.rejects(api.callQuorum([services[0]], 'read', {}, { quorum: 1 }), (e) => e.code === 'QUORUM_FAILED' && /allowSingleProvider/.test(e.message))
   set({ value: 'solo' })
   const r = await api.callQuorum([services[0]], 'read', {}, { quorum: 1, allowSingleProvider: true })
@@ -137,7 +137,7 @@ const alias = (s, { holder, live, container = '0x' + '7a'.repeat(20) } = {}) => 
   ...s, container, verified: { ...s.verified, holder: holder ?? s.verified.holder },
   manifest: { ...s.manifest, container, endpoints: { ...s.manifest.endpoints, live: live ?? s.manifest.endpoints.live } },
 })
-test('TAP-23 §3.5: two services sharing a holder or an origin are one source, and are refused before any call', async () => {
+test('TAPI-23 §3.5: two services sharing a holder or an origin are one source, and are refused before any call', async () => {
   const h = '0x' + '99'.repeat(20)
   const a = { ...services[0], verified: { ...services[0].verified, holder: h } }
   const b = alias(services[1], { holder: h.toUpperCase().replace('0X', '0x') })
@@ -146,7 +146,7 @@ test('TAP-23 §3.5: two services sharing a holder or an origin are one source, a
   await assert.rejects(api.callQuorum([services[0], sameOrigin], 'read', {}), (e) => e.code === 'QUORUM_FAILED' && /share origin/.test(e.message))
 })
 
-test('TAP-23 attested reads: ATTEST_DISAGREE on dissent, no tolerance, explicit numeric block, listed chain', async () => {
+test('TAPI-23 attested reads: ATTEST_DISAGREE on dissent, no tolerance, explicit numeric block, listed chain', async () => {
   const ar = (s) => ({ ...s, manifest: { ...s.manifest, methods: s.manifest.methods.map((m) => ({ ...m, attestedRead: { kind: 'eth_call', chains: [1] } })) } })
   const trio = three().map(ar)
   const res = (hash, result, extra = {}) => ({ chainId: 1, blockNumber: 100, blockHash: hash, result, ...extra })

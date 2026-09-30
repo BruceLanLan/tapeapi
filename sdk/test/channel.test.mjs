@@ -1,5 +1,5 @@
-// TAP-26 通道的密码学部分：握手、帧、以及每一种应当失败的方式。
-// The cryptographic core of TAP-26: the handshake, frames, and every way each of them is supposed to fail.
+// TAPI-26 通道的密码学部分：握手、帧、以及每一种应当失败的方式。
+// The cryptographic core of TAPI-26: the handshake, frames, and every way each of them is supposed to fail.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { TapeAPIError } from '../src/index.js'
@@ -101,7 +101,7 @@ test('expired, far-future and malformed invites are refused, and keys are valida
   const { invite } = mk()
   assert.throws(() => accept(invite, { now: invite.exp }), bad(/expired/))
   assert.throws(() => accept({ ...invite, exp: Math.floor(Date.now() / 1000) + 99999 }), bad(/further ahead/))
-  assert.throws(() => accept({ ...invite, kind: 'message' }), bad(/not a TAP-26 invite/))
+  assert.throws(() => accept({ ...invite, kind: 'message' }), bad(/not a TAPI-26 invite/))
   assert.throws(() => accept({ ...invite, cid: 'zz' }), bad(/not hex/))
   // a low-order point: every DH with it is a known value / 低阶点：与它做的每一次 DH 都是已知值
   const lowOrder = 'e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800'

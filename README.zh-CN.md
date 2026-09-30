@@ -18,7 +18,7 @@ TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上�
 
 [English](README.md) · [网站](https://tapeapi.fun) · [手册](https://tapeapi.fun/docs/zh/) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [更新日志](CHANGELOG.md) · [路线图](docs/ROADMAP.md)
 
-> **状态：正式版（1.3.0）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAP-22）是实验性的，没有部署。
+> **状态：正式版（1.3.0）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAPI-22）是实验性的，没有部署。
 > 所有代码和合约都没有经过第三方审计。
 
 ## 从这里开始
@@ -136,10 +136,10 @@ flowchart LR
 
 | 层 | 是什么 | 规范 |
 |---|---|---|
-| **身份** | 一枚 TapeOut 电路的 ERC-6551 容器。谁持有电路，谁就拥有这个服务；电路转手，服务跟着走。 | [TAP-20](spec/TAP-20.md) |
-| **清单** | 容器链上站点里的 `.well-known/tapeapi.json`：接口地址、方法、AI 价目表、MCP 工具定义的哈希、签名密钥，以及持有人对这把密钥的委托。 | [TAP-20](spec/TAP-20.md) |
-| **签名回答与回执** | 每个回答都有签名，并和它的请求绑定；AI 调用另有一张用量回执。 | [TAP-21](spec/TAP-21.md) |
-| **通道与群聊** | 端到端加密，经中继或 ChannelBus 传递；承载方只看得到密文。 | [TAP-26](spec/TAP-26.md)、[TAP-27](spec/TAP-27.md) |
+| **身份** | 一枚 TapeOut 电路的 ERC-6551 容器。谁持有电路，谁就拥有这个服务；电路转手，服务跟着走。 | [TAPI-20](spec/TAPI-20.md) |
+| **清单** | 容器链上站点里的 `.well-known/tapeapi.json`：接口地址、方法、AI 价目表、MCP 工具定义的哈希、签名密钥，以及持有人对这把密钥的委托。 | [TAPI-20](spec/TAPI-20.md) |
+| **签名回答与回执** | 每个回答都有签名，并和它的请求绑定；AI 调用另有一张用量回执。 | [TAPI-21](spec/TAPI-21.md) |
+| **通道与群聊** | 端到端加密，经中继或 ChannelBus 传递；承载方只看得到密文。 | [TAPI-26](spec/TAPI-26.md)、[TAPI-27](spec/TAPI-27.md) |
 
 ## 回执能证明什么，不能证明什么
 
@@ -157,8 +157,8 @@ flowchart LR
   [调试台](https://tapeapi.fun/playground/)和[状态页](https://tapeapi.fun/status/)。
 - **可用，由你自己部署：** AI 签名旁路与 new-api 一键包、MCP 签名代理、`tapeapi-verify`、`tapeapi-mcp`、抽检探针，
   以及 SDK 里的群聊一步投递（`deliverGroupUpdate`）。
-- **实验性，未部署：** 付费通道与托管合约（[TAP-22](spec/TAP-22.md)）、服务目录、可由电路验证的方法
-  （[TAP-25](spec/TAP-25.md)）。它们都不在 1.0 的稳定承诺里。
+- **实验性，未部署：** 付费通道与托管合约（[TAPI-22](spec/TAPI-22.md)）、服务目录、可由电路验证的方法
+  （[TAPI-25](spec/TAPI-25.md)）。它们都不在 1.0 的稳定承诺里。
 - **1.0 承诺什么：** 按 1.0 文档写的代码，在所有 1.x 版本里都能继续工作；除了标注 `@experimental` 或 `@internal` 的，
   其余全部是稳定的。从 0.x 升级：[升级到 1.0](docs/guides/zh-CN/upgrade-1.0.md)。
 - **我们不做的事：** 不替任何人托管旁路（它会经手你用户的 API 密钥，只能你自己部署）；不发币；不帮任何人绕开上游服务商的
@@ -184,26 +184,29 @@ flowchart LR
 
 ## 规范
 
-| TAP | 标题 | 状态 |
-|---|---|---|
-| [TAP-1](spec/TAP-1.md) | TAP 流程与状态 | Draft |
-| [TAP-20](spec/TAP-20.md) | 服务身份与清单，含 AI 价目表与多链名字 | Stable (v1)（稳定）；§3.5 实验性 |
-| [TAP-21](spec/TAP-21.md) | 签名响应信封，含 AI 用量回执 | Stable (v1)（稳定） |
-| [TAP-22](spec/TAP-22.md) | 计量支付：凭证与托管 | Experimental（实验性） |
-| [TAP-23](spec/TAP-23.md) | 多家交叉验证的读取 | Stable (v1)（稳定） |
-| [TAP-24](spec/TAP-24.md) | 跨链意图询价 | Withdrawn（已撤回） |
-| [TAP-25](spec/TAP-25.md) | 可由电路验证的方法 | Experimental（实验性） |
-| [TAP-26](spec/TAP-26.md) | 容器间的私密通道 | Stable (v1)（稳定） |
-| [TAP-27](spec/TAP-27.md) | 最多 32 个容器的私密群聊（实验性的格式 2 最多 128 个） | Stable (v1)（稳定） |
+这些是 TapeAPI 自己的规范，不是 TAP。其中部分内容已作为 TAP 草稿提交到 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)：
+[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)（服务身份与清单）、[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)（签名响应）、[#12](https://github.com/TapeOutProtocol/TAPs/pull/12)（私密通道）。
 
-规范中英双语，以英文为准。**“TAP-20”到“TAP-27”只是这些文档在本仓库里的名字，不是 TAP 编号**：TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑编号（TAP-01 §6.1），这些规范的部分内容可能作为 TAP 草稿提交到那里。
+| 规范 | 标题 | 状态 |
+|---|---|---|
+| [TAPI-1](spec/TAPI-1.md) | TapeAPI 的文档流程与状态 | Draft |
+| [TAPI-20](spec/TAPI-20.md) | 服务身份与清单，含 AI 价目表与多链名字 | Stable (v1)（稳定）；§3.5 实验性 |
+| [TAPI-21](spec/TAPI-21.md) | 签名响应信封，含 AI 用量回执 | Stable (v1)（稳定） |
+| [TAPI-22](spec/TAPI-22.md) | 计量支付：凭证与托管 | Experimental（实验性） |
+| [TAPI-23](spec/TAPI-23.md) | 多家交叉验证的读取 | Stable (v1)（稳定） |
+| [TAPI-24](spec/TAPI-24.md) | 跨链意图询价 | Withdrawn（已撤回） |
+| [TAPI-25](spec/TAPI-25.md) | 可由电路验证的方法 | Experimental（实验性） |
+| [TAPI-26](spec/TAPI-26.md) | 容器间的私密通道 | Stable (v1)（稳定） |
+| [TAPI-27](spec/TAPI-27.md) | 最多 32 个容器的私密群聊（实验性的格式 2 最多 128 个） | Stable (v1)（稳定） |
+
+规范中英双语，以英文为准。**TAPI-1 与 TAPI-20 至 TAPI-27 是 TapeAPI 自己的文档名，不是 TAP 编号**（2026-09-30 之前叫 TAP-1 与 TAP-20 至 TAP-27）：TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 编号。含有旧名字的冻结常量（例如 `TAP-26/…`、`TAP-27/…` 标签）永不改变。
 
 ## 仓库
 
 [`sdk/`](sdk/) `@tapeapi/sdk`（解析、调用、验签、AI 回执、通道、群聊、MCP）·
 [`server/`](server/) `@tapeapi/server`（服务端、AI 旁路、MCP 代理）·
 [`contracts/`](contracts/)（ChannelBus，以及实验性的托管合约和服务目录）·
-[`spec/`](spec/)（各 TAP、测试向量、Python 验证器）· [`examples/`](examples/) ·
+[`spec/`](spec/)（各规范、测试向量、Python 验证器）· [`examples/`](examples/) ·
 [`conformance/`](conformance/) · [`site/`](site/)（网站）· [`docs/`](docs/README.md)。
 合约地址见[入门](docs/guides/zh-CN/introduction.md#链上地址)。
 

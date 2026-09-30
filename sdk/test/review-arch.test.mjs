@@ -29,7 +29,7 @@ const C = (n) => '0x' + n.toString(16).padStart(40, '0')
 const TRUST = { verifyMember: 'trust-roster' }
 const isGroupErr = (re) => (e) => e instanceof TapeAPIError && e.code === 'GROUP_INVALID' && (!re || re.test(e.message))
 const entry = (m) => ({ container: m.container, chainId: 56, x25519: hex(m.identity.x25519.publicKey), ed25519: hex(m.identity.ed25519.publicKey) })
-const seqOf = (wire) => new DataView(wire.buffer, wire.byteOffset + 29, 8).getBigUint64(0)   // TAP-27 message header / 消息头
+const seqOf = (wire) => new DataView(wire.buffer, wire.byteOffset + 29, 8).getBigUint64(0)   // TAPI-27 message header / 消息头
 // Move Date.now (all SDK clocks read it) for the duration of fn / 在 fn 执行期间拨动 Date.now
 async function shifted(ms, fn) { const real = Date.now; Date.now = () => real() + ms; try { return await fn() } finally { Date.now = real } }
 
@@ -164,7 +164,7 @@ test('FIXED B13: a peer tx re-included by a reorg in a block already scanned is 
 
 // ================================================================================================= B1 ====
 // Two in-process relays and a ChannelBus on the fake chain, all named by A's invite. B posts its accept to only
-// one of them, as TAP-26 allows. / 两个进程内中继加假链上的 ChannelBus，都写在 A 的邀请里。B 只往其中一个发 accept。
+// one of them, as TAPI-26 allows. / 两个进程内中继加假链上的 ChannelBus，都写在 A 的邀请里。B 只往其中一个发 accept。
 const R1 = { url: 'http://127.0.0.1:1/r1/tapeapi/v1', container: '0x' + 'a1'.repeat(20) }
 const R2 = { url: 'http://127.0.0.1:1/r2/tapeapi/v1', container: '0x' + 'a2'.repeat(20) }
 const apiFor = (core) => ({ call: async (_svc, method, p) => ({ result: method === 'relayRecv' ? await core.recv(p.room, p.after, Math.min(p.waitMs ?? 0, 20), p.epoch) : core.send(p.room, p.frame) }) })
@@ -277,7 +277,7 @@ test('FIXED A3 (consumer): a lapsed provider\'s unsigned 503 is reported as DELE
   } finally { await provider.close() }
 })
 
-test('a file of another format that also calls itself "tapeapi" (version "0", site root) is never taken for a TAP-20 manifest', () => {
+test('a file of another format that also calls itself "tapeapi" (version "0", site root) is never taken for a TAPI-20 manifest', () => {
   // Another project on TapeOut publishes `tapeapi.json` at the site root with `"tapeapi": "0"`. Different path, and
   // even at our path the version alone refuses it: "0.N" requires N >= 1.
   // TapeOut 上另一个项目在站点根目录发布 `tapeapi.json`（`"tapeapi": "0"`）。路径不同；即便放到我们的路径，版本号也会拒绝它。
@@ -285,7 +285,7 @@ test('a file of another format that also calls itself "tapeapi" (version "0", si
 })
 
 // ================================================================================================= B7 ====
-// A container with a circuit and a holder; `record: true` also publishes its channel record (TAP-26 §3.1).
+// A container with a circuit and a holder; `record: true` also publishes its channel record (TAPI-26 §3.1).
 // 有电路与持有人的容器；`record: true` 时还发布其通道记录。
 const HOLDER = '0x' + '41'.repeat(32)
 const nowS = () => Math.floor(Date.now() / 1000)
@@ -380,7 +380,7 @@ test('FIXED B7: an RPC outage is never cached, a sold circuit is noticed after t
   assert.equal((await api.chain.channelKeys(Y.container)).x25519, entryY.x25519, 'and the failed fresh read did not evict Y')
   // Y's circuit is sold / Y 的电路被卖
   chain.setOwner(Y.tokenId, '0x' + '99'.repeat(20))
-  assert.equal(await verify(entryY), true, 'within the cache window (at most 300 s, TAP-27 §3.3 step 6) the record stands')
+  assert.equal(await verify(entryY), true, 'within the cache window (at most 300 s, TAPI-27 §3.3 step 6) the record stands')
   assert.equal(await later(301_000, () => verify(entryY)), false, 'after it, the sale is noticed')
   const api2 = client(chain, chain.fetch)
   await api2.chain.channelKeys(Y.container, { fresh: true }).catch(() => {})
@@ -435,7 +435,7 @@ test('FIXED B7: the owner re-verifies members past the cache when it starts an e
   assert.deepEqual(seen.splice(0), [false, false], 'createGroup: the members were just resolved')
   const gb = G.joinGroup({ self: ms[1], identity: ids[1], invite: { gid: owner.gid, owner: { container: ms[0].container, chainId: 56 } }, ownerKeys: entry(ms[0]) })
   await gb.acceptEpoch(epochWire, { verifyMember: spy })
-  assert.deepEqual(seen.splice(0), [false, false, false], 'a member may use the cache (TAP-27 §3.3 step 6)')
+  assert.deepEqual(seen.splice(0), [false, false, false], 'a member may use the cache (TAPI-27 §3.3 step 6)')
   await owner.rotate({ verifyMember: spy })
   assert.deepEqual(seen.splice(0), [true, true], 'rotate: a record cached before a sale would otherwise keep the sold member a whole epoch')
 })
@@ -655,7 +655,7 @@ test('FIXED X1: a counterfeit ERC-721 is not a TapeOut circuit: its account is r
   assert.equal(await fresh.chain.isCPU(ADDR.circuits), true)
 })
 
-test('FIXED X1 (TAP-20 §3.6 step 3): a manifest whose circuits contract is not a TapeOut processor is refused', async () => {
+test('FIXED X1 (TAPI-20 §3.6 step 3): a manifest whose circuits contract is not a TapeOut processor is refused', async () => {
   const { MANIFEST_KEY } = await import('../src/index.js')
   const { privateKeyToAddress: addrOf, signDigest: signD, delegationDigest: delD } = await import('../src/sig.js')
   const HK = '0x' + '11'.repeat(32), signerA = addrOf('0x' + '22'.repeat(32)), exp = nowS() + 86400
@@ -972,7 +972,7 @@ test('FIXED R2-6: a factory address with no code is a configuration error, never
   const Y = container(chain56, 3)
   await assert.rejects(client(chain56, chain56.fetch, { factory: '0x' + '81'.repeat(20) }).chain.channelKeys(Y.container), (e) => e.code === 'BAD_KEY' && /no code on chain 56/.test(e.message))
   assert.ok((await client(chain56, chain56.fetch, { factory: ADDR.factory }).chain.channelKeys(Y.container)).x25519)
-  // and on the manifest path (TAP-20 §3.6 step 3): BAD_KEY, not MANIFEST_INVALID / 清单路径上同样是 BAD_KEY，而不是 MANIFEST_INVALID
+  // and on the manifest path (TAPI-20 §3.6 step 3): BAD_KEY, not MANIFEST_INVALID / 清单路径上同样是 BAD_KEY，而不是 MANIFEST_INVALID
   const { MANIFEST_KEY } = await import('../src/index.js')
   const { privateKeyToAddress: addrOf, signDigest: signD, delegationDigest: delD } = await import('../src/sig.js')
   const HK = '0x' + '11'.repeat(32), signerA = addrOf('0x' + '22'.repeat(32)), exp = nowS() + 86400
@@ -986,7 +986,7 @@ test('FIXED R2-6: a factory address with no code is a configuration error, never
   await assert.rejects(client(chain56, chain56.fetch, { factory: '0x' + '81'.repeat(20) }).resolve(ADDR.container), (e) => e.code === 'BAD_KEY' && /no code on chain 56/.test(e.message))
 })
 
-test('FIXED R2-N2: a channel record whose keys lack the 0x prefix is refused (TAP-26 §3.1 "0x<64 hex>"), not accepted and then never matched', async () => {
+test('FIXED R2-N2: a channel record whose keys lack the 0x prefix is refused (TAPI-26 §3.1 "0x<64 hex>"), not accepted and then never matched', async () => {
   const chain = createFakeChain()
   const c = C(0xc0df)
   chain.setContainerToken(c, { tokenId: 7 }); chain.setAccount(7, c); chain.setOwner(7, sig.privateKeyToAddress(HOLDER))
@@ -1499,7 +1499,7 @@ test('FIXED R4-6: "serves no logs" releases a hold only while the node keeps say
   assert.equal(w2.filter((d) => 'oldestServed' in d).length, 1, 'the gap below rpc1\'s window, once')
 })
 
-test('FIXED R4-6 (TAP-26 §3.7 "known before the current poll", both halves): a history floor learnt by a probe holds once; a floor the node later contradicts is dropped and the blocks are read', async () => {
+test('FIXED R4-6 (TAPI-26 §3.7 "known before the current poll", both halves): a history floor learnt by a probe holds once; a floor the node later contradicts is dropped and the blocks are read', async () => {
   const chain = createFakeChain()
   chain.setFault('http://rpc1', 'history:5000'); chain.setFault('http://rpc2', 'nologs')
   const rpc = createRpc({ urls: RPC, quorum: 2, fetch: chain.fetch })

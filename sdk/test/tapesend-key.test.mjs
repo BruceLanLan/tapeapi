@@ -1,5 +1,5 @@
-// TAP-26 §3.1：对方的长期公钥 MUST 来自 DeWebHub。这里既用主网录制数据回放，也用假链覆盖每一种拒绝路径。
-// TAP-26 §3.1: the peer's static key MUST come from the DeWebHub. Replayed from recorded mainnet responses, and
+// TAPI-26 §3.1：对方的长期公钥 MUST 来自 DeWebHub。这里既用主网录制数据回放，也用假链覆盖每一种拒绝路径。
+// TAPI-26 §3.1: the peer's static key MUST come from the DeWebHub. Replayed from recorded mainnet responses, and
 // every refusal path covered on the fake chain.
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -18,7 +18,7 @@ const replay = async (url, init) => {
   return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
 }
 
-test('mainnet vector: container 4246 has a usable X25519 TapeSend key, and a TAP-26 invite to it builds', async () => {
+test('mainnet vector: container 4246 has a usable X25519 TapeSend key, and a TAPI-26 invite to it builds', async () => {
   const api = createTapeAPI({ rpcUrls: ['https://a.invalid', 'https://b.invalid'], quorum: 2, fetch: replay })
   const k = await api.chain.tapeSendKey(fx.container)
   assert.equal(k.container.toLowerCase(), fx.container.toLowerCase())

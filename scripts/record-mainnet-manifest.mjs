@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Record the TAP-20 §6.1 mainnet vector: the live manifest of 11.1013.tape (api.tapeapi.fun), read-only, pinned to one
+// Record the TAPI-20 §6.1 mainnet vector: the live manifest of 11.1013.tape (api.tapeapi.fun), read-only, pinned to one
 // block. Sends no transactions.
 //
 // How: the SDK's own resolve('11.1013.tape') runs against the SDK's default BSC nodes (rpcUrlsFor(56)) with quorum 2
@@ -13,7 +13,7 @@
 //
 // Usage: node scripts/record-mainnet-manifest.mjs [--write]      (without --write it only prints)
 //
-// 记录 TAP-20 §6.1 的主网向量：11.1013.tape（api.tapeapi.fun）的线上清单，只读、钉在一个区块上，不发任何交易。
+// 记录 TAPI-20 §6.1 的主网向量：11.1013.tape（api.tapeapi.fun）的线上清单，只读、钉在一个区块上，不发任何交易。
 // 做法：用 SDK 自己的 resolve('11.1013.tape')，走 SDK 默认的 BSC 节点、按运营方计的法定数 2；外层 fetch 把每个 eth_call
 // 钉到一个各节点一致的区块（EIP-1898 { blockHash }），并记下每个节点的回答。只有所有作答节点字节一致、且至少两家运营方
 // 作答的调用才写入 fixture。委托续期（12 月 10 日前）后清单会变，重跑会记下另一个同样有效的状态：fixture 钉的是那个区块上的状态。
@@ -89,7 +89,7 @@ const raw = Buffer.from(bytes.slice(2), 'hex')
 const out = {
   recordedAt: new Date().toISOString().slice(0, 10),
   chainId: 56,
-  source: `${NAME} (https://api.tapeapi.fun), TAP-20 §6.1; recorded by scripts/record-mainnet-manifest.mjs`,
+  source: `${NAME} (https://api.tapeapi.fun), TAPI-20 §6.1; recorded by scripts/record-mainnet-manifest.mjs`,
   note: 'Read-only. Every eth_call was sent with the EIP-1898 block parameter { blockHash } of `block`, to the SDK default BSC nodes, and kept only when every answering node returned the same bytes and at least `rpc.quorum` operators answered. The manifest changes when its delegation is renewed (due before 2026-12-10); this fixture pins the state at `block`, not the current manifest. / 只读。每个 eth_call 都以 `block` 的 EIP-1898 { blockHash } 发往 SDK 默认 BSC 节点，只有所有作答节点字节一致且至少 `rpc.quorum` 家运营方作答才保留。委托续期（12 月 10 日前）后清单会变；本 fixture 钉的是 `block` 上的状态。',
   rpc: { urls, operators: rpc.operators, quorum: QUORUM, blockParam: 'EIP-1898 { blockHash }' },
   block,

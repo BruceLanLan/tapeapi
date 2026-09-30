@@ -48,12 +48,12 @@ export function requireDeviationBps(v) {
 }
 
 /**
- * §2.5 的降级闸门。这两条检查**在发 `observe` 之前**做，因为 `observe` 的 `OLD` revert 按 TAP-23 §3.3
+ * §2.5 的降级闸门。这两条检查**在发 `observe` 之前**做，因为 `observe` 的 `OLD` revert 按 TAPI-23 §3.3
  * 属于合约 revert（`INTERNAL`），而这里其实是**本服务自己的参数校验失败**，归 `BAD_REQUEST` 更准确 ——
  * 调用方能据此把窗口调短再试，而 `INTERNAL` 会让它以为是我们坏了。
  *
  * The degradation gate. Both checks run **before** sending `observe`, because an `OLD` revert would be a
- * contract revert (`INTERNAL` per TAP-23 §3.3) when what actually happened is that this service's own
+ * contract revert (`INTERNAL` per TAPI-23 §3.3) when what actually happened is that this service's own
  * parameter validation failed — `BAD_REQUEST` is the accurate code, and it tells the caller to shorten the
  * window and retry instead of suggesting we are broken. The trade-off is noted in the README.
  */

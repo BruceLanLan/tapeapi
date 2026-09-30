@@ -28,7 +28,7 @@ function setup(methods) {
 const post = (p, method, body) => p.handleRequest(new Request(`http://x/tapeapi/v1/${method}`, {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body),
 }), { clientIp: '198.51.100.1' })
-// What a client written from TAP-21 §3.3 computes: its own (id, method, params). / 按规范实现的客户端所计算的绑定。
+// What a client written from TAPI-21 §3.3 computes: its own (id, method, params). / 按规范实现的客户端所计算的绑定。
 const verifiesUnder = (env, id, method, params) => {
   try { return recoverResponseSigner({ container: ADDR.container, id, method, params, ok: env.ok, body: env.ok ? env.result : env.error, ts: env.ts }, env.sig).toLowerCase() === signer.toLowerCase() }
   catch { return false }
@@ -41,7 +41,7 @@ test('FIXED SD-1: a request with no id is refused signed over ("", {}), not over
   assert.equal(res.status, 400)
   assert.equal(env.error.code, 'BAD_REQUEST')
   assert.equal(env.id, '')
-  assert.ok(verifiesUnder(env, '', 'm', {}), 'TAP-21 §3.2: an invalid id binds to id "" and params {}')
+  assert.ok(verifiesUnder(env, '', 'm', {}), 'TAPI-21 §3.2: an invalid id binds to id "" and params {}')
 })
 
 test('FIXED SD-1: an over-long id (129 UTF-16 units) is an invalid id: refused signed over ("", {})', async () => {

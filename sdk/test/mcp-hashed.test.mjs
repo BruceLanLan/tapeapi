@@ -1,8 +1,8 @@
-// Hash-only MCP receipts and verify links (the 2026 Q4 plan, privacy item 4 of the "do now" list): the TAP-21 digest
+// Hash-only MCP receipts and verify links (the 2026 Q4 plan, privacy item 4 of the "do now" list): the TAPI-21 digest
 // rebuilt from its two inner hashes is the same 32 bytes, so a receipt that carries only those hashes still verifies;
 // verifyLink carries that form by default and the full receipt only when asked; low-entropy params stay guessable from
 // their hash, which is said and shown here. The signed envelope and the digest are unchanged. No network.
-// 只带哈希的 MCP 回执与核验链接：由两个内层哈希重建的 TAP-21 摘要与原摘要逐字节相同，所以只带这两个哈希的回执仍能核验；
+// 只带哈希的 MCP 回执与核验链接：由两个内层哈希重建的 TAPI-21 摘要与原摘要逐字节相同，所以只带这两个哈希的回执仍能核验；
 // verifyLink 默认放这种形态，要求时才放完整回执；低熵参数仍可从哈希猜出，这里写明并演示。签名信封与摘要都不变。不联网。
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -14,7 +14,7 @@ import { bytesToHex } from '../src/abi.js'
 const KEY = '0x' + '42'.repeat(32)
 const SIGNER = privateKeyToAddress(KEY)
 const CIRCUITS = '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', CONTAINER = '0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8'
-const vectors = JSON.parse(readFileSync(new URL('../../spec/vectors/tap-21-envelope.json', import.meta.url), 'utf8'))
+const vectors = JSON.parse(readFileSync(new URL('../../spec/vectors/tapi-21-envelope.json', import.meta.url), 'utf8'))
 
 function signed({ method = 'balance', params = { address: '0x086bFB1908B1DF8C0c4412f28E4DD22Bdd52d715' }, ok = true, body = { balance: '12.5' }, id = 'mcp-1', ts = 1790000000 } = {}) {
   const env = { id, ok, container: CONTAINER, ts, ...(ok ? { result: body } : { error: body }), block: 7 }
@@ -23,7 +23,7 @@ function signed({ method = 'balance', params = { address: '0x086bFB1908B1DF8C0c4
 }
 const hashedEnv = (h) => ({ container: h.service.container, id: h.id, requestHash: h.requestHash, ok: h.ok, bodyHash: h.bodyHash, ts: h.ts })
 
-test('the digest rebuilt from the two inner hashes is byte for byte the TAP-21 digest (every published envelope vector too)', () => {
+test('the digest rebuilt from the two inner hashes is byte for byte the TAPI-21 digest (every published envelope vector too)', () => {
   const cases = [
     { container: CONTAINER, id: 'x', method: 'm', params: {}, ok: true, body: null, ts: 0 },
     { container: CONTAINER, id: 'ünïcödé', method: 'bnbUsd', params: { a: [1, 2, { b: 'c' }] }, ok: false, body: { code: 'BAD_REQUEST', message: 'no' }, ts: 2 ** 40 },

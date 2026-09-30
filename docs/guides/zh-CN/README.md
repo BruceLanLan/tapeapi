@@ -24,4 +24,4 @@
 git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm install
 ```
 
-协议本身定义在 [`spec/`](../../../spec/)（TAP-20 至 TAP-27）中。凡是规则要紧之处，各指南都会链接到相应章节。
+协议本身定义在 [`spec/`](../../../spec/)（TAPI-20 至 TAPI-27）中。凡是规则要紧之处，各指南都会链接到相应章节。

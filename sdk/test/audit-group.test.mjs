@@ -1,9 +1,9 @@
-// Adversarial audit of TAP-26 §3.1/§3.2 channel identity + inbox and TAP-27 Tape Group (commits 7fddc71, 86af31f).
+// Adversarial audit of TAPI-26 §3.1/§3.2 channel identity + inbox and TAPI-27 Tape Group (commits 7fddc71, 86af31f).
 // The findings (G-01 .. G-19) have since been fixed. Each `FIXED <id>` test replays the original attack and asserts
 // that it is now refused (or that the right result happens); a `CONFIRMED <id>` test asserts behaviour that was
 // attacked and held. A `REMAINS <id>` test pins a residual and asserts today's behaviour: either by design (G-02,
 // G-08) or a gap the fix left in the source (G-05b); invert it once the source changes.
-// 对 TAP-26 §3.1/§3.2 通道身份与收件、TAP-27 Tape Group 的对抗审计。发现项 G-01 .. G-19 均已修复：每个 `FIXED <id>`
+// 对 TAPI-26 §3.1/§3.2 通道身份与收件、TAPI-27 Tape Group 的对抗审计。发现项 G-01 .. G-19 均已修复：每个 `FIXED <id>`
 // 测试重放原攻击并断言它现在被拒绝（或结果正确）；`CONFIRMED <id>` 断言经受住攻击的行为；`REMAINS <id>` 固定一个残余
 // 并断言其当前行为：或为设计使然（G-02、G-08），或为修复在源码中留下的缺口（G-05b）；源码修改后应将其反转。
 import { test } from 'node:test'
@@ -217,8 +217,8 @@ test('FIXED G-05: api.groupVerifier() caches a record for minutes, not until it 
   chain.setOwner(B.tokenId, '0x' + '99'.repeat(20))                                   // circuit sold / 电路被卖
   assert.equal(await verify(entry(B)), true, 'within the ~300 s cache window the old answer still stands')
   assert.equal(await later(301_000, () => verify(entry(B))), false, 'after the cache window the same verifier answers false')
-  // channelKeys shares the verifier's cache since arch B7; a fresh read is what TAP-26 §3.1 says now: the identity is gone
-  // arch B7 起 channelKeys 与核验器共用缓存；fresh 读取给出 TAP-26 §3.1 此刻的结论：身份已失效
+  // channelKeys shares the verifier's cache since arch B7; a fresh read is what TAPI-26 §3.1 says now: the identity is gone
+  // arch B7 起 channelKeys 与核验器共用缓存；fresh 读取给出 TAPI-26 §3.1 此刻的结论：身份已失效
   await assert.rejects(client.chain.channelKeys(B.container, { fresh: true }), /current holder/)
   assert.equal(await client.groupVerifier()(entry(B)), false, 'a CHANNEL_INVALID record is a definitive "no", not an error')
   assert.equal(await client.groupVerifier()({ ...entry(B), container: C(0xa0ff) }), false, 'no container / NOT_FOUND is a "no" too')
@@ -548,12 +548,12 @@ test('CONFIRMED C-02: message integrity: reattribution, truncation, sig/ct/heade
   assert.equal(owner.open(w, { text: true }).from, ms[1].container.toLowerCase())
 })
 
-test('CONFIRMED C-03: TAP-26 and TAP-27 sealed inbox contents cannot be confused for one another', () => {
+test('CONFIRMED C-03: TAPI-26 and TAPI-27 sealed inbox contents cannot be confused for one another', () => {
   const me = { container: C(0xf100), chainId: 56, identity: channel.generateIdentity() }
   const self = { container: me.container, chainId: 56, staticSecret: me.identity.x25519.secretKey }
   const to = { container: me.container, staticPublic: me.identity.x25519.publicKey }
   const groupInv = channel.sealToInbox({ v: 1, kind: G.GROUP_INVITE_KIND, gid: 'ab'.repeat(16), owner: { container: C(1), chainId: 56 }, relays: [] }, { to })
-  assert.throws(() => channel.openInvite(groupInv, { self }), /not a TAP-26 invite/)
+  assert.throws(() => channel.openInvite(groupInv, { self }), /not a TAPI-26 invite/)
   const peer = channel.generateKeyPair()
   const { invite } = channel.createInvite({ self: { container: C(2), chainId: 56, staticSecret: peer.secretKey }, peer: { container: me.container, staticPublic: me.identity.x25519.publicKey } })
   assert.throws(() => G.openGroupInvite(channel.sealInvite(invite, { to }), { self }), isGroupErr(/not a group invite/))
@@ -562,7 +562,7 @@ test('CONFIRMED C-03: TAP-26 and TAP-27 sealed inbox contents cannot be confused
   assert.throws(() => channel.openFromInbox(elsewhere, { self }), /does not open/)
 })
 
-test('CONFIRMED C-04: a sealed TAP-26 invite with a spoofed `from` cannot complete, and the responder accepts no frame meanwhile', () => {
+test('CONFIRMED C-04: a sealed TAPI-26 invite with a spoofed `from` cannot complete, and the responder accepts no frame meanwhile', () => {
   const victim = channel.generateKeyPair(), attacker = channel.generateKeyPair(), bob = channel.generateKeyPair()
   const V = C(0xf200), B = C(0xf201)
   const { invite, pending } = channel.createInvite({ self: { container: V, chainId: 56, staticSecret: attacker.secretKey }, peer: { container: B, staticPublic: bob.publicKey } })

@@ -512,7 +512,7 @@ test('verify: an AI usage receipt reads from the header value or line, the SSE c
   }
   const s = readAny(streamText)
   assert.equal(s.kind, 'usage'); assert.equal(s.receipt.id, 'chatcmpl-8'); assert.equal(s.receipt.result.stream, true)
-  // Still a TAP-21 receipt when it is one. / TAP-21 回执照旧。
+  // Still a TAPI-21 receipt when it is one. / TAPI-21 回执照旧。
   assert.equal(readAny(verifyLink(makeReceipt())).kind, 'receipt')
   const shape = (mut) => { const x = structuredClone(env); mut(x); try { parseUsageReceipt(x); return 'ok' } catch (e) { return e.field } }
   assert.equal(shape((x) => { x.params.requestSha256 = 'xyz' }), 'params')

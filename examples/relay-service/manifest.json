@@ -1,7 +1,7 @@
 {
   "tapeapi": "0.1",
   "name": "relay.tape",
-  "description": "Forwards TAP-26 channel ciphertext between peers that cannot connect directly. Content-blind: frames are end-to-end encrypted and the relay holds no key.",
+  "description": "Forwards TAPI-26 channel ciphertext between peers that cannot connect directly. Content-blind: frames are end-to-end encrypted and the relay holds no key.",
   "circuits": "0x0000000000000000000000000000000000000000",
   "tokenId": "0",
   "container": "0x0000000000000000000000000000000000000000",

@@ -106,8 +106,8 @@ export function createProvider(opts = {}) {
   const rpc = rpcUrls.length ? createRpc({ urls: rpcUrls, quorum, timeoutMs, fetch: fetchImpl, allowSingleNode: opts.allowSingleNode === true }) : null
   const bodyLimit = opts.bodyLimit ?? 64 * 1024
   const hardBodyCap = Math.max(bodyLimit * 64, 4 * 1024 * 1024)
-  // TAP-21 §3.2: providers MUST cap the response body at 1 MiB and SHOULD answer within 30 s.
-  // TAP-21 §3.2：响应体 MUST 不超过 1 MiB，SHOULD 在 30 秒内作答。
+  // TAPI-21 §3.2: providers MUST cap the response body at 1 MiB and SHOULD answer within 30 s.
+  // TAPI-21 §3.2：响应体 MUST 不超过 1 MiB，SHOULD 在 30 秒内作答。
   const RESPONSE_LIMIT = 1024 * 1024
   const handlerTimeoutMs = Number(opts.handlerTimeoutMs ?? 25_000)   // drained and refused below this, cut off above it / 此值以下读完再拒，以上直接断开
   const escrowCacheMs = opts.escrowCacheMs ?? 30_000
@@ -217,7 +217,7 @@ export function createProvider(opts = {}) {
       throw e
     }
   }
-  // v2 escrow (TAP-22 §3.2(4)): the (consumer, this container) channel is the cap -- there is no allowance and no
+  // v2 escrow (TAPI-22 §3.2(4)): the (consumer, this container) channel is the cap -- there is no allowance and no
   // shared balance to reason about. An armed withdraw request is subtracted while it is inside its lifetime
   // [requestedAt, requestedAt + 48h + 7d]: inside the cooldown the provider can still settle ahead of it, but
   // once it is executable the requested amount can leave in the same block as our settle (E-03), so serving
@@ -266,14 +266,14 @@ export function createProvider(opts = {}) {
     return next
   }
   async function verifyVoucher(v, price) {
-    // TAP-22 §3.2: every BAD_VOUCHER carries data.price, so a consumer holding a stale manifest can always tell,
+    // TAPI-22 §3.2: every BAD_VOUCHER carries data.price, so a consumer holding a stale manifest can always tell,
     // whatever else was wrong with the voucher. / 每个 BAD_VOUCHER 都带 data.price，持旧清单的消费者总能察觉。
     const bad = (msg, extra) => { throw new TapeAPIError('BAD_VOUCHER', msg, { ...extra, data: { ...(extra?.data || {}), price: price.toString() } }) }
     if (!isPlainObject(v)) bad('voucher missing')
     if (!isAddress(v.consumer) || !isAddress(v.provider)) bad('voucher.consumer/provider must be addresses')
     if (!eqAddr(v.provider, container)) bad('voucher.provider is not this container')
     if (typeof v.cumulative !== 'string' || !/^\d+$/.test(v.cumulative)) bad('voucher.cumulative must be decimal string')
-    // TAP-22 §3.1: valid while now ≤ expires, the same inclusive boundary the escrow uses / 与托管合约同一个包含边界
+    // TAPI-22 §3.1: valid while now ≤ expires, the same inclusive boundary the escrow uses / 与托管合约同一个包含边界
     if (!Number.isInteger(v.expires) || v.expires < now()) bad('voucher expired')
     if (v.expires - now() < minVoucherLifeS) bad(`voucher expires in ${v.expires - now()} s; this provider needs at least ${minVoucherLifeS} s to settle`, { data: { minVoucherLifeS } })
     const cumulative = BigInt(v.cumulative)
@@ -335,7 +335,7 @@ export function createProvider(opts = {}) {
       const stale = { data: { lastCumulative: last.toString(), onChainClaimed: claimed.toString(), price: price.toString(), ...(proof ? { voucher: proof } : {}) } }
       if (cumulative <= claimed) bad(`cumulative ${cumulative} already settled on-chain (claimed ${claimed})`, stale)
       if (cumulative < last + price) bad(`cumulative ${cumulative} < last ${last} + price ${price}`, stale)
-      // TAP-22 §3.2(4): cumulative − claimedOf ≤ channelOf − armed. / 累计额 − 已结算 ≤ 通道余额 − 已上膛的提现。
+      // TAPI-22 §3.2(4): cumulative − claimedOf ≤ channelOf − armed. / 累计额 − 已结算 ≤ 通道余额 − 已上膛的提现。
       if (cumulative - claimed > available) bad(`unsettled ${cumulative - claimed} exceeds the available channel ${available} (channel ${channel}, armed withdraw ${armed})`)
       // Reserve now, bill later: the meter only advances once the method has actually produced a result.
       // Otherwise an upstream 502 would be charged to the consumer.
@@ -369,9 +369,9 @@ export function createProvider(opts = {}) {
     })
   }
 
-  // ---- 信封 / envelopes (TAP-21 v2: digest covers {method, params} and ok) ----
-  // TOOLS_CHANGED: an MCP-bound service whose upstream tools no longer match the manifest's toolsSha256 (TAP-20 §3.8).
-  // TOOLS_CHANGED：上游工具与清单 toolsSha256 不再相符的 MCP 绑定服务（TAP-20 §3.8）。
+  // ---- 信封 / envelopes (TAPI-21 v2: digest covers {method, params} and ok) ----
+  // TOOLS_CHANGED: an MCP-bound service whose upstream tools no longer match the manifest's toolsSha256 (TAPI-20 §3.8).
+  // TOOLS_CHANGED：上游工具与清单 toolsSha256 不再相符的 MCP 绑定服务（TAPI-20 §3.8）。
   const STATUS = { PAYMENT_REQUIRED: 402, BAD_VOUCHER: 402, METHOD_NOT_FOUND: 404, BAD_REQUEST: 400, INTERNAL: 500, TOOLS_CHANGED: 409 }
   function envelope({ id, method, params }, ok, payload, block) {
     const ts = now()
@@ -393,9 +393,9 @@ export function createProvider(opts = {}) {
     const code = known(e?.code) ? e.code : 'INTERNAL'
     if (code === 'INTERNAL') {
       log('internal error', e)
-      // A handler may attach the revert bytes of a call it made (TAP-23 §3.3): that is chain state anyone can
+      // A handler may attach the revert bytes of a call it made (TAPI-23 §3.3): that is chain state anyone can
       // reproduce, not an upstream detail, so it is the one thing an INTERNAL may carry. Nothing else passes.
-      // 处理器可附上它所做调用的 revert 字节（TAP-23 §3.3）：那是人人可复现的链上状态，不是上游细节，是 INTERNAL 唯一可携带的内容。
+      // 处理器可附上它所做调用的 revert 字节（TAPI-23 §3.3）：那是人人可复现的链上状态，不是上游细节，是 INTERNAL 唯一可携带的内容。
       const revert = e instanceof TapeAPIError ? e.data?.revert : undefined
       if (typeof revert === 'string' && revert.length <= 2 + 2 * 4096 && /^0x(?:[0-9a-fA-F]{2})*$/.test(revert)) return { code, message: 'execution reverted', data: { revert: revert.toLowerCase() } }
       return { code, message: 'internal error' }
@@ -407,11 +407,11 @@ export function createProvider(opts = {}) {
 
   const utf8Length = (str) => new TextEncoder().encode(str).length
 
-  // TAP-21 §3.2: what an answer to a parsed request object is signed over. An invalid `id` (missing, not a string,
+  // TAPI-21 §3.2: what an answer to a parsed request object is signed over. An invalid `id` (missing, not a string,
   // empty, over 128 UTF-16 units) is not trusted, and neither are the params beside it: ("", {}). Params with no
   // canonical form: (id, {}). Otherwise the request's own (id, params). One helper for the normal path and the crash
   // path, so a spec-conformant client verifies every answer (spec review SD-1).
-  // TAP-21 §3.2：对已解析请求对象的回答签在什么之上。无效 `id`（缺失、非字符串、空、超过 128 个 UTF-16 单元）不可信，
+  // TAPI-21 §3.2：对已解析请求对象的回答签在什么之上。无效 `id`（缺失、非字符串、空、超过 128 个 UTF-16 单元）不可信，
   // 它旁边的 params 也不可信：("", {})。没有规范形式的 params：(id, {})。否则就是请求自己的 (id, params)。
   // 正常路径与崩溃路径共用一个函数，使按规范实现的客户端能验证每一个回答。
   function bindingOf(body, method) {
@@ -432,7 +432,7 @@ export function createProvider(opts = {}) {
     const method = typeof body?.method === 'string' ? body.method : ''
     // A request whose params have no canonical form cannot be answered with an envelope bound to them. Check it
     // BEFORE any handler runs, and bind the refusal to empty params (runtime audit F-07). An invalid id binds to
-    // ("", {}) (TAP-21 §3.2, SD-1). / 参数没有规范形式的请求，无法用绑定这些参数的信封作答。在任何处理器运行之前
+    // ("", {}) (TAPI-21 §3.2, SD-1). / 参数没有规范形式的请求，无法用绑定这些参数的信封作答。在任何处理器运行之前
     // 检查，拒绝时绑定空参数。无效 id 绑定 ("", {})。
     const { req, paramsError } = bindingOf(body, method)
     const { id, params } = req
@@ -446,7 +446,7 @@ export function createProvider(opts = {}) {
     try {
       if (!id) { const w = spendFree(); if (w) return { rateLimited: w }; throw new TapeAPIError('BAD_REQUEST', 'id (string, 1..128 chars) required') }
       if (paramsError) { const w = spendFree(); if (w) return { rateLimited: w }; throw new TapeAPIError('BAD_REQUEST', `params have no canonical form: ${paramsError.message}`) }
-      // TAP-21 §3.1: a body `method` that disagrees with the path is refused, never silently overwritten (D14)
+      // TAPI-21 §3.1: a body `method` that disagrees with the path is refused, never silently overwritten (D14)
       // 与路径不一致的 body `method` 被拒绝，而不是被悄悄覆盖
       if (sentMethod !== undefined && sentMethod !== method) { const w = spendFree(); if (w) return { rateLimited: w }; throw new TapeAPIError('BAD_REQUEST', 'body method does not match the path') }
       if (body.params != null && !isPlainObject(body.params)) { const w = spendFree(); if (w) return { rateLimited: w }; throw new TapeAPIError('BAD_REQUEST', 'params must be a JSON object') }
@@ -483,7 +483,7 @@ export function createProvider(opts = {}) {
       // Sign FIRST, bill second: a result that cannot be signed (no canonical form) must not be charged for
       // (runtime audit F-06). / 先签名、后计费：签不了名的结果不能收钱。
       const env = envelope(req, true, result ?? null, block)
-      // Nor is a result too large to send (TAP-21 §3.2, 1 MiB) / 超过 1 MiB 发不出去的结果也不收钱
+      // Nor is a result too large to send (TAPI-21 §3.2, 1 MiB) / 超过 1 MiB 发不出去的结果也不收钱
       if (utf8Length(JSON.stringify(env)) > RESPONSE_LIMIT) throw new TapeAPIError('INTERNAL', `response of ${def.name} exceeds ${RESPONSE_LIMIT} bytes`)
       if (lease) await lease.commit()   // bill only for a delivered result / 交付了结果才计费
       return { status: 200, env, paid: verified }
@@ -554,7 +554,7 @@ export function createProvider(opts = {}) {
   }
 
   // Fixed window, bounded map. Not distributed: two processes each get their own budget, which is stated in
-  // TAP-21 §3.4 rather than papered over. / 固定窗口、有界表。不跨进程共享：两个进程各有一份预算，这一点写进规范而不是假装没有。
+  // TAPI-21 §3.4 rather than papered over. / 固定窗口、有界表。不跨进程共享：两个进程各有一份预算，这一点写进规范而不是假装没有。
   const buckets = new Map()
   function rateLimited(key, budget) {
     if (!rl || !budget) return 0
@@ -641,7 +641,7 @@ export function createProvider(opts = {}) {
     catch (e) {
       log('invoke crashed', e)
       // Bound to the same (id, params) the answer would have carried, so the client that sent it can verify it
-      // (TAP-21 §3.2, SD-1). / 与正常回答相同的 (id, params) 绑定，发出请求的客户端才能验证它。
+      // (TAPI-21 §3.2, SD-1). / 与正常回答相同的 (id, params) 绑定，发出请求的客户端才能验证它。
       out = { status: 500, env: envelope(bindingOf(body, m[1]).req, false, { code: 'INTERNAL', message: 'internal error' }, lastBlock), paid: false }
     }
     if (out.rateLimited) return tooMany(out.rateLimited)
@@ -671,7 +671,7 @@ export function createProvider(opts = {}) {
   function close() { return new Promise((r) => (server ? server.close(() => r()) : r())) }
 
   // 待结算凭证 / vouchers worth settling (latest per consumer). Expired ones are reported via log, not silently dropped.
-  // A voucher signed by a session key settles only while BOTH it and the session are live (TAP-22 §3.2), so its
+  // A voucher signed by a session key settles only while BOTH it and the session are live (TAPI-22 §3.2), so its
   // deadline is min(expires, sessionExpiry); a consumer-signed voucher's deadline is its expires. Sorted soonest first.
   // 会话密钥签的凭证只有在凭证与会话都有效时才能结算，截止时间为 min(expires, sessionExpiry)；按截止时间升序。
   async function pendingSettlements() {
@@ -691,7 +691,7 @@ export function createProvider(opts = {}) {
       .map(({ consumer, provider, cumulative, expires, sig, deadline }) => ({ consumer, provider, cumulative, expires, sig, deadline }))
   }
 
-  // What an operator must settle NOW (TAP-22 §3.3.1): vouchers above what the escrow already paid whose deadline is
+  // What an operator must settle NOW (TAPI-22 §3.3.1): vouchers above what the escrow already paid whose deadline is
   // within `marginS`, and every voucher on a channel with an armed withdraw request (settle before availableAt).
   // The runtime holds no wallet: send each `settleTx(v)` with your own key, on a timer shorter than marginS.
   // 运营者此刻必须结算的：高于已结算额、且截止时间在 marginS 之内的凭证，以及所有挂着提现请求的通道上的凭证

@@ -83,7 +83,7 @@ test('FIXED G1-M4: every `now` is Unix seconds; a group takes `clock` (a functio
   const { group, epochWire } = await G.createGroup({ self, identity, clock: () => T, verifyMember: 'trust-roster' })
   assert.equal(group.roster.issued, Math.floor(T), 'issued is the clock, in seconds')
   const wire = group.seal('x')
-  // seq = clock ms << 16 (TAP-27 §3.4): the seconds clock is converted, not truncated to whole seconds
+  // seq = clock ms << 16 (TAPI-27 §3.4): the seconds clock is converted, not truncated to whole seconds
   const seq = new DataView(wire.buffer, wire.byteOffset + 29, 8).getBigUint64(0)
   assert.equal(seq >> 16n, 1789000000500n)
   assert.throws(() => G.joinGroup({ self, identity, invite: { gid: group.gid, owner: self }, ownerKeys: {}, now: () => 0 }), invalid(/renamed/))
@@ -91,7 +91,7 @@ test('FIXED G1-M4: every `now` is Unix seconds; a group takes `clock` (a functio
 })
 
 // FIXED RC-6 (review 2026-09-29, O P1-3 / F P1-1): `relays` meant two things in one namespace: createGroup's relays are
-// references { url, container } (a TAP-27 roster field), the delivery functions' relays were clients { api, service }.
+// references { url, container } (a TAPI-27 roster field), the delivery functions' relays were clients { api, service }.
 // The delivery options are relayClients and busClients now; every old name is refused with a pointer to the upgrade
 // guide. / `relays` 在同一命名空间里有两种含义：createGroup 的是引用，投递函数的是客户端。投递参数改名 relayClients / busClients。
 test('FIXED RC-6: group delivery takes relayClients: [{ api, service }] and busClients: [...]; relays / buses / relay / bus / svc are refused', async () => {

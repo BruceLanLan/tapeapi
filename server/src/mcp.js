@@ -1,8 +1,8 @@
 // A TapeAPI provider as a remote MCP server (Streamable HTTP, stateless): POST /mcp takes JSON-RPC and answers JSON.
-// Every tool call goes through provider.handleRequest like any other call, so the result is the same signed TAP-21
+// Every tool call goes through provider.handleRequest like any other call, so the result is the same signed TAPI-21
 // envelope, under the same rate limits, and comes back with a receipt anyone can verify against the chain.
 // 把 TapeAPI 提供者作为远程 MCP 服务器（Streamable HTTP，无状态）：POST /mcp 收 JSON-RPC、回 JSON。每次工具调用都像普通调用
-// 一样经过 provider.handleRequest，所以结果是同样签名的 TAP-21 信封、受同样的限流，并附带任何人都能对照链上核验的回执。
+// 一样经过 provider.handleRequest，所以结果是同样签名的 TAPI-21 信封、受同样的限流，并附带任何人都能对照链上核验的回执。
 import { mcp, webmcp, TapeAPIError } from '@tapeapi/sdk'
 import { readCapped, TooLarge } from './read-capped.js'
 

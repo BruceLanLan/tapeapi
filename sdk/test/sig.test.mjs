@@ -80,7 +80,7 @@ test('C-02: recoverAddress rejects high-s (malleated) signatures and bad v, like
   for (const v of ['1d', '00ff', '29']) assert.throws(() => recoverAddress(d, good.slice(0, 130) + v.slice(-2)), (e) => e.code === 'BAD_SIGNATURE')
   assert.throws(() => recoverAddress(d, '0x' + '00'.repeat(65)), (e) => e.code === 'BAD_SIGNATURE')
 })
-test('responseDigest follows the TAP-21 v2 layout: request hash + ok byte + canonical body', () => {
+test('responseDigest follows the TAPI-21 v2 layout: request hash + ok byte + canonical body', () => {
   const container = '0x' + '11'.repeat(20)
   const env = { container, id: 'req-1', method: 'read', params: { chainId: 1, b: 2 }, ok: true, body: { b: 1, a: [1, 2] }, ts: 1758300000 }
   const enc = new TextEncoder()
@@ -92,7 +92,7 @@ test('responseDigest follows the TAP-21 v2 layout: request hash + ok byte + cano
     ...keccak256(enc.encode(canonicalJSON({ a: [1, 2], b: 1 }))), ...ts,
   ]))
   assert.equal(bytesToHex(responseDigest(env)), bytesToHex(manual))
-  // informative constant published in TAP-21 §6 / 规范 §6 的参考常量
+  // informative constant published in TAPI-21 §6 / 规范 §6 的参考常量
   assert.equal(bytesToHex(keccak256('TAPI-1/resp/v2')), 'bd61d43697493b5514339aa5ca816a32e8911486b4b1e5395614878bd164011d')
   assert.equal(bytesToHex(responseDigest(env)), bytesToHex(responseDigest({ ...env, body: { a: [1, 2], b: 1 }, params: { b: 2, chainId: 1 } })))
   assert.notEqual(bytesToHex(responseDigest(env)), bytesToHex(responseDigest({ ...env, ts: 1758300001 })))

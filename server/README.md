@@ -1,7 +1,7 @@
 # @tapeapi/server
 
 Provider runtime for [TapeAPI](https://tapeapi.fun): serve your methods as a TapeAPI service. It parses requests,
-signs every answer (TAP-21), rate-limits, and for paid methods checks and meters EIP-712 vouchers (TAP-22). You write
+signs every answer (TAPI-21), rate-limits, and for paid methods checks and meters EIP-712 vouchers (TAPI-22). You write
 plain functions. Runs on Node (`listen`) and on any fetch runtime such as Cloudflare Workers (`handleRequest`).
 
 > **1.3.0.** Semantic versioning from 1.0 on: breaking changes come only in 2.0. See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md).
@@ -30,7 +30,7 @@ import { readFile } from 'node:fs/promises'
 import { createProvider } from '@tapeapi/server'
 
 const provider = createProvider({
-  manifest: JSON.parse(await readFile('manifest.json', 'utf8')),   // your TAP-20 manifest
+  manifest: JSON.parse(await readFile('manifest.json', 'utf8')),   // your TAPI-20 manifest
   signerKey: process.env.SIGNER_KEY,                               // the key your holder delegated
   dev: true,                                                       // local run (http, no delegation); remove to go live
   rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],

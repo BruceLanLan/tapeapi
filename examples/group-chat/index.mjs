@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A minimal TAP-27 group chat over the public relay (12.1013.tape): two throwaway identities, an owner and a member,
+// A minimal TAPI-27 group chat over the public relay (12.1013.tape): two throwaway identities, an owner and a member,
 // each with its own TapeAPI client. The owner creates the group and delivers the epoch message AND the invite in one
 // call (deliverGroupUpdate); the member finds the invite in its inbox room (checkGroupInvites), joins, and the two
 // exchange one message each.
@@ -11,7 +11,7 @@
 // application checks every member with api.groupVerifier() and looks the owner up with
 // api.chain.channelKeys(invite.owner.container). See docs/guides/groups.md.
 //
-// 公共中继（12.1013.tape）上的最小 TAP-27 群聊：两个临时身份（群主与成员），各用自己的 TapeAPI 客户端。群主建群，一次调用
+// 公共中继（12.1013.tape）上的最小 TAPI-27 群聊：两个临时身份（群主与成员），各用自己的 TapeAPI 客户端。群主建群，一次调用
 // 投递纪元消息**和**邀请（deliverGroupUpdate）；成员在收件房间里找到邀请（checkGroupInvites），入群，双方各发一条消息。
 // **仅供演示**：容器是随机地址，身份在链上没有通道记录，所以成员靠信任（verifyMember: 'trust-roster'），成员直接从群主处拿到
 // 群主公钥。正式应用必须用 api.groupVerifier() 核验每个成员，并用 api.chain.channelKeys(invite.owner.container) 查群主。

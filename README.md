@@ -17,7 +17,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 [中文说明](README.zh-CN.md) · [Website](https://tapeapi.fun) · [Docs](https://tapeapi.fun/docs/) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md)
 
 > **Status: released, 1.3.0.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
-> breaking changes come only in 2.0. Paid channels (TAP-22) are experimental and not deployed. Nothing here has had a
+> breaking changes come only in 2.0. Paid channels (TAPI-22) are experimental and not deployed. Nothing here has had a
 > third-party audit.
 
 ## Start here
@@ -138,10 +138,10 @@ flowchart LR
 
 | Layer | What it is | Spec |
 |---|---|---|
-| **Identity** | A TapeOut circuit's ERC-6551 container. Whoever holds the circuit owns the service; transfer the circuit and the service moves with it. | [TAP-20](spec/TAP-20.md) |
-| **Manifest** | `.well-known/tapeapi.json` in the container's on-chain site: endpoints, methods, the AI price table, the hash of MCP tool definitions, the signing key and the holder's delegation of it. | [TAP-20](spec/TAP-20.md) |
-| **Signed answers and receipts** | Every answer is signed and bound to its request; AI calls get a usage receipt. | [TAP-21](spec/TAP-21.md) |
-| **Channels and groups** | End-to-end encrypted, over a relay or ChannelBus; the carrier sees ciphertext only. | [TAP-26](spec/TAP-26.md), [TAP-27](spec/TAP-27.md) |
+| **Identity** | A TapeOut circuit's ERC-6551 container. Whoever holds the circuit owns the service; transfer the circuit and the service moves with it. | [TAPI-20](spec/TAPI-20.md) |
+| **Manifest** | `.well-known/tapeapi.json` in the container's on-chain site: endpoints, methods, the AI price table, the hash of MCP tool definitions, the signing key and the holder's delegation of it. | [TAPI-20](spec/TAPI-20.md) |
+| **Signed answers and receipts** | Every answer is signed and bound to its request; AI calls get a usage receipt. | [TAPI-21](spec/TAPI-21.md) |
+| **Channels and groups** | End-to-end encrypted, over a relay or ChannelBus; the carrier sees ciphertext only. | [TAPI-26](spec/TAPI-26.md), [TAPI-27](spec/TAPI-27.md) |
 
 ## What a receipt proves, and what it does not
 
@@ -161,8 +161,8 @@ the signature adds is accountability. A receipt cannot be disowned, so anyone ru
   [playground](https://tapeapi.fun/playground/) and [status page](https://tapeapi.fun/status/).
 - **Available, you run it:** the AI signing sidecar and the new-api package, the MCP signing proxy, `tapeapi-verify`,
   `tapeapi-mcp`, the spot-check probe, and one-call group delivery (`deliverGroupUpdate`) in the SDK.
-- **Experimental, not deployed:** paid channels and the escrow ([TAP-22](spec/TAP-22.md)), the service directory, and
-  circuit-verified methods ([TAP-25](spec/TAP-25.md)). None of them is part of the 1.0 stability promise.
+- **Experimental, not deployed:** paid channels and the escrow ([TAPI-22](spec/TAPI-22.md)), the service directory, and
+  circuit-verified methods ([TAPI-25](spec/TAPI-25.md)). None of them is part of the 1.0 stability promise.
 - **What 1.0 promises:** code written against the 1.0 docs keeps working in every 1.x release; everything is Stable
   except what is marked `@experimental` or `@internal`. Coming from 0.x: [Upgrading to 1.0](docs/guides/upgrade-1.0.md).
 - **What we do not do:** host the sidecar for anyone (it sees your users' API keys, so you run it); issue a token;
@@ -193,28 +193,33 @@ chain as they do now; the prices in their manifest are published, not settled. S
 
 ## Specifications
 
-| TAP | Title | Status |
-|---|---|---|
-| [TAP-1](spec/TAP-1.md) | TAP process and statuses | Draft |
-| [TAP-20](spec/TAP-20.md) | Service identity and manifest, with the AI price table and multi-chain names | Stable (v1); §3.5 Experimental |
-| [TAP-21](spec/TAP-21.md) | Signed response envelope, with AI usage receipts | Stable (v1) |
-| [TAP-22](spec/TAP-22.md) | Metered payment: vouchers and escrow | Experimental |
-| [TAP-23](spec/TAP-23.md) | Attested read, cross-checked by independent providers | Stable (v1) |
-| [TAP-24](spec/TAP-24.md) | Intent RFQ | Withdrawn |
-| [TAP-25](spec/TAP-25.md) | Circuit-verified methods | Experimental |
-| [TAP-26](spec/TAP-26.md) | Private channels between containers | Stable (v1) |
-| [TAP-27](spec/TAP-27.md) | Private groups of up to 32 containers (up to 128 in the experimental format 2) | Stable (v1) |
+These are TapeAPI's own specifications, not TAPs. Parts of them have been submitted as TAP drafts to
+[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs): [#8](https://github.com/TapeOutProtocol/TAPs/pull/8) (service identity and manifest), [#10](https://github.com/TapeOutProtocol/TAPs/pull/10) (signed
+responses) and [#12](https://github.com/TapeOutProtocol/TAPs/pull/12) (private channels).
 
-The specs are bilingual; English is authoritative. **"TAP-20" to "TAP-27" are these documents' names inside this
-repository, not TAP numbers**: TAPs are numbered by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)
-(TAP-01 §6.1), and parts of these specs may be submitted there as TAP drafts.
+| Spec | Title | Status |
+|---|---|---|
+| [TAPI-1](spec/TAPI-1.md) | TapeAPI's document process and statuses | Draft |
+| [TAPI-20](spec/TAPI-20.md) | Service identity and manifest, with the AI price table and multi-chain names | Stable (v1); §3.5 Experimental |
+| [TAPI-21](spec/TAPI-21.md) | Signed response envelope, with AI usage receipts | Stable (v1) |
+| [TAPI-22](spec/TAPI-22.md) | Metered payment: vouchers and escrow | Experimental |
+| [TAPI-23](spec/TAPI-23.md) | Attested read, cross-checked by independent providers | Stable (v1) |
+| [TAPI-24](spec/TAPI-24.md) | Intent RFQ | Withdrawn |
+| [TAPI-25](spec/TAPI-25.md) | Circuit-verified methods | Experimental |
+| [TAPI-26](spec/TAPI-26.md) | Private channels between containers | Stable (v1) |
+| [TAPI-27](spec/TAPI-27.md) | Private groups of up to 32 containers (up to 128 in the experimental format 2) | Stable (v1) |
+
+The specs are bilingual; English is authoritative. **TAPI-1 and TAPI-20 to TAPI-27 are TapeAPI's own document names,
+not TAP numbers** (they were called TAP-1 and TAP-20 to TAP-27 until 2026-09-30): TAPs are numbered by the editors of
+[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01. Frozen constants that contain an old name, such as the
+`TAP-26/…` and `TAP-27/…` labels, never change.
 
 ## Repository
 
 [`sdk/`](sdk/) `@tapeapi/sdk` (resolve, call, verify, AI receipts, channels, groups, MCP) ·
 [`server/`](server/) `@tapeapi/server` (providers, the AI sidecar, the MCP proxy) ·
 [`contracts/`](contracts/) (ChannelBus, and the experimental escrow and directory) ·
-[`spec/`](spec/) (the TAPs, test vectors, the Python verifier) · [`examples/`](examples/) ·
+[`spec/`](spec/) (the specs, test vectors, the Python verifier) · [`examples/`](examples/) ·
 [`conformance/`](conformance/) · [`site/`](site/) (the website) · [`docs/`](docs/README.md).
 Contract addresses are in the [introduction](docs/guides/introduction.md#on-chain-addresses).
 

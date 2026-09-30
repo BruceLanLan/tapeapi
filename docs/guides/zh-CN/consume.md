@@ -88,7 +88,7 @@ const byCircuit = await api.resolve({ circuits: '0x<processor contract>', tokenI
 TapeOut 名称 `<#ID>.<processor>.tape` 同样从链上读取：处理器编号给出处理器合约（`factory.cpuAt`），该合约加上 `#ID`
 给出容器（`DeWebHub.accountOf`）。它不比 `{ circuits, tokenId }` 形式多引入任何信任；上面三种形式经过同样的检查。
 
-解析（[TAP-20 §3.6](../../../spec/TAP-20.md)）依次执行：
+解析（[TAPI-20 §3.6](../../../spec/TAPI-20.md)）依次执行：
 
 1. 从电路推导出容器（`DeWebHub.accountOf`），并检查处理器确实是 TapeOut 的处理器（`factory.isCPU`），使伪造的 NFT
    无法冒充服务；
@@ -125,7 +125,7 @@ try {
 | `PRICE_CHANGED` | 价格涨到了你已接受的价格之上。 | 先征询你的用户，再调用 `api.acceptPrice(svc, method)` 或传入 `{ maxPrice }`。 |
 | `QUORUM_FAILED` | `callQuorum` 中的提供者未达成一致。 | 视为没有回答。 |
 
-完整列表见[升级到 1.0](upgrade-1.0.md#错误码)与 [TAP-21](../../../spec/TAP-21.md)。服务发出的错误同样带签名（`e.signed`）。
+完整列表见[升级到 1.0](upgrade-1.0.md#错误码)与 [TAPI-21](../../../spec/TAPI-21.md)。服务发出的错误同样带签名（`e.signed`）。
 
 ## 4. 要求多个提供者之间达成一致
 
@@ -145,9 +145,9 @@ console.log(q.result, 'agreed by', q.agreed)                  // 否则抛出 Ta
 
 ## 5. 为调用付费
 
-> **实验性。** 付费功能（TAP-22 付费通道与托管合约）尚未部署、未经审计，不在 1.0 的稳定承诺之内：下面的名字可能在 1.x 的次版本里改变。见[升级到 1.0](upgrade-1.0.md#10-承诺什么)。
+> **实验性。** 付费功能（TAPI-22 付费通道与托管合约）尚未部署、未经审计，不在 1.0 的稳定承诺之内：下面的名字可能在 1.x 的次版本里改变。见[升级到 1.0](upgrade-1.0.md#10-承诺什么)。
 
-免费方法无需任何东西。付费方法需要一张由消费者签名的凭证（[TAP-22](../../../spec/TAP-22.md)）：
+免费方法无需任何东西。付费方法需要一张由消费者签名的凭证（[TAPI-22](../../../spec/TAPI-22.md)）：
 
 ```js
 const consumer = '0x<your address>'                             // 签署凭证的钱包账户
@@ -188,5 +188,5 @@ digest = keccak256( "TAPI-1/resp/v2" ‖ c ‖ keccak256(id) ‖ keccak256(canon
 ```
 
 恢复出签名者（只接受低 s），将其与 `manifest.signer` 比较，检查持有者的委托指明的正是该签名者，并且
-`|now - ts| <= 300`。规范 JSON 的定义见 [TAP-21](../../../spec/TAP-21.md)；测试向量和一个独立的 Python 实现位于
+`|now - ts| <= 300`。规范 JSON 的定义见 [TAPI-21](../../../spec/TAPI-21.md)；测试向量和一个独立的 Python 实现位于
 [`spec/vectors/`](../../../spec/vectors/)。

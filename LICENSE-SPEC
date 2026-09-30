@@ -1,4 +1,4 @@
-The specification text in spec/ (TAP-1, TAP-20 through TAP-27) is dedicated
+The specification text in spec/ (TAPI-1, TAPI-20 through TAPI-27) is dedicated
 to the public domain under CC0 1.0 Universal. Each TAP carries `License |
 CC0-1.0` in its own header table. Everything else in this repository
 (contracts/, sdk/, server/, examples/, scripts/, site/) is MIT licensed; see

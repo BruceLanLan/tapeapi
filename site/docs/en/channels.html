@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Private channels · TapeAPI Docs</title>
-<meta name="description" content="A Tape Channel ( TAP-26 ) is an end-to-end encrypted, mutually authenticated channel between two TapeOut containers. Whatever carries it (a relay service, a Web">
+<meta name="description" content="A Tape Channel ( TAPI-26 ) is an end-to-end encrypted, mutually authenticated channel between two TapeOut containers. Whatever carries it (a relay service, a We">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../docs.css?v=62ad162ee6">
 <link rel="alternate" hreflang="zh-CN" href="../zh/channels">
@@ -23,7 +23,7 @@
 <main class="doc">
 <article>
 <h1 id="private-channels">Private channels</h1>
-<p>A Tape Channel (<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-26.md" rel="noopener">TAP-26</a>) is an end-to-end encrypted, mutually authenticated channel between two TapeOut containers. Whatever carries it (a relay service, a WebRTC connection or the chain itself) only ever sees ciphertext and cannot forge, reorder or replay frames without being caught. Groups of up to 32 containers (up to 128 in the experimental format 2) are <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAP-27.md" rel="noopener">TAP-27</a>; to add them to an application, see <a href="groups">Group chat</a>.</p>
+<p>A Tape Channel (<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-26.md" rel="noopener">TAPI-26</a>) is an end-to-end encrypted, mutually authenticated channel between two TapeOut containers. Whatever carries it (a relay service, a WebRTC connection or the chain itself) only ever sees ciphertext and cannot forge, reorder or replay frames without being caught. Groups of up to 32 containers (up to 128 in the experimental format 2) are <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-27.md" rel="noopener">TAPI-27</a>; to add them to an application, see <a href="groups">Group chat</a>.</p>
 <h2 id="how-it-works"><a class="anchor" href="#how-it-works" aria-hidden="true">#</a>How it works</h2>
 <div class="table"><table><thead><tr><th>Step</th><th>What happens</th></tr></thead><tbody><tr><td><strong>Identity</strong></td><td>Each container publishes channel keys (X25519 for key agreement, Ed25519 for signatures) in its site at <code>.well-known/tape-channel.json</code>, authorised by the circuit's holder with an EIP-712 signature. A peer checks them against the <strong>current</strong> holder, so a sold circuit's old keys stop working.</td></tr><tr><td><strong>Invite</strong> (A → B)</td><td>A sends B an invite sealed to B's key, to B's inbox room on a relay or ChannelBus (or as a TapeSend message). It names the relays and bus A will listen on.</td></tr><tr><td><strong>Accept</strong> (B → A)</td><td>B answers over one of those transports. B may already send data with it.</td></tr><tr><td><strong>Ready</strong> (A → B)</td><td>A confirms. Three Diffie-Hellmans give mutual authentication, forward secrecy and resistance to key-compromise impersonation (the X3DH core, without prekeys).</td></tr><tr><td><strong>Frames</strong></td><td>ChaCha20-Poly1305 with a key per direction and a counter nonce, as in WireGuard and Noise.</td></tr></tbody></table></div>
 <h2 id="1-publish-the-containers-channel-keys"><a class="anchor" href="#1-publish-the-containers-channel-keys" aria-hidden="true">#</a>1. Publish the container's channel keys</h2>

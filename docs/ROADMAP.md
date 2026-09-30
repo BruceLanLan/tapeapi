@@ -19,7 +19,7 @@ the [changelog](../CHANGELOG.md).
   support for publishing its manifest. Your server gets an on-chain identity, tool definitions pinned by `toolsSha256`
   in the on-chain manifest, and a signature on every result. No third-party MCP server has been taped out yet. See
   [Tape out your own MCP server](guides/mcp.md#tape-out-your-own-mcp-server).
-- **Public relay** at relay.tapeapi.fun (`12.1013.tape`) for end-to-end encrypted channels between containers (TAP-26).
+- **Public relay** at relay.tapeapi.fun (`12.1013.tape`) for end-to-end encrypted channels between containers (TAPI-26).
 - **ChannelBus** on BNB Chain at `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`: a stateless, ownerless event bus that
   carries channel frames on-chain when no relay is wanted.
 - **Playground** at [tapeapi.fun/playground](https://tapeapi.fun/playground/): resolve any service by name, see every
@@ -30,9 +30,9 @@ the [changelog](../CHANGELOG.md).
   [`docs/guides/`](guides/).
 - **Holder console** at [tapeapi.fun/console](https://tapeapi.fun/console/): take a service live, publish its manifest
   and sign its delegation from a phone wallet.
-- **Specifications** "TAP-20" to "TAP-27" (names inside this repository, not TAP numbers; TAPs are numbered by the editors of TapeOutProtocol/TAPs), the SDK and the provider runtime, used from this repository.
-  Since 1.0.0, TAP-20, TAP-21, TAP-23, TAP-26 and TAP-27 are Stable (v1) (TAP-20 §3.5, the service directory, is
-  Experimental); TAP-22 and TAP-25 are Experimental.
+- **Specifications** TAPI-20 to TAPI-27 (TapeAPI's own specs, called TAP-20 to TAP-27 until 2026-09-30; not TAPs, which the editors of TapeOutProtocol/TAPs number; parts are submitted there as TAP drafts #8, #10 and #12), the SDK and the provider runtime, used from this repository.
+  Since 1.0.0, TAPI-20, TAPI-21, TAPI-23, TAPI-26 and TAPI-27 are Stable (v1) (TAPI-20 §3.5, the service directory, is
+  Experimental); TAPI-22 and TAPI-25 are Experimental.
 
 ## 2. Next
 
@@ -49,7 +49,7 @@ the [changelog](../CHANGELOG.md).
 
 ## 3. Later
 
-- **Escrow audit, then paid calls.** The paid-call escrow (TAP-22, `contracts/src/TapeAPIEscrow.sol`) is written and
+- **Escrow audit, then paid calls.** The paid-call escrow (TAPI-22, `contracts/src/TapeAPIEscrow.sol`) is written and
   tested but **not deployed**. It will be deployed only after an independent third-party audit; paid calls start
   after that. Until then every live method is free. The version that goes to audit is the next one: it adds the
   default 1% contribution (provider can set 0) and is planned to settle in BEM, BNB (as WBNB), USDT, USDC, ETH and
@@ -68,7 +68,7 @@ the [changelog](../CHANGELOG.md).
 ## 5. Having a say
 
 Open an [issue](https://github.com/BruceLanLan/tapeapi/issues) for a feature or a service you need. A change to a
-specification starts as a *spec proposal (TAP)* issue; see [CONTRIBUTING.md](../CONTRIBUTING.md).
+specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ---
 
@@ -82,7 +82,7 @@ specification starts as a *spec proposal (TAP)* issue; see [CONTRIBUTING.md](../
   运行或部署成 Cloudflare Worker（[`examples/mcp-proxy/`](../examples/mcp-proxy/)），持有人控制台支持发布它的清单。
   你的服务器由此获得链上身份、由链上清单里的 `toolsSha256` 钉住的工具定义，以及每个结果上的签名。目前还没有任何第三方
   MCP 服务器被 tape out。见 [Tape out 你自己的 MCP 服务器](guides/zh-CN/mcp.md#tape-out-你自己的-mcp-服务器)。
-- **公共中继** relay.tapeapi.fun（`12.1013.tape`），用于容器之间的端到端加密通道（TAP-26）。
+- **公共中继** relay.tapeapi.fun（`12.1013.tape`），用于容器之间的端到端加密通道（TAPI-26）。
 - **ChannelBus** 已部署在 BNB Chain，地址 `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`：无状态、无所有者的事件总线，
   不想用中继时在链上承载通道帧。
 - **调试台** [tapeapi.fun/playground](https://tapeapi.fun/playground/)：按名称解析任意服务，查看 SDK 做的每一项核对，
@@ -91,8 +91,8 @@ specification starts as a *spec proposal (TAP)* issue; see [CONTRIBUTING.md](../
   自动开 GitHub issue。
 - **手册** [tapeapi.fun/docs](https://tapeapi.fun/docs/)，中英双语，由 [`docs/guides/`](guides/) 生成。
 - **持有人控制台** [tapeapi.fun/console](https://tapeapi.fun/console/)：用手机钱包让服务上线、发布清单、签署委托。
-- **规范** “TAP-20”至“TAP-27”（本仓库内的名字，不是 TAP 编号；TAP 由 TapeOutProtocol/TAPs 的编辑编号），以及 SDK 与提供者运行时，目前从本仓库使用。自 1.0.0 起，TAP-20、TAP-21、
-  TAP-23、TAP-26 与 TAP-27 为 Stable (v1)（稳定；TAP-20 §3.5 服务目录为实验性）；TAP-22 与 TAP-25 为实验性。
+- **规范** TAPI-20 至 TAPI-27（TapeAPI 自己的规范，2026-09-30 之前叫 TAP-20 至 TAP-27；不是 TAP，TAP 由 TapeOutProtocol/TAPs 的编辑编号；部分内容已作为 TAP 草稿 #8、#10、#12 提交到那里），以及 SDK 与提供者运行时，目前从本仓库使用。自 1.0.0 起，TAPI-20、TAPI-21、
+  TAPI-23、TAPI-26 与 TAPI-27 为 Stable (v1)（稳定；TAPI-20 §3.5 服务目录为实验性）；TAPI-22 与 TAPI-25 为实验性。
 
 ## 2. 接下来
 
@@ -106,7 +106,7 @@ specification starts as a *spec proposal (TAP)* issue; see [CONTRIBUTING.md](../
 
 ## 3. 更远
 
-- **托管合约审计，然后才有付费调用。** 付费调用的托管合约（TAP-22，`contracts/src/TapeAPIEscrow.sol`）已写好并有
+- **托管合约审计，然后才有付费调用。** 付费调用的托管合约（TAPI-22，`contracts/src/TapeAPIEscrow.sol`）已写好并有
   测试，但**未部署**。只有通过独立第三方审计后才会部署，付费调用在那之后才开始。在此之前所有线上方法都免费。
   送审的是下一版：它加入默认 1% 的维护贡献（提供者可设为 0），并计划支持 BEM、BNB（包装为 WBNB）、USDT、USDC、ETH、USD1 结算。
   见 [SECURITY.md](../SECURITY.md)。
@@ -121,5 +121,5 @@ specification starts as a *spec proposal (TAP)* issue; see [CONTRIBUTING.md](../
 
 ## 5. 参与决定
 
-需要某个功能或服务，请开 [issue](https://github.com/BruceLanLan/tapeapi/issues)。规范改动从 *spec proposal (TAP)*
+需要某个功能或服务，请开 [issue](https://github.com/BruceLanLan/tapeapi/issues)。规范改动从 *spec proposal (TAPI)*
 issue 开始，见 [CONTRIBUTING.md](../CONTRIBUTING.md)。
