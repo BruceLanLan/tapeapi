@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "doctor": "1.2.0",
+  "checkedAt": null,
+  "rpcBudgetPerName": 60,
+  "providers": {}
+}

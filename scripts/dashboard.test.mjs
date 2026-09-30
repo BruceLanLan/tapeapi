@@ -36,7 +36,7 @@ test('dashboard: the page references only local files', () => {
     const path = r.split(/[?#]/)[0]
     if (path.startsWith('/')) { assert.equal(path, '/', r); continue }   // only the homepage link may be absolute / 只有首页链接
     const target = posix.normalize(posix.join('dashboard/', path))
-    const file = target.endsWith('/') ? `${target}index.html` : target
+    const file = target.endsWith("/") ? `${target}index.html` : existsSync(join(SITE, target)) ? target : `${target}.html`   // a docs page is linked without .html / 手册页面链接不带 .html
     assert.ok(existsSync(join(SITE, file)), `${r} -> site/${file} does not exist`)
   }
   for (const [name, text] of [['index.html', html], ['dashboard.js', js], ['dashboard.css', css], ['lib.js', read('dashboard/lib.js')]]) {

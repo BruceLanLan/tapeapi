@@ -134,6 +134,10 @@ test('tapeapi-verify (--no-salt) passes Claude Code and Codex calls through unch
   const cText = await c.text()
   assert.equal(events(cText).at(-1).event, 'response.completed')
   await waitFor(() => v.log().length === 3, 'three metered calls logged')
+  // stderr comes through a pipe and can trail the log file under load: wait for the three verdict lines too
+  // stderr 经管道传回，负载高时会晚于日志文件：也要等到三行结论
+  const okLines = () => v.stderr().split('\n').filter((l) => /\] OK\s+POST \/v1\/(messages|responses)/.test(l)).length
+  await waitFor(() => okLines() === 3, 'three verdict lines on stderr')
   const lines = v.stderr().split('\n')
   assert.ok(lines.some((l) => /--\s+GET \/v1\/models 200/.test(l)), 'the model list is reported as passed through')
   assert.equal(lines.filter((l) => /\] OK\s+POST \/v1\/(messages|responses)/.test(l)).length, 3, v.stderr())

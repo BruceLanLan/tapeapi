@@ -150,14 +150,53 @@ Nothing needs saving to stay **safe**; these keep a restart **smooth**:
 - **Owner:** save `group.snapshot()` (no secrets: the roster and the epoch). After a restart,
   `G.resumeGroup({ self, identity, snapshot, verifyMember })` starts the next epoch at once (the old key is gone) and
   returns it as an update: `deliverGroupUpdate({ group: resumed.group, update: resumed, relayClients: [relay] })`.
+  The resumed handle holds no key of the epoch before: a message members sent under it while the owner was away is
+  refused with `no key for epoch N (not in this handle's snapshot ...)` and `e.data.reason === 'snapshot'`, not as a
+  forgery. A format-2 snapshot says `v: 2` (1.2.0 wrote `v: 1`, which is still read): SDKs up to 1.2.0 refuse it
+  instead of resuming the group as format 1, so an owner cannot be moved back to one of them.
 - **Member:** save `g.snapshot()` after sealing. After a restart, pass `minEpoch: snapshot.epoch` and
   `lastSeq: snapshot.lastSeq` to `joinGroup`: a relay replaying an older epoch is refused, and a clock that stepped
-  back cannot make new messages look like replays.
+  back cannot make new messages look like replays. It also tells the restarted handle that the messages of its own it
+  reads back from the room are its own, not another device's (below).
 - **Cursors:** `cursors` takes any `{ get(key), set(key, value) }`, sync or async; back it with a file or a database.
   Keys are `relay:<relay container>:<room>`, values `{ after, epoch }`. Keep the epoch with the index: an index without
   its room epoch is exactly the mistake below.
 - **Identity:** the identity file with the secret keys. Lose it and the member must publish a new identity, and the
   owner must add it again.
+
+## Errors a chat should handle
+
+`open()` refuses with `GROUP_INVALID`; three refusals are normal events, told apart by `e.data`:
+
+- **A message ahead of its epoch message** (`e.data.reason === 'not-yet'`, `e.data.retryAfterEpoch: N`). With several
+  relays, or a relay and ChannelBus, a member's message can arrive before the owner's epoch message that makes its key.
+  Keep it and open it again after `acceptEpoch`. If that epoch message is refused ("not a member of it"), the member
+  was removed and the held messages can be dropped. The SDK does not buffer for you; a few lines do:
+
+```js
+const held = []                                          // messages ahead of their epoch message, at most 256
+function openOrHold(wire) {
+  try { return g.open(wire, { text: true }) }
+  catch (e) { if (e.data?.retryAfterEpoch !== undefined && held.length < 256) { held.push(wire); return null } throw e }
+}
+// after every accepted epoch message / 每接受一条纪元消息之后
+for (const w of held.splice(0)) {
+  try { const m = openOrHold(w); if (m && !m.own) show(m.from, m.data) }
+  catch { /* dropped: its epoch expired, or this member is not in it */ }
+}
+```
+
+- **An epoch gone** (`e.data.reason === 'expired'`): the previous epoch is kept 10 minutes after the next one arrives,
+  and nothing from before the member joined opens. Show a gap; nothing can bring it back.
+- **The owner restarted** (`e.data.reason === 'snapshot'`, on a handle from `resumeGroup`): see "Saving state".
+
+**One identity is one device.** Two devices (or two processes) holding the same identity each start their sequence
+numbers from their own clock, so everyone else refuses the messages of the one with the lower numbers as
+`seq ... already seen` (and `e.data.mayBeOtherDevice: true`). The SDK does not hide this: `open()` returns a message
+signed with this identity that this handle did not seal, in full, with `otherDevice: true` (not `own`), and
+`g.otherDevice` becomes `{ count, epoch, seq }`. Tell the user to use one device, or give each device its own container
+and identity. A handle restarted without `lastSeq` takes its own earlier messages in the room for another device's;
+pass `lastSeq` from the snapshot.
 
 ## Troubleshooting checklist
 
@@ -170,6 +209,33 @@ Nothing needs saving to stay **safe**; these keep a restart **smooth**:
 | Posting fails with `too many invites / epoch messages from this source in this room` | The relay limits 0x03 / 0x04 frames per source per room (8 per 10 minutes on the reference relay) | Wait `retryAfterS` seconds and deliver again; do not repost in a tight loop. Never swallow the error: `deliverGroupUpdate` throws `GROUP_DELIVERY`, and the failed entry of `e.data.deliveries` has `error.rateLimited: true` and `error.retryAfterS` |
 | A mobile wallet never returns to the app when signing the channel keys | The app is served on a LAN HTTP address (`http://192.168.x.x`), which the wallet will not call back | Serve it through an HTTPS tunnel, and set WalletConnect's `metadata.url` to that exact HTTPS origin |
 | A new member logs "not a member of it" for some epoch messages | Older epochs in the group room were not made for it | Expected: catch and continue; the epoch that added it opens |
+| `no key for epoch N` with `data.retryAfterEpoch` | The message arrived before its epoch message (several relays, or relay and ChannelBus) | Hold it and open it again after `acceptEpoch` ("Errors a chat should handle") |
+| One member's messages are refused as `already seen`, with `data.mayBeOtherDevice` | The same identity sends from two devices; the one with the lower sequence numbers is refused by everyone | One device per identity; the device itself sees `otherDevice: true` on the other's messages and `g.otherDevice` |
+| A format-2 invite joins on an old client, then every frame fails with `GROUP_INVALID` (`data.format: 2`) | The client predates format 2: it joins in silence and refuses the group's frames afterwards | Check `invite.format === 2` before joining and ask the user to update |
+
+## Format 2 (experimental): before joining, and what the owner reads
+
+**Check the invite's format before joining.** A client without format 2 (every SDK before 1.2) opens a format-2 invite
+and `joinGroup` succeeds in silence; only afterwards does every epoch message and group message fail with
+`GROUP_INVALID` and `data.format: 2`. Check first, so the user is told to update instead of seeing a group that never
+works:
+
+```js
+const inv = G.openGroupInvite(wire, { self })            // or found.invites[i].invite
+// G.MAX_MEMBERS_V2 is undefined in an SDK before 1.2: such a build must not join a format-2 group
+if (inv.format === 2 && !G.MAX_MEMBERS_V2) return askToUpdate(inv)
+```
+
+An application that has not adopted format 2, whatever its SDK, makes the same check with its own flag.
+
+**What the owner reads on each epoch.** The owner reuses its own positive verdict on an unchanged member for up to
+24 hours (`verifyReuseS` in `createGroup` / `resumeGroup`, default 86,400 s). With 128 members, removing one or
+rotating reads **no** record, adding one reads **one** (the new member, once, past the cache), and the first epoch after
+the verdicts age out reads all 127: about 2,300 HTTP requests and 27 seconds at the default concurrency of 8 (about 18
+requests and 1.7 s a record on BSC), at most once a day. SDK 1.2.0 did that full read on every epoch, and read an
+added member twice. A resumed owner has no verdicts, so its first epoch reads everyone. `verifyReuseS: 0` goes back to
+reading every member on every epoch, for an owner that must drop a sold circuit at its next epoch rather than within a
+day (TAP-27 §8).
 
 ## Limits
 

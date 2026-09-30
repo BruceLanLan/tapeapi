@@ -4,12 +4,12 @@ JavaScript SDK for [TapeAPI](https://tapeapi.fun): find a service on BNB Smart C
 answer whose signature is checked against the key the service's holder delegated on chain. Paid methods use
 EIP-712 vouchers against an escrow; nothing is signed or sent without you.
 
-> **1.2.0.** Semantic versioning from 1.0 on: breaking changes come only in 2.0. See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md).
+> **1.3.0.** Semantic versioning from 1.0 on: breaking changes come only in 2.0. See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md).
 
 ## Install
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz
 ```
 
 Not on the npm registry yet: each GitHub release carries the package file. Built from https://github.com/BruceLanLan/tapeapi
@@ -63,11 +63,11 @@ The package ships a command that exposes any TapeAPI service's free methods as M
 Cursor, any MCP client), and verifies every answer in your own process before the model sees it:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ```json
-{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
+{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
 ```
 
 - **Identity from the chain.** Each service (a TapeOut name like `11.1013.tape` or a container address) is resolved
@@ -94,27 +94,51 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0
 For AI clients that cannot read usage receipts themselves (Claude Code, Codex, any tool with a base-URL setting): it
 forwards every request to a TapeAPI AI service resolved on chain and checks the signed receipt of every answer.
 
+It keeps running in the foreground; start the client in a second terminal.
+
 ```bash
-# 42.1013.tape is an example name: put your AI provider's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz tapeapi-verify 42.1013.tape
-ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1
+# Terminal 1. 42.1013.tape is an example name: put your AI provider's TapeOut name here
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-verify 42.1013.tape
+```
+
+```bash
+# Terminal 2, macOS or Linux
+ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude
+OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex             # Codex (or base_url in config.toml)
+```
+
+```powershell
+# Terminal 2, Windows PowerShell
+$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8790"; claude
+$env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex
 ```
 
 Run as written, `tapeapi-verify 42.1013.tape` stops with "no file at /.well-known/tapeapi.json": the name is an example.
-No service of your own yet? The repository's local trial, `node examples/relay-trial/trial.mjs`, runs a sidecar, a fake
-upstream and this proxy on your machine with no key and no cost. Providers check their own service, step by step, with
-`tapeapi-doctor` (experimental; from a checkout of the repository for now: `node sdk/bin/tapeapi-doctor.js <name>`).
+No service of your own yet? The repository's local trial runs a sidecar, a fake upstream and this proxy on your machine
+with no key and no cost: in a checkout, run `npm ci` once at the root, then `node examples/relay-trial/trial.mjs`.
+
+## Provider check: `tapeapi-doctor` (experimental)
+
+Providers check their own AI service, step by step, from the name to a receipt that verifies:
+
+```bash
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-doctor <your TapeOut name or your sidecar's https URL>
+```
+
+Every failed check says what is missing, where to fix it and the next command, in English and Chinese. Exit status 0
+passed, 1 failed, 2 a usage mistake, 3 undecided (run it again); `--help` lists every option. Experimental: its checks
+and output may change in a 1.x release.
 
 With `--strict` a receipt that does not verify becomes an error to the client. `tapeapi-verify --help` lists every
 option. In your own code, `createVerifyingFetch` from `@tapeapi/sdk/ai` does the same without a proxy
-([AI providers](https://tapeapi.fun/docs/en/ai-providers.html)).
+([AI providers](https://tapeapi.fun/docs/en/ai-providers)).
 
 ## Docs
 
-- [Call a service](https://tapeapi.fun/docs/en/consume.html)
-- [Public API](https://tapeapi.fun/docs/en/public-api.html) (`11.1013.tape`, free)
-- [Agents and WebMCP](https://tapeapi.fun/docs/en/agents.html)
-- [Private channels](https://tapeapi.fun/docs/en/channels.html)
+- [Call a service](https://tapeapi.fun/docs/en/consume)
+- [Public API](https://tapeapi.fun/docs/en/public-api) (`11.1013.tape`, free)
+- [Agents and WebMCP](https://tapeapi.fun/docs/en/agents)
+- [Private channels](https://tapeapi.fun/docs/en/channels)
 - [All docs](https://tapeapi.fun/docs/) · [Playground](https://tapeapi.fun/playground/) · [Specifications](https://github.com/BruceLanLan/tapeapi/tree/main/spec)
 
 ## License

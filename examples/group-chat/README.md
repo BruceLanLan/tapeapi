@@ -42,7 +42,7 @@ node examples/group-chat/index.mjs
 
 - 中继是尽力而为的公共服务：房间保留到最后一次访问后 15 分钟就被清除（公共中继存在 Durable Object 存储里，存的是密文）；邀请与纪元消息按来源按房间限流。
 - 中继看得到房间号、帧大小与时间，看不到内容与成员名单。
-- 至多 32 人；群主是单点；未经第三方审计。
+- 至多 32 人（实验性的格式 2 最多 128 人，见 [群聊指南](../../docs/guides/zh-CN/groups.md)）；群主是单点；未经第三方审计。
 
 ---
 
@@ -98,4 +98,4 @@ The full flow, choosing a transport, saving state and a troubleshooting checklis
   keeps them, as ciphertext, in Durable Object storage until then); invites and epoch messages are limited per source
   per room.
 - The relay sees room ids, frame sizes and timing, not content or the member list.
-- At most 32 members; the owner is a single point; not audited by a third party.
+- At most 32 members (up to 128 in the experimental format 2, see the [group chat guide](../../docs/guides/groups.md)); the owner is a single point; not audited by a third party.

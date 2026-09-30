@@ -1,4 +1,4 @@
-// Read privacy for ChannelBus (sdk/src/bus-privacy.js; docs/PLAN-2026Q4.md, privacy item 2): what each node is asked,
+// Read privacy for ChannelBus (sdk/src/bus-privacy.js; the 2026 Q4 plan, privacy item 2): what each node is asked,
 // and what reaches the application. A recording fetch keeps every eth_getLogs filter each node receives.
 // ChannelBus 的读取隐私：每家节点被问了什么、什么交到了应用手里。记录用的 fetch 保存每家节点收到的每个 eth_getLogs 过滤条件。
 import { test } from 'node:test'

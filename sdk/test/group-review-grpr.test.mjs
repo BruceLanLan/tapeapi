@@ -35,7 +35,9 @@ test('FIXED GRPR-1: a verifier rejecting with a falsy reason (Promise.reject(), 
   const falsy = [() => Promise.reject(), async () => { throw undefined }, async () => { throw null }, () => { throw undefined }]
   for (const format of [1, 2]) {
     const ms = people(4, 0x5100 + format * 16)
-    const { group } = await G.createGroup({ ...(format === 2 ? { format } : {}), self: ms[0], identity: ms[0].identity, members: ms.slice(1).map(entry), ...TRUST })
+    // format 2: verifyReuseS 0, so that the owner checks every member on every epoch (GRP2-1: otherwise it reuses its verdicts)
+    // 格式 2：verifyReuseS 为 0，群主每个纪元都核验全部成员（GRP2-1 之后默认会复用结论）
+    const { group } = await G.createGroup({ ...(format === 2 ? { format, verifyReuseS: 0 } : {}), self: ms[0], identity: ms[0].identity, members: ms.slice(1).map(entry), ...TRUST })
     for (const vm of falsy) {
       // drop mode (rotate): 1.1.0 dropped nobody on a failure; neither does this / drop 模式：暂时故障不移除任何人
       await assert.rejects(group.rotate({ verifyMember: vm }), isGroupErr(/member 0x[0-9a-f]{40}: /), `format ${format}`)

@@ -129,7 +129,7 @@ test('FIXED A5: every example default is the same 2-of-3 set of three operators'
   // 代码从 SDK 取列表；配置文件（由部署读取，而不是代码）逐字写出。
   for (const f of ['../../examples/relay-service/index.mjs', '../../examples/cloudflare-worker/relay-worker.js', '../../examples/cloudflare-worker/worker.js',
     '../../examples/public-api/worker.js', '../../examples/reader-service/index.mjs', '../../hosting/worker.js']) {
-    if (!existsSync(new URL(f, import.meta.url))) continue   // hosting/ is only in the internal repository / hosting/ 只在内部仓库
+    if (!existsSync(new URL(f, import.meta.url))) continue   // a file only in the internal repository / 只在内部仓库的文件
     const src = readFileSync(new URL(f, import.meta.url), 'utf8')
     assert.match(src, /rpcUrlsFor\(56\)/, `${f} defaults to the SDK's set`)
     assert.ok(!/defibit|ninicoin|publicnode\.com|bsc-dataseed/.test(src), `${f} spells out no node of its own`)

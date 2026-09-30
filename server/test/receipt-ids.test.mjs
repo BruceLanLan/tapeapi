@@ -1,4 +1,4 @@
-// Guessable answer ids (docs/PLAN-2026Q4.md, privacy item 1). Ollama's OpenAI-compatible API numbers its chat ids
+// Guessable answer ids (the 2026 Q4 plan, privacy item 1). Ollama's OpenAI-compatible API numbers its chat ids
 // "chatcmpl-" and 0..998 (ollama/ollama#18655); TAP-21 §3.5 makes the sidecar keep the upstream's id, and the free
 // `receipt` method answers anyone who names an id. So: the sidecar estimates the ids' entropy and says so in its log;
 // receipts are stored per (id, requestSha256), so answers that share an id keep a receipt each; the `receipt` method has

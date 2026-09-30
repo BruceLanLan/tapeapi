@@ -16,7 +16,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 
 [中文说明](README.zh-CN.md) · [Website](https://tapeapi.fun) · [Docs](https://tapeapi.fun/docs/) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md)
 
-> **Status: released, 1.2.0.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
+> **Status: released, 1.3.0.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
 > breaking changes come only in 2.0. Paid channels (TAP-22) are experimental and not deployed. Nothing here has had a
 > third-party audit.
 
@@ -42,8 +42,12 @@ curl shows the signed envelope but checks nothing. The SDK checks it. It is not 
 release (Node.js 20 or later):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz
 ```
+
+The server package (`@tapeapi/server`: providers, the AI sidecar, the MCP proxy) depends on this SDK, which is not on
+npm either, so installed alone it fails with a 404: install both in one command,
+`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-server-1.3.0.tgz`.
 
 ```js
 // try.mjs: node try.mjs
@@ -80,15 +84,34 @@ No outside provider has published a price table on chain yet, so this was run ag
 **Claude Code and Codex** cannot read receipts themselves. Run the local verifying proxy and point them at it:
 
 ```bash
-# 42.1013.tape is an example name: put your AI provider's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz tapeapi-verify 42.1013.tape
-ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1
+# Terminal 1 (it keeps running). 42.1013.tape is an example name: put your AI provider's TapeOut name here
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-verify 42.1013.tape
+```
+
+```bash
+# Terminal 2, macOS or Linux
+ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude
+OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex             # Codex (or base_url in config.toml)
+```
+
+```powershell
+# Terminal 2, Windows PowerShell
+$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8790"; claude
+$env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex
 ```
 
 Run as written, `tapeapi-verify 42.1013.tape` stops with "no file at /.well-known/tapeapi.json": the name is an example
 and no service is published under it. To watch a receipt verify end to end without any provider, run the local trial
-from a checkout of this repository: `node examples/relay-trial/trial.mjs` (no key, no circuit, no cost). Running an AI
-service yourself? Start at [From zero to live](docs/guides/ai-providers.md#from-zero-to-live).
+(no key, no circuit, no cost) from a checkout of this repository, after installing its dependencies once at its root:
+
+```bash
+git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi
+npm ci --no-audit --no-fund
+node examples/relay-trial/trial.mjs
+```
+
+Running an AI service yourself? Start at [From zero to live](docs/guides/ai-providers.md#from-zero-to-live); the
+provider's check, `tapeapi-doctor` (experimental), ships in the same release package.
 
 **MCP.** The same eight reads are tools at `https://api.tapeapi.fun/mcp`, with a signed receipt on every result:
 
@@ -147,8 +170,9 @@ the signature adds is accountability. A receipt cannot be disowned, so anyone ru
   upstream's terms).
 - **Chains:** BNB Chain (chainId 56) for everything, and the only chain where payments will run. X Layer (196) and Base
   (8453) are read-only: identity, resolution, receipts and MCP checks. X Layer has only two independent RPC operators.
-- **No third-party audit.** Tests: about 1,200 JavaScript tests (`npm test`), 169 contract tests (`forge test`) and an
-  independent Python implementation of every signature, hash and encoding (`python3 spec/vectors/verify.py`).
+- **No third-party audit.** Tests: the JavaScript suite (`npm test`), the contract tests (`forge test`) and an
+  independent Python implementation of every signature, hash and encoding (`python3 spec/vectors/verify.py`), all
+  three run by CI on every push.
 
 ## Privacy, plainly
 
@@ -179,7 +203,7 @@ chain as they do now; the prices in their manifest are published, not settled. S
 | [TAP-24](spec/TAP-24.md) | Intent RFQ | Withdrawn |
 | [TAP-25](spec/TAP-25.md) | Circuit-verified methods | Experimental |
 | [TAP-26](spec/TAP-26.md) | Private channels between containers | Stable (v1) |
-| [TAP-27](spec/TAP-27.md) | Private groups of up to 32 containers | Stable (v1) |
+| [TAP-27](spec/TAP-27.md) | Private groups of up to 32 containers (up to 128 in the experimental format 2) | Stable (v1) |
 
 The specs are bilingual; English is authoritative. The TAP numbers are
 [proposed](https://github.com/TapeOutProtocol/TapeKit/issues/8) to the TapeKit maintainers and not yet assigned.

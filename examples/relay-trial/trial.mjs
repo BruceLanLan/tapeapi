@@ -18,14 +18,35 @@
 // 3. 启动 tapeapi-verify（你的 Claude Code、Codex 用户运行的代理），经由它发一次调用；4. 改动签名回答的一个字节，展示回执核验能发现。
 // 全部只监听 127.0.0.1 的空闲端口，结束时关闭（--keep 让它继续运行）。
 //
-//   npm install --no-audit --no-fund        # once, at the repository root / 在仓库根目录，一次
+//   npm ci --no-audit --no-fund             # once, at the repository root / 在仓库根目录，一次
 //   node examples/relay-trial/trial.mjs [--keep] [--lang en|zh|both]
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { createTapeAPI, ai } from '@tapeapi/sdk'
-import { diagnose, formatReport } from '../../sdk/src/doctor.js'
-import { startStack } from '../new-api-sidecar/smoke.mjs'
-import { DEMO_KEY } from '../ai-proxy/fake-upstream.mjs'
+
+const MAIN = !!process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]
+/**
+ * A dependency that is not installed, in words (review ONB2-2): a fresh clone has no node_modules until `npm ci`.
+ * Returns the message, or null for any other error. / 依赖未安装时的提示：新克隆在 npm ci 之前没有 node_modules。其它错误返回 null。
+ */
+export function missingDependencies(e) {
+  if (e?.code !== 'ERR_MODULE_NOT_FOUND') return null
+  return 'The repository\'s dependencies are not installed. Run this once at the repository root, then run the trial again:\n' +
+    '仓库的依赖还没有安装。先在仓库根目录运行一次下面的命令，再重新运行试跑：\n\n  npm ci --no-audit --no-fund\n'
+}
+// Imported here, not at the top, so that a missing dependency gets the message above instead of a stack trace.
+// 在这里而不是文件顶部导入：缺依赖时给出上面的提示，而不是一段调用栈。
+let createTapeAPI, ai, diagnose, formatReport, startStack, DEMO_KEY
+try {
+  ;({ createTapeAPI, ai } = await import('@tapeapi/sdk'))
+  ;({ diagnose, formatReport } = await import('../../sdk/src/doctor.js'))
+  ;({ startStack } = await import('../new-api-sidecar/smoke.mjs'))
+  ;({ DEMO_KEY } = await import('../ai-proxy/fake-upstream.mjs'))
+} catch (e) {
+  const m = missingDependencies(e)
+  if (!m) throw e
+  if (MAIN) { console.error(m); process.exit(1) }
+  throw new Error(m, { cause: e })
+}
 
 const VERIFY_BIN = fileURLToPath(new URL('../../sdk/bin/tapeapi-verify.js', import.meta.url))
 const enc = new TextEncoder()
@@ -140,7 +161,7 @@ export async function runTrial({ say = () => {}, lang = 'both', keep = false } =
   }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (MAIN) {
   const args = process.argv.slice(2)
   const lang = args.includes('--lang') ? args[args.indexOf('--lang') + 1] : 'both'
   if (!['en', 'zh', 'both'].includes(lang) || args.some((a) => a.startsWith('-') && !['--keep', '--lang'].includes(a))) {

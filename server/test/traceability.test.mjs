@@ -1,4 +1,4 @@
-// Provider behaviour the traceability pass (docs/research/TRACEABILITY.md) found missing or off by one.
+// Provider behaviour the traceability pass found missing or off by one.
 // Each test names its drift id. / 可追溯性检查发现的缺失或差一的提供者行为；每条注明对应的漂移编号。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'

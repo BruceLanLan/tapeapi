@@ -236,6 +236,27 @@ async function documentedUsages(myContainer: string, myIdentity: ReturnType<type
 }
 void documentedUsages
 
+// Security 1.2 (@experimental): the Merkle proof mode. / 默克尔证明模式。
+async function security12(): Promise<void> {
+  const { proof } = await import('@tapeapi/sdk')
+  const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), pin: true, proofs: 'strict' })
+  const svc = await api.resolve('11.1013.tape')
+  const root: string | null | undefined = svc.proofs?.stateRoot
+  const reads: string[] = (svc.proofs?.verified ?? []).map((x) => x.read)
+  const missing: Array<string | undefined> = (svc.proofs?.unavailable ?? []).map((x) => x.reason)
+  const b = await api.rpc!.confirmedBlock('finalized', { stateRoot: true })
+  const sr: string | undefined = b.stateRoot
+  const slots = proof.STORAGE.fileInfo(svc.container, '.well-known/tapeapi.json')
+  const s: bigint = slots.sha256Hash
+  const checked = proof.verifyAccountProof(b.stateRoot!, MAINNET.siteRegistry, [slots.size, slots.sha256Hash], { accountProof: [], storageProof: [] })
+  const v: bigint | undefined = checked.values.get(slots.size)
+  const leaf: Uint8Array | null = proof.verifyMptProof(proof.EMPTY_TRIE_ROOT, '0x' + '00'.repeat(32), [], { secure: true })
+  try { await api.resolve('11.1013.tape') } catch (e) { if (e instanceof TapeAPIError && (e.code === 'PROOF_INVALID' || e.code === 'PROOF_UNAVAILABLE')) { const what: unknown = e.data?.read; void what } }
+  const relaxed = createTapeAPI({ rpcUrls: rpcUrlsFor(56), pin: true, proofs: true })
+  void root; void reads; void missing; void sr; void s; void v; void leaf; void relaxed
+}
+void security12
+
 // Security 1.1 (@experimental): pinning, sentinel, content signature, delegation floor, evidence, second opinions.
 async function security11(): Promise<void> {
   const { security } = await import('@tapeapi/sdk')

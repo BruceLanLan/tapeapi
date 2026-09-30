@@ -68,7 +68,11 @@ for (const [dir, pkg] of Object.entries(PKGS)) {
     for (const f of ['package.json', 'README.md', 'LICENSE']) assert.ok(files.includes(f), `${f} is packed`)
     const srcOnDisk = readdirSync(join(ROOT, dir, 'src')).filter((f) => f.endsWith('.js')).map((f) => `src/${f}`)
     for (const f of srcOnDisk) assert.ok(files.includes(f), `${f} is packed`)
-    assert.ok(info.unpackedSize < 1024 * 1024, `unpacked size ${info.unpackedSize} under 1 MiB`)
+    // A guard against packing something by mistake (the file list is checked above), not a performance budget: the tgz
+    // is about 300 KB, and a browser loads only the modules it imports. Raised from 1 MiB in 1.2.1 (security, doctor and
+    // group format 2 took the SDK to about 1.06 MB). / 防止误打包的护栏（文件清单已在上面逐项检查），不是性能预算：tgz 约
+    // 300 KB，浏览器只加载它引用的模块。1.2.1 由 1 MiB 提到 1.5 MiB（安全加固、诊断与群聊格式 2 使 SDK 约 1.06 MB）。
+    assert.ok(info.unpackedSize < 1.5 * 1024 * 1024, `unpacked size ${info.unpackedSize} under 1.5 MiB`)
   })
 }
 

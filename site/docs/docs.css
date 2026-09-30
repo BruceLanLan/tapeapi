@@ -74,10 +74,10 @@ code, pre, kbd { font-family: var(--mono); }
    change all five together. The mark and wordmark are inline SVG paths (logo.svg), so they need no font
    and follow the theme through currentColor. The labels use a 2 KB IBM Plex Mono subset (OFL): capitals,
    digits and . - / · only; Chinese falls through to the system face. Every page loads it from fonts/tapeapi-rail.woff2;
-   scripts/publish-site.mjs inlines it into the homepage's DeWEB copy, which ships only index.html, style.css and app.js.
+   the publishing step inlines it into the homepage's DeWEB copy, which ships only index.html, style.css and app.js.
    全站统一的页头。本段原样复制到上述五个样式里，改动时五处一起改。标志与字标是内联 SVG 路径，
    不依赖字体，颜色随主题。标签用 2 KB 的 IBM Plex Mono 子集，只含大写字母、数字与少量符号，中文走系统字体。各页都从 fonts/tapeapi-rail.woff2
-   加载；首页在 DeWEB 上只发布 index.html、style.css 和 app.js，由 scripts/publish-site.mjs 暂存时内嵌。 */
+   加载；首页在 DeWEB 上只发布 index.html、style.css 和 app.js，由发布步骤暂存时内嵌。 */
 @font-face {
   font-family: "TapeAPI Rail"; font-style: normal; font-weight: 500; font-display: swap;
   unicode-range: U+20, U+2D-2F, U+30-39, U+41-5A, U+B7;

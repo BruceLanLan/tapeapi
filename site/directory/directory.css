@@ -1,0 +1,39 @@
+/* TapeAPI provider directory. Loaded after ../status/status.css, which carries the colour tokens, dark mode, the site
+   header and the card, badge and footer styles; only what this page adds is here. No external resources.
+   服务方目录。在 ../status/status.css 之后加载（颜色变量、暗色模式、页头、卡片、徽标与页脚都在那里）；这里只有本页新增的样式。无外部资源。 */
+.dir h1::before { display: none; }
+.dir .lede { margin: 12px 0 0; max-width: 72ch; color: var(--ink-2); }
+
+/* The notice above the list: what a listing means and what it does not. / 列表上方的声明。 */
+.notice {
+  margin: 20px 0 0; padding: 14px 16px; max-width: 80ch;
+  background: var(--amber-well); border-left: 3px solid var(--amber); color: var(--ink);
+}
+.notice p { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.rules { margin: 14px 0 0; max-width: 80ch; color: var(--ink-2); font-size: 15px; }
+
+.card .name { font-family: var(--mono); font-size: 17px; overflow-wrap: anywhere; }
+.card .cmd-cap { margin: 14px 0 6px; font-size: 13px; color: var(--ink-3); }
+pre.cmd, .notes pre {
+  margin: 0; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--hair-2);
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.5;
+  max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.notes pre { margin: 6px 0 12px; }
+.card.empty h2 { font-size: 18px; margin: 0 0 8px; }
+.card.empty .steps { margin: 0 0 8px; padding-left: 22px; color: var(--ink-2); }
+.card.empty p { margin: 0; }
+p.card.err { margin: 0; }
+
+.notes ol { margin: 0 0 12px; padding-left: 22px; }
+.notes li { margin: 0 0 8px; }
+.notes code { overflow-wrap: anywhere; }
+.flags { margin: 0 0 12px; display: grid; grid-template-columns: max-content minmax(0, 1fr); }
+.flags dt, .flags dd { padding: 7px 0; border-top: 1px solid var(--hair-2); font-size: 14px; }
+.flags dt { padding-right: 14px; font-family: var(--mono); color: var(--ink); }
+.flags dd { margin: 0; min-width: 0; }
+
+@media (max-width: 380px) {
+  .flags { grid-template-columns: 1fr; }
+  .flags dd { border-top: 0; padding-top: 0; }
+}

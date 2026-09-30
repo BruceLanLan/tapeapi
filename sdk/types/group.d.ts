@@ -32,13 +32,16 @@ export interface RosterMember { container: Address; chainId: number; x25519: str
 export interface Roster { v?: number; gid: string; epoch: number; issued: number; owner: { container: Address; chainId: number }; members: RosterMember[]; relays?: RelayRef[]; bus?: unknown; [key: string]: unknown }
 /** What to keep across a restart (no secrets). `roster` is present for an owner, `lastSeq` once a message was sealed. */
 /** A format-1 snapshot (no `format`). */
-export type GroupSnapshotV1 = Omit<GroupSnapshot, 'format' | 'rosterBin'> & { format?: undefined }
+export type GroupSnapshotV1 = Omit<GroupSnapshot, 'v' | 'format' | 'rosterBin'> & { v: 1; format?: undefined }
 /** @experimental A format-2 snapshot. */
 export type GroupSnapshotV2 = GroupSnapshot & { format: 2 }
-export interface GroupSnapshot { v: 1; gid: string; owner: { container: Address; chainId: number }; epoch: number | null; role: 'owner' | 'member'; lastSeq?: string; roster?: string; /** @experimental format 2 only */ format?: 2; /** @experimental format 2 owner only: the roster bytes as sent (hex) */ rosterBin?: string }
+export interface GroupSnapshot {
+  /** 1 for format 1. @experimental 2 for format 2 (since GRP2-2, so that TapeAPI 1.0.0 to 1.2.0 refuse it instead of
+   *  resuming it as format 1); a format-2 snapshot written by 1.2.0 says 1 and is still read. */
+  v: 1 | 2; gid: string; owner: { container: Address; chainId: number }; epoch: number | null; role: 'owner' | 'member'; lastSeq?: string; roster?: string; /** @experimental format 2 only */ format?: 2; /** @experimental format 2 owner only: the roster bytes as sent (hex) */ rosterBin?: string }
 /** A message opened with group.open(): or { own: true, epoch, seq } for our own message coming back. */
 export type OpenedGroupMessage =
-  | { from: Address; index: number; epoch: number; seq: bigint; gap: number | null; data: Uint8Array | string; own?: undefined }
+  | { from: Address; index: number; epoch: number; seq: bigint; gap: number | null; data: Uint8Array | string; own?: undefined; /** @experimental Signed with this handle's own identity, but not sealed by this handle: the same identity on another device (TAP-27 §8: one identity is one device). */ otherDevice?: true }
   | { own: true; epoch: number; seq: bigint }
 
 /** A TAP-27 group handle, owner or member (joinGroup). */
@@ -62,6 +65,10 @@ export interface GroupHandle {
   seal(data: Uint8Array | string, opts?: { random?: RandomBytes }): Uint8Array
   /** §3.4: verify and decrypt (`data` is text with { text: true }). */
   open(wire: Uint8Array, opts?: { text?: boolean }): OpenedGroupMessage
+  /** @experimental null, or once open() has returned a message with `otherDevice: true`: how many, and the latest's
+   *  epoch and seq. The same identity is in use elsewhere, and receivers refuse the messages of the device with the
+   *  lower seq ("already seen", data.mayBeOtherDevice). */
+  readonly otherDevice?: { count: number; epoch: number; seq: string } | null
 }
 
 /**
@@ -111,6 +118,10 @@ export declare function createGroup(opts: {
   random?: RandomBytes
   clock?: () => number
   verifyConcurrency?: number
+  /** How long the owner reuses a positive verdict when it starts an epoch (and for its own lazy checks): 0..86400,
+   *  default 86400. An entry with a verdict still within it is not read again; a new or changed entry, or one whose
+   *  verdict aged out, is read past the cache. 0 reads every member on every epoch. */
+  verifyReuseS?: number
 }): Promise<{ group: OwnerGroupV2; epochWire: Uint8Array; epoch: number; added: GroupUpdate['added'] }>
 /**
  * Owner: create a group. TWO ROOMS: post `epochWire` to group.room AND group.inviteFor(m) to each member's inbox room
@@ -155,6 +166,8 @@ export declare function resumeGroup(opts: {
   random?: RandomBytes
   clock?: () => number
   verifyConcurrency?: number
+  /** As in createGroup({ format: 2 }). A resumed owner holds no verdicts, so its first epoch reads every member. */
+  verifyReuseS?: number
 }): Promise<GroupUpdate & { group: OwnerGroupV2 }>
 export declare function resumeGroup(opts: {
   self: { container: Address; chainId?: number }
@@ -215,7 +228,7 @@ export interface GroupEntryV2 { container: Address; chainId: number; ed25519: st
 export type MemberVerifierV2 = (member: GroupEntryV2, opts?: { fresh?: boolean }) => Promise<boolean>
 /** @experimental A message opened by a format-2 handle: `verified` is false until the sender's entry was checked against its channel record. */
 export type OpenedGroupMessageV2 =
-  | { from: Address; index: number; epoch: number; seq: bigint; gap: number | null; data: Uint8Array | string; verified: boolean; verifyError?: { code: string; message: string }; own?: undefined }
+  | { from: Address; index: number; epoch: number; seq: bigint; gap: number | null; data: Uint8Array | string; verified: boolean; verifyError?: { code: string; message: string }; own?: undefined; otherDevice?: true }
   | { own: true; epoch: number; seq: bigint }
 /**
  * @experimental A format-2 group handle (TAP-27 §3.8). §3.3 step 6 is lazy: acceptEpoch checks only the owner's entry;

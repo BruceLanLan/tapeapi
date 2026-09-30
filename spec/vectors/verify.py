@@ -874,6 +874,310 @@ got = recover_address(moved_digest, mv['sig'])
 check('content/moved signature recovers elsewhere', got, mv['recoversTo'].lower())
 check('content/moved signature is not the holder', got != CS['holderAddress'].lower(), True)
 
+# ============================================ TAP-20 §3.2 (informative) Merkle proofs, EIP-1186 ====
+# Written from the Yellow Paper (appendices B and D) and EIP-1186. Nibble paths are hex strings here; a trie is rebuilt
+# from its key/value pairs to check ethereum/tests' roots, and proofs are walked against a root.
+# 照黄皮书附录 B、D 与 EIP-1186 编写。半字节路径在这里用十六进制字符串表示；由键值对重建树以核对 ethereum/tests 的根，再对照根走一遍证明。
+class ProofError(Exception):
+    pass
+
+def rlp_enc(x):
+    def head(n, short, long_):
+        if n < 56:
+            return bytes([short + n])
+        ln = n.to_bytes((n.bit_length() + 7) // 8, 'big')
+        return bytes([long_ + len(ln)]) + ln
+    if isinstance(x, (bytes, bytearray)):
+        x = bytes(x)
+        return x if len(x) == 1 and x[0] < 0x80 else head(len(x), 0x80, 0xb7) + x
+    body = b''.join(rlp_enc(i) for i in x)
+    return head(len(body), 0xc0, 0xf7) + body
+
+# Lists nest at most 64 deep, as in the SDK (FIXED PROOFR-3): a list embedded in a trie node is under 32 bytes and each
+# level costs a header byte, so a node holds at most 32 levels; deeper input raised a bare RecursionError here.
+# 列表嵌套至多 64 层，与 SDK 相同（FIXED PROOFR-3）：树节点里内嵌的列表不足 32 字节、每层至少一个头字节，节点至多 32 层；
+# 更深的输入原先在这里抛裸 RecursionError。
+RLP_MAX_DEPTH = 64
+
+def rlp_dec(data):
+    """Canonical RLP only. Lists come back as tuples (encoded_length, [items])."""
+    def length_of(pos, n, end):
+        if n == 0 or pos + n > end or data[pos] == 0:
+            raise ProofError('rlp: bad long length')
+        v = int.from_bytes(data[pos:pos + n], 'big')
+        if v < 56:
+            raise ProofError('rlp: long form below 56')
+        return v
+    def item(pos, end, depth):
+        if pos >= end:
+            raise ProofError('rlp: truncated')
+        b = data[pos]
+        if b < 0x80:
+            return data[pos:pos + 1], pos + 1
+        if b < 0xc0:
+            if b < 0xb8:
+                start, n = pos + 1, b - 0x80
+            else:
+                k = b - 0xb7; n = length_of(pos + 1, k, end); start = pos + 1 + k
+            if start + n > end:
+                raise ProofError('rlp: string overruns')
+            if n == 1 and data[start] < 0x80:
+                raise ProofError('rlp: wrapped single byte')
+            return data[start:start + n], start + n
+        if b < 0xf8:
+            start, n = pos + 1, b - 0xc0
+        else:
+            k = b - 0xf7; n = length_of(pos + 1, k, end); start = pos + 1 + k
+        if start + n > end:
+            raise ProofError('rlp: list overruns')
+        if depth >= RLP_MAX_DEPTH:
+            raise ProofError('rlp: lists nested too deep')
+        out, q = [], start
+        while q < start + n:
+            it, q = item(q, start + n, depth + 1)
+            out.append(it)
+        return (start + n - pos, out), start + n
+    it, end = item(0, len(data), 0)
+    if end != len(data):
+        raise ProofError('rlp: trailing bytes')
+    return it
+
+def _hp_encode(nib, leaf):
+    flag = (2 if leaf else 0) + (len(nib) & 1)
+    s = ('%x' % flag) + ('' if len(nib) & 1 else '0') + nib
+    return bytes.fromhex(s)
+
+def trie_root(pairs):
+    """pairs: {nibble-hex-path: value bytes}. The root hash, built top-down."""
+    def node(items, depth):
+        if not items:
+            return None
+        if len(items) == 1:
+            (k, v), = items.items()
+            return [_hp_encode(k[depth:], True), v]
+        common = 0
+        keys = list(items)
+        while all(len(k) > depth + common for k in keys) and len({k[depth + common] for k in keys}) == 1:
+            common += 1
+        if common:
+            return [_hp_encode(keys[0][depth:depth + common], False), ref(node(items, depth + common))]
+        slots = []
+        for d in '0123456789abcdef':
+            sub = {k: v for k, v in items.items() if len(k) > depth and k[depth] == d}
+            slots.append(ref(node(sub, depth + 1)) if sub else b'')
+        return slots + [items.get(keys[0][:depth], b'') if any(len(k) == depth for k in keys) else b'']
+    def ref(n):
+        e = rlp_enc(n)
+        return n if len(e) < 32 else keccak256(e)
+    root = node({k: v for k, v in pairs.items() if v}, 0)
+    return keccak256(rlp_enc(root if root is not None else b''))
+
+EMPTY_ROOT = keccak256(rlp_enc(b''))
+
+def walk_proof(root, key_path, proof, secure):
+    """The value under key_path (nibble hex), or None when the proof shows it absent. Raises ProofError."""
+    def node_bytes(n):
+        if not isinstance(n, str) or not re.fullmatch(r'0x(?:[0-9a-fA-F]{2})*', n):
+            raise ProofError('proof node is not 0x-hex')
+        return bytes.fromhex(n[2:])
+    if not isinstance(proof, list):
+        raise ProofError('proof is not a list')
+    nodes = [node_bytes(n) for n in proof]
+    if root == EMPTY_ROOT:
+        if nodes in ([], [b'\x80']):
+            return None
+        raise ProofError('nodes for an empty trie')
+    want, inline, i, rest = root, None, 0, key_path
+    def finish(v):
+        if i != len(nodes):
+            raise ProofError('unused proof nodes')
+        return v
+    while True:
+        if inline is not None:
+            items, inline = inline, None
+        else:
+            if i == len(nodes):
+                raise ProofError('proof too short')
+            if keccak256(nodes[i]) != want:
+                raise ProofError('hash mismatch at node %d' % i)
+            dec = rlp_dec(nodes[i]); i += 1
+            if not isinstance(dec, tuple):
+                raise ProofError('node is not a list')
+            items = dec[1]
+        def descend(r):
+            nonlocal want, inline
+            if isinstance(r, tuple):
+                if r[0] >= 32:
+                    raise ProofError('embedded node too long')
+                inline = r[1]
+            elif len(r) == 32:
+                want = r
+            else:
+                raise ProofError('bad reference')
+        if len(items) == 17:
+            if isinstance(items[16], tuple) or any(not isinstance(c, tuple) and len(c) not in (0, 32) for c in items[:16]):
+                raise ProofError('bad branch')
+            if not rest:
+                if secure:
+                    raise ProofError('secure key ends in a branch')
+                return finish(items[16] or None)
+            if secure and items[16]:
+                raise ProofError('branch value in a secure trie')
+            child = items[int(rest[0], 16)]; rest = rest[1:]
+            if not isinstance(child, tuple) and len(child) == 0:
+                return finish(None)
+            descend(child)
+        elif len(items) == 2:
+            enc = items[0]
+            if isinstance(enc, tuple) or not enc:
+                raise ProofError('bad path')
+            hx = enc.hex(); flag = int(hx[0], 16)
+            if flag > 3 or (flag % 2 == 0 and hx[1] != '0'):
+                raise ProofError('bad hex prefix')
+            seg = hx[1:] if flag % 2 else hx[2:]
+            if flag >= 2:
+                if isinstance(items[1], tuple) or not items[1]:
+                    raise ProofError('leaf without value')
+                if rest == seg:
+                    return finish(items[1])
+                if secure and len(seg) != len(rest):
+                    raise ProofError('secure leaf of the wrong length')
+                return finish(None)
+            if not seg:
+                raise ProofError('empty extension')
+            if not rest.startswith(seg):
+                return finish(None)
+            rest = rest[len(seg):]
+            descend(items[1])
+        else:
+            raise ProofError('node of %d items' % len(items))
+
+def account_and_slots(state_root, acc):
+    ans = acc['answer']
+    addr = bytes.fromhex(acc['address'][2:])
+    leaf = walk_proof(state_root, keccak256(addr).hex(), ans['accountProof'], True)
+    if leaf is None:
+        exists, sroot, chash = False, EMPTY_ROOT, keccak256(b'')
+    else:
+        dec = rlp_dec(leaf)
+        if not isinstance(dec, tuple) or len(dec[1]) != 4:
+            raise ProofError('account is not four items')
+        nonce, bal, sroot, chash = dec[1]
+        if len(sroot) != 32 or len(chash) != 32 or any(isinstance(x, tuple) for x in dec[1]):
+            raise ProofError('bad account fields')
+        exists = True
+        if int(ans['storageHash'], 16) != int.from_bytes(sroot, 'big'):
+            raise ProofError('storageHash differs from the account')
+    values = {}
+    for slot in acc['slots']:
+        n = int(slot, 16)
+        entries = [e for e in ans['storageProof'] if int(e['key'], 16) == n]
+        if len(entries) != 1:
+            raise ProofError('slot answered %d times' % len(entries))
+        raw = walk_proof(sroot, keccak256(n.to_bytes(32, 'big')).hex(), entries[0]['proof'], True)
+        v = 0
+        if raw is not None:
+            w = rlp_dec(raw)
+            if isinstance(w, tuple) or not w or len(w) > 32 or w[0] == 0:
+                raise ProofError('storage value not canonical')
+            v = int.from_bytes(w, 'big')
+        if int(entries[0]['value'], 16) != v:
+            raise ProofError('claimed value differs')
+        values['0x%x' % n] = '0x%x' % v
+    return {'exists': exists, 'storageRoot': h(sroot), 'codeHash': h(chash), 'values': values}
+
+PV = json.loads((HERE / 'tap-20-proof.json').read_text())
+def _tb(s):
+    return bytes.fromhex(s[2:]) if s.startswith('0x') else s.encode('utf-8')
+for c in PV['trie']:
+    nib = lambda k: (keccak256(k) if c['secure'] else k).hex()
+    built = trie_root({nib(_tb(k)): _tb(v) for k, v in c['in'].items()})
+    check('proof/trie/%s/%s root rebuilt' % (c['file'], c['name']), h(built), c['root'])
+    for pr in c['proofs']:
+        key = bytes.fromhex(pr['key'][2:])
+        check('proof/trie/%s/%s path of %s' % (c['file'], c['name'], pr['key']), '0x' + nib(key), pr['path'])
+        try:
+            got = walk_proof(bytes.fromhex(c['root'][2:]), nib(key), pr['proof'], c['secure'])
+            got = None if got is None else h(got)
+        except ProofError as e:
+            got = 'error: %s' % e
+        check('proof/trie/%s/%s value of %s' % (c['file'], c['name'], pr['key']), got, pr['value'])
+        # the proven value is the one in `in` (None for a key not there) / 证明出的值就是 `in` 里的那个（不在其中为 None）
+        want = next((_tb(v) for k, v in c['in'].items() if _tb(k) == key and v), None)
+        check('proof/trie/%s/%s membership of %s' % (c['file'], c['name'], pr['key']), got, None if want is None else h(want))
+# RLP nesting is bounded as in the SDK (FIXED PROOFR-3): 64 nested lists decode, 65 or 5000 are a ProofError, never a
+# RecursionError. / RLP 嵌套上限与 SDK 相同：64 层列表可解码，65 层或 5000 层是 ProofError，绝不是 RecursionError。
+def _nested(lists):
+    enc = b'\xc0'
+    for _ in range(lists - 1):
+        n = len(enc)
+        enc = (bytes([0xc0 + n]) if n < 56 else bytes([0xf7 + (n.bit_length() + 7) // 8]) + n.to_bytes((n.bit_length() + 7) // 8, 'big')) + enc
+    return enc
+def _refused(data):
+    try:
+        rlp_dec(data)
+        return False
+    except ProofError:
+        return True
+check('proof/rlp 64 nested lists decode', _refused(_nested(64)), False)
+check('proof/rlp 65 nested lists are refused', _refused(_nested(65)), True)
+check('proof/rlp 5000 nested lists are refused, not a RecursionError', _refused(_nested(5000)), True)
+check('proof/trie cases have keys absent from their trie', any(p['value'] is None for c in PV['trie'] for p in c['proofs']), True)
+check('proof/trie has non-secure and secure cases', {c['secure'] for c in PV['trie']}, {True, False})
+
+MN = PV['mainnet']
+sroot = bytes.fromhex(MN['block']['stateRoot'][2:])
+results = []
+for idx, acc in enumerate(MN['accounts']):
+    try:
+        got = account_and_slots(sroot, acc)
+    except ProofError as e:
+        got = 'error: %s' % e
+    results.append(got)
+    check('proof/mainnet/account %d %s' % (idx, acc['address']), got, acc['expect'])
+# the layouts, computed here, name the slots the proofs were asked for / 这里算出的布局正是证明所请求的槽
+def u256(x):
+    return int(x, 16).to_bytes(32, 'big') if isinstance(x, str) else x.to_bytes(32, 'big')
+L = MN['layoutCheck']
+site = int.from_bytes(keccak256(u256(L['container']) + u256(1)), 'big')
+base = int.from_bytes(keccak256(keccak256(L['path'].encode()) + u256((site + 2) % 2**256)), 'big')
+check('proof/layout fileInfo size slot', '0x%x' % ((base + 1) % 2**256), L['fileInfo']['size'])
+check('proof/layout fileInfo sha256Hash slot', '0x%x' % ((base + 2) % 2**256), L['fileInfo']['sha256Hash'])
+ns = int.from_bytes(keccak256(u256(int.from_bytes(keccak256(b'openzeppelin.storage.ERC721'), 'big') - 1)), 'big') & ~0xff
+check('proof/layout ownerOf slot (ERC-7201 openzeppelin.storage.ERC721 + 2)', '0x%x' % int.from_bytes(keccak256(u256(int(L['tokenId'])) + u256(ns + 2)), 'big'), L['ownerOf'])
+check('proof/layout cpuAt element', '0x%x' % ((int.from_bytes(keccak256(u256(6)), 'big') + int(L['processor'])) % 2**256), L['cpuAt']['element'])
+check('proof/layout isCPU slot', '0x%x' % int.from_bytes(keccak256(u256(int('0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', 16)) + u256(7)), 'big'), L['isCPU'])
+# the proven words say what the nodes answered by eth_call / 已证明的字与节点 eth_call 的回答一致
+proven = {}
+for r in results:
+    if isinstance(r, dict):
+        proven.update(r['values'])
+R = MN['reads']
+check('proof/mainnet proven ownerOf', '0x' + ('%040x' % (int(proven[L['ownerOf']], 16) & (2**160 - 1))), R['ownerOf'])
+check('proof/mainnet proven cpuAt(1013)', '0x' + ('%040x' % (int(proven[L['cpuAt']['element']], 16) & (2**160 - 1))), R['cpuAt'])
+check('proof/mainnet proven isCPU', int(proven[L['isCPU']], 16) == 1, R['isCPU'])
+check('proof/mainnet proven size (low 32 bits)', int(proven[L['fileInfo']['size']], 16) & 0xffffffff, R['size'])
+check('proof/mainnet proven sha256Hash', '0x%064x' % int(proven[L['fileInfo']['sha256Hash']], 16), R['sha256Hash'])
+# every single-byte change is refused / 每个单字节改动都被拒绝
+refused = 0
+for m in MN['mutations']:
+    acc = json.loads(json.dumps(MN['accounts'][m['account']]))
+    lst = acc['answer']['accountProof'] if m['list'] == 'accountProof' else acc['answer']['storageProof'][int(m['list'].split('.')[1])]['proof']
+    b = bytearray.fromhex(lst[m['node']][2:]); b[m['byte']] ^= m['xor']; lst[m['node']] = '0x' + b.hex()
+    try:
+        account_and_slots(sroot, acc)
+    except ProofError:
+        refused += 1
+check('proof/mainnet every mutation refused', refused, len(MN['mutations']))
+wrong = bytes.fromhex(MN['wrongRoot']['stateRoot'][2:])
+bad_root = 0
+for acc in MN['accounts']:
+    try:
+        account_and_slots(wrong, acc)
+    except ProofError:
+        bad_root += 1
+check('proof/mainnet a wrong stateRoot refuses every account', bad_root, len(MN['accounts']))
+
 if fail:
     print('FAIL: %d of %d checks disagreed with the reference implementation\n' % (len(fail), checked))
     for f in fail:

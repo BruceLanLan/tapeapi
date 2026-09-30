@@ -18,3 +18,7 @@ contracts/verify/
 examples/litellm-sidecar/config.yaml
 examples/litellm-sidecar/models.json
 examples/litellm-sidecar/pgdata/
+
+# The new-api package: new-api's SQLite data and logs (bind mounts of its compose file).
+examples/new-api-sidecar/data/
+examples/new-api-sidecar/logs/

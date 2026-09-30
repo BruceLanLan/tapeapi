@@ -66,7 +66,7 @@ test('manifestMethods derives params from query/body/url templates', () => {
   assert.equal(ms[1].priceBEM, '0.0001')
 })
 
-// ---- hosting hardening (docs/DESIGN-hosted.md, "Web2 adapter hardening") / 托管加固 ----
+// ---- hardening for running configurations written by others ("Web2 adapter hardening") / 加固：运行他人写的配置 ----
 import { buildMethods, checkUpstreamUrl, isPrivateIp, readCapped, expandEnv, HOSTED_POLICY } from './adapter.mjs'
 
 test('FIXED H-HOSTED-1: ${NAME} expands only from the env passed in, never from process.env', async () => {

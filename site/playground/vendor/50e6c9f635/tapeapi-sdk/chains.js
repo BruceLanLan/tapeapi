@@ -10,7 +10,7 @@
 // （有代码；ERC-1967 实现槽等于下面的值；hub.accountOf 等于 opener.accountOf）：节点的回答记在 fixtures/chains-onchain.json，
 // chains.test.mjs 钉住它，`node scripts/probe-chains.mjs` 在线重查。
 //
-// What follows TapeOut to an L2 (docs/PLAN-2026Q4.md, 2026-09-28): identity, name resolution, manifests, delegations,
+// What follows TapeOut to an L2 (the 2026 Q4 plan, 2026-09-28): identity, name resolution, manifests, delegations,
 // receipts and MCP verification. What does not: payments (the escrow and BEM are on BNB Smart Chain only), ChannelBus and
 // the public services. `payments` below says which.
 // 跟随 TapeOut 到 L2 的：身份、名字解析、清单、委托、回执与 MCP 核验。不跟随的：支付（托管与 BEM 只在 BNB Smart Chain）、
@@ -52,11 +52,15 @@ const L2 = {
 }
 // Security 1.1, read at runtime only when a client opts in to pinning (createTapeAPI({ pin: true })): `finality` is the
 // tag a pinned resolution starts from, and `maxPinAgeS` the oldest block (by its timestamp against the client's clock) it
-// accepts, about maxPinLagBlocks block times. Measured 2026-09-30 on the default nodes: BSC finalized was 2 s old,
-// X Layer safe 94 s, Base safe 84-188 s. `pin: 'latest'` stays the default: reads are unpinned unless the client asks.
+// accepts, about maxPinLagBlocks block times. `pin: 'latest'` stays the default: reads are unpinned unless the client asks.
+// maxPinAgeS covers the tag's own lag, a node lagging now and then and the client's clock error. Measured 2026-09-30
+// (FIXED RPC2-3): BSC finalized 0-2 s old (96 samples; 120 s leaves room for a clock off by a minute); X Layer safe
+// moves every ~228 s and reached 248 s (70 samples; 300 left 52 s, so 600); Base safe 56-188 s (300 kept).
 // 安全加固 1.1：只有客户端选择钉块时（createTapeAPI({ pin: true })）运行时才读取：`finality` 是钉块的起点标签，`maxPinAgeS`
-// 是可接受的最旧区块（按区块时间戳对照客户端时钟），约为 maxPinLagBlocks 个出块时间。2026-09-30 默认节点实测：BSC finalized
-// 落后 2 秒，X Layer safe 94 秒，Base safe 84–188 秒。默认仍为 `pin: 'latest'`：客户端不要求就不钉块。
+// 是可接受的最旧区块（按区块时间戳对照客户端时钟），约为 maxPinLagBlocks 个出块时间。默认仍为 `pin: 'latest'`：客户端不要求就不钉块。
+// maxPinAgeS 要覆盖标签本身的落后、节点偶尔的落后与客户端时钟误差。2026-09-30 实测（FIXED RPC2-3）：BSC finalized 0–2 秒
+// （96 个样本；120 秒给偏差一分钟的时钟留余量）；X Layer safe 约每 228 秒跳一次、最大 248 秒（70 个样本；300 只剩 52 秒，改 600）；
+// Base safe 56–188 秒（300 不变）。
 
 const deepFreeze = (o) => { for (const v of Object.values(o)) if (v && typeof v === 'object') deepFreeze(v); return Object.freeze(o) }
 
@@ -80,14 +84,14 @@ export const CHAINS = deepFreeze({
     },
     // The delegation domain: EIP712Domain("TapeAPI", "1", chainId, verifyingContract) (TAP-20 §3.4)
     delegation: { chainId: 56, verifyingContract: HUB },
-    pin: 'latest', finality: 'finalized', maxPinLagBlocks: 400, maxPinAgeS: 180, payments: true,   // 0.45 s a block / 约 0.45 秒一块
+    pin: 'latest', finality: 'finalized', maxPinLagBlocks: 266, maxPinAgeS: 120, payments: true,   // 0.45 s a block / 约 0.45 秒一块
   },
   196: {
     chainId: 196, key: 'xlayer', name: 'X Layer', currency: 'OKB', area: 2, ...L2, hub: HUB,
     erc6551Registry: ERC6551_REGISTRY,
     expectedImpl: { ...L2.expectedImpl, '0xe61a9c7213a6aa616c246a2b569e555b417b25ee': ['0xdcc57797089ebd9f26e686379a4323f353a3f9c6'] },
     delegation: { chainId: 196, verifyingContract: HUB },
-    maxPinLagBlocks: 300, maxPinAgeS: 300,   // about one block a second: 5 minutes / 约 1 秒一块
+    maxPinLagBlocks: 600, maxPinAgeS: 600,   // about one block a second: 10 minutes / 约 1 秒一块
   },
   8453: {
     chainId: 8453, key: 'base', name: 'Base', currency: 'ETH', area: 3, ...L2, hub: HUB,

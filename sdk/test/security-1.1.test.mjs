@@ -1,4 +1,4 @@
-// Security 1.1 (docs/DESIGN-security-1.1.md): each item as tests. SEC11-1 pinned block with freshness, SEC11-2 identity-root
+// Security 1.1 (the security 1.1 hardening design): each item as tests. SEC11-1 pinned block with freshness, SEC11-2 identity-root
 // sentinel, SEC11-3 manifest content signature, SEC11-4 contradiction evidence, SEC11-5 random second opinion, SEC11-6
 // delegation floor. The resolve budget is asserted in resolve-rounds.test.mjs.
 // 安全加固 1.1：每一项写成测试。SEC11-1 钉块与新鲜度，SEC11-2 身份根哨兵，SEC11-3 清单内容签名，SEC11-4 矛盾证据，
@@ -73,9 +73,10 @@ test('FIXED SEC11-1: a pinned block older than maxAgeS, or ahead of the clock, i
   const chain = fakeService()
   const t0 = nowS()
   chain.state.headTime = t0
-  // BSC: maxPinAgeS 180 (chains.js); the finalized block is 2 s old at t0 / BSC 的时限为 180 秒；t0 时 finalized 块 2 秒旧
-  await testClient(chain.fetch, { pin: true, clock: () => t0 + 170 }).resolve(NAME)
-  await assert.rejects(testClient(chain.fetch, { pin: true, clock: () => t0 + 179 }).resolve(NAME), (e) => e.code === 'RPC_STALE' && e.data.ageS === 181 && e.data.maxAgeS === 180)
+  // BSC: maxPinAgeS 120 (chains.js; 180 until FIXED RPC2-3); the finalized block is 2 s old at t0
+  // BSC 的时限为 120 秒（FIXED RPC2-3 之前为 180）；t0 时 finalized 块 2 秒旧
+  await testClient(chain.fetch, { pin: true, clock: () => t0 + 110 }).resolve(NAME)
+  await assert.rejects(testClient(chain.fetch, { pin: true, clock: () => t0 + 119 }).resolve(NAME), (e) => e.code === 'RPC_STALE' && e.data.ageS === 121 && e.data.maxAgeS === 120)
   await assert.rejects(testClient(chain.fetch, { pin: { maxAgeS: 30 }, clock: () => t0 + 40 }).resolve(NAME), (e) => e.code === 'RPC_STALE')
   // a block from the future (by more than maxSkewS) / 来自未来的区块（超过 maxSkewS）
   await assert.rejects(testClient(chain.fetch, { pin: true, clock: () => t0 - 400 }).resolve(NAME), (e) => e.code === 'RPC_STALE' && /ahead/.test(e.message))

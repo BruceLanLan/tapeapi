@@ -1,5 +1,6 @@
-# Every push and pull request runs the three suites: JavaScript, the independent Python verifier, and Foundry.
-# 每次推送和拉取请求都跑三套测试：JavaScript、独立的 Python 校验器、Foundry。
+# Every push and pull request runs the three suites: JavaScript, the independent Python verifier, and Foundry, and checks
+# the provider directory's format (site/directory/providers.json; no network: the daily recheck reads the chain).
+# 每次推送和拉取请求都跑三套测试：JavaScript、独立的 Python 校验器、Foundry，并检查服务方目录的格式（不联网；读链交给每日复核）。
 name: CI
 on:
   push:
@@ -35,3 +36,21 @@ jobs:
       - run: python3 spec/vectors/verify.py
       - run: forge test
         working-directory: contracts
+
+  directory:
+    # A pull request that lists a provider edits site/directory/providers.json: its format and its order are checked here,
+    # with no RPC and no call to any service (directory-recheck.yml runs tapeapi-doctor once a day). It runs on every
+    # push and pull request because a paths filter at the top would apply to the test job too; it takes seconds.
+    # 登记服务方的拉取请求修改 providers.json：这里只查格式与顺序，不发 RPC、不调用任何服务（诊断由每日任务运行）。
+    # 每次都运行，因为顶层的路径过滤也会作用于测试任务；只需几秒。
+    if: github.repository == 'BruceLanLan/tapeapi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node directory/recheck.mjs --validate

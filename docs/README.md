@@ -28,7 +28,7 @@
 | [`spec/TAP-24.md`](../spec/TAP-24.md) | 无桥跨链兑换（已撤回）。Intent RFQ (withdrawn). |
 | [`spec/TAP-25.md`](../spec/TAP-25.md) | 链上 `eval()` 裁决的方法。Circuit-Verified Methods. |
 | [`spec/TAP-26.md`](../spec/TAP-26.md) | **Tape Channel：** 两个容器之间的端到端加密通道（持有人授权的通道密钥、收件房间、中继 / ChannelBus / TapeSend）。Private channels between containers. |
-| [`spec/TAP-27.md`](../spec/TAP-27.md) | **Tape Group：** 至多 32 个容器的加密群聊（群主管理的纪元、加密名单、发送者签名）。Private groups. |
+| [`spec/TAP-27.md`](../spec/TAP-27.md) | **Tape Group：** 至多 32 个容器的加密群聊（实验性的格式 2 最多 128 个；群主管理的纪元、加密名单、发送者签名）。Private groups of up to 32 containers (up to 128 in the experimental format 2). |
 | [`spec/vectors/`](../spec/vectors/) | 测试向量与独立的 Python 实现 `verify.py`。Test vectors and an independent Python implementation. |
 
 ## 设计与说明 / Design and explainers

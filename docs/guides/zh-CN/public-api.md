@@ -142,6 +142,11 @@ console.log(q.result.bnbUsd, 'agreed by', q.agreed)   // 否则抛出 TapeAPIErr
 永远看不到内容或身份（它能看到房间名、大小和时间）。公共中继位于 `https://relay.tapeapi.fun`，身份 `12.1013.tape`，
 容器 `0x9cD838625251576c199B2DeF7A17e50266843185`，提供 `relaySend`、`relayHandshake` 和 `relayRecv`，每条消息零费用。
 
+**它只用于测试和小规模使用。** 它运行在 Cloudflare 的免费额度上，全体用户合计每天约 10 万次请求；一个全天长轮询的客户端每天约用
+4,300 次，所以几十个常驻在线的客户端就会用完。有常驻在线用户、或群超过约 64 人的应用，请自己运行中继
+（[`examples/relay-service/`](../../../examples/relay-service/) 或 [`examples/cloudflare-worker/`](../../../examples/cloudflare-worker/)），
+费用由应用自己承担；TapeAPI 不代付。
+
 在邀请中列出它，然后用 `channel.relayTransport` 通过它承载通道：
 
 ```js

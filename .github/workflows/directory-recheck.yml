@@ -1,0 +1,69 @@
+# The provider directory's daily recheck (directory/README.md): tapeapi-doctor on every name in
+# site/directory/providers.json, read-only, with no key and no secret (GITHUB_TOKEN only, to commit the result).
+# At most 60 JSON-RPC requests per name (RPC_BUDGET_PER_NAME in directory/recheck.mjs; about 36 measured on BNB Chain).
+# site/directory/status.json is committed back so https://tapeapi.fun/directory/ can read it from its own site: a push
+# made with GITHUB_TOKEN starts no other workflow (CI does not run on it), and Cloudflare Pages redeploys the site once.
+# Nothing is committed while the directory is empty. A name that newly stops passing turns the job red (the owner gets
+# GitHub's email); a name that cannot be read today is `undecided` and keeps yesterday's verdict. Nothing is removed.
+# Pull requests that edit providers.json are checked by ci.yml (`recheck.mjs --validate`: the format only, no RPC).
+# 服务方目录的每日复核：对 site/directory/providers.json 里的每个名字跑 tapeapi-doctor，只读，不用任何密钥（GITHUB_TOKEN 仅用于提交结果）。
+# 每个名字最多 60 次 JSON-RPC 请求（BNB Chain 实测约 36 次）。status.json 提交回仓库，网站从自己的站点读取：用 GITHUB_TOKEN 的推送
+# 不会触发其它工作流（CI 不会因此运行），Cloudflare Pages 重新部署一次。目录为空时不提交。有名字新近不再通过时任务变红（所有者收到
+# GitHub 邮件）；今天读不到的名字记为 undecided，保留前一天的结论。不删除任何条目。改 providers.json 的拉取请求由 ci.yml 只查格式。
+name: directory-recheck
+
+on:
+  schedule:
+    - cron: '17 3 * * *'   # once a day, 03:17 UTC / 每天一次
+  workflow_dispatch:
+
+permissions:
+  contents: write           # to commit site/directory/status.json / 提交 status.json
+
+concurrency:
+  group: directory-recheck
+  cancel-in-progress: false
+
+jobs:
+  recheck:
+    # The public repository only (the private copy it is staged from has the same file). / 只在公开仓库运行。
+    if: github.repository == 'BruceLanLan/tapeapi'
+    runs-on: ubuntu-latest
+    # About 5 s per name when every check passes; a name whose every step times out takes a few minutes. 30 covers a
+    # directory of a few dozen names; raise it (and the budget note above) if the list grows past that.
+    # 全部通过时每个名字约 5 秒；每步都超时的名字要几分钟。30 分钟够几十个名字；列表更长时调高它。
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+
+      - name: Recheck every listed name
+        id: run
+        run: |
+          set +e
+          node directory/recheck.mjs --recheck --write
+          code=$?
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          # 2 is a crash before anything was written / 2 表示写文件之前就崩溃了
+          if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then exit "$code"; fi
+
+      - name: Commit status.json when it changed
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add site/directory/status.json
+          if git diff --cached --quiet; then echo 'status.json unchanged'; exit 0; fi
+          git commit -m 'directory: daily recheck'
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Fail when a name newly stopped passing
+        if: steps.run.outputs.code == '1'
+        run: |
+          echo 'A listed name stopped passing tapeapi-doctor today; see the recheck step above and site/directory/status.json.'
+          exit 1

@@ -29,9 +29,10 @@ new-api:3000            渠道、令牌、额度、倍率、计费全部照旧
 
 ### 5 分钟上线
 
-还没准备好花钱？先在本机跑一遍本地试跑（不需要密钥、电路，也不花钱）：在仓库根目录 `npm install` 后运行
-`node examples/relay-trial/trial.mjs`。下面每一步做完都可以用 `node sdk/bin/tapeapi-doctor.js` 检查，它会说清缺什么、去哪做、
-下一条命令；逐步清单见 [AI 服务方指南 · 从零到上线](../../docs/guides/zh-CN/ai-providers.md#从零到上线)。
+还没准备好花钱？先在本机跑一遍本地试跑（不需要密钥、电路，也不花钱）：先在仓库根目录运行 `npm ci --no-audit --no-fund`，再运行
+`node examples/relay-trial/trial.mjs`。下面每一步做完都可以用 `tapeapi-doctor`（实验性）检查，它会说清缺什么、去哪做、下一条命令。
+它随 SDK 发布包提供，在任何目录都能运行：`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-doctor <你的名字或旁路地址>`；
+在本目录（`examples/new-api-sidecar`）里也可以用检出自带的 `node ../../sdk/bin/tapeapi-doctor.js`。逐步清单见 [AI 服务方指南 · 从零到上线](../../docs/guides/zh-CN/ai-providers.md#从零到上线)。
 
 前提：一台装了 Docker 与 Docker Compose 2.17 或更高版本的服务器；一个域名和你已有的 HTTPS 反向代理（Nginx、Caddy、1Panel、宝塔都行）；
 一枚已开通容器的 TapeOut 电路（在 tapeout.net 购买）；本仓库的检出（镜像由它构建）：
@@ -105,19 +106,30 @@ compose 文件，放在同一个网络里，`UPSTREAM_BASE_URL` 指向你的 new
 |---|---|
 | OpenAI SDK、各类 OpenAI 兼容工具 | `base_url = https://api.example.com/v1` |
 | Anthropic SDK、Claude Code | `ANTHROPIC_BASE_URL=https://api.example.com`（不带 `/v1`），`ANTHROPIC_AUTH_TOKEN=<new-api 令牌>` |
-| Codex | `config.toml` 里 `base_url = "https://api.example.com/v1"`，`wire_api = "responses"` |
+| Codex | `OPENAI_BASE_URL=https://api.example.com/v1`，或 `config.toml` 里 `base_url = "https://api.example.com/v1"` 加 `wire_api = "responses"` |
 
 想自己核验每次调用的 Claude Code 或 Codex 用户，在本机运行核验代理 `tapeapi-verify`（需要清单已上链，见上面的现状说明），
-把客户端指向它：
+把客户端指向它。`tapeapi-verify` 会一直在前台运行，客户端要在第二个终端里启动：
 
 ```sh
-# 42.1013.tape 是示例名：换成你的 TapeOut 名字（即 .env 里的 TAPE_NAME）
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz tapeapi-verify 42.1013.tape
-ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
+# 终端 1。42.1013.tape 是示例名：换成你的 TapeOut 名字（即 .env 里的 TAPE_NAME）
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-verify 42.1013.tape
+```
+
+```sh
+# 终端 2，macOS 或 Linux
+ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude
+OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex             # Codex（或 config.toml 里的 base_url）
+```
+
+```powershell
+# 终端 2，Windows PowerShell
+$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8790"; claude
+$env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex
 ```
 
 照原样用示例名运行会停在 “no file at /.well-known/tapeapi.json”：链上没有以 `42.1013.tape` 发布的服务。你的清单发布之后，
-先自己跑一遍 `node sdk/bin/tapeapi-doctor.js <你的名字>`，全部通过（退出码 0）再告诉用户。
+先自己跑一遍 `tapeapi-doctor <你的名字>`（上面的 npx 写法），全部通过（退出码 0）再告诉用户。
 
 在 `.env` 里设 `TAPE_NAME=<你的 TapeOut 名字>`，旁路启动时会打印这条提示。用 SDK 的开发者可以用 `ai.createVerifyingFetch` 包裹官方 SDK 的 fetch。
 
@@ -171,7 +183,7 @@ SSE 注释 `: tapeapi-receipt …`（官方 SDK、Claude Code、Codex 都忽略�
 ### 不用 Docker 试一遍
 
 ```sh
-npm install --no-audit --no-fund                        # 在 tapeapi/ 根目录，一次
+npm ci --no-audit --no-fund                             # 在 tapeapi/ 根目录，一次
 node examples/new-api-sidecar/smoke.mjs                 # 旁路入口 + 模拟上游（代替 new-api），Chat、Responses、Anthropic、Embeddings 全部核验回执
 node --test examples/new-api-sidecar/new-api-sidecar.test.mjs
 ```
@@ -222,9 +234,11 @@ your users' API keys, so only you run it.
 ### Live in 5 minutes
 
 Not ready to pay for anything yet? Run the local trial on your machine first (no key, no circuit, no cost):
-`npm install` at the repository root, then `node examples/relay-trial/trial.mjs`. After each step below,
-`node sdk/bin/tapeapi-doctor.js` checks it and says what is missing, where to fix it and the next command; the
-step-by-step checklist is [AI providers · From zero to live](../../docs/guides/ai-providers.md#from-zero-to-live).
+`npm ci --no-audit --no-fund` at the repository root, then `node examples/relay-trial/trial.mjs`. After each step below,
+`tapeapi-doctor` (experimental) checks it and says what is missing, where to fix it and the next command. It ships in
+the SDK's release package and runs from any directory:
+`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-doctor <your name or sidecar URL>`; in this directory (`examples/new-api-sidecar`)
+the checkout's own is `node ../../sdk/bin/tapeapi-doctor.js`. The step-by-step checklist is [AI providers · From zero to live](../../docs/guides/ai-providers.md#from-zero-to-live).
 
 You need a server with Docker and Docker Compose 2.17 or later; a domain and your existing HTTPS reverse proxy (Nginx,
 Caddy, 1Panel, ...); a TapeOut circuit with its container opened (bought on tapeout.net); and a checkout of this
@@ -266,12 +280,14 @@ repository (the image is built from it): `git clone https://github.com/BruceLanL
    > with the console" in the [AI provider guide](../../docs/guides/ai-providers.md).
 4. **Tell your users.** Same tokens (issued by new-api), new base URL: OpenAI SDKs and OpenAI-compatible tools use
    `https://api.example.com/v1`; the Anthropic SDK and Claude Code use `ANTHROPIC_BASE_URL=https://api.example.com`
-   (no `/v1`) with `ANTHROPIC_AUTH_TOKEN=<new-api token>`; Codex uses `base_url = "https://api.example.com/v1"` with
-   `wire_api = "responses"` in `config.toml`. Claude Code and Codex users who want every call checked run the local
+   (no `/v1`) with `ANTHROPIC_AUTH_TOKEN=<new-api token>`; Codex uses `OPENAI_BASE_URL=https://api.example.com/v1`, or
+   `base_url = "https://api.example.com/v1"` with `wire_api = "responses"` in `config.toml`. Claude Code and Codex users who want every call checked run the local
    verifying proxy `tapeapi-verify <your TapeOut name>` (it needs the manifest on chain, see the note above) and point
-   their client at it (`ANTHROPIC_BASE_URL=http://127.0.0.1:8790`, or `OPENAI_BASE_URL=http://127.0.0.1:8790/v1`); set
+   their client at it from a second terminal, since `tapeapi-verify` keeps running in the foreground
+   (`ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude`, or `OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex`; in Windows
+   PowerShell `$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8790"; claude` and `$env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex`); set
    `TAPE_NAME` in `.env` and the sidecar prints that hint at start. SDK users can wrap the official SDK's fetch with
-   `ai.createVerifyingFetch`. Before telling anyone, run `node sdk/bin/tapeapi-doctor.js <your TapeOut name>` yourself
+   `ai.createVerifyingFetch`. Before telling anyone, run `tapeapi-doctor <your TapeOut name>` (the npx form above) yourself
    and wait for exit status 0 (the documentation's `42.1013.tape` is an example name: nothing is published under it).
 
 ### What users see
@@ -333,7 +349,7 @@ evading an upstream provider's bans or regional restrictions.
 ### Try it without Docker
 
 ```sh
-npm install --no-audit --no-fund                        # once, in tapeapi/
+npm ci --no-audit --no-fund                             # once, in tapeapi/
 node examples/new-api-sidecar/smoke.mjs                 # the sidecar entry + a fake upstream standing in for new-api
 node --test examples/new-api-sidecar/new-api-sidecar.test.mjs
 ```

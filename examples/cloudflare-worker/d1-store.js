@@ -2,7 +2,7 @@
 //
 // The whole point is `advance`: `UPDATE ... WHERE cumulative < ?` is evaluated by SQLite as one statement, so
 // two isolates racing the same voucher produce exactly one winner. Read-then-write cannot do this -- it is the
-// lost update that lets one payment buy several calls (x402 shipped that bug; see docs/research).
+// lost update that lets one payment buy several calls (x402 shipped that bug).
 // 关键在 `advance`：`UPDATE ... WHERE cumulative < ?` 由 SQLite 作为单条语句求值，两个隔离实例争同一张凭证
 // 只会有一个赢家。读后写做不到这一点，那正是"一次付款换多次服务"的丢失更新。
 //

@@ -35,6 +35,8 @@ export * as mcp from './mcp.js'
 export * as ai from './ai.js'
 /** @experimental security 1.1: local container derivation, ContradictionRecord v1, random second opinions. */
 export * as security from './security.js'
+/** @experimental security 1.2: RLP and Merkle-Patricia proof checks (EIP-1186), and the storage slots resolve can prove. */
+export * as proof from './proof.js'
 
 /** @experimental Not covered by the 1.0 stability promise (TAP-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export declare const MAX_CONTRIBUTION_BPS: number
@@ -74,6 +76,8 @@ export interface CreateTapeAPIOptions {
   quorum?: number
   /** Development only: accept fewer nodes than `quorum`. */
   allowSingleNode?: boolean
+  /** Silence the rpc "no spare" notice, also on other chains unless `chains[id].quiet` is set. */
+  quiet?: boolean
   /** Timeout of one RPC request in ms (default 8000). Renamed from `timeoutMs` in 1.0: passing `timeoutMs` throws
    *  INVALID_ARGUMENT (api.call keeps its own per-call `timeoutMs`). */
   rpcTimeoutMs?: number
@@ -92,7 +96,7 @@ export interface CreateTapeAPIOptions {
   chainId?: number
   /** Nodes for the other TapeOut chains, used when a target names one (a name with an area code, or { chainId }).
    *  Without an entry, that chain's SDK defaults (rpcUrlsFor) are used. */
-  chains?: Record<number, { rpcUrls?: string[]; quorum?: number; rpcTimeoutMs?: number; allowSingleNode?: boolean; hub?: Address; factory?: Address; siteRegistry?: Address; pin?: CreateTapeAPIOptions['pin'] }>
+  chains?: Record<number, { rpcUrls?: string[]; quorum?: number; rpcTimeoutMs?: number; allowSingleNode?: boolean; quiet?: boolean; hub?: Address; factory?: Address; siteRegistry?: Address; pin?: CreateTapeAPIOptions['pin'] }>
   hub?: Address
   siteRegistry?: Address
   /** TapeOut processor factory; required with hub and siteRegistry on a chain not in CHAINS. */
@@ -124,11 +128,33 @@ export interface CreateTapeAPIOptions {
   delegationFloor?: boolean | { get(key: string): unknown; set(key: string, value: unknown): unknown; delete?(key: string): unknown }
   /** @experimental (security 1.1) Receives each warning of a resolution (default: console.warn once per warning). */
   onWarning?: (warning: ResolveWarning) => void
+  /** @experimental (security 1.2) Merkle proof mode, only with `pin` (without it: INVALID_ARGUMENT). cpuAt, isCPU, ownerOf
+   *  and fileInfo are also proven by eth_getProof (from any node) against the stateRoot of the pinned block, which nodes
+   *  of `quorum` operators confirmed, and compared with the quorum's eth_call answers; the manifest bytes then hash to the
+   *  proven sha256Hash. A verified proof that contradicts the quorum's answer is refused in both modes (PROOF_INVALID).
+   *  When no verified proof can be had, `true` warns (PROOF_UNAVAILABLE, PROOF_INVALID in `svc.warnings`) and keeps the
+   *  quorum reads (detection only), and 'strict' refuses with those codes. Not proven: contentSig, EIP-1271
+   *  isValidSignature, accountOf (the sentinel re-derives the container locally) and the directory's serviceOf. A dev
+   *  target is not pinned: its `svc.proofs` is undefined. It rests on the stateRoot being confirmed by independent operators: it does not
+   *  stop an upgrade of a TapeOut contract (real state) or operators that all collude on the block header. Default off. */
+  proofs?: boolean | 'strict'
+}
+
+/** @experimental (security 1.2) One read of a resolution under the proof mode. */
+export interface ProofEntry {
+  read: 'fileInfo' | 'cpuAt' | 'isCPU' | 'ownerOf'
+  /** The contract whose storage was proven. */
+  address: Address
+  /** The host of the node that served the proof. */
+  node?: string
+  /** Why the read was not proven (unavailable / invalid only). */
+  reason?: string
+  [key: string]: unknown
 }
 
 /** @experimental (security 1.1) A finding that did not stop a resolution. */
 export interface ResolveWarning {
-  code: 'IMPL_UNKNOWN' | 'IMPL_UNREAD' | 'CONTAINER_MISMATCH' | 'CONTENT_SIG_INVALID' | 'CONTENT_SIG_UNCHECKED' | string
+  code: 'IMPL_UNKNOWN' | 'IMPL_UNREAD' | 'CONTAINER_MISMATCH' | 'CONTENT_SIG_INVALID' | 'CONTENT_SIG_UNCHECKED' | 'PROOF_UNAVAILABLE' | 'PROOF_INVALID' | string
   message: string
   [key: string]: unknown
 }
@@ -167,6 +193,11 @@ export interface ResolvedService {
   /** @experimental (security 1.1) Present when the manifest carries a contentSig or the client requires one.
    *  `checked: false`: an error prevented the check (warning CONTENT_SIG_UNCHECKED; only without requireContentSig). */
   contentSig?: { valid: boolean; checked?: false }
+  /** @experimental (security 1.2) What the proof mode proved, against which block and stateRoot (only with `proofs`).
+   *  `invalid`: reads for which every node that served a proof served one that does not verify (only with proofs: true;
+   *  'strict' throws PROOF_INVALID). A proof that contradicts the quorum is never listed: it is thrown in both modes.
+   *  Undefined for a dev target, which is not pinned. */
+  proofs?: { mode: 'warn' | 'strict'; block: number; stateRoot: Hex | null; verified: ProofEntry[]; unavailable: ProofEntry[]; invalid: ProofEntry[] }
   /** @experimental (security 1.1) Findings that did not stop the resolution (absent when there were none). */
   warnings?: ResolveWarning[]
 }

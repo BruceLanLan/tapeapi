@@ -7,7 +7,83 @@ interfaces.
 
 ## [Unreleased]
 
-## [1.2.0] — 2026-09-30
+## [1.3.0] — 2026-09-30
+
+### Added
+
+- **Merkle proof mode (experimental, security roadmap 1.2; the light-client idea borrowed from Polkadot).**
+  `createTapeAPI({ pin: true, proofs: true | 'strict' })` checks `cpuAt`, `isCPU`, `ownerOf` and `fileInfo` (size,
+  `sha256Hash`) against EIP-1186 `eth_getProof` proofs of the pinned block's `stateRoot`, which nodes of `quorum`
+  operators must agree on (`rpc.confirmedBlock(tag, { stateRoot: true })`); the manifest bytes are then checked against
+  the proven hash. A proof may come from any node; every `eth_call` still goes through the quorum and is compared with
+  the proven value. `true` warns and keeps the quorum reads; `'strict'` refuses with the new codes `PROOF_UNAVAILABLE`
+  or `PROOF_INVALID`. It resists nodes that agree on false state, as long as the `stateRoot` comes from independent
+  operators; it does not resist an upgrade of the contracts (that is real state) or all operators forging a header.
+  RLP and Merkle-Patricia checks are the SDK's own (no new dependency), checked against ethereum/tests trie cases by
+  both the SDK and `verify.py`; vectors `spec/vectors/tap-20-proof.json`; TAP-20 §3.2 note, §6.5; `svc.proofs`, the
+  `proof` namespace. Default unchanged. Which default nodes serve proofs (2026-09-30): Alchemy on BNB Smart Chain,
+  dRPC on Base, none on X Layer at the `safe` block (add your own node to use `'strict'` there).
+  A proven value that contradicts the quorum's answer is refused in both modes (`PROOF_INVALID`); `proofs: true` falls
+  back only when no verified proof can be had, and is then detection only. A proof that does not verify moves on to
+  the next node; only a node that refuses the method or serves a bad proof is skipped for 10 minutes, never for a rate
+  limit or a timeout. A confirming node that omits the `stateRoot` is not counted (nodes of `quorum` operators must
+  still report the same one). RLP nesting is capped at 64 and `proof.*` throws only `PROOF_INVALID`. Not proven:
+  `contentSig`, EIP-1271 `isValidSignature`, `accountOf` (the sentinel derives it locally) and `serviceOf`. An
+  independent review (77,000 RLP and trie cases, attacks on the whole resolution) found no way to forge a proof.
+- **Provider directory at https://tapeapi.fun/directory/.** An AI service lists itself by a pull request to
+  `site/directory/providers.json` once `tapeapi-doctor` passes; `.github/workflows/directory-recheck.yml` runs
+  `tapeapi-doctor` on every entry once a day (read-only, no key, at most 60 JSON-RPC requests per name) and commits
+  `site/directory/status.json`; an entry that cannot be read that day is `undecided` and keeps its last verdict. CI
+  checks the format only. A listing only means the automated checks passed: it is not a recommendation, an endorsement
+  or an audit. No ranking, no fees, no automatic removal; TapeAPI lists nobody itself and pays for nothing.
+
+### Fixed
+
+- **Resolve on BNB Smart Chain, X Layer and Base, found by testing 1.2.0's security options on all three mainnets:**
+  - A rate limit is the node not answering, never an answer, whatever its code or wording (Coinbase's `-32016` and
+    dRPC's code 15 inside a batch, HTTP 429, "too many requests", "quota"): on Base it used to surface as
+    `RPC_DISAGREE`. A revert that happens to use those words is still an answer.
+  - A pinned read that publicnode or Coinbase answers with "block not found: canonical hash" counts as that node lacking
+    the block (only "not canonical" is still an answer).
+  - The pinned block may be older on X Layer (`maxPinAgeS` 300 -> 600 s; its `safe` tag moves about every 228 s,
+    measured up to 248 s old) and must be newer on BNB Smart Chain (180 -> 120 s; `finalized` measured 0 to 2 s old).
+  - A request whose connection broke (not a timeout, not an answer) is sent once more after `transportRetryMs`
+    (default 250 ms): X Layer has two independent operators, so one reset used to fail the read.
+  - `createTapeAPI({ quiet })` reaches the clients it makes, so a default X Layer client no longer warns.
+- **`tapeapi-doctor` and the AI relay path, found by walking the docs as a new operator:**
+  - The docs no longer say `tapeapi-doctor` runs only from a checkout (1.2.0 ships it), and its "next" commands match
+    how it was run: a checkout path, the npx form with the release URL, or the installed command.
+  - URL mode probes the address you gave, and warns when the manifest publishes another one (it used to probe the
+    manifest's endpoints, so a pre-publish check could pass against the wrong server).
+  - Diagnoses that fit: a page that is not the sidecar (a reverse proxy or wrong port), a self-signed certificate in
+    plain words, and an opened container without a manifest (sidecar, key, delegation, then publish).
+  - `--lang en|zh` prints one language (`--json` adds `detailZh`); usage errors are bilingual.
+  - Step 0 says `npm ci` first, and `examples/relay-trial` prints that command instead of a module-not-found stack.
+  - PowerShell forms next to every shell variable example; `tapeapi-verify` needs its own terminal.
+- The public relay's place is stated in the Public API guide: it is for testing and small-scale use (Cloudflare's free
+  tier, about 100,000 requests a day for all users); apps with always-online users or groups over about 64 members run
+  their own relay at their own cost.
+- Website: the status line reads "Stable 1.x"; every "up to 32" mentions the experimental format 2 (up to 128); the
+  verify page no longer repeats its hash-only notice; docs links have no `.html`, and the sitemap lists the upgrade
+  guide.
+
+- **Groups, format 2 (experimental), found by testing 1.2.0 across versions and on the public relay:**
+  - The owner no longer checks every member again at each epoch: it reuses its positive verdicts within `verifyReuseS`
+    (a new option on `createGroup` / `resumeGroup`; 0 checks all) for entries that did not change, and a new member
+    is checked once. Rotating or removing one member of a 128-member group went from 127 checks (about 2,300 RPC
+    requests) to 0; the first epoch after a verdict expires still checks everyone, at most once a day.
+  - A format-2 `snapshot()` is now `v: 2`, which 1.0.0 to 1.2.0 refuse (`GROUP_INVALID`) instead of resuming it as a
+    format-1 group and splitting it; the `v: 1` format-2 snapshots 1.2.0 wrote still resume.
+  - One identity on two devices is no longer silent: `open()` returns a message signed with our identity that this
+    handle did not seal, with `otherDevice: true`; `group.otherDevice` reports it; an "already seen" error carries
+    `data.mayBeOtherDevice`. One identity is still one device (TAP-27 §8).
+  - "no key for epoch N" carries `data.reason` (`not-yet`, `expired`, `snapshot`) and `data.retryAfterEpoch`; an owner
+    resumed from a snapshot no longer reports "fails authentication" for an epoch whose key it does not hold.
+  - The groups guide says to check `invite.format` before joining (a client before 1.2.0 joins a format-2 group
+    without error and then fails on every frame), how to buffer a message that arrives before its epoch, and the
+    owner's cost per epoch.
+
+ — 2026-09-30
 
 ### Added
 
@@ -73,7 +149,9 @@ interfaces.
   `request`), so the disagreement can be kept as evidence.
 - A cold resolve on the chain's own contracts sends the sentinel's two ERC-1967 slot reads to each node alone, in the
   same round as the batch (never batched, so the `eth_call` batches stay those of 1.1.0): still 4 rounds, 18 requests
-  instead of 12, cached for 300 s. `pin` adds one round.
+  instead of 12 on BNB Smart Chain and X Layer (24 on Base, which has four default nodes), cached for 300 s. `pin` adds
+  one round and 3 requests there (sometimes two rounds on BNB Smart Chain), and two rounds and 8 requests on Base
+  (measured 2026-09-30).
 - A read pinned to a block (an EIP-1898 object or a hex block number, for `eth_call`, `eth_getCode`,
   `eth_getStorageAt`) that a node answers with "header not found", "unknown block" or `-32001` counts as that node not
   answering, not as a disagreement: a node that lags behind the pinned block no longer makes the read fail with
@@ -207,8 +285,9 @@ The full lists, what changed from 0.x and the error-code table are in the upgrad
 
 ### Fixed
 
-- **The public copy keeps git's executable bit.** `scripts/stage-public.mjs` wrote every file 0644, so the CLIs in
-  `sdk/bin` reached the public repository without their executable bit once; they keep 100755 now, with a test.
+- **The public copy keeps git's executable bit.** The script that stages the public copy wrote every file 0644, so
+  the CLIs in `sdk/bin` reached the public repository without their executable bit once; they keep 100755 now, with a
+  test.
 
 ### From 1.0.0-rc.1 to 1.0.0-rc.5
 
@@ -349,7 +428,7 @@ Fixes from the release-candidate review (P2 items, observation period): no inter
   from 93 KB to 27 KB (58 KB to 6 KB brotli): on a throttled Slow 4G load the first paint comes at about 550 ms instead
   of 690 ms, and every face is in by about 680 ms. Once the fonts are in, the page is pixel for pixel what it was.
   `scripts/version-assets.mjs` now stamps fonts too (`url(...woff2?v=<hash>)` in stylesheets and a preload's `href`),
-  and `scripts/publish-site.mjs` inlines the fonts back into the self-contained DeWEB copy, which still makes no
+  and the publishing step inlines the fonts back into the self-contained DeWEB copy, which still makes no
   external request.
 
 ## [1.0.0-rc.1] — 2026-09-29
@@ -861,7 +940,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0-rc.5...v1.0.0

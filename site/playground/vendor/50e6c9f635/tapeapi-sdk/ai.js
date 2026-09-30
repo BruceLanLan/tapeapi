@@ -1,4 +1,4 @@
-// AI usage receipts (docs/PLAN-2026Q4.md, "A1/A2"): the rules both sides share. A signing sidecar in front of an AI API
+// AI usage receipts (the 2026 Q4 plan, "A1/A2"): the rules both sides share. A signing sidecar in front of an AI API
 // (@tapeapi/server/ai-proxy) signs every metered answer as a TAP-21 envelope; the client keeps the bytes it sent and
 // received, hashes them the same way and checks the signature against the service's on-chain signer and the amounts
 // against the manifest's price table. The hashing, the event-stream scanner, the price arithmetic, the receipt codec and

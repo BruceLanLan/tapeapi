@@ -183,6 +183,10 @@ export function blocks(lines, ctx) {
 // ── links ───────────────────────────────────────────────────────────────────────────────────────────────────────
 const PAGE_OF = new Map(Object.entries(SOURCES).flatMap(([page, s]) => Object.entries(s).map(([lang, p]) => [`${lang}:${p}`, page])))
 const pageFile = (page) => (page === 'index' ? 'index.html' : `${page}.html`)
+// Links name a page without .html, as the sitemap and the server do (Cloudflare Pages serves agents.html at /docs/en/agents
+// and redirects the .html form there): one address per page (review ONB2-11). / 链接不带 .html，与 sitemap 和服务器一致：每页一个地址。
+const pageHref = (page) => (page === 'index' ? './' : page)
+const otherHref = (lang, page) => `../${lang}/${page === 'index' ? '' : page}`
 
 function resolver(src, lang) {
   return (href) => {
@@ -191,7 +195,7 @@ function resolver(src, lang) {
     const target = posix.normalize(posix.join(posix.dirname(src), path))
     for (const l of [lang, ...Object.keys(LANGS).filter((x) => x !== lang)]) {
       const page = PAGE_OF.get(`${l}:${target}`)
-      if (page) return `${l === lang ? '' : `../${l}/`}${pageFile(page)}${hash ? `#${hash}` : ''}`
+      if (page) return `${l === lang ? pageHref(page) : otherHref(l, page)}${hash ? `#${hash}` : ''}`
     }
     if (target.startsWith('..')) throw new Error(`${src}: link ${href} leaves the repository`)
     const abs = join(ROOT, target)
@@ -226,7 +230,7 @@ function sections(r) {
     const m = html.match(/^<h([1-3]) id="([^"]+)">/)
     const heading = m ? r.headings.find((h) => h.id === m[2]) : null
     const text = unesc(html.replace(/<a class="anchor"[^>]*>#<\/a>/g, '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim()
-    return { p: pageFile(r.page), t: r.title, h: heading && heading.level > 1 ? heading.text : '', id: heading && heading.level > 1 ? heading.id : '', x: heading ? text.slice(heading.text.length).trim() : text }
+    return { p: pageHref(r.page), t: r.title, h: heading && heading.level > 1 ? heading.text : '', id: heading && heading.level > 1 ? heading.id : '', x: heading ? text.slice(heading.text.length).trim() : text }
   }).filter((s) => s.x || s.h)
 }
 
@@ -239,11 +243,11 @@ function template(r, all) {
   const next = idx < ORDER.length - 1 ? all.get(`${r.lang}:${ORDER[idx + 1]}`) : null
   const nav = GROUPS.map((g) => `<div class="group"><p class="gtitle">${esc(g[r.lang])}</p><ul>${g.pages.map((p) => {
     const t = all.get(`${r.lang}:${p}`).title
-    return `<li><a href="${pageFile(p)}"${p === r.page ? ' aria-current="page"' : ''}>${esc(t)}</a></li>`
+    return `<li><a href="${pageHref(p)}"${p === r.page ? ' aria-current="page"' : ''}>${esc(t)}</a></li>`
   }).join('')}</ul></div>`).join('')
   const toc = r.headings.filter((h) => h.level === 2 || h.level === 3)
     .map((h) => `<li class="l${h.level}"><a href="#${h.id}">${h.html.replace(/<a [^>]*>|<\/a>/g, '')}</a></li>`).join('')
-  const pn = `<nav class="pn">${prev ? `<a class="prev" href="${pageFile(prev.page)}"><span>${L.prev}</span>${esc(prev.title)}</a>` : '<span></span>'}${next ? `<a class="next" href="${pageFile(next.page)}"><span>${L.next}</span>${esc(next.title)}</a>` : '<span></span>'}</nav>`
+  const pn = `<nav class="pn">${prev ? `<a class="prev" href="${pageHref(prev.page)}"><span>${L.prev}</span>${esc(prev.title)}</a>` : '<span></span>'}${next ? `<a class="next" href="${pageHref(next.page)}"><span>${L.next}</span>${esc(next.title)}</a>` : '<span></span>'}</nav>`
   const other = LANGS[r.lang].other
   const siteLinks = SITE_NAV[r.lang].map(([p, t]) => `<a href="${SITE}/${p}/">${t}</a>`).join('')
   const siteGroup = `<div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">${L.home}</a></li>${SITE_NAV[r.lang].map(([p, t]) => `<li><a href="${SITE}/${p}/">${t}</a></li>`).join('')}<li><a href="${REPO}" rel="noopener">GitHub</a></li></ul></div>`
@@ -256,15 +260,15 @@ function template(r, all) {
 <meta name="description" content="${esc(sections(r)[0]?.x.slice(0, 160) || r.title)}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../docs.css">
-<link rel="alternate" hreflang="${LANGS[other].html}" href="../${other}/${pageFile(r.page)}">
+<link rel="alternate" hreflang="${LANGS[other].html}" href="${otherHref(other, r.page)}">
 ${THEME_BOOT}
 </head>
-<body data-page="${r.page}" data-other="../${other}/${pageFile(r.page)}" data-l-copy="${L.copy}" data-l-copied="${L.copied}" data-l-none="${L.noResults}" data-l-light="${L.light}" data-l-dark="${L.dark}" data-l-theme="${L.theme}">
+<body data-page="${r.page}" data-other="${otherHref(other, r.page)}" data-l-copy="${L.copy}" data-l-copied="${L.copied}" data-l-none="${L.noResults}" data-l-light="${L.light}" data-l-dark="${L.dark}" data-l-theme="${L.theme}">
 <header class="hd-bar top"><div class="hd">
   <button class="hd-btn menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">${L.menu}</button>
-  ${BRAND}<a class="hd-sec" href="index.html">${L.docs}</a>
+  ${BRAND}<a class="hd-sec" href="./">${L.docs}</a>
   <div class="search"><input id="q" type="search" placeholder="${L.search}" aria-label="${L.search}" autocomplete="off"><div class="results" id="results" hidden></div></div>
-  <nav class="hd-nav" aria-label="TapeAPI"><a href="index.html" aria-current="true">${L.docs}</a>${siteLinks}<a href="${REPO}" rel="noopener">GitHub</a></nav>
+  <nav class="hd-nav" aria-label="TapeAPI"><a href="./" aria-current="true">${L.docs}</a>${siteLinks}<a href="${REPO}" rel="noopener">GitHub</a></nav>
   <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="${LANGS[other].html}">${LANGS[r.lang].otherLabel}</button><button class="hd-btn" id="theme-btn" type="button">${L.theme}</button></div>
 </div></header>
 <div class="layout">

@@ -386,3 +386,83 @@ console.log('done')
     format1Refuses: 'A format-1 receiver refuses every wire above: the epoch field exceeds 2^32 - 1 (TAP-27 §3.3), and the reference format-1 parser also reads count = 0 at offset 113. Reference code: GROUP_INVALID.',
   })
 }
+
+// ---------- Merkle proofs (TAP-20 §3.2, informative; security 1.2) ----------
+// Two parts. `trie`: cases copied from the Ethereum trie tests (their roots are ethereum/tests' own), with proofs this
+// repository's test-only builder made (sdk/test/helpers/trie.mjs); a checker rebuilds each root from `in` itself and
+// verifies each proof, including keys absent from the trie and embedded nodes. `mainnet`: the eth_getProof answers of a
+// real resolution of 11.1013.tape (sdk/test/fixtures/mainnet-11-1013-proof.json), the values they prove against the
+// block's stateRoot, and single-byte changes that every checker must refuse.
+// 两部分。`trie`：摘自以太坊 trie 测试的用例（根值是 ethereum/tests 自己的），证明由本仓库仅供测试的构建器生成；核验方自行由 `in` 重建根，
+// 并核验每个证明（包括树中不存在的键与内嵌节点）。`mainnet`：11.1013.tape 一次真实解析的 eth_getProof 回答、它们对照区块 stateRoot 证明的值，
+// 以及每个核验方都必须拒绝的单字节改动。
+{
+  const { readFileSync } = await import('node:fs')
+  const { keccak_256 } = await import('@noble/hashes/sha3')
+  const { buildTrie, trieBytes } = await import('../sdk/test/helpers/trie.mjs')
+  const { verifyAccountProof, verifyMptProof, STORAGE } = await import('../sdk/src/proof.js')
+  const abi = await import('../sdk/src/abi.js')
+  const ET = JSON.parse(readFileSync(new URL('../sdk/test/fixtures/ethereum-trie-tests.json', import.meta.url), 'utf8'))
+  const FX = JSON.parse(readFileSync(new URL('../sdk/test/fixtures/mainnet-11-1013-proof.json', import.meta.url), 'utf8'))
+  const hexOf = (b) => (b === null ? null : toHex(b))
+  const trie = []
+  for (const [file, cases] of Object.entries(ET.files)) {
+    const secure = /secure/i.test(file)
+    for (const c of cases) {
+      const pairs = Object.entries(c.in).map(([k, v]) => [trieBytes(k), trieBytes(v)])
+      const t = buildTrie(pairs, { secure })
+      if (t.root !== c.root) throw new Error(`trie ${file}/${c.name}: built ${t.root}, ethereum/tests says ${c.root}`)
+      const keyOf = (k) => (secure ? keccak_256(k) : k)
+      const asks = [...pairs.map(([k]) => k), trieBytes('0xdeadbeefcafe'), trieBytes('do'), trieBytes('dogz')]
+      const seen = new Set()
+      const proofs = []
+      for (const k of asks) {
+        if (seen.has(toHex(k))) continue
+        seen.add(toHex(k))
+        const proof = t.proof(k)
+        const value = verifyMptProof(t.root, keyOf(k), proof, { secure })
+        proofs.push({ key: toHex(k), path: toHex(keyOf(k)), value: hexOf(value), proof })
+      }
+      trie.push({ file, name: c.name, secure, in: c.in, root: c.root, proofs })
+    }
+  }
+  const accounts = [...FX.getProof, ...FX.absent].map((g) => {
+    const r = verifyAccountProof(FX.block.stateRoot, g.address, g.slots, g.answer)
+    return {
+      address: g.address, slots: g.slots, answer: { accountProof: g.answer.accountProof, storageHash: g.answer.storageHash, storageProof: g.answer.storageProof.map((s) => ({ key: s.key, value: s.value, proof: s.proof })) },
+      expect: { exists: r.account.exists, storageRoot: r.account.storageRoot, codeHash: r.account.codeHash, values: Object.fromEntries([...r.values].map(([k, v]) => ['0x' + k.toString(16), '0x' + v.toString(16)])) },
+    }
+  })
+  // First, middle and last byte of every node: a checker must refuse each change (xor 0x01) / 每个节点的首、中、末字节
+  const mutations = []
+  accounts.forEach((a, ai) => {
+    const lists = [['accountProof', a.answer.accountProof], ...a.answer.storageProof.map((s, si) => [`storageProof.${si}`, s.proof])]
+    for (const [list, nodes] of lists) nodes.forEach((n, ni) => { const len = (n.length - 2) / 2; for (const byte of [...new Set([0, len >> 1, len - 1])]) mutations.push({ account: ai, list, node: ni, byte, xor: 1 }) })
+  })
+  write('tap-20-proof.json', {
+    tap: 'TAP-20 §3.2 (informative): Merkle proofs of chain state, EIP-1186 eth_getProof against a stateRoot', note,
+    rules: {
+      rlp: 'canonical only: a single byte below 0x80 is not wrapped, lengths have no leading zeros, the long form starts at 56 bytes, nothing follows the item',
+      trie: 'Yellow Paper appendix D: the root node is always referenced by hash; a child is a 32-byte hash or an embedded node whose RLP is under 32 bytes; hex-prefix flags 0-3 (odd lengths carry a nibble, even ones a zero pad); a proof with nodes left unused is refused; a key shown absent (an empty branch slot, or a leaf or extension whose path diverges) has no value',
+      account: 'state trie key keccak256(address); leaf value RLP([nonce, balance, storageRoot, codeHash]); an absent account has the empty storage root ' + '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
+      storage: 'storage trie (root = the account storageRoot) key keccak256(uint256 slot as 32 bytes); leaf value RLP(the word without leading zeros); absent = 0',
+      layouts: { fileInfoSize: 'low 32 bits of keccak256(keccak256(path) || uint256(keccak256(uint256(container) || uint256(1)) + 2)) + 1', fileInfoSha256: 'the same base + 2', ownerOf: 'keccak256(uint256(tokenId) || uint256(0x80bb2b638cc20bc4d0a60d66940f3ab4a00c1d7b313497ca82fb0b4ab0079300 + 2))', cpuAt: 'length at slot 6, element n at keccak256(uint256(6)) + n', isCPU: 'keccak256(uint256(circuits) || uint256(7))' },
+    },
+    trie,
+    mainnet: {
+      source: FX.source, chainId: FX.chainId, block: FX.block,
+      layoutCheck: { container: FX.container, path: '.well-known/tapeapi.json', tokenId: '11', processor: '1013', fileInfo: Object.fromEntries(Object.entries(STORAGE.fileInfo(FX.container, '.well-known/tapeapi.json')).map(([k, v]) => [k, '0x' + v.toString(16)])), ownerOf: '0x' + STORAGE.ownerOf(11n).toString(16), cpuAt: Object.fromEntries(Object.entries(STORAGE.cpuAt(1013n)).map(([k, v]) => [k, '0x' + v.toString(16)])), isCPU: '0x' + STORAGE.isCPU('0xe02c26c7432A7121168AA9B610DE24eCf9a1a414').toString(16) },
+      // What the nodes answered by eth_call at the same block (the fixture): each proven slot must say the same.
+      // 同一区块上节点 eth_call 的回答（fixture）：每个已证明的槽都必须与之一致。
+      reads: (() => {
+        const { decodeReturn, selector } = abi
+        const call = (fn) => decodeReturn(fn, FX.calls.find((c) => c.data.startsWith(selector(fn))).result)
+        const info = call('fileInfo')
+        return { ownerOf: call('ownerOf').toLowerCase(), cpuAt: call('cpuAt').toLowerCase(), isCPU: call('isCPU'), size: Number(info.size), sha256Hash: info.sha256Hash.toLowerCase() }
+      })(),
+      accounts,
+      mutations,
+      wrongRoot: { stateRoot: '0x' + FX.block.stateRoot.slice(2, 64) + ((parseInt(FX.block.stateRoot.slice(64), 16) ^ 1).toString(16).padStart(2, '0')), expect: 'reject every account' },
+    },
+  })
+}

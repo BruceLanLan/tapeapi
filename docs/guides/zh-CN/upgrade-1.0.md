@@ -117,6 +117,8 @@
 | `RPC_UNAVAILABLE` | 客户端 | 作答节点过少 | 是 |
 | `RPC_STALE` | 客户端 | 1.2 起，开启实验性的 `pin` 选项时：节点共同确认的区块旧于 `maxPinAgeS`，或比本机时钟超前（`data.ageS`） | 是 |
 | `CONTRACT_UNKNOWN` | 客户端 | 1.2 起，开启实验性的 `sentinel: 'strict'` 时：TapeOut 身份合约运行着本 SDK 不认识的实现，即合约已被升级（`data.role`、`data.implementation`） | 否：升级 SDK 或核实这次升级 |
+| `PROOF_INVALID` | 客户端 | 1.3 起，开启实验性的 `proofs`（须同时开 `pin`）时：`fileInfo`、`cpuAt`、`isCPU` 或 `ownerOf` 的默克尔证明已核验通过，但证明出的值与节点的回答不同（`proofs: true` 与 `'strict'` 都拒绝）；或者只在 `'strict'` 下：节点提供的证明对照节点共同确认的区块 stateRoot 全都核验不过（`data.read`、`data.node`、`data.block`、`data.stateRoot`） | 否 |
+| `PROOF_UNAVAILABLE` | 客户端 | 1.3 起，开启实验性的 `proofs: 'strict'` 时：没有节点为所钉区块提供 `eth_getProof`，`quorum` 家运营方的节点没有就 stateRoot 达成一致，或合约运行着 SDK 不知道存储布局的实现（`data.read`、`data.reason`）。`proofs: true` 下同样的情况只是警告，并沿用法定数的回答（只是检测） | 是，或加一个提供证明的节点 |
 | `RPC_ERROR` | 客户端 | 所有节点返回同一个 JSON-RPC 错误（`data.rpcCode`、`data.rpcRevert`） | 回滚：否 |
 | `CANON_INVALID` | 客户端 | JSON 没有规范形式、有重复键或禁用键 | 否 |
 | `ABI_INVALID` | 客户端 | ABI 数据无法解码 | 否 |

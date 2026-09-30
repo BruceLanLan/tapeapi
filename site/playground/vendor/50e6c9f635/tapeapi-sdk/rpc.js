@@ -50,8 +50,19 @@ export async function readJsonBounded(res, limit, { code = 'CANON_INVALID' } = {
 // NodeReal dataseeds, was one operator). Every URL is still asked, and every answer must still agree.
 // 按**运营方**而不是 URL 计票：同一运营方的两个 URL 作答只算一次；不同运营方少于 quorum 的节点组合与 URL 太少一样被拒绝
 // （旧默认的三个 NodeReal dataseed 只是一家）。每个 URL 仍然都问，所有回答仍须一致。
+// A JSON-RPC error that reports an execution revert: geth's code 3, or a message saying so (-32000 "execution reverted").
+// 报告执行回滚的 JSON-RPC 错误：geth 的 code 3，或消息如此说（-32000 "execution reverted"）。
+const revertShaped = (err) => Number(err?.code) === 3 || /revert/i.test(String(err?.message ?? ''))
+
 // -32005 rate limited, -32601 method not found, and the range/limit refusals nodes return as -32000.
 // -32005 限流、-32601 方法不存在，以及节点以 -32000 返回的区间/限额拒绝。
+// Rate limits in any code (FIXED RPC2-1, measured 2026-09-30): Coinbase answers each batch element with -32016 "over rate
+// limit" inside an HTTP 200, dRPC with 15, others with 429 or -32029 / -32429. A node saying it is limited has not
+// answered; a revert, or an answer about gas or an allowance, stays an answer whatever words it carries.
+// 任何代码的限流（FIXED RPC2-1，2026-09-30 实测）：Coinbase 在 HTTP 200 的批量里对每个元素回 -32016 "over rate limit"，dRPC
+// 回 15，其它节点回 429 或 -32029 / -32429。节点说自己被限流就是没有作答；回滚，或关于 gas、allowance 的回答，不论带什么字眼仍是回答。
+const LIMIT_CODES = new Set([-32016, -32029, -32429, 15, 429])
+const LIMIT_WORDS = /rate.?limit|too many requests|throttl|exceeded|quota|capacity/i
 export function isNodeLimit(error) {
   const code = Number(error?.code)
   const msg = String(error?.message ?? '')
@@ -60,13 +71,11 @@ export function isNodeLimit(error) {
   // mentions a revert as a node limit. / 有些客户端的回滚也用 -32000，而回滚是关于链的回答：提到 revert 的一律不算节点限制。
   // ...and so is running out of gas ("gas required exceeds allowance", "exceeds block gas limit") (review L-4)
   // 耗尽 gas 同样是关于链的回答
-  if (code !== -32000 || /revert|gas|allowance/i.test(msg)) return false
+  if (revertShaped(error) || /gas|allowance/i.test(msg)) return false
+  if (LIMIT_CODES.has(code) || LIMIT_WORDS.test(msg)) return true
+  if (code !== -32000) return false
   return /limit|range|too many|too large|more than|exceed|not supported|unsupported|timeout|too heavy|response size/i.test(msg)
 }
-
-// A JSON-RPC error that reports an execution revert: geth's code 3, or a message saying so (-32000 "execution reverted").
-// 报告执行回滚的 JSON-RPC 错误：geth 的 code 3，或消息如此说（-32000 "execution reverted"）。
-const revertShaped = (err) => Number(err?.code) === 3 || /revert/i.test(String(err?.message ?? ''))
 
 // A state read pinned to one block (security 1.1): eth_call, eth_getCode or eth_getStorageAt whose block parameter is an
 // EIP-1898 object or a hex block number, never a tag. eth_getLogs is not one (its filter may carry a blockHash too).
@@ -78,11 +87,13 @@ const pinnedRead = (method, params) => {
   return (typeof b === 'string' && /^0x[0-9a-fA-F]+$/.test(b)) || (!!b && typeof b === 'object' && ('blockHash' in b || 'blockNumber' in b))
 }
 // A node saying it does not have that block (it lags behind the pinned block): -32001 "resource not found" (EIP-1898),
-// or a message naming a missing block/header, and never a revert. "not currently canonical" is not this: it is what the
-// node says about the chain, and stays an answer.
+// or a message naming a missing block/header, and never a revert. "not canonical" / "not currently canonical" is not
+// this: it is what the node says about the chain, and stays an answer. Only those words are excluded: publicnode and
+// Coinbase say "block not found: canonical hash 0x…" (measured 2026-09-30), which is a missing block (FIXED RPC2-2).
 // 节点表示它没有该区块（落后于所钉区块）：-32001 "resource not found"（EIP-1898），或消息说区块/区块头不存在，且绝不是回滚。
-// "not currently canonical" 不属此类：那是节点对链的陈述，仍算作答。
-const blockMissing = (err) => !revertShaped(err) && !/canonical/i.test(String(err?.message ?? '')) &&
+// "not canonical" / "not currently canonical" 不属此类：那是节点对链的陈述，仍算作答。只排除这两种措辞：publicnode 与 Coinbase
+// 答 "block not found: canonical hash 0x…"（2026-09-30 实测），那是没有该块（FIXED RPC2-2）。
+const blockMissing = (err) => !revertShaped(err) && !/not (?:currently )?canonical/i.test(String(err?.message ?? '')) &&
   (Number(err?.code) === -32001 || /header.*not found|block.*not found|unknown block|not found.*block/i.test(String(err?.message ?? '')))
 
 // Node sets already warned about, once per process (arch A5) / 已警告过的节点集合，每个进程一次
@@ -91,7 +102,23 @@ const warnedSets = new Set()
 // .localhost). / 可解析主机上的 https URL：不是纯 http，也不是保留名（RFC 6761）。
 const deployable = (u) => { const m = /^https:\/\/(?:[^/?#@]*@)?([^/?#:]+)/i.exec(u); return !!m && !/(?:^|\.)(?:invalid|example|test|localhost)$/i.test(m[1]) }
 
-export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl, allowSingleNode = false, bodyLimit = RPC_BODY_LIMIT, disagreeRetryMs = 300, maxHeadSpread = 64, quiet = false, warn } = {}) {
+// The connection broke before any answer (FIXED RPC2-4): a reset, "socket hang up", a body "terminated", a network
+// TypeError. Never a timeout or an abort, never what a node answered (an HTTP error, a refusal, a body too large or not JSON).
+// 连接在任何回答之前断开（FIXED RPC2-4）：重置、"socket hang up"、响应体 "terminated"、网络 TypeError。绝不是超时或中止，
+// 也绝不是节点的回答（HTTP 错误、拒绝、过大或不是 JSON 的响应体）。
+const BROKEN_CODES = new Set(['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET'])
+function brokenConnection(e) {
+  if (!e || typeof e !== 'object' || e instanceof TapeAPIError || e.refusal || e.timedOut) return false
+  const causes = [e, e.cause, e.cause?.cause].filter((x) => x && typeof x === 'object')
+  const words = causes.map((x) => `${x.name ?? ''} ${x.code ?? ''} ${x.message ?? ''}`).join(' ')
+  if (/abort|timeout|timed ?out/i.test(words)) return false
+  if (causes.some((x) => BROKEN_CODES.has(String(x.code ?? '')))) return true
+  if (/ECONNRESET|EPIPE|socket hang up|other side closed|\bterminated\b/i.test(words)) return true
+  // A network TypeError from fetch: Node, Chrome, Firefox, Safari / fetch 抛出的网络 TypeError：Node、Chrome、Firefox、Safari
+  return e instanceof TypeError && /fetch failed|failed to fetch|networkerror|load failed/i.test(String(e.message))
+}
+
+export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl, allowSingleNode = false, bodyLimit = RPC_BODY_LIMIT, disagreeRetryMs = 300, maxHeadSpread = 64, quiet = false, warn, transportRetryMs = 250 } = {}) {
   if (!Array.isArray(urls) || urls.length === 0) throw new TapeAPIError('INVALID_ARGUMENT', 'no rpc urls')
   urls = [...new Set(urls.map(String))]
   if (!Number.isInteger(quorum) || quorum < 1) throw new TapeAPIError('INVALID_ARGUMENT', 'quorum must be a positive integer')
@@ -150,7 +177,19 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     return { kind: 'ok', value: j.result }
   }
 
+  // A plain request whose connection broke is asked once more after transportRetryMs (FIXED RPC2-4: X Layer has two
+  // operators, so one reset was RPC_UNAVAILABLE). A timeout is not asked again. Batches keep P101-3: their calls are
+  // asked again alone, through here. transportRetryMs <= 0 turns it off.
+  // 连接断开的单个请求过 transportRetryMs 再问一次（FIXED RPC2-4：X Layer 只有两家运营方，一次重置就是 RPC_UNAVAILABLE）。
+  // 超时不重问。批量仍按 P101-3：其中的调用逐个重问，走的就是这里。transportRetryMs <= 0 关闭重试。
   async function one(url, method, params) {
+    try { return await once(url, method, params) } catch (e) {
+      if (!(transportRetryMs > 0) || !brokenConnection(e)) throw e
+      await new Promise((r) => setTimeout(r, transportRetryMs))
+      return once(url, method, params)
+    }
+  }
+  async function once(url, method, params) {
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), timeoutMs)
     try {
@@ -175,6 +214,10 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
         throw new Error(`http ${res.status}`)
       }
       return answerOf(await readJsonBounded(res, bodyLimit))
+    } catch (e) {
+      // our timer fired: a timeout / 自己的计时器触发：超时
+      if (ac.signal.aborted && e && typeof e === 'object') { try { e.timedOut = true } catch { /* frozen / 不可写 */ } }
+      throw e
     } finally { clearTimeout(timer) }
   }
 
@@ -313,7 +356,7 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
       // (a log object may or may not carry blockTimestamp), and decoration is not disagreement.
       // `project` 只保留关于链的事实字段：各节点对某些回答的附加字段不同（日志对象可能带或不带 blockTimestamp），附加字段不算分歧。
       if (s.value.kind === 'ok' && project) {
-        try { s.value.value = project(s.value.value) } catch (e) { failures.push(`${describeUrl(urls[i], i)}: malformed answer (${e.message})`); return }
+        try { s.value.value = project(s.value.value, i) } catch (e) { failures.push(`${describeUrl(urls[i], i)}: malformed answer (${e.message})`); return }
       }
       // ...and by whether it is revert-shaped (code 3, or a message saying "revert"): "execution reverted" on one node and
       // "header not found" on another share -32000, yet only one is an answer about the chain (review R3-4).
@@ -389,6 +432,11 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
    * 作答者必须报告同一个区块（第二轮，与任何读取一样须全体一致）。同一块号出现两个不同哈希即 RPC_DISAGREE。新鲜度由调用方检查。
    * 之后钉在该块上的读取（EIP-1898 blockHash 或十六进制块号），落后节点答 "header not found" / "unknown block" / -32001 的，
    * 按该节点未作答处理。
+   * `{ stateRoot: true }` (@experimental, security 1.2 proofs): the block's stateRoot is returned when nodes of `need`
+   * operators report it for the block (undefined otherwise); a node that leaves it out is not counted, and one that
+   * reports another is RPC_DISAGREE (agreedRoot below). Without it, confirmedBlock is exactly 1.2.0.
+   * `{ stateRoot: true }`（@experimental，安全加固 1.2 证明模式）：有 `need` 家运营方的节点对该块报出 stateRoot 时随结果返回（否则为
+   * undefined）；省略的节点不计入，报出另一个的即 RPC_DISAGREE（见下面的 agreedRoot）。不传时 confirmedBlock 与 1.2.0 完全相同。
    */
   const BLOCK_TAGS = new Set(['finalized', 'safe', 'latest'])
   const blockFacts = (b) => {
@@ -397,21 +445,34 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     if (typeof b.hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(b.hash) || !Number.isSafeInteger(number) || !Number.isSafeInteger(timestamp)) throw new Error('malformed block')
     return { number, hash: b.hash.toLowerCase(), timestamp }
   }
-  async function confirmedBlock(tag = 'finalized') {
+  // ...and its stateRoot, for proofs (a node that gives none, or a malformed one, gives none) / 再加 stateRoot，供证明使用
+  const blockFactsWithRoot = (b) => {
+    const f = blockFacts(b)
+    if (typeof b.stateRoot === 'string' && /^0x[0-9a-fA-F]{64}$/.test(b.stateRoot)) f.stateRoot = b.stateRoot.toLowerCase()
+    return f
+  }
+  async function confirmedBlock(tag = 'finalized', { stateRoot: withRoot = false } = {}) {
     if (!BLOCK_TAGS.has(tag)) throw new TapeAPIError('INVALID_ARGUMENT', `confirmedBlock takes 'finalized', 'safe' or 'latest', not ${String(tag).slice(0, 32)}`)
+    const facts = withRoot ? blockFactsWithRoot : blockFacts
     const settled = await Promise.allSettled(urls.map((u) => one(u, 'eth_getBlockByNumber', [tag, false])))
     const got = []; const failures = []
     settled.forEach((s, i) => {
-      if (s.status === 'fulfilled' && s.value.kind === 'ok') { try { got.push({ i, ...blockFacts(s.value.value) }); return } catch (e) { failures.push(`${describeUrl(urls[i], i)}: ${e.message}`); return } }
+      if (s.status === 'fulfilled' && s.value.kind === 'ok') { try { got.push({ i, ...facts(s.value.value) }); return } catch (e) { failures.push(`${describeUrl(urls[i], i)}: ${e.message}`); return } }
       failures.push(`${describeUrl(urls[i], i)}: ${s.status === 'rejected' ? (s.reason?.message || s.reason) : `error ${s.value.value.code}`}`)
     })
     const answered = operatorsOf(got.map((g) => g.i))
     if (answered < need) throw new TapeAPIError('RPC_UNAVAILABLE', `eth_getBlockByNumber(${tag}): only ${answered}/${need} operators answered (${failures.join('; ')})`)
-    const hashAt = new Map()
+    const hashAt = new Map(), rootAt = new Map()
     for (const g of got) {
       const h = hashAt.get(g.number)
       if (h && h !== g.hash) throw new TapeAPIError('RPC_DISAGREE', `eth_getBlockByNumber(${tag}): nodes report two different hashes for block ${g.number}`)
       hashAt.set(g.number, g.hash)
+      // One hash, two stateRoots: one node misreports the header (only asked for with { stateRoot: true }). A node that
+      // gives none is not compared. / 同一哈希、两个 stateRoot：有节点谎报区块头（只在 { stateRoot: true } 时检查）；没给的不比较。
+      if (withRoot && g.stateRoot) {
+        if (rootAt.has(g.number) && rootAt.get(g.number) !== g.stateRoot) throw new TapeAPIError('RPC_DISAGREE', `eth_getBlockByNumber(${tag}): nodes report two different stateRoots for block ${g.number}`)
+        rootAt.set(g.number, g.stateRoot)
+      }
     }
     const best = new Map()   // operator -> its highest answer / 每家运营方最高的回答
     for (const g of got) { const op = opOf[g.i]; if (!best.has(op) || best.get(op).number < g.number) best.set(op, g) }
@@ -421,13 +482,35 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     if (top.every((g) => g.number === target)) {
       const g = top[0]
       if (top.some((x) => x.timestamp !== g.timestamp)) throw new TapeAPIError('RPC_DISAGREE', `eth_getBlockByNumber(${tag}): nodes report two timestamps for block ${target}`)
-      return { number: target, hash: g.hash, timestamp: g.timestamp, tag, operators: need }
+      return { number: target, hash: g.hash, timestamp: g.timestamp, tag, operators: need, ...(withRoot ? { stateRoot: agreedRoot(got, target, g.hash, tag) } : {}) }
     }
     // A node that has not reached the block answers null: that is no answer, not a disagreement.
     // 尚未到达该块的节点答 null：那是没有作答，不是分歧。
-    const b = await call('eth_getBlockByNumber', ['0x' + target.toString(16), false], { project: blockFacts })
+    if (!withRoot) {
+      const b = await call('eth_getBlockByNumber', ['0x' + target.toString(16), false], { project: facts })
+      if (b.number !== target) throw new TapeAPIError('RPC_DISAGREE', `eth_getBlockByNumber: asked for block ${target}, nodes answered block ${b.number}`)
+      return { number: b.number, hash: b.hash, timestamp: b.timestamp, tag, operators: need }
+    }
+    // With the stateRoot (FIXED PROOFR-5): the block itself goes through the same unanimous round as without it (number,
+    // hash, timestamp; a node that leaves the stateRoot out is not a different answer), and each node's stateRoot is kept
+    // on the side and settled by agreedRoot. / 带 stateRoot 时（FIXED PROOFR-5）：区块本身照旧过同样的全体一致（块号、哈希、
+    // 时间戳；省略 stateRoot 的节点不算另一种回答），各节点的 stateRoot 另行记下，由 agreedRoot 裁定。
+    const seen = []
+    const b = await call('eth_getBlockByNumber', ['0x' + target.toString(16), false], { project: (x, i) => { const f = blockFactsWithRoot(x); seen.push({ i, ...f }); return blockFacts(x) } })
     if (b.number !== target) throw new TapeAPIError('RPC_DISAGREE', `eth_getBlockByNumber: asked for block ${target}, nodes answered block ${b.number}`)
-    return { number: b.number, hash: b.hash, timestamp: b.timestamp, tag, operators: need }
+    return { number: b.number, hash: b.hash, timestamp: b.timestamp, tag, operators: need, stateRoot: agreedRoot(seen, target, b.hash, `0x${target.toString(16)}`) }
+  }
+  // The stateRoot of block `number` (hash `hash`): the nodes that report one for that block must all report the same
+  // (another one is RPC_DISAGREE: a node misreports the header), and it counts only when nodes of `need` operators report
+  // it; a node that leaves it out (or gives a malformed one) is not counted either way. undefined when too few gave it
+  // (FIXED PROOFR-5: one confirming node without a stateRoot made every proof PROOF_UNAVAILABLE on the first path, and
+  // RPC_DISAGREE on the second). / 块 `number`（哈希 `hash`）的 stateRoot：对该块报了 stateRoot 的节点必须全部相同（不同即
+  // RPC_DISAGREE：有节点谎报区块头），且须有 `need` 家运营方的节点报出才算数；省略（或格式错误）的节点两边都不计。报出的太少时
+  // 为 undefined（FIXED PROOFR-5：原先一个确认节点不给 stateRoot，第一条路径让全部证明 PROOF_UNAVAILABLE，第二条路径则 RPC_DISAGREE）。
+  function agreedRoot(answers, number, hash, what) {
+    const withIt = answers.filter((g) => g.number === number && g.hash === hash && g.stateRoot)
+    if (new Set(withIt.map((g) => g.stateRoot)).size > 1) throw new TapeAPIError('RPC_DISAGREE', `eth_getBlockByNumber(${what}): nodes report two different stateRoots for block ${number}`)
+    return withIt.length && operatorsOf(withIt.map((g) => g.i)) >= need ? withIt[0].stateRoot : undefined
   }
 
   // `block`: a tag, a hex number, or an EIP-1898 object ({ blockHash, requireCanonical } or { blockNumber })
@@ -442,7 +525,7 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
   // `o.bodyLimit` raises the answer size for one kind of read (a whole block's receipts, TAP-26 §3.7) / 为某类读取放宽回答大小
   const single = (url, o = {}) => {
     if (!urls.includes(url)) throw new TapeAPIError('INVALID_ARGUMENT', `${describeUrl(url, 0)} is not one of this client's nodes`)
-    return createRpc({ urls: [url], quorum: 1, timeoutMs, fetch: fetchImpl, bodyLimit: o.bodyLimit ?? bodyLimit, disagreeRetryMs, maxHeadSpread })
+    return createRpc({ urls: [url], quorum: 1, timeoutMs, fetch: fetchImpl, bodyLimit: o.bodyLimit ?? bodyLimit, disagreeRetryMs, maxHeadSpread, transportRetryMs })
   }
   // `operators`: the distinct operators behind `urls`, in first-seen order / `urls` 背后的不同运营方
   return { call, ethCall, blockNumber, confirmedBlock, chainId, urls, operators, quorum: need, degraded, single, bodyLimit }

@@ -4,8 +4,8 @@
 // Everything a manifest, a node or a provider says is untrusted text: it reaches the page through textContent only.
 // “我的服务”面板：只读查看自己运行的 TapeAPI 服务。每一项用真实 SDK（调试台 vendor/ 里的同一份）解析，再从浏览器
 // 直接请求它的健康检查。本页只向钱包发 eth_requestAccounts 取地址。清单、节点、提供者给出的一切只经 textContent 进入页面。
-import { createTapeAPI, TapeAPIError, abi, rpcUrlsFor, CHAINS } from '../playground/vendor/167d3a095a/tapeapi-sdk/index.js'
-import { parseInput, classifyExpiry, healthUrl, sameAddress, loadList, saveList, addTo, removeFrom, PUBLIC_EXAMPLES, STORAGE_KEY, HEALTH_PATH } from './lib.js?v=e2ba4c1347'
+import { createTapeAPI, TapeAPIError, abi, rpcUrlsFor, CHAINS } from '../playground/vendor/50e6c9f635/tapeapi-sdk/index.js'
+import { parseInput, classifyExpiry, healthUrl, sameAddress, loadList, saveList, addTo, removeFrom, PUBLIC_EXAMPLES, STORAGE_KEY, HEALTH_PATH } from './lib.js?v=efca0477bf'
 
 // The SDK's default nodes: three distinct operators (NodeReal, Alchemy, 48 Club); the SDK counts agreement by operator.
 // SDK 的默认节点：三家不同运营方；SDK 按运营方计票。
@@ -445,7 +445,7 @@ function applyLang() {
   for (const n of document.querySelectorAll('[data-i18n]')) n.innerHTML = t(n.getAttribute('data-i18n'))   // our own strings only / 只有本文件的字符串
   $('lang-btn').textContent = t('other')
   $('lang-btn').setAttribute('lang', lang === 'zh' ? 'en' : 'zh-CN')
-  $('docs-link').href = `../docs/${lang}/provide.html`
+  $('docs-link').href = `../docs/${lang}/provide`
   document.title = lang === 'zh' ? 'TapeAPI 我的服务' : 'TapeAPI · My services'
   themeLabel()
   renderMsg($('wallet-status'), walletMsg)

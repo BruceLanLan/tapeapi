@@ -152,6 +152,12 @@ sizes and timing). The public relay at `https://relay.tapeapi.fun`, identity `12
 `0x9cD838625251576c199B2DeF7A17e50266843185`, offers `relaySend`, `relayHandshake` and `relayRecv`, all at zero
 cost per message.
 
+**It is for testing and small-scale use.** It runs on Cloudflare's free tier, which allows about 100,000 requests a day
+across all users; a client that long-polls all day uses about 4,300 of them, so a few dozen always-online clients use it
+up. An app with always-online users or groups of more than about 64 members should run its own relay
+([`examples/relay-service/`](../../examples/relay-service/) or [`examples/cloudflare-worker/`](../../examples/cloudflare-worker/)),
+at its own cost; TapeAPI does not pay for it.
+
 Name it in an invite, then carry the channel over it with `channel.relayTransport`:
 
 ```js

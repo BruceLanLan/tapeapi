@@ -5,7 +5,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { runTrial } from './trial.mjs'
+import { runTrial, missingDependencies } from './trial.mjs'
 
 test('runTrial: every step passes, and the doctor ran its service checks for real', async () => {
   const lines = []
@@ -27,4 +27,17 @@ test('the command exits 0 and prints both languages by default', async () => {
   const code = await new Promise((ok) => child.on('exit', ok))
   assert.equal(code, 0, out)
   assert.match(out, /The trial passed\./); assert.match(out, /试跑通过。/)
+})
+
+test('FIXED ONB2-2: without npm ci the trial says to run it at the repository root, not ERR_MODULE_NOT_FOUND', async () => {
+  const e = Object.assign(new Error("Cannot find package '@tapeapi/sdk' imported from trial.mjs"), { code: 'ERR_MODULE_NOT_FOUND' })
+  const m = missingDependencies(e)
+  assert.match(m, /npm ci --no-audit --no-fund/); assert.match(m, /repository root/); assert.match(m, /仓库根目录/)
+  assert.ok(!m.includes('ERR_MODULE_NOT_FOUND'))
+  assert.equal(missingDependencies(new Error('something else')), null)
+  // the imports that can fail are inside the guard: nothing is imported statically but Node's own modules
+  // 可能失败的导入都在保护之内：静态导入的只有 Node 自带模块
+  const { readFileSync } = await import('node:fs')
+  const src = readFileSync(fileURLToPath(new URL('./trial.mjs', import.meta.url)), 'utf8')
+  for (const [, from] of src.matchAll(/^import .* from '([^']+)'/gm)) assert.match(from, /^node:/, from)
 })

@@ -1,4 +1,4 @@
-// A signing sidecar in front of an AI API (docs/PLAN-2026Q4.md A3). The provider keeps its upstream, its keys and its
+// A signing sidecar in front of an AI API (the 2026 Q4 plan, A3). The provider keeps its upstream, its keys and its
 // billing; the sidecar passes /v1/* through byte for byte and signs every answer a format adapter recognises (sdk
 // ai.FORMATS: OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, OpenAI Embeddings) as an AI usage receipt
 // (A2): a TAP-21 envelope by the service's delegated key over { path, requestSha256 } and { model, usage,

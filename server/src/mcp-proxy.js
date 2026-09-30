@@ -204,7 +204,7 @@ function createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall }) {
   return { listTools, callTool: (name, args) => request('tools/call', { name, arguments: args }), label: url ? url.origin + url.pathname : 'in-process' }
 }
 
-// An upstream tool -> a TAP-20 method (docs/PLAN-MCP.md, "阶段 2 接口约定"): params from inputSchema, each property's
+// An upstream tool -> a TAP-20 method (the MCP plan, "阶段 2 接口约定"): params from inputSchema, each property's
 // `type` name, `?` when not required; fixed returns; free. The result passes the holder console's methodsProblems
 // (site/console/lib.js): params are informative (the MCP inputSchema stays authoritative), so a property whose name is
 // not a plain field is left out of them, as is any beyond the 32nd; the description is one line of at most 256 code points.

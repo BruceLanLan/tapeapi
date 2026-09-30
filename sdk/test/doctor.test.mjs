@@ -9,8 +9,10 @@ import assert from 'node:assert/strict'
 import http from 'node:http'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
 import { createTapeAPI } from '../src/index.js'
-import { diagnose, formatReport, DOCTOR_CHECKS, INVALID_KEY } from '../src/doctor.js'
+import { diagnose, formatReport, DOCTOR_CHECKS, INVALID_KEY, doctorCommands, releaseTgz } from '../src/doctor.js'
+import { howRun } from '../bin/tapeapi-doctor.js'
 import { privateKeyToAddress, signDigest, delegationDigest } from '../src/sig.js'
 import { createFakeChain, ADDR } from './helpers/fake-chain.mjs'
 import { createAIProxy } from '../../server/src/ai-proxy.js'
@@ -18,6 +20,7 @@ import { createFakeUpstream } from '../../examples/ai-proxy/fake-upstream.mjs'
 import { startSidecar } from '../../examples/new-api-sidecar/server.mjs'
 
 const BIN = fileURLToPath(new URL('../bin/tapeapi-doctor.js', import.meta.url))
+const ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const RPC = ['http://rpc1', 'http://rpc2']
 const NAME = '42.7.tape'   // processor 7 is ADDR.circuits on the fake chain / 假链上 7 号处理器
 const HOLDER_KEY = '0x' + '11'.repeat(32), SIGNER_KEY = '0x' + '22'.repeat(32), OTHER_KEY = '0x' + '77'.repeat(32)
@@ -289,9 +292,9 @@ test('URL mode: a freshly started new-api sidecar in setup mode is reported as s
 })
 
 // ---- the command / 命令行 ----
-function cli(args, env = {}) {
+function cli(args, env = {}, cwd = ROOT) {
   return new Promise((ok) => {
-    const child = spawn(process.execPath, [BIN, ...args], { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(process.execPath, [BIN, ...args], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] })
     let out = '', err = ''
     child.stdout.on('data', (d) => { out += d }); child.stderr.on('data', (d) => { err += d })
     child.on('exit', (code) => ok({ code, out, err }))
@@ -380,15 +383,18 @@ function divertedFetch(man, calls) {
 
 test('FIXED DOCR-2: the key goes only to the host being checked, over https: never to another host a manifest names, never over http without --allow-http', async () => {
   reset()
-  // URL mode: the served manifest points its ai endpoints at another host / 地址模式：清单把 ai 端点指向另一主机
+  // URL mode: the served manifest points its ai endpoints at another host. Since ONB2-5 every probe goes to the address
+  // given, so that host receives nothing at all, the key only the host being checked; the endpoints check warns.
+  // 地址模式：清单把 ai 端点指向另一主机。ONB2-5 起所有探测都打给出的地址：那个主机什么都收不到，密钥只发往被检查的主机；端点检查警告。
   const man = JSON.parse(JSON.stringify(proxy.manifest()))
   man.dev = true
   man.ai = { ...man.ai, endpoints: man.ai.endpoints.map((e) => ({ ...e, baseUrl: e.baseUrl.replace(sidecarUrl, 'https://attacker.example') })) }
   const calls = []
   const rep = await diagnose('http://127.0.0.1:8080', { offline: true, allowHttp: true, fetch: divertedFetch(man, calls), key: KEY })
-  assert.deepEqual(calls.filter((c) => c.auth?.includes(KEY)), [], 'no request carries the key')
-  assert.ok(calls.some((c) => c.url.startsWith('https://attacker.example') && c.method === 'POST'), 'the invalid-key probe still runs')
-  assert.match(byId(rep, 'receipt').detail, /\(your key\): not sent: attacker\.example is not the host being checked \(127\.0\.0\.1:8080\)/)
+  assert.deepEqual(calls.filter((c) => c.url.includes('attacker.example')), [], 'no request at all goes to the host the manifest names')
+  assert.ok(calls.filter((c) => c.auth?.includes(KEY)).every((c) => c.url.startsWith('http://127.0.0.1:8080/')), 'the key goes to the host being checked only')
+  assert.ok(calls.some((c) => c.url === 'http://127.0.0.1:8080/v1/chat/completions' && c.method === 'POST'), 'the invalid-key probe runs against the address given')
+  assert.match(byId(rep, 'endpoints').detail, /the manifest publishes https:\/\/attacker\.example, not the address you gave \(http:\/\/127\.0\.0\.1:8080\)/)
   // name mode: endpoints.live (signed) on one host, ai endpoints on another / 名字模式：已签名的 endpoints.live 在一处，ai 端点在另一处
   const onChain = JSON.parse(JSON.stringify(proxy.manifest()))
   onChain.ai = man.ai
@@ -428,4 +434,208 @@ test('FIXED DOCR-4: the help and the guides say what the probes can cost: a few 
   const en = readFileSync(new URL('../../docs/guides/ai-providers.md', import.meta.url), 'utf8')
   const zh = readFileSync(new URL('../../docs/guides/zh-CN/ai-providers.md', import.meta.url), 'utf8')
   assert.match(en, /accepts any key, it answers instead/); assert.match(zh, /接受任意密钥/)
+})
+
+// ---- the onboarding review of 1.2.0: FIXED ONB2-<n> / 1.2.0 接入走查 ----
+// A stub web: each host answers as the case needs; every request is recorded. / 模拟网络：每个主机按用例应答，记录每个请求。
+function stubWeb(routes, calls = []) {
+  return async (url, init = {}) => {
+    url = String(url); calls.push({ url, method: init.method ?? 'GET' })
+    for (const [re, answer] of routes) if (re.test(url)) return typeof answer === 'function' ? answer(url, init) : answer.clone()
+    return new Response('not found', { status: 404, headers: { 'content-type': 'text/plain' } })
+  }
+}
+const html = (status = 200) => new Response('<html><body><h1>Welcome to nginx!</h1></body></html>', { status, headers: { 'content-type': 'text/html' } })
+
+test('FIXED ONB2-1: the commands the doctor names are the way it was run: a checkout (relative to the working directory), npx from the release package, or an installed package', async () => {
+  const bin = fileURLToPath(new URL('../bin/tapeapi-doctor.js', import.meta.url))
+  assert.deepEqual(howRun(bin, ROOT), { run: 'checkout', bin: 'sdk/bin/tapeapi-doctor.js', trial: 'examples/relay-trial/trial.mjs' })
+  const sub = howRun(bin, `${ROOT}examples/new-api-sidecar`)
+  assert.equal(doctorCommands(sub).doctor('x.tape'), 'node ../../sdk/bin/tapeapi-doctor.js x.tape', 'ONB2-3: from examples/new-api-sidecar the path still works')
+  // an installed package's path, built so that the exports-map scan (packages.test.mjs) does not read it as an import
+  const pkgBin = (prefix) => `${prefix}/node_modules/${'@tapeapi'}/sdk/bin/tapeapi-doctor.js`
+  const npx = howRun(pkgBin('/home/u/.npm/_npx/0a1b'), '/home/u', '1.2.0')
+  assert.deepEqual(npx, { run: 'npx', version: '1.2.0' })
+  assert.equal(doctorCommands(npx).doctor('42.1013.tape'), `npx -y --package=${releaseTgz('1.2.0')} tapeapi-doctor 42.1013.tape`)
+  assert.equal(releaseTgz('1.2.0'), 'https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz')
+  const inst = doctorCommands(howRun(pkgBin('/srv/app'), '/srv/app', '1.2.0'))
+  assert.equal(inst.doctor('42.1013.tape'), 'npx tapeapi-doctor 42.1013.tape')
+  assert.match(inst.trial, /git clone .* && npm ci .* && node examples\/relay-trial\/trial\.mjs/, 'a package has no trial: the hint says how to get one')
+  // diagnose() uses the commands it is given, in the next command and in the fix / diagnose() 在下一条命令与修复提示里用给定的命令
+  const { api } = world({ open: false })
+  const c = byId(await run(api, NAME, { commands: doctorCommands(npx) }), 'container')
+  assert.equal(c.next, `npx -y --package=${releaseTgz('1.2.0')} tapeapi-doctor ${NAME}`)
+  assert.ok(!/node sdk\/bin/.test(JSON.stringify(c)))
+  // the command itself, run from a subdirectory of the checkout / 在检出的子目录里运行命令本身
+  const h = await cli(['--help'], {}, `${ROOT}examples/new-api-sidecar`)
+  assert.match(h.out, /Usage: node \.\.\/\.\.\/sdk\/bin\/tapeapi-doctor\.js \[options\] <target>/)
+  assert.match(h.out, /node \.\.\/relay-trial\/trial\.mjs/)
+})
+
+test('FIXED ONB2-4: an address that is not the sidecar (a welcome page, broken JSON, 404 everywhere) says: check the reverse proxy and the port', async () => {
+  const cases = [
+    ['a web server welcome page', [[/./, html()]], /an HTML page/],
+    ['broken JSON', [[/tapeapi\.json$/, new Response('{"name":"x"', { headers: { 'content-type': 'application/json' } })]], /invalid JSON/],
+    ['404 everywhere', [], /HTTP 404, and no TapeAPI sidecar answers/],
+  ]
+  for (const [what, routes, detail] of cases) {
+    const rep = await diagnose('https://api.example.com', { offline: true, fetch: stubWeb(routes) })
+    const c = byId(rep, 'manifest-format')
+    assert.equal(c.status, 'fail', what)
+    assert.match(c.detail, detail, what)
+    assert.match(c.fix.en, /does not reach a TapeAPI sidecar\. Check your reverse proxy and its port/, what)
+    assert.match(c.fix.zh, /检查反向代理与端口/, what)
+    assert.ok(!/models\.json|variables the sidecar reports/.test(c.fix.en), `${what}: not the sidecar-variables hint`)
+    assert.equal(c.next, 'curl -s https://api.example.com/tapeapi/v1/health', what)
+  }
+  // The sidecar answers its health check but the manifest path is not forwarded / 旁路回答了 health，但清单路径没有被转发
+  const part = await diagnose('https://api.example.com', { offline: true, fetch: stubWeb([[/\/tapeapi\/v1\/health$/, new Response(JSON.stringify({ ok: true, signer }), { headers: { 'content-type': 'application/json' } })]]) })
+  assert.match(byId(part, 'manifest-format').detail, /the reverse proxy does not forward \/\.well-known\/tapeapi\.json/)
+  assert.match(byId(part, 'manifest-format').fix.en, /Forward every path/)
+})
+
+test('FIXED ONB2-4: a self-signed certificate is said in words (never DEPTH_ZERO_SELF_SIGNED_CERT), and the next command is the doctor again, not the trial', async () => {
+  const tls = (code) => async () => { const e = new TypeError('fetch failed'); e.cause = Object.assign(new Error(code === 'DEPTH_ZERO_SELF_SIGNED_CERT' ? 'self-signed certificate' : code), { code }); throw e }
+  for (const [code, words, zh] of [['DEPTH_ZERO_SELF_SIGNED_CERT', /self-signed/, /自签名/], ['CERT_HAS_EXPIRED', /expired/, /过期/], ['ERR_TLS_CERT_ALTNAME_INVALID', /names another host/, /域名与这个地址不符/], ['UNABLE_TO_VERIFY_LEAF_SIGNATURE', /intermediate/, /中间证书/]]) {
+    const rep = await diagnose('https://api.example.com', { offline: true, fetch: tls(code) })
+    const c = byId(rep, 'manifest-format')
+    assert.equal(c.status, 'fail'); assert.equal(rep.exitCode, 1)
+    assert.match(c.detail, words); assert.match(c.detailZh, zh)
+    assert.ok(!formatReport(rep).includes(code), `${code} is not shown`)
+    assert.equal(c.next, 'node sdk/bin/tapeapi-doctor.js https://api.example.com')
+    assert.equal(c.hint, undefined, 'no "run the local trial" note for a TLS problem')
+  }
+})
+
+test('FIXED ONB2-4: an opened container with no manifest: the steps in order (sidecar, service key, delegation, publish), not straight to step 5', async () => {
+  const { api } = world({ file: false })
+  const c = failsExactlyAt(await run(api), 'manifest-file')
+  const at = (re) => c.fix.en.search(re)
+  assert.ok(at(/run the sidecar/) >= 0 && at(/run the sidecar/) < at(/service key/) && at(/service key/) < at(/delegation/) && at(/delegation/) < at(/publish the manifest \(step 5/), c.fix.en)
+  assert.match(c.fix.zh, /运行旁路.*生成服务密钥.*签委托.*发布清单/)
+  assert.equal(c.next, 'node sdk/bin/tapeapi-doctor.js <your sidecar URL>')
+})
+
+test('FIXED ONB2-5: URL mode probes the address given, not the one the manifest publishes, and warns when they differ', async () => {
+  reset()
+  // A proxy in front of the sidecar that strips its headers, while the manifest still names the sidecar itself: before
+  // the fix the probes went to the sidecar and passed. / 旁路前面一个去掉其响应头的代理，而清单仍写旁路本身：修复前探测打到旁路并通过。
+  const strip = http.createServer(async (req, res) => {
+    const parts = []; for await (const c of req) parts.push(c)
+    const r = await fetch(sidecarUrl + req.url, { method: req.method, headers: Object.fromEntries(Object.entries(req.headers).filter(([k]) => !['host', 'connection', 'content-length'].includes(k))), body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(parts) })
+    res.writeHead(r.status, Object.fromEntries([...r.headers].filter(([k]) => !k.startsWith('x-tapeapi') && k !== 'content-length' && k !== 'content-encoding')))
+    res.end(Buffer.from(await r.arrayBuffer()))
+  })
+  await new Promise((ok) => strip.listen(0, '127.0.0.1', ok))
+  try {
+    const given = `http://127.0.0.1:${strip.address().port}`
+    const calls = []
+    const rep = await diagnose(given, { offline: true, fetch: async (u, i) => { calls.push(String(u)); return fetch(u, i) } })
+    assert.ok(calls.every((u) => u.startsWith(given + '/')), `every probe goes to ${given}:\n${calls.join('\n')}`)
+    assert.equal(byId(rep, 'endpoints').status, 'warn')
+    assert.match(byId(rep, 'endpoints').detail, new RegExp(`the manifest publishes ${sidecarUrl}, not the address you gave \\(${given}\\)`))
+    assert.match(byId(rep, 'endpoints').fix.en, /PUBLIC_URL/)
+    assert.equal(byId(rep, 'receipt').status, 'fail')
+    assert.match(byId(rep, 'receipt').detail, /no x-tapeapi-receipt header/)
+    // the sidecar itself: the same address, no warning / 旁路本身：同一地址，没有警告
+    assert.equal(byId(await diagnose(sidecarUrl, { offline: true }), 'endpoints').status, 'pass')
+  } finally { await new Promise((ok) => strip.close(ok)) }
+})
+
+test('FIXED ONB2-7: --lang zh prints what went wrong in Chinese, --lang en has no Chinese, usage mistakes are bilingual', async () => {
+  const rep = await diagnose('https://api.example.com', { offline: true, fetch: stubWeb([[/./, html()]]) })
+  const zh = formatReport(rep, { lang: 'zh' }), en = formatReport(rep, { lang: 'en' })
+  assert.ok(!/[一-鿿]/.test(en), `English only:\n${en}`)
+  for (const english of ['not checked', 'an HTML page', 'result:', 'next:', 'sidecar URL']) assert.ok(!zh.includes(english), `"${english}" in the Chinese report:\n${zh}`)
+  assert.match(zh, /一个 HTML 网页/); assert.match(zh, /未检查："manifest-format" 未通过/); assert.match(zh, /结果：/); assert.match(zh, /下一条命令:/)
+  // the undecided case too / 无法判定的情形也一样
+  const down = await diagnose('https://api.example.com', { offline: true, fetch: async () => { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } }) } })
+  assert.match(formatReport(down, { lang: 'zh' }), /无法判定：.*拒绝连接/)
+  // the command: every usage mistake in both languages, and no TapeKit source path / 命令行：每个用法错误都双语，且不暴露 TapeKit 源码路径
+  for (const args of [[], ['--lang', 'fr', NAME], ['--bogus'], ['a', 'b'], ['http://example.com'], ['--offline', NAME], ['42.01013.tape']]) {
+    const r = await cli(args)
+    assert.equal(r.code, 2, args.join(' '))
+    const first = r.err.split('\n\n')[0]
+    assert.match(first, /[一-鿿]/, `${args.join(' ')}: ${first}`)
+    assert.match(first, /tapeapi-doctor: [A-Za-z"-]/, `${args.join(' ')}: ${first}`)
+    assert.ok(!/kernel\/src|name what to check/.test(r.err), r.err)
+  }
+})
+
+// ---- the documents of the onboarding path / 接入路径上的文档 ----
+const doc = (p) => readFileSync(`${ROOT}${p}`, 'utf8')
+// the current release: the documents name the package of the version being released, whatever it is
+// 当前版本：文档写的是正在发布的那个版本的安装包，不写死版本号
+const TGZ = releaseTgz(JSON.parse(doc('sdk/package.json')).version)
+const GUIDES = ['docs/guides/ai-providers.md', 'docs/guides/zh-CN/ai-providers.md']
+/** The table rows of "From zero to live", keyed by step number. / “从零到上线”表格的各行，按步骤号取。 */
+const stepRows = (text) => Object.fromEntries(text.split('\n').filter((l) => /^\| [0-7] \|/.test(l)).map((l) => [l.split('|')[1].trim(), l]))
+
+test('FIXED ONB2-1: the documents say tapeapi-doctor ships in the release package, give its npx form, and write steps 1 to 7 one way', () => {
+  for (const p of [...GUIDES, 'sdk/README.md', 'sdk/src/doctor.js']) {
+    const t = doc(p)
+    assert.ok(!/1\.1\.0 (package|的发布包)|from a checkout of (this|the) repository for now|目前从本仓库的检出运行|Until tapeapi-doctor ships in a release|进入发布包之前/.test(t), `${p} still says the doctor is not released`)
+  }
+  for (const p of [...GUIDES, 'sdk/README.md']) assert.ok(doc(p).includes(`npx -y --package=${TGZ} tapeapi-doctor`), `${p}: the npx form`)
+  for (const p of GUIDES) {
+    const rows = stepRows(doc(p))
+    assert.deepEqual(Object.keys(rows), ['0', '1', '2', '3', '4', '5', '6', '7'], p)
+    for (const n of ['1', '2', '3', '4', '5', '7']) {
+      assert.match(rows[n], /`tapeapi-doctor (--offline )?(<[^>]+>|https:\/\/api\.example\.com)`/, `${p} step ${n}`)
+      assert.ok(!rows[n].includes('node sdk/bin'), `${p} step ${n} is written one way`)
+    }
+  }
+})
+
+test('FIXED ONB2-2: step 0 says to run npm ci at the repository root first, everywhere it is given', () => {
+  for (const p of [...GUIDES, 'README.md', 'README.zh-CN.md', 'examples/relay-trial/README.md']) {
+    const t = doc(p)
+    const trial = t.indexOf('node examples/relay-trial/trial.mjs')
+    assert.ok(trial > 0, p)
+    const ci = t.indexOf('npm ci')
+    assert.ok(ci > 0 && ci < trial, `${p}: npm ci comes before the trial`)
+    assert.ok(!/npm install --no-audit/.test(t), `${p}: npm ci, not npm install`)
+  }
+  for (const p of GUIDES) assert.match(stepRows(doc(p))['0'], /npm ci/, `${p}: step 0 names npm ci`)
+})
+
+test('FIXED ONB2-3: after `cd examples/new-api-sidecar` no document runs node sdk/bin/... as if at the root', () => {
+  for (const p of [...GUIDES, 'examples/new-api-sidecar/README.md']) {
+    for (const block of doc(p).split('```').filter((_, i) => i % 2 === 1)) {
+      if (!/cd [^\n]*examples\/new-api-sidecar/.test(block)) continue
+      assert.ok(!/(^|\s)node sdk\/bin\//.test(block), `${p}: ${block}`)
+    }
+  }
+  const t = doc('examples/new-api-sidecar/README.md')
+  assert.ok(!/(^|[\s`])node sdk\/bin\/tapeapi-doctor/.test(t), 'the package README, read inside examples/new-api-sidecar, never names the root-relative path')
+  assert.match(t, /node \.\.\/\.\.\/sdk\/bin\/tapeapi-doctor\.js/)
+  for (const p of GUIDES) assert.match(doc(p), /node \.\.\/\.\.\/sdk\/bin\/tapeapi-doctor\.js/, p)
+})
+
+test('FIXED ONB2-6: every bash client line has its PowerShell form, and tapeapi-verify is said to need a second terminal', () => {
+  for (const p of [...GUIDES, 'README.md', 'README.zh-CN.md', 'sdk/README.md', 'examples/new-api-sidecar/README.md']) {
+    const t = doc(p)
+    assert.ok(t.includes('ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude'), p)
+    assert.ok(t.includes('$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8790"; claude'), `${p}: PowerShell for Claude Code`)
+    assert.ok(t.includes('$env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex'), `${p}: PowerShell for Codex`)
+    assert.match(t, /second terminal|Terminal 2|第二个终端|终端 2/, `${p}: a second terminal`)
+    // the verifying proxy and the client never share one code block / 核验代理与客户端不在同一个代码块里
+    for (const block of t.split('```').filter((_, i) => i % 2 === 1)) assert.ok(!(block.includes('tapeapi-verify 42') && block.includes('claude')), `${p}: ${block}`)
+  }
+})
+
+test('FIXED ONB2-7: the documents agree on key names and Codex, mark the doctor experimental, and say the server package needs the SDK package', () => {
+  for (const p of [...GUIDES, 'README.md', 'README.zh-CN.md']) {
+    const t = doc(p)
+    assert.ok(!t.includes('RELAY_KEY'), `${p}: API_KEY, as in the README`)
+    assert.match(t, /OPENAI_BASE_URL/, p); assert.match(t, /config\.toml/, p)
+  }
+  assert.match(doc(GUIDES[0]), /`tapeapi-doctor` \(experimental\)/); assert.match(doc(GUIDES[0]), /It is experimental/)
+  assert.match(doc(GUIDES[1]), /`tapeapi-doctor`（实验性）/); assert.match(doc(GUIDES[1]), /它是实验性的/)
+  const ver = JSON.parse(doc('sdk/package.json')).version.replaceAll('.', '\\.')   // the current release / 当前版本
+  const both = new RegExp(`npm install https://\\S+tapeapi-sdk-${ver}\\.tgz https://\\S+tapeapi-server-${ver}\\.tgz`)
+  assert.match(doc('README.md'), both); assert.match(doc('README.zh-CN.md'), both)
+  assert.match(doc('README.md'), /fails with a 404/); assert.match(doc('README.zh-CN.md'), /报 404/)
+  const ignore = doc('.gitignore')
+  assert.match(ignore, /^examples\/new-api-sidecar\/data\/$/m); assert.match(ignore, /^examples\/new-api-sidecar\/logs\/$/m)
 })

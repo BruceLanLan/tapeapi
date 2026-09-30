@@ -40,6 +40,9 @@
 /dashboard/*
   Content-Security-Policy: frame-ancestors 'none'
 
+/directory/*
+  Content-Security-Policy: frame-ancestors 'none'
+
 # The receipt checker restricts its scripts with a <meta> policy in the page itself (sdk/test/console.test.mjs keeps
 # script-src out of this file for every page but the console). / 回执核验页在页面内用 <meta> 限制脚本。
 /verify/*

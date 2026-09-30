@@ -10,13 +10,15 @@ LiteLLM 或模型服务），用一次性身份（不在链上）和示例价目
 
 ```sh
 git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi
-npm install --no-audit --no-fund
+npm ci --no-audit --no-fund                    # 先在仓库根目录安装依赖，一次即可
 node examples/relay-trial/trial.mjs            # --lang zh 只看中文；--keep 跑完不退出，可以自己 curl
 ```
 
 它依次做四件事，每一步都打印结论：
 
-1. **诊断**：`tapeapi-doctor --offline` 检查旁路：清单格式、委托、`ai` 字段、价目表、端点、可访问、CORS、真实请求拿到可核验的回执、
+没有先运行 `npm ci` 时，试跑只打印这一句提示并退出。
+
+1. **诊断**：`tapeapi-doctor --offline`（实验性）检查旁路：清单格式、委托、`ai` 字段、价目表、端点、可访问、CORS、真实请求拿到可核验的回执、
    按 id 取回执。身份项（电路、容器、链上清单）跳过，因为一次性身份不在链上。上线后你对自己的 TapeOut 名字跑的是同一个检查。
 2. **像用户的应用那样调用**：经由 SDK 的 `ai.createVerifyingFetch` 发普通、流式与 Anthropic Messages 请求，每份回执都核验，并打印一份签名回执。
 3. **经由 `tapeapi-verify`**：你的 Claude Code、Codex 用户在本机运行的核验代理，打印他们看到的那一行结论。
@@ -37,13 +39,15 @@ upstream (no real model, no real key; it stands for your new-api, LiteLLM or mod
 
 ```sh
 git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi
-npm install --no-audit --no-fund
+npm ci --no-audit --no-fund                    # first, once, at the repository root: installs the dependencies
 node examples/relay-trial/trial.mjs            # --lang en for English only; --keep leaves it running for your own curl
 ```
 
 It does four things, printing a verdict for each:
 
-1. **The doctor**: `tapeapi-doctor --offline` checks the sidecar: manifest format, delegation, the `ai` field, the price
+Without `npm ci` first, the trial prints only that hint and exits.
+
+1. **The doctor**: `tapeapi-doctor --offline` (experimental) checks the sidecar: manifest format, delegation, the `ai` field, the price
    table, the endpoints, reachability, CORS, a real request getting a receipt that verifies, and the receipt lookup. The
    identity checks (circuit, container, manifest on chain) are skipped: a throwaway identity is not on chain. Once you are
    live you run the same check against your TapeOut name.

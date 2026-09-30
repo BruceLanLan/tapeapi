@@ -1,4 +1,4 @@
-// Hash-only MCP receipts and verify links (docs/PLAN-2026Q4.md, privacy item 4 of the "do now" list): the TAP-21 digest
+// Hash-only MCP receipts and verify links (the 2026 Q4 plan, privacy item 4 of the "do now" list): the TAP-21 digest
 // rebuilt from its two inner hashes is the same 32 bytes, so a receipt that carries only those hashes still verifies;
 // verifyLink carries that form by default and the full receipt only when asked; low-entropy params stay guessable from
 // their hash, which is said and shown here. The signed envelope and the digest are unchanged. No network.

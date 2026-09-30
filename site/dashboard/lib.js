@@ -1,6 +1,6 @@
 // "My services" dashboard: pure helpers, no DOM and no storage at module scope, so Node can test them offline
 // (scripts/dashboard.test.mjs). / “我的服务”面板的纯函数：模块顶层不碰 DOM 与存储，Node 可离线测试。
-import { chainByArea } from '../playground/vendor/167d3a095a/tapeapi-sdk/chains.js'
+import { chainByArea } from '../playground/vendor/50e6c9f635/tapeapi-sdk/chains.js'
 
 export const STORAGE_KEY = 'tapeapi.dashboard'
 export const PUBLIC_EXAMPLES = Object.freeze(['11.1013.tape', '12.1013.tape'])

@@ -12,14 +12,31 @@ Start from nothing (no circuit, no container) and check every step before the ne
 and to run: TapeAPI hosts no one's sidecar and pays for no circuit, container or gas. `42.1013.tape` in this guide is an
 example name; no service is published under it. In the commands, put your own TapeOut name and your sidecar's address.
 
+Step 0 needs a checkout of this repository with its dependencies installed, once, at its root (Node.js 20 or later):
+
+```sh
+git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi
+npm ci --no-audit --no-fund
+```
+
+The checks of steps 1 to 7 are `tapeapi-doctor` (experimental), which ships in the SDK's release package since 1.2.0.
+Every `tapeapi-doctor` in the table stands for this, run from any directory, with nothing to clone:
+
+```sh
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-doctor <your name>
+```
+
+In a checkout, `node sdk/bin/tapeapi-doctor.js <your name>` at its root does the same. Either way the report writes
+the next command the way you ran it.
+
 | # | Step | Where (who pays) | Check | What you should see |
 |---|---|---|---|---|
-| 0 | See the whole path work on your machine: no key, no circuit, no cost | this repository | `node examples/relay-trial/trial.mjs` | it prints "The trial passed." |
-| 1 | Get a TapeOut circuit | [tapeout.net](https://tapeout.net) (you buy it) | `node sdk/bin/tapeapi-doctor.js <your name>` | `name` and `circuit` pass |
-| 2 | Open its container | tapeout.net (one transaction, your gas) | the same command | `container` passes; `manifest-file` fails, as it should until step 5 |
-| 3 | Run the sidecar in front of your gateway, on your server, behind your HTTPS reverse proxy | [below](#choose-how-to-run-the-sidecar) (your server) | `node sdk/bin/tapeapi-doctor.js --offline https://api.example.com` | the report names the setup-mode variables still missing |
-| 4 | Service key and delegation; put the values in `.env` and restart the sidecar | [holder console](https://tapeapi.fun/console/) steps 3 and 4 (no fee, no gas) | `node sdk/bin/tapeapi-doctor.js https://api.example.com` | `delegation`, `reach` and `receipt` pass; `manifest-file` warns "not published on chain yet" |
-| 5 | Publish the manifest, price table included | console step 5 (one transaction, your gas) | `node sdk/bin/tapeapi-doctor.js <your name>` | every check passes: exit status 0 |
+| 0 | See the whole path work on your machine: no key, no circuit, no cost | a checkout of this repository, after `npm ci` at its root (above) | `node examples/relay-trial/trial.mjs` | it prints "The trial passed." |
+| 1 | Get a TapeOut circuit | [tapeout.net](https://tapeout.net) (you buy it) | `tapeapi-doctor <your name>` | `name` and `circuit` pass |
+| 2 | Open its container | tapeout.net (one transaction, your gas) | `tapeapi-doctor <your name>` | `container` passes; `manifest-file` fails, as it should until step 5 |
+| 3 | Run the sidecar in front of your gateway, on your server, behind your HTTPS reverse proxy | [below](#choose-how-to-run-the-sidecar) (your server) | `tapeapi-doctor --offline https://api.example.com` | the report names the setup-mode variables still missing |
+| 4 | Service key and delegation; put the values in `.env` and restart the sidecar | [holder console](https://tapeapi.fun/console/) steps 3 and 4 (no fee, no gas) | `tapeapi-doctor https://api.example.com` | `delegation`, `reach` and `receipt` pass; `manifest-file` warns "not published on chain yet" |
+| 5 | Publish the manifest, price table included | console step 5 (one transaction, your gas) | `tapeapi-doctor <your name>` | every check passes: exit status 0 |
 | 6 | Tell your users | [What your users do](#what-your-users-do) | `tapeapi-verify <your name>` on a user's machine | one `OK` line per call |
 | 7 | Renew the delegation every 90 days | console step 4, "Renew" | `tapeapi-doctor <your name>`, daily in your CI | `delegation` warns from 30 days before expiry |
 
@@ -36,9 +53,16 @@ names, and only over https (plain http only to a loopback sidecar with `--allow-
 `--json` included, shows it as `***`, even when a gateway echoes it back. Every check that fails says what is missing,
 where to fix it and the next command, in English and Chinese. Exit status: 0 passed (warnings allowed; `--strict` counts
 them), 1 a check failed, 2 a usage mistake, 3 the chain or the network could not be read (a timeout, a refused
-connection, DNS: run it again); `--json` prints the report for CI. It
-reads only: it signs nothing and sends no transaction. For now it runs from a checkout of this repository
-(`git clone`, then `npm install` at the root); it is not in the 1.1.0 package.
+connection, DNS: run it again); `--json` prints the report for CI; `--lang en` or `--lang zh` prints one language only. It
+reads only: it signs nothing and sends no transaction. Given a sidecar's URL, it probes that address, not the one the
+served manifest publishes, and warns when the two differ. It is experimental: its checks and its output may still change
+in a 1.x release.
+
+Once every check passes, you may list your service in the [provider directory](https://tapeapi.fun/directory/) with a
+pull request of your own that adds its name to `site/directory/providers.json` (the steps are in
+[`directory/`](https://github.com/BruceLanLan/tapeapi/tree/main/directory)). The directory reruns the doctor on every
+entry once a day and shows the result. A listing only means the automated checks passed, not a recommendation, a
+guarantee or an audit; your service works the same without one.
 
 ## What you get
 
@@ -87,6 +111,9 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi/examples/new-
 cp env.example .env && cp models.example.json models.json     # fill in both
 docker compose up -d
 ```
+
+From this directory the checkout's doctor is `node ../../sdk/bin/tapeapi-doctor.js`; the `npx` form of the table works
+from anywhere.
 
 Your reverse proxy sends `https://api.example.com` to the sidecar (`127.0.0.1:8080`) and new-api's web console to
 `127.0.0.1:3000` on a hostname of its own. Until the identity is complete the sidecar runs in setup mode and says what
@@ -162,7 +189,7 @@ They keep their keys and their SDKs and change the base URL to the endpoint of t
 |---|---|
 | OpenAI SDKs and OpenAI-compatible tools | `https://api.example.com/v1` |
 | Anthropic SDKs, Claude Code (`ANTHROPIC_BASE_URL`) | `https://api.example.com` (the SDK adds `/v1`) |
-| Codex (`base_url` in `config.toml`, `wire_api = "responses"`) | `https://api.example.com/v1` |
+| Codex (`OPENAI_BASE_URL`, or `base_url` in `config.toml` with `wire_api = "responses"`) | `https://api.example.com/v1` |
 
 **Checking receipts.** Developers wrap the official SDK's fetch; every answer is then checked against the manifest on
 chain (signer, price table, exact bytes), and a receipt that fails is an error, never swallowed:
@@ -175,7 +202,7 @@ const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })            // BNB Chain n
 const svc = await api.resolve('42.1013.tape')                    // your service's TapeOut name (this one is an example)
 const fetch = ai.createVerifyingFetch({ api, service: svc })
 const baseURL = svc.manifest.ai.endpoints.find((e) => e.format === 'openai-chat').baseUrl
-const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
+const client = new OpenAI({ baseURL, apiKey: process.env.API_KEY, fetch })  // the user's key with your service, as before
 ```
 
 Use the `baseUrl` from the manifest exactly. A request to a metered path on any other host (`localhost` for
@@ -193,12 +220,23 @@ the fetch itself checks `res.ok`. Whether a paid call is retried after other 5xx
 `maxRetries`).
 
 **Claude Code and Codex users** cannot read receipts themselves. They run the local verifying proxy `tapeapi-verify`
-and point the client at it:
+and point the client at it. `tapeapi-verify` keeps running in the foreground, so the client starts in a second terminal:
 
 ```sh
-# 42.1013.tape is an example name: put your service's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz tapeapi-verify 42.1013.tape
-ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex: OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
+# Terminal 1. 42.1013.tape is an example name: put your service's TapeOut name here
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-verify 42.1013.tape
+```
+
+```sh
+# Terminal 2, macOS or Linux
+ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude
+OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex             # Codex (or base_url in config.toml)
+```
+
+```powershell
+# Terminal 2, Windows PowerShell
+$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8790"; claude
+$env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex
 ```
 
 With the example name as written it stops with "no file at /.well-known/tapeapi.json": nothing is published under

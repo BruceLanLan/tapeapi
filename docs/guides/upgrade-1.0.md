@@ -125,6 +125,8 @@ client codes are raised by the SDK (§3.4).
 | `RPC_UNAVAILABLE` | client | Too few nodes answered | yes |
 | `RPC_STALE` | client | Since 1.2, with the experimental `pin` option: the block the nodes confirm is older than `maxPinAgeS`, or ahead of this client's clock (`data.ageS`) | yes |
 | `CONTRACT_UNKNOWN` | client | Since 1.2, with the experimental `sentinel: 'strict'`: a TapeOut identity contract runs an implementation this SDK does not know, which means it was upgraded (`data.role`, `data.implementation`) | no: update the SDK or check the upgrade |
+| `PROOF_INVALID` | client | Since 1.3, with the experimental `proofs` (needs `pin`): a verified Merkle proof of `fileInfo`, `cpuAt`, `isCPU` or `ownerOf` proves a value other than the one the nodes answered (with `proofs: true` as well as `'strict'`); or, with `'strict'` only, every proof the nodes served failed to verify against the stateRoot of the block the nodes confirmed (`data.read`, `data.node`, `data.block`, `data.stateRoot`) | no |
+| `PROOF_UNAVAILABLE` | client | Since 1.3, with the experimental `proofs: 'strict'`: no node served `eth_getProof` for the pinned block, nodes of `quorum` operators did not agree on a stateRoot, or the contract runs an implementation whose storage layout the SDK does not know (`data.read`, `data.reason`). With `proofs: true` the same is only a warning and the quorum's answer is kept (detection only) | yes, or add a node that serves proofs |
 | `RPC_ERROR` | client | Every node returned the same JSON-RPC error (`data.rpcCode`, `data.rpcRevert`) | a revert: no |
 | `CANON_INVALID` | client | JSON with no canonical form, duplicate or forbidden keys | no |
 | `ABI_INVALID` | client | ABI data that does not decode | no |

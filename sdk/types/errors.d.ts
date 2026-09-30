@@ -8,7 +8,9 @@
  * signed provider error the TAP-21 envelope fields `ts`, `block`, `id`, `sig`, `error`. Every other detail is in `data`
  * (for example `data.tooLarge`, `data.rpcCode`, `data.rpcRevert`, `data.rpcData`, and for `QUORUM_FAILED` /
  * `ATTEST_DISAGREE` `data.quorum`, `data.agreed`, `data.disagreed`, `data.failed`, `data.groups`; for
- * `ATTEST_DISAGREE` also the verified envelopes and the request, `data.envelopes`, `data.request`).
+ * `ATTEST_DISAGREE` also the verified envelopes and the request, `data.envelopes`, `data.request`; for the experimental
+ * proof mode's `PROOF_INVALID` / `PROOF_UNAVAILABLE`, `data.read`, `data.address`, `data.reason`, `data.node`,
+ * `data.block`, `data.stateRoot`).
  */
 export declare class TapeAPIError extends Error {
   constructor(code: string, message?: string, extra?: TapeAPIErrorExtra)

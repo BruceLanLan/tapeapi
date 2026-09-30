@@ -140,11 +140,46 @@ for (const { invite } of found.invites) {
 
 - **群主：** 保存 `group.snapshot()`（不含秘密：名单与纪元号）。重启后 `G.resumeGroup({ self, identity, snapshot, verifyMember })`
   立即开启下一纪元（旧密钥已不在），并把它作为一次更新返回：`deliverGroupUpdate({ group: resumed.group, update: resumed, relayClients: [relay] })`。
+  恢复出的句柄没有上一纪元的密钥：群主离线期间成员在那个纪元下发的消息会被拒收，错误为 `no key for epoch N (not in this handle's snapshot ...)`，
+  且 `e.data.reason === 'snapshot'`，而不是被当作伪造。格式 2 的快照写为 `v: 2`（1.2.0 写的是 `v: 1`，仍可读取）：1.2.0 及更早的
+  SDK 会拒收它，而不是把群当作格式 1 恢复，所以群主不能退回到这些版本。
 - **成员：** 在 seal 之后保存 `g.snapshot()`。重启后把 `minEpoch: snapshot.epoch` 与 `lastSeq: snapshot.lastSeq` 传给
-  `joinGroup`：中继重放旧纪元会被拒绝，时钟回拨也不会让新消息看起来像重放。
+  `joinGroup`：中继重放旧纪元会被拒绝，时钟回拨也不会让新消息看起来像重放。它还让重启后的句柄知道：从房间里读回的
+  自己以前的消息是自己的，而不是另一台设备的（见下文）。
 - **游标：** `cursors` 接受任何 `{ get(key), set(key, value) }`，同步异步都行；可以存进文件或数据库。键是
   `relay:<中继容器>:<房间号>`，值是 `{ after, epoch }`。序号要和房间纪元一起存：只有序号没有纪元，正是下面排查清单里的那个错误。
 - **身份：** 含私钥的身份文件。丢了它，成员只能发布新身份，并由群主重新加入。
+
+## 聊天应用要处理的错误
+
+`open()` 以 `GROUP_INVALID` 拒收；其中三种拒收是正常事件，用 `e.data` 区分：
+
+- **消息先于它的纪元消息到达**（`e.data.reason === 'not-yet'`，`e.data.retryAfterEpoch: N`）。使用多个中继、或中继加
+  ChannelBus 时，成员的消息可能先于群主那条生成其密钥的纪元消息到达。把它留下，`acceptEpoch` 之后再打开一次。如果那条纪元消息
+  被拒收（"not a member of it"），说明本成员已被移除，留下的消息可以丢弃。SDK 不替你缓冲；几行代码即可：
+
+```js
+const held = []                                          // 先于纪元消息到达的消息，至多 256 条
+function openOrHold(wire) {
+  try { return g.open(wire, { text: true }) }
+  catch (e) { if (e.data?.retryAfterEpoch !== undefined && held.length < 256) { held.push(wire); return null } throw e }
+}
+// 每接受一条纪元消息之后
+for (const w of held.splice(0)) {
+  try { const m = openOrHold(w); if (m && !m.own) show(m.from, m.data) }
+  catch { /* 丢弃：其纪元已过期，或本成员不在该纪元中 */ }
+}
+```
+
+- **纪元已丢弃**（`e.data.reason === 'expired'`）：下一纪元到达后，上一纪元只保留 10 分钟；成员加入之前的消息一概打不开。
+  显示为空洞即可，无法找回。
+- **群主重启过**（`e.data.reason === 'snapshot'`，出现在 `resumeGroup` 得到的句柄上）：见"保存状态与重启"。
+
+**一个身份对应一台设备。** 持有同一身份的两台设备（或两个进程）各自从自己的时钟起算序号，其他人会把序号较低那台设备的消息
+当作 `seq ... already seen` 拒收（并带 `e.data.mayBeOtherDevice: true`）。SDK 不会掩盖这一点：用本身份签名、却不是本句柄
+封装的消息，`open()` 会完整返回并带 `otherDevice: true`（而不是 `own`），`g.otherDevice` 变为 `{ count, epoch, seq }`。
+请提示用户只用一台设备，或者给每台设备各自的容器与身份。不带 `lastSeq` 重启的句柄会把房间里自己以前的消息当作另一台设备的；
+请传入快照里的 `lastSeq`。
 
 ## 常见坑排查清单
 
@@ -157,6 +192,28 @@ for (const { invite } of found.invites) {
 | 投递报错 `too many invites / epoch messages from this source in this room` | 中继对 0x03 / 0x04 帧按来源按房间限流（参考中继每 10 分钟 8 条） | 等 `retryAfterS` 秒后重新投递，不要紧密循环重发。绝不能吞掉这个错误：`deliverGroupUpdate` 会抛出 `GROUP_DELIVERY`，`e.data.deliveries` 里失败的那一条带 `error.rateLimited: true` 与 `error.retryAfterS` |
 | 签通道密钥时手机钱包回不到应用 | 应用跑在局域网 HTTP 地址上（`http://192.168.x.x`），钱包不会回连 | 用 HTTPS 隧道对外提供应用，并把 WalletConnect 的 `metadata.url` 设成与实际访问地址完全一致的 HTTPS 源 |
 | 新成员对某些纪元消息报 "not a member of it" | 群房间里更早的纪元不是为它生成的 | 正常现象：捕获后继续；加入它的那个纪元能打开 |
+| `no key for epoch N`，且带 `data.retryAfterEpoch` | 消息先于它的纪元消息到达（多个中继，或中继加 ChannelBus） | 留下它，`acceptEpoch` 之后再打开（见"聊天应用要处理的错误"） |
+| 某个成员的消息被以 `already seen` 拒收，且带 `data.mayBeOtherDevice` | 同一身份在两台设备上发送；序号较低的那台被所有人拒收 | 一个身份只用一台设备；设备本身会在对方的消息上看到 `otherDevice: true`，并可查 `g.otherDevice` |
+| 旧客户端收到格式 2 邀请后入群成功，随后每一帧都报 `GROUP_INVALID`（`data.format: 2`） | 该客户端早于格式 2：它一声不响地入群，之后拒收该群的帧 | 入群前检查 `invite.format === 2`，提示用户升级 |
+
+## 格式 2（实验性）：入群之前，以及群主要读取什么
+
+**入群前检查邀请的格式。** 不支持格式 2 的客户端（1.2 之前的所有 SDK）能打开格式 2 的邀请，`joinGroup` 也会一声不响地成功；
+之后每一条纪元消息与群消息才以 `GROUP_INVALID`、`data.format: 2` 失败。请先检查，让用户看到"请升级"，而不是一个永远用不了的群：
+
+```js
+const inv = G.openGroupInvite(wire, { self })            // 或 found.invites[i].invite
+// 1.2 之前的 SDK 里 G.MAX_MEMBERS_V2 为 undefined：这样的构建不能加入格式 2 的群
+if (inv.format === 2 && !G.MAX_MEMBERS_V2) return askToUpdate(inv)
+```
+
+尚未采用格式 2 的应用，无论用哪个版本的 SDK，都用自己的开关做同样的检查。
+
+**群主每个纪元要读取什么。** 群主对未变化的成员复用自己得出的肯定结论，至多 24 小时（`createGroup` / `resumeGroup` 的
+`verifyReuseS`，默认 86,400 秒）。128 人时，移除一人或轮换**不读取**任何记录，加一人读取**一条**（新成员，只一次，绕过缓存），
+结论过期后的第一个纪元读取全部 127 条：按默认并发 8，约 2,300 个 HTTP 请求、27 秒（BSC 上每条记录约 18 个请求、1.7 秒），
+至多每天一次。SDK 1.2.0 每个纪元都这样全量读取，并且对新加入的成员读取两次。恢复出的群主没有任何结论，所以它的第一个纪元会读取
+所有人。`verifyReuseS: 0` 回到每个纪元都读取全部成员，适合必须在下一个纪元、而不是一天之内移除已出售电路的群主（TAP-27 §8）。
 
 ## 局限
 

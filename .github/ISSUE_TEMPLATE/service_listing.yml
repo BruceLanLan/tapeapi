@@ -1,16 +1,32 @@
-name: Share a service / 分享你的服务
-description: Tell us about a TapeAPI service you run, so others can find it. 介绍你运行的 TapeAPI 服务，方便别人找到它。
+name: Share or list a service / 分享或登记你的服务
+description: Tell us about a TapeAPI service you run; the directory itself is listed by your own pull request. 介绍你运行的 TapeAPI 服务；目录登记由你自己提拉取请求。
 title: "[service] "
 labels: ["service-listing"]
 body:
   - type: markdown
     attributes:
       value: |
-        A service needs **no permission from us and no listing** to work: anyone can resolve it by its TapeOut name (`<#ID>.<processor>.tape`, e.g. `11.1013.tape`) and the SDK checks everything on-chain. This issue only helps people find it; we may link shared services from the docs, and a service directory is on the [roadmap](https://github.com/BruceLanLan/tapeapi/blob/main/docs/ROADMAP.md).
-        Sharing confers **no authority and no endorsement**: clients always derive the container on-chain and verify signatures themselves (TAP-20 §3.6). We do not vet or take responsibility for any shared service, and a link can be removed.
+        A service needs **no permission from us and no listing** to work: anyone can resolve it by its TapeOut name (`<#ID>.<processor>.tape`, e.g. `11.1013.tape`) and the SDK checks everything on-chain.
 
-        服务的运行**不需要我们的许可，也不需要登记**：任何人都能用它的 TapeOut 名称（`<#ID>.<processor>.tape`，例如 `11.1013.tape`）解析它，SDK 会在链上核对一切。本 issue 只是方便别人找到它；我们可能在手册里链接分享的服务，服务目录在[路线图](https://github.com/BruceLanLan/tapeapi/blob/main/docs/ROADMAP.md)上。
-        分享**不代表任何权威或背书**：客户端始终自行链上推导容器并验签（TAP-20 §3.6）。我们不审核、不对任何服务负责，链接也可能被移除。
+        **To be listed in the [provider directory](https://tapeapi.fun/directory/), open a pull request yourself; this issue is not a listing.** The conditions:
+        1. `tapeapi-doctor <your name>` passes every check: exit status 0 (warnings allowed). See the [guide for AI providers](https://tapeapi.fun/docs/en/ai-providers).
+        2. Your pull request adds one entry to `site/directory/providers.json`, in the names' order (chain, processor, #ID): `name`, `added` (YYYY-MM-DD) and an optional https `contact`. Nothing else is accepted: no description, prices or logo.
+        3. Its description pastes the doctor's last line and the confirmations at the end of this form.
+        4. CI checks the format only (`node directory/recheck.mjs --validate`, no network). The daily recheck runs the doctor on every entry and shows the result on the page. An entry that stops passing is flagged, never removed automatically.
+
+        We list nobody on anyone's behalf and pay no one's costs. The directory has no ranking, no fees and no featured places. A listing only means the automated checks (tapeapi-doctor) passed; it is not a recommendation, a guarantee or an audit, and each provider answers for its own service quality, prices and compliance. Clients always derive the container on-chain and verify signatures themselves (TAP-20 §3.6).
+        Use this form to tell people about a service (we may link shared services from the docs), or to ask about listing.
+
+        服务的运行**不需要我们的许可，也不需要登记**：任何人都能用它的 TapeOut 名称（`<#ID>.<processor>.tape`，例如 `11.1013.tape`）解析它，SDK 会在链上核对一切。
+
+        **要登记到[服务方目录](https://tapeapi.fun/directory/)，请自己提拉取请求；本 issue 不是登记。** 条件：
+        1. `tapeapi-doctor <你的名字>` 全部检查通过：退出码 0（允许警告）。见 [AI 服务方指南](https://tapeapi.fun/docs/zh/ai-providers)。
+        2. 拉取请求在 `site/directory/providers.json` 里按名字的顺序（链、处理器、#ID）加一条：`name`、`added`（YYYY-MM-DD）和可选的 https `contact`。不接受其它任何内容：没有简介、价格或标志。
+        3. 描述里贴上诊断的最后一行，以及本表末尾的确认项。
+        4. CI 只检查格式（`node directory/recheck.mjs --validate`，不联网）。每日复核对每一条运行诊断，结果显示在页面上。不再通过的条目只标记，不自动删除。
+
+        我们不替任何人上架，也不代付任何费用。目录不排名、不收费、不设推荐位。只代表通过了 TapeAPI 的自动检查（tapeapi-doctor），不代表推荐、担保或审计；服务质量、价格与合规由服务方自己负责。客户端始终自行链上推导容器并验签（TAP-20 §3.6）。
+        本表用于介绍服务（我们可能在手册里链接分享的服务），或询问登记事宜。
   - type: input
     id: tapename
     attributes:
@@ -52,5 +68,7 @@ body:
           required: true
         - label: "The playground resolves the name and verifies a signed answer from it. 调试台能解析该名称并验证其签名响应。"
           required: true
-        - label: "I understand sharing confers no endorsement and a link can be removed. 我理解分享不代表背书，链接可能被移除。"
+        - label: "tapeapi-doctor passes every check for this name (exit status 0). tapeapi-doctor 对这个名字全部检查通过（退出码 0）。"
+          required: false
+        - label: "I understand a listing or a link is not a recommendation, a guarantee or an audit, and that an entry that stops passing is flagged. 我理解登记或链接不代表推荐、担保或审计，不再通过的条目会被标记。"
           required: true

@@ -17,3 +17,6 @@ contact_links:
   - name: Service status / 服务状态
     url: https://tapeapi.fun/status/
     about: "Is the public service or relay down? Check here first; the monitor opens an issue automatically. 公共服务或中继挂了？先看这里，监控会自动开 issue。"
+  - name: Provider directory / 服务方目录
+    url: https://tapeapi.fun/directory/
+    about: "Listing is by your own pull request to site/directory/providers.json once tapeapi-doctor passes; the page has the steps. 登记方式是 tapeapi-doctor 全部通过后自己提拉取请求修改 providers.json，步骤见该页。"

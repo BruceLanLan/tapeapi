@@ -18,7 +18,7 @@ TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上�
 
 [English](README.md) · [网站](https://tapeapi.fun) · [手册](https://tapeapi.fun/docs/zh/) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [更新日志](CHANGELOG.md) · [路线图](docs/ROADMAP.md)
 
-> **状态：正式版（1.2.0）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAP-22）是实验性的，没有部署。
+> **状态：正式版（1.3.0）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAP-22）是实验性的，没有部署。
 > 所有代码和合约都没有经过第三方审计。
 
 ## 从这里开始
@@ -42,8 +42,11 @@ curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/
 curl 只显示签名信封，不做任何核对；核对交给 SDK。SDK 还没发到 npm，从 GitHub Release 安装（Node.js 20 或以上）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz
 ```
+
+服务端包（`@tapeapi/server`：服务提供方、AI 旁路、MCP 代理）依赖这个 SDK，而 SDK 也不在 npm 上，所以单独安装服务端包会报 404：
+请用一条命令同时安装两者，`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-server-1.3.0.tgz`。
 
 ```js
 // try.mjs：node try.mjs
@@ -80,14 +83,33 @@ console.log(r.choices[0].message.content)
 **Claude Code 和 Codex** 自己读不到回执。在本机开一个核验代理，再把它们指过去：
 
 ```bash
-# 42.1013.tape 是示例名：换成 AI 服务方的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz tapeapi-verify 42.1013.tape
-ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1
+# 终端 1（会一直运行）。42.1013.tape 是示例名：换成 AI 服务方的 TapeOut 名字
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-verify 42.1013.tape
+```
+
+```bash
+# 终端 2，macOS 或 Linux
+ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude
+OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex             # Codex（或 config.toml 里的 base_url）
+```
+
+```powershell
+# 终端 2，Windows PowerShell
+$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8790"; claude
+$env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex
 ```
 
 照原样运行 `tapeapi-verify 42.1013.tape` 会停在 “no file at /.well-known/tapeapi.json”：这个名字是示例名，链上没有以它发布的服务。
-不依赖任何服务方、想看回执端到端核验通过，就在本仓库的检出里跑本地试跑：`node examples/relay-trial/trial.mjs`（不需要密钥、电路，
-也不花钱）。自己要做 AI 服务？从[从零到上线](docs/guides/zh-CN/ai-providers.md#从零到上线)开始。
+不依赖任何服务方、想看回执端到端核验通过，就在本仓库的检出里跑本地试跑（不需要密钥、电路，也不花钱），先在根目录安装一次依赖：
+
+```bash
+git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi
+npm ci --no-audit --no-fund
+node examples/relay-trial/trial.mjs
+```
+
+自己要做 AI 服务？从[从零到上线](docs/guides/zh-CN/ai-providers.md#从零到上线)开始；服务方的检查工具 `tapeapi-doctor`（实验性）
+在同一个发布包里。
 
 **MCP。** 同样的 8 个读取方法也是 MCP 工具，地址是 `https://api.tapeapi.fun/mcp`，每个结果都带签名回执：
 
@@ -143,8 +165,8 @@ flowchart LR
   封禁或地区限制（TapeAPI 只面向在上游条款范围内经营的服务方）。
 - **链：** BNB Chain（chainId 56）什么都能做，将来的支付也只在这条链上。X Layer（196）和 Base（8453）只读：身份、解析、
   回执和 MCP 核验。X Layer 只有两家独立的 RPC 运营方。
-- **没有经过第三方审计。** 测试：约 1,200 个 JavaScript 测试（`npm test`）、169 个合约测试（`forge test`），另有一份独立的
-  Python 实现核对每一处签名、哈希和编码（`python3 spec/vectors/verify.py`）。
+- **没有经过第三方审计。** 测试：JavaScript 测试（`npm test`）、合约测试（`forge test`），另有一份独立的 Python 实现核对每一处
+  签名、哈希和编码（`python3 spec/vectors/verify.py`）；三者在每次推送时都由 CI 运行。
 
 ## 隐私，如实说
 
@@ -172,7 +194,7 @@ flowchart LR
 | [TAP-24](spec/TAP-24.md) | 跨链意图询价 | Withdrawn（已撤回） |
 | [TAP-25](spec/TAP-25.md) | 可由电路验证的方法 | Experimental（实验性） |
 | [TAP-26](spec/TAP-26.md) | 容器间的私密通道 | Stable (v1)（稳定） |
-| [TAP-27](spec/TAP-27.md) | 最多 32 个容器的私密群聊 | Stable (v1)（稳定） |
+| [TAP-27](spec/TAP-27.md) | 最多 32 个容器的私密群聊（实验性的格式 2 最多 128 个） | Stable (v1)（稳定） |
 
 规范中英双语，以英文为准。TAP 编号已[提交给 TapeKit 维护者](https://github.com/TapeOutProtocol/TapeKit/issues/8)，尚未正式分配。
 

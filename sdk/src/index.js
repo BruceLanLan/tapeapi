@@ -16,6 +16,7 @@ import { validateAIField, MANIFEST_FIELD as AI_FIELD } from './ai.js'
 import { CHAIN_IDS, chainById, parseTapeName, IMPL_SLOT } from './chains.js'
 import { rpcUrlsFor } from './rpc-defaults.js'
 import { erc6551Account } from './security.js'
+import { verifyAccountProof, STORAGE, LAYOUT_IMPLEMENTATIONS, addressOfWord } from './proof.js'
 
 // Default nodes per chain and who operates them (quorums count operators, not URLs) / 各链默认节点及其运营方
 export { RPC_DEFAULTS, rpcUrlsFor, operatorOf } from './rpc-defaults.js'
@@ -37,6 +38,9 @@ export * as ai from './ai-public.js'       // AI usage receipts: format adapters
 // @experimental security 1.1: local container derivation, ContradictionRecord v1, random second opinions
 // @experimental 安全加固 1.1：本地推导容器、矛盾记录 v1、随机抽查
 export * as security from './security.js'
+// @experimental security 1.2: RLP and Merkle-Patricia proof checks (EIP-1186), the storage slots resolve can prove
+// @experimental 安全加固 1.2：RLP 与默克尔-帕特里夏证明核验（EIP-1186），以及 resolve 能证明的存储槽
+export * as proof from './proof.js'
 
 // TAP-22 §3.4 贡献比例常量 / contribution constants (basis points).
 export const MAX_CONTRIBUTION_BPS = 5000          // contract hard cap / 合约硬上限
@@ -144,6 +148,45 @@ function pinOptionsOf(pin, known) {
   if (!Number.isSafeInteger(cacheS) || cacheS < 0) bad('cacheS must be a whole number of seconds')
   return { tag, maxAgeS, by, cacheS }
 }
+// The proofs option (security 1.2): null = off (the default), 'warn' (proofs: true) or 'strict'. Only with pin: a proof is
+// checked against the stateRoot of the block the nodes confirmed, and an unpinned resolution has no such block.
+// 证明选项（安全加固 1.2）：null 为关闭（默认），'warn'（proofs: true）或 'strict'。只能与 pin 一起用：证明要对照节点确认的区块的
+// stateRoot 核验，不钉块的解析没有这样的区块。
+function proofOptionOf(proofs, pinConf) {
+  if (proofs === undefined || proofs === false) return null
+  if (proofs !== true && proofs !== 'strict') throw new TapeAPIError('INVALID_ARGUMENT', "proofs: pass true (check proofs, warn and fall back to the quorum reads when none can be had), 'strict' (refuse) or false")
+  if (!pinConf) throw new TapeAPIError('INVALID_ARGUMENT', "proofs needs pin: a proof is checked against the stateRoot of the block that nodes of `quorum` operators confirm, and only a pinned resolution has one; pass createTapeAPI({ pin: true, proofs })")
+  return proofs === true ? 'warn' : 'strict'
+}
+// A node that refused eth_getProof outright (the method is not there, or it will not prove that state) or served a proof
+// that does not verify is not asked for one again for this long. A rate limit, a timeout or a broken connection is no
+// such statement: that node is asked again next time (FIXED PROOFR-1: one 429 from the only node that serves proofs on
+// BNB Smart Chain stopped 'strict' for ten minutes).
+// 明确拒绝 eth_getProof 的节点（没有该方法，或不肯证明该状态）或给出核验不过的证明的节点，在这段时间内不再被索取证明。限流、
+// 超时、连接断开不是这种表态：下次照常再问（FIXED PROOFR-1：BSC 上唯一提供证明的节点一次 429，就让 'strict' 停摆十分钟）。
+const PROVER_SKIP_MS = 10 * 60_000
+const RATE_WORDS = /rate|too many requests|throttl|quota|capacity|exceeded|limit reached|per second/i
+// How a prover failed: 'refused' (skip it for PROVER_SKIP_MS) or 'transient' (ask it again next time). What single().call
+// throws: RPC_UNAVAILABLE with data.refusals when the node answered with a node-limit error (-32601, -32005, 429, ...),
+// RPC_ERROR when it answered another JSON-RPC error ("missing trie node", a proof window), RPC_UNAVAILABLE without
+// refusals for a timeout, an HTTP error or a broken connection. -32005 counts as a refusal unless its words say rate limit.
+// 证明节点失败的方式：'refused'（跳过 PROVER_SKIP_MS）或 'transient'（下次再问）。single().call 抛出的：节点以节点限制错误作答
+// 时为带 data.refusals 的 RPC_UNAVAILABLE；以其它 JSON-RPC 错误作答时为 RPC_ERROR；超时、HTTP 错误、断连为不带 refusals 的
+// RPC_UNAVAILABLE。-32005 算拒绝，除非措辞说的是限流。
+function proverFailure(e) {
+  const r = e?.data?.refusals?.[0]
+  if (r) {
+    const code = Number(r.code), msg = String(r.message ?? '')
+    if (code === -32601 || (/method.*(?:not found|does not exist)|does not exist|not (?:available|supported)|unsupported/i.test(msg) && !RATE_WORDS.test(msg))) return 'refused'
+    if (code === -32005) return RATE_WORDS.test(msg) ? 'transient' : 'refused'
+    return 'transient'
+  }
+  if (e instanceof TapeAPIError && e.code === 'RPC_ERROR') {
+    // a node lagging behind the pinned block says so; it will have it soon / 落后于所钉区块的节点会这么说，它很快就会有
+    return /header.*not found|block.*not found|unknown block|not found.*block/i.test(String(e.message)) ? 'transient' : 'refused'
+  }
+  return 'transient'
+}
 const isFloorStore = (x) => !!x && typeof x.get === 'function' && typeof x.set === 'function'
 // An execution revert: the chain's answer. rpc.js reports every JSON-RPC error all nodes agree on as RPC_ERROR, a
 // revert (geth code 3, or "execution reverted" under -32000) and "header not found" alike (review R2-2); it marks
@@ -166,12 +209,13 @@ const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : toHex(
 // 选项 / options:
 //   rpcUrls, quorum (默认 2)：urls 或其不同运营方（operatorOf）少于 quorum 直接抛 RPC_UNAVAILABLE；只有 allowSingleNode: true
 //                        才允许下调（开发用，M-11）。quorum counts operators: URLs of one operator count once.
+//   quiet: true          silence the rpc "no spare" notice, here and on other chains unless chains[id].quiet / 不显示"没有余量"提示
 //   dev: true            允许 resolve({ dev }) 与 http:// 端点；不改变链上来源清单的 holder 校验（M-06）
 //   allowHttp: true      非 dev 下也接受 http:// 端点（仅测试）/ accept http endpoints outside dev (tests only)
 //   maxSkewS (默认 300)  信封 ts 与本地时钟的最大偏差（TAP-21 §3.2）/ envelope ts freshness window
 //   identityCacheS (默认 300，上限 300；0 = 不缓存), identityCacheSize (默认 1024)：通道身份缓存（arch B7）
 //                        channel-identity cache for chain.channelKeys and groupVerifier (0 disables; never above 300 s)
-//   chains              其它链的节点：{ [chainId]: { rpcUrls, quorum (默认 2), timeoutMs, allowSingleNode } }。解析别的链上的
+//   chains              其它链的节点：{ [chainId]: { rpcUrls, quorum (默认 2), rpcTimeoutMs, allowSingleNode, quiet } }。解析别的链上的
 //                        名字或 { chainId, ... } 时，本客户端为那条链建一个子客户端（api.forChain(chainId)），节点取这里的
 //                        rpcUrls，没给就取 SDK 的默认节点 rpcUrlsFor(chainId)（chains.js 与 rpc-defaults.js）。
 //                        nodes for the other TapeOut chains. Resolving a name on another chain (1.2.344.tape is X Layer) or a
@@ -205,7 +249,7 @@ export function createTapeAPI(opts = {}) {
   const devMode = opts.dev === true
   const allowHttp = devMode || opts.allowHttp === true
   const maxSkewS = Number.isFinite(opts.maxSkewS) ? Number(opts.maxSkewS) : DEFAULT_MAX_SKEW_S
-  // ---- security 1.1 options (all @experimental, docs/DESIGN-security-1.1.md) / 安全加固 1.1 的选项 ----
+  // ---- security 1.1 options (all @experimental, see the security 1.1 hardening design) / 安全加固 1.1 的选项 ----
   //   clock               a function returning Unix seconds (default Date.now) / 返回 Unix 秒的时钟
   //   pin                 pin every read of one resolution to one block confirmed by nodes of `quorum` operators and no
   //                       older than maxAgeS: true | { tag, maxAgeS, by: 'hash' | 'number', cacheS }. Default: unpinned.
@@ -219,8 +263,17 @@ export function createTapeAPI(opts = {}) {
   //                       seen for that container, holder and signer (api.clearDelegationFloor forgets one). Default off.
   //                       拒绝 expires 低于同一容器、持有人与签名者已见最大值的委托。默认关闭。
   //   onWarning           (warning) => void; default: console.warn once per distinct warning. / 警告回调。
+  //   proofs              (security 1.2) true | 'strict': with pin, check ownerOf, fileInfo, cpuAt and isCPU against Merkle
+  //                       proofs (eth_getProof, from any node) of the pinned block's stateRoot. A verified proof that
+  //                       contradicts the quorum's answer is refused in both modes (PROOF_INVALID). When no proof can be
+  //                       had (no node serves one, none verifies, the layout is unknown) true warns and keeps the quorum
+  //                       reads (detection only); 'strict' refuses (PROOF_UNAVAILABLE, PROOF_INVALID).
+  //                       钉块时，用区块 stateRoot 的默克尔证明核对 ownerOf、fileInfo、cpuAt 与 isCPU。已核验的证明与法定数的
+  //                       回答矛盾时，两种模式都拒绝（PROOF_INVALID）。拿不到可用证明时（没有节点提供、都核验不过、布局未知），
+  //                       true 警告并沿用法定数读取（只是检测）；'strict' 拒绝。
   const now = clockOf(opts.clock)
   const pinConf = pinOptionsOf(opts.pin, chainById(chainId))
+  const proofMode = proofOptionOf(opts.proofs, pinConf)
   const sentinelMode = opts.sentinel ?? 'warn'
   if (!['warn', 'strict', 'off'].includes(sentinelMode)) throw new TapeAPIError('INVALID_ARGUMENT', "sentinel must be 'warn', 'strict' or 'off'")
   if (opts.requireContentSig !== undefined && typeof opts.requireContentSig !== 'boolean') throw new TapeAPIError('INVALID_ARGUMENT', 'requireContentSig must be a boolean')
@@ -230,7 +283,7 @@ export function createTapeAPI(opts = {}) {
   if (opts.onWarning !== undefined && typeof opts.onWarning !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'onWarning must be a function')
   const onWarning = opts.onWarning ?? consoleWarning
   const rpc = (opts.rpcUrls && opts.rpcUrls.length)
-    ? createRpc({ urls: opts.rpcUrls, quorum: opts.quorum ?? 2, timeoutMs: opts.rpcTimeoutMs, fetch: fetchImpl, allowSingleNode: opts.allowSingleNode === true })
+    ? createRpc({ urls: opts.rpcUrls, quorum: opts.quorum ?? 2, timeoutMs: opts.rpcTimeoutMs, fetch: fetchImpl, allowSingleNode: opts.allowSingleNode === true, quiet: opts.quiet === true })
     : null
   // Highest `issued` seen per container's channel record (arch B4). Pass a persistent Map-like { get, set } to keep it
   // across restarts. / 每个容器通道记录见过的最高 `issued`；传入持久化的 { get, set } 可跨重启保留。
@@ -545,7 +598,13 @@ export function createTapeAPI(opts = {}) {
   // limit or has no hash is refused without downloading it. / read() 有意等 fileInfo：缺失、超限或没有哈希的文件不下载就拒绝。
   // `beforeRead` (security 1.1): called just before read() goes out, so reads started there go out in the same turn.
   // `beforeRead`：在 read() 发出之前调用，在其中发出的读取与它在同一轮发出。
-  async function readVerifiedFile(container, path, { limit = MANIFEST_LIMIT, code = 'MANIFEST_INVALID', at = 'latest', beforeRead = null } = {}) {
+  // `proofs` (security 1.2): a proof session; the fileInfo slots (size, sha256Hash) are proven alongside fileInfo, and the
+  // file is accepted only once they equal what the nodes answered, so the bytes also hash to the PROVEN sha256Hash.
+  // `proofs`（安全加固 1.2）：证明会话；fileInfo 的槽（size、sha256Hash）与 fileInfo 一起证明，证明值与节点回答一致才接受文件，
+  // 因此字节的哈希也等于**已证明**的 sha256Hash。
+  async function readVerifiedFile(container, path, { limit = MANIFEST_LIMIT, code = 'MANIFEST_INVALID', at = 'latest', beforeRead = null, proofs = null } = {}) {
+    const slots = proofs ? STORAGE.fileInfo(container, registryKey(path)) : null
+    const proofP = proofs ? proofs.request(siteRegistry, [IMPL, slots.size, slots.sha256Hash]) : null
     const info = await view(siteRegistry, 'fileInfo', [container, registryKey(path)], at)
     const size = Number(info.size)
     if (size === 0) throw new TapeAPIError(code, `no file at ${path} for ${container} (fileInfo.size = 0)`)
@@ -567,6 +626,13 @@ export function createTapeAPI(opts = {}) {
     if (raw.length !== size) throw new TapeAPIError(code, `${path}: read ${raw.length} bytes, fileInfo.size declares ${size}`)
     const digest = toHex(sha256(raw))
     if (digest !== info.sha256Hash.toLowerCase()) throw new TapeAPIError(code, `${path}: sha256 of bytes is ${digest}, fileInfo.sha256Hash declares ${info.sha256Hash}`)
+    if (proofP) {
+      await proofs.settle('fileInfo', siteRegistry, proofP, { impl: LAYOUT_IMPLEMENTATIONS.siteRegistry, detail: { container: checksumAddress(container), path: registryKey(path) }, check: (v) => {
+        const provenSize = v.get(slots.size) & 0xffffffffn, provenHash = '0x' + v.get(slots.sha256Hash).toString(16).padStart(64, '0')
+        if (provenSize !== BigInt(size)) return `fileInfo.size is ${size}, the proven size is ${provenSize}`
+        return provenHash === digest ? null : `the bytes hash to ${digest}, the proven sha256Hash is ${provenHash}`
+      } })
+    }
     return { bytes: raw, size, sha256Hash: digest, contentType: info.contentType, updatedAt: info.updatedAt }
   }
 
@@ -580,7 +646,7 @@ export function createTapeAPI(opts = {}) {
     // The directory's record goes out with the file reads; it is still looked at only after the file checks passed.
     // 目录记录与文件读取一起发出；仍然只在文件检查通过之后才看它。
     const serviceP = isAddress(directory) ? early(() => view(directory, 'serviceOf', [container], ctx.at)) : null
-    const file = await readVerifiedFile(container, MANIFEST_PATH, { at: ctx.at, beforeRead: ctx.beforeRead })
+    const file = await readVerifiedFile(container, MANIFEST_PATH, { at: ctx.at, beforeRead: ctx.beforeRead, proofs: ctx.proofs })
     const m = safeParseJSON(new TextDecoder().decode(file.bytes), { code: 'MANIFEST_INVALID' })
     let service = null
     if (serviceP) {
@@ -700,7 +766,7 @@ export function createTapeAPI(opts = {}) {
       const conf = opts.chains?.[n] ?? {}
       sub = createTapeAPI({
         chainId: n, rpcUrls: conf.rpcUrls ?? rpcUrlsFor(n), quorum: conf.quorum ?? 2, rpcTimeoutMs: conf.rpcTimeoutMs ?? opts.rpcTimeoutMs,
-        allowSingleNode: conf.allowSingleNode === true, hub: conf.hub, factory: conf.factory, siteRegistry: conf.siteRegistry,
+        allowSingleNode: conf.allowSingleNode === true, quiet: (conf.quiet ?? opts.quiet) === true, hub: conf.hub, factory: conf.factory, siteRegistry: conf.siteRegistry,
         fetch: opts.fetch, dev: opts.dev, allowHttp: opts.allowHttp, maxSkewS: opts.maxSkewS,
         identityCacheS: opts.identityCacheS, identityCacheSize: opts.identityCacheSize, channelRecordFloor: recordFloor, _router: forChain,
         // security 1.1: the same choices on every chain, but each chain's own finality tag and age limit unless
@@ -708,6 +774,7 @@ export function createTapeAPI(opts = {}) {
         clock: opts.clock, sentinel: opts.sentinel, requireContentSig: opts.requireContentSig, onWarning: opts.onWarning,
         delegationFloor: delegationFloor ?? undefined,
         pin: conf.pin ?? (pinConf ? { by: pinConf.by, cacheS: pinConf.cacheS } : false),
+        proofs: opts.proofs,
       })
       subClients.set(n, sub)
     }
@@ -799,7 +866,7 @@ export function createTapeAPI(opts = {}) {
   async function pinnedBlock() {
     let e = pinShared
     if (!e || (e.done && now() - e.at >= pinConf.cacheS)) {
-      const p = needRpc().confirmedBlock(pinConf.tag)
+      const p = proofMode ? needRpc().confirmedBlock(pinConf.tag, { stateRoot: true }) : needRpc().confirmedBlock(pinConf.tag)
       const entry = { p, at: now(), done: false }
       e = pinShared = entry
       p.then(() => { entry.done = true }, () => { if (pinShared === entry) pinShared = null })
@@ -855,6 +922,124 @@ export function createTapeAPI(opts = {}) {
     return p
   }
 
+  // ---- security 1.2: Merkle proofs (@experimental) / 默克尔证明 ----
+  // With `proofs`, the reads resolve bases trust on (cpuAt, isCPU, ownerOf, fileInfo) are also proven: one eth_getProof per
+  // contract at the pinned block, from ANY node (a proof needs no quorum, a wrong one fails the check), checked here
+  // against the stateRoot that the confirming nodes agreed on (rpc.confirmedBlock), and the proven values compared with
+  // the quorum's eth_call answers. Every eth_call still goes through the quorum as before (TAP-20 §3.2): a proof adds a
+  // check, it never replaces one. Each proof goes out in the same turn as the eth_call it checks (no extra round) and is
+  // awaited only where that answer is accepted. Provers are asked one at a time, the last one whose proof verified first; a
+  // proof that does not verify sends the request on to the next node, and only when no node gave one that verifies is the
+  // read unavailable or invalid (FIXED PROOFR-1). A node that refused the method, or served a proof that did not verify,
+  // is skipped for PROVER_SKIP_MS; a rate limit or a timeout is not (BSC's default nodes: only Alchemy serves proofs).
+  // 开启 `proofs` 后，resolve 据以信任的读取（cpuAt、isCPU、ownerOf、fileInfo）同时被证明：每个合约在钉住的区块上一个 eth_getProof，
+  // 来自**任一**节点（证明不需要法定数，错的证明核验不过），在本地对照确认节点一致给出的 stateRoot 核验，并与法定数的 eth_call 回答
+  // 比对。每个 eth_call 仍照旧过法定数（TAP-20 §3.2）：证明只增加检查，从不替代检查。证明与它所核对的 eth_call 在同一轮发出（不多一轮），
+  // 只在接受该回答的地方等待。证明节点逐个询问，上次证明核验通过的优先；核验不过就转问下一个节点，所有节点都拿不出核验通过的证明，
+  // 该读取才记为不可用或无效（FIXED PROOFR-1）。拒绝该方法或给出核验不过的证明的节点跳过 PROVER_SKIP_MS；限流与超时不跳过
+  // （BSC 默认节点里只有 Alchemy 提供证明）。
+  const proverSkip = new Map()   // url -> skip until (ms) / 跳过到何时
+  const provers = new Map()      // url -> single-node client / 单节点客户端
+  let proverLast = null
+  const hostOf = (u) => { try { return new URL(u).hostname } catch { return 'node' } }
+  // `verify(answer)`: the checked proof, or a throw. Returns { proven, node } from the first node whose proof verifies;
+  // else { invalid: [{ node, reason }], tried } when some node served a proof and none verified, else { tried }.
+  // `verify(answer)`：核验后的证明，或抛错。返回第一个核验通过的节点的 { proven, node }；有节点给了证明但都核验不过时返回
+  // { invalid, tried }；否则返回 { tried }。
+  async function fetchProof(address, slots, blockNumber, verify) {
+    const r = needRpc()
+    const order = [...r.urls].sort((a, b) => (b === proverLast) - (a === proverLast))
+    const tried = [], invalid = []
+    for (const url of order) {
+      if ((proverSkip.get(url) ?? 0) > Date.now()) { tried.push(`${hostOf(url)}: skipped, refused or failed a proof in the last ${PROVER_SKIP_MS / 60_000} min`); continue }
+      let one = provers.get(url)
+      if (!one) { one = r.single(url); provers.set(url, one) }
+      let answer
+      try {
+        answer = await one.call('eth_getProof', [address, slots.map((x) => '0x' + x.toString(16).padStart(64, '0')), '0x' + blockNumber.toString(16)])
+      } catch (e) {
+        if (proverFailure(e) === 'refused') proverSkip.set(url, Date.now() + PROVER_SKIP_MS)
+        tried.push(`${hostOf(url)}: ${String(e?.message ?? e).slice(0, 120)}`)
+        continue
+      }
+      let proven
+      try { proven = verify(answer) } catch (e) {
+        proverSkip.set(url, Date.now() + PROVER_SKIP_MS)
+        invalid.push({ node: hostOf(url), reason: String(e?.message ?? e) })
+        tried.push(`${hostOf(url)}: a proof that does not verify`)
+        continue
+      }
+      proverLast = url
+      return { proven, node: hostOf(url) }
+    }
+    return invalid.length ? { invalid, tried } : { tried }
+  }
+  // One resolution's proofs. request() starts one eth_getProof (shared by identical requests); settle() records one read
+  // as verified, unavailable or invalid, and in 'strict' throws for the last two. `check(values)` is null when the proven
+  // values equal the quorum's answer, else why not: a verified proof that contradicts the quorum is refused in EVERY mode
+  // (FIXED PROOFR-2: with proofs: true it was a warning, and the forged answer was accepted). `impl`: the implementations
+  // whose storage layout is known; the proxy's ERC-1967 slot is proven in the same request and must name one of them.
+  // 一次解析的证明。request() 发出一个 eth_getProof（相同请求共用）；settle() 把一项读取记为已证明、不可用或无效，'strict' 下后两者抛错。
+  // `check(values)` 在证明值与法定数回答一致时为 null，否则给出原因：已核验的证明与法定数矛盾时，**任何**模式都拒绝（FIXED PROOFR-2：
+  // proofs: true 下原先只警告，伪造的回答照样被接受）。`impl`：已知存储布局的实现；代理的 ERC-1967 槽在同一请求里证明，须为其一。
+  function proofSession(pinned) {
+    const s = { mode: proofMode, block: pinned.number, stateRoot: pinned.stateRoot ?? null, verified: [], unavailable: [], invalid: [] }
+    const shared = new Map()
+    s.request = (address, slots) => {
+      const key = `${String(address).toLowerCase()}:${slots.join(',')}`
+      if (!shared.has(key)) shared.set(key, early(() => prove(address, slots)))
+      return shared.get(key)
+    }
+    async function prove(address, slots) {
+      if (!s.stateRoot) return { unavailable: `nodes of ${needRpc().quorum} operators did not agree on a stateRoot for block ${s.block}` }
+      const got = await fetchProof(address, slots, s.block, (answer) => verifyAccountProof(s.stateRoot, address, slots, answer))
+      if (got.proven) return { ...got.proven, node: got.node }
+      if (got.invalid) return { invalid: got.invalid.map((x) => `the proof from ${x.node} does not verify against stateRoot ${s.stateRoot} of block ${s.block}: ${x.reason}`).join('; '), node: got.invalid.map((x) => x.node).join(', '), tried: got.tried }
+      return { unavailable: `no node served eth_getProof for block ${s.block} (${got.tried.join('; ')})` }
+    }
+    s.settle = async (read, address, p, { impl = null, check, detail = {} }) => {
+      const r = await p
+      const fail = (list, code, reason, always = false) => {
+        const entry = { read, address: checksumAddress(address), ...detail, reason, ...(r.node ? { node: r.node } : {}) }
+        list.push(entry)
+        if (proofMode === 'strict' || always) throw new TapeAPIError(code, `${read}: ${reason}`, { data: { ...entry, block: s.block, stateRoot: s.stateRoot } })
+      }
+      if (r.unavailable) return fail(s.unavailable, 'PROOF_UNAVAILABLE', r.unavailable)
+      if (r.invalid) return fail(s.invalid, 'PROOF_INVALID', r.invalid)
+      if (impl) {
+        const word = r.values.get(BigInt(IMPL_SLOT)), got = addressOfWord(word)
+        if (got === null) return fail(s.unavailable, 'PROOF_UNAVAILABLE', `the proxy's ERC-1967 implementation slot holds 0x${word.toString(16)}, which is not an address: its storage layout is unknown`)
+        if (!impl.includes(got)) return fail(s.unavailable, 'PROOF_UNAVAILABLE', `the proxy runs implementation ${got}, whose storage layout this SDK does not know`)
+      }
+      // A verified proof that contradicts the quorum: refused whatever the mode (FIXED PROOFR-2) / 已核验的证明与法定数矛盾：任何模式都拒绝
+      const why = check(r.values)
+      if (why) return fail(s.invalid, 'PROOF_INVALID', `the proven state at block ${s.block} differs from what the nodes answered: ${why}`, true)
+      s.verified.push({ read, address: checksumAddress(address), ...detail, node: r.node })
+    }
+    return s
+  }
+  const IMPL = BigInt(IMPL_SLOT)
+  // The factory proof: cpuAt(n) when a name gave n, and isCPU(circuits) / 工厂证明：名字给出 n 时含 cpuAt(n)，以及 isCPU(circuits)
+  function factoryProof(proofs, circuits, n = null) {
+    const slots = [IMPL, ...(n === null ? [] : [STORAGE.cpuAt(n).length, STORAGE.cpuAt(n).element]), STORAGE.isCPU(circuits)]
+    return { circuits, n, p: proofs.request(factory, slots) }
+  }
+  // Called once isCPU(fp.circuits) was answered true by the nodes / 在节点答 isCPU(fp.circuits) 为 true 之后调用
+  async function settleFactory(proofs, fp) {
+    const layout = { impl: LAYOUT_IMPLEMENTATIONS.factory }
+    if (fp.n !== null) {
+      const { length, element } = STORAGE.cpuAt(fp.n)
+      await proofs.settle('cpuAt', factory, fp.p, { ...layout, detail: { processor: String(fp.n) }, check: (v) => {
+        if (v.get(length) <= BigInt(fp.n)) return `the factory has ${v.get(length)} processors, the nodes answered cpuAt(${fp.n})`
+        return eqAddr(addressOfWord(v.get(element)), fp.circuits) ? null : `cpuAt(${fp.n}) holds 0x${v.get(element).toString(16)}, the nodes answered ${fp.circuits}`
+      } })
+    }
+    await proofs.settle('isCPU', factory, fp.p, { ...layout, detail: { circuits: checksumAddress(fp.circuits) }, check: (v) => {
+      const w = v.get(STORAGE.isCPU(fp.circuits))
+      return w === 1n ? null : `isCPU(${fp.circuits}) holds ${w}, the nodes answered true`
+    } })
+  }
+
   async function resolve(target) {
     // A name or { chainId, ... } on another chain is resolved by that chain's client (TAP-20 §3.1: identity, manifest and
     // delegation all live on the chain the circuit is on). / 别的链上的名字或 { chainId, ... } 交给那条链的客户端解析。
@@ -876,11 +1061,17 @@ export function createTapeAPI(opts = {}) {
     const devTarget = !!(target && typeof target === 'object' && 'dev' in target)
     const pinned = pinConf && !devTarget ? await pinnedBlock() : null
     const at = pinned ? blockParamOf(pinned) : 'latest'
+    // Security 1.2: this resolution's proofs (only with pin) / 本次解析的证明（只在钉块时）
+    const proofs = proofMode && pinned ? proofSession(pinned) : null
     let implsP = null
-    const ctx = { at, beforeRead: () => { implsP = implsP ?? early(() => readImplementations(at)) } }
+    const ctx = { at, beforeRead: () => { implsP = implsP ?? early(() => readImplementations(at)) }, proofs }
     let src
     let located = null
-    const ahead = (circuits, tokenId) => ({ circuits, tokenId, isCPU: early(() => isCPUAt(circuits, at)), holder: early(() => view(circuits, 'ownerOf', [BigInt(tokenId)], at)) })
+    // `n`: the processor number when a name gave the circuits (its cpuAt is proven too) / 名字给出电路时的处理器编号（其 cpuAt 也证明）
+    const ahead = (circuits, tokenId, n = null) => ({
+      circuits, tokenId, isCPU: early(() => isCPUAt(circuits, at)), holder: early(() => view(circuits, 'ownerOf', [BigInt(tokenId)], at)),
+      ...(proofs ? { factoryProof: factoryProof(proofs, circuits, n), ownerProof: proofs.request(circuits, [STORAGE.ownerOf(tokenId)]) } : {}),
+    })
     if (typeof target === 'string') {
       const name = tapeName(target)
       if (isAddress(target)) src = await manifestFromContainer(target, ctx)
@@ -890,7 +1081,7 @@ export function createTapeAPI(opts = {}) {
       else if (name) {
         const circuits = await factCpuAt(name.processor, at)
         const container = factAccountOf(circuits, name.tokenId, at)
-        located = ahead(circuits, name.tokenId)
+        located = ahead(circuits, name.tokenId, BigInt(name.processor))
         src = await manifestFromContainer(await container, ctx)
       } else {
         const container = await view(needDirectory(), 'resolve', [labelToBytes32(target)], at)
@@ -928,7 +1119,7 @@ export function createTapeAPI(opts = {}) {
     // Steps 3-5 and the contribution read go out together; each is still checked in its place below. accountOf of the pair
     // the target named is the cached fact from above: no second read.
     // 第 3-5 步与贡献比例的读取一起发出；每一项仍在下面原来的位置检查。目标所给二元组的 accountOf 是上面缓存的事实：不再读第二次。
-    let holder = null, contributionP = null
+    let holder = null, contributionP = null, ownerProof = null, cpuProof = null
     const warnings = []
     const issue = (code, message, extra = {}) => { const w = { code, message, ...extra }; warnings.push(w); try { onWarning(w) } catch { /* a reporter never breaks resolve / 报告函数绝不影响解析 */ } }
     let sentinel = null
@@ -937,10 +1128,19 @@ export function createTapeAPI(opts = {}) {
       const derivedP = factAccountOf(manifest.circuits, manifest.tokenId, at)
       const cpu = same ? located.isCPU : early(() => isCPUAt(manifest.circuits, at))
       holder = same ? located.holder : early(() => view(manifest.circuits, 'ownerOf', [BigInt(manifest.tokenId)], at))
+      if (proofs) {
+        ownerProof = same ? located.ownerProof : proofs.request(manifest.circuits, [STORAGE.ownerOf(manifest.tokenId)])
+        // The target's own factory proof when it named these circuits (with cpuAt for a name); otherwise isCPU alone. A
+        // manifest naming other circuits than the target is refused below (its container cannot derive), so only these count.
+        // 目标所指正是这些电路时用它的工厂证明（名字还含 cpuAt），否则只证 isCPU。清单所写电路与目标不同的，下面会因容器推导不出而被拒。
+        cpuProof = located && eqAddr(located.circuits, manifest.circuits) ? located.factoryProof : factoryProof(proofs, manifest.circuits)
+      }
       contributionP = early(() => readContribution(manifest, at))
       const derived = await derivedP
       if (!eqAddr(derived, manifest.container)) throw new TapeAPIError('MANIFEST_INVALID', `hub.accountOf(${manifest.circuits}, ${manifest.tokenId}) is ${derived}, manifest.container is ${manifest.container}`)
       await requireCPU(manifest.circuits, 'MANIFEST_INVALID', cpu)
+      // Security 1.2: cpuAt and isCPU against the factory's proven storage / 对照工厂已证明的存储核对 cpuAt 与 isCPU
+      if (proofs) await settleFactory(proofs, cpuProof)
       if (sentinelProxies.length || localDerivation) sentinel = { mode: sentinelMode, implementations: null, container: 'unchecked' }
       // Sentinel, second half: the hub's derivation against ERC-6551 computed here, with no read.
       // 哨兵的后一半：hub 的推导与本地按 ERC-6551 算出的地址比对，不读链。
@@ -958,6 +1158,15 @@ export function createTapeAPI(opts = {}) {
       if (!eqAddr(src.service.circuits, manifest.circuits) || BigInt(src.service.tokenId) !== BigInt(manifest.tokenId)) throw new TapeAPIError('MANIFEST_INVALID', 'manifest circuits/tokenId do not match directory record')
     }
     const verified = await verifyDelegation(manifest, { dev, holder, at })
+    // Security 1.2: the holder against the circuit's proven ownerOf slot (a proxy whose code has no cheap proof, so the
+    // layout is checked by agreement with eth_call) / 持有人对照电路合约已证明的 ownerOf 槽
+    if (proofs && ownerProof) {
+      const slot = STORAGE.ownerOf(manifest.tokenId)
+      await proofs.settle('ownerOf', manifest.circuits, ownerProof, { detail: { tokenId: String(manifest.tokenId) }, check: (v) => {
+        const w = v.get(slot)
+        return eqAddr(addressOfWord(w), verified.holder) ? null : `ownerOf(${manifest.tokenId}) is ${verified.holder}, the proven slot holds 0x${w.toString(16)}`
+      } })
+    }
     const contribution = dev ? 0 : await contributionP
     // TAP-20 §3.10 (OPTIONAL, security 1.1): the holder's signature over the manifest content. Checked whenever present
     // (a bad one is a warning) and required only by requireContentSig. Without requireContentSig nothing in this check
@@ -1026,6 +1235,13 @@ export function createTapeAPI(opts = {}) {
     if (pinned) svc.pinned = { number: pinned.number, hash: pinned.hash, timestamp: pinned.timestamp, tag: pinned.tag, by: pinConf.by }
     if (sentinel) svc.sentinel = sentinel
     if (contentSig) svc.contentSig = contentSig
+    // Security 1.2: what was proven, and (proofs: true) a warning for each read that could not be proven (a contradiction
+    // was thrown above). / 证明了什么；无法证明的每项各一条警告（矛盾已在上面抛出）
+    if (proofs) {
+      for (const x of proofs.unavailable) issue('PROOF_UNAVAILABLE', `${x.read} ${x.address} not proven: ${x.reason}`, { read: x.read })
+      for (const x of proofs.invalid) issue('PROOF_INVALID', `${x.read} ${x.address}: ${x.reason}`, { read: x.read })
+      svc.proofs = { mode: proofs.mode, block: proofs.block, stateRoot: proofs.stateRoot, verified: proofs.verified, unavailable: proofs.unavailable, invalid: proofs.invalid }
+    }
     if (warnings.length) svc.warnings = warnings
     ACCEPTED.set(svc, pricesOf(manifest))
     return svc
@@ -1073,7 +1289,7 @@ export function createTapeAPI(opts = {}) {
     svc.manifest = fresh.manifest; svc.verified = fresh.verified; svc.contribution = fresh.contribution
     if (fresh.aiProblems) svc.aiProblems = fresh.aiProblems; else delete svc.aiProblems
     svc.file = fresh.file; svc.fetchedAt = fresh.fetchedAt
-    for (const k of ['pinned', 'sentinel', 'contentSig', 'warnings']) { if (fresh[k] !== undefined) svc[k] = fresh[k]; else delete svc[k] }
+    for (const k of ['pinned', 'sentinel', 'contentSig', 'proofs', 'warnings']) { if (fresh[k] !== undefined) svc[k] = fresh[k]; else delete svc[k] }
     return svc
   }
 
@@ -1136,7 +1352,7 @@ export function createTapeAPI(opts = {}) {
     // say that plainly instead of failing somewhere inside the request loop. / 本客户端只走 HTTP，明说而不是在请求循环里出错。
     if (!m.endpoints.live.length) throw new TapeAPIError('PROVIDER_UNAVAILABLE', `${svc.container} publishes no live endpoint (async: true only); this client cannot reach it`)
     let price = gatePrice(svc, method, methodPrice(def), maxPrice)
-    // Payments run on BNB Smart Chain only (docs/PLAN-2026Q4.md, 2026-09-28): no escrow, no BEM on the L2s.
+    // Payments run on BNB Smart Chain only (the 2026 Q4 plan, 2026-09-28): no escrow, no BEM on the L2s.
     // 支付只在 BNB Smart Chain：L2 上没有托管合约，也没有 BEM。
     if (price > 0n && known && known.payments === false) throw new TapeAPIError('PAYMENT_REQUIRED', `${method} costs ${def.priceBEM} BEM, but ${svc.container} is on ${known.name}: TapeAPI payments run on BNB Smart Chain only`, { data: { method, chainId } })
     if (price > 0n && !payer) throw new TapeAPIError('PAYMENT_REQUIRED', `${method} costs ${def.priceBEM} BEM; pass { payer }`)

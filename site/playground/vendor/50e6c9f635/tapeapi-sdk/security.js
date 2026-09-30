@@ -1,4 +1,4 @@
-// Security 1.1 helpers (docs/DESIGN-security-1.1.md). Everything here is @experimental: outside the 1.0 stability
+// Security 1.1 helpers (the security 1.1 hardening design). Everything here is @experimental: outside the 1.0 stability
 // promise, and it may change in a 1.x minor release.
 // 安全加固 1.1 的辅助函数。这里的一切都是 @experimental：不在 1.0 稳定承诺之内，1.x 的小版本里可能改变。
 //

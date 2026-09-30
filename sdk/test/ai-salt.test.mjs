@@ -1,4 +1,4 @@
-// Request salt (docs/PLAN-2026Q4.md, privacy item 3 of the "do now" list): createVerifyingFetch appends 64 random
+// Request salt (the 2026 Q4 plan, privacy item 3 of the "do now" list): createVerifyingFetch appends 64 random
 // whitespace characters to a JSON request body, so the receipt's requestSha256 cannot be confirmed by hashing guessed
 // prompts. The upstream parses the same request (`user`, `metadata.user_id` and every other field untouched);
 // compressed and non-JSON bodies are sent as they are; the hash is over the bytes actually sent; the receipts of all

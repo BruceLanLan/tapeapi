@@ -37,8 +37,8 @@ test('safeParseJSON parses normal JSON and rejects forbidden keys anywhere / mal
   assert.equal(({}).polluted, undefined)
 })
 
-// 2026-09-21：签名前的规范化收紧，理由见 sdk/src/canon.js 的注释与 docs/research/RESEARCH-process-signing.md。
-// Hardening of the pre-signature canonical form; rationale in canon.js and docs/research/RESEARCH-process-signing.md.
+// 2026-09-21：签名前的规范化收紧，理由见 sdk/src/canon.js 的注释与进程签名的调研。
+// Hardening of the pre-signature canonical form; rationale in canon.js and the process-signing research.
 test('canonicalJSON refuses -0, integers past 2^53, and any value carrying toJSON()', () => {
   // -0 serialises as 0, so the two are indistinguishable after the fact / -0 会被序列化成 0，事后无法区分
   assert.throws(() => canonicalJSON([-0]), (e) => e.code === 'CANON_INVALID' && /negative zero/.test(e.message))

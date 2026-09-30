@@ -13,14 +13,30 @@
 旁路，也不代付电路、容器或 gas。本指南里的 `42.1013.tape` 是示例名，链上没有以它发布的服务。命令里请换成你自己的 TapeOut 名字和
 旁路地址。
 
+第 0 步需要本仓库的检出，并在它的根目录安装一次依赖（Node.js 20 或以上）：
+
+```sh
+git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi
+npm ci --no-audit --no-fund
+```
+
+第 1 到 7 步的检查用 `tapeapi-doctor`（实验性），1.2.0 起随 SDK 的发布包提供。表里的每个 `tapeapi-doctor` 都指下面这条命令，
+在任何目录都能运行，不需要克隆仓库：
+
+```sh
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-doctor <你的名字>
+```
+
+在检出的根目录里，`node sdk/bin/tapeapi-doctor.js <你的名字>` 效果相同。两种方式下，报告给出的下一条命令都按你的运行方式书写。
+
 | # | 步骤 | 在哪里做（谁付费） | 检查 | 你应该看到 |
 |---|---|---|---|---|
-| 0 | 在本机看整条路径跑通：不需要密钥、电路，也不花钱 | 本仓库 | `node examples/relay-trial/trial.mjs` | 打印“试跑通过。” |
-| 1 | 取得一枚 TapeOut 电路 | [tapeout.net](https://tapeout.net)（由你购买） | `node sdk/bin/tapeapi-doctor.js <你的名字>` | `name`、`circuit` 通过 |
-| 2 | 开通它的容器 | tapeout.net（一笔交易，gas 由你支付） | 同上 | `container` 通过；`manifest-file` 失败，第 5 步之前本该如此 |
-| 3 | 在你的服务器上、你的 HTTPS 反向代理后面，把旁路放在你的网关前面运行 | [见下文](#选择旁路的运行方式)（你的服务器） | `node sdk/bin/tapeapi-doctor.js --offline https://api.example.com` | 报告列出设置模式下还缺的变量 |
-| 4 | 服务密钥与委托；把值填进 `.env` 并重启旁路 | [持有人操作台](https://tapeapi.fun/console/)第 3、4 步（不收费、不花 gas） | `node sdk/bin/tapeapi-doctor.js https://api.example.com` | `delegation`、`reach`、`receipt` 通过；`manifest-file` 警告“尚未发布上链” |
-| 5 | 发布清单（含价目表） | 操作台第 5 步（一笔交易，gas 由你支付） | `node sdk/bin/tapeapi-doctor.js <你的名字>` | 全部通过：退出码 0 |
+| 0 | 在本机看整条路径跑通：不需要密钥、电路，也不花钱 | 本仓库的检出，先在根目录运行 `npm ci`（见上） | `node examples/relay-trial/trial.mjs` | 打印“试跑通过。” |
+| 1 | 取得一枚 TapeOut 电路 | [tapeout.net](https://tapeout.net)（由你购买） | `tapeapi-doctor <你的名字>` | `name`、`circuit` 通过 |
+| 2 | 开通它的容器 | tapeout.net（一笔交易，gas 由你支付） | `tapeapi-doctor <你的名字>` | `container` 通过；`manifest-file` 失败，第 5 步之前本该如此 |
+| 3 | 在你的服务器上、你的 HTTPS 反向代理后面，把旁路放在你的网关前面运行 | [见下文](#选择旁路的运行方式)（你的服务器） | `tapeapi-doctor --offline https://api.example.com` | 报告列出设置模式下还缺的变量 |
+| 4 | 服务密钥与委托；把值填进 `.env` 并重启旁路 | [持有人操作台](https://tapeapi.fun/console/)第 3、4 步（不收费、不花 gas） | `tapeapi-doctor https://api.example.com` | `delegation`、`reach`、`receipt` 通过；`manifest-file` 警告“尚未发布上链” |
+| 5 | 发布清单（含价目表） | 操作台第 5 步（一笔交易，gas 由你支付） | `tapeapi-doctor <你的名字>` | 全部通过：退出码 0 |
 | 6 | 告诉你的用户 | [你的用户要做什么](#你的用户要做什么) | 在用户机器上运行 `tapeapi-verify <你的名字>` | 每次调用一行 `OK` |
 | 7 | 每 90 天续期委托 | 操作台第 4 步“续期” | `tapeapi-doctor <你的名字>`，在你的 CI 里每天跑 | 到期前 30 天起 `delegation` 警告 |
 
@@ -32,8 +48,13 @@
 名字则为其已签名 `endpoints.live` 的主机），绝不发往清单指定的其它主机，且只走 https（仅对回环地址上的旁路、并加 `--allow-http`
 时允许 http）；报告里的每段文字（含 `--json`）都把它显示为 `***`，即使网关把它回显出来。每项失败都用中英双语说明缺什么、去哪改、
 下一条命令。退出码：0 通过（允许警告；`--strict` 时警告也算失败），1 有检查失败，2 用法错误，3 链或网络读不到（超时、拒绝连接、
-DNS：请重试）；`--json` 输出供 CI 使用的报告。它只读：不签任何东西、不发交易。
-目前从本仓库的检出运行（`git clone` 后在根目录 `npm install`），1.1.0 的发布包里还没有它。
+DNS：请重试）；`--json` 输出供 CI 使用的报告；`--lang en` 或 `--lang zh` 只输出一种语言。它只读：不签任何东西、不发交易。
+给它旁路地址时，它探测的就是这个地址，而不是旁路提供的清单里发布的地址；两者不同时会警告。它是实验性的：检查项与输出在 1.x
+版本里仍可能变化。
+
+全部检查通过后，你可以自己提一个拉取请求，把服务的名字加进 `site/directory/providers.json`，登记到[服务方目录](https://tapeapi.fun/directory/)
+（步骤见 [`directory/`](https://github.com/BruceLanLan/tapeapi/tree/main/directory)）。目录每天对每一条重新运行诊断并显示结果。
+登记只代表通过了自动检查，不代表推荐、担保或审计；不登记，你的服务照样可用。
 
 ## 你得到什么
 
@@ -74,6 +95,8 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi/examples/new-
 cp env.example .env && cp models.example.json models.json     # 两个都要填
 docker compose up -d
 ```
+
+在这个目录里，检出自带的诊断是 `node ../../sdk/bin/tapeapi-doctor.js`；表里的 `npx` 写法在任何目录都能用。
 
 你的反向代理把 `https://api.example.com` 转给旁路（`127.0.0.1:8080`），把 new-api 的网页控制台用单独的主机名转给 `127.0.0.1:3000`。
 身份变量设齐之前，旁路处于设置模式，并说明缺了什么。完整步骤、反向代理设置、如何把旁路加进已有的 new-api 部署、
@@ -137,7 +160,7 @@ docker compose up -d
 |---|---|
 | OpenAI SDK 与各类 OpenAI 兼容工具 | `https://api.example.com/v1` |
 | Anthropic SDK、Claude Code（`ANTHROPIC_BASE_URL`） | `https://api.example.com`（SDK 自己加 `/v1`） |
-| Codex（`config.toml` 里的 `base_url`，`wire_api = "responses"`） | `https://api.example.com/v1` |
+| Codex（`OPENAI_BASE_URL`，或 `config.toml` 里的 `base_url` 加 `wire_api = "responses"`） | `https://api.example.com/v1` |
 
 **核验回执。** 开发者包裹官方 SDK 的 fetch；之后每个回答都会对照链上清单核验（signer、价目表、确切字节），核验失败就报错，从不静默吞掉：
 
@@ -149,7 +172,7 @@ const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })            // 不同运�
 const svc = await api.resolve('42.1013.tape')                    // 你的服务的 TapeOut 名字（这里是示例名）
 const fetch = ai.createVerifyingFetch({ api, service: svc })
 const baseURL = svc.manifest.ai.endpoints.find((e) => e.format === 'openai-chat').baseUrl
-const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
+const client = new OpenAI({ baseURL, apiKey: process.env.API_KEY, fetch })  // 用户在你这里的密钥，照旧
 ```
 
 请原样使用清单里的 `baseUrl`。发往任何其它主机（`localhost` 对 `127.0.0.1`、端口不同）的计量路径请求，会在发送之前以
@@ -162,12 +185,24 @@ const client = new OpenAI({ baseURL, apiKey: process.env.RELAY_KEY, fetch })
 带 `x-should-retry: false` 与 `x-tapeapi-verify-error: RECEIPT_INVALID` 两个头；官方 SDK 抛出 `APIError` 且不重试，自己调用
 这个 fetch 的代码检查 `res.ok`。付费调用在其它 5xx 上是否自动重试，由你自己决定（SDK 的 `maxRetries`）。
 
-**Claude Code 与 Codex 用户**自己读不到回执。他们在本机运行核验代理 `tapeapi-verify`，把客户端指向它：
+**Claude Code 与 Codex 用户**自己读不到回执。他们在本机运行核验代理 `tapeapi-verify`，把客户端指向它。`tapeapi-verify`
+会一直在前台运行，所以客户端要在第二个终端里启动：
 
 ```sh
-# 42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.2.0/tapeapi-sdk-1.2.0.tgz tapeapi-verify 42.1013.tape
-ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          # Codex：OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
+# 终端 1。42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-verify 42.1013.tape
+```
+
+```sh
+# 终端 2，macOS 或 Linux
+ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude
+OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex             # Codex（或 config.toml 里的 base_url）
+```
+
+```powershell
+# 终端 2，Windows PowerShell
+$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8790"; claude
+$env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex
 ```
 
 照原样用示例名运行会停在 “no file at /.well-known/tapeapi.json”：链上没有以 `42.1013.tape` 发布的服务。还没有自己的服务？

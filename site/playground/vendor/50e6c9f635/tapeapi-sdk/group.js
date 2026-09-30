@@ -43,6 +43,7 @@ const SLOT = 32 + 16                                      // wrapped K + tag; no
 const HEADER_MSG = 1 + 16 + 8 + 4 + 8 + 24                // 61: type, gid, epoch, sender, seq, nonce
 const SIG = 64
 const SEQ_SEGMENT = 1n << 16n                             // seq = clock ms << 16 | counter (§3.4)
+const OWN_SEALS_KEPT = 1024                               // nonces of our latest seals kept per epoch (GRP2-3) / 每纪元保留的最近封装 nonce 数
 
 const te = new TextEncoder()
 const fail = (msg, extra) => { throw new TapeAPIError('GROUP_INVALID', msg, extra) }
@@ -439,14 +440,22 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
   let mySeq = lastSeq === null ? 0n : lastSeq + 1n
   let queue = Promise.resolve()      // one acceptEpoch at a time (audit G-03) / 同一时刻只处理一条纪元消息
   let sealed = lastSeq !== null      // whether mySeq - 1 is a seq actually used (or restored) / mySeq - 1 是否真的用过（或恢复而来）
+  // GRP2-3: messages signed with our own key that this handle did not seal come from another device holding the same
+  // identity (§8: one identity is one device). A restarted handle that was given lastSeq takes its own index's seqs up to
+  // it for its own earlier messages. / 用本身份签名、却不是本句柄封装的消息来自持有同一身份的另一台设备；带 lastSeq 重启的句柄
+  // 把自己序号不超过它的消息视为重启前自己发的。
+  const restoredSeq = lastSeq
+  let otherDevice = null             // { count, epoch, seq } once seen / 一旦发现即记录
   const room = groupRoom(gid)
   const clock = { now }
 
-  function install(epoch, roster, rosterBytes, K) {
+  // `keyless`: an epoch stood up from snapshot() by resumeGroup, only so the next one chains to it; it has no key, and
+  // open() says so instead of failing authentication (GRP2-4). / 由 resumeGroup 从快照立起、只为接续的纪元：没有密钥，open() 如实说明
+  function install(epoch, roster, rosterBytes, K, { keyless = false } = {}) {
     if (current !== null && epoch <= current) fail(`epoch ${epoch} is not newer than ${current}`)   // never backwards / 绝不后退
     const index = roster.members.findIndex((m) => sameContainer(m, self))
     const prevEpoch = current
-    epochs.set(epoch, { roster, rosterBytes, K, index, members: roster.members, high: new Map(), keys: new Map(), expiresAt: Infinity, removed: new Set(), movedOn: new Set() })
+    epochs.set(epoch, { roster, rosterBytes, K, index, members: roster.members, high: new Map(), keys: new Map(), expiresAt: Infinity, removed: new Set(), movedOn: new Set(), keyless, own: null })
     if (prevEpoch !== null && epochs.has(prevEpoch)) {
       const prev = epochs.get(prevEpoch)
       prev.expiresAt = clock.now() + KEEP_PREVIOUS_MS
@@ -483,7 +492,10 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
   // 结论存活时间从所依据的那次读取起算，而不是从一次可能很慢的核验结束时起算。
   const verdicts = new Map()
   const checking = new Map()          // entry key -> the check under way, shared / 进行中的核验，共享
-  const entryKey = (m) => `${m.chainId}:${m.container}:${m.ed25519}`
+  // The owner's handle knows each entry's x25519 and checks both keys, so its verdicts cover both (a member that changed
+  // only its x25519 is a new entry there, GRP2-1); a member's handle sees no x25519 and keys by ed25519 alone.
+  // 群主句柄知道每个条目的 x25519 且核验两把公钥，所以其结论覆盖两者（只换了 x25519 的成员在那里是新条目）；成员句柄看不到 x25519，只按 ed25519。
+  const entryKey = (m) => `${m.chainId}:${m.container}:${m.ed25519}${m.x25519 !== undefined ? ':' + m.x25519 : ''}`
   const verdictOf = (m) => {
     const v = verdicts.get(entryKey(m))
     if (!v) return null
@@ -493,7 +505,7 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
   }
   // an older check that ends late never overwrites a newer verdict / 晚结束的旧核验不覆盖更新的结论
   const setVerdict = (k, ok, at) => { const old = verdicts.get(k); if (!old || old.at <= at) verdicts.set(k, { ok, at }) }
-  const trustAll = (members) => { const at = clock.now(); for (const m of members) setVerdict(entryKey(m), true, at) }
+  const trustAll = (members, at = clock.now()) => { for (const m of members) setVerdict(entryKey(m), true, at) }
   const pickVerifier = (v) => {
     const f = v ?? verifier
     if (f !== 'trust-roster' && typeof f !== 'function') fail('verifyMember is required: check every member against its TAP-26 channel record (group.channelKeysVerifier(api) or api.groupVerifier())')
@@ -661,6 +673,34 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
     return { epoch: p.epoch, roster: epochs.get(p.epoch).roster }
   }
 
+  // GRP2-3: what this handle sealed in an epoch: its seqs there are consecutive, so a range, plus the nonce of each of the
+  // last OWN_SEALS_KEPT, which tells our echo from another device's message with the same seq; older seqs in the range
+  // count as ours. / 本句柄在某纪元封装过的消息：序号连续，记一个区间，并记下最近若干条的 nonce，用以区分回声与另一设备的同号消息。
+  function rememberSealed(st, seq, nonce) {
+    const o = st.own ??= { lo: seq, hi: seq, nonces: new Map(), forgotUpTo: null }
+    o.hi = seq
+    o.nonces.set(seq, toHex(nonce))
+    if (o.nonces.size > OWN_SEALS_KEPT) { const oldest = o.nonces.keys().next().value; o.nonces.delete(oldest); o.forgotUpTo = oldest }
+  }
+  function isOwnEcho(st, seq, nonce) {
+    if (restoredSeq !== null && seq <= restoredSeq) return true      // sealed before our restart / 重启之前封装的
+    const o = st.own
+    if (!o || seq < o.lo || seq > o.hi) return false
+    const n = o.nonces.get(seq)
+    if (n !== undefined) return n === toHex(nonce)
+    return o.forgotUpTo !== null && seq <= o.forgotUpTo
+  }
+  // GRP2-5: why there is no key, in data.reason: 'not-yet' (a later epoch than ours: accept its epoch message, then open
+  // again; data.retryAfterEpoch), or 'expired' (an earlier one, gone or from before we joined).
+  // 没有密钥的原因：'not-yet'（比本方新的纪元：接受其纪元消息后再打开；data.retryAfterEpoch）或 'expired'（更早的纪元，已丢弃或在加入之前）
+  function noKey(epoch) {
+    if (current === null || epoch > current) {
+      fail(`no key for epoch ${epoch} (not joined yet, or its epoch message has not been accepted yet: accept it, then open this message again; if that epoch message is refused, this member is not in it)`,
+        { data: { epoch, current, reason: 'not-yet', retryAfterEpoch: epoch } })
+    }
+    fail(`no key for epoch ${epoch} (the epoch expired, or is from before this member joined)`, { data: { epoch, current, reason: 'expired' } })
+  }
+
   // format 2: each member with its verification state (§3.8): verified, or mismatch: true once definitively refused
   // 格式 2：每个成员附核验状态
   const withState = (m) => {
@@ -679,6 +719,8 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
     _install: install,
     _concurrency: concurrency,
     _trustAll: trustAll,
+    // GRP2-1: the owner reuses a positive verdict that is still within reuseS / 群主复用仍在 reuseS 之内的肯定结论
+    _reusable: (m) => verdictOf(m)?.ok === true,
     _held: () => (current === null ? null : epochs.get(current)),
 
     /**
@@ -695,8 +737,12 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
       if (format === 2) {
         // the owner keeps its full list (x25519 included: it wraps the next epoch's slots) and the roster bytes as sent,
         // which the next epoch's prev hashes / 群主保存完整列表（含 x25519，下一纪元包裹格子要用）与原样的名单字节（下一纪元 prev 的哈希对象）
+        // v: 2 (GRP2-2): TapeAPI 1.0.0 to 1.2.0 accept only v: 1 in resumeGroup, and 1.0.0 / 1.1.0 would read a format-2
+        // snapshot as format 1 and split the group; with v: 2 every one of them refuses it. v: 1 with format: 2 (from
+        // 1.2.0) is still read. / 1.0.0 至 1.2.0 的 resumeGroup 只接受 v: 1，而 1.0.0 / 1.1.0 会把格式 2 快照当作格式 1、使群分裂；
+        // 改为 v: 2 后它们都会拒收。1.2.0 发出的 v: 1 + format: 2 仍可读取。
         return {
-          v: 1, format: 2, gid: toHex(gid), owner: { container: String(ownerRef.container).toLowerCase(), chainId: ownerRef.chainId ?? 56 },
+          v: 2, format: 2, gid: toHex(gid), owner: { container: String(ownerRef.container).toLowerCase(), chainId: ownerRef.chainId ?? 56 },
           epoch: current ?? floor, role: isOwner ? 'owner' : 'member',
           ...(sealed ? { lastSeq: (mySeq - 1n).toString() } : {}),
           ...(isOwner && st ? { roster: canonicalJSON({ gid: toHex(gid), epoch: current, members: st.members.map((m) => ({ ...m })), relays: st.roster.relays, ...(st.roster.bus ? { bus: st.roster.bus } : {}) }), rosterBin: toHex(st.rosterBytes) } : {}),
@@ -731,15 +777,25 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
       const seq = mySeq++
       sealed = true
       const nonce = r(24)
+      rememberSealed(st, seq, nonce)
       const header = concat(Uint8Array.of(WIRE_MESSAGE), gid, epochField(format, current), u32(st.index), u64(seq), nonce)
       const ct = xchacha20poly1305(keyOf(st, current, st.index), nonce, header).encrypt(pt)
       return concat(header, ct, ed25519.sign(concat(LABELS[format].msg, header, ct), id.edSecret))
     },
 
     /**
+     * @experimental (GRP2-3) null, or { count, epoch, seq } once open() has seen a message signed with this identity that
+     * this handle did not seal: the same identity is in use on another device (§8: one identity is one device), and
+     * receivers refuse the messages of whichever device has the lower seq. / 发现本身份在别处发言后为 { count, epoch, seq }。
+     */
+    get otherDevice() { return otherDevice === null ? null : { ...otherDevice } },
+
+    /**
      * §3.4: verify and decrypt. Returns { from, index, epoch, seq, gap, data } (`data` is text with { text: true }),
      * or { own: true } for our own message coming back. `gap` is null when the sender restarted in between.
-     * 验证并解密。自己发出的消息返回 { own: true }。发送者中途重启时 `gap` 为 null。
+     * A message signed with our own key that this handle did not seal is returned in full with `otherDevice: true`
+     * (@experimental, GRP2-3). / 验证并解密。自己发出的消息返回 { own: true }。发送者中途重启时 `gap` 为 null。
+     * 用本身份签名、但不是本句柄封装的消息完整返回，并带 `otherDevice: true`。
      */
     open(wire, { text = false } = {}) {
       if (!(wire instanceof Uint8Array) || wire.length < HEADER_MSG + 16 + SIG || wire[0] !== WIRE_MESSAGE) fail('not a group message')
@@ -757,25 +813,32 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
       const index = readU32(wire, 25)
       const seq = readU64(wire, 29)
       const st = live(epoch)
-      if (!st) fail(`no key for epoch ${epoch} (not joined yet, or the epoch expired)`)
+      if (!st) noKey(epoch)
       if (index >= st.members.length) fail('sender index outside the roster')
       const header = wire.slice(0, HEADER_MSG), ct = wire.slice(HEADER_MSG, wire.length - SIG), sig = wire.slice(wire.length - SIG)
       // verify first, even our own: a relay must not make us swallow a message by relabelling it (audit G-17)
       // 先验签，哪怕是自己的：中继不能靠改署名让我们吞掉一条消息
       if (!edVerify(sig, concat(LABELS[format].msg, header, ct), fromHex(st.members[index].ed25519, 32))) fail(`message is not signed by member ${index}`)
-      if (index === st.index) return { own: true, epoch, seq }
+      const nonce = wire.slice(37, 61)
+      const fromOtherDevice = index === st.index && !isOwnEcho(st, seq, nonce)
+      if (index === st.index && !fromOtherDevice) return { own: true, epoch, seq }
+      // GRP2-4: authentic, under an epoch this handle only knows from snapshot(): no key, and not a forgery
+      // 真实的消息，但所在纪元本句柄只从快照得知：没有密钥，而不是伪造
+      if (st.keyless) fail(`no key for epoch ${epoch} (not in this handle's snapshot: the owner restarted with resumeGroup(), and snapshot() keeps no keys)`, { data: { epoch, current, reason: 'snapshot' } })
       // format 2: a sender whose entry definitively does not match its channel record is outside the roster (§3.8)
       // 格式 2：条目与通道记录确定不符的发送者视同不在名单中
-      const v = format === 2 ? verdictOf(st.members[index]) : null
+      const v = format === 2 && !fromOtherDevice ? verdictOf(st.members[index]) : null
       if (v && !v.ok) mismatch(index, st.members[index])
       if (epoch !== current) {
         if (st.removed.has(index)) fail(`member ${index} was removed after epoch ${epoch}: its messages under it are refused`)
         if (st.movedOn.has(index)) fail(`member ${index} already speaks in epoch ${current}: its epoch-${epoch} messages are refused`)
       }
       const high = st.high.get(index)
-      if (high !== undefined && seq <= high) fail(`seq ${seq} from member ${index} already seen (replayed or reordered)`)
+      // data (GRP2-3): besides a replay or a reordering, two devices sending with one identity look exactly like this
+      // data：除了重放或乱序，同一身份在两台设备上发送看起来也正是这样
+      if (high !== undefined && seq <= high) fail(`seq ${seq} from member ${index} already seen (replayed or reordered)`, { data: { index, epoch, seq: seq.toString(), high: high.toString(), mayBeOtherDevice: true, hint: 'a replay, a reordering, or the same identity sending from two devices (TAP-27 §8: one identity is one device)' } })
       let pt
-      try { pt = xchacha20poly1305(keyOf(st, epoch, index), wire.slice(37, 61), header).decrypt(ct) } catch { fail('message fails authentication') }
+      try { pt = xchacha20poly1305(keyOf(st, epoch, index), nonce, header).decrypt(ct) } catch { fail('message fails authentication') }
       let decoded
       if (text) { try { decoded = new TextDecoder('utf-8', { fatal: true }).decode(pt) } catch { fail('message is authentic but not UTF-8') } }
       const gap = high === undefined ? null : (seq - high - 1n < SEQ_SEGMENT ? Number(seq - high - 1n) : null)
@@ -791,8 +854,13 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
       }
       const out = { from: st.members[index].container, index, epoch, seq, gap, data: text ? decoded : pt }
       // format 2: `verified` says whether `from` has been checked against its channel record (§3.8); until it is, an
-      // application MUST show the sender as unverified (openVerified checks first) / 格式 2：`verified` 表示 `from` 是否已对照通道记录核验
-      if (format === 2) out.verified = v?.ok === true
+      // application MUST show the sender as unverified (openVerified checks first). Our own entry was checked when we
+      // accepted the epoch (our slot names our keys). / 格式 2：`verified` 表示 `from` 是否已对照通道记录核验；自己的条目在接受纪元时已核对
+      if (format === 2) out.verified = fromOtherDevice || v?.ok === true
+      if (fromOtherDevice) {
+        out.otherDevice = true
+        otherDevice = { count: (otherDevice?.count ?? 0) + 1, epoch, seq: seq.toString() }
+      }
       return out
     },
   }
@@ -860,14 +928,21 @@ function ownerApi({ group, install, gid, owner, id, verifyMember, random, transp
   // `added`: the members this epoch brings in, who still need an invite in their OWN inbox room (§3.5). The epoch
   // message alone reaches nobody new: it goes to the group room, which a new member does not know yet.
   // `added`：本纪元新加入、仍需在各自收件房间收到邀请的成员。纪元消息只发到群房间，新成员还不知道这个房间。
-  const next = async (newList, { verify = verifyMember, added = [] } = {}) => {
+  const next = async (newList, { verify = verifyMember, added = [], checked = [], trustedAt } = {}) => {
     // Re-check EVERY member, not only additions: a circuit that changed hands drops out here, instead of freezing
     // the group for everyone else (audit G-15). A transient failure aborts; a definitive mismatch drops.
     // 重新核验**全部**成员，而不只是新加入者：转手的电路在此退出，而不是让整个群卡住。暂时故障则中止，确定不符则移除。
     // Read past the identity cache (arch B7): a record cached a minute before the sale would keep the sold member for
     // a whole epoch, not a few minutes. The owner decides when this runs; no outsider can make it read.
     // 绕过身份缓存：出售前一分钟缓存的记录会让已出售的成员再留一整个纪元，而不是几分钟。何时执行由群主决定，外人无法触发读取。
-    const dropped = await verifyAll(newList.slice(1), verify, { drop: true, fresh: group.epoch !== null, concurrency: group._concurrency })
+    // Format 2 (§3.8, GRP2-1): an entry with a positive verdict still within verifyReuseS, or one checked a moment ago by
+    // addMembers, is not read again; every other entry (new, changed, aged out, or with no verdict) is, freshly. Format 1
+    // checks every member, as always. / 格式 2：仍在 verifyReuseS 之内有肯定结论的条目、或 addMembers 刚核验过的条目不再读取；
+    // 其余条目（新的、变化的、过期的、没有结论的）都重新读取。格式 1 照旧核验全部成员。
+    const v2 = group.format === 2 && typeof verify === 'function'
+    const todo = v2 ? newList.slice(1).filter((m) => !checked.includes(m) && !group._reusable(m)) : newList.slice(1)
+    const checkedAt = group._clock.now()
+    const dropped = await verifyAll(todo, verify, { drop: true, fresh: group.epoch !== null, concurrency: group._concurrency })
     const keep = newList.filter((m, i) => i === 0 || !dropped.includes(m))
     const epoch = group.epoch === null ? 0 : group.epoch + 1
     if (epoch > MAX_EPOCH) fail('epoch counter exhausted: create a new group')
@@ -882,8 +957,14 @@ function ownerApi({ group, install, gid, owner, id, verifyMember, random, transp
       built = buildEpoch({ gid, epoch, issued, prev, owner, members: keep, relays: transports.relays, bus: transports.bus, ownerEdSecret: id.edSecret, random })
     }
     install(epoch, { ...built.roster }, built.rosterBytes, built.K)
-    // format 2: the owner has just checked every member (or created the group from checked ones) / 群主刚核验过全部成员
-    if (group.format === 2) group._trustAll(built.roster.members)
+    // format 2: a verdict for what was checked now, dated from the start of the check; a reused verdict keeps its date, so
+    // reuse never outlives verifyReuseS / 格式 2：为本次核验的条目记结论（自核验开始时起算）；复用的结论保留原日期，复用不会超过 verifyReuseS
+    if (group.format === 2) {
+      if (v2) {
+        group._trustAll([built.roster.members[0]])                                     // ourselves / 我们自己
+        group._trustAll(todo.filter((m) => !dropped.includes(m)), checkedAt)
+      } else group._trustAll(built.roster.members, trustedAt)                         // 'trust-roster', or createGroup's check / 或 createGroup 的核验
+    }
     list = built.roster.members
     lastWire = built.wire
     const inRoster = added.filter((m) => list.some((x) => sameContainer(x, m))).map((m) => list.find((x) => sameContainer(x, m)))
@@ -906,8 +987,16 @@ function ownerApi({ group, install, gid, owner, id, verifyMember, random, transp
       for (const m of add) if (list.some((x) => sameContainer(x, m))) fail(`${m.container} is already a member`)
       const max = group.format === 2 ? MAX_MEMBERS_V2 : MAX_MEMBERS
       if (list.length + add.length > max) fail(`a ${group.format === 2 ? 'format-2 ' : ''}group has at most ${max} members`)
-      await verifyAll(add, opts.verifyMember ?? verifyMember, { concurrency: group._concurrency })
-      return next([...list, ...add], { verify: opts.verifyMember ?? verifyMember, added: add })
+      const vm = opts.verifyMember ?? verifyMember
+      if (group.format === 2) {
+        // GRP2-1: each new member is checked ONCE, freshly (the epoch below reuses this check) / 新成员只核验一次（下面的纪元复用这次核验）
+        const at = group._clock.now()
+        await verifyAll(add, vm, { concurrency: group._concurrency, fresh: true })
+        if (typeof vm === 'function') group._trustAll(add, at)
+        return next([...list, ...add], { verify: vm, added: add, checked: add })
+      }
+      await verifyAll(add, vm, { concurrency: group._concurrency })
+      return next([...list, ...add], { verify: vm, added: add })
     },
     /** Remove members and start a new epoch they cannot read (§3.6) / 移除成员并开启他们读不到的新纪元 */
     async removeMembers(targets, opts = {}) {
@@ -961,13 +1050,17 @@ export async function createGroup(opts = {}) {
   const others = members.map(normMember)
   checkUnique([ownerEntry, ...others])
   if (format === 2) { for (const m of [ownerEntry, ...others]) checkChainIdV2(m); if (others.length + 1 > MAX_MEMBERS_V2) fail(`a format-2 group has at most ${MAX_MEMBERS_V2} members`) }
+  // format 2: how long the owner reuses a positive verdict (§3.8, GRP2-1); 0 checks every member on every epoch
+  // 格式 2：群主复用肯定结论的时长；0 表示每个纪元都核验全部成员
+  const reuseS = format === 2 ? checkReuse(opts.verifyReuseS) : VERIFY_REUSE_S
+  const checkedAt = (now ?? (() => Date.now()))()
   await verifyAll(others, verifyMember, { concurrency })
   const gid = random(16)
   // format 2: the owner's verifier also serves its own lazy checks once the verdicts of the last epoch age out (GRPR-4)
   // 格式 2：群主的核验器也用于它自己的惰性核验（上一纪元的结论过期之后）
-  const { group, install } = makeGroup({ gid, self: owner, id, ownerRef: owner, ownerEd: id.edPub, isOwner: true, random, concurrency, format, verifier: ownerVerifier(verifyMember), ...(now ? { now } : {}) })
+  const { group, install } = makeGroup({ gid, self: owner, id, ownerRef: owner, ownerEd: id.edPub, isOwner: true, random, concurrency, format, reuseS, verifier: ownerVerifier(verifyMember), ...(now ? { now } : {}) })
   const next = ownerApi({ group, install, gid, owner, id, verifyMember, random, transports: { relays, bus }, startList: [ownerEntry, ...others] })
-  const first = await next([ownerEntry, ...others], { verify: 'trust-roster', added: others })   // just verified above / 刚刚核验过
+  const first = await next([ownerEntry, ...others], { verify: 'trust-roster', added: others, trustedAt: checkedAt })   // just verified above / 刚刚核验过
   return { group, epochWire: first.epochWire, epoch: first.epoch, added: first.added }
 }
 
@@ -981,22 +1074,25 @@ export async function resumeGroup(opts = {}) {
   const now = clockMs(opts)
   const concurrency = checkConcurrency(opts.verifyConcurrency) ?? VERIFY_CONCURRENCY
   const id = checkIdentity(identity)
-  if (!snapshot || snapshot.v !== 1 || snapshot.role !== 'owner' || typeof snapshot.roster !== 'string') fail('resumeGroup needs an owner snapshot()')
+  // v: 1 (format 1, and format 2 as 1.2.0 wrote it) or v: 2 (format 2 since GRP2-2) / v: 1（格式 1，及 1.2.0 写出的格式 2）或 v: 2（格式 2）
+  if (snapshot?.v === 2 && snapshot.format !== 2) fail('a v: 2 snapshot is a format-2 snapshot, and this one does not say format: 2')
+  if (!snapshot || (snapshot.v !== 1 && snapshot.v !== 2) || snapshot.role !== 'owner' || typeof snapshot.roster !== 'string') fail('resumeGroup needs an owner snapshot()')
   const owner = { container: self.container.toLowerCase(), chainId: self.chainId ?? 56 }
   if (!sameContainer(snapshot.owner, owner)) fail('this snapshot belongs to another owner')
   let roster
   try { roster = safeParseJSON(snapshot.roster, { code: 'GROUP_INVALID' }) } catch (e) { fail(`snapshot roster: ${e.message}`) }
   if (roster.gid !== snapshot.gid || roster.epoch !== snapshot.epoch) fail('snapshot roster does not match the snapshot')
   const format = checkFormat(snapshot.format) ?? 1
+  const reuseS = format === 2 ? checkReuse(opts.verifyReuseS) : VERIFY_REUSE_S
   const gid = fromHex(snapshot.gid, 16, 'gid')
-  const { group, install } = makeGroup({ gid, self: owner, id, ownerRef: owner, ownerEd: id.edPub, isOwner: true, lastSeq: parseLastSeq(snapshot.lastSeq), random, concurrency, format, verifier: ownerVerifier(verifyMember), ...(now ? { now } : {}) })
+  const { group, install } = makeGroup({ gid, self: owner, id, ownerRef: owner, ownerEd: id.edPub, isOwner: true, lastSeq: parseLastSeq(snapshot.lastSeq), random, concurrency, format, reuseS, verifier: ownerVerifier(verifyMember), ...(now ? { now } : {}) })
   // stand the old roster up without a key, only so the next epoch chains to it / 立起旧名单（无密钥），只为让下一纪元接上
   if (format === 2) {
     // the roster bytes as sent (prev hashes them), and the full list the owner kept / 原样的名单字节（prev 的哈希对象）与群主保存的完整列表
     if (typeof snapshot.rosterBin !== 'string' || !/^[0-9a-f]+$/.test(snapshot.rosterBin) || snapshot.rosterBin.length % 2) fail('a format-2 owner snapshot needs rosterBin')
     if (!Array.isArray(roster.members) || !roster.members.length) fail('snapshot roster has no members')
-    install(roster.epoch, { ...roster, format: 2, members: roster.members.map(normMember) }, fromHex(snapshot.rosterBin, snapshot.rosterBin.length / 2, 'rosterBin'), new Uint8Array(32))
-  } else install(roster.epoch, roster, te.encode(snapshot.roster), new Uint8Array(32))
+    install(roster.epoch, { ...roster, format: 2, members: roster.members.map(normMember) }, fromHex(snapshot.rosterBin, snapshot.rosterBin.length / 2, 'rosterBin'), new Uint8Array(32), { keyless: true })
+  } else install(roster.epoch, roster, te.encode(snapshot.roster), new Uint8Array(32), { keyless: true })
   const next = ownerApi({ group, install, gid, owner, id, verifyMember, random, transports: { relays: relays ?? roster.relays ?? [], bus: bus ?? roster.bus }, startList: roster.members.map(normMember) })
   const r = await next(roster.members.map(normMember))
   return { group, epochWire: r.epochWire, epoch: r.epoch, dropped: r.dropped, added: r.added }

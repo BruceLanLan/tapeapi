@@ -47,7 +47,9 @@ test('build-docs: no raw markdown reaches a page, and every internal link and an
       if (href === '/favicon.svg') { assert.ok(existsSync(join(ROOT, 'site/favicon.svg'))); continue }   // the site's icon, outside docs/ / 站点图标，不在 docs/ 下
       const [path, hash] = href.replace(/\?v=[0-9a-f]{10}(?=#|$)/, '').split('#')   // a content hash (version-assets.mjs) is not part of the path
       if (!path) { assert.ok(ids.has(decodeURIComponent(hash)), `${p}: anchor #${hash} does not exist`); continue }
-      const target = posix.normalize(posix.join(posix.dirname(p), path))
+      // A page is linked without .html, as the server serves it (ONB2-11). / 页面链接不带 .html，与服务器一致。
+      const at = posix.normalize(posix.join(posix.dirname(p), path))
+      const target = at.endsWith('/') ? `${at}index.html` : files.has(at) || HAND_WRITTEN.has(at) ? at : `${at}.html`
       assert.ok(files.has(target) || HAND_WRITTEN.has(target), `${p}: link ${href} -> ${target} does not exist`)
       if (hash && files.has(target)) assert.ok(files.get(target).includes(` id="${decodeURIComponent(hash)}"`), `${p}: ${href} anchor missing`)
     }
@@ -86,4 +88,20 @@ test('FIXED DOCS-1: link reference definitions are not rendered as text', async 
   assert.match(html, /1\.0\.0/)
   assert.doesNotMatch(html, /\[Unreleased\]: https:\/\//)
   assert.doesNotMatch(html, /compare\/v1\.0\.0-rc\.5\.\.\.v1\.0\.0/)
+})
+
+test('FIXED ONB2-11: pages link each other without .html, like the sitemap, and the sitemap lists every page in both languages', () => {
+  const sitemap = readFileSync(join(ROOT, 'site/sitemap.xml'), 'utf8')
+  const locs = new Set([...sitemap.matchAll(/<loc>https:\/\/tapeapi\.fun\/([^<]*)<\/loc>/g)].map((m) => m[1]))
+  for (const p of files.keys()) {
+    if (!p.endsWith('.html') || p === 'index.html') continue
+    const [lang, file] = p.split('/')
+    assert.ok(locs.has(`docs/${lang}/${file === 'index.html' ? '' : file.replace(/\.html$/, '')}`), `the sitemap lists docs/${lang}/${file}`)
+    for (const [, href] of files.get(p).matchAll(/ (?:href|data-other)="([^"]+)"/g)) {
+      if (/^(https?:|mailto:|#|\/)/.test(href) || /\.(css|js|svg)(\?|$)/.test(href)) continue
+      assert.ok(!/\.html(#|$)/.test(href), `${p}: ${href} names .html`)
+    }
+  }
+  assert.ok(locs.has('docs/en/upgrade-1.0') && locs.has('docs/zh/upgrade-1.0'))
+  for (const [, href] of readFileSync(join(ROOT, 'site/index.html'), 'utf8').matchAll(/href="(docs\/[^"]*)"/g)) assert.ok(!/\.html(#|$)/.test(href), `site/index.html: ${href}`)
 })

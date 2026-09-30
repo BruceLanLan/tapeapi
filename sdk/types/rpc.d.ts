@@ -18,6 +18,8 @@ export interface RpcOptions {
   /** Silence the "quorum equals node count" warning. */
   quiet?: boolean
   warn?: (...args: unknown[]) => void
+  /** Ms before a request whose connection broke (not a timeout) is sent once more (default 250; <= 0: never). */
+  transportRetryMs?: number
 }
 
 /** A quorum JSON-RPC client: every answer is agreed by nodes of `quorum` distinct operators or the call throws. */
@@ -29,8 +31,10 @@ export interface Rpc {
   /** @experimental (security 1.1) A block nodes of `quorum` operators confirm, starting from `tag` (default 'finalized').
    *  Freshness is the caller's check. A read pinned to a block (EIP-1898 blockHash or a hex number) that a node answers
    *  with "header not found" / "unknown block" / -32001 counts as that node not answering; every node that answers must
-   *  still agree. */
-  confirmedBlock(tag?: 'finalized' | 'safe' | 'latest'): Promise<{ number: number; hash: Hex; timestamp: number; tag: string; operators: number }>
+   *  still agree. `{ stateRoot: true }` (@experimental, security 1.2): the block's stateRoot is returned when nodes of
+   *  `quorum` operators report it (undefined otherwise); a node that leaves it out is not counted, and one that reports
+   *  another stateRoot for the block is RPC_DISAGREE. */
+  confirmedBlock(tag?: 'finalized' | 'safe' | 'latest', opts?: { stateRoot?: boolean }): Promise<{ number: number; hash: Hex; timestamp: number; tag: string; operators: number; stateRoot?: Hex }>
   chainId(): Promise<number>
   /** A single-node client over one of this client's URLs. */
   single(url: string, opts?: { bodyLimit?: number }): Rpc
