@@ -6,7 +6,7 @@
 // --key-env names the operator's own. Its own command, not a mode of tapeapi-verify, whose exit 0 means "stopped".
 // tapeapi-doctor（实验性）：服务方对自己 AI 服务的逐项检查，失败时用中英双语给出缺什么、去哪改、下一条命令；退出码供 CI 使用。只读。
 //
-//   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-doctor 42.1013.tape
+//   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-doctor 42.1013.tape
 //   node sdk/bin/tapeapi-doctor.js --offline http://127.0.0.1:8080      (from a checkout / 从检出运行)
 import { readFileSync, realpathSync, existsSync } from 'node:fs'
 import { dirname, join, relative, isAbsolute } from 'node:path'
@@ -32,6 +32,12 @@ const USAGE = `tapeapi-doctor ${VERSION} (experimental): check an AI service on 
 检查 TapeAPI 上的 AI 服务（服务方视角），逐项给出结论与中英双语的修复提示。
 
 Usage: ${CMDS.doctor('[options] <target>')}
+
+14 checks, in order: name, circuit, container, activation, manifest-file, manifest-format, delegation, ai-field, prices,
+endpoints, reach, cors, receipt, receipt-lookup. "activation" (TAP-10 §6.3) only warns: an unpaid name still has its site
+files, but a TAP-11 client answers "unpaid" and does not resolve the service; --strict makes that warning fail too.
+14 项检查，依次为：名字、电路、容器、激活、清单文件、清单格式、委托、ai 字段、价目表、端点、可访问、CORS、回执、按 id 取回执。
+“激活”（TAP-10 §6.3）只警告：未付费的名字站点文件仍可读，但按 TAP-11 的客户端会得到 unpaid、不解析此服务；--strict 时这个警告也算失败。
 
   <target>             your TapeOut name (42.1013.tape is an example name; on X Layer or Base with its area code,
                        1.2.344.tape), your container address (0x...), or your sidecar's URL (https://api.example.com;

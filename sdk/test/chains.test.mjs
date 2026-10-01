@@ -142,12 +142,12 @@ test('names: BNB Smart Chain names carry no area code, other chains do (TapeKit 
   assert.equal(formatTapeName({ tokenId: '1', processor: '5', chainId: 8453 }), '1.3.5.tape')
   assert.equal(formatTapeName({ tokenId: 4246, processor: 0 }), '4246.0.tape')
   assert.equal(formatTapeName({ tokenId: 1, processor: 344, chainId: 196 }, { suffix: false }), '1.2.344')
-  for (const chainId of CHAIN_IDS) for (const [tokenId, processor] of [[1n, 0n], [4246n, 7n], [2n ** 255n, 10n ** 9n]]) {
+  for (const chainId of CHAIN_IDS) for (const [tokenId, processor] of [[1n, 0n], [4246n, 7n], [10n ** 18n, 10n ** 9n]]) {
     const name = formatTapeName({ tokenId, processor, chainId })
     assert.deepEqual(p(name), [tokenId.toString(), CHAINS[chainId].area, processor.toString(), chainId, name])
     assert.deepEqual(p(formatTapeName({ tokenId, processor, chainId }, { suffix: false })), [tokenId.toString(), CHAINS[chainId].area, processor.toString(), chainId, name])
   }
-  for (const bad of [{ tokenId: 0, processor: 1 }, { tokenId: 1, processor: -1 }, { tokenId: '01', processor: 1 }, { tokenId: 1, processor: 1, chainId: 97 }, { tokenId: 'x', processor: 1 }]) {
+  for (const bad of [{ tokenId: 0, processor: 1 }, { tokenId: 1, processor: -1 }, { tokenId: '01', processor: 1 }, { tokenId: 1, processor: 1, chainId: 97 }, { tokenId: 'x', processor: 1 }, { tokenId: '1000000000000000001', processor: 1 }, { tokenId: 1, processor: 1000000001 }, { tokenId: String(2n ** 255n), processor: 0 }]) {
     assert.throws(() => formatTapeName(bad), RangeError, JSON.stringify(bad))
   }
 })
@@ -354,4 +354,22 @@ test('FIXED G1-M7: the channel-record floor is shared with the other chains\' cl
   const legacy = new Map([[X_CONTAINER.toLowerCase(), nowS - 60]])
   await assert.rejects(createTapeAPI(w.opts({ channelRecordFloor: legacy })).forChain(196).chain.channelKeys(X_CONTAINER), /older than a record already seen/)
   assert.equal(legacy.get(`196:${X_CONTAINER.toLowerCase()}`), nowS - 60)
+})
+
+// TAP-10 §3.1 ranges, applied in every mode from 1.4 (an erratum: such a name cannot exist on chain). Until 1.3 a #ID or
+// processor number of up to 78 digits parsed, and resolve() then asked the chain about it.
+// TAP-10 §3.1 的范围，自 1.4 起所有模式都适用（勘误：这样的名字在链上不可能存在）。1.3 之前最多 78 位都能解析，resolve() 还会去问链。
+test('FIXED TAP10-RANGE: #ID <= 10^18 and processor number <= 10^9 in every mode; an out-of-range name is an error before any request', async () => {
+  const ok = (s) => { const r = parseTapeName(s); return r && !r.error }
+  assert.ok(ok('1000000000000000000.1000000000.tape'))
+  assert.ok(ok('1000000000000000000.2.1000000000'))
+  for (const s of ['1000000000000000001.0', '1.1000000000001', '1.2.1000000001', '1' + '0'.repeat(77) + '.0.tape', '4246.' + '9'.repeat(78)]) {
+    const r = parseTapeName(s)
+    assert.ok(r && /out of range: a TapeOut name has 1 <= #ID <= 10\^18 and 0 <= processor number <= 10\^9 \(TAP-10 §3\.1\)/.test(r.error), s)
+  }
+  let sent = 0
+  const api = createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, quiet: true, fetch: async () => { sent++; throw new Error('no request expected') } })
+  await assert.rejects(api.resolve('1000000000000000001.0.tape'), (e) => e.code === 'MANIFEST_INVALID' && /out of range/.test(e.message))
+  await assert.rejects(api.resolve('1.1000000001'), (e) => e.code === 'MANIFEST_INVALID' && /out of range/.test(e.message))
+  assert.equal(sent, 0)
 })

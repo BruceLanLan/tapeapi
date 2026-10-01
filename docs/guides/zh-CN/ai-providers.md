@@ -24,7 +24,7 @@ npm ci --no-audit --no-fund
 在任何目录都能运行，不需要克隆仓库：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-doctor <你的名字>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-doctor <你的名字>
 ```
 
 在检出的根目录里，`node sdk/bin/tapeapi-doctor.js <你的名字>` 效果相同。两种方式下，报告给出的下一条命令都按你的运行方式书写。
@@ -33,14 +33,15 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0
 |---|---|---|---|---|
 | 0 | 在本机看整条路径跑通：不需要密钥、电路，也不花钱 | 本仓库的检出，先在根目录运行 `npm ci`（见上） | `node examples/relay-trial/trial.mjs` | 打印“试跑通过。” |
 | 1 | 取得一枚 TapeOut 电路 | [tapeout.net](https://tapeout.net)（由你购买） | `tapeapi-doctor <你的名字>` | `name`、`circuit` 通过 |
-| 2 | 开通它的容器 | tapeout.net（一笔交易，gas 由你支付） | `tapeapi-doctor <你的名字>` | `container` 通过；`manifest-file` 失败，第 5 步之前本该如此 |
+| 2 | 开通它的容器 | tapeout.net（一笔交易，gas 由你支付） | `tapeapi-doctor <你的名字>` | `container` 通过；第 2b 步之前 `activation` 警告；`manifest-file` 失败，第 5 步之前本该如此 |
+| 2b | 激活名字（[TAP-10 §6.3](https://github.com/TapeOutProtocol/TAPs)）：不激活，按 TAP-11 的客户端会得到 `unpaid`、不解析你的服务 | 持有人的钱包在你所在链的 DomainBinding 上调用 `bind("<你的名字>", <你的容器>, <月数>)`，`msg.value` = 月数 × `monthlyFee()`（费用以 BNB、OKB 或 ETH 计，连同 gas 由你自己支付）；诊断会打印确切的调用和它刚从链上读到的费用，费用随时可能变化 | `tapeapi-doctor <你的名字>` | `activation` 通过，并显示付费至哪一天 |
 | 3 | 在你的服务器上、你的 HTTPS 反向代理后面，把旁路放在你的网关前面运行 | [见下文](#选择旁路的运行方式)（你的服务器） | `tapeapi-doctor --offline https://api.example.com` | 报告列出设置模式下还缺的变量 |
 | 4 | 服务密钥与委托；把值填进 `.env` 并重启旁路 | [持有人操作台](https://tapeapi.fun/console/)第 3、4 步（不收费、不花 gas） | `tapeapi-doctor https://api.example.com` | `delegation`、`reach`、`receipt` 通过；`manifest-file` 警告“尚未发布上链” |
 | 5 | 发布清单（含价目表） | 操作台第 5 步（一笔交易，gas 由你支付） | `tapeapi-doctor <你的名字>` | 全部通过：退出码 0 |
 | 6 | 告诉你的用户 | [你的用户要做什么](#你的用户要做什么) | 在用户机器上运行 `tapeapi-verify <你的名字>` | 每次调用一行 `OK` |
-| 7 | 每 90 天续期委托 | 操作台第 4 步“续期” | `tapeapi-doctor <你的名字>`，在你的 CI 里每天跑 | 到期前 30 天起 `delegation` 警告 |
+| 7 | 每 90 天续期委托，并让激活保持有效 | 操作台第 4 步“续期”；按第 2b 步再次付费 | `tapeapi-doctor <你的名字>`，在你的 CI 里每天跑 | 到期前 30 天起 `delegation` 警告；名字不再有效时 `activation` 警告 |
 
-`tapeapi-doctor` 按顺序检查：名字能解析、电路存在、容器已开通、链上有清单文件、清单格式、委托（及剩余天数）、`ai` 字段、价目表、
+`tapeapi-doctor` 按顺序检查：名字能解析、电路存在、容器已开通、名字已激活（TAP-10 §6.3；只警告：站点文件仍可读，但按 TAP-11 的客户端会得到 `unpaid`、不解析这个服务）、链上有清单文件、清单格式、委托（及剩余天数）、`ai` 字段、价目表、
 端点、端点可访问（TLS、旁路已退出设置模式、它签名用的密钥）、CORS、真实请求拿到可核验的回执、按 id 取回执。那次请求不花钱：
 它带一个不可能有效的密钥，你的网关拒绝它，旁路对这个拒绝同样签回执。如果你的网关接受任意密钥，它就会真的作答，每次运行每个端点
 会花掉你几个输入 token 加 1 个输出 token（`openai-responses` 为 16 个，这是它的下限），`receipt` 检查随之警告你修好网关鉴权。
@@ -190,7 +191,7 @@ const client = new OpenAI({ baseURL, apiKey: process.env.API_KEY, fetch })  // �
 
 ```sh
 # 终端 1。42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh

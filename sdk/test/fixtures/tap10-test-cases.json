@@ -1,0 +1,220 @@
+{
+  "_comment": "TAP-10 v1.1 'Test Cases / Access layer' as written by the official text, nothing added. Counting basis: 16 table rows, expanded to 27 cases (one per input; a row with several inputs shares one expected result). 'expected' holds only what the TAP says; 'needsChain' marks cases (or parts of a case) that need on-chain state a fake chain cannot honestly reproduce. 官方 TAP-10 v1.1 Test Cases（访问层）原文；16 行展开为 27 个用例（每个输入一例，同一行的多个输入共享期望）。不含任何自拟期望值。",
+  "tap": "TAP-10",
+  "version": "1.1",
+  "updated": "2026-09-28",
+  "upstream": "TapeOutProtocol/TAPs, TAPs/TAP-10.md (merged 2026-09-28, commit 8dc19e4)",
+  "recordedBy": "Official: reference kernel at TapeKit f1831a4 against mainnet, read-only, 2026-09-27 19:30-19:35 UTC (BNB Smart Chain blocks 124389066-124389111, Base 51874039-51874048, X Layer 71768388-71768407)",
+  "messagingLayer": "TAP-10 'Test Cases / Messaging layer' points at TapeKit send/module/test/vectors.json; those vectors are already reproduced by sdk/test/fixtures/tapesend-vectors.json and sdk/test/tapesend.test.mjs, so they are not duplicated here. 消息层向量已由 tapesend-vectors.json 与 tapesend.test.mjs 复现，此处不重复。",
+  "cases": [
+    {
+      "id": "TAP10-1", "n": 1, "row": 1, "input": "4246.0.tape", "form": "on-chain name",
+      "expected": { "identity": { "chainId": 56, "processorNumber": "0", "tokenId": "4246", "canonicalName": "4246.0.tape" } },
+      "expectedOnChain": { "processorContract": "0x50A994E71615474b55559fF4F500928fbc339DD9", "processorName": "Genesis CPU", "container": "0x86DDaEF00401E3F10418398D67D7189fc458eA95", "opened": true, "siteStatus": "ok", "paid": "through the container, until 2026-10-08T14:34:51Z (depends on later chain state)" },
+      "expectedText": "BNB Smart Chain, processor 0 (`Genesis CPU`, `0x50A994E71615474b55559fF4F500928fbc339DD9`), #4246, container `0x86DDaEF00401E3F10418398D67D7189fc458eA95`, opened. `ok`, paid through the container, until 2026-10-08T14:34:51Z",
+      "source": "TAP-10 Test Cases (Access layer) row 1; §3.1, §3.4, §4.2, §6.2",
+      "needsChain": true, "needsChainReason": "container, opened, site status and payment need chain state; only the name half (chain, processor number, #ID, canonical name) is judged offline"
+    },
+    {
+      "id": "TAP10-2", "n": 2, "row": 1, "input": "4246.0", "form": "short name",
+      "expected": { "identity": { "chainId": 56, "processorNumber": "0", "tokenId": "4246", "canonicalName": "4246.0.tape" } },
+      "expectedText": "same as row 1",
+      "source": "TAP-10 Test Cases (Access layer) row 1; §3.1 (every form of one name resolves identically), §3.4",
+      "needsChain": true, "needsChainReason": "same as TAP10-1"
+    },
+    {
+      "id": "TAP10-3", "n": 3, "row": 1, "input": "#4246@0", "form": "display label",
+      "expected": { "identity": { "chainId": 56, "processorNumber": "0", "tokenId": "4246", "canonicalName": "4246.0.tape" } },
+      "expectedText": "same as row 1",
+      "source": "TAP-10 Test Cases (Access layer) row 1; §3.1, §3.4 (display label form: SHOULD for shells and messaging clients)",
+      "needsChain": true, "needsChainReason": "same as TAP10-1"
+    },
+    {
+      "id": "TAP10-4", "n": 4, "row": 1, "input": "tape://4246.0/", "form": "URL, suffix-less host",
+      "expected": { "identity": { "chainId": 56, "processorNumber": "0", "tokenId": "4246", "canonicalName": "4246.0.tape" } },
+      "expectedText": "same as row 1",
+      "source": "TAP-10 Test Cases (Access layer) row 1; §3.2, §3.4 (URL form: SHOULD for shells; the suffix-less host is accepted as input only)",
+      "needsChain": true, "needsChainReason": "same as TAP10-1"
+    },
+    {
+      "id": "TAP10-5", "n": 5, "row": 1, "input": "0x50A994E71615474b55559fF4F500928fbc339DD9#4246", "form": "processor contract#ID",
+      "expected": { "identity": { "chainId": 56, "processorNumber": "0", "tokenId": "4246", "canonicalName": "4246.0.tape" } },
+      "expectedText": "same as row 1",
+      "source": "TAP-10 Test Cases (Access layer) row 1; §3.4 (processor contract#ID), §4.3 (reverse-resolved)",
+      "needsChain": true, "needsChainReason": "reverse resolution scans cpuAt on chain (§4.3 step 3); only the input form is judged offline"
+    },
+    {
+      "id": "TAP10-6", "n": 6, "row": 2, "input": "0x86DDaEF00401E3F10418398D67D7189fc458eA95", "form": "container address",
+      "expected": { "reverseName": "4246.0.tape" },
+      "expectedText": "Reverse-resolves to `4246.0.tape`",
+      "source": "TAP-10 Test Cases (Access layer) row 2; §3.4 (container address), §4.3",
+      "needsChain": true, "needsChainReason": "needs token() and a cpuAt scan on chain; judged offline only as a capability (can the SDK produce a name or processor number from a container address at all)"
+    },
+    {
+      "id": "TAP10-7", "n": 7, "row": 3, "input": "File list of 4246.0.tape", "form": "site file list",
+      "expected": { "text": "Only `index.html`; fallback `index.html`" },
+      "expectedText": "Only `index.html`; fallback `index.html`",
+      "source": "TAP-10 Test Cases (Access layer) row 3; §7.1 step 7 (pathCount, pathsRange), fallbackPath (§7.2 step 4c)",
+      "needsChain": true, "needsChainReason": "depends on the site store's content on mainnet; no fake-chain fixture can state it without inventing data. Not judged"
+    },
+    {
+      "id": "TAP10-8", "n": 8, "row": 4, "input": "index.html of 4246.0.tape", "form": "site file",
+      "expected": { "text": "19,770 bytes, SHA-256 0x275c896aa347670b19e8ed11256165dbabadb0f9e3c947370b591130acb507b8, updated 2026-09-21T09:00:31Z; ok" },
+      "expectedText": "19,770 bytes, SHA-256 `0x275c896aa347670b19e8ed11256165dbabadb0f9e3c947370b591130acb507b8`, updated 2026-09-21T09:00:31Z; `ok`",
+      "source": "TAP-10 Test Cases (Access layer) row 4; §7.1 (marked by the TAP as depending on later chain state: file updates)",
+      "needsChain": true, "needsChainReason": "the file bytes are not in the TAP (only length and hash); the repository's fixtures/mainnet-4246-index.json is the older 756-byte file the TAP itself says has to be updated. Not judged"
+    },
+    {
+      "id": "TAP10-9", "n": 9, "row": 5, "input": "tape://4246.0.tape/some/route", "form": "URL with path",
+      "expected": { "text": "Lands on `index.html` (§7.2 step 4c)" },
+      "expectedText": "Lands on `index.html` (§7.2 step 4c)",
+      "source": "TAP-10 Test Cases (Access layer) row 5; §7.2",
+      "needsChain": true, "needsChainReason": "the landing order needs the site's file list and fallbackPath on chain; §7.2 is shell behaviour (the SDK reads manifests, not site paths). Not judged"
+    },
+    {
+      "id": "TAP10-10", "n": 10, "row": 6, "input": "tape://4246.0.tape/missing.png", "form": "URL with path",
+      "expected": { "text": "Not found (has an extension)" },
+      "expectedText": "Not found (has an extension)",
+      "source": "TAP-10 Test Cases (Access layer) row 6; §7.2 step 4",
+      "needsChain": true, "needsChainReason": "same as TAP10-9. Not judged"
+    },
+    {
+      "id": "TAP10-11", "n": 11, "row": 7, "input": "1.3.1", "form": "short name, Base",
+      "expected": { "identity": { "chainId": 8453, "processorNumber": "1", "tokenId": "1", "canonicalName": "1.3.1.tape" } },
+      "expectedOnChain": { "processorContract": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b", "container": "0x4591b393399452eA24ECB10424CdBA194F1c4E64", "opened": true, "siteStatus": "unpaid" },
+      "expectedText": "Base, processor 1 (`0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b`), #1, container `0x4591b393399452eA24ECB10424CdBA194F1c4E64`, opened, `unpaid`",
+      "source": "TAP-10 Test Cases (Access layer) row 7; §3.1 (canonical name example 1.3.1.tape), §4.2, §6.2",
+      "needsChain": true, "needsChainReason": "container, opened and unpaid need chain state; only the name half is judged offline"
+    },
+    {
+      "id": "TAP10-12", "n": 12, "row": 7, "input": "#1@3.1", "form": "display label, Base",
+      "expected": { "identity": { "chainId": 8453, "processorNumber": "1", "tokenId": "1", "canonicalName": "1.3.1.tape" } },
+      "expectedText": "same as row 7",
+      "source": "TAP-10 Test Cases (Access layer) row 7; §3.1, §3.4 (display label: SHOULD)",
+      "needsChain": true, "needsChainReason": "same as TAP10-11"
+    },
+    {
+      "id": "TAP10-13", "n": 13, "row": 7, "input": "0x4591b393399452eA24ECB10424CdBA194F1c4E64", "form": "container address, Base",
+      "expected": { "identity": { "chainId": 8453, "processorNumber": "1", "tokenId": "1" } },
+      "expectedText": "same as row 7",
+      "source": "TAP-10 Test Cases (Access layer) row 7; §3.4, §4.1 (input without chain information is resolved on every active chain), §4.3",
+      "needsChain": true, "needsChainReason": "needs token() and a cpuAt scan on chain; judged offline only as a capability"
+    },
+    {
+      "id": "TAP10-14", "n": 14, "row": 8, "input": "1.3.5", "form": "short name, Base",
+      "expected": { "identity": { "chainId": 8453, "processorNumber": "5", "tokenId": "1" } },
+      "expectedOnChain": { "container": "0xa1a56711bE1B3DdfbB5384C025a17C435B8DFff7", "siteStatus": "not-opened" },
+      "expectedText": "Base, processor 5, #1, container `0xa1a56711bE1B3DdfbB5384C025a17C435B8DFff7`, `not-opened`",
+      "source": "TAP-10 Test Cases (Access layer) row 8; §3.1, §6.2",
+      "needsChain": true, "needsChainReason": "container and not-opened need chain state; only the name half is judged offline"
+    },
+    {
+      "id": "TAP10-15", "n": 15, "row": 9, "input": "#1@2.1", "form": "display label, X Layer",
+      "expected": { "identity": { "chainId": 196, "processorNumber": "1", "tokenId": "1" } },
+      "expectedOnChain": { "processorContract": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b", "container": "0x374fa57399f356030847Eb0c56851bE9a1194E5D", "siteStatus": "not-opened" },
+      "expectedText": "X Layer, processor 1 (`0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b`), #1, container `0x374fa57399f356030847Eb0c56851bE9a1194E5D`, `not-opened`",
+      "source": "TAP-10 Test Cases (Access layer) row 9; §3.1, §3.4 (display label: SHOULD), §6.2",
+      "needsChain": true, "needsChainReason": "container and not-opened need chain state; only the name half is judged offline"
+    },
+    {
+      "id": "TAP10-16", "n": 16, "row": 10, "input": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b#1", "form": "processor contract#ID",
+      "expected": { "status": "ambiguous" },
+      "expectedText": "`ambiguous` (the processor exists on Base and X Layer)",
+      "source": "TAP-10 Test Cases (Access layer) row 10; §4.1 (MUST stop with ambiguous), §4.4",
+      "needsChain": true, "needsChainReason": "ambiguity depends on two chains answering; judged offline only as 'does the SDK have a path that can produce it'"
+    },
+    {
+      "id": "TAP10-17", "n": 17, "row": 11, "input": "1.2.344", "form": "short name, X Layer",
+      "expected": { "status": "no-such-cpu", "chainId": 196 },
+      "expectedText": "`no-such-cpu` on X Layer",
+      "source": "TAP-10 Test Cases (Access layer) row 11; §4.2 steps 1-2, §4.4",
+      "needsChain": true, "needsChainReason": "built with the fake chain: an X Layer in which cpuAt(344) reverts"
+    },
+    {
+      "id": "TAP10-18", "n": 18, "row": 12, "input": "1.999999", "form": "short name, BNB Smart Chain",
+      "expected": { "status": "no-such-cpu" },
+      "expectedText": "`no-such-cpu`",
+      "source": "TAP-10 Test Cases (Access layer) row 12; §4.2 steps 1-2, §4.4",
+      "needsChain": true, "needsChainReason": "built with the fake chain: BNB Smart Chain in which cpuAt(999999) reverts"
+    },
+    {
+      "id": "TAP10-19", "n": 19, "row": 13, "input": "999999999.0", "form": "short name, BNB Smart Chain",
+      "expected": { "status": "no-such-token" },
+      "expectedText": "`no-such-token`",
+      "source": "TAP-10 Test Cases (Access layer) row 13; §4.2 steps 4, §4.4",
+      "needsChain": true, "needsChainReason": "built with the fake chain: processor 0 exists, accountOf derives an address, ownerOf(999999999) reverts; the fake only answers cpuAt(7) by itself, so cpuAt(0) is rewritten by the script's fetch wrapper"
+    },
+    {
+      "id": "TAP10-20", "n": 20, "row": 14, "input": "0x000000000000000000000000000000000000dEaD", "form": "container address",
+      "expected": { "status": "not-tapeout" },
+      "expectedText": "`not-tapeout`",
+      "source": "TAP-10 Test Cases (Access layer) row 14; §4.3 step 1, §4.4",
+      "needsChain": true, "needsChainReason": "built with the fake chain: an address on which token() reverts (no code)"
+    },
+    {
+      "id": "TAP10-21", "n": 21, "row": 15, "input": "04246.0", "form": "leading zero",
+      "expected": { "status": "input-error" },
+      "expectedText": "Input error",
+      "source": "TAP-10 Test Cases (Access layer) row 15; §3.1 (no leading zeros), §4.4",
+      "needsChain": false
+    },
+    {
+      "id": "TAP10-22", "n": 22, "row": 15, "input": "0.0.tape", "form": "#ID zero",
+      "expected": { "status": "input-error" },
+      "expectedText": "Input error",
+      "source": "TAP-10 Test Cases (Access layer) row 15; §3.1 (1 <= #ID), §4.4",
+      "needsChain": false
+    },
+    {
+      "id": "TAP10-23", "n": 23, "row": 15, "input": "4246", "form": "bare number",
+      "expected": { "status": "input-error" },
+      "expectedText": "Input error",
+      "source": "TAP-10 Test Cases (Access layer) row 15; §3.4 ('Anything else MUST be rejected as an input error; a client MUST NOT guess')",
+      "needsChain": false
+    },
+    {
+      "id": "TAP10-24", "n": 24, "row": 15, "input": "1.0.5", "form": "reserved area code 0",
+      "expected": { "status": "input-error" },
+      "expectedText": "Input error",
+      "source": "TAP-10 Test Cases (Access layer) row 15; §2.1 (0 and 1 are reserved), §3.1, §4.4",
+      "needsChain": false
+    },
+    {
+      "id": "TAP10-25", "n": 25, "row": 15, "input": "1.1.5", "form": "reserved area code 1",
+      "expected": { "status": "input-error" },
+      "expectedText": "Input error",
+      "source": "TAP-10 Test Cases (Access layer) row 15; §2.1, §3.1, §4.4",
+      "needsChain": false
+    },
+    {
+      "id": "TAP10-26", "n": 26, "row": 15, "input": "1.4.5", "form": "unassigned area code 4",
+      "expected": { "status": "input-error" },
+      "expectedText": "Input error",
+      "source": "TAP-10 Test Cases (Access layer) row 15; §3.1 (an area code not in §2.1 is an input error), §4.4",
+      "needsChain": false
+    },
+    {
+      "id": "TAP10-27", "n": 27, "row": 16, "input": "Accepted implementations", "form": "static data",
+      "expected": {
+        "text": "Every site store and payment contract of §2.2 is accepted on all three chains",
+        "accepted": {
+          "56": {
+            "siteStore": { "proxy": "0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6", "impls": ["0x1d279D138A4D803378a7d4557c056f1beD53c261"] },
+            "payment": { "proxy": "0x861EE183de2BBE4a6ecf9D15812C123b566a3DB7", "impls": ["0xaa226181a6588d3f9AC0035e5f3dBaF311039bCE", "0x4E8684EaEA48b524245B2191DeE451eAa1c1cA94"] }
+          },
+          "8453": {
+            "siteStore": { "proxy": "0xd6EFb7adCc9c83dC4924Ad56f6a8E4e969b9ADB6", "impls": ["0xa85c4143d1D4A77f54b8e4ecC9E6D1418Afea45f"] },
+            "payment": { "proxy": "0x68809Fd2fb343aA57D0aeB7f33Defe477c9666f9", "impls": ["0x5eBF29b80789e548907C707530C3C7607C4347Df"] }
+          },
+          "196": {
+            "siteStore": { "proxy": "0xd6EFb7adCc9c83dC4924Ad56f6a8E4e969b9ADB6", "impls": ["0xa85c4143d1D4A77f54b8e4ecC9E6D1418Afea45f"] },
+            "payment": { "proxy": "0x68809Fd2fb343aA57D0aeB7f33Defe477c9666f9", "impls": ["0x5eBF29b80789e548907C707530C3C7607C4347Df"] }
+          }
+        }
+      },
+      "expectedText": "Every site store and payment contract of §2.2 is accepted on all three chains",
+      "source": "TAP-10 Test Cases (Access layer) last row; Deployments / TapeOut and site contracts (the proxy and accepted-implementation addresses), §6.1",
+      "needsChain": false
+    }
+  ]
+}

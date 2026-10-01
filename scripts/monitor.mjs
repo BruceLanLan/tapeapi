@@ -5,7 +5,13 @@
 // expires, and make one real call whose signed envelope the SDK verifies. Also GET the website and the docs.
 // Relay async delivery: post one test frame to a random room, let the relay sit idle for ASYNC_WAIT_S (60 s), and read
 // it back through a brand-new client -- the check that would have caught RELAY-1 (see checkRelayAsync below).
-// Exit 0 when everything is healthy, 1 when anything is down or a delegation expires in fewer than 14 days.
+// Activation (TAP-10 §6.3, TAP-11): a service's name must be activated on chain (DomainBinding isLive(name, container) or
+// isContainerLive(container)), else a TAP-11 client gets "unpaid" and does not resolve it. The monitor reports it per service:
+// not activated = a WARNING only (the service still answers and its site files stay readable, so it must not turn the
+// scheduled run red); activated = the paid-until date and the days left (containerPaidUntil): under 14 days a warning,
+// under 3 days (or past) a problem; unreadable = a warning.
+// Exit 0 when everything is healthy, 1 when anything is down, a delegation expires in fewer than 14 days, or an activation
+// that exists expires in fewer than 3 days. Warnings (listed under "Notes") never change the exit code.
 //
 //   node scripts/monitor.mjs                     Markdown report on stdout (used as the GitHub issue body)
 //   node scripts/monitor.mjs --json              the raw results and the evaluation as JSON
@@ -14,7 +20,10 @@
 // 只读监控：不发交易、不持有任何密钥。对每个服务：取健康检查；像客户端一样用 SDK 从链上解析它（3 家不同运营方的公共节点、quorum 2）；
 // 核对链上清单的 signer 与服务实际使用的一致；计算委托到期天数；做一次真实调用并由 SDK 验签。另外检查官网与文档。
 // 中继异步投递：往随机房间发一帧测试帧，让中继闲置 ASYNC_WAIT_S（60 秒），再用全新的客户端读回——能抓住 RELAY-1 的那项检查。
-// 全部健康退出码 0；任何服务不可用、或委托不足 14 天到期，退出码 1。
+// 激活（TAP-10 §6.3、TAP-11）：服务的名字必须在链上激活（DomainBinding 的 isLive(名字, 容器) 或 isContainerLive(容器)），否则按 TAP-11
+// 的客户端得到 unpaid、不解析它。监控对每个服务报告：未激活只是警告（服务照常应答、站点文件仍可读取，不能让定时任务变红）；
+// 已激活则给出到期日与剩余天数（containerPaidUntil）：不足 14 天警告，不足 3 天（或已过期）算问题；读不到则警告。
+// 全部健康退出码 0；任何服务不可用、委托不足 14 天到期、或已有的激活不足 3 天到期，退出码 1。警告（列在 Notes 下）不改变退出码。
 import { fileURLToPath } from 'node:url'
 import { rpcUrlsFor } from '../sdk/src/rpc-defaults.js'
 
@@ -23,6 +32,9 @@ export const RPC_URLS = rpcUrlsFor(56)
 export const PROCESSOR = '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414'   // processor 1013
 export const HEALTH_PATH = '/tapeapi/v1/health'
 export const WARN_DAYS = 14
+// An activation with fewer days left than this is a problem (exit 1); fewer than WARN_DAYS is a warning.
+// 已激活的名字剩余天数少于此值算问题（退出码 1）；少于 WARN_DAYS 为警告。
+export const ACTIVATION_FAIL_DAYS = 3
 const DAY_S = 86400
 // How long the relay async check leaves the room idle. Cloudflare evicts an idle Durable Object within seconds to about
 // fifteen, so 60 s is well past the point where an in-memory room (RELAY-1) is gone. / 异步检查让房间闲置的时长：
@@ -76,11 +88,51 @@ export function effectiveExpiry(svc) {
   return xs.length ? Math.min(...xs) : null
 }
 
+const dateOf = (t) => new Date(t * 1000).toISOString().slice(0, 10)
+
+/**
+ * What the activation of one service result means for the evaluation: { problems[], warnings[] }.
+ * Not activated is a warning, never a problem: under TAP-11 a client answers "unpaid" and does not resolve the service, but the
+ * service itself is up and its site files stay readable (TAP-10 §6.3), and the 30-minute run must not stay red for it.
+ * 未激活只是警告、绝不算问题：按 TAP-11，客户端得到 unpaid、不解析该服务，但服务本身可用、站点文件仍可读取；30 分钟一次的运行不能为此一直变红。
+ */
+export function activationFindings(s, now, warnDays = WARN_DAYS) {
+  const out = { problems: [], warnings: [] }
+  const a = s?.activation
+  if (!a || a.skipped) return out          // not read (the chain row already says why) / 没读（链上那一行已说明原因）
+  const n = s.name
+  if (a.error) { out.warnings.push(`${n}: activation could not be read (${a.error}); whether ${s.label ?? n} is activated is unknown`); return out }
+  if (!a.live) {
+    out.warnings.push(`${n}: ${s.label ?? n} is not activated (isLive and isContainerLive are false): under TAP-11 a client gets "unpaid" and does not resolve this service; the service still answers and its site files stay readable (TAP-10 §6.3).${a.feeText ? ` monthlyFee() now: ${a.feeText} per 30 days.` : ''}`)
+    return out
+  }
+  if (!Number.isFinite(a.paidUntil)) return out    // activated, expiry not readable: nothing to count / 已激活，到期时间读不到：无从计算
+  const days = daysUntil(a.paidUntil, now)
+  if (a.paidUntil <= now) out.problems.push(`${n}: activation EXPIRED ${dateOf(a.paidUntil)}; TAP-11 clients get "unpaid" until it is paid again`)
+  else if (days < ACTIVATION_FAIL_DAYS) out.problems.push(`${n}: activation expires in ${days} days (${dateOf(a.paidUntil)}); pay it now or TAP-11 clients get "unpaid"`)
+  else if (days < warnDays) out.warnings.push(`${n}: activation expires in ${days} days (${dateOf(a.paidUntil)}); pay the next month soon`)
+  return out
+}
+
+/** The activation cell of the services table. / 服务表里的激活一栏。 */
+function activationCell(s, now) {
+  const a = s.activation
+  if (!a) return '-'
+  if (a.skipped) return 'skipped'
+  if (a.error) return `unreadable (${a.error})`
+  if (!a.live) return `NOT ACTIVATED (TAP-11: unpaid)${a.feeText ? `, monthlyFee ${a.feeText} / 30 d` : ''}`
+  return Number.isFinite(a.paidUntil) ? `active until ${dateOf(a.paidUntil)} (${daysUntil(a.paidUntil, now)} d)` : 'active (paid-until unknown)'
+}
+
 /**
  * results: { services: [{ name, label, health: { status, ok, signer, delegationExpires, latencyMs, error },
- *                         chain: { signer, expires, error }, call: { method, ok, skipped, error } }],
+ *                         chain: { signer, expires, error }, call: { method, ok, skipped, error },
+ *                         activation?: { live, paidUntil, feeText, error, skipped } }],
  *            pages: [{ name, url, status, error }] }
  * now: unix seconds.  Returns { healthy, problems[], warnings[] }.
+ * `activation` is judged by activationFindings(): only an activation that expires in fewer than 3 days is a problem; every other
+ * finding (not activated, fewer than 14 days, unreadable) is a warning, and a missing or skipped one says nothing.
+ * activation 由 activationFindings() 判断：只有已激活且不足 3 天到期才算问题，其余（未激活、不足 14 天、读不到）都是警告；缺失或跳过则不说话。
  */
 export function evaluate(results, now = Math.floor(Date.now() / 1000), { warnDays = WARN_DAYS } = {}) {
   const problems = []
@@ -101,6 +153,9 @@ export function evaluate(results, now = Math.floor(Date.now() / 1000), { warnDay
     if (Number.isFinite(c.expires) && Number.isFinite(h.delegationExpires) && c.expires !== h.delegationExpires) {
       warnings.push(`${n}: service reports delegationExpires ${h.delegationExpires}, on-chain manifest says ${c.expires}`)
     }
+    const af = activationFindings(s, now, warnDays)
+    problems.push(...af.problems)
+    warnings.push(...af.warnings)
     const k = s.call ?? {}
     if (!k.skipped && (k.error || k.ok !== true)) problems.push(`${n}: verified ${k.method ?? 'call'} failed (${k.error ?? 'unexpected result'})`)
   }
@@ -188,8 +243,8 @@ export function report(results, evaluation, now = Math.floor(Date.now() / 1000))
   const when = new Date(now * 1000).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
   const L = []
   L.push(`## TapeAPI monitor: ${evaluation.healthy ? 'all healthy' : `${evaluation.problems.length} problem(s)`}`, '', `Checked ${when}.`, '')
-  L.push('| Service | Health | Latency | Signer (chain = service) | Delegation expires | Verified call |')
-  L.push('|---|---|---|---|---|---|')
+  L.push('| Service | Health | Latency | Signer (chain = service) | Delegation expires | Activation | Verified call |')
+  L.push('|---|---|---|---|---|---|---|')
   for (const s of results.services) {
     const h = s.health ?? {}; const c = s.chain ?? {}; const k = s.call ?? {}
     const health = h.error ? `DOWN (${h.error})` : h.status !== 200 ? `DOWN (HTTP ${h.status})` : h.ok === true ? 'up' : `ok=${h.ok}`
@@ -199,7 +254,7 @@ export function report(results, evaluation, now = Math.floor(Date.now() / 1000))
     const exp = effectiveExpiry(s)
     const expiry = exp == null ? '-' : `${new Date(exp * 1000).toISOString().slice(0, 10)} (${daysUntil(exp, now)} d)`
     const call = k.skipped ? 'skipped' : k.ok ? `${k.method} ok${k.detail ? `, ${k.detail}` : ''}${Number.isFinite(k.latencyMs) ? ` (${k.latencyMs} ms)` : ''}` : `${k.method ?? 'call'} FAILED${k.error ? ` (${k.error})` : ''}`
-    L.push(`| ${s.name} \`${s.label}\` | ${health} | ${lat} | ${signer} | ${expiry} | ${call} |`.replace(/\n/g, ' '))
+    L.push(`| ${s.name} \`${s.label}\` | ${health} | ${lat} | ${signer} | ${expiry} | ${activationCell(s, now)} | ${call} |`.replace(/\n/g, ' '))
   }
   L.push('', '| Page | Status | Latency |', '|---|---|---|')
   for (const p of results.pages) L.push(`| ${p.url} | ${p.error ? `DOWN (${p.error})` : p.status} | ${Number.isFinite(p.latencyMs) ? `${p.latencyMs} ms` : '-'} |`)
@@ -252,6 +307,33 @@ async function checkHealth(svc) {
   } catch (e) { return { status: e.status ?? null, error: msg(e) } }
 }
 
+/**
+ * Is `name` (the on-chain name, with `.tape`) activated for `container`? Reuses the doctor's activationStatus (sdk/src/doctor.js).
+ * Never throws: a chain that cannot be read gives { error }, which evaluate() turns into a warning, so it cannot sink the other checks.
+ * Cost: activationStatus reads in sequence isLive(name, container), isContainerLive(container), then containerPaidUntil(container)
+ * when activated or monthlyFee() when not: 3 eth_calls per service, 6 per run (2 services), each one quorum round over the SDK's 3
+ * nodes. They are awaited one after the other, so rpc.js does not batch them: at most 6 extra requests per node per run, and 2 x 48
+ * runs a day = about 288 per node per day, a few percent of what a public node allows; the whole check is retried once on a failure
+ * (worst case 12 per node per run). Nothing is cached: the answer must be the chain's current one.
+ * 激活检查：复用 doctor 的 activationStatus。从不抛错：读不到链就返回 { error }，由 evaluate() 记为警告，拖不垮其它检查。
+ * 成本：依次读 isLive(名字, 容器)、isContainerLive(容器)，再按结果读 containerPaidUntil(已激活) 或 monthlyFee()(未激活)：每服务 3 次
+ * eth_call，每次运行 6 次（2 个服务），每次都在 SDK 的 3 个节点上过一轮法定数；它们依次 await，所以 rpc.js 不会合并批量：
+ * 每个节点每次运行最多多 6 个请求，每天 48 次运行约 288 个/节点，只占公共节点配额的很小一部分；失败时整项重试一次（最坏每次 12 个）。不缓存。
+ * `name` must be the canonical name: SERVICES[].label is (11.1013.tape), and the tests lock the labels. / label 就是规范名，测试锁定了它。
+ */
+export async function checkActivation(api, { name, container }, { pauseMs = 2000 } = {}) {
+  try {
+    const [{ activationStatus, formatNative }, { CHAINS }] = await Promise.all([import('../sdk/src/doctor.js'), import('../sdk/src/index.js')])
+    const a = await retry(() => activationStatus(api, api.chainId, { name, container }), { pauseMs })
+    // No bigint in the results: --json prints them with JSON.stringify. / 结果里不留 bigint：--json 用 JSON.stringify 输出。
+    return {
+      live: a.live, isLive: a.isLive, isContainerLive: a.isContainerLive, isLiveReverted: a.isLiveReverted,
+      paidUntil: a.paidUntil, feeWei: a.fee === null ? null : String(a.fee),
+      feeText: a.fee === null ? null : formatNative(a.fee, CHAINS[api.chainId]?.currency ?? ''), binding: a.binding,
+    }
+  } catch (e) { return { error: msg(e) } }
+}
+
 async function checkChainAndCall(api, svc) {
   let resolved
   const chain = {}
@@ -263,7 +345,9 @@ async function checkChainAndCall(api, svc) {
     chain.endpoints = resolved.manifest.endpoints?.live ?? []
   } catch (e) { chain.error = msg(e) }
   const call = { method: svc.probe.method }
-  if (!resolved) return { chain, call: { ...call, skipped: true } }
+  if (!resolved) return { chain, call: { ...call, skipped: true }, activation: { skipped: true } }
+  // In parallel with the verified call: it uses the chain, the call uses the service. / 与验签调用并行：它用链，调用用服务。
+  const activationP = checkActivation(api, { name: svc.label, container: resolved.container })
   try {
     const t0 = performance.now()
     const out = await retry(() => api.call(resolved, svc.probe.method, svc.probe.params(), { timeoutMs: 20000 }))
@@ -272,7 +356,7 @@ async function checkChainAndCall(api, svc) {
     call.detail = svc.probe.detail(out?.result)
     if (!call.ok) call.error = out?.verified !== true ? 'envelope not verified' : `unexpected result ${JSON.stringify(out?.result).slice(0, 120)}`
   } catch (e) { call.ok = false; call.error = msg(e) }
-  return { chain, call }
+  return { chain, call, activation: await activationP }
 }
 
 async function checkPage(p) {

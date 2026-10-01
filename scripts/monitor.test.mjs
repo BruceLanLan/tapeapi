@@ -2,19 +2,22 @@
 // 监控评估逻辑的离线测试：不联网，结果手工构造。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { evaluate, report, daysUntil, effectiveExpiry, retry, SERVICES, PAGES, WARN_DAYS, ASYNC_WAIT_S, asyncWaitMs, testFrame, judgeAsync, isNetworkError, checkRelayAsync, randomRoom } from './monitor.mjs'
+import { evaluate, report, daysUntil, effectiveExpiry, retry, SERVICES, PAGES, WARN_DAYS, ACTIVATION_FAIL_DAYS, checkActivation, activationFindings, ASYNC_WAIT_S, asyncWaitMs, testFrame, judgeAsync, isNetworkError, checkRelayAsync, randomRoom } from './monitor.mjs'
+import { encodeCall } from '../sdk/src/abi.js'
+import { TapeAPIError } from '../sdk/src/index.js'
 import { createRelayCore, relayMethods } from '../examples/relay-service/relay-core.mjs'
 
 const NOW = 1_790_000_000
 const DAY = 86400
 const SIGNER = '0xaB70dEe8e1CEabb1D10eDFeBcbe0c313c53cf154'
 
-function svc(name, { expires = NOW + 60 * DAY, health = {}, chain = {}, call = {} } = {}) {
+function svc(name, { expires = NOW + 60 * DAY, health = {}, chain = {}, call = {}, activation = { live: true, isLive: true, isContainerLive: false, paidUntil: NOW + 25 * DAY } } = {}) {
   return {
     name, label: `${name}.1013.tape`,
     health: { status: 200, ok: true, signer: SIGNER, delegationExpires: expires, latencyMs: 120, ...health },
     chain: { signer: SIGNER.toLowerCase(), expires, ...chain },   // case differs on purpose: addresses compare case-insensitively
     call: { method: 'blockNumber', ok: true, ...call },
+    ...(activation === null ? {} : { activation }),   // pass activation: null for a result from before the check existed
   }
 }
 const pages = () => PAGES.map((p) => ({ ...p, status: 200, latencyMs: 80 }))
@@ -293,4 +296,160 @@ test('FIXED P101-2: a signed answer with no result is a clear failure, not a Typ
   assert.deepEqual([r.ok, r.kind, r.error], [false, 'wrong', 'relayRecv answered with no result (undefined), not { frames, next, epoch }'])
   const ev = evaluate(withAsync(r), NOW)
   assert.deepEqual(ev.problems, ['relay: async delivery failed after 1.2 s idle (relayRecv answered with no result (undefined), not { frames, next, epoch })'])
+})
+
+// ---------------------------------------------------------------- activation (TAP-10 §6.3, TAP-11) / 激活
+// There is no fetch mock in this file: results are built by hand and fed to evaluate/report, as above. checkActivation is fed a
+// stand-in chain (api.rpc.ethCall answering by selector), which runs the doctor's real activationStatus on it.
+// 本文件没有 fetch mock：结果手工构造再喂给 evaluate/report；checkActivation 喂一个替身链（api.rpc.ethCall 按选择子回答），跑的是 doctor 真正的 activationStatus。
+const UNACTIVATED = { live: false, isLive: false, isContainerLive: false, paidUntil: null, feeText: '0.01 BNB', feeWei: '10000000000000000' }
+const activated = (days) => ({ live: true, isLive: true, isContainerLive: false, paidUntil: NOW + days * DAY })
+const CONTAINER = '0x1111111111111111111111111111111111111111'
+const word = (n) => '0x' + BigInt(n).toString(16).padStart(64, '0')
+function fakeChain(answers, { name = '11.1013.tape' } = {}) {
+  const sel = (fn, args) => encodeCall(fn, args).slice(0, 10)
+  const table = { [sel('isLive', [name, CONTAINER])]: 'isLive', [sel('isContainerLive', [CONTAINER])]: 'isContainerLive', [sel('containerPaidUntil', [CONTAINER])]: 'containerPaidUntil', [sel('monthlyFee', [])]: 'monthlyFee' }
+  const f = { calls: [], chainId: 56, rpc: { ethCall: async (to, data) => {
+    const fn = table[data.slice(0, 10)]
+    f.calls.push(fn)
+    const a = answers[fn]
+    if (a instanceof Error) throw a
+    return typeof a === 'function' ? a() : a
+  } } }
+  return f
+}
+const reverted = () => new TapeAPIError('RPC_ERROR', 'execution reverted')
+const down = () => new TapeAPIError('RPC_UNAVAILABLE', 'quorum not reached: 3 nodes, 0 answers')
+
+test('MON-ACT-1: activated with plenty of days: no finding, the report shows the paid-until date and the days left', () => {
+  const r = results(svc('api', { activation: activated(25) }), svc('relay', { activation: { ...activated(40), isLive: false, isContainerLive: true } }))
+  const ev = evaluate(r, NOW)
+  assert.deepEqual(ev, { healthy: true, problems: [], warnings: [] })
+  const md = report(r, ev, NOW)
+  assert.match(md, /\| Service \| Health \| Latency \| Signer \(chain = service\) \| Delegation expires \| Activation \| Verified call \|/)
+  assert.match(md, new RegExp(`active until ${new Date((NOW + 25 * DAY) * 1000).toISOString().slice(0, 10)} \\(25 d\\)`))
+  assert.match(md, /\(40 d\)/)
+})
+
+test('MON-ACT-2: activated, fewer than 14 days left: a warning, not a problem; 14 days exactly is quiet', () => {
+  assert.equal(WARN_DAYS, 14)
+  const ev = evaluate(results(svc('api', { activation: activated(10) }), svc('relay')), NOW)
+  assert.equal(ev.healthy, true)
+  assert.deepEqual(ev.problems, [])
+  assert.equal(ev.warnings.length, 1)
+  assert.match(ev.warnings[0], /^api: activation expires in 10 days \(\d{4}-\d\d-\d\d\)/)
+  assert.deepEqual(evaluate(results(svc('api', { activation: activated(14) })), NOW).warnings, [])
+  assert.equal(evaluate(results(svc('api', { activation: { ...activated(14), paidUntil: NOW + 14 * DAY - 3600 } })), NOW).warnings.length, 1)
+})
+
+test('MON-ACT-3: activated, fewer than 3 days left (or past): a problem, and the exit code is 1', () => {
+  assert.equal(ACTIVATION_FAIL_DAYS, 3)
+  assert.equal(evaluate(results(svc('api', { activation: activated(3) })), NOW).healthy, true, '3 days exactly is a warning')
+  for (const paidUntil of [NOW + 3 * DAY - 3600, NOW + 2 * DAY, NOW + 60]) {
+    const ev = evaluate(results(svc('api', { activation: { ...activated(0), paidUntil } }), svc('relay')), NOW)
+    assert.equal(ev.healthy, false, String(paidUntil - NOW))
+    assert.equal(ev.problems.length, 1)
+    assert.match(ev.problems[0], /^api: activation expires in 2 days|^api: activation expires in 0 days/)
+  }
+  const gone = evaluate(results(svc('relay', { activation: { ...activated(0), paidUntil: NOW - 2 * DAY } })), NOW)
+  assert.equal(gone.healthy, false)
+  assert.match(gone.problems[0], /^relay: activation EXPIRED \d{4}-\d\d-\d\d/)
+})
+
+test('MON-ACT-4: not activated: a warning that says TAP-11 and "unpaid" and names monthlyFee(), never a problem', () => {
+  const r = results(svc('api', { activation: UNACTIVATED }), svc('relay', { activation: UNACTIVATED }))
+  const ev = evaluate(r, NOW)
+  assert.equal(ev.healthy, true)
+  assert.deepEqual(ev.problems, [])
+  assert.equal(ev.warnings.length, 2)
+  for (const w of ev.warnings) {
+    assert.match(w, /is not activated/)
+    assert.match(w, /TAP-11/)
+    assert.match(w, /"unpaid"/)
+    assert.match(w, /monthlyFee\(\) now: 0\.01 BNB per 30 days/)
+    assert.match(w, /site files stay readable/)
+  }
+  const md = report(r, ev, NOW)
+  assert.match(md, /all healthy/)
+  assert.match(md, /\| NOT ACTIVATED \(TAP-11: unpaid\), monthlyFee 0\.01 BNB \/ 30 d \|/)
+  // The fee could not be read: the warning still stands, without a number. / 费用读不到：警告照旧，只是没有数字。
+  assert.doesNotMatch(activationFindings(svc('api', { activation: { ...UNACTIVATED, feeText: null } }), NOW).warnings[0], /monthlyFee/)
+})
+
+test('MON-ACT-5: an unreadable chain is a warning that names the error; skipped or missing says nothing, and nothing else changes', () => {
+  const ev = evaluate(results(svc('api', { activation: { error: 'RPC_UNAVAILABLE: quorum not reached' } }), svc('relay')), NOW)
+  assert.equal(ev.healthy, true)
+  assert.deepEqual(ev.problems, [])
+  assert.match(ev.warnings[0], /^api: activation could not be read \(RPC_UNAVAILABLE: quorum not reached\)/)
+  assert.match(report(results(svc('api', { activation: { error: 'RPC_UNAVAILABLE: x' } })), ev, NOW), /unreadable \(RPC_UNAVAILABLE: x\)/)
+  // A resolve that failed skips the activation: only the resolve problem, no second line / 解析失败则跳过激活：只有解析那一个问题
+  const skipped = svc('api', { chain: { signer: undefined, expires: undefined, error: 'RPC_UNAVAILABLE: quorum' }, call: { ok: undefined, skipped: true }, activation: { skipped: true } })
+  assert.deepEqual(evaluate(results(skipped), NOW), { healthy: false, problems: ['api: on-chain resolve failed (RPC_UNAVAILABLE: quorum)'], warnings: [] })
+  assert.deepEqual(evaluate(results(svc('api', { activation: null })), NOW), { healthy: true, problems: [], warnings: [] })
+  assert.match(report(results(svc('api', { activation: null })), { healthy: true, problems: [], warnings: [] }, NOW), /\| - \|/)
+  // activated, paid-until unknown: no day count to judge / 已激活但到期时间读不到
+  assert.deepEqual(evaluate(results(svc('api', { activation: { live: true, paidUntil: null } })), NOW), { healthy: true, problems: [], warnings: [] })
+})
+
+test('MON-ACT-6: neither service activated does not change the exit code: same healthy flag and same problems as without the check', () => {
+  const boards = {
+    'all healthy': () => [svc('api', { activation: null }), svc('relay', { activation: null })],
+    'one service down': () => [svc('api', { activation: null, health: { status: 502 } }), svc('relay', { activation: null })],
+    'delegation 5 days': () => [svc('api', { activation: null, expires: NOW + 5 * DAY }), svc('relay', { activation: null })],
+  }
+  for (const [what, make] of Object.entries(boards)) {
+    const before = evaluate(results(...make()), NOW)
+    const after = evaluate(results(...make().map((s) => ({ ...s, activation: UNACTIVATED }))), NOW)
+    assert.equal(after.healthy, before.healthy, what)
+    assert.deepEqual(after.problems, before.problems, what)
+    assert.equal(after.warnings.length, before.warnings.length + 2, `${what}: only the two warnings are new`)
+  }
+  // The exit code main() derives: healthy ? 0 : 1 / main() 的退出码：healthy ? 0 : 1
+  assert.equal(evaluate(results(svc('api', { activation: UNACTIVATED }), svc('relay', { activation: UNACTIVATED })), NOW).healthy ? 0 : 1, 0)
+  // The report is the GitHub issue body only when something is wrong; a warning-only run prints Notes, not Problems.
+  const md = report(results(svc('api', { activation: UNACTIVATED })), evaluate(results(svc('api', { activation: UNACTIVATED })), NOW), NOW)
+  assert.match(md, /all healthy/)
+  assert.match(md, /Notes/)
+  assert.doesNotMatch(md, /\*\*Problems\*\*/)
+})
+
+test('MON-ACT-7: checkActivation on a stand-in chain: unactivated reads isLive, isContainerLive, monthlyFee (3 eth_calls) and gives a JSON-safe result', async () => {
+  const chain = fakeChain({ isLive: word(0), isContainerLive: word(0), monthlyFee: word(10n ** 16n) })
+  const a = await checkActivation(chain, { name: '11.1013.tape', container: CONTAINER }, { pauseMs: 0 })
+  assert.deepEqual(chain.calls, ['isLive', 'isContainerLive', 'monthlyFee'])
+  assert.equal(a.live, false)
+  assert.equal(a.feeText, '0.01 BNB')
+  assert.equal(a.feeWei, '10000000000000000')
+  assert.doesNotThrow(() => JSON.stringify(a), 'no bigint in the result: --json must print it')
+  assert.equal(evaluate(results(svc('api', { activation: a })), NOW).warnings.length, 1)
+})
+
+test('MON-ACT-8: checkActivation: activated reads containerPaidUntil (3 eth_calls); isContainerLive reverting counts as false; a read failure never throws', async () => {
+  let chain = fakeChain({ isLive: word(1), isContainerLive: word(1), containerPaidUntil: word(NOW + 9 * DAY) })
+  let a = await checkActivation(chain, { name: '11.1013.tape', container: CONTAINER }, { pauseMs: 0 })
+  assert.deepEqual(chain.calls, ['isLive', 'isContainerLive', 'containerPaidUntil'])
+  assert.deepEqual([a.live, a.paidUntil, a.feeText], [true, NOW + 9 * DAY, null])
+  assert.match(evaluate(results(svc('api', { activation: a })), NOW).warnings[0], /activation expires in 9 days/)
+  chain = fakeChain({ isLive: word(1), isContainerLive: reverted(), containerPaidUntil: word(NOW + 40 * DAY) })
+  a = await checkActivation(chain, { name: '11.1013.tape', container: CONTAINER }, { pauseMs: 0 })
+  assert.deepEqual([a.live, a.isLive, a.isContainerLive], [true, true, false])
+  // Nodes down: retried once (the whole check), then { error }: no exception, a warning, exit code unchanged
+  chain = fakeChain({ isLive: down() })
+  a = await checkActivation(chain, { name: '11.1013.tape', container: CONTAINER }, { pauseMs: 0 })
+  assert.deepEqual(chain.calls, ['isLive', 'isLive'])
+  assert.match(a.error, /^RPC_UNAVAILABLE: quorum not reached/)
+  const ev = evaluate(results(svc('api', { activation: a }), svc('relay')), NOW)
+  assert.deepEqual([ev.healthy, ev.problems.length, ev.warnings.length], [true, 0, 1])
+  // A flaky first read that then answers is fine / 第一次不稳、重试后有回答也行
+  let n = 0
+  chain = fakeChain({ isLive: () => { if (n++ === 0) throw down(); return word(0) }, isContainerLive: word(0), monthlyFee: word(10n ** 16n) })
+  assert.equal((await checkActivation(chain, { name: '11.1013.tape', container: CONTAINER }, { pauseMs: 0 })).live, false)
+  // A chain with no known DomainBinding is an error result too, not a crash / 没有已知 DomainBinding 的链也只是错误结果
+  assert.match((await checkActivation({ ...fakeChain({}), chainId: 31337 }, { name: '11.1013.tape', container: CONTAINER }, { pauseMs: 0 })).error, /no DomainBinding is known on chain 31337/)
+})
+
+test('MON-ACT-9: the --json output of a run with activation results prints (no bigint anywhere)', async () => {
+  const a = await checkActivation(fakeChain({ isLive: word(0), isContainerLive: word(0), monthlyFee: word(10n ** 16n) }), { name: '11.1013.tape', container: CONTAINER }, { pauseMs: 0 })
+  const text = JSON.stringify({ ...results(svc('api', { activation: a })), ...evaluate(results(svc('api', { activation: a })), NOW) }, null, 2)
+  assert.match(text, /"feeText": "0\.01 BNB"/)
 })

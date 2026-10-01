@@ -23,7 +23,7 @@ The checks of steps 1 to 7 are `tapeapi-doctor` (experimental), which ships in t
 Every `tapeapi-doctor` in the table stands for this, run from any directory, with nothing to clone:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-doctor <your name>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-doctor <your name>
 ```
 
 In a checkout, `node sdk/bin/tapeapi-doctor.js <your name>` at its root does the same. Either way the report writes
@@ -33,15 +33,17 @@ the next command the way you ran it.
 |---|---|---|---|---|
 | 0 | See the whole path work on your machine: no key, no circuit, no cost | a checkout of this repository, after `npm ci` at its root (above) | `node examples/relay-trial/trial.mjs` | it prints "The trial passed." |
 | 1 | Get a TapeOut circuit | [tapeout.net](https://tapeout.net) (you buy it) | `tapeapi-doctor <your name>` | `name` and `circuit` pass |
-| 2 | Open its container | tapeout.net (one transaction, your gas) | `tapeapi-doctor <your name>` | `container` passes; `manifest-file` fails, as it should until step 5 |
+| 2 | Open its container | tapeout.net (one transaction, your gas) | `tapeapi-doctor <your name>` | `container` passes; `activation` warns until step 2b; `manifest-file` fails, as it should until step 5 |
+| 2b | Activate the name ([TAP-10 §6.3](https://github.com/TapeOutProtocol/TAPs)): without it a TAP-11 client gets `unpaid` and does not resolve your service | the holder's wallet calls `bind("<your name>", <your container>, <months>)` on DomainBinding of your chain, with `msg.value` = months × `monthlyFee()` (you pay the fee, in BNB, OKB or ETH, and the gas); the doctor prints the exact call and the fee it reads from the chain now, which can change at any time | `tapeapi-doctor <your name>` | `activation` passes and shows the date it is paid until |
 | 3 | Run the sidecar in front of your gateway, on your server, behind your HTTPS reverse proxy | [below](#choose-how-to-run-the-sidecar) (your server) | `tapeapi-doctor --offline https://api.example.com` | the report names the setup-mode variables still missing |
 | 4 | Service key and delegation; put the values in `.env` and restart the sidecar | [holder console](https://tapeapi.fun/console/) steps 3 and 4 (no fee, no gas) | `tapeapi-doctor https://api.example.com` | `delegation`, `reach` and `receipt` pass; `manifest-file` warns "not published on chain yet" |
 | 5 | Publish the manifest, price table included | console step 5 (one transaction, your gas) | `tapeapi-doctor <your name>` | every check passes: exit status 0 |
 | 6 | Tell your users | [What your users do](#what-your-users-do) | `tapeapi-verify <your name>` on a user's machine | one `OK` line per call |
-| 7 | Renew the delegation every 90 days | console step 4, "Renew" | `tapeapi-doctor <your name>`, daily in your CI | `delegation` warns from 30 days before expiry |
+| 7 | Renew the delegation every 90 days, and keep the activation paid | console step 4, "Renew"; pay again as in step 2b | `tapeapi-doctor <your name>`, daily in your CI | `delegation` warns from 30 days before expiry; `activation` warns once the name is no longer paid |
 
-`tapeapi-doctor` checks, in order: the name resolves, the circuit exists, the container is opened, the manifest file is
-on chain, its format, the delegation (and the days left), the `ai` field, the price table, the endpoints, that they are
+`tapeapi-doctor` checks, in order: the name resolves, the circuit exists, the container is opened, the name is activated
+(TAP-10 §6.3; a warning only: the site files stay readable, but a TAP-11 client answers `unpaid` and does not resolve the
+service), the manifest file is on chain, its format, the delegation (and the days left), the `ai` field, the price table, the endpoints, that they are
 reachable (TLS, sidecar out of setup mode, the key it signs with), CORS, that a real request gets a receipt that
 verifies, and the receipt lookup. That request costs nothing: it carries a key that cannot be valid, your gateway
 refuses it, and the sidecar signs a receipt for the refusal too. If your gateway accepts any key, it answers instead,
@@ -224,7 +226,7 @@ and point the client at it. `tapeapi-verify` keeps running in the foreground, so
 
 ```sh
 # Terminal 1. 42.1013.tape is an example name: put your service's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.3.0/tapeapi-sdk-1.3.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh

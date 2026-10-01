@@ -139,6 +139,8 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
   // Distinct operators among the nodes that answered (indexes into urls) / 作答节点中不同运营方的数目
   const operatorsOf = (idx) => new Set(idx.map((i) => opOf[i])).size
   const degraded = need < quorum
+  // TAP-10 §5.2 strict agreement / 严格共识
+  const strictNeed = degraded ? need : Math.max(need, 2, Math.min(3, operators.length))
   // A quorum equal to the node count has no spare: one node down, rate limiting or refusing a method stops every
   // read (arch A5). Said once per node set, and only for a set that could be a deployment (some `deployable` URL);
   // plain-http and reserved-name sets are local or test setups. `quiet: true` silences it.
@@ -338,12 +340,22 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
   // TAPI-20 §3.2：所有作答节点的字节必须完全一致；任何分歧都是 RPC_DISAGREE，绝不少数服从多数。传输失败不算作答、
   // 也不算分歧，但作答数须 ≥ need。一个 revert、一个有值，是分歧。对全部节点重问一次以吸收 "latest" 跨块边界的
   // 诚实竞态；重问也必须一致。
-  async function round(method, params, project) {
+  // `opts.answers === 'tap10'` (@experimental, TAP-10 conformance): only a result or an execution revert is an answer
+  // (TAP-10 §1 "Answer"); any other JSON-RPC error is a node failure, like a timeout. `opts.strict` (TAP-10 §5.2 strict
+  // agreement): the agreeing answers must come from at least max(2, min(3, operators)) operators (never fewer than the
+  // quorum; a degraded allowSingleNode set keeps its own count). Neither is set by any 1.x default read.
+  // `opts.answers === 'tap10'`（@experimental，TAP-10 一致模式）：只有结果与执行回滚算回答（TAP-10 §1）；其它 JSON-RPC 错误与超时
+  // 一样算节点故障。`opts.strict`（TAP-10 §5.2 严格共识）：一致的回答须来自至少 max(2, min(3, 运营方数)) 家运营方（不少于法定数；
+  // allowSingleNode 降级的节点组合保持自己的数目）。1.x 的默认读取都不设这两项。
+  async function round(method, params, project, opts = null) {
     const settled = await Promise.allSettled(urls.map(u => ask(u, method, params)))
     const buckets = new Map(); const failures = []; const refusals = []; const answeredIdx = []; let tooLarge = 0
     const pinned = pinnedRead(method, params)
+    const tap10Answers = opts?.answers === 'tap10'
+    const needHere = opts?.strict ? strictNeed : need
     settled.forEach((s, i) => {
       if (s.status === 'rejected') { failures.push(`${describeUrl(urls[i], i)}: ${s.reason?.message || s.reason}`); if (s.reason?.refusal) refusals.push(s.reason.refusal); if (s.reason?.data?.tooLarge) tooLarge++; return }
+      if (tap10Answers && s.value.kind === 'error' && !revertShaped(s.value.value)) { failures.push(`${describeUrl(urls[i], i)}: not an answer (${s.value.value.code}: ${s.value.value.message.slice(0, 80)})`); return }
       // A pinned read that a node answers with "no such block" (it has not reached the pinned block yet): that node did
       // not answer, as a timeout would not (FIXED SECR-3). Nodes that have the block still all have to agree, and at least
       // `need` operators still have to answer. Not a refusal: channel.js reads `refusals` as what a node will not do.
@@ -372,7 +384,7 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     // `refusals`：仅当每个失败的节点都以节点限制错误作答（没有连不上的）时给出
     // `tooLarge`: every node that failed sent an answer over bodyLimit -- set by this client, never read from a node's words
     // `tooLarge`：每个失败的节点发来的回答都超过 bodyLimit——由本客户端标记，绝不从节点的话里推断
-    if (answered < need) throw new TapeAPIError('RPC_UNAVAILABLE', `${method}: only ${answered}/${need} ${answeredIdx.length > answered ? 'operators' : 'nodes'} answered (${failures.join('; ')})`, { ...(refusals.length && refusals.length === failures.length ? { refusals } : {}), ...(tooLarge && tooLarge === failures.length ? { tooLarge: true } : {}) })
+    if (answered < needHere) throw new TapeAPIError('RPC_UNAVAILABLE', `${method}: only ${answered}/${needHere} ${answeredIdx.length > answered ? 'operators' : 'nodes'} answered (${failures.join('; ')})`, { ...(refusals.length && refusals.length === failures.length ? { refusals } : {}), ...(tooLarge && tooLarge === failures.length ? { tooLarge: true } : {}) })
     if (buckets.size > 1) throw new TapeAPIError('RPC_DISAGREE', `${method}: ${answeredIdx.length} nodes answered with ${buckets.size} different results`)
     const [b] = buckets.values()
     if (b.r.kind === 'error') {
@@ -385,12 +397,13 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     return b.r.value
   }
 
-  async function call(method, params = [], { project } = {}) {
-    try { return await round(method, params, project) }
+  async function call(method, params = [], { project, answers, strict } = {}) {
+    const opts = answers || strict ? { answers, strict: strict === true } : null
+    try { return await round(method, params, project, opts) }
     catch (e) {
       if (e.code !== 'RPC_DISAGREE' || disagreeRetryMs < 0) throw e
       await new Promise((r) => setTimeout(r, disagreeRetryMs))
-      return round(method, params, project)
+      return round(method, params, project, opts)
     }
   }
 
@@ -513,9 +526,64 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     return withIt.length && operatorsOf(withIt.map((g) => g.i)) >= need ? withIt[0].stateRoot : undefined
   }
 
+  /**
+   * @experimental (TAP-10 §5.3) The TAP-10 pinned block: every node is asked for its head (eth_blockNumber); once heads
+   * from Q = min(2, operators) operators are in, the others get at most `graceMs` (1.5 s) more. Each operator counts once,
+   * at the LOWEST head its nodes reported; the pinned block is the Q-th highest operator head minus 2, and its pin lag the
+   * highest operator head minus the pinned block. A lag above `maxLag` (TAP-10 §2.1: BSC 400, Base 150, X Layer 300) is
+   * RPC_STALE with data.status 'stale-block': block numbers only, no clock. Then, as confirmedBlock does, every node is
+   * asked for that block by number and all that answer must report the same block (hash and timestamp), from nodes of
+   * `quorum` operators, so the reads can pin to its hash (EIP-1898), which is stronger than pinning to a number.
+   * blockNumber() is not used: its maxHeadSpread (64) refuses heads TAP-10 accepts on an L2.
+   * `{ stateRoot: true }` also returns the agreed stateRoot (proofs), as confirmedBlock does.
+   * @experimental（TAP-10 §5.3）TAP-10 钉块：向每个节点要头块；Q = min(2, 运营方数) 家的头块到齐后，其余的至多再等 `graceMs`
+   * （1.5 秒）。每家运营方只计一次，取其节点报告的**最低**头块；钉块为第 Q 高的运营方头块减 2，钉块滞后为最高运营方头块减钉块。
+   * 滞后超过 `maxLag` 即 RPC_STALE、data.status 为 'stale-block'：只看块号，不看时钟。然后像 confirmedBlock 那样按块号向每个节点
+   * 取该块，作答者须报告同一个区块（哈希与时间戳），且来自 quorum 家运营方，读取因此可以钉在它的哈希上（EIP-1898），比按块号更强。
+   * 不用 blockNumber()：它的 maxHeadSpread（64）会拒绝 TAP-10 在 L2 上接受的头块差。
+   */
+  async function tap10Block({ maxLag, stateRoot: withRoot = false, graceMs = 1500 } = {}) {
+    if (!Number.isSafeInteger(maxLag) || maxLag < 0) throw new TapeAPIError('INVALID_ARGUMENT', 'tap10Block: maxLag must be a whole number of blocks')
+    const Q = Math.min(2, operators.length)
+    const lowest = new Map()   // operator -> its lowest head / 每家运营方最低的头块
+    const failures = []
+    await new Promise((resolve) => {
+      let pending = urls.length, timer = null, closed = false
+      const close = () => { if (closed) return; closed = true; if (timer) clearTimeout(timer); resolve() }
+      urls.forEach((u, i) => {
+        one(u, 'eth_blockNumber', []).then((a) => {
+          if (a.kind !== 'ok') throw new Error(`error ${a.value.code}: ${String(a.value.message).slice(0, 80)}`)
+          const n = Number(BigInt(a.value))
+          if (!Number.isSafeInteger(n) || n < 0) throw new Error('bad eth_blockNumber answer')
+          if (closed) return
+          const op = opOf[i]
+          if (!lowest.has(op) || lowest.get(op) > n) lowest.set(op, n)
+        }).catch((e) => { failures.push(`${describeUrl(u, i)}: ${e?.message || e}`) }).finally(() => {
+          pending--
+          if (pending === 0) return close()
+          if (!closed && !timer && lowest.size >= Q) timer = setTimeout(close, graceMs)
+        })
+      })
+    })
+    if (lowest.size < Q) throw new TapeAPIError('RPC_UNAVAILABLE', `eth_blockNumber: only ${lowest.size}/${Q} operators answered (${failures.join('; ')})`, { data: { status: 'unavailable' } })
+    const heads = [...lowest.values()].sort((a, b) => b - a)
+    const number = heads[Q - 1] - 2
+    const lag = heads[0] - number
+    const headsByOperator = Object.fromEntries(lowest)
+    if (number < 0) throw new TapeAPIError('RPC_UNAVAILABLE', `eth_blockNumber: heads ${heads.join(', ')} leave no block to pin`, { data: { status: 'unavailable' } })
+    if (lag > maxLag) throw new TapeAPIError('RPC_STALE', `stale-block: the pinned block ${number} is ${lag} blocks behind the highest head an operator reports (${heads[0]}), more than ${maxLag} (TAP-10 §5.3)`, { data: { status: 'stale-block', block: number, lag, maxLag, heads: headsByOperator } })
+    const hex = '0x' + number.toString(16)
+    const facts = withRoot ? blockFactsWithRoot : blockFacts
+    const seen = []
+    const b = await call('eth_getBlockByNumber', [hex, false], { answers: 'tap10', project: (x, i) => { const f = facts(x); seen.push({ i, ...f }); return blockFacts(x) } })
+    if (b.number !== number) throw new TapeAPIError('RPC_DISAGREE', `eth_getBlockByNumber: asked for block ${number}, nodes answered block ${b.number}`)
+    return { number, hash: b.hash, timestamp: b.timestamp, tag: 'tap10', lag, maxLag, heads: headsByOperator, operators: need, ...(withRoot ? { stateRoot: agreedRoot(seen, number, b.hash, hex) } : {}) }
+  }
+
   // `block`: a tag, a hex number, or an EIP-1898 object ({ blockHash, requireCanonical } or { blockNumber })
   // `block`：标签、十六进制块号，或 EIP-1898 对象
-  async function ethCall(to, data, block = 'latest') { return call('eth_call', [{ to, data }, block]) }
+  // `opts` (@experimental): { answers: 'tap10', strict } as for call() / 与 call() 相同
+  async function ethCall(to, data, block = 'latest', opts) { return opts ? call('eth_call', [{ to, data }, block], opts) : call('eth_call', [{ to, data }, block]) }
   async function chainId() { return Number(BigInt(await call('eth_chainId', []))) }
   // A client for ONE node, with this client's fetch and timeout. Data that authenticates itself (a TAPI-26 frame,
   // a payload whose digest is on chain) needs no agreement: one honest node is enough, and asking every node to
@@ -528,5 +596,5 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     return createRpc({ urls: [url], quorum: 1, timeoutMs, fetch: fetchImpl, bodyLimit: o.bodyLimit ?? bodyLimit, disagreeRetryMs, maxHeadSpread, transportRetryMs })
   }
   // `operators`: the distinct operators behind `urls`, in first-seen order / `urls` 背后的不同运营方
-  return { call, ethCall, blockNumber, confirmedBlock, chainId, urls, operators, quorum: need, degraded, single, bodyLimit }
+  return { call, ethCall, blockNumber, confirmedBlock, tap10Block, chainId, urls, operators, quorum: need, degraded, single, bodyLimit }
 }

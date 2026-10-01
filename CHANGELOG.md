@@ -7,7 +7,50 @@ interfaces.
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-10-01
+
+### Added
+
+- **TAP-10 conformance mode: the resolution path.** `createTapeAPI({ conform: 'tap10' })` resolves on the TAP-10 v1.1 /
+  TAP-11 §2.2 path (`false`, `null` or leaving it out means off, as before), with `pin: 'tap10'` (also usable alone) and the
+  read-only `api.siteStatus(target)`. The default behaviour is unchanged. In this mode:
+  - the whole resolution is pinned to one block by TAP-10 §5.3: each operator's lowest head, the Q-th highest minus 2,
+    `stale-block` by block distance (BNB Smart Chain 400, Base 150, X Layer 300), no clock; the block hash is then
+    confirmed by every answering node (the SDK keeps its stronger pin by hash);
+  - the site store's and the payment contract's implementations are read at that block and fail closed (`store-changed`);
+  - the container is derived through `opener.accountOf` and checked against the local ERC-6551 derivation, and
+    `isOpened` and the activation of the name (`isLive`, `isContainerLive`; a revert counts as false, TAP-10 §6.3) are
+    read: a name that is not opened or not activated fails with the new code `SITE_STATUS` (`data.status`: `not-opened`
+    or `unpaid`). Every error in this mode carries `data.status`, TAP-10's lowercase name;
+  - the input forms of TAP-10 §3.4 are accepted (`#4246@0`, `tape://4246.0/`, `0x…#ID`), an input with no processor
+    number whose activation cannot be told is answered `unsupported` (the all-chain lookup is planned for 1.5);
+  - `eth_chainId` is checked; only a result or a revert counts as an answer (TAP-10 §1); the holder and the site
+    state are read again after 60 s.
+  Activation is judged by `resolve` and `siteStatus` only: `channelKeys` and the TapeSend key of an unactivated
+  container are still read (TAP-10 §12.2). Today both `11.1013.tape` and `12.1013.tape` answer `unpaid` in this mode:
+  neither is activated. Also new: `rpc.tap10Block`, `{ answers: 'tap10', strict }` on `call` / `ethCall`,
+  `parseTapeInput`, `MAX_TOKEN_ID`, `MAX_PROCESSOR`, `CONFORM_TTL_MS`, `tap10MaxPinLag` in `chains.js`. The
+  [guide](docs/guides/upgrade-1.0.md) lists what stays for 1.5 and the limits (two-operator chains pin more weakly).
+
+- **The monitor reports each service's activation** (TAP-10 §6.3): the paid-until date and days left, or the `monthlyFee()`
+  read at that moment when the name is not activated. Not activated, and under 14 days left, are warnings; under 3 days
+  or expired is a problem. The exit code is otherwise unchanged (today both of our services are not activated, and the
+  run is still healthy). It adds 6 `eth_call` requests per run to each node.
+- **`tapeapi-doctor` checks activation** (now 14 checks). It reads DomainBinding `isLive(name, container)` and
+  `isContainerLive(container)` (a revert counts as false, TAP-10 §6.3). A name that is not activated is a warning, not a
+  failure (a TAP-11 client answers `unpaid` and does not resolve the service; `--strict` makes it fail), with the `bind`
+  hint and the fee `monthlyFee()` reads at that moment. The guide has a new step 2b. Run against `11.1013.tape` and
+  `12.1013.tape` today it warns: neither is activated.
+- `node scripts/tap10-gap.mjs`: a diagnostic that runs TAP-10's own Test Cases through the SDK's name resolution and prints
+  where it conforms and where it does not (offline; of 23 cases that can be judged offline, 12 conform and 11 are known
+  gaps, each with its TAP-10 section). `sdk/test/tap10-gap.test.mjs` pins the current results (`CONFORMS`, `KNOWN GAP`),
+  so the opt-in TAP-10 mode that is planned can flip them. Not part of the public SDK interface.
+
 ### Changed
+
+- **Name range (erratum, all modes).** Names are limited to #ID ≤ 10^18 and processor number ≤ 10^9 (TAP-10 §3.1); up to
+  1.3, 78 digits were parsed. Such names cannot exist on chain, so a name that used to cost lookups is now refused with
+  no request. The error text for a name that was already refused changed with it.
 
 - The status of the TAP drafts is stated: the service manifest and delegation was merged as TAP-11 (Draft,
   TapeOutProtocol/TAPs#8) and seven more drafts are under review (#10, #12, #16, #18, #20, #26, #28). TAPI-20 to
@@ -19,6 +62,13 @@ interfaces.
   channels (#12). Labels and constants that contain the old names (`TAP-26/…`, `TAP-27/…`) are frozen wire constants
   and do not change: no wire format or signature changes. Conformance check ids are now `tapi20.…` and so on. Earlier
   entries below use the new names.
+
+### Fixed
+
+- `tapesend`: an endpoint built from an address now sits on the recipient's chain. `seal`, `open`, `messageId` and
+  `sendTx` take an optional `toChainId` (default: `chainId`, so existing calls are unchanged); before, the `to` endpoint
+  of a cross-chain message used the sender's chain, which a TAP-10 client reads as a damaged payload (TAP-10 §15.3, §17).
+  The official message-ID vector #2 (hub on Base, recipient on BNB Smart Chain) reproduces.
 
 ## [1.3.0] — 2026-09-30
 
@@ -953,7 +1003,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.0.0...v1.1.0

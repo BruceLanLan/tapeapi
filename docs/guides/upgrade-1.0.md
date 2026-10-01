@@ -121,10 +121,11 @@ client codes are raised by the SDK (§3.4).
 | `PRICE_CHANGED` | client | The price rose above what you accepted | after consent |
 | `QUORUM_FAILED` | client | Providers disagree, or too few answered (`data.agreed`, `data.failed`, ...) | depends |
 | `ATTEST_DISAGREE` | client | An attested read disagrees | no |
-| `NOT_FOUND` | client | No service there: an unregistered label, a processor number past the last, or no channel record (a missing manifest file is `MANIFEST_INVALID`) | no |
+| `NOT_FOUND` | client | No service there: an unregistered label, a processor number past the last, or no channel record (a missing manifest file is `MANIFEST_INVALID`). Under `conform: 'tap10'`: `no-such-cpu`, `no-such-token` or `not-tapeout` in `data.status` | no |
 | `RPC_UNAVAILABLE` | client | Too few nodes answered | yes |
-| `RPC_STALE` | client | Since 1.2, with the experimental `pin` option: the block the nodes confirm is older than `maxPinAgeS`, or ahead of this client's clock (`data.ageS`) | yes |
-| `CONTRACT_UNKNOWN` | client | Since 1.2, with the experimental `sentinel: 'strict'`: a TapeOut identity contract runs an implementation this SDK does not know, which means it was upgraded (`data.role`, `data.implementation`) | no: update the SDK or check the upgrade |
+| `RPC_STALE` | client | Since 1.2, with the experimental `pin` option: the block the nodes confirm is older than `maxPinAgeS`, or ahead of this client's clock (`data.ageS`). Since 1.4, with `pin: 'tap10'` or `conform: 'tap10'`: the pinned block is more blocks behind the highest head than TAP-10 allows (`data.status` `stale-block`, `data.lag`, `data.maxLag`) | yes |
+| `CONTRACT_UNKNOWN` | client | Since 1.2, with the experimental `sentinel: 'strict'`: a TapeOut identity contract runs an implementation this SDK does not know, which means it was upgraded (`data.role`, `data.implementation`). Since 1.4, under `conform: 'tap10'`, always for the SiteRegistry and the DomainBinding (`data.status` `store-changed`) | no: update the SDK or check the upgrade |
+| `SITE_STATUS` | client | Since 1.4, only under the experimental `conform: 'tap10'`: the name exists but TAP-10 says not to use its site: `data.status` is `unpaid` (not activated) or `not-opened` (the container was never opened) | no: only the holder can change it |
 | `PROOF_INVALID` | client | Since 1.3, with the experimental `proofs` (needs `pin`): a verified Merkle proof of `fileInfo`, `cpuAt`, `isCPU` or `ownerOf` proves a value other than the one the nodes answered (with `proofs: true` as well as `'strict'`); or, with `'strict'` only, every proof the nodes served failed to verify against the stateRoot of the block the nodes confirmed (`data.read`, `data.node`, `data.block`, `data.stateRoot`) | no |
 | `PROOF_UNAVAILABLE` | client | Since 1.3, with the experimental `proofs: 'strict'`: no node served `eth_getProof` for the pinned block, nodes of `quorum` operators did not agree on a stateRoot, or the contract runs an implementation whose storage layout the SDK does not know (`data.read`, `data.reason`). With `proofs: true` the same is only a warning and the quorum's answer is kept (detection only) | yes, or add a node that serves proofs |
 | `RPC_ERROR` | client | Every node returned the same JSON-RPC error (`data.rpcCode`, `data.rpcRevert`) | a revert: no |
@@ -146,6 +147,117 @@ client codes are raised by the SDK (§3.4).
 
 An MCP server in front of a service (`createMcpProxy`) reports its own refusals as JSON-RPC errors whose
 `error.data.code` is `TOOLS_CHANGED`, `INVISIBLE_CHARACTERS` or `UPSTREAM_UNAVAILABLE`.
+
+## The TAP-10 conformance mode (1.4, experimental)
+
+`createTapeAPI({ conform: 'tap10' })` resolves services the way the official TAP-10 v1.1 (§3–§7) and TAP-11 §2.2 describe.
+It is off by default: without it, 1.x behaves exactly as before (a test pins every request and result of the default
+mode). It covers **the resolution path only**; the rest of TAP-10 follows in later releases (see the end of this
+section). It is `@experimental` and follows TAP-10 while TAP-10 is a draft: results record `version: '1.1'`.
+
+```js
+const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: 'tap10' })
+const svc = await api.resolve('#11@1013')          // any TAP-10 input form
+const site = await api.siteStatus('11.1013.tape')   // any mode: identity and site status only
+```
+
+It implies `pin: 'tap10'`; passing another `pin` with it is `INVALID_ARGUMENT`. Names on Base and X Layer, and
+`api.forChain()`, run in the same mode. `pin: 'tap10'` can also be used alone, for the TAP-10 pinned block without the
+rest.
+
+**What it does differently**
+
+- **One pinned block per resolution** (TAP-10 §5.3): each operator counts once at its lowest head; the block is the
+  second highest of those minus 2, read by its hash. It is refused as `stale-block` when it is more than 400 (BNB Smart
+  Chain), 150 (Base) or 300 (X Layer) blocks behind the highest head. Only block numbers are compared, never your clock.
+- **Chain check**: once per client, every node is asked `eth_chainId`, adopted by the usual agreement (nodes of `quorum`
+  operators, every answer equal): one node down does not stop the mode, a node on another chain is a disagreement
+  (refused), and nodes all on another chain are `wrong-chain`. (Strict agreement, which TAP-10 §5.4 requires of
+  messaging clients, comes with the messaging path.) Only a result or a revert counts as a node's answer; any other
+  JSON-RPC error is a node failure.
+- **Input**: an on-chain name (`4246.0.tape`), a short name (`4246.0`), a display label (`#4246@0`, `#1@3.1`), a
+  `tape://` or `web+tape://` URL, a container address, or a processor contract#ID (`0x50A9…9DD9#4246`). Anything else,
+  including a directory label, is an input error.
+- **Identity**: `cpuCount` and `cpuAt`, the container from the container opener (and checked against a local ERC-6551
+  derivation by the `sentinel`), `ownerOf`, `isOpened`.
+- **Site status**, in TAP-10 §6.2's order: `store-changed` (the SiteRegistry or the DomainBinding runs an implementation
+  this SDK does not list: refused whatever `sentinel` says), then `no-such-cpu` / `no-such-token` / `not-tapeout`, then
+  `not-opened`, then `unpaid` (neither `isLive(on-chain name, container)` nor `isContainerLive(container)` is true; on the
+  previous DomainBinding, which lacks `isContainerLive`, its revert counts as false, as TAP-10 §6.3 says. A revert of
+  `isLive` is counted as false too, which TAP-10 does not say: no accepted implementation reverts on it, so only an
+  unknown implementation could, and that one is already refused as `store-changed`).
+- **Manifest**: `chunkCount` 0 is `no-manifest`; the file must be valid UTF-8 without a byte order mark; its `circuits`,
+  `tokenId` and `container` are compared with what was resolved, never used.
+- **Caching**: only the processor table is kept between resolutions. Before `api.call()`, a service older than 60 seconds
+  is resolved again; if that says `unpaid` (or any other verdict), the call stops instead of using the kept manifest.
+
+**What the result looks like.** A resolved service carries `svc.conform` and a TAP-10 `svc.pinned`:
+
+```js
+svc.conform  // { version: '1.1', status: 'resolved', site: 'ok', chainId: 56, name: '11.1013.tape', processor: '1013',
+             //   tokenId: '11', circuits, container, holder, opened: true,
+             //   activation: { live: true, isLive: false, isContainerLive: true },
+             //   implementations: [{ role: 'siteRegistry', ..., accepted: true }, { role: 'binding', ..., accepted: true }],
+             //   pinned: { number, hash, lag, maxLag } }
+svc.pinned   // { number, hash, timestamp, tag: 'tap10', by: 'hash', mode: 'tap10', lag: 2, maxLag: 400 }
+```
+
+`api.siteStatus(target)` returns the same object with `status` set to `ok`, `unpaid`, `not-opened`, `store-changed`,
+`no-such-cpu`, `no-such-token` or `not-tapeout`; it reads no manifest, works in any mode, and never throws for a site
+status (only for an input error, `unsupported`, `wrong-chain` and reads that cannot be made).
+
+**Errors.** Every error of the mode carries the TAP-10 / TAP-11 name in `error.data.status`; branch on it. The codes are
+the existing ones, plus one:
+
+| `data.status` | `code` |
+|---|---|
+| `input-error`, `unsupported` (see below), `wrong-chain` | `INVALID_ARGUMENT` |
+| `no-such-cpu`, `no-such-token`, `not-tapeout` | `NOT_FOUND` |
+| `unavailable`, `stale-block` | `RPC_UNAVAILABLE` / `RPC_DISAGREE`, `RPC_STALE` |
+| `store-changed`, and `hub-changed`\* | `CONTRACT_UNKNOWN` |
+| `not-opened`, `unpaid` | **`SITE_STATUS`** (new) |
+| `no-manifest`, `incomplete`, `no-hash`, `manifest-invalid`, and `container-mismatch`\* | `MANIFEST_INVALID` |
+| `delegation-invalid` | `DELEGATION_INVALID` |
+
+\* Only with `sentinel: 'strict'`, only from `resolve`, never from `siteStatus`: they are TapeAPI's own checks, which
+TAP-10 does not make when resolving a site. `hub-changed` is the condition of the same name in TAP-10 §13.8 (the hub runs
+an implementation not listed); `container-mismatch` means the container opener derived another address than ERC-6551
+computed here.
+
+`SITE_STATUS` means the name exists and its manifest may well be valid, but TAP-10 says not to use the site. Retrying
+does not help; only the circuit's holder can change it (activate with `DomainBinding.bind`, or open the container).
+
+**Why our own services are `unpaid`.** `11.1013.tape` (api.tapeapi.fun) and `12.1013.tape` (relay.tapeapi.fun) have not
+been activated: `isLive` and `isContainerLive` were both false for both on 2026-09-30, and again for `11.1013.tape` on
+2026-10-01. Under `conform: 'tap10'` they resolve as
+`SITE_STATUS` with `data.status` `unpaid` until their holder pays; the default mode resolves them as before.
+
+**Activation binds compliant clients only.** TAP-10 §6.3 says it plainly: the fee is enforced by compliant clients
+showing only activated sites, not by any technical block. The data stays public and readable; the default mode does not
+check activation, and neither do the messaging reads in any mode (`chain.channelKeys`, `chain.tapeSendKey`): TAP-10
+§12.2 says activation must not stop messaging.
+
+**Limits you should know about.**
+
+- *Container addresses and processor contract#IDs* (`unsupported`). Such input carries no processor number, and 1.4
+  cannot find it, so it has no on-chain name and `isLive` cannot be asked. When `isContainerLive` is true the site is
+  `ok`; when it is false or reverts, the mode does not say `unpaid` (the container may have paid for its name only) but
+  throws `INVALID_ARGUMENT` with `data.status` `unsupported`: pass the on-chain name (for example `4246.0.tape`). Once
+  the client has resolved a name of that processor, it knows the number and such input is decided in full. Input that
+  may belong to another chain (an address that is no container here, a `token()` naming another chain, a processor
+  contract that is no processor here) is `unsupported` too, never `not-tapeout`: TAP-10 §4.1 allows that verdict only
+  after every active chain was read. Use `api.forChain(chainId)` or the name.
+- *Chains with two operators.* The pinned block is the second highest operator head minus 2. Where a chain's nodes come
+  from two operators only (X Layer's defaults, OKX and dRPC), one operator reporting a low head drags the pin back by up
+  to the chain's max pin lag (300 blocks on X Layer, about five minutes) and the reads are made there: honest nodes serve
+  that older state, and it is accepted, where the default mode's `latest` reads would only disagree. With three or more
+  operators (BNB Smart Chain, Base) one low head is ignored. Add a third operator's node to `chains[196].rpcUrls` if this
+  matters to you.
+
+**Not covered yet.** This is not "TapeAPI conforms to TAP-10". Still to come (planned for 1.5): resolving input without
+chain information on every active chain, with `ambiguous`; finding the processor number from a container or a
+processor contract (which removes the first limit above); the messaging path (strict `eth_chainId` and `keyFor`,
+channel records, endpoint limits); strict agreement for `ownerOf` and EIP-1271.
 
 ## Formats that are now frozen
 

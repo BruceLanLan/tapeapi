@@ -159,6 +159,12 @@ export const FUNCTIONS = {
   // cpuAt(i): processor contract number i, so a name <#ID>.<i>.tape resolves (TapeKit SPEC §3.2); reverts past the end.
   // cpuAt(i)：第 i 号处理器合约，名字 <#ID>.<i>.tape 由此解析；超出范围时 revert。
   cpuAt: { inputs: ['uint256'], outputs: ['address'] },
+  // TAP-10 §4.2 step 1: how many processors the factory has (a number >= cpuCount is no-such-cpu) / 工厂已有多少个处理器
+  cpuCount: { inputs: [], outputs: ['uint256'] },
+  // Container opener (TAP-10 §4.2 steps 3 and 5, Appendix A): accountOf has the hub's selector, so a read is told apart by
+  // its address only; isOpened says whether the circuit's container was opened (its one-time fee paid).
+  // 容器开通器：accountOf 与 hub 的选择器相同，只能按地址区分；isOpened 表示该电路的容器是否已开通。
+  isOpened: { inputs: ['address', 'uint256'], outputs: ['bool'] },
   // TAP-10 key lookup (TAPI-26 §3.1). keyFor returns a struct of static members only, so it is ABI-encoded inline
   // exactly like ten separate return values. ERC-6551 token() maps a container back to (chainId, circuits, tokenId).
   // TAP-10 密钥查询。keyFor 返回的结构体只含静态成员，ABI 编码与十个独立返回值相同。token() 把容器映射回电路。
@@ -186,6 +192,13 @@ export const FUNCTIONS = {
       { name: 'updatedAt', type: 'uint256' }, { name: 'chunkCount', type: 'uint256' },
     ],
   },
+  // DomainBinding, read-only (TAP-10 §6.3, Appendix A): is this name activated for this container? `isContainerLive` reverts on
+  // implementations that lack it, and a client treats a revert as false. DomainBinding 只读：名字是否已激活（TAP-10 §6.3）；
+  // 不支持 isContainerLive 的实现会 revert，客户端按 false 处理。
+  isLive: { inputs: ['string', 'address'], outputs: ['bool'] },             // (on-chain name, container)
+  isContainerLive: { inputs: ['address'], outputs: ['bool'] },
+  containerPaidUntil: { inputs: ['address'], outputs: ['uint40'] },
+  monthlyFee: { inputs: [], outputs: ['uint256'] },                         // wei per 30 days; read at payment time, never hard-coded
   // IERC721 / IERC20
   ownerOf: { inputs: ['uint256'], outputs: ['address'] },
   balanceOf: { inputs: ['address'], outputs: ['uint256'] },

@@ -10,7 +10,7 @@ in the experimental format 2) are [TAPI-27](../../spec/TAPI-27.md); to add them 
 | Step | What happens |
 |---|---|
 | **Identity** | Each container publishes channel keys (X25519 for key agreement, Ed25519 for signatures) in its site at `.well-known/tape-channel.json`, authorised by the circuit's holder with an EIP-712 signature. A peer checks them against the **current** holder, so a sold circuit's old keys stop working. |
-| **Invite** (A → B) | A sends B an invite sealed to B's key, to B's inbox room on a relay or ChannelBus (or as a TapeSend message). It names the relays and bus A will listen on. |
+| **Invite** (A → B) | A sends B an invite sealed to B's key, to B's inbox room on a relay or ChannelBus (or as a TapeSend message; for a peer on another chain pass `toChainId`, or a 32-byte endpoint). It names the relays and bus A will listen on. |
 | **Accept** (B → A) | B answers over one of those transports. B may already send data with it. |
 | **Ready** (A → B) | A confirms. Three Diffie-Hellmans give mutual authentication, forward secrecy and resistance to key-compromise impersonation (the X3DH core, without prekeys). |
 | **Frames** | ChaCha20-Poly1305 with a key per direction and a counter nonce, as in WireGuard and Noise. |

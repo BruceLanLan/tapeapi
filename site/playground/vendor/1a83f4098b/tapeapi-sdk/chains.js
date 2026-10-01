@@ -62,6 +62,12 @@ const L2 = {
 // （96 个样本；120 秒给偏差一分钟的时钟留余量）；X Layer safe 约每 228 秒跳一次、最大 248 秒（70 个样本；300 只剩 52 秒，改 600）；
 // Base safe 56–188 秒（300 不变）。
 
+// TAP-10 §2.1 "Max pin lag (blocks)": the most a TAP-10 pinned block (§5.3, pin: 'tap10' and conform: 'tap10') may fall
+// behind the highest head any operator reports, about five minutes of blocks on each chain. Checked by block numbers only,
+// never against a clock. maxPinLagBlocks and maxPinAgeS above belong to the security-1.1 pin (pin: true) and are unchanged.
+// TAP-10 §2.1 的"最大钉块滞后（块数）"：TAP-10 钉块（§5.3，pin: 'tap10' 与 conform: 'tap10'）最多落后于任一运营方报告的最高头块多少块，
+// 各链约五分钟的块数。只按块号检查，绝不对照时钟。上面的 maxPinLagBlocks 与 maxPinAgeS 属于安全加固 1.1 的钉块（pin: true），不变。
+
 const deepFreeze = (o) => { for (const v of Object.values(o)) if (v && typeof v === 'object') deepFreeze(v); return Object.freeze(o) }
 
 /** Supported chains by chainId. `area` null = names carry no area code (BNB Smart Chain). / 按链号列出的已支持链。 */
@@ -85,6 +91,7 @@ export const CHAINS = deepFreeze({
     // The delegation domain: EIP712Domain("TapeAPI", "1", chainId, verifyingContract) (TAPI-20 §3.4)
     delegation: { chainId: 56, verifyingContract: HUB },
     pin: 'latest', finality: 'finalized', maxPinLagBlocks: 266, maxPinAgeS: 120, payments: true,   // 0.45 s a block / 约 0.45 秒一块
+    tap10MaxPinLag: 400,
   },
   196: {
     chainId: 196, key: 'xlayer', name: 'X Layer', currency: 'OKB', area: 2, ...L2, hub: HUB,
@@ -92,6 +99,7 @@ export const CHAINS = deepFreeze({
     expectedImpl: { ...L2.expectedImpl, '0xe61a9c7213a6aa616c246a2b569e555b417b25ee': ['0xdcc57797089ebd9f26e686379a4323f353a3f9c6'] },
     delegation: { chainId: 196, verifyingContract: HUB },
     maxPinLagBlocks: 600, maxPinAgeS: 600,   // about one block a second: 10 minutes / 约 1 秒一块
+    tap10MaxPinLag: 300,
   },
   8453: {
     chainId: 8453, key: 'base', name: 'Base', currency: 'ETH', area: 3, ...L2, hub: HUB,
@@ -99,6 +107,7 @@ export const CHAINS = deepFreeze({
     expectedImpl: { ...L2.expectedImpl, '0xe61a9c7213a6aa616c246a2b569e555b417b25ee': ['0x38a2d320b8984bbac9b0a2691b6c0fd829a23867'] },
     delegation: { chainId: 8453, verifyingContract: HUB },
     maxPinLagBlocks: 150, maxPinAgeS: 300,   // two seconds a block / 2 秒一块
+    tap10MaxPinLag: 150,
   },
 })
 
@@ -141,7 +150,13 @@ export function chainByKey(key) {
 // 由点或 @ 连接的数字串（可带 #、协议头、后缀、末尾的点或路径）都算"像名字"：要么是名字要么报错，永远不当目录标签。
 const NAME_SHAPED = /^(?:(?:web\+)?tape:\/\/)?#?\d+(?:[.@]\d+)+(?:\.tape)?\.?(?:\/.*)?$/i
 const CANONICAL = /^([1-9]\d{0,77})(?:\.(0|[1-9]\d{0,6}))?\.(0|[1-9]\d{0,77})(\.tape)?$/
-const MAX_UINT = 2n ** 256n
+// TAP-10 §3.1 (1.4, an erratum that applies to every mode): 1 <= #ID <= 10^18 and 0 <= processor number <= 10^9. A name
+// outside these ranges cannot exist on chain (no processor numbers a circuit that high, no factory holds that many
+// processors), so refusing it changes no answer about a real circuit; until 1.3 the parser took up to 78 digits.
+// TAP-10 §3.1（1.4，按勘误，所有模式都适用）：1 <= #ID <= 10^18，0 <= 处理器号 <= 10^9。超出范围的名字在链上不可能存在，拒绝它
+// 不会改变对任何真实电路的回答；1.3 之前解析器接受最多 78 位数字。
+export const MAX_TOKEN_ID = 10n ** 18n
+export const MAX_PROCESSOR = 10n ** 9n
 
 /** Is `str` name-shaped (a TapeOut name, or a spelling of one)? / 是否像 TapeOut 名字。 */
 export const isNameShaped = (str) => typeof str === 'string' && NAME_SHAPED.test(str.trim())
@@ -156,8 +171,11 @@ export function parseTapeName(str) {
   if (!isNameShaped(str)) return null
   const t = str.trim()
   const m = CANONICAL.exec(t)
-  if (!m || BigInt(m[1]) >= MAX_UINT || BigInt(m[3]) >= MAX_UINT) {
+  if (!m) {
     return { error: `"${t.slice(0, 80)}" is not a TapeOut name in canonical form: write <#ID>.<processor>.tape on BNB Smart Chain or <#ID>.<area>.<processor>.tape on another chain, decimal without leading zeros, lowercase, #ID >= 1 (TapeKit SPEC §2.2, kernel/src/name.js)` }
+  }
+  if (BigInt(m[1]) > MAX_TOKEN_ID || BigInt(m[3]) > MAX_PROCESSOR) {
+    return { error: `"${t.slice(0, 80)}" is out of range: a TapeOut name has 1 <= #ID <= 10^18 and 0 <= processor number <= 10^9 (TAP-10 §3.1)` }
   }
   let chain = CHAINS[56]
   if (m[2] !== undefined) {
@@ -169,6 +187,47 @@ export function parseTapeName(str) {
   return { tokenId: m[1], processor: m[3], area: chain.area, chainId: chain.chainId, name: formatTapeName({ tokenId: m[1], processor: m[3], chainId: chain.chainId }) }
 }
 
+// TAP-10 §3.4 input forms, for the conformance mode (conform: 'tap10') only. The default mode keeps parseTapeName above,
+// which takes the canonical name and the short name and refuses every other spelling.
+//   on-chain name / short name   4246.0.tape, 4246.0, 1.3.1.tape, 1.3.1     (`.tape` in any case)
+//   URL                          tape://4246.0.tape/docs/, tape://4246.0/, web+tape://1.3.1.tape/   (scheme in any case; the
+//                                path is ignored: a service is the circuit, not a page)
+//   display label                #4246@0, 4246@0, #1@3.1
+//   container address            0x + 40 hex digits
+//   processor contract#ID        0x50A9...9DD9#4246
+// Anything else is an input error (§3.4: "a client MUST NOT guess"), and so is a name out of the §3.1 ranges. Returns
+// { kind: 'name', tokenId, processor, area, chainId, name } | { kind: 'container', container } |
+// { kind: 'pair', circuits, tokenId } | { error }.
+// TAP-10 §3.4 的输入形式，只供一致模式使用。默认模式仍用上面的 parseTapeName：只收规范名字与短名字，其它写法一律拒绝。
+// 其它任何东西都是输入错误（§3.4："客户端不得猜测"），超出 §3.1 范围的名字也是。
+const LABEL_FORM = /^#?([1-9]\d{0,77})@(?:(0|[1-9]\d{0,6})\.)?(0|[1-9]\d{0,77})$/
+const URL_FORM = /^(?:web\+)?tape:\/\/([^/?#]+)(?:[/?#].*)?$/i
+const PAIR_FORM = /^(0x[0-9a-fA-F]{40})#([1-9]\d{0,77})$/
+export function parseTapeInput(input) {
+  if (typeof input !== 'string') return { error: 'input must be a string' }
+  const t = input.trim()
+  const shown = `"${t.slice(0, 80)}"`
+  if (/^0x[0-9a-fA-F]{40}$/.test(t)) return { kind: 'container', container: t }
+  let m = PAIR_FORM.exec(t)
+  if (m) {
+    if (BigInt(m[2]) > MAX_TOKEN_ID) return { error: `${shown} is out of range: #ID must be at most 10^18 (TAP-10 §3.1)` }
+    return { kind: 'pair', circuits: m[1], tokenId: m[2] }
+  }
+  let nameText = t
+  m = URL_FORM.exec(t)
+  if (m) nameText = m[1]
+  else {
+    m = LABEL_FORM.exec(t)
+    if (m) nameText = m[2] === undefined ? `${m[1]}.${m[3]}` : `${m[1]}.${m[2]}.${m[3]}`
+  }
+  // `.tape` in any case; the digits themselves have no case / `.tape` 不分大小写
+  nameText = nameText.replace(/\.tape$/i, '.tape')
+  if (!/^\d+(?:\.\d+){1,2}(?:\.tape)?$/.test(nameText)) return { error: `${shown} is not a TAP-10 input form: give an on-chain name (4246.0.tape), a short name (4246.0), a tape:// URL, a display label (#4246@0), a container address or a processor contract#ID (TAP-10 §3.4)` }
+  const p = parseTapeName(nameText)
+  if (!p || p.error) return { error: p?.error ?? `${shown} is not a TapeOut name` }
+  return { kind: 'name', ...p }
+}
+
 /**
  * The canonical name (with `.tape`) of #tokenId on processor `processor` of chain `chainId` (default 56).
  * `{ suffix: false }` leaves the suffix off (`1.2.344`, as an address bar shows it). Throws RangeError on bad input.
@@ -177,13 +236,13 @@ export function parseTapeName(str) {
 export function formatTapeName({ tokenId, processor, chainId = 56 }, { suffix = true } = {}) {
   const chain = chainById(chainId)
   if (!chain) throw new RangeError(`chain ${chainId} is not a TapeOut chain this client supports`)
-  const dec = (v, what, min) => {
+  const dec = (v, what, min, max) => {
     let n
     try { n = BigInt(v) } catch { throw new RangeError(`${what} must be a whole number`) }
     if (typeof v === 'string' && !/^(0|[1-9]\d*)$/.test(v)) throw new RangeError(`${what} must be decimal digits without leading zeros`)
-    if (n < min || n >= MAX_UINT) throw new RangeError(`${what} out of range`)
+    if (n < min || n > max) throw new RangeError(`${what} out of range (TAP-10 §3.1: ${min} to ${max})`)
     return n.toString()
   }
-  const short = `${dec(tokenId, '#ID', 1n)}.${chain.area === null ? '' : `${chain.area}.`}${dec(processor, 'processor', 0n)}`
+  const short = `${dec(tokenId, '#ID', 1n, MAX_TOKEN_ID)}.${chain.area === null ? '' : `${chain.area}.`}${dec(processor, 'processor', 0n, MAX_PROCESSOR)}`
   return suffix ? `${short}.${chain.nameSuffix}` : short
 }

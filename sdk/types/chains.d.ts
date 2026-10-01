@@ -29,6 +29,8 @@ export interface TapeOutChain {
   readonly maxPinLagBlocks: number
   /** @experimental (security 1.1) The oldest pinned block, in seconds of its timestamp, a pinned resolution accepts. */
   readonly maxPinAgeS: number
+  /** TAP-10 §2.1 max pin lag in blocks (BSC 400, Base 150, X Layer 300), for pin: 'tap10' and conform: 'tap10'. */
+  readonly tap10MaxPinLag: number
   /** Whether TapeAPI payments (escrow, BEM) run on this chain: BNB Smart Chain only. */
   readonly payments: boolean
 }
@@ -42,6 +44,9 @@ export declare function chainById(chainId: number | string): TapeOutChain | null
 export declare function chainByArea(area: number | null | undefined): TapeOutChain | null
 export declare function chainByKey(key: string): TapeOutChain | null
 export declare function isNameShaped(str: unknown): boolean
+/** TAP-10 §3.1 (1.4, every mode): the largest #ID (10^18) and processor number (10^9) a name may carry. */
+export declare const MAX_TOKEN_ID: bigint
+export declare const MAX_PROCESSOR: bigint
 
 export interface ParsedTapeName {
   tokenId: string
@@ -51,6 +56,13 @@ export interface ParsedTapeName {
   /** Canonical, with the suffix: '4246.0.tape', '1.2.344.tape'. */
   name: string
 }
-/** null: not name-shaped; { error }: name-shaped but not a canonical name of a supported chain. */
+/** null: not name-shaped; { error }: name-shaped but not a canonical name of a supported chain, or out of the TAP-10 §3.1 ranges. */
 export declare function parseTapeName(str: unknown): ParsedTapeName | { error: string } | null
+/** @experimental (TAP-10 §3.4, the conformance mode's input forms) A name in any TAP-10 spelling (on-chain name, short
+ *  name, tape:// or web+tape:// URL, display label), a container address, or a processor contract#ID. */
+export declare function parseTapeInput(input: unknown):
+  | ({ kind: 'name' } & ParsedTapeName)
+  | { kind: 'container'; container: Address }
+  | { kind: 'pair'; circuits: Address; tokenId: string }
+  | { error: string }
 export declare function formatTapeName(parts: { tokenId: bigint | number | string; processor: bigint | number | string; chainId?: number }, opts?: { suffix?: boolean }): string

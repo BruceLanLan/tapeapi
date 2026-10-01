@@ -15,7 +15,7 @@ export { TapeAPIError } from './errors.js'
 export { createRpc } from './rpc.js'
 export { RPC_DEFAULTS, rpcUrlsFor, operatorOf } from './rpc-defaults.js'
 export type { RpcNode } from './rpc-defaults.js'
-export { CHAINS, CHAIN_IDS, HOME_CHAIN_ID, IMPL_SLOT, chainById, chainByArea, chainByKey, parseTapeName, formatTapeName, isNameShaped } from './chains.js'
+export { CHAINS, CHAIN_IDS, HOME_CHAIN_ID, IMPL_SLOT, chainById, chainByArea, chainByKey, parseTapeName, formatTapeName, isNameShaped, parseTapeInput, MAX_TOKEN_ID, MAX_PROCESSOR } from './chains.js'
 export type { TapeOutChain, ParsedTapeName } from './chains.js'
 export { canonicalJSON, safeParseJSON } from './canon.js'
 export { validateManifest, parseUnits, formatUnits, METHOD_NAME_RE, BEM_DECIMALS } from './manifest.js'
@@ -64,6 +64,8 @@ export declare const IDENTITY_CACHE_SIZE: number
 export declare const MANIFEST_LIMIT: number
 export declare const ENVELOPE_LIMIT: number
 export declare const MANIFEST_TTL_MS: number
+/** @experimental (1.4) The reread age of a kept service under conform: 'tap10' (TAP-11 §7.1, TAP-10 §11): 60 s. */
+export declare const CONFORM_TTL_MS: number
 export declare const DEFAULT_MAX_SKEW_S: number
 /** SiteRegistry key for a path (strips leading slashes). */
 export declare function registryKey(path: string): string
@@ -96,11 +98,24 @@ export interface CreateTapeAPIOptions {
   chainId?: number
   /** Nodes for the other TapeOut chains, used when a target names one (a name with an area code, or { chainId }).
    *  Without an entry, that chain's SDK defaults (rpcUrlsFor) are used. */
-  chains?: Record<number, { rpcUrls?: string[]; quorum?: number; rpcTimeoutMs?: number; allowSingleNode?: boolean; quiet?: boolean; hub?: Address; factory?: Address; siteRegistry?: Address; pin?: CreateTapeAPIOptions['pin'] }>
+  chains?: Record<number, { rpcUrls?: string[]; quorum?: number; rpcTimeoutMs?: number; allowSingleNode?: boolean; quiet?: boolean; hub?: Address; factory?: Address; siteRegistry?: Address; opener?: Address; binding?: Address; pin?: CreateTapeAPIOptions['pin'] }>
   hub?: Address
   siteRegistry?: Address
   /** TapeOut processor factory; required with hub and siteRegistry on a chain not in CHAINS. */
   factory?: Address
+  /** @experimental (1.4) TAP-10 container opener (accountOf, isOpened), read by `conform` and `siteStatus`. Default: the chain's. */
+  opener?: Address
+  /** @experimental (1.4) TAP-10 payment contract DomainBinding (isLive, isContainerLive), read by `conform` and `siteStatus`. Default: the chain's. */
+  binding?: Address
+  /** @experimental (1.4) The TAP-10 conformance mode (TAP-10 v1.1, the resolution path): resolve as TAP-10 §3-§7 and TAP-11
+   *  §2.2 say, at one TAP-10 pinned block (implies `pin: 'tap10'`; another explicit `pin` is INVALID_ARGUMENT). Accepts the
+   *  TAP-10 §3.4 input forms (display label, tape:// URL, processor contract#ID) and refuses directory labels; reads the
+   *  container from the opener, `isOpened`, and activation (`isLive`, `isContainerLive`); refuses an unaccepted SiteRegistry
+   *  or DomainBinding implementation (store-changed, fail-closed). Every error carries the TAP-10 / TAP-11 outcome name in
+   *  `data.status`; `not-opened` and `unpaid` are `SITE_STATUS`. Messaging reads (channelKeys, tapeSendKey) are not
+   *  gated by activation (TAP-10 §12.2). Not yet (1.5): input without chain information on every chain (`ambiguous`), the
+   *  processor-number reverse scan, the messaging path. */
+  conform?: 'tap10' | false | null
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   directory?: Address
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
@@ -111,8 +126,11 @@ export interface CreateTapeAPIOptions {
    *  and that is at most `maxAgeS` old (by its timestamp against `clock`). `true` uses the chain's settings (chains.js
    *  `finality`: BSC 'finalized', L2 'safe'; `maxPinAgeS`). Reads go by EIP-1898 blockHash (`by: 'hash'`, default) or
    *  block number. Costs one more round per resolution (two when the nodes' tagged blocks differ), unless `cacheS`
-   *  reuses a pin. Default: unpinned (chains.js `pin: 'latest'`). A stale block is RPC_STALE. */
-  pin?: boolean | 'latest' | { tag?: 'finalized' | 'safe' | 'latest'; maxAgeS?: number; by?: 'hash' | 'number'; cacheS?: number }
+   *  reuses a pin. Default: unpinned (chains.js `pin: 'latest'`). A stale block is RPC_STALE.
+   *  `'tap10'` (@experimental, 1.4): TAP-10 §5.3 instead: the second highest operator head minus 2, stale by block lag only
+   *  (chains.js `tap10MaxPinLag`: BSC 400, Base 150, X Layer 300; RPC_STALE with data.status 'stale-block'), reads by
+   *  the block's hash. */
+  pin?: boolean | 'latest' | 'tap10' | { tag?: 'finalized' | 'safe' | 'latest'; maxAgeS?: number; by?: 'hash' | 'number'; cacheS?: number }
   /** @experimental (security 1.1) Identity-root sentinel: compare the DeWebHub's and the SiteRegistry's ERC-1967
    *  implementations with chains.js `expectedImpl`, and re-derive the container locally (ERC-6551). 'warn' (default)
    *  reports in `svc.warnings` and `onWarning`; 'strict' refuses (CONTRACT_UNKNOWN, MANIFEST_INVALID); 'off' skips.
@@ -168,6 +186,29 @@ export type ResolveTarget =
   | { chainId: number; container: Address }
   | { dev: string | Record<string, unknown> }
 
+/** @experimental (1.4) The TAP-10 site status of a target (api.siteStatus), and the identity behind it. */
+export interface SiteStatus {
+  /** The TAP-10 version this follows. */
+  version: '1.1'
+  status: 'ok' | 'unpaid' | 'not-opened' | 'store-changed' | 'no-such-cpu' | 'no-such-token' | 'not-tapeout'
+  chainId: number
+  /** The on-chain name; null when the input gave no processor number and the client has not met it (1.4). */
+  name: string | null
+  processor: string | null
+  tokenId: string | null
+  /** The processor contract. */
+  circuits: Address | null
+  /** Derived by the container opener (TAP-10 §4.2). */
+  container: Address | null
+  holder: Address | null
+  opened: boolean | null
+  /** TAP-10 §6.3. `isLive` is null when it could not be asked (no on-chain name). A revert counts as false and is flagged. */
+  activation: { live: boolean; isLive: boolean | null; isContainerLive: boolean; isLiveReverted?: true; isContainerLiveReverted?: true } | null
+  /** The SiteRegistry and DomainBinding implementations at the pinned block (TAP-10 §6.1). */
+  implementations: Array<{ role: 'siteRegistry' | 'binding'; proxy: Address; implementation: Address; accepted: boolean }> | null
+  pinned: { number: number; hash: Hex; lag: number; maxLag: number }
+}
+
 /** A service returned by api.resolve(): manifest verified against the chain and the holder's delegation. */
 export interface ResolvedService {
   manifest: Manifest
@@ -182,8 +223,11 @@ export interface ResolvedService {
   fetchedAt: number
   /** Why the manifest's `ai` field was dropped (TAPI-20 §3.9: an invalid field is refused, the rest of the manifest is kept). */
   aiProblems?: string[]
-  /** @experimental (security 1.1) The block every read of this resolution was made at (only with `pin`). */
-  pinned?: { number: number; hash: Hex; timestamp: number; tag: string; by: 'hash' | 'number' }
+  /** @experimental (security 1.1) The block every read of this resolution was made at (only with `pin`). `mode`, `lag`
+   *  and `maxLag` with pin: 'tap10' or conform: 'tap10'. */
+  pinned?: { number: number; hash: Hex; timestamp: number; tag: string; by: 'hash' | 'number'; mode?: 'tap10'; lag?: number; maxLag?: number }
+  /** @experimental (1.4) What the TAP-10 conformance mode resolved (only with conform: 'tap10'). */
+  conform?: Omit<SiteStatus, 'status'> & { status: 'resolved'; site: 'ok'; derivation?: 'match' | 'mismatch' }
   /** @experimental (security 1.1) What the identity-root sentinel saw (absent when it did not run). */
   sentinel?: {
     mode: 'warn' | 'strict'
@@ -374,6 +418,12 @@ export interface TapeAPI {
   /** @experimental (security 1.1) Forget the delegation floor of one container, holder and signer (`chainId` defaults to
    *  this client's). Takes the `data` of a floor DELEGATION_INVALID error as it is. Resolves to true when there was one. */
   clearDelegationFloor(who: { chainId?: number; container: Address; holder: Address; signer: Address }): Promise<boolean>
+  /** @experimental (1.4) The TAP-10 site status of a target in any mode: identity and site status (TAP-10 §4, §6.2) at one
+   *  TAP-10 pinned block, without reading the manifest. A site status ('unpaid', 'store-changed', 'no-such-cpu', ...) is
+   *  returned, never thrown; input errors, wrong-chain, stale-block and unavailable reads throw (with data.status), and so
+   *  does INVALID_ARGUMENT with data.status 'unsupported': an input 1.4 cannot decide (a container address or processor
+   *  contract#ID with no known processor number and isContainerLive not true, or one that may belong to another chain). */
+  siteStatus(target: ResolveTarget): Promise<SiteStatus>
 }
 
 export declare function createTapeAPI(opts?: CreateTapeAPIOptions): TapeAPI

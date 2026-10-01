@@ -42,7 +42,7 @@ trust with a signature anyone can check:
 
 ## Status
 
-Released, version 1.3.0. From 1.0 on, TapeAPI follows semantic versioning: code written against the 1.0 docs keeps
+Released, version 1.4.0. From 1.0 on, TapeAPI follows semantic versioning: code written against the 1.0 docs keeps
 working in every 1.x release, and breaking changes come only in 2.0 ([what 1.0 promises](upgrade-1.0.md)). The free
 tier runs on TapeOut's deployed contracts. Our own contracts have no third-party audit; the paid-call escrow is not
 deployed yet. TAPI-20 to TAPI-27 are TapeAPI's own specs, not TAPs: TAPs are numbered by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), where the service manifest was merged as TAP-11 (a Draft; a merge is not adoption) and seven more drafts for parts of these specs are under review.

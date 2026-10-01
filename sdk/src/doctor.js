@@ -3,8 +3,8 @@
 // passed or failed, why, and what to do next, in English and Chinese. Not in the package's exports; the shape may change.
 // @experimental tapeapi-doctor 背后的服务方诊断：按顺序检查 AI 服务在用户能核验回执之前需要的一切，用中英双语说明结论与下一步。
 //
-// Order / 顺序:  name -> circuit -> container -> manifest-file -> manifest-format -> delegation -> ai-field -> prices ->
-//                endpoints -> reach -> cors -> receipt -> receipt-lookup
+// Order / 顺序:  name -> circuit -> container -> activation -> manifest-file -> manifest-format -> delegation -> ai-field ->
+//                prices -> endpoints -> reach -> cors -> receipt -> receipt-lookup   (14 checks / 14 项)
 // A check that cannot run because an earlier one failed is `skip`, naming that one. / 因前项失败而无法运行的检查记为 skip。
 //
 // The receipt check sends each endpoint one request with a key that cannot be valid: the sidecar signs the refusal too
@@ -16,9 +16,9 @@ import { TapeAPIError, validateManifest, safeParseJSON, parseTapeName, CHAINS, M
 import * as ai from './ai.js'
 import { delegationDigest, recoverAddress } from './sig.js'
 import { sha256 } from '@noble/hashes/sha256'
-import { toHex, hexToBytes } from './abi.js'
+import { toHex, hexToBytes, encodeCall, decodeReturn } from './abi.js'
 
-export const DOCTOR_CHECKS = Object.freeze(['name', 'circuit', 'container', 'manifest-file', 'manifest-format', 'delegation', 'ai-field', 'prices', 'endpoints', 'reach', 'cors', 'receipt', 'receipt-lookup'])
+export const DOCTOR_CHECKS = Object.freeze(['name', 'circuit', 'container', 'activation', 'manifest-file', 'manifest-format', 'delegation', 'ai-field', 'prices', 'endpoints', 'reach', 'cors', 'receipt', 'receipt-lookup'])
 /** A delegation with fewer days left than this is a warning (the sidecars log RENEW from the same point). / 少于这么多天即警告。 */
 export const RENEW_DAYS = 30
 export const INVALID_KEY = 'sk-tapeapi-doctor-invalid-key-0000000000'
@@ -56,6 +56,7 @@ const TITLES = {
   name: T('Name resolves to a processor', '名字能解析到处理器'),
   circuit: T('Circuit exists (has a holder)', '电路存在（有持有人）'),
   container: T('Container is opened', '容器已开通'),
+  activation: T('Name is activated (TAP-10 §6.3)', '名字已激活（TAP-10 §6.3）'),
   'manifest-file': T('Manifest file on chain', '链上有清单文件'),
   'manifest-format': T('Manifest format (TAPI-20)', '清单格式合规（TAPI-20）'),
   delegation: T('Delegation valid', '委托有效'),
@@ -81,6 +82,40 @@ const corsWants = (format) => (format === 'anthropic-messages' ? ['x-api-key', '
 const isRevert = (e) => e instanceof TapeAPIError && e.code === 'RPC_ERROR' && /revert/i.test(e.message)
 // An answer from the chain decides; anything else (nodes down, nodes disagreeing) does not. / 链上的回答才算定论。
 const undecided = (e) => !(e instanceof TapeAPIError) || ['RPC_UNAVAILABLE', 'RPC_DISAGREE', 'RPC_ERROR', 'TIMEOUT', 'PROVIDER_UNAVAILABLE'].includes(e.code)
+
+// ── Activation (TAP-10 §6.3) / 激活 ─────────────────────────────────────────────────────────────────────────────
+// A name is activated when DomainBinding.isLive(on-chain name, container) or DomainBinding.isContainerLive(container) is true.
+// isContainerLive reverts on payment contracts that lack it: a client treats that as false (§6.3). Read-only eth_call, in
+// sequence: the fee and the expiry only to describe the result, and a failure there only leaves them out.
+// 名字已激活 = isLive(链上名字, 容器) 或 isContainerLive(容器) 为真。isContainerLive 在不支持的实现上会 revert，按 false 处理（§6.3）。
+// 只读 eth_call，依次发出；费用与到期时间只用来描述结果，读不到就不显示。
+const readBinding = (capi, binding, fn, args) => capi.rpc.ethCall(binding, encodeCall(fn, args)).then((raw) => decodeReturn(fn, raw))
+/** wei as a decimal amount of the chain's coin, trailing zeros trimmed. / 把 wei 写成该链币的十进制数。 */
+export function formatNative(wei, symbol = '') {
+  const w = BigInt(wei), base = 10n ** 18n
+  const frac = (w % base).toString().padStart(18, '0').replace(/0+$/, '')
+  return `${w / base}${frac ? `.${frac}` : ''}${symbol ? ` ${symbol}` : ''}`
+}
+/**
+ * Is `name` (the on-chain name, TAP-10 §3.1, with `.tape`; null when only the container is known) activated for `container`?
+ * 名字（链上名字，带 `.tape`；只知道容器时为 null）对该容器是否已激活？
+ * @returns {Promise<{ live: boolean, isLive: boolean|null, isContainerLive: boolean, isLiveReverted: boolean, paidUntil: number|null, fee: bigint|null, binding: string }>}
+ *   isLive is null when no name was given; paidUntil (containerPaidUntil, seconds) and fee (monthlyFee, wei) are null when not read.
+ */
+export async function activationStatus(capi, chainId, { name = null, container }) {
+  const binding = CHAINS[chainId]?.binding
+  if (!binding) throw new TapeAPIError('INVALID_ARGUMENT', `no DomainBinding is known on chain ${chainId}`)
+  let isLive = null, isLiveReverted = false, isContainerLive = false
+  if (name) {
+    try { isLive = await readBinding(capi, binding, 'isLive', [name, container]) } catch (e) { if (!isRevert(e)) throw e; isLive = false; isLiveReverted = true }
+  }
+  try { isContainerLive = await readBinding(capi, binding, 'isContainerLive', [container]) } catch (e) { if (!isRevert(e)) throw e; isContainerLive = false }
+  const live = isLive === true || isContainerLive === true
+  let paidUntil = null, fee = null
+  if (live) { try { const t = Number(await readBinding(capi, binding, 'containerPaidUntil', [container])); if (t > 0) paidUntil = t } catch { /* left out */ } }
+  else { try { fee = await readBinding(capi, binding, 'monthlyFee', []) } catch { /* left out */ } }
+  return { live, isLive, isContainerLive, isLiveReverted, paidUntil, fee, binding }
+}
 
 // Price hints (the holder console's, per 1M tokens): they warn, never refuse. / 价目表提示（与持有人操作台一致）：只警告不拒绝。
 const HUGE = { USDT: '1000', USDC: '1000', USD1: '1000', USD: '1000', BNB: '2', ETH: '0.5', BEM: '100000' }
@@ -199,7 +234,7 @@ export async function diagnose(input, o = {}) {
   // a network failure worth retrying: undecided (exit 3), with the network hint / 值得重试的网络失败：未判定（退出码 3），附网络提示
   const retry = (id, detail, fix) => add(id, 'error', T(`could not decide: ${en(detail)}`, `无法判定：${zh(detail)}`), { fix: T(`${fix.en} This is a network failure: run the doctor again (exit code 3 means: retry).`, `${fix.zh} 这是网络故障：重新运行诊断（退出码 3 表示：重试）。`) })
   const error = (id, e) => add(id, 'error', T(`could not decide: ${e?.code ? `${e.code} ` : ''}${e?.message || e}`, `无法判定：${e?.code ? `${e.code} ` : ''}${e?.message || e}`), { fix: T('The chain or the network could not be read; run the doctor again (exit code 3 means: retry).', '链或网络读不到；重新运行诊断（退出码 3 表示：重试）。') })
-  const firstNotPassed = () => [...done].find(([, s]) => s !== 'pass' && s !== 'skip')?.[0]
+  const firstNotPassed = () => [...done].find(([, s]) => s !== 'pass' && s !== 'skip' && s !== 'warn')?.[0]
   const blocked = (ids, by) => { for (const id of ids) skip(id, T(`not checked: "${by}" did not pass`, `未检查："${by}" 未通过`)) }
   const http = async (url, init = {}) => fetchImpl(url, { redirect: 'manual', signal: AbortSignal.timeout(timeoutMs), ...init })
   const host = (u) => { try { return new URL(u).host } catch { return String(u) } }
@@ -222,7 +257,7 @@ export async function diagnose(input, o = {}) {
   if (mode !== 'url' && !capi) throw new TapeAPIError('INVALID_ARGUMENT', 'a name or a container needs a chain client (api)')
   if (capi && mode === 'name' && typeof capi.forChain === 'function') capi = capi.forChain(chainId)
 
-  const IDENTITY = ['circuit', 'container', 'manifest-file', 'manifest-format', 'delegation']
+  const IDENTITY = ['circuit', 'container', 'activation', 'manifest-file', 'manifest-format', 'delegation']
   const SERVICE = ['ai-field', 'prices', 'endpoints', 'reach', 'cors', 'receipt', 'receipt-lookup']
 
   // ------------------------------------------------------------------ on-chain identity / 链上身份
@@ -261,6 +296,30 @@ export async function diagnose(input, o = {}) {
     if (bytes.length !== Number(info.size)) return { problem: T(`read ${bytes.length} bytes, fileInfo.size declares ${info.size}`, `读到 ${bytes.length} 字节，fileInfo.size 声明 ${info.size}`) }
     if (digest !== String(info.sha256Hash).toLowerCase()) return { problem: T(`sha256 of the bytes is ${digest}, fileInfo declares ${info.sha256Hash}`, `字节的 sha256 是 ${digest}，fileInfo 声明 ${info.sha256Hash}`) }
     return { bytes, size: bytes.length }
+  }
+
+  // Activation (TAP-10 §6.3): a warning, not a failure: the site files stay readable, a TAP-11 client just answers "unpaid".
+  // 激活：只警告不失败——站点文件仍可读取，按 TAP-11 的客户端只是得到 "unpaid"。
+  async function chainActivation({ name, container }) {
+    let a
+    try { a = await activationStatus(capi, chainId, { name, container }) } catch (e) { error('activation', e); return false }
+    const chain = CHAINS[chainId], coin = chain?.currency ?? ''
+    if (a.live) {
+      const via = a.isLive && a.isContainerLive ? T('isLive and isContainerLive are true', 'isLive 与 isContainerLive 为真') : a.isLive ? T('isLive(name, container) is true', 'isLive(名字, 容器) 为真') : T('isContainerLive(container) is true', 'isContainerLive(容器) 为真')
+      const until = a.paidUntil ? new Date(a.paidUntil * 1000).toISOString().slice(0, 10) : null
+      pass('activation', T(`activated: ${via.en}${until ? `; paid until ${until} (containerPaidUntil)` : ''}`, `已激活：${via.zh}${until ? `；已付费至 ${until}（containerPaidUntil）` : ''}`))
+      return true
+    }
+    const what = name ?? container
+    const fee = a.fee !== null ? T(` The fee now: ${formatNative(a.fee, coin)} per 30 days (monthlyFee(), read from the chain just now; it can change at any time).`, `当前月费：每 30 天 ${formatNative(a.fee, coin)}（monthlyFee()，刚从链上读取；随时可能变化）。`) : T('', '')
+    const caveat = name ? T('', '') : T(' Container mode: isLive was not checked (a container address does not give the name); run the doctor with the name.', '容器地址模式：没有检查 isLive（容器地址推不出名字），请改用名字运行。')
+    const revert = a.isLiveReverted ? T(' isLive reverted: counted as false.', ' isLive 回退：按 false 处理。') : T('', '')
+    warn('activation',
+      T(`${what} is not activated: ${name ? 'isLive and isContainerLive are both false' : 'isContainerLive is false'}. Under TAP-11 a client gets "unpaid" and does not resolve this service; the site files stay readable (TAP-10 §6.3).${revert.en}${caveat.en}${fee.en}`,
+        `${what} 尚未激活：${name ? 'isLive 与 isContainerLive 都为假' : 'isContainerLive 为假'}。按 TAP-11，客户端会得到 unpaid、不解析此服务；站点文件仍可读取（TAP-10 §6.3）。${revert.zh}${caveat.zh}${fee.zh}`),
+      T(`Activate it on DomainBinding (${a.binding}): the holder calls bind("${name ?? '<on-chain name>'}", ${container}, months) from the wallet that holds the circuit and pays months x monthlyFee() in ${coin || 'the chain coin'} (you pay it, plus gas; read monthlyFee() on chain when you pay, never trust a number written down). Then run: ${cmd.doctor(input)}`,
+        `到 DomainBinding（${a.binding}）激活：持有人用持有该电路的钱包调用 bind("${name ?? '<链上名字>'}", ${container}, 月数)，付 月数 × monthlyFee()（${coin || '该链原生币'}；费用与 gas 由你自己承担，付款时从链上读取 monthlyFee()，不要照抄写下来的数字）。然后运行：${cmd.doctor(input)}`))
+    return true
   }
 
   const publishFix = T(`Publish the sidecar's manifest on chain: holder console ${cmd.console} step 5 (one transaction; you pay its gas).`, `把旁路的清单发布上链：持有人操作台 ${cmd.console} 第 5 步（一笔交易，gas 由你支付）。`)
@@ -331,6 +390,8 @@ export async function diagnose(input, o = {}) {
       pass('name', `container ${input} belongs to circuit #${tokenId} of ${circuits}`)
     }
     if (!(await chainIdentity({ circuits, tokenId }))) { const by = firstNotPassed(); blocked(IDENTITY.filter((x) => !done.has(x)), by); blocked(SERVICE, by); return finish() }
+    // activation / 激活（警告，不挡后面的检查）
+    if (!(await chainActivation({ name: mode === 'name' ? parsed.name : null, container: identity.container }))) { blocked(['manifest-file', 'manifest-format', 'delegation', ...SERVICE], 'activation'); return finish() }
     // manifest file / 清单文件
     const file = await chainManifestFile(identity.container)
     if (!file) { blocked(['manifest-format', 'delegation', ...SERVICE], 'manifest-file'); return finish() }
@@ -369,7 +430,7 @@ export async function diagnose(input, o = {}) {
     // Every probe goes to the address given (ONB2-5) / 所有探测都打给出的地址
     given = url.replace(/\/\.well-known\/tapeapi\.json$/i, '')
     skip('name', T('URL mode: a sidecar address, no name', '地址模式：旁路地址，没有名字'))
-    const stop = () => { blocked(['circuit', 'container', 'manifest-file', 'delegation', ...SERVICE], 'manifest-format'); return finish() }
+    const stop = () => { blocked(['circuit', 'container', 'activation', 'manifest-file', 'delegation', ...SERVICE], 'manifest-format'); return finish() }
     // Is a sidecar answering here? Its health check says. / 这里是旁路吗？看 health。
     const health = async () => { try { const h = await (await http(given + '/tapeapi/v1/health', { headers: { accept: 'application/json' } })).json(); return h && typeof h === 'object' && (h.setup !== undefined || typeof h.signer === 'string' || typeof h.ok === 'boolean') ? h : null } catch { return null } }
     let res
@@ -418,7 +479,7 @@ export async function diagnose(input, o = {}) {
     const throwaway = raw.dev === true || eq(manifest.circuits, ZERO)
     if (o.offline || throwaway || !capi) {
       const why = throwaway ? T('a dev manifest (no on-chain identity)', '本地或一次性身份（dev 清单）') : o.offline ? T('--offline', '--offline') : T('no chain client', '没有链客户端')
-      for (const id of ['circuit', 'container', 'manifest-file']) skip(id, T(`not read on chain: ${why.en}`, `未读链：${why.zh}`))
+      for (const id of ['circuit', 'container', 'activation', 'manifest-file']) skip(id, T(`not read on chain: ${why.en}`, `未读链：${why.zh}`))
       if (manifest.delegation) {
         const d = delegationExpiry(manifest)
         if (d.status === 'fail') { record(d); blocked(SERVICE, 'delegation'); return finish() }
@@ -438,8 +499,9 @@ export async function diagnose(input, o = {}) {
         if (where !== null && Number(where) !== chainId && typeof capi.forChain === 'function') { chainId = Number(where); capi = capi.forChain(chainId) }
       } catch { /* the identity checks below read again and report / 下面的身份检查会再读并报告 */ }
       if (!(await chainIdentity({ circuits: manifest.circuits, tokenId: BigInt(manifest.tokenId), container: manifest.container }))) {
-        const by = firstNotPassed(); blocked(['manifest-file', 'delegation'].filter((x) => !done.has(x)), by); blocked(SERVICE, by); return finish()
+        const by = firstNotPassed(); blocked(['activation', 'manifest-file', 'delegation'].filter((x) => !done.has(x)), by); blocked(SERVICE, by); return finish()
       }
+      skip('activation', T('URL mode: a sidecar address carries no name; run the doctor with your TapeOut name to check the activation', '地址模式：旁路地址不带名字；用你的 TapeOut 名字运行诊断才检查激活'))
       const file = await chainManifestFile(identity.container)
       if (file?.missing) warn('manifest-file', T('not published on chain yet', '尚未发布上链'), publishFix)
       else if (file?.problem) fail('manifest-file', file.problem, publishFix)

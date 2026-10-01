@@ -292,3 +292,24 @@ async function security11(): Promise<void> {
   void [at, seen, ok, n, td, d, field, r.spotCheck, unchecked]
 }
 void security11
+
+// @experimental 1.4: the TAP-10 conformance mode and siteStatus / TAP-10 一致模式与 siteStatus
+async function conform14() {
+  const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: 'tap10', chains: { 8453: { opener: MAINNET.hub } } })
+  const s = await api.siteStatus('#11@1013')
+  const status: 'ok' | 'unpaid' | 'not-opened' | 'store-changed' | 'no-such-cpu' | 'no-such-token' | 'not-tapeout' = s.status
+  const isLive: boolean | null | undefined = s.activation?.isLive
+  const lag: number = s.pinned.lag
+  try {
+    const svc = await api.resolve('tape://11.1013.tape/')
+    const site: 'ok' | undefined = svc.conform?.site
+    const mode: 'tap10' | undefined = svc.pinned?.mode
+    void [site, mode]
+  } catch (e) {
+    if (e instanceof TapeAPIError && e.code === 'SITE_STATUS') { const why: unknown = e.data?.status; void why }
+  }
+  const pinned = createTapeAPI({ rpcUrls: rpcUrlsFor(56), pin: 'tap10' })
+  const b = await pinned.rpc!.tap10Block({ maxLag: 400 })
+  void [status, isLive, lag, b.lag]
+}
+void conform14

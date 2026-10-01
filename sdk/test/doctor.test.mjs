@@ -10,11 +10,12 @@ import http from 'node:http'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
-import { createTapeAPI } from '../src/index.js'
+import { createTapeAPI, CHAINS } from '../src/index.js'
 import { diagnose, formatReport, DOCTOR_CHECKS, INVALID_KEY, doctorCommands, releaseTgz } from '../src/doctor.js'
 import { howRun } from '../bin/tapeapi-doctor.js'
 import { privateKeyToAddress, signDigest, delegationDigest } from '../src/sig.js'
-import { createFakeChain, ADDR } from './helpers/fake-chain.mjs'
+import { ADDR } from './helpers/fake-chain.mjs'
+import { createActivationChain } from './helpers/activation-chain.mjs'
 import { createAIProxy } from '../../server/src/ai-proxy.js'
 import { createFakeUpstream } from '../../examples/ai-proxy/fake-upstream.mjs'
 import { startSidecar } from '../../examples/new-api-sidecar/server.mjs'
@@ -69,7 +70,7 @@ test.after(() => new Promise((ok) => server.close(ok)))
 
 /** A chain on which NAME is a complete AI service (edit it to break it). / NAME 是完整 AI 服务的链（改它来制造故障）。 */
 function world({ manifest = proxy.manifest(), open = true, owner = holder, file = true } = {}) {
-  const chain = createFakeChain()
+  const chain = createActivationChain()   // activated by default; the activation tests (ACT-n) change that / 默认已激活
   if (owner) chain.setOwner('42', owner)
   chain.setAccount('42', ADDR.container)
   chain.setContainerToken(ADDR.container, { tokenId: 42 })
@@ -569,7 +570,7 @@ const doc = (p) => readFileSync(`${ROOT}${p}`, 'utf8')
 const TGZ = releaseTgz(JSON.parse(doc('sdk/package.json')).version)
 const GUIDES = ['docs/guides/ai-providers.md', 'docs/guides/zh-CN/ai-providers.md']
 /** The table rows of "From zero to live", keyed by step number. / “从零到上线”表格的各行，按步骤号取。 */
-const stepRows = (text) => Object.fromEntries(text.split('\n').filter((l) => /^\| [0-7] \|/.test(l)).map((l) => [l.split('|')[1].trim(), l]))
+const stepRows = (text) => Object.fromEntries(text.split('\n').filter((l) => /^\| [0-7]b? \|/.test(l)).map((l) => [l.split('|')[1].trim(), l]))
 
 test('FIXED ONB2-1: the documents say tapeapi-doctor ships in the release package, give its npx form, and write steps 1 to 7 one way', () => {
   for (const p of [...GUIDES, 'sdk/README.md', 'sdk/src/doctor.js']) {
@@ -579,7 +580,7 @@ test('FIXED ONB2-1: the documents say tapeapi-doctor ships in the release packag
   for (const p of [...GUIDES, 'sdk/README.md']) assert.ok(doc(p).includes(`npx -y --package=${TGZ} tapeapi-doctor`), `${p}: the npx form`)
   for (const p of GUIDES) {
     const rows = stepRows(doc(p))
-    assert.deepEqual(Object.keys(rows), ['0', '1', '2', '3', '4', '5', '6', '7'], p)
+    assert.deepEqual(Object.keys(rows).sort(), ['0', '1', '2', '2b', '3', '4', '5', '6', '7'], p)
     for (const n of ['1', '2', '3', '4', '5', '7']) {
       assert.match(rows[n], /`tapeapi-doctor (--offline )?(<[^>]+>|https:\/\/api\.example\.com)`/, `${p} step ${n}`)
       assert.ok(!rows[n].includes('node sdk/bin'), `${p} step ${n} is written one way`)
@@ -638,4 +639,162 @@ test('FIXED ONB2-7: the documents agree on key names and Codex, mark the doctor 
   assert.match(doc('README.md'), /fails with a 404/); assert.match(doc('README.zh-CN.md'), /报 404/)
   const ignore = doc('.gitignore')
   assert.match(ignore, /^examples\/new-api-sidecar\/data\/$/m); assert.match(ignore, /^examples\/new-api-sidecar\/logs\/$/m)
+})
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Activation (TAP-10 §6.3, TAP-11): the name must be activated on DomainBinding, or a TAP-11 client answers `unpaid`.
+// 激活：名字必须在 DomainBinding 上激活，否则按 TAP-11 的客户端得到 unpaid。只警告，绝不改变其它检查的结果。
+// The chain is sdk/test/helpers/activation-chain.mjs (the fake chain plus a DomainBinding).
+// ---------------------------------------------------------------------------------------------------------------------
+const actWorld = (setup) => { reset(); const w = world(); setup?.(w.chain); return w }
+const others = (rep) => Object.fromEntries(Object.entries(status(rep)).filter(([id]) => id !== 'activation'))
+
+test('ACT-1: isLive(name, container) true, isContainerLive false: activated (pass), read with the on-chain name, exit 0', async () => {
+  const { api, chain } = actWorld((c) => c.setActivation({ names: [[NAME, ADDR.container]], containerLive: false, paidUntil: 0 }))
+  const rep = await run(api)
+  const a = byId(rep, 'activation')
+  assert.equal(a.status, 'pass', formatReport(rep, { lang: 'en' }))
+  assert.match(a.detail, /^activated: isLive\(name, container\) is true$/)   // no expiry known: not shown / 到期未知：不显示
+  assert.match(a.detailZh, /已激活：isLive\(名字, 容器\) 为真/)
+  assert.equal(rep.exitCode, 0)
+  const live = chain.activation.calls.find((c) => c.fn === 'isLive')
+  assert.deepEqual(live.args, [NAME, ADDR.container], 'isLive gets the canonical on-chain name (with .tape) and the container derived from it')
+  assert.equal(live.url.startsWith('http://rpc'), true)
+  assert.ok(!chain.activation.calls.some((c) => c.fn === 'monthlyFee'), 'no fee is read for an activated name')
+})
+
+test('ACT-2: only isContainerLive true (one payment per container): activated, with the date it is paid until', async () => {
+  const until = nowS() + 40 * 86_400
+  const { api } = actWorld((c) => c.setActivation({ names: [], containerLive: true, paidUntil: until }))
+  const rep = await run(api)
+  const a = byId(rep, 'activation')
+  assert.equal(a.status, 'pass', formatReport(rep, { lang: 'en' }))
+  assert.match(a.detail, new RegExp(`^activated: isContainerLive\\(container\\) is true; paid until ${new Date(until * 1000).toISOString().slice(0, 10)} \\(containerPaidUntil\\)$`))
+  assert.match(a.detailZh, /已激活：isContainerLive\(容器\) 为真；已付费至 \d{4}-\d{2}-\d{2}（containerPaidUntil）/)
+  assert.equal(rep.exitCode, 0)
+})
+
+test('ACT-3: both false: a WARNING (not a failure) naming unpaid, the current monthlyFee and the bind call; every other check unchanged; exit 0', async () => {
+  const activated = await run(actWorld().api)
+  const { api, chain } = actWorld((c) => c.setUnactivated({ fee: 12_500_000_000_000_000n }))
+  const rep = await run(api)
+  const a = byId(rep, 'activation')
+  assert.equal(a.status, 'warn', formatReport(rep, { lang: 'en' }))
+  assert.match(a.detail, /^42\.7\.tape is not activated: isLive and isContainerLive are both false\. Under TAP-11 a client gets "unpaid" and does not resolve this service; the site files stay readable \(TAP-10 §6\.3\)\./)
+  assert.match(a.detail, /The fee now: 0\.0125 BNB per 30 days \(monthlyFee\(\), read from the chain just now; it can change at any time\)\./)
+  assert.match(a.detailZh, /尚未激活：isLive 与 isContainerLive 都为假。按 TAP-11，客户端会得到 unpaid、不解析此服务；站点文件仍可读取（TAP-10 §6\.3）。/)
+  assert.match(a.detailZh, /当前月费：每 30 天 0\.0125 BNB（monthlyFee\(\)/)
+  assert.match(a.fix.en, new RegExp(`bind\\("42\\.7\\.tape", ${ADDR.container}, months\\).*months x monthlyFee\\(\\) in BNB.*you pay it, plus gas`))
+  assert.match(a.fix.zh, /调用 bind\("42\.7\.tape", 0x6060[0-9a-f]+, 月数\)，付 月数 × monthlyFee\(\)（BNB；费用与 gas 由你自己承担/)
+  assert.ok(a.fix.en.includes(`DomainBinding (${CHAINS[56].binding})`), 'the fix names the DomainBinding of the chain')
+  assert.ok(!/\b0\.01\b/.test(a.fix.en + a.fix.zh), 'no fee is written into the hint: it is read from the chain')
+  // not a failure: exit 0, and the other thirteen checks are what they were / 不是失败：退出码 0，其余 13 项不变
+  assert.equal(rep.exitCode, 0); assert.equal(rep.ok, true); assert.equal(rep.counts.warn, 1); assert.equal(rep.counts.fail, 0)
+  assert.deepEqual(others(rep), others(activated))
+  assert.equal(Object.keys(others(rep)).length, 13)
+  assert.ok(chain.activation.calls.some((c) => c.fn === 'monthlyFee'))
+  assert.match(formatReport(rep), /WARN {2}Name is activated \(TAP-10 §6\.3\) \/ 名字已激活（TAP-10 §6\.3）/)
+})
+
+test('ACT-3b: the fee that cannot be read is left out, the warning stays', async () => {
+  const { api } = actWorld((c) => c.setUnactivated({ fee: null }))
+  const rep = await run(api)
+  const a = byId(rep, 'activation')
+  assert.equal(a.status, 'warn')
+  assert.ok(!/The fee now/.test(a.detail) && !/当前月费/.test(a.detailZh))
+  assert.equal(rep.exitCode, 0)
+})
+
+test('ACT-3c: a warning on activation does not hide a later failure: it stays a warning, the failure is named by its own check', async () => {
+  reset()
+  const w = world({ file: false }); w.chain.setUnactivated()
+  const rep = await run(w.api)
+  assert.equal(byId(rep, 'activation').status, 'warn')
+  assert.equal(byId(rep, 'manifest-file').status, 'fail')
+  assert.equal(rep.exitCode, 1)
+  for (const id of ['manifest-format', 'delegation', 'ai-field', 'receipt-lookup']) {
+    assert.equal(byId(rep, id).status, 'skip'); assert.match(byId(rep, id).detail, /"manifest-file" did not pass/, id)
+  }
+})
+
+test('ACT-4: isContainerLive reverts (a payment contract without it) = false (TAP-10 §6.3): with isLive true still activated, otherwise the warning, never an error', async () => {
+  let r = await run(actWorld((c) => c.setActivation({ names: [[NAME, ADDR.container]], containerLive: 'revert', paidUntil: 0 })).api)
+  assert.equal(byId(r, 'activation').status, 'pass', formatReport(r, { lang: 'en' }))
+  assert.match(byId(r, 'activation').detail, /isLive\(name, container\) is true/)
+  assert.equal(r.exitCode, 0)
+  const { api, chain } = actWorld((c) => c.setUnactivated({ containerLive: 'revert' }))
+  r = await run(api)
+  assert.equal(byId(r, 'activation').status, 'warn', formatReport(r, { lang: 'en' }))
+  assert.equal(r.exitCode, 0); assert.equal(r.counts.error, 0)
+  assert.ok(chain.activation.calls.some((c) => c.fn === 'isContainerLive'), 'it was asked')
+  assert.ok(chain.activation.calls.some((c) => c.fn === 'monthlyFee'))
+})
+
+test('ACT-5: the chain cannot be read (the nodes fail on the DomainBinding reads): activation is "error" (undecided), exit 3, nothing after it is decided', async () => {
+  for (const failure of ['http500', 'rpcerror']) {
+    const { api } = actWorld((c) => c.setActivation({ failure }))
+    const rep = await run(api)
+    const a = byId(rep, 'activation')
+    assert.equal(a.status, 'error', `${failure}: ${formatReport(rep, { lang: 'en' })}`)
+    assert.match(a.detail, /^could not decide: /)
+    assert.match(a.fix.en, /exit code 3 means: retry/)
+    assert.equal(rep.exitCode, 3)
+    for (const id of ['name', 'circuit', 'container']) assert.equal(byId(rep, id).status, 'pass', `${failure}: ${id} read before it is not changed`)
+    for (const id of ['manifest-file', 'manifest-format', 'delegation', 'receipt-lookup']) assert.equal(byId(rep, id).status, 'skip', `${failure}: ${id}`)
+  }
+})
+
+test('ACT-6: container mode: only isContainerLive can be read (a container address does not give the name); the warning says so', async () => {
+  const { api, chain } = actWorld((c) => c.setUnactivated())
+  const rep = await run(api, ADDR.container)
+  const a = byId(rep, 'activation')
+  assert.equal(a.status, 'warn', formatReport(rep, { lang: 'en' }))
+  assert.match(a.detail, /isContainerLive is false\..*Container mode: isLive was not checked/)
+  assert.match(a.detailZh, /容器地址模式：没有检查 isLive/)
+  assert.ok(!chain.activation.calls.some((c) => c.fn === 'isLive'))
+  assert.equal(rep.exitCode, 0)
+  const ok = await run(actWorld().api, ADDR.container)
+  assert.equal(byId(ok, 'activation').status, 'pass')
+})
+
+test('ACT-7: URL mode has no name: activation is skipped with the way to check it, and nothing else changes', async () => {
+  reset()
+  const { chain } = world({ file: false })
+  chain.setUnactivated()   // even an unpaid container: URL mode does not warn about what it cannot know / 未付费也不警告：地址模式不知道名字
+  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch: chain.fetchWith(), allowHttp: true, dev: true })
+  const rep = await run(api, sidecarUrl)
+  const a = byId(rep, 'activation')
+  assert.equal(a.status, 'skip'); assert.match(a.detail, /run the doctor with your TapeOut name/)
+  assert.equal(byId(rep, 'container').status, 'pass'); assert.equal(byId(rep, 'manifest-file').status, 'warn'); assert.equal(rep.exitCode, 0)
+  assert.equal(chain.activation.calls.length, 0, 'no DomainBinding read in URL mode')
+  const off = await diagnose(sidecarUrl, { offline: true, allowHttp: true })
+  assert.equal(byId(off, 'activation').status, 'skip')
+  assert.deepEqual(off.checks.map((c) => c.id), DOCTOR_CHECKS)
+})
+
+test('ACT-8: 14 checks, activation between container and manifest-file, in the help and in both guides', async () => {
+  assert.equal(DOCTOR_CHECKS.length, 14)
+  assert.deepEqual(DOCTOR_CHECKS.slice(2, 5), ['container', 'activation', 'manifest-file'])
+  const h = await cli(['--help'])
+  assert.match(h.out, /14 checks, in order: name, circuit, container, activation, manifest-file/)
+  assert.match(h.out, /14 项检查，依次为：名字、电路、容器、激活、清单文件/)
+  assert.match(h.out, /--strict makes that warning fail too/)
+  for (const p of GUIDES) {
+    const t = doc(p)
+    assert.match(t, /TAP-10 §6\.3/, p)
+    assert.match(stepRows(t)['2b'], /bind\(.*monthlyFee\(\)/, `${p}: step 2b says the command and who pays`)
+    assert.match(stepRows(t)['2b'], /`activation` (passes|通过)/, `${p}: step 2b says what you should see`)
+  }
+  assert.match(doc('sdk/README.md'), /14 checks/)
+})
+
+test('ACT-9: the activation read is read-only eth_call to the chain\'s DomainBinding, in a fixed order, and costs at most 3 reads', async () => {
+  const { api, chain } = actWorld((c) => c.setUnactivated())
+  await run(api)
+  const fns = [...new Set(chain.activation.calls.map((c) => c.fn))]
+  assert.deepEqual(fns, ['isLive', 'isContainerLive', 'monthlyFee'])
+  assert.deepEqual(chain.activation.calls.filter((c) => c.url === 'http://rpc1').map((c) => c.fn), ['isLive', 'isContainerLive', 'monthlyFee'])
+  const live = await actWorld()
+  await run(live.api)
+  assert.deepEqual(live.chain.activation.calls.filter((c) => c.url === 'http://rpc1').map((c) => c.fn), ['isLive', 'isContainerLive', 'containerPaidUntil'])
 })

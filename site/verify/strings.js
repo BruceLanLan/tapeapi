@@ -1,7 +1,7 @@
 // Receipt checker: every string the script shows, in Chinese and English (the two must have the same keys:
 // scripts/verify-page.test.mjs). Plain text only: the page puts these in with textContent.
 // 回执核验页脚本显示的全部文字，中英两套键必须一致（由测试检查）。只是纯文本：页面用 textContent 放入。
-import { MAX_INPUT } from './lib.js?v=b5f531938f'
+import { MAX_INPUT } from './lib.js?v=fd0179eaa6'
 
 export const T = {
   zh: {

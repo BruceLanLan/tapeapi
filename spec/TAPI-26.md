@@ -71,7 +71,7 @@ Three messages. A is the initiator, B the responder. Roles are fixed by who sent
    **Delivery.** The invite reaches B by either path; both are safe because the handshake, not the path, authenticates it:
 
    - **Inbox room (default).** Every container has an inbox room `SHA-256("TAP-26/inbox/v1" ‖ endpoint)` on any relay (§3.5) or ChannelBus (§3.7) that its record lists under `inbox`. A posts there the wire message `0x03 ‖ E ‖ N ‖ C`: `e` a fresh X25519 secret, `E = X25519(e, 9)`, `N` 24 random bytes, `K = HKDF-SHA256(X25519(e, R), salt = "TAP-26/inbox/v1", info = E ‖ R ‖ room, L = 32)` with `R` B's static key, and `C = XChaCha20-Poly1305(K, N, aad = "TAP-26/inbox/v1" ‖ E ‖ room).encrypt(UTF-8(canonicalJSON(invite)))`, where `room` is the 32 raw bytes of the room id. The whole wire message is at most 16,448 bytes. Wire type `0x03` carries any strict-JSON object with `v` 1 and a string `kind`, and the receiver dispatches on `kind`: TAPI-26 invites (`tape.channel/invite`) and TAPI-27 group invites (`tape.group/invite`) share it, and one cannot be taken for the other. Anyone can post it; no holder transaction is needed. Only the room (which identifies B) and the size are visible.
-   - **TapeSend (durable fallback).** A's holder sends a TapeSend message (TAP-10 §5.3) whose content is the invite, sealed to B's static key. It reaches a peer that is offline for longer than a relay or node keeps data, at the cost of one holder transaction. B MUST check that the TapeSend `from` equals `invite.from`.
+   - **TapeSend (durable fallback).** A's holder sends a TapeSend message (TAP-10 §5.3) whose content is the invite, sealed to B's static key. It reaches a peer that is offline for longer than a relay or node keeps data, at the cost of one holder transaction. B MUST check that the TapeSend `from` equals `invite.from`. When B is on another chain than A, pass `toChainId` (or the 32-byte endpoint) so the `to` endpoint is built on B's chain (TAP-10 §15.3).
 
    A TAP-10 client that does not implement this specification decodes the content as an unsupported kind (TAP-10 §6) and MUST NOT act on it; no change to TAP-10 is required.
 
@@ -250,7 +250,7 @@ TAPI-26 只提供这条通道，别的刻意不管。它不涉及游戏、状态
    **投递。** 邀请可经以下任一路径到达 B；两者都安全，因为认证邀请的是握手而不是路径：
 
    - **收件房间（默认）。** 每个容器在其记录 `inbox` 所列的任一中继（§3.5）或 ChannelBus（§3.7）上有一个收件房间 `SHA-256("TAP-26/inbox/v1" ‖ endpoint)`。A 在此投递线路消息 `0x03 ‖ E ‖ N ‖ C`（构造见英文部分：以 B 的长期公钥做 X25519、HKDF-SHA256 派生密钥、XChaCha20-Poly1305 加密邀请的规范 JSON），其中 HKDF 的 `info` 与 AAD 里的 `room` 是房间号的 32 个原始字节。整条线路消息至多 16,448 字节。线路类型 `0x03` 承载任意 `v` 为 1、`kind` 为字符串的严格 JSON 对象，接收方按 `kind` 分派：TAPI-26 邀请（`tape.channel/invite`）与 TAPI-27 入群邀请（`tape.group/invite`）共用它，二者不会被混淆。任何人都能投递，无需持有人交易。外界只看得到房间（它指向 B）与大小。
-   - **TapeSend（持久备用）。** A 的持有人发送一条内容为该邀请、密封给 B 长期公钥的 TapeSend 消息（TAP-10 §5.3）。它能送达离线时间超过中继或节点数据保留期的对方，代价是一笔持有人交易。B MUST 核对 TapeSend 的 `from` 等于 `invite.from`。
+   - **TapeSend（持久备用）。** A 的持有人发送一条内容为该邀请、密封给 B 长期公钥的 TapeSend 消息（TAP-10 §5.3）。它能送达离线时间超过中继或节点数据保留期的对方，代价是一笔持有人交易。B MUST 核对 TapeSend 的 `from` 等于 `invite.from`。B 与 A 不在同一条链时，传 `toChainId`（或直接传 32 字节端点），使 `to` 端点按 B 所在的链拼出（TAP-10 §15.3）。
 
    不实现本规范 的 TAP-10 客户端会把该内容解码为不支持的类型（TAP-10 §6），且 MUST NOT 据此行事；无需修改 TAP-10。
 

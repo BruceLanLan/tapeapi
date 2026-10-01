@@ -113,10 +113,11 @@
 | `PRICE_CHANGED` | 客户端 | 价格涨到你已同意的价格之上 | 征得同意之后 |
 | `QUORUM_FAILED` | 客户端 | 提供者不一致，或作答过少（`data.agreed`、`data.failed`……） | 视情况 |
 | `ATTEST_DISAGREE` | 客户端 | 见证读取不一致 | 否 |
-| `NOT_FOUND` | 客户端 | 那里没有服务：标签未注册、处理器编号超出范围，或没有通道记录（清单文件缺失为 `MANIFEST_INVALID`） | 否 |
+| `NOT_FOUND` | 客户端 | 那里没有服务：标签未注册、处理器编号超出范围，或没有通道记录（清单文件缺失为 `MANIFEST_INVALID`）。在 `conform: 'tap10'` 下：`data.status` 为 `no-such-cpu`、`no-such-token` 或 `not-tapeout` | 否 |
 | `RPC_UNAVAILABLE` | 客户端 | 作答节点过少 | 是 |
-| `RPC_STALE` | 客户端 | 1.2 起，开启实验性的 `pin` 选项时：节点共同确认的区块旧于 `maxPinAgeS`，或比本机时钟超前（`data.ageS`） | 是 |
-| `CONTRACT_UNKNOWN` | 客户端 | 1.2 起，开启实验性的 `sentinel: 'strict'` 时：TapeOut 身份合约运行着本 SDK 不认识的实现，即合约已被升级（`data.role`、`data.implementation`） | 否：升级 SDK 或核实这次升级 |
+| `RPC_STALE` | 客户端 | 1.2 起，开启实验性的 `pin` 选项时：节点共同确认的区块旧于 `maxPinAgeS`，或比本机时钟超前（`data.ageS`）。1.4 起，`pin: 'tap10'` 或 `conform: 'tap10'` 下：钉块落后最高头块的块数超过 TAP-10 的允许值（`data.status` 为 `stale-block`，`data.lag`、`data.maxLag`） | 是 |
+| `CONTRACT_UNKNOWN` | 客户端 | 1.2 起，开启实验性的 `sentinel: 'strict'` 时：TapeOut 身份合约运行着本 SDK 不认识的实现，即合约已被升级（`data.role`、`data.implementation`）。1.4 起，在 `conform: 'tap10'` 下，SiteRegistry 与 DomainBinding 一律如此（`data.status` 为 `store-changed`） | 否：升级 SDK 或核实这次升级 |
+| `SITE_STATUS` | 客户端 | 1.4 起，只在实验性的 `conform: 'tap10'` 下：名字存在，但 TAP-10 规定不得使用其站点：`data.status` 为 `unpaid`（未激活）或 `not-opened`（容器从未开通） | 否：只有持有人能改变 |
 | `PROOF_INVALID` | 客户端 | 1.3 起，开启实验性的 `proofs`（须同时开 `pin`）时：`fileInfo`、`cpuAt`、`isCPU` 或 `ownerOf` 的默克尔证明已核验通过，但证明出的值与节点的回答不同（`proofs: true` 与 `'strict'` 都拒绝）；或者只在 `'strict'` 下：节点提供的证明对照节点共同确认的区块 stateRoot 全都核验不过（`data.read`、`data.node`、`data.block`、`data.stateRoot`） | 否 |
 | `PROOF_UNAVAILABLE` | 客户端 | 1.3 起，开启实验性的 `proofs: 'strict'` 时：没有节点为所钉区块提供 `eth_getProof`，`quorum` 家运营方的节点没有就 stateRoot 达成一致，或合约运行着 SDK 不知道存储布局的实现（`data.read`、`data.reason`）。`proofs: true` 下同样的情况只是警告，并沿用法定数的回答（只是检测） | 是，或加一个提供证明的节点 |
 | `RPC_ERROR` | 客户端 | 所有节点返回同一个 JSON-RPC 错误（`data.rpcCode`、`data.rpcRevert`） | 回滚：否 |
@@ -138,6 +139,96 @@
 
 位于服务之前的 MCP 服务器（`createMcpProxy`）以 JSON-RPC 错误报告它自己的拒绝，其 `error.data.code` 为
 `TOOLS_CHANGED`、`INVISIBLE_CHARACTERS` 或 `UPSTREAM_UNAVAILABLE`。
+
+## TAP-10 一致模式（1.4，实验性）
+
+`createTapeAPI({ conform: 'tap10' })` 按官方 TAP-10 v1.1（§3–§7）与 TAP-11 §2.2 的描述解析服务。默认关闭：不开时 1.x 的行为与以前完全相同
+（有一个测试逐个钉住默认模式的每个请求与结果）。它只覆盖**解析路径**；TAP-10 的其余部分在后续版本跟上（见本节末尾）。它标为
+`@experimental`，在 TAP-10 仍是草案期间随 TAP-10 跟进：结果里记有 `version: '1.1'`。
+
+```js
+const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: 'tap10' })
+const svc = await api.resolve('#11@1013')          // 任一 TAP-10 输入形式
+const site = await api.siteStatus('11.1013.tape')   // 任何模式：只看身份与站点状态
+```
+
+它隐含 `pin: 'tap10'`；同时传别的 `pin` 是 `INVALID_ARGUMENT`。Base 与 X Layer 上的名字、`api.forChain()` 都以同样的模式运行。
+`pin: 'tap10'` 也可以单独使用，只要 TAP-10 的钉块、不要其余部分。
+
+**有哪些不同**
+
+- **一次解析一个钉块**（TAP-10 §5.3）：每家运营方只计一次、取其最低头块；钉块为其中第二高者减 2，按区块哈希读取。钉块落后最高头块
+  超过 400（BNB Smart Chain）、150（Base）或 300（X Layer）块即拒绝为 `stale-block`。只比较块号，从不看你的时钟。
+- **链检查**：每个客户端一次，向每个节点要 `eth_chainId`，按通常的共识采用（`quorum` 家运营方的节点、所有回答一致）：一个节点宕机不会
+  停掉一致模式，有节点在别的链上即为分歧（拒绝），节点全在别的链上即 `wrong-chain`。（TAP-10 §5.4 对消息客户端要求的严格共识随消息路径
+  一起做。）只有结果与回滚算节点的回答，其它 JSON-RPC 错误算节点故障。
+- **输入**：链上名字（`4246.0.tape`）、短名字（`4246.0`）、显示标签（`#4246@0`、`#1@3.1`）、`tape://` 或 `web+tape://` URL、容器地址、
+  处理器合约#ID（`0x50A9…9DD9#4246`）。其它任何东西（包括目录标签）都是输入错误。
+- **身份**：`cpuCount` 与 `cpuAt`、由容器开通器推导容器（并由 `sentinel` 与本地 ERC-6551 推导互验）、`ownerOf`、`isOpened`。
+- **站点状态**，按 TAP-10 §6.2 的顺序：`store-changed`（SiteRegistry 或 DomainBinding 运行着本 SDK 未列出的实现：不论 `sentinel`
+  怎么设都拒绝），然后 `no-such-cpu` / `no-such-token` / `not-tapeout`，然后 `not-opened`，然后 `unpaid`（`isLive(链上名字, 容器)` 与
+  `isContainerLive(容器)` 都不为真；上一版 DomainBinding 没有 `isContainerLive`，按 TAP-10 §6.3，它的回滚按假处理。`isLive` 的回滚也按假
+  处理，这一点 TAP-10 没有规定：接受列表里的实现对它不会回滚，只有未知实现才可能，而未知实现已先被拒为 `store-changed`）。
+- **清单**：`chunkCount` 为 0 即 `no-manifest`；文件须为合法 UTF-8 且不带字节序标记；其中的 `circuits`、`tokenId`、`container` 只与解析
+  结果比对，绝不采用。
+- **缓存**：两次解析之间只保留处理器表。`api.call()` 之前，超过 60 秒的服务会重新解析；若结果是 `unpaid`（或其它结论），调用停止，
+  不再使用保留的清单。
+
+**结果长什么样。** 解析成功的服务带 `svc.conform` 与 TAP-10 的 `svc.pinned`：
+
+```js
+svc.conform  // { version: '1.1', status: 'resolved', site: 'ok', chainId: 56, name: '11.1013.tape', processor: '1013',
+             //   tokenId: '11', circuits, container, holder, opened: true,
+             //   activation: { live: true, isLive: false, isContainerLive: true },
+             //   implementations: [{ role: 'siteRegistry', ..., accepted: true }, { role: 'binding', ..., accepted: true }],
+             //   pinned: { number, hash, lag, maxLag } }
+svc.pinned   // { number, hash, timestamp, tag: 'tap10', by: 'hash', mode: 'tap10', lag: 2, maxLag: 400 }
+```
+
+`api.siteStatus(target)` 返回同样的对象，`status` 为 `ok`、`unpaid`、`not-opened`、`store-changed`、`no-such-cpu`、`no-such-token` 或
+`not-tapeout`；它不读清单，任何模式下都能用，站点状态绝不抛错（只有输入错误、`unsupported`、`wrong-chain` 与读不到时才抛）。
+
+**错误。** 一致模式的每个错误都在 `error.data.status` 里带 TAP-10 / TAP-11 的名字，请按它分支。错误码沿用现有的，只新增一个：
+
+| `data.status` | `code` |
+|---|---|
+| `input-error`、`unsupported`（见下文）、`wrong-chain` | `INVALID_ARGUMENT` |
+| `no-such-cpu`、`no-such-token`、`not-tapeout` | `NOT_FOUND` |
+| `unavailable`、`stale-block` | `RPC_UNAVAILABLE` / `RPC_DISAGREE`、`RPC_STALE` |
+| `store-changed`，以及 `hub-changed`\* | `CONTRACT_UNKNOWN` |
+| `not-opened`、`unpaid` | **`SITE_STATUS`**（新增） |
+| `no-manifest`、`incomplete`、`no-hash`、`manifest-invalid`，以及 `container-mismatch`\* | `MANIFEST_INVALID` |
+| `delegation-invalid` | `DELEGATION_INVALID` |
+
+\* 只在 `sentinel: 'strict'` 下、只由 `resolve` 抛出，绝不出现在 `siteStatus` 里：它们是 TapeAPI 自己加的检查，TAP-10 解析站点时不做。
+`hub-changed` 与 TAP-10 §13.8 的同名条件相同（hub 运行着未列出的实现）；`container-mismatch` 表示容器开通器推导出的地址与本地按 ERC-6551
+算出的不同。
+
+`SITE_STATUS` 表示名字存在、清单也可能完全合格，但 TAP-10 规定不得使用该站点。重试没用；只有电路的持有人能改变它（用
+`DomainBinding.bind` 激活，或开通容器）。
+
+**为什么我们自己的服务是 `unpaid`。** `11.1013.tape`（api.tapeapi.fun）与 `12.1013.tape`（relay.tapeapi.fun）尚未激活：2026-09-30
+两者的 `isLive` 与 `isContainerLive` 都为假，2026-10-01 再读 `11.1013.tape` 仍是如此。在 `conform: 'tap10'` 下，它们在持有人付费之前都解析为
+`SITE_STATUS`、`data.status` 为 `unpaid`；默认模式照常解析。
+
+**激活只约束合规客户端。** TAP-10 §6.3 说得很明白：费用靠合规客户端只显示已激活的站点来落实，不是任何技术上的封锁。数据仍是公开、
+可读的；默认模式不检查激活，消息读取（`chain.channelKeys`、`chain.tapeSendKey`）在任何模式下也不检查：TAP-10 §12.2 规定激活不得阻止消息。
+
+**需要知道的局限。**
+
+- *容器地址与处理器合约#ID*（`unsupported`）。这类输入不带处理器号，1.4 也找不回来，所以没有链上名字，无法查询 `isLive`。`isContainerLive`
+  为真时站点为 `ok`；为假或回滚时，一致模式不报 `unpaid`（该容器可能只按名字付过费），而是抛出 `INVALID_ARGUMENT`、`data.status` 为
+  `unsupported`：请传链上名字（例如 `4246.0.tape`）。客户端解析过该处理器的某个名字之后就知道其编号，这类输入便能完整判定。可能属于别的链的
+  输入（在本链不是容器的地址、`token()` 声称别的链、在本链不是处理器的处理器合约）同样是 `unsupported`，绝不是 `not-tapeout`：TAP-10 §4.1
+  只允许在读遍所有活跃链之后下这个结论。请用 `api.forChain(chainId)` 或名字。
+- *只有两家运营方的链。* 钉块为第二高的运营方头块减 2。某条链的节点只来自两家运营方时（X Layer 的默认节点：OKX 与 dRPC），一家报出较低的
+  头块，就能把钉块往回拖，最多拖到该链的最大钉块滞后（X Layer 为 300 块，约五分钟），读取就在那里进行：诚实节点会照实提供那份较旧的状态，
+  而且会被接受；默认模式的 `latest` 读取在这种情况下只会出现分歧。有三家及以上运营方时（BNB Smart Chain、Base），一家的低头块会被忽略。
+  如果你在意这一点，请在 `chains[196].rpcUrls` 里加一个第三家运营方的节点。
+
+**尚未覆盖。** 这并不意味着"TapeAPI 已符合 TAP-10"。仍待完成（计划在 1.5）：无链信息的输入在所有活跃链上解析并给出 `ambiguous`；由容器或
+处理器合约找回处理器号（这会消除上面第一条局限）；消息路径（严格的 `eth_chainId` 与 `keyFor`、通道记录、端点上限）；`ownerOf` 与 EIP-1271
+的严格共识。
 
 ## 现已冻结的格式
 

@@ -72,9 +72,12 @@ export function assertValidPublicKey(publicKey) {
 }
 
 // T = "TAP-10/X/v2" ‖ to ‖ from ‖ ref ‖ hub
-function context({ to, from, hub, ref, chainId = 56 }) {
+// TAP-10 §15.3: `to` is on the recipient's chain (`toChainId`), `from` on the sending chain (`chainId`). Without `toChainId`
+// both use `chainId`, which is right for a same-chain send. A 32-byte endpoint carries its own chain and ignores both.
+// TAP-10 §15.3：`to` 在收件方所在链（toChainId），`from` 在发送链（chainId）。不给 toChainId 时两者都用 chainId（同链发送）；32 字节端点自带链，不受两者影响。
+function context({ to, from, hub, ref, chainId = 56, toChainId }) {
   const r = ref === undefined || ref === null ? ZERO_REF : bytes32(ref, 'ref')
-  return concat(ascii('TAP-10/X/v2'), endpoint(to, chainId), endpoint(from, chainId), r, addr20(hub, 'hub'))
+  return concat(ascii('TAP-10/X/v2'), endpoint(to, toChainId ?? chainId), endpoint(from, chainId), r, addr20(hub, 'hub'))
 }
 const commitment = (K) => sha256(concat(ascii('TAP-10/commit/v2'), K))
 const kek = (ss, E, R, T) => hkdf(sha256, ss, ascii('TAP-10/wrap/v2'), concat(E, R, T), 32)
@@ -89,17 +92,20 @@ export function encodePublic(content) {
 /**
  * §5.3 seal `content` to 1..16 recipient keys. `to`/`from` are containers (or 32-byte endpoints), `hub` the DeWebHub
  * the message is sent through, `ref` the message replied to (32 bytes) or nothing. `random` is for test vectors only.
+ * `chainId` is the sending chain (the `from` endpoint; the hub is on it). For a recipient on another chain pass
+ * `toChainId` (the `to` endpoint's chain, default `chainId`), or pass `to` as a ready 32-byte endpoint (TAP-10 §15.3).
+ * `chainId` 是发送链（`from` 端点所在链，中枢也在这条链上）。收件方在另一条链时传 `toChainId`（`to` 端点所在链，默认等于 `chainId`），或直接把 `to` 传成现成的 32 字节端点（TAP-10 §15.3）。
  * The official client seals to the recipient AND the sender's own key, so the sender can read its outbox; pass both.
  * 把 content 封装给 1..16 把收件人公钥。官方客户端同时封装给收件人与发件人自己的密钥，以便发件人查看发件箱。
  */
-export function seal({ content, recipients, to, from, hub, ref, chainId = 56, random = randomBytes }) {
+export function seal({ content, recipients, to, from, hub, ref, chainId = 56, toChainId, random = randomBytes }) {
   if (!(content instanceof Uint8Array)) fail('bad-input', 'content must be bytes')
   if (!Array.isArray(recipients) || recipients.length < 1 || recipients.length > MAX_SLOTS) fail('bad-input', `1..${MAX_SLOTS} recipient keys required`)
   recipients.forEach((R, i) => {
     assertValidPublicKey(R)
     for (let j = 0; j < i; j++) if (equal(R, recipients[j])) fail('bad-input', 'duplicate recipient key')
   })
-  const T = context({ to, from, hub, ref, chainId })
+  const T = context({ to, from, hub, ref, chainId, toChainId })
   const e = random(32)
   const E = x25519.getPublicKey(e)
   const N = random(24)
@@ -131,13 +137,13 @@ function parse(payload) {
   return { kind: 'sealed', E: payload.slice(4, 36), N: payload.slice(36, 60), commit: payload.slice(60, 92), slots, P: payload.slice(0, PREAMBLE), S: payload.slice(PREAMBLE, PREAMBLE + SLOT * n), C: payload.slice(PREAMBLE + SLOT * n) }
 }
 
-/** §5.3 open with the recipient's secret key; the same outcomes as the reference module / 用收件人私钥打开 */
-export function open({ payload, secretKey, to, from, hub, ref, chainId = 56 }) {
+/** §5.3 open with the recipient's secret key; the same outcomes as the reference module. `chainId` / `toChainId` as in `seal`. / 用收件人私钥打开；`chainId` / `toChainId` 含义同 `seal` */
+export function open({ payload, secretKey, to, from, hub, ref, chainId = 56, toChainId }) {
   const p = parse(payload)
   if (p.kind === 'public') return { kind: 'public', content: p.content }
   try { assertValidPublicKey(p.E) } catch { fail('damaged', 'ephemeral key is invalid') }
   if (!secretKey) fail('not-for-key', 'a secret key is required to open a sealed message')
-  const T = context({ to, from, hub, ref, chainId })
+  const T = context({ to, from, hub, ref, chainId, toChainId })
   const R = x25519.getPublicKey(secretKey)
   const fp = fingerprint(R)
   let K = null, ss = null, matched = false
@@ -155,19 +161,26 @@ export function open({ payload, secretKey, to, from, hub, ref, chainId = 56 }) {
   try { return { kind: 'sealed', content: xchacha20poly1305(K, p.N, concat(p.P, p.S, T)).decrypt(p.C) } } catch { fail('damaged', 'content failed authentication') }
 }
 
-/** keccak256("TAP-10/msg/v2" ‖ uint256 chainId ‖ hub ‖ to ‖ uint256 inboxIndex) / 消息 ID（回复时作为 ref） */
-export function messageId({ chainId = 56, hub, to, inboxIndex }) {
+/**
+ * keccak256("TAP-10/msg/v2" ‖ uint256 chainId ‖ hub ‖ to ‖ uint256 inboxIndex) / 消息 ID（回复时作为 ref）。
+ * TAP-10 §17: `chainId` is the chain whose hub holds the entry (the hub's chain); the `to` endpoint is on the recipient's chain,
+ * so for a recipient elsewhere pass `toChainId` (default `chainId`) or a 32-byte endpoint.
+ * §17：`chainId` 是存放该条目的链（中枢所在链）；`to` 端点在收件方所在链，收件方在别的链时传 `toChainId`（默认等于 `chainId`）或 32 字节端点。
+ */
+export function messageId({ chainId = 56, toChainId, hub, to, inboxIndex }) {
   const u256 = (v) => { const b = new Uint8Array(32); let x = BigInt(v); for (let i = 31; i >= 0; i--) { b[i] = Number(x & 0xffn); x >>= 8n } return b }
-  return toHex(keccak_256(concat(ascii('TAP-10/msg/v2'), u256(chainId), addr20(hub, 'hub'), endpoint(to, chainId), u256(inboxIndex))))
+  return toHex(keccak_256(concat(ascii('TAP-10/msg/v2'), u256(chainId), addr20(hub, 'hub'), endpoint(to, toChainId ?? chainId), u256(inboxIndex))))
 }
 
 /**
  * The DeWebHub `send(circuits, tokenId, to, ref, payload)` transaction. Only the circuit's holder can send: the hub
- * derives the sender container itself, so `from` cannot be forged. Non-payable; no protocol fee.
+ * derives the sender container itself, so `from` cannot be forged. Non-payable; no protocol fee. `chainId` is the hub's
+ * chain; a recipient on another chain: pass `toChainId` (default `chainId`) or a 32-byte endpoint as `to`.
+ * 无法伪造。`chainId` 是中枢所在链；收件方在另一条链时传 `toChainId`（默认等于 `chainId`）或把 `to` 传成 32 字节端点。
  * DeWebHub 的 send 交易。只有电路持有人能发送：中枢自己推导发件容器，`from` 无法伪造。不可附带 BNB，无协议费。
  */
-export function sendTx({ hub, circuits, tokenId, to, ref, payload, chainId = 56 }) {
+export function sendTx({ hub, circuits, tokenId, to, ref, payload, chainId = 56, toChainId }) {
   if (!(payload instanceof Uint8Array) || payload.length === 0 || payload.length > MAX_PAYLOAD) fail('bad-input', `payload must be 1..${MAX_PAYLOAD} bytes`)
-  const args = [circuits, BigInt(tokenId), toHex(endpoint(to, chainId)), ref ? toHex(bytes32(ref, 'ref')) : toHex(ZERO_REF), payload]
+  const args = [circuits, BigInt(tokenId), toHex(endpoint(to, toChainId ?? chainId)), ref ? toHex(bytes32(ref, 'ref')) : toHex(ZERO_REF), payload]
   return { to: hub, data: SEND_SELECTOR + bytesToHex(encodeParams(['address', 'uint256', 'bytes32', 'bytes32', 'bytes'], args)), value: '0x0' }
 }
