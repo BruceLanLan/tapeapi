@@ -38,7 +38,7 @@ DeWEB 是网站，TapeSend 是消息，TapeAPI 是服务。
 
 正式版，版本 1.3.0。1.0 起遵循语义化版本：按 1.0 文档写的代码在所有 1.x 版本里都能继续工作，破坏性修改只在 2.0
 （[1.0 承诺什么](upgrade-1.0.md)）。免费层运行在 TapeOut 已部署的合约之上。我们自己的合约未经第三方审计；付费调用的
-托管合约尚未部署。TAPI-20 到 TAPI-27 是 TapeAPI 自己的规范，不是 TAP：TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑编号，这些规范的部分内容已作为 TAP 草稿提交到那里。
+托管合约尚未部署。TAPI-20 到 TAPI-27 是 TapeAPI 自己的规范，不是 TAP：TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑编号，其中服务清单已合并为 TAP-11（Draft；合并不等于被采纳），另有 7 份针对这些规范部分内容的草稿在评审中。
 
 ## 链上地址
 
@@ -69,7 +69,7 @@ BNB Smart Chain，chainId 56。
 ## 规范
 
 协议以 TapeAPI 自己的规范（TAPI）写成，中英双语（以英文为准），采用 CC0。
-这些规范不是 TAP；部分内容已作为 TAP 草稿提交到 TapeOutProtocol/TAPs：[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)、[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)、[#12](https://github.com/TapeOutProtocol/TAPs/pull/12)。
+这些规范不是 TAP。我们就其中部分内容向 TapeOutProtocol/TAPs 提交了 8 份 TAP 草稿：服务身份与清单已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)；合并为 Draft 不等于被采纳），另 7 份在评审中、尚无编号：[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)、[#12](https://github.com/TapeOutProtocol/TAPs/pull/12)、[#16](https://github.com/TapeOutProtocol/TAPs/pull/16)、[#18](https://github.com/TapeOutProtocol/TAPs/pull/18)、[#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、[#26](https://github.com/TapeOutProtocol/TAPs/pull/26)、[#28](https://github.com/TapeOutProtocol/TAPs/pull/28)。TAPI-20 至 TAPI-27 仍是 1.x 兼容性承诺的依据。
 
 | 规范 | 标题 |
 |---|---|

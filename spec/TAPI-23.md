@@ -14,7 +14,7 @@
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
 
-> **Not a TAP.** "TAPI-23" is TapeAPI's own name for this document; until 2026-09-30 it was called "TAP-23". It is not a TAP: TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01 §6.1. Frozen constants that contain an old name (for example the `TAP-26/…` labels) are historical constants and never change.
+> **Not a TAP.** "TAPI-23" is TapeAPI's own name for this document; until 2026-09-30 it was called "TAP-23". It is not a TAP: TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01 §6.1. Part of it has been submitted as a TAP draft under that process, under review and without a number yet: attested reads across independent services ([PR #18](https://github.com/TapeOutProtocol/TAPs/pull/18)). A submission is not adoption, and the draft takes whatever number the editors give it. Frozen constants that contain an old name (for example the `TAP-26/…` labels) are historical constants and never change.
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
@@ -170,7 +170,7 @@ Copyright and related rights waived via CC0-1.0.
 
 > 英文为权威文本，本译文与英文章节一一对应。
 
-> **不是 TAP。** “TAPI-23”是 TapeAPI 给本文档起的名字，2026-09-30 之前叫“TAP-23”。它不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。
+> **不是 TAP。** “TAPI-23”是 TapeAPI 给本文档起的名字，2026-09-30 之前叫“TAP-23”。它不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配。其中部分内容已按该流程作为 TAP 草稿提交，在评审中、尚无编号：多家独立服务的交叉验证读取（[PR #18](https://github.com/TapeOutProtocol/TAPs/pull/18)）。提交不等于被采纳，草稿的编号以编辑分配为准。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。
 
 > **实现状态（2026-09-27）：** 已实现，未托管：SDK 的 `callQuorum` 执行 §3.4（包括 `ATTEST_DISAGREE`），`examples/chain-attested-read` 是一个提供者示例，但没有任何运行中的服务提供 `attestedRead` 方法。未经第三方审计。质押与罚没仍不在范围内。
 

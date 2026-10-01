@@ -184,8 +184,20 @@ flowchart LR
 
 ## 规范
 
-这些是 TapeAPI 自己的规范，不是 TAP。其中部分内容已作为 TAP 草稿提交到 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)：
-[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)（服务身份与清单）、[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)（签名响应）、[#12](https://github.com/TapeOutProtocol/TAPs/pull/12)（私密通道）。
+这些是 TapeAPI 自己的规范，不是 TAP。2026-09-30 至 10-01，我们就其中部分内容向 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 提交了 8 份 TAP 草稿。服务身份与清单已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)，2026-10-01）；合并为 Draft 不等于被采纳。其余 7 份是评审中的草稿 PR，尚无 TAP 编号。TAPI-20 至 TAPI-27 仍是 1.x 兼容性承诺的依据。
+
+| 我们的规范 | 提交的草稿 | 状态 |
+|---|---|---|
+| TAPI-20（核心：§3.1 至 §3.4、§3.6、§3.10） | 服务身份与清单，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8) | 已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)，Draft |
+| TAPI-21 | 签名响应，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10) | 评审中，无编号 |
+| TAPI-26 | 私密通道，[#12](https://github.com/TapeOutProtocol/TAPs/pull/12) | 评审中，无编号 |
+| TAPI-20 §3.8、TAPI-21 | MCP 工具绑定，[#16](https://github.com/TapeOutProtocol/TAPs/pull/16) | 评审中，无编号 |
+| TAPI-23 | 多家独立服务的交叉验证读取，[#18](https://github.com/TapeOutProtocol/TAPs/pull/18) | 评审中，无编号 |
+| TAPI-27（仅格式 1） | 私密群聊，[#20](https://github.com/TapeOutProtocol/TAPs/pull/20) | 评审中，无编号 |
+| TAPI-20 §3.9、TAPI-21 §3.5 | AI 用量回执，[#26](https://github.com/TapeOutProtocol/TAPs/pull/26) | 评审中，无编号 |
+| TAPI-20 §3.2（证明模式，说明性） | 证明核验读取，[#28](https://github.com/TapeOutProtocol/TAPs/pull/28) | 评审中，无编号 |
+
+TAPI-22、TAPI-24、TAPI-25 没有提交。#10、#16、#18 已通过编辑的格式审查，等排在 TAP-11 之后合并。这些草稿按官方 TAP-10 写；参考实现（我们的 SDK）目前有几处还没对齐，各草稿在 Backwards Compatibility 里如实列出，SDK 会以可选模式跟上。
 
 | 规范 | 标题 | 状态 |
 |---|---|---|

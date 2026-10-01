@@ -13,7 +13,7 @@
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
 
-> **Not a TAP.** "TAPI-26" is TapeAPI's own name for this document; until 2026-09-30 it was called "TAP-26". It is not a TAP: TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01 §6.1. Part of it has been submitted as a TAP draft under that process: private channels, [TapeOutProtocol/TAPs PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12); the draft takes whatever number the editors give it. Frozen constants that contain an old name (for example the `TAP-26/…` labels) are historical constants and never change.
+> **Not a TAP.** "TAPI-26" is TapeAPI's own name for this document; until 2026-09-30 it was called "TAP-26". It is not a TAP: TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01 §6.1. Part of it has been submitted as a TAP draft under that process, under review and without a number yet: private channels ([PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12)). A submission is not adoption, and the draft takes whatever number the editors give it. Frozen constants that contain an old name (for example the `TAP-26/…` labels) are historical constants and never change.
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
@@ -211,7 +211,7 @@ Copyright and related rights waived via [CC0](https://creativecommons.org/public
 
 > 以英文为准。章节编号与上半部分一一对应。
 
-> **不是 TAP。** “TAPI-26”是 TapeAPI 给本文档起的名字，2026-09-30 之前叫“TAP-26”。它不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配。其中部分内容已按该流程作为 TAP 草稿提交：私密通道，[TapeOutProtocol/TAPs PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12)；草稿的编号以编辑分配为准。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。
+> **不是 TAP。** “TAPI-26”是 TapeAPI 给本文档起的名字，2026-09-30 之前叫“TAP-26”。它不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配。其中部分内容已按该流程作为 TAP 草稿提交，在评审中、尚无编号：私密通道（[PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12)）。提交不等于被采纳，草稿的编号以编辑分配为准。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。
 
 > **实现状态（2026-09-27）：** 运行中：ChannelBus 已部署于 BNB Chain `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`（代码与参考构建逐字节一致）；免费公共中继运行于 `relay.tapeapi.fun`（`12.1013.tape`，源码 `examples/cloudflare-worker/relay-worker.js`）；SDK 实现了经中继与 ChannelBus 的通道，并导出一组实测的总线节点 `BUS_RPC_URLS`（§3.7）。未经第三方审计。
 

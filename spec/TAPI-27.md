@@ -14,7 +14,7 @@
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
 
-> **Not a TAP.** "TAPI-27" is TapeAPI's own name for this document; until 2026-09-30 it was called "TAP-27". It is not a TAP: TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01 §6.1. Frozen constants that contain an old name (for example the `TAP-26/…` labels) are historical constants and never change.
+> **Not a TAP.** "TAPI-27" is TapeAPI's own name for this document; until 2026-09-30 it was called "TAP-27". It is not a TAP: TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01 §6.1. Part of it (format 1 only) has been submitted as a TAP draft under that process, under review and without a number yet: private groups ([PR #20](https://github.com/TapeOutProtocol/TAPs/pull/20)). A submission is not adoption, and the draft takes whatever number the editors give it. Frozen constants that contain an old name (for example the `TAP-26/…` labels) are historical constants and never change.
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
@@ -206,7 +206,7 @@ Copyright and related rights waived via [CC0](https://creativecommons.org/public
 
 > 以英文版为准。章节编号一一对应。
 
-> **不是 TAP。** “TAPI-27”是 TapeAPI 给本文档起的名字，2026-09-30 之前叫“TAP-27”。它不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。
+> **不是 TAP。** “TAPI-27”是 TapeAPI 给本文档起的名字，2026-09-30 之前叫“TAP-27”。它不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配。其中部分内容（仅格式 1）已按该流程作为 TAP 草稿提交，在评审中、尚无编号：私密群聊（[PR #20](https://github.com/TapeOutProtocol/TAPs/pull/20)）。提交不等于被采纳，草稿的编号以编辑分配为准。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。
 
 > **实现状态（2026-09-27）：** 已实现：`sdk/src/group.js` 可经任一 TAPI-26 传输运行群聊，包括已部署的 ChannelBus（`0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`）与公共中继 `relay.tapeapi.fun`。群聊无需托管服务：群主本身是客户端。未经第三方审计。
 

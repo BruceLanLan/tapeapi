@@ -30,7 +30,7 @@ the [changelog](../CHANGELOG.md).
   [`docs/guides/`](guides/).
 - **Holder console** at [tapeapi.fun/console](https://tapeapi.fun/console/): take a service live, publish its manifest
   and sign its delegation from a phone wallet.
-- **Specifications** TAPI-20 to TAPI-27 (TapeAPI's own specs; not TAPs, which the editors of TapeOutProtocol/TAPs number; parts are submitted there as TAP drafts #8, #10 and #12), the SDK and the provider runtime, used from this repository.
+- **Specifications** TAPI-20 to TAPI-27 (TapeAPI's own specs; not TAPs, which the editors of TapeOutProtocol/TAPs number; eight TAP drafts are submitted there, of which the service manifest is merged as TAP-11, a Draft, and seven are under review), the SDK and the provider runtime, used from this repository.
   Since 1.0.0, TAPI-20, TAPI-21, TAPI-23, TAPI-26 and TAPI-27 are Stable (v1) (TAPI-20 §3.5, the service directory, is
   Experimental); TAPI-22 and TAPI-25 are Experimental.
 
@@ -43,9 +43,15 @@ the [changelog](../CHANGELOG.md).
   for its own request; the reviewer must itself be a container. A review then costs a real call and a real circuit.
 - **npm packages** `@tapeapi/sdk` and `@tapeapi/server`. Today both install from each GitHub release (the SDK first,
   then the server), or are used from a clone of this repository.
-- **TAP drafts in the official process.** TapeOut's TAP process ([TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs),
-  TAP-01) is where parts of these specs go as TAP drafts, starting with the service identity and manifest, built on
-  TAP-10. Editors assign the numbers.
+- **TAP drafts in the official process.** We submitted eight TAP drafts to TapeOut's TAP process
+  ([TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), TAP-01) on 2026-09-30 and 2026-10-01, all written
+  against TAP-10. The service identity and manifest was merged as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md) (Draft, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8), 2026-10-01); a merge
+  into Draft is not adoption. Seven more are under review and have no number yet: signed responses [#10](https://github.com/TapeOutProtocol/TAPs/pull/10), private
+  channels [#12](https://github.com/TapeOutProtocol/TAPs/pull/12), MCP tool binding [#16](https://github.com/TapeOutProtocol/TAPs/pull/16), attested reads [#18](https://github.com/TapeOutProtocol/TAPs/pull/18), private groups [#20](https://github.com/TapeOutProtocol/TAPs/pull/20), AI usage receipts [#26](https://github.com/TapeOutProtocol/TAPs/pull/26)
+  and proof-verified reads [#28](https://github.com/TapeOutProtocol/TAPs/pull/28); #10, #16 and #18 have passed the format review and wait to be merged after TAP-11.
+  The reference implementation (our SDK) does not yet match TAP-10 in a few places, which the drafts list under
+  Backwards Compatibility; the SDK will follow in an optional mode, and its default behaviour stays the same. TAPI-20 to
+  TAPI-27 remain the basis of the 1.x compatibility promise.
 
 ## 3. Later
 
@@ -91,7 +97,7 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
   自动开 GitHub issue。
 - **手册** [tapeapi.fun/docs](https://tapeapi.fun/docs/)，中英双语，由 [`docs/guides/`](guides/) 生成。
 - **持有人控制台** [tapeapi.fun/console](https://tapeapi.fun/console/)：用手机钱包让服务上线、发布清单、签署委托。
-- **规范** TAPI-20 至 TAPI-27（TapeAPI 自己的规范；不是 TAP，TAP 由 TapeOutProtocol/TAPs 的编辑编号；部分内容已作为 TAP 草稿 #8、#10、#12 提交到那里），以及 SDK 与提供者运行时，目前从本仓库使用。自 1.0.0 起，TAPI-20、TAPI-21、
+- **规范** TAPI-20 至 TAPI-27（TapeAPI 自己的规范；不是 TAP，TAP 由 TapeOutProtocol/TAPs 的编辑编号；我们已向那里提交 8 份 TAP 草稿，其中服务清单已合并为 TAP-11（Draft），另 7 份在评审中），以及 SDK 与提供者运行时，目前从本仓库使用。自 1.0.0 起，TAPI-20、TAPI-21、
   TAPI-23、TAPI-26 与 TAPI-27 为 Stable (v1)（稳定；TAPI-20 §3.5 服务目录为实验性）；TAPI-22 与 TAPI-25 为实验性。
 
 ## 2. 接下来
@@ -101,8 +107,13 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
 - **凭回执的信誉。** 只有调用方才能评价一个服务，而且必须持有该服务为它自己的请求签发的回执；评价者本身也必须是一个容器。
   这样每条评价都要付出一次真实调用和一个真实电路的代价。
 - **npm 包** `@tapeapi/sdk` 与 `@tapeapi/server`。目前 SDK 从每个 GitHub Release 安装，服务端包在本仓库的克隆目录里使用。
-- **按官方流程提交 TAP 草稿。** TapeOut 的 TAP 流程（[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)，TAP-01）
-  是这些规范的部分内容作为 TAP 草稿提交的地方，先从建立在 TAP-10 之上的服务身份与清单开始。编号由编辑分配。
+- **按官方流程提交 TAP 草稿。** 2026-09-30 至 10-01，我们向 TapeOut 的 TAP 流程
+  （[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)，TAP-01）提交了 8 份草稿，一律按 TAP-10 写。
+  服务身份与清单已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)，2026-10-01）；合并为 Draft 不等于被采纳。另有 7 份在评审中、
+  尚无编号：签名响应 [#10](https://github.com/TapeOutProtocol/TAPs/pull/10)、私密通道 [#12](https://github.com/TapeOutProtocol/TAPs/pull/12)、MCP 工具绑定 [#16](https://github.com/TapeOutProtocol/TAPs/pull/16)、多家交叉验证读取 [#18](https://github.com/TapeOutProtocol/TAPs/pull/18)、私密群聊 [#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、
+  AI 用量回执 [#26](https://github.com/TapeOutProtocol/TAPs/pull/26)、证明核验读取 [#28](https://github.com/TapeOutProtocol/TAPs/pull/28)；其中 #10、#16、#18 已通过格式审查，等排在 TAP-11 之后合并。参考实现
+  （我们的 SDK）目前有几处还没对齐 TAP-10，草稿在 Backwards Compatibility 里如实列出；SDK 会以可选模式跟上，默认行为
+  不变。TAPI-20 至 TAPI-27 仍是 1.x 兼容性承诺的依据。
 
 ## 3. 更远
 

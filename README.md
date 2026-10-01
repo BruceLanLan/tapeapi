@@ -193,9 +193,21 @@ chain as they do now; the prices in their manifest are published, not settled. S
 
 ## Specifications
 
-These are TapeAPI's own specifications, not TAPs. Parts of them have been submitted as TAP drafts to
-[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs): [#8](https://github.com/TapeOutProtocol/TAPs/pull/8) (service identity and manifest), [#10](https://github.com/TapeOutProtocol/TAPs/pull/10) (signed
-responses) and [#12](https://github.com/TapeOutProtocol/TAPs/pull/12) (private channels).
+These are TapeAPI's own specifications, not TAPs. On 2026-09-30 and 2026-10-01 we submitted eight TAP drafts for parts of them to
+[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs). The service identity and manifest was merged as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md) (Draft, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8), 2026-10-01); a merge into Draft is not adoption. The other seven are draft pull requests under review and have no TAP number yet. TAPI-20 to TAPI-27 remain the basis of the 1.x compatibility promise.
+
+| Our spec | Submitted draft | Status |
+|---|---|---|
+| TAPI-20 (core: §3.1 to §3.4, §3.6, §3.10) | Service identity and manifest, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8) | Merged as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md), Draft |
+| TAPI-21 | Signed responses, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10) | Under review, no number |
+| TAPI-26 | Private channels, [#12](https://github.com/TapeOutProtocol/TAPs/pull/12) | Under review, no number |
+| TAPI-20 §3.8, TAPI-21 | MCP tool binding, [#16](https://github.com/TapeOutProtocol/TAPs/pull/16) | Under review, no number |
+| TAPI-23 | Attested reads from independent services, [#18](https://github.com/TapeOutProtocol/TAPs/pull/18) | Under review, no number |
+| TAPI-27 (format 1 only) | Private groups, [#20](https://github.com/TapeOutProtocol/TAPs/pull/20) | Under review, no number |
+| TAPI-20 §3.9, TAPI-21 §3.5 | AI usage receipts, [#26](https://github.com/TapeOutProtocol/TAPs/pull/26) | Under review, no number |
+| TAPI-20 §3.2 (proof mode, informative) | Proof-verified reads, [#28](https://github.com/TapeOutProtocol/TAPs/pull/28) | Under review, no number |
+
+TAPI-22, TAPI-24 and TAPI-25 have not been submitted. #10, #16 and #18 have passed the editors' format review and wait to be merged after TAP-11. The drafts are written against TAP-10; the reference implementation (our SDK) does not yet match it in a few places, which each draft lists under Backwards Compatibility, and the SDK will follow in an optional mode.
 
 | Spec | Title | Status |
 |---|---|---|

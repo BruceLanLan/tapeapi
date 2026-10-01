@@ -9,6 +9,9 @@ interfaces.
 
 ### Changed
 
+- The status of the TAP drafts is stated: the service manifest and delegation was merged as TAP-11 (Draft,
+  TapeOutProtocol/TAPs#8) and seven more drafts are under review (#10, #12, #16, #18, #20, #26, #28). TAPI-20 to
+  TAPI-27 remain TapeAPI's own names and the basis of the 1.x compatibility promise.
 - **The specs are renamed TAPI-1 and TAPI-20 to TAPI-27** (they were TAP-1 and TAP-20 to TAP-27). TAP numbers belong
   to TapeOut's TAP process (TapeOutProtocol/TAPs, TAP-01 §6.1), where editors assign them and the multiples of ten are
   reserved for core standards; TapeAPI no longer uses any TAP number, and TAP-20 is left free. Parts of these specs are
