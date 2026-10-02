@@ -55,6 +55,8 @@
     <span class="meta" lang="zh">1.x 稳定版 · 今天所有调用免费 · 代码 MIT · 规范 CC0 · 未经第三方审计</span>
     <span class="meta" lang="en">Stable 1.x · Every call free today · Code MIT · Spec CC0 · No third-party audit</span>
   </div>
+  <p class="lede sub" lang="zh"><b>1.5：让“已核验”真的等于“已核验”。</b>1.0 给每次调用附一张签名回执；1.5 把核验本身收紧，并与 TapeOut 官方 TAP 标准对齐。<b>安全更新：</b>1.0.0 至 1.4.0 的流式 AI 回执核验，在特定分块下可能把被截断或被注入内容的流显示为“已核验”，请升级到 1.5.0。<a href="https://github.com/BruceLanLan/tapeapi/releases/tag/v1.5.0">更新说明</a></p>
+  <p class="lede sub" lang="en"><b>1.5: make “verified” actually mean verified.</b> 1.0 put a signed receipt on every call; 1.5 tightens the verification itself and aligns with TapeOut's official TAP standards. <b>Security update:</b> in 1.0.0 to 1.4.0, streamed AI receipt verification could, under particular chunking, report a truncated or content-injected stream as verified; please upgrade to 1.5.0. <a href="https://github.com/BruceLanLan/tapeapi/releases/tag/v1.5.0">Release notes</a></p>
   <div class="cta">
     <a class="btn pri" href="#start"><span lang="zh">从这里开始</span><span lang="en">Start here</span><span class="ar" aria-hidden="true">↓</span></a>
     <a class="btn" href="playground/"><span lang="zh">在线试用</span><span lang="en">Try it live</span><span class="ar" aria-hidden="true">→</span></a>
@@ -572,14 +574,26 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
 
 <section id="roadmap">
   <div class="shead"><span class="idx">10</span><h2 lang="zh">路线图</h2><h2 lang="en">Roadmap</h2><span class="line"></span></div>
-  <p class="tcap" lang="zh">除了已完成的 1.0，以下都还没有上线，也不承诺日期</p>
-  <p class="tcap" lang="en">Apart from 1.0, which is done, none of this is live yet, and no dates are promised</p>
+  <p class="tcap" lang="zh">标 DONE 的已经发布；其余都还没有上线，也不承诺日期</p>
+  <p class="tcap" lang="en">Items marked DONE have shipped; none of the rest is live yet, and no dates are promised</p>
   <div class="apps road">
     <div class="app">
       <div class="no yes">DONE</div>
       <h3 lang="zh">1.0：接口稳定</h3><h3 lang="en">1.0: stable interfaces</h3>
       <p lang="zh">SDK 与规范的接口已冻结：TAPI-20、21、23、26、27 为 Stable (v1)，测试数据由独立的 Python 验证器核对。1.0 起遵循语义化版本：按文档写的代码不会因为我们升级而坏掉，破坏性修改只在 2.0；标为实验性的部分（付费、ServiceDirectory、bus-privacy）除外。</p>
       <p lang="en">The SDK and spec interfaces are frozen: TAPI-20, 21, 23, 26 and 27 are Stable (v1), with test vectors checked by the independent Python verifier. From 1.0 on, TapeAPI follows semantic versioning: code written to the docs does not break when we upgrade, and breaking changes come only in 2.0, except in what is marked experimental (payments, the ServiceDirectory, bus-privacy).</p>
+    </div>
+    <div class="app">
+      <div class="no yes">DONE</div>
+      <h3 lang="zh">1.5：核验收紧，对齐官方标准</h3><h3 lang="en">1.5: tighter verification, aligned with the official standards</h3>
+      <p lang="zh">几轮对抗式审查（AI 辅助，不是第三方审计）修了一批真实问题，包括 1.0 至 1.4 里流式 AI 回执核验可被截断绕过的缺陷；严格模式在结束点切断流。规范改名 TAPI，提交了 8 份 TAP 草稿，其中服务身份与清单已合并为 TAP-11。SDK 的 TAP-10 一致模式补全（实验性，默认关闭）：同一区块解析、未激活报 unpaid、跨链解析遇到多条命中报 ambiguous。</p>
+      <p lang="en">Several rounds of adversarial review (AI-assisted, not a third-party audit) fixed real problems, among them a bypass of streamed AI receipt verification in 1.0 to 1.4; strict mode now cuts the stream at its end. The specs were renamed TAPI, 8 TAP drafts were submitted, and the service identity and manifest was merged as TAP-11. The SDK's TAP-10 conformance mode is complete (experimental, off by default): one block per resolution, unpaid for a name not activated, ambiguous when a cross-chain lookup has several hits.</p>
+    </div>
+    <div class="app">
+      <div class="no">NEXT</div>
+      <h3 lang="zh">TAP 编号与 2.0</h3><h3 lang="en">TAP numbers and 2.0</h3>
+      <p lang="zh">等 TapeOut 的编辑合并我们的 TAP 草稿并分配编号；2.0 才会让 TAP-10 一致模式成为默认。</p>
+      <p lang="en">Waiting for TapeOut's editors to merge our TAP drafts and assign numbers; only 2.0 makes the TAP-10 conformance mode the default.</p>
     </div>
     <div class="app">
       <div class="no">NEXT</div>
@@ -615,8 +629,8 @@ console.log(r.result.bnbUsd, r.agreed)</pre></div>
     <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-26.md">TAPI-26</a></span><span><span lang="zh">容器间的私密通道</span><span lang="en">Private channels between containers</span></span><span class="st">Stable (v1)</span></div>
     <div class="spec"><span class="id"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-27.md">TAPI-27</a></span><span><span lang="zh">容器间的私密群聊</span><span lang="en">Private groups between containers</span></span><span class="st">Stable (v1)</span></div>
   </div>
-  <p class="note" lang="zh"><b>这些是 TapeAPI 自己的规范，不是 TAP。</b>TAPI-1 与 TAPI-20 至 TAPI-27 是 TapeAPI 自己的文档名；TAP 由 <a href="https://github.com/TapeOutProtocol/TAPs">TapeOutProtocol/TAPs</a> 的编辑按 TAP-01 编号。我们就其中部分内容提交了 8 份 TAP 草稿：服务身份与清单已合并为 <a href="https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md">TAP-11</a>（Draft，<a href="https://github.com/TapeOutProtocol/TAPs/pull/8">#8</a>；合并为 Draft 不等于被采纳）；其余 7 份在评审中、尚无编号：签名响应 <a href="https://github.com/TapeOutProtocol/TAPs/pull/10">#10</a>、私密通道 <a href="https://github.com/TapeOutProtocol/TAPs/pull/12">#12</a>、MCP 工具绑定 <a href="https://github.com/TapeOutProtocol/TAPs/pull/16">#16</a>、多家交叉验证读取 <a href="https://github.com/TapeOutProtocol/TAPs/pull/18">#18</a>、私密群聊 <a href="https://github.com/TapeOutProtocol/TAPs/pull/20">#20</a>、AI 用量回执 <a href="https://github.com/TapeOutProtocol/TAPs/pull/26">#26</a>、证明核验读取 <a href="https://github.com/TapeOutProtocol/TAPs/pull/28">#28</a>。TAPI-20 至 TAPI-27 仍是 1.x 兼容性承诺的依据。规范中英双语，以英文为准。</p>
-  <p class="note" lang="en"><b>These are TapeAPI's own specs, not TAPs.</b> TAPI-1 and TAPI-20 to TAPI-27 are TapeAPI's own document names; TAPs are numbered by the editors of <a href="https://github.com/TapeOutProtocol/TAPs">TapeOutProtocol/TAPs</a> under TAP-01. We submitted eight TAP drafts for parts of them: the service identity and manifest was merged as <a href="https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md">TAP-11</a> (Draft, <a href="https://github.com/TapeOutProtocol/TAPs/pull/8">#8</a>; a merge into Draft is not adoption); the other seven are under review and have no number yet: signed responses <a href="https://github.com/TapeOutProtocol/TAPs/pull/10">#10</a>, private channels <a href="https://github.com/TapeOutProtocol/TAPs/pull/12">#12</a>, MCP tool binding <a href="https://github.com/TapeOutProtocol/TAPs/pull/16">#16</a>, attested reads <a href="https://github.com/TapeOutProtocol/TAPs/pull/18">#18</a>, private groups <a href="https://github.com/TapeOutProtocol/TAPs/pull/20">#20</a>, AI usage receipts <a href="https://github.com/TapeOutProtocol/TAPs/pull/26">#26</a> and proof-verified reads <a href="https://github.com/TapeOutProtocol/TAPs/pull/28">#28</a>. TAPI-20 to TAPI-27 remain the basis of the 1.x compatibility promise. The specs are bilingual; English is authoritative.</p>
+  <p class="note" lang="zh"><b>这些是 TapeAPI 自己的规范，不是 TAP。</b>TAPI-1 与 TAPI-20 至 TAPI-27 是 TapeAPI 自己的文档名；TAP 由 <a href="https://github.com/TapeOutProtocol/TAPs">TapeOutProtocol/TAPs</a> 的编辑按 TAP-01 编号。我们就其中部分内容提交了 8 份 TAP 草稿：服务身份与清单已合并为 <a href="https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md">TAP-11</a>（Draft，<a href="https://github.com/TapeOutProtocol/TAPs/pull/8">#8</a>；合并为 Draft 不等于被采纳）；其余 7 份在评审中、尚无编号：签名响应 <a href="https://github.com/TapeOutProtocol/TAPs/pull/10">#10</a>、私密通道 <a href="https://github.com/TapeOutProtocol/TAPs/pull/12">#12</a>、MCP 工具绑定 <a href="https://github.com/TapeOutProtocol/TAPs/pull/16">#16</a>、多家交叉验证读取 <a href="https://github.com/TapeOutProtocol/TAPs/pull/18">#18</a>、私密群聊 <a href="https://github.com/TapeOutProtocol/TAPs/pull/20">#20</a>、AI 用量回执 <a href="https://github.com/TapeOutProtocol/TAPs/pull/26">#26</a>、证明核验读取 <a href="https://github.com/TapeOutProtocol/TAPs/pull/28">#28</a>。编辑审的是格式而不是方案本身：另外三份（签名响应、MCP 工具绑定、多家交叉验证读取）已通过格式审查，等排在 TAP-11 之后合并，其余四份还没有回复；合并为 Draft 不等于被采纳。TAPI-20 至 TAPI-27 仍是 1.x 兼容性承诺的依据。规范中英双语，以英文为准。</p>
+  <p class="note" lang="en"><b>These are TapeAPI's own specs, not TAPs.</b> TAPI-1 and TAPI-20 to TAPI-27 are TapeAPI's own document names; TAPs are numbered by the editors of <a href="https://github.com/TapeOutProtocol/TAPs">TapeOutProtocol/TAPs</a> under TAP-01. We submitted eight TAP drafts for parts of them: the service identity and manifest was merged as <a href="https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md">TAP-11</a> (Draft, <a href="https://github.com/TapeOutProtocol/TAPs/pull/8">#8</a>; a merge into Draft is not adoption); the other seven are under review and have no number yet: signed responses <a href="https://github.com/TapeOutProtocol/TAPs/pull/10">#10</a>, private channels <a href="https://github.com/TapeOutProtocol/TAPs/pull/12">#12</a>, MCP tool binding <a href="https://github.com/TapeOutProtocol/TAPs/pull/16">#16</a>, attested reads <a href="https://github.com/TapeOutProtocol/TAPs/pull/18">#18</a>, private groups <a href="https://github.com/TapeOutProtocol/TAPs/pull/20">#20</a>, AI usage receipts <a href="https://github.com/TapeOutProtocol/TAPs/pull/26">#26</a> and proof-verified reads <a href="https://github.com/TapeOutProtocol/TAPs/pull/28">#28</a>. The editors review the format, not the merits: three more (signed responses, MCP tool binding, attested reads) have passed the format check and wait to be merged after TAP-11, and the other four have had no response yet; a merge into Draft is not adoption. TAPI-20 to TAPI-27 remain the basis of the 1.x compatibility promise. The specs are bilingual; English is authoritative.</p>
 </section>
 
 <footer>

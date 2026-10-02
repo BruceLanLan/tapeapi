@@ -16,6 +16,11 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 
 [中文说明](README.zh-CN.md) · [Website](https://tapeapi.fun) · [Docs](https://tapeapi.fun/docs/) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md)
 
+> **1.5: make "verified" actually mean verified.** 1.0 put a signed receipt on every call; 1.5 tightens the verification
+> itself and aligns it with TapeOut's official TAP standards. **Security update:** in 1.0.0 to 1.4.0, streamed AI receipt
+> verification could, under particular chunking, report a truncated or content-injected stream as verified. Please upgrade to
+> 1.5.0 ([release notes](https://github.com/BruceLanLan/tapeapi/releases/tag/v1.5.0)).
+
 > **Status: released, 1.5.0.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
 > breaking changes come only in 2.0. Paid channels (TAPI-22) are experimental and not deployed. Nothing here has had a
 > third-party audit.
@@ -193,21 +198,25 @@ chain as they do now; the prices in their manifest are published, not settled. S
 
 ## Specifications
 
-These are TapeAPI's own specifications, not TAPs. On 2026-09-30 and 2026-10-01 we submitted eight TAP drafts for parts of them to
-[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs). The service identity and manifest was merged as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md) (Draft, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8), 2026-10-01); a merge into Draft is not adoption. The other seven are draft pull requests under review and have no TAP number yet. TAPI-20 to TAPI-27 remain the basis of the 1.x compatibility promise.
+These are TapeAPI's own specifications, not TAPs. TapeOut publishes its standards as TAPs, numbered by its editors in
+[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01. After that process appeared we renamed our documents
+TAPI-1 and TAPI-20 to TAPI-27 (so that TAP numbers stay with the editors: TAP-20, for example, now belongs to another proposal), and
+between 2026-09-30 and 2026-10-01 we submitted eight TAP drafts for parts of them. Editors review the format, not the merits
+(TAP-01 §4), so a merge into Draft is not adoption. TAPI-20 to TAPI-27 remain the basis of the 1.x compatibility promise.
 
-| Our spec | Submitted draft | Status |
+| Our spec | Draft (pull request) | The editors' response, as of 2026-10-03 |
 |---|---|---|
-| TAPI-20 (core: §3.1 to §3.4, §3.6, §3.10) | Service identity and manifest, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8) | Merged as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md), Draft |
-| TAPI-21 | Signed responses, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10) | Under review, no number |
-| TAPI-26 | Private channels, [#12](https://github.com/TapeOutProtocol/TAPs/pull/12) | Under review, no number |
-| TAPI-20 §3.8, TAPI-21 | MCP tool binding, [#16](https://github.com/TapeOutProtocol/TAPs/pull/16) | Under review, no number |
-| TAPI-23 | Attested reads from independent services, [#18](https://github.com/TapeOutProtocol/TAPs/pull/18) | Under review, no number |
-| TAPI-27 (format 1 only) | Private groups, [#20](https://github.com/TapeOutProtocol/TAPs/pull/20) | Under review, no number |
-| TAPI-20 §3.9, TAPI-21 §3.5 | AI usage receipts, [#26](https://github.com/TapeOutProtocol/TAPs/pull/26) | Under review, no number |
-| TAPI-20 §3.2 (proof mode, informative) | Proof-verified reads, [#28](https://github.com/TapeOutProtocol/TAPs/pull/28) | Under review, no number |
+| TAPI-20 (core: §3.1 to §3.4, §3.6, §3.10) | Service identity and manifest, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8) | Merged on 2026-10-01 as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md), Draft |
+| TAPI-21 | Signed responses, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10) | Passed the format check; to be merged after TAP-11. We made the two requested changes (it requires TAP-11; the references use its number) and applied their notes: `voucher` and the payment codes are reserved names, `METHOD_NOT_FOUND` is widened |
+| TAPI-20 §3.8, TAPI-21 | MCP tool binding, [#16](https://github.com/TapeOutProtocol/TAPs/pull/16) | Passed the format check; to be merged after #8 and #10. References updated to TAP-11 |
+| TAPI-23 | Attested reads from independent services, [#18](https://github.com/TapeOutProtocol/TAPs/pull/18) | Passed the format check; to be merged after #8 and #10. Their notes applied: services sharing a signer count as one party, and attested reads alone must not release funds (a SHOULD NOT in §7) |
+| TAPI-26 | Private channels, [#12](https://github.com/TapeOutProtocol/TAPs/pull/12) | No response yet |
+| TAPI-27 (format 1 only) | Private groups, [#20](https://github.com/TapeOutProtocol/TAPs/pull/20) | No response yet |
+| TAPI-20 §3.9, TAPI-21 §3.5 | AI usage receipts, [#26](https://github.com/TapeOutProtocol/TAPs/pull/26) | No response yet |
+| TAPI-20 §3.2 (proof mode, informative) | Proof-verified reads, [#28](https://github.com/TapeOutProtocol/TAPs/pull/28) | No response yet |
+| Follow-ups to TAP-11 | A Security Considerations note on `verifyingContract`, [#35](https://github.com/TapeOutProtocol/TAPs/pull/35); an informative Chinese translation, [#36](https://github.com/TapeOutProtocol/TAPs/pull/36) | No response yet |
 
-TAPI-22, TAPI-24 and TAPI-25 have not been submitted. #10, #16 and #18 have passed the editors' format review and wait to be merged after TAP-11. The drafts are written against TAP-10; the reference implementation (our SDK) does not yet match it in a few places, which each draft lists under Backwards Compatibility, and the SDK follows them in an optional mode (`conform: 'tap10'`, experimental since 1.4).
+TAPI-22, TAPI-24 and TAPI-25 have not been submitted. When the editors assign numbers to the other drafts, we rename our references to them. The drafts are written against the official TAP-10 and list, under Backwards Compatibility, where TapeAPI's own 1.x behaviour differs. The SDK follows TAP-10 in an optional conformance mode (`conform: 'tap10'`, experimental: the resolution path since 1.4; all-chain resolution, the messaging path and strict reads since 1.5). Its default behaviour does not change before 2.0.
 
 | Spec | Title | Status |
 |---|---|---|
