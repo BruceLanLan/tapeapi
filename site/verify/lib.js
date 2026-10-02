@@ -16,10 +16,10 @@
 // carry by default, carries only the two hashes the signature is computed over (requestHash, bodyHash), and is checked
 // by rebuilding the digest from them. / MCP / TAPI-21 回执有两种形态：v 1 带明文参数与结果；v 2（核验链接默认的形态）只带签名
 // 所依据的两个哈希，按它们重建摘要来核对。
-import { fromBase64Url, RECEIPT_META_KEY } from '../playground/vendor/1a83f4098b/tapeapi-sdk/mcp.js'
-import { findDuplicateKey, FORBIDDEN_KEYS } from '../playground/vendor/1a83f4098b/tapeapi-sdk/canon.js'
-import { envelopeProblems, priceProblems, formatOfMethod, validateAIField, MANIFEST_FIELD, sha256Hex, scanSse } from '../playground/vendor/1a83f4098b/tapeapi-sdk/ai.js'
-import { parseTapeName } from '../playground/vendor/1a83f4098b/tapeapi-sdk/chains.js'
+import { fromBase64Url, RECEIPT_META_KEY } from '../playground/vendor/2149b3f2fc/tapeapi-sdk/mcp.js'
+import { findDuplicateKey, FORBIDDEN_KEYS } from '../playground/vendor/2149b3f2fc/tapeapi-sdk/canon.js'
+import { envelopeProblems, priceProblems, formatOfMethod, validateAIField, MANIFEST_FIELD, sha256Hex, scanSse, answerProblems, completeOf, isWholeJson } from '../playground/vendor/2149b3f2fc/tapeapi-sdk/ai.js'
+import { parseTapeName } from '../playground/vendor/2149b3f2fc/tapeapi-sdk/chains.js'
 
 export { RECEIPT_META_KEY }
 export const MAX_INPUT = 64 * 1024   // bytes of pasted text or link / 粘贴文本或链接的字节上限
@@ -190,9 +190,14 @@ export const usageEnvelopeOf = (r) => ({ container: r.container, id: r.id, metho
 /**
  * The verdict for an AI usage receipt, from facts only. Checks, in order: sig, resolve, container, delegation, signer,
  * then method (the path belongs to the method), amount (the manifest's price table), request and response (only when
- * the bytes were given). A receipt that does not recover to today's key is "other-key" whatever else it says; one signed
- * by today's key that contradicts the price table or the pasted bytes is invalid, naming the check.
+ * the bytes were given), and answer: the pasted answer read with the format's adapter, whose id, model, usage and
+ * completeness must be what the receipt says (TAPI-21 §3.5 check 4, sdk ai.answerProblems; the usage of an injected
+ * stream is not compared, and is listed in answerUnchecked). A receipt that does not recover to today's key is
+ * "other-key" whatever else it says; one signed by today's key that contradicts the price table or the pasted bytes is
+ * invalid, naming the check.
  * AI 用量回执的结论，只来自事实。签名不是今天的密钥即"无法确认"；由今天的密钥签名却与价目表或粘贴的字节不符，则为无效并指出哪一项。
+ * answer 一项按格式适配器重读粘贴的回答：id、model、usage 与完整性必须与回执一致（第 4 项核验；注入用量的流不比较 usage，
+ * 列在 answerUnchecked）。
  * @param {object} f  { receipt, recovered, recoverError, svc, resolveError, now, request?, response? }
  */
 export function usageVerdictOf({ receipt: r, recovered, recoverError, svc, resolveError, now = Math.floor(Date.now() / 1000), request, response }) {
@@ -204,6 +209,24 @@ export function usageVerdictOf({ receipt: r, recovered, recoverError, svc, resol
   try { field = svc ? validateAIField(m?.[MANIFEST_FIELD], { allowHttp: true }) : null } catch { field = null }
   const hash = (text) => (typeof text === 'string' && text.length ? text : null)
   const req = hash(request), res = hash(response)
+  // A pasted stream is read once: its hash, and the shapes that clients parse differently from the hash rule (a line led by
+  // U+FEFF, an event left unfinished at the close; FIXED SSE-BOM, SSE-EOF), which fail the response check even when the
+  // hash matches. / 粘贴的流只读一遍：哈希，以及客户端与哈希规则解析不一致的形态；即使哈希一致，这些形态也让回应检查失败。
+  const scanned = res !== null && r.result.stream ? scanSse(res, format ? { format } : {}) : null
+  // A receipt that says stream, over pasted bytes that are one whole JSON answer: the page has no content type of its own,
+  // and read as a stream such bytes report no usage (FIXED AI-WHOLE). / 回执说是流，粘贴的却是一整段 JSON 回答：本页没有
+  // 自己的 content-type，按流读它什么用量也读不到。
+  const responseShape = scanned && isWholeJson(res) ? 'whole' : scanned?.ambiguous ? 'ambiguous' : scanned?.unfinished ? 'unfinished' : null
+  // Check 4: the answer as the format's adapter reads it (FIXED AI-INJ: the page used to compare only the hashes).
+  // 第 4 项：按格式适配器读出的回答（FIXED AI-INJ：本页以前只比较哈希）。
+  let answer = null
+  if (res !== null && format) {
+    let read = scanned
+    if (!read) { let j; try { j = JSON.parse(res) } catch { j = undefined } read = format.response(j) ?? { id: null, model: null, usage: null } }
+    answer = answerProblems({ envelope: r, read, format, requestBytes: req ?? undefined })
+    const complete = completeOf({ status: r.result.status, stream: r.result.stream, read })
+    if (complete !== r.result.complete) answer.problems.push(`the receipt says complete ${r.result.complete}, but the answer ${complete ? 'is' : 'is not'} complete`)
+  }
   const checks = {
     sig: sigOk ? 'pass' : 'fail',
     resolve: svc ? 'pass' : resolveError ? (isDefinite(resolveError) ? 'fail' : 'unknown') : 'skip',
@@ -213,14 +236,18 @@ export function usageVerdictOf({ receipt: r, recovered, recoverError, svc, resol
     method: !format ? 'unknown' : format.match({ verb: 'POST', path: r.params.path }) ? 'pass' : 'fail',
     amount: svc ? (field && priceProblems(field, r.result, fname).length === 0 ? 'pass' : 'fail') : 'skip',
     request: req === null ? 'skip' : sha256Hex(req) === r.params.requestSha256 ? 'pass' : 'fail',
-    response: res === null ? 'skip' : (r.result.stream ? scanSse(res, format ? { format } : {}).responseSha256 : sha256Hex(res)) === r.result.responseSha256 ? 'pass' : 'fail',
+    response: res === null ? 'skip' : (scanned ? scanned.responseSha256 : sha256Hex(res)) === r.result.responseSha256 && !responseShape ? 'pass' : 'fail',
+    answer: res === null ? 'skip' : !answer ? 'unknown' : answer.problems.length ? 'fail' : 'pass',
   }
   const list = Object.entries(checks).map(([id, state]) => ({ id, state }))
-  const out = (verdict, failed = null) => ({ verdict, failed, checks: list, amountProblems: field ? priceProblems(field, r.result, fname) : svc ? [`the manifest has no valid ${MANIFEST_FIELD} field`] : [] })
+  const out = (verdict, failed = null) => ({
+    verdict, failed, checks: list, responseShape, amountProblems: field ? priceProblems(field, r.result, fname) : svc ? [`the manifest has no valid ${MANIFEST_FIELD} field`] : [],
+    answerProblems: answer?.problems ?? [], answerUnchecked: answer?.unchecked ?? [],
+  })
   for (const id of ['sig', 'resolve', 'container', 'delegation']) if (checks[id] === 'fail') return out('invalid', id)
   if (checks.resolve === 'unknown' || !svc) return out('unchecked')
   if (checks.signer !== 'pass') return out('other-key')
-  for (const id of ['method', 'amount', 'request', 'response']) if (checks[id] === 'fail') return out('invalid', id)
+  for (const id of ['method', 'amount', 'request', 'response', 'answer']) if (checks[id] === 'fail') return out('invalid', id)
   return out('valid')
 }
 

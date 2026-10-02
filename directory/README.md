@@ -34,7 +34,7 @@ The directory only helps people find services, and lets anyone recheck them with
 1. Make your service pass the doctor, with exit status 0 (warnings allowed):
 
    ```sh
-   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-doctor <your name>
+   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-doctor <your name>
    ```
 
    The [guide for AI providers](../docs/guides/ai-providers.md#from-zero-to-live) takes you there step by step.
@@ -55,7 +55,7 @@ The directory only helps people find services, and lets anyone recheck them with
 1. 先让你的服务通过诊断，退出码为 0（允许警告）：
 
    ```sh
-   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-doctor <你的名字>
+   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-doctor <你的名字>
    ```
 
    [AI 服务方指南](../docs/guides/zh-CN/ai-providers.md#从零到上线)一步步带你做到这一点。

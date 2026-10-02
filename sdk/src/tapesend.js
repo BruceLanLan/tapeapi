@@ -35,16 +35,38 @@ const equal = (a, b) => a.length === b.length && a.every((x, i) => x === b[i])
 const bytes32 = (v, name) => { const b = typeof v === 'string' ? hexToBytes(v) : v; if (!(b instanceof Uint8Array) || b.length !== 32) fail('bad-input', `${name} must be 32 bytes`); return b }
 const addr20 = (a, name) => { if (!isAddress(a)) fail('bad-input', `${name} must be an address`); return hexToBytes(a) }
 
+// @experimental (1.5) `conform: 'tap10'` on any function below: TAP-10 §12.1 "clients MUST reject endpoint IDs whose chainId
+// exceeds 2^53 − 1". Every chainId the call takes (chainId, toChainId, and the chain of a 32-byte endpoint) above it is then
+// bad-input. Without it the bound stays 2^64 − 1 (the hub's own, §13.2), as in 1.4. / `conform: 'tap10'`：TAP-10 §12.1 要求
+// 拒绝 chainId 大于 2^53 − 1 的端点号；此时调用涉及的每个 chainId（含 32 字节端点里的）超出即 bad-input。不传时仍为 2^64 − 1。
+const MAX_TAP10_CHAIN_ID = (1n << 53n) - 1n
+function conformOf(conform) {
+  if (conform === undefined || conform === null || conform === false) return false
+  if (conform !== 'tap10') fail('bad-input', "conform: pass 'tap10', or leave it out")
+  return true
+}
+function tap10Chain(id, strict) {
+  if (!strict) return
+  let n
+  try { n = BigInt(id) } catch { fail('bad-input', 'chainId must be a whole number') }
+  if (n < 1n || n > MAX_TAP10_CHAIN_ID) fail('bad-input', `chainId ${n} is outside 1 to 2^53 - 1: not a supported chain (TAP-10 §12.1)`)
+}
+
 /** uint32(0) ‖ uint64(chainId) ‖ container; a 32-byte hex endpoint passes through / 端点号；32 字节端点原样使用 */
-export function endpoint(target, chainId = 56) {
+// `opts` may be left out, undefined, null or false (all: not in the conformance mode), as 1.4 ignored a third argument.
+// `opts` 可以省略，或为 undefined、null、false（都表示不开一致模式），因为 1.4 忽略第三个参数。
+export function endpoint(target, chainId = 56, opts) {
+  const strict = conformOf(opts && typeof opts === 'object' ? opts.conform : undefined)
   if (typeof target === 'string' && /^0x[0-9a-fA-F]{64}$/.test(target)) {
     const b = hexToBytes(target)
     if (b[0] | b[1] | b[2] | b[3]) fail('bad-input', 'endpoint reserved bits must be zero')
     if (b.slice(4, 12).every((x) => x === 0) || b.slice(12).every((x) => x === 0)) fail('bad-input', 'endpoint chain id and container must be non-zero')
+    if (strict) { let id = 0n; for (let i = 4; i < 12; i++) id = (id << 8n) | BigInt(b[i]); tap10Chain(id, true) }
     return b
   }
   const id = BigInt(chainId)
   if (!(id >= 1n && id < 1n << 64n)) fail('bad-input', 'chainId must fit in 64 bits')
+  tap10Chain(id, strict)
   const out = new Uint8Array(32)
   for (let i = 0; i < 8; i++) out[4 + i] = Number((id >> BigInt(8 * (7 - i))) & 0xffn)
   out.set(addr20(target, 'container'), 12)
@@ -75,9 +97,9 @@ export function assertValidPublicKey(publicKey) {
 // TAP-10 §15.3: `to` is on the recipient's chain (`toChainId`), `from` on the sending chain (`chainId`). Without `toChainId`
 // both use `chainId`, which is right for a same-chain send. A 32-byte endpoint carries its own chain and ignores both.
 // TAP-10 §15.3：`to` 在收件方所在链（toChainId），`from` 在发送链（chainId）。不给 toChainId 时两者都用 chainId（同链发送）；32 字节端点自带链，不受两者影响。
-function context({ to, from, hub, ref, chainId = 56, toChainId }) {
+function context({ to, from, hub, ref, chainId = 56, toChainId, conform }) {
   const r = ref === undefined || ref === null ? ZERO_REF : bytes32(ref, 'ref')
-  return concat(ascii('TAP-10/X/v2'), endpoint(to, toChainId ?? chainId), endpoint(from, chainId), r, addr20(hub, 'hub'))
+  return concat(ascii('TAP-10/X/v2'), endpoint(to, toChainId ?? chainId, { conform }), endpoint(from, chainId, { conform }), r, addr20(hub, 'hub'))
 }
 const commitment = (K) => sha256(concat(ascii('TAP-10/commit/v2'), K))
 const kek = (ss, E, R, T) => hkdf(sha256, ss, ascii('TAP-10/wrap/v2'), concat(E, R, T), 32)
@@ -96,16 +118,17 @@ export function encodePublic(content) {
  * `toChainId` (the `to` endpoint's chain, default `chainId`), or pass `to` as a ready 32-byte endpoint (TAP-10 §15.3).
  * `chainId` 是发送链（`from` 端点所在链，中枢也在这条链上）。收件方在另一条链时传 `toChainId`（`to` 端点所在链，默认等于 `chainId`），或直接把 `to` 传成现成的 32 字节端点（TAP-10 §15.3）。
  * The official client seals to the recipient AND the sender's own key, so the sender can read its outbox; pass both.
+ * `conform: 'tap10'` (@experimental, 1.5): every chainId at most 2^53 − 1 (TAP-10 §12.1).
  * 把 content 封装给 1..16 把收件人公钥。官方客户端同时封装给收件人与发件人自己的密钥，以便发件人查看发件箱。
  */
-export function seal({ content, recipients, to, from, hub, ref, chainId = 56, toChainId, random = randomBytes }) {
+export function seal({ content, recipients, to, from, hub, ref, chainId = 56, toChainId, conform, random = randomBytes }) {
   if (!(content instanceof Uint8Array)) fail('bad-input', 'content must be bytes')
   if (!Array.isArray(recipients) || recipients.length < 1 || recipients.length > MAX_SLOTS) fail('bad-input', `1..${MAX_SLOTS} recipient keys required`)
   recipients.forEach((R, i) => {
     assertValidPublicKey(R)
     for (let j = 0; j < i; j++) if (equal(R, recipients[j])) fail('bad-input', 'duplicate recipient key')
   })
-  const T = context({ to, from, hub, ref, chainId, toChainId })
+  const T = context({ to, from, hub, ref, chainId, toChainId, conform })
   const e = random(32)
   const E = x25519.getPublicKey(e)
   const N = random(24)
@@ -138,12 +161,13 @@ function parse(payload) {
 }
 
 /** §5.3 open with the recipient's secret key; the same outcomes as the reference module. `chainId` / `toChainId` as in `seal`. / 用收件人私钥打开；`chainId` / `toChainId` 含义同 `seal` */
-export function open({ payload, secretKey, to, from, hub, ref, chainId = 56, toChainId }) {
+export function open({ payload, secretKey, to, from, hub, ref, chainId = 56, toChainId, conform }) {
+  conformOf(conform)
   const p = parse(payload)
   if (p.kind === 'public') return { kind: 'public', content: p.content }
   try { assertValidPublicKey(p.E) } catch { fail('damaged', 'ephemeral key is invalid') }
   if (!secretKey) fail('not-for-key', 'a secret key is required to open a sealed message')
-  const T = context({ to, from, hub, ref, chainId, toChainId })
+  const T = context({ to, from, hub, ref, chainId, toChainId, conform })
   const R = x25519.getPublicKey(secretKey)
   const fp = fingerprint(R)
   let K = null, ss = null, matched = false
@@ -167,9 +191,11 @@ export function open({ payload, secretKey, to, from, hub, ref, chainId = 56, toC
  * so for a recipient elsewhere pass `toChainId` (default `chainId`) or a 32-byte endpoint.
  * §17：`chainId` 是存放该条目的链（中枢所在链）；`to` 端点在收件方所在链，收件方在别的链时传 `toChainId`（默认等于 `chainId`）或 32 字节端点。
  */
-export function messageId({ chainId = 56, toChainId, hub, to, inboxIndex }) {
+export function messageId({ chainId = 56, toChainId, hub, to, inboxIndex, conform }) {
   const u256 = (v) => { const b = new Uint8Array(32); let x = BigInt(v); for (let i = 31; i >= 0; i--) { b[i] = Number(x & 0xffn); x >>= 8n } return b }
-  return toHex(keccak_256(concat(ascii('TAP-10/msg/v2'), u256(chainId), addr20(hub, 'hub'), endpoint(to, toChainId ?? chainId), u256(inboxIndex))))
+  // the hub's chain is a chain too / 中枢所在链也是一条链
+  tap10Chain(chainId, conformOf(conform))
+  return toHex(keccak_256(concat(ascii('TAP-10/msg/v2'), u256(chainId), addr20(hub, 'hub'), endpoint(to, toChainId ?? chainId, { conform }), u256(inboxIndex))))
 }
 
 /**
@@ -179,8 +205,9 @@ export function messageId({ chainId = 56, toChainId, hub, to, inboxIndex }) {
  * 无法伪造。`chainId` 是中枢所在链；收件方在另一条链时传 `toChainId`（默认等于 `chainId`）或把 `to` 传成 32 字节端点。
  * DeWebHub 的 send 交易。只有电路持有人能发送：中枢自己推导发件容器，`from` 无法伪造。不可附带 BNB，无协议费。
  */
-export function sendTx({ hub, circuits, tokenId, to, ref, payload, chainId = 56, toChainId }) {
+export function sendTx({ hub, circuits, tokenId, to, ref, payload, chainId = 56, toChainId, conform }) {
   if (!(payload instanceof Uint8Array) || payload.length === 0 || payload.length > MAX_PAYLOAD) fail('bad-input', `payload must be 1..${MAX_PAYLOAD} bytes`)
-  const args = [circuits, BigInt(tokenId), toHex(endpoint(to, toChainId ?? chainId)), ref ? toHex(bytes32(ref, 'ref')) : toHex(ZERO_REF), payload]
+  tap10Chain(chainId, conformOf(conform))
+  const args = [circuits, BigInt(tokenId), toHex(endpoint(to, toChainId ?? chainId, { conform })), ref ? toHex(bytes32(ref, 'ref')) : toHex(ZERO_REF), payload]
   return { to: hub, data: SEND_SELECTOR + bytesToHex(encodeParams(['address', 'uint256', 'bytes32', 'bytes32', 'bytes'], args)), value: '0x0' }
 }

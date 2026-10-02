@@ -327,8 +327,9 @@ export function buildConformWorld() {
     for (const r of (Array.isArray(body) ? body : [body])) sent.push({ chainId: id, method: r.method, selector: r.method === 'eth_call' ? String(r.params[0].data).slice(0, 10) : null })
     return chains[id].fetch(String(url), init)
   }
+  // allChains (1.5): TAP-10 §4.1 resolves input without chain information on every active chain / 无链信息的输入在所有活跃链上解析
   const api = (extra = {}) => createTapeAPI({
-    conform: 'tap10', rpcUrls: nodes(56), quorum: 2, fetch, quiet: true, onWarning: () => {}, chains: { 196: { rpcUrls: nodes(196) }, 8453: { rpcUrls: nodes(8453) } }, ...extra,
+    conform: 'tap10', allChains: true, rpcUrls: nodes(56), quorum: 2, fetch, quiet: true, onWarning: () => {}, chains: { 196: { rpcUrls: nodes(196) }, 8453: { rpcUrls: nodes(8453) } }, ...extra,
   })
   return { chains, sent, fetch, api, holder }
 }
@@ -385,7 +386,10 @@ const CONFORM_KINDS = {
     const r = await tryConform(w, () => w.api().siteStatus(c.input))
     const want = c.expected.reverseName ?? null
     const name = r.ok ? r.value.name : null
-    return { verdict: want !== null && name === want ? 'CONFORMS' : 'GAP', ours: r.ok ? `chain ${r.value.chainId}, status ${r.value.status}, name ${name ?? 'unknown (no reverse scan)'}` : `${r.code} ${r.status}`,
+    // a case may state the name (row 2) or the identity (row 7: chain, processor number, #ID) / 用例给出名字或身份
+    const id = c.expected.identity
+    const ok = r.ok && (want !== null ? name === want : !!id && r.value.chainId === id.chainId && r.value.processor === id.processorNumber && r.value.tokenId === id.tokenId)
+    return { verdict: ok ? 'CONFORMS' : 'GAP', ours: r.ok ? `chain ${r.value.chainId}, status ${r.value.status}, name ${name ?? 'unknown (no reverse scan)'}` : `${r.code} ${r.status}`,
       obs: r.ok ? { chainId: r.value.chainId, status: r.value.status, name, processor: r.value.processor } : { code: r.code, status: r.status },
       note: 'reverse resolution to a name needs the processor-number scan and, without chain information, every active chain (1.5)' }
   },

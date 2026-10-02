@@ -3,7 +3,7 @@
 // "Advanced" (A deploy, B verify) is only for someone deploying their own ChannelBus.
 // 持有人操作台的页面脚本（模块，从 index.html 加载，使页面能在 script-src 'self' 下运行）。
 // 步骤：1 连接、2 读电路、3 服务密钥与变量、4 签委托、5 发布清单；“高级”（A 部署、B 核对）只给自己部署 ChannelBus 的人。
-import * as C from './lib.js?v=97ef583782'
+import * as C from './lib.js?v=15e0674daf'
 
 const $ = (id) => document.getElementById(id)
 // ChannelBus (Advanced) runs on BNB Chain only (TapeAPI does not follow it to L2s). / ChannelBus（高级）只在 BNB Chain。

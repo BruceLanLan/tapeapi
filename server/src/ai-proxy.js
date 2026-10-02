@@ -104,10 +104,12 @@ const receiptDescription = (ttlMs) => `The signed usage receipt of an AI respons
 const FORWARD_BASE = ai.FORWARD_HEADERS
 // Upstream response headers that are not passed on: hop-by-hop, those that describe the transfer rather than the body
 // (fetch has already decoded it), cookies of the upstream's own domain, the upstream's CORS (ours replaces it), and any
-// receipt header an upstream tries to set (ours replaces it).
-// 不转交的上游响应头：逐跳头、描述传输而非正文的头（fetch 已解码）、上游自己域名的 Cookie、上游的 CORS、上游试图设置的回执头。
+// receipt header an upstream tries to set (ours replaces it), and the sidecar-error mark (only the sidecar's own answers
+// carry it: from the upstream it would make a client report a transport failure for an answer that came from it).
+// 不转交的上游响应头：逐跳头、描述传输而非正文的头（fetch 已解码）、上游自己域名的 Cookie、上游的 CORS、上游试图设置的回执头，
+// 以及旁路错误标记（只有旁路自己的回答才带它；来自上游时，客户端会把上游的回答当作传输失败）。
 const DROP = new Set(['connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'te', 'trailer', 'upgrade', 'proxy-authenticate',
-  'proxy-authorization', 'content-encoding', 'content-length', 'set-cookie', 'set-cookie2', 'alt-svc', ai.RECEIPT_HEADER])
+  'proxy-authorization', 'content-encoding', 'content-length', 'set-cookie', 'set-cookie2', 'alt-svc', ai.RECEIPT_HEADER, ai.SIDECAR_ERROR_HEADER])
 const EXPOSE_BASE = [ai.RECEIPT_HEADER, ai.SIDECAR_ERROR_HEADER, 'retry-after']
 const TOKEN_LIST = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+(?:\s*,\s*[A-Za-z0-9!#$%&'*+.^_`|~-]+)*$/
 const NULL_BODY = new Set([101, 204, 205, 304])
@@ -122,13 +124,17 @@ const errorResponse = (status, code, message, headers) => new Response(JSON.stri
 })
 
 // A URL path as a lenient server reads it (as sdk ai.js loosePath, which is not in the SDK's public face): percent-encoded
-// unreserved characters decoded, runs of '/' collapsed, a trailing '/' dropped. OpenAI and Anthropic serve
-// '/v1//chat/completions' and '/v1/chat/%63ompletions'; a metered path must be written exactly (review P2-O1).
-// 宽松服务器眼中的路径（同 sdk ai.js 的 loosePath，它不在 SDK 的公开接口里）：计量路径必须按原样书写。
+// unreserved characters decoded, an encoded '/' or a backslash (%2F, %5C) read as '/', runs of '/' collapsed, a trailing '/'
+// dropped. OpenAI and Anthropic serve '/v1//chat/completions' and '/v1/chat/%63ompletions'; a metered path must be written
+// exactly (review P2-O1). / 宽松服务器眼中的路径（同 sdk ai.js 的 loosePath，它不在 SDK 的公开接口里）：计量路径必须按原样书写。
 const loosePath = (path) => {
-  const p = String(path).replace(/%([0-9A-Fa-f]{2})/g, (m, h) => { const c = String.fromCharCode(parseInt(h, 16)); return /[A-Za-z0-9._~-]/.test(c) ? c : m }).replace(/\/{2,}/g, '/')
+  const p = String(path).replace(/%([0-9A-Fa-f]{2})/g, (m, h) => { const c = String.fromCharCode(parseInt(h, 16)); return c === '/' || c === '\\' ? '/' : /[A-Za-z0-9._~-]/.test(c) ? c : m }).replace(/\/{2,}/g, '/')
   return p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p
 }
+// An encoded '/' or a backslash in a path: an upstream may decode it into a separator and serve a path this sidecar did not
+// see (a metered one, without a receipt), so it is refused outright. / 路径里编码的 '/' 或反斜杠：上游可能把它解码成分隔符，
+// 回答旁路没有看到的路径（计量路径而没有回执），一律拒绝。
+const ENCODED_SEPARATOR = /%(?:2f|5c)/i
 const sameBytes = (a, b) => a.length === b.length && a.every((x, i) => x === b[i])
 const isPrefix = (a, b) => a.length <= b.length && a.every((x, i) => x === b[i])
 // The first lines that open a format's final event: `data: X` / `data:X`, `event: Y` / `event:Y`.
@@ -410,8 +416,14 @@ export function createAIProxy(opts = {}) {
     let line = [], lineLen = 0, lineComment = false
     let out = null
     const emit = (b) => { scanner.push(b); out.push(b) }
+    // A line that starts with U+FEFF (not at the very start of the stream) is read as an unknown field by the receipt rule
+    // and as the field after the mark by clients that strip a byte order mark from every line (the official OpenAI and
+    // Anthropic SDKs): such a stream says different things to different clients, so it gets no receipt (FIXED SSE-BOM).
+    // 以 U+FEFF 开头的行（流最开头除外）：回执规则把它读作未知字段，逐行去掉字节序标记的客户端（OpenAI 与 Anthropic 官方 SDK）
+    // 却读作标记之后的字段。这样的流对不同客户端说的不是同一回事，不给回执。
     const signed = () => {
       injected = true
+      if (scanner.info.ambiguous) { log(`${format.name}: a line of the stream starts with U+FEFF, which clients read differently; no receipt`); return null }
       const r = read.result()
       const env = signReceipt({ id: goodId(r.id) ? r.id : newId(), method: format.method, params, result: resultOf({ format, read: r, requested, responseSha256: scanner.digest(), stream: true, status, usageInjected }) }, goodId(r.id))
       return enc.encode(ai.receiptComment(env))
@@ -461,7 +473,9 @@ export function createAIProxy(opts = {}) {
         // 最终事件先计入哈希（适配器也读到它的 usage），再签回执。
         const ev = held; held = []; heldLen = 0
         for (const b of ev) scanner.push(b)
-        out.push(signed(), enc.encode('\n\n'), ...ev)
+        const c = signed()
+        if (c) out.push(c, enc.encode('\n\n'))
+        out.push(...ev)
       } else if (mode === 'strip') {
         const ev = concat(held)
         const { json, name } = eventOf(ev)
@@ -508,7 +522,8 @@ export function createAIProxy(opts = {}) {
           if (mode === 'final' && !injected) {
             // The final event never finished (no blank line): no client dispatches it, so the receipt goes before it.
             // 最终事件没有结束（没有空行）：客户端都不会分派它，回执放在它前面。
-            out.push(signed(), enc.encode('\n\n'))
+            const c = signed()
+            if (c) out.push(c, enc.encode('\n\n'))
           }
           release()
         }
@@ -517,11 +532,14 @@ export function createAIProxy(opts = {}) {
           // No final event: one comment line at the end, after a line end if the stream stopped mid-line. No blank line:
           // an unfinished event must stay unfinished, as a client's parser discards it.
           // 没有最终事件：在末尾追加一行注释（停在行中时先补换行）。不加空行：未结束的事件必须保持未结束。
-          st.appended++
-          const tail = out.length ? out[out.length - 1] : null
-          const last = tail && tail.length ? tail[tail.length - 1] : lastByte
-          if (last !== -1 && last !== LF && last !== CR) out.push(enc.encode('\n'))
-          out.push(signed(), enc.encode('\n'))
+          const c = signed()
+          if (c) {
+            st.appended++
+            const tail = out.length ? out[out.length - 1] : null
+            const last = tail && tail.length ? tail[tail.length - 1] : lastByte
+            if (last !== -1 && last !== LF && last !== CR) out.push(enc.encode('\n'))
+            out.push(c, enc.encode('\n'))
+          }
         }
         send(controller)
       },
@@ -568,6 +586,7 @@ export function createAIProxy(opts = {}) {
     if (wait) { st.rateLimited++; return oaError(429, 'rate_limited', `too many requests; retry in ${wait}s`, { 'retry-after': String(wait) }) }
     const verb = request.method
     if (verb !== 'GET' && verb !== 'POST' && verb !== 'DELETE') return oaError(405, 'method_not_allowed', 'use GET, POST or DELETE', { allow: 'GET, POST, DELETE, OPTIONS' })
+    if (ENCODED_SEPARATOR.test(path)) return oaError(400, 'bad_path', `${verb} ${path.slice(0, 200)}: an encoded '/' or '\\' (%2F, %5C) is not accepted in a path; write the path with plain '/'`)
     const format = ai.formatFor(verb, path, formats)
     // A metered path written loosely would reach an upstream that serves it, with no receipt: refused, never signed as
     // if written exactly (the client's receipt check would not match its own URL). / 宽松写法的计量路径：拒绝，不转发、不签名。

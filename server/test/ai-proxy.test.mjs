@@ -218,7 +218,7 @@ for (const size of [1, 7, 64, 4096]) {
   })
 }
 
-test('stream without [DONE]: the comment is appended; an unfinished last event stays unfinished; no usage -> usage null', async () => {
+test('stream without [DONE]: the comment is appended; an unfinished last event stays unfinished (and is then not verified, FIXED SSE-EOF); no usage -> usage null', async () => {
   const cases = [
     chatStream({ done: false, usage: null }),                                      // ends at an event boundary / 结束在事件边界
     chatStream({ done: false }) + 'data: {"partial":',                             // ends mid-line / 结束在行中
@@ -236,7 +236,12 @@ test('stream without [DONE]: the comment is appended; an unfinished last event s
       assert.deepEqual(parseSse(out), parseSse(upstreamText + pre), `case ${i}: no event added or completed`)
       const env = oa.readSseReceipt(out)
       if (i === 0) { assert.equal(env.result.usage, null); assert.equal(env.result.prices, null) }
-      assert.equal(oa.verifyUsageReceipt({ envelope: env, manifest: m, requestBytes: body, responseBytes: out, stream: true }).ok, true, `case ${i} size ${size}`)
+      // An event left unfinished at the close is dispatched by some clients (the openai SDK), so the stream is not
+      // verified, offline as well as streaming (FIXED SSE-EOF): the signed bytes are fine, the shape is not.
+      // 关闭时未结束的事件会被一些客户端（openai SDK）分派，所以无论离线还是流式都不通过核验：签名的字节没问题，形态有问题。
+      const v = oa.verifyUsageReceipt({ envelope: env, manifest: m, requestBytes: body, responseBytes: out, stream: true })
+      if (i === 0) assert.equal(v.ok, true, `case ${i} size ${size}`)
+      else assert.deepEqual(v.problems, ['an unfinished event at the close of the stream (no blank line after it) is not covered by its receipt, and some clients dispatch it'], `case ${i} size ${size}`)
     }
   }
 })

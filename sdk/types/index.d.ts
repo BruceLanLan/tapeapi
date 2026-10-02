@@ -17,6 +17,9 @@ export { RPC_DEFAULTS, rpcUrlsFor, operatorOf } from './rpc-defaults.js'
 export type { RpcNode } from './rpc-defaults.js'
 export { CHAINS, CHAIN_IDS, HOME_CHAIN_ID, IMPL_SLOT, chainById, chainByArea, chainByKey, parseTapeName, formatTapeName, isNameShaped, parseTapeInput, MAX_TOKEN_ID, MAX_PROCESSOR } from './chains.js'
 export type { TapeOutChain, ParsedTapeName } from './chains.js'
+/** @experimental (1.5) TAP-10 §13.8 messaging constants per chain, and the §12.1 endpoint chainId bound (2^53 − 1). */
+export { TAP10_SEALS, TAP10_MAX_CHAIN_ID } from './chains.js'
+export type { Tap10Seals } from './chains.js'
 export { canonicalJSON, safeParseJSON } from './canon.js'
 export { validateManifest, parseUnits, formatUnits, METHOD_NAME_RE, BEM_DECIMALS } from './manifest.js'
 /** @experimental ServiceDirectory labels (not deployed); may change in a 1.x minor release. */
@@ -94,6 +97,10 @@ export interface CreateTapeAPIOptions {
   identityCacheSize?: number
   /** Persist the highest channel-record `issued` seen per container across restarts. */
   channelRecordFloor?: { get(key: string): unknown; set(key: string, value: unknown): unknown }
+  /** @experimental (1.5) Only with conform: 'tap10': where the sticky TAP-10 §13.8 statuses of the messaging path are kept,
+   *  key `<chainId>:<hub, lowercase>`, value `{ circuitsChangedAt: number | null; factorySealSeenAt: number | null;
+   *  factorySealLost: boolean }`. get/set may be async. Default: a Map of this client (and its forChain sub-clients). */
+  sealStatusStore?: { get(key: string): unknown; set(key: string, value: unknown): unknown }
   /** This client's chain (default 56). A chain in CHAINS brings its own hub, factory and siteRegistry. */
   chainId?: number
   /** Nodes for the other TapeOut chains, used when a target names one (a name with an area code, or { chainId }).
@@ -112,10 +119,33 @@ export interface CreateTapeAPIOptions {
    *  TAP-10 §3.4 input forms (display label, tape:// URL, processor contract#ID) and refuses directory labels; reads the
    *  container from the opener, `isOpened`, and activation (`isLive`, `isContainerLive`); refuses an unaccepted SiteRegistry
    *  or DomainBinding implementation (store-changed, fail-closed). Every error carries the TAP-10 / TAP-11 outcome name in
-   *  `data.status`; `not-opened` and `unpaid` are `SITE_STATUS`. Messaging reads (channelKeys, tapeSendKey) are not
-   *  gated by activation (TAP-10 §12.2). Not yet (1.5): input without chain information on every chain (`ambiguous`), the
-   *  processor-number reverse scan, the messaging path. */
+   *  `data.status`; `not-opened` and `unpaid` are `SITE_STATUS`. Messaging reads (channelKeys, tapeSendKey) are never
+   *  gated by activation or opening (TAP-10 §12.2). Since 1.5 they also read the TAP-10 way: a fresh TAP-10 pinned block,
+   *  strict agreement on every read and on `eth_chainId`, the container from the opener; tapeSendKey checks the hub
+   *  (`hub-changed`, `circuits-changed`, TAP-10 §13.8) and the key (`hub-mismatch`, `no-key`, `key-stale`, `bad-key`,
+   *  §14.4 steps 1-3); channelKeys needs both site-store implementations accepted (`store-changed`) and refuses a byte
+   *  order mark. Only the hub, factory and opener TAP-10 lists for the chain are accepted (`hub`, `factory`, `opener`
+   *  set to anything else: INVALID_ARGUMENT). Input that may belong to another chain is `unsupported`, as in resolve.
+   *  Since 1.5 the processor number of a container address or processor contract#ID is found (TAP-10 §4.3: a snapshot
+   *  shipped with the SDK, checked by one `cpuAt` at the pinned block, then a capped, resumable `cpuAt` scan), and input
+   *  without chain information is searched on every chain with `allChains`. Since 1.5.0 resolve checks `eth_chainId` and reads `ownerOf`
+   *  and a contract holder's EIP-1271 calls (`eth_getCode`, `isValidSignature`; delegation and contentSig) under strict
+   *  agreement (TAP-11 §2.2); its other reads, and `siteStatus`, keep default agreement. */
   conform?: 'tap10' | false | null
+  /** @experimental (1.5) Resolve input without chain information (a container address or a processor contract#ID
+   *  string, TAP-10 §4.1) on EVERY TapeOut chain, each at its own TAP-10 pinned block: more than one chain resolving it is
+   *  INVALID_ARGUMENT with `data.status` 'ambiguous' and `data.candidates`; a chain that cannot be read (or whose site
+   *  contracts are `store-changed`) is reported with its own status instead of a guess or `not-tapeout`; every result and
+   *  such error carries `chains` / `data.chains`, what each chain said. This sends reads to the other chains' nodes
+   *  (`chains[id].rpcUrls`, or the SDK defaults for that chain), so it is off unless you pass `true`.
+   *  Applies to the TAP-10 path only: `resolve` under `conform: 'tap10'`, and `siteStatus` in any mode; passed on by
+   *  `forChain`. Only `true` turns it on; any other value is ignored (1.4 ignored the option). Off: a container address is
+   *  resolved on this client's chain when it is a container of this chain and is `unsupported` otherwise (never
+   *  `not-tapeout`); under `conform: 'tap10'` a processor contract#ID string is `unsupported` before any request (TAP-10
+   *  resolves it only when exactly one chain does), while `siteStatus` on a default client resolves it on this client's
+   *  chain as 1.4 did. `{ circuits, tokenId, chainId? }` names its chain (this client's when `chainId` is left out) and
+   *  `{ chainId, container }` names its own; neither is searched. `{ container }` without `chainId` is an input error. */
+  allChains?: boolean | null
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   directory?: Address
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
@@ -192,7 +222,7 @@ export interface SiteStatus {
   version: '1.1'
   status: 'ok' | 'unpaid' | 'not-opened' | 'store-changed' | 'no-such-cpu' | 'no-such-token' | 'not-tapeout'
   chainId: number
-  /** The on-chain name; null when the input gave no processor number and the client has not met it (1.4). */
+  /** The on-chain name; null when identity stopped before the processor number was known (for example `not-tapeout`). */
   name: string | null
   processor: string | null
   tokenId: string | null
@@ -202,11 +232,18 @@ export interface SiteStatus {
   container: Address | null
   holder: Address | null
   opened: boolean | null
-  /** TAP-10 §6.3. `isLive` is null when it could not be asked (no on-chain name). A revert counts as false and is flagged. */
-  activation: { live: boolean; isLive: boolean | null; isContainerLive: boolean; isLiveReverted?: true; isContainerLiveReverted?: true } | null
+  /** TAP-10 §6.3, both reads made for every input since 1.5. A revert counts as false and is flagged. */
+  activation: { live: boolean; isLive: boolean; isContainerLive: boolean; isLiveReverted?: true; isContainerLiveReverted?: true } | null
   /** The SiteRegistry and DomainBinding implementations at the pinned block (TAP-10 §6.1). */
   implementations: Array<{ role: 'siteRegistry' | 'binding'; proxy: Address; implementation: Address; accepted: boolean }> | null
   pinned: { number: number; hash: Hex; lag: number; maxLag: number }
+  /** @experimental (1.5) Only for input searched on every chain (`allChains`): what each chain said, this client's chain
+   *  first. `status` is a site status, an identity outcome, or the status of a read that failed ('unavailable',
+   *  'stale-block', 'wrong-chain'). The fields above are the chosen chain's. */
+  chains?: Array<{ chainId: number; status: string }>
+  /** @experimental (1.5) Only with `allChains`, when a processor contract#ID resolved on one chain while the chain whose
+   *  status is returned could not be decided (here: `store-changed`): the chain(s) that resolved it. */
+  candidates?: Array<{ chainId: number; name: string | null; processor: string | null; tokenId: string | null; circuits: Address | null; container: Address | null; status: string; warnings?: Array<{ code: string; message: string }> }>
 }
 
 /** A service returned by api.resolve(): manifest verified against the chain and the holder's delegation. */
@@ -358,6 +395,43 @@ export interface ChannelKeysRecord {
   holder: Address
   keys: string
   inbox: { room: string; relays: unknown[]; bus?: unknown }
+  /** @experimental (1.5) Only with conform: 'tap10': how the record was read (the private-channels draft §3.3). From the
+   *  identity cache, `pinned` is the block of the read that filled it; `{ fresh: true }` reads again. */
+  tap10?: Tap10MessagingRead & { implementations: Array<{ role: 'siteRegistry' | 'binding'; proxy: Address; implementation: Address | null; accepted: boolean }> }
+  [key: string]: unknown
+}
+
+/** @experimental (1.5) Common part of what the conformance mode's messaging reads report. */
+export interface Tap10MessagingRead {
+  version: '1.1'
+  status: 'ok'
+  /** The fresh TAP-10 pinned block every read was made at (by its hash). */
+  pinned: { number: number; hash: Hex; lag: number; maxLag: number }
+}
+
+/** A container's TapeSend (TAP-10) key as the hub serves it (TAPI-26 §3.1 fallback; loose). */
+export interface TapeSendKeyRecord {
+  container: Address
+  chainId: number
+  circuits: Address
+  tokenId: string
+  /** The X25519 public key, 0x + 64 hex. */
+  staticPublic: string
+  keyIndex: number
+  version: number
+  holder: Address
+  opened: boolean
+  /** The receiving-chains bitmap in binary (TAP-10 §14.3): bit 0 BNB Smart Chain, 1 Base, 2 X Layer. */
+  chainsBitmap: string
+  /** @experimental (1.5) Only with conform: 'tap10' (TAP-10 §12.2, §13.8, §14.4 steps 1-3). */
+  tap10?: Tap10MessagingRead & {
+    /** uint32(0) ‖ uint64(chainId) ‖ container, hex. */
+    endpoint: Hex
+    hub: { implementation: Address | null; accepted: true }
+    circuits: 'ok'
+    /** §13.8: read, reported, never required. `factoryLost`: this client saw the factory seal in effect, then not. */
+    seal: { factory: boolean; hub: boolean; factoryLost?: true }
+  }
   [key: string]: unknown
 }
 
@@ -367,7 +441,7 @@ export interface ChainReads {
   cpuAt(processor: BigNumberish): Promise<Address>
   isCPU(circuits: Address): Promise<boolean>
   channelKeys(container: Address, opts?: { fresh?: boolean }): Promise<ChannelKeysRecord>
-  tapeSendKey(target: Address | { circuits: Address; tokenId: BigNumberish }): Promise<Record<string, unknown>>
+  tapeSendKey(target: Address | { circuits: Address; tokenId: BigNumberish }): Promise<TapeSendKeyRecord>
   ownerOf(circuits: Address, tokenId: BigNumberish): Promise<Address>
   /** ERC-6551 token() of a container on this chain; tokenId is a decimal string (1.0: was a bigint). */
   tokenOf(container: Address): Promise<{ circuits: Address; tokenId: string }>
@@ -421,8 +495,9 @@ export interface TapeAPI {
   /** @experimental (1.4) The TAP-10 site status of a target in any mode: identity and site status (TAP-10 §4, §6.2) at one
    *  TAP-10 pinned block, without reading the manifest. A site status ('unpaid', 'store-changed', 'no-such-cpu', ...) is
    *  returned, never thrown; input errors, wrong-chain, stale-block and unavailable reads throw (with data.status), and so
-   *  does INVALID_ARGUMENT with data.status 'unsupported': an input 1.4 cannot decide (a container address or processor
-   *  contract#ID with no known processor number and isContainerLive not true, or one that may belong to another chain). */
+   *  does INVALID_ARGUMENT with data.status 'unsupported' (without `allChains`: a container address that is no container
+   *  of this chain, or any processor contract#ID string) or 'ambiguous' (with `allChains`: more than one chain resolves it;
+   *  `data.candidates`). With `allChains` the result carries `chains`. */
   siteStatus(target: ResolveTarget): Promise<SiteStatus>
 }
 

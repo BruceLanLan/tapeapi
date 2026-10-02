@@ -239,13 +239,17 @@ export function toolsDigest(tools) {
 
 /**
  * Text a model reads but a person does not see: every code point of Unicode general category Cf (format: tag
- * characters U+E0000-E007F, zero-width U+200B-U+200F, U+2060-U+2064, U+FEFF, bidi controls, soft hyphen) and every C0/C1
- * control, except a line feed or a tab inside a `description`. Checked in every string of the digest-covered fields of
+ * characters U+E0000-E007F, zero-width U+200B-U+200F, U+2060-U+2064, U+FEFF, bidi controls, soft hyphen), every C0/C1
+ * control except a line feed or a tab inside a `description`, every Default_Ignorable_Code_Point, assigned or not (U+034F,
+ * the Hangul fillers, the Mongolian free variation selectors, U+2065, U+FFF0-FFF8, U+E0080-E0FFF, ...), the braille blank
+ * U+2800 and U+1D159, and every variation selector (U+FE00-FE0F, U+E0100-E01EF) except one U+FE0E or U+FE0F directly
+ * after an emoji character. Checked in every string of the digest-covered fields of
  * each tool, keys included, at any depth. Returns one "tool X: field path: U+XXXX" line per offending string ([] when
  * none). A pinned tool with any of these is refused: whoever approves a digest must be able to read what it pins.
  * The holder console (site/console/lib.js) carries the same function, character for character; a test keeps them equal.
- * 模型能读、人看不见的文本：Unicode 类别 Cf 的每个码点（格式字符：标签字符、零宽字符、双向控制符、软连字符）和每个
- * C0/C1 控制符（`description` 里的换行和制表符除外）。检查每个工具摘要字段里的所有字符串（含键、任意深度）。每个有问题的
+ * 模型能读、人看不见的文本：Unicode 类别 Cf 的每个码点（格式字符：标签字符、零宽字符、双向控制符、软连字符）、每个
+ * C0/C1 控制符（`description` 里的换行和制表符除外）、每个 Default_Ignorable 码点（无论是否已分配：Hangul 填充符、蒙古文自由变体选择符等）、盲文空白与 U+1D159，以及
+ * 每个变体选择符（紧跟 emoji 字符的单个 U+FE0E / U+FE0F 除外）。检查每个工具摘要字段里的所有字符串（含键、任意深度）。每个有问题的
  * 字符串返回一行 "tool X: field path: U+XXXX"（没有则为空）。带这些字符的工具一律拒绝：批准摘要的人必须能读到它钉住的内容。
  * 持有人操作台（site/console/lib.js）有逐字相同的副本，由测试保证一致。
  * @param {unknown} tools
@@ -255,9 +259,23 @@ export function invisibleProblems(tools) {
   const FIELDS = ['name', 'title', 'description', 'inputSchema', 'outputSchema', 'annotations']
   const obj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
   const u = (c) => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
-  const bad = (c, text) => /\p{Cf}/u.test(c) || (/\p{Cc}/u.test(c) && !(text && (c === '\n' || c === '\t')))
-  const first = (s, text) => { for (const c of s) if (bad(c, text)) return c; return null }
-  const show = (s) => Array.from(s).slice(0, 64).map((c) => (bad(c, false) ? `<${u(c)}>` : c)).join('')
+  // Default_Ignorable_Code_Point: what renderers draw as nothing, assigned or not (the combining grapheme joiner, the
+  // Hangul fillers, the Mongolian free variation selectors, U+2065, U+FFF0-FFF8, U+E0080-E0FFF, ...; FIXED MCP-DI).
+  // Two blanks it does not cover are listed: the braille blank and the musical null notehead.
+  // Default_Ignorable_Code_Point：渲染时不画出任何东西的码点（无论是否已分配）。它不覆盖的两个空白另列：盲文空白与音乐空符头。
+  const BLANK = new Set([0x2800, 0x1D159])
+  // Variation selectors are 256 invisible symbols, enough to spell any text (FIXED MCP-VS). Only VS15 / VS16 directly
+  // after an emoji character passes ("⚠️", "❤️", "1️⃣"), decided before the Default_Ignorable rule, which covers them
+  // too; the ideographic ones (U+E0100-E01EF) never pass. / 变体选择符是 256 个不可见符号，足以拼出任何文本。只放行紧跟
+  // emoji 字符的 VS15/VS16（先于 Default_Ignorable 规则判断，它也覆盖它们）；表意文字变体选择符一律拒绝。
+  const vs = (p) => (p >= 0xFE00 && p <= 0xFE0F) || (p >= 0xE0100 && p <= 0xE01EF)
+  const bad = (c, text, prev) => {
+    const p = c.codePointAt(0)
+    if (vs(p)) return !((p === 0xFE0E || p === 0xFE0F) && prev !== null && /\p{Emoji}/u.test(prev))
+    return /\p{Cf}/u.test(c) || /\p{Default_Ignorable_Code_Point}/u.test(c) || BLANK.has(p) || (/\p{Cc}/u.test(c) && !(text && (c === '\n' || c === '\t')))
+  }
+  const first = (s, text) => { let prev = null; for (const c of s) { if (bad(c, text, prev)) return c; prev = c } return null }
+  const show = (s) => { let prev = null; return Array.from(s).slice(0, 64).map((c) => { const x = bad(c, false, prev) ? `<${u(c)}>` : c; prev = c; return x }).join('') }
   const out = []
   for (const t of Array.isArray(tools) ? tools : []) {
     if (!obj(t)) continue
@@ -288,18 +306,30 @@ export const QUOTED_PREFIX = "[quoted from the tool's own output, not a TapeAPI 
 const SIGNED_PHRASE = /Signed by TapeAPI service/gi
 
 /**
- * Upstream MCP content as the model is shown it: every text item that matches PROVENANCE_RE is prefixed with
- * QUOTED_PREFIX, and its "Signed by TapeAPI service" phrases become "Signed (claimed by the tool) by TapeAPI service",
- * so the genuine provenance line (first in the result) is the only one of its form. Other items are passed as they are.
- * The receipt keeps the original content: that is what was signed.
- * 展示给模型的上游 MCP 内容：匹配 PROVENANCE_RE 的文本项加上 QUOTED_PREFIX 前缀，其中的 "Signed by TapeAPI service" 改成
- * "Signed (claimed by the tool) by TapeAPI service"，使真正的来源说明行（结果中的第一项）是唯一这种形式的行。其余项原样。
- * 回执保留原始内容：签名的就是它。
+ * Upstream MCP content as the model is shown it: every text that matches PROVENANCE_RE is prefixed with QUOTED_PREFIX,
+ * and its "Signed by TapeAPI service" phrases become "Signed (claimed by the tool) by TapeAPI service", so the genuine
+ * provenance line (first in the result) is the only one of its form. The texts are a text item's `text`, an embedded
+ * resource's `resource.text` and a resource link's `name`, `title` and `description` (FIXED MCP-RES). Other items and
+ * members are passed as they are; structuredContent is not rewritten (it is the tool's data, and the instructions say
+ * so). The receipt keeps the original content: that is what was signed.
+ * 展示给模型的上游 MCP 内容：匹配 PROVENANCE_RE 的文本加上 QUOTED_PREFIX 前缀，其中的 "Signed by TapeAPI service" 改成
+ * "Signed (claimed by the tool) by TapeAPI service"，使真正的来源说明行（结果中的第一项）是唯一这种形式的行。文本包括文本项的
+ * text、内嵌资源的 resource.text、资源链接的 name / title / description。其余项与成员原样；structuredContent 不改写（它是工具的
+ * 数据，说明里写明了）。回执保留原始内容：签名的就是它。
  * @param {Array<object>} content
  * @returns {Array<object>}
  */
 export function quoteProvenance(content) {
-  return content.map((c) => (isObj(c) && c.type === 'text' && typeof c.text === 'string' && PROVENANCE_RE.test(c.text)
-    ? { ...c, text: QUOTED_PREFIX + c.text.replace(SIGNED_PHRASE, 'Signed (claimed by the tool) by TapeAPI service') }
-    : c))
+  const quote = (s) => (typeof s === 'string' && PROVENANCE_RE.test(s) ? QUOTED_PREFIX + s.replace(SIGNED_PHRASE, 'Signed (claimed by the tool) by TapeAPI service') : s)
+  return content.map((c) => {
+    if (!isObj(c)) return c
+    if (c.type === 'text' && typeof c.text === 'string' && PROVENANCE_RE.test(c.text)) return { ...c, text: quote(c.text) }
+    if (c.type === 'resource' && isObj(c.resource) && typeof c.resource.text === 'string' && PROVENANCE_RE.test(c.resource.text)) return { ...c, resource: { ...c.resource, text: quote(c.resource.text) } }
+    if (c.type === 'resource_link' && ['name', 'title', 'description'].some((k) => typeof c[k] === 'string' && PROVENANCE_RE.test(c[k]))) {
+      const out = { ...c }
+      for (const k of ['name', 'title', 'description']) if (typeof c[k] === 'string') out[k] = quote(c[k])
+      return out
+    }
+    return c
+  })
 }

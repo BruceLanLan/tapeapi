@@ -7,10 +7,28 @@ const { voucherDigest, recoverAddress, signResponse, privateKeyToAddress } = sig
 // would stop this runtime loading on Cloudflare Workers, Deno or a browser. A test asserts the two agree.
 // 写成字面量而不是读 package.json：`createRequire` 属于 node:module，在模块顶层导入会让这套运行时无法在
 // Cloudflare Workers、Deno 或浏览器里加载。有测试断言两者一致。
-export const VERSION = '1.4.0'
+export const VERSION = '1.5.0'
 const now = () => Math.floor(Date.now() / 1000)
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+// The address a configured client-IP header names, one spelling per address, so one client is one rate-limit key
+// (FIXED IP-CANON: '::FFFF:1.2.3.4', '0:0::ffff:102:304' and '1.2.3.4' were three keys). IPv4 in dotted decimal (no leading
+// zeros, as Node's net.isIP), IPv6 as the WHATWG URL parser writes it (lowercase, zeros compressed), an IPv4-mapped IPv6
+// address as its IPv4; anything else is 'unknown'. No node:net: handleRequest runs on Workers too.
+// 配置的客户端 IP 头所指的地址，每个地址只有一种写法，一个客户端只占一个限流键。IPv4 为点分十进制（无前导零），IPv6 按 URL 解析器
+// 的写法（小写、压缩零），IPv4 映射的 IPv6 地址写成 IPv4；其它一律为 'unknown'。不用 node:net：handleRequest 也跑在 Workers 上。
+function canonicalIp(value) {
+  const v = String(value ?? '').trim()
+  const m4 = /^(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})$/.exec(v)
+  if (m4) return m4.slice(1).every((o) => Number(o) <= 255) ? v : 'unknown'
+  if (v.length > 45 || !v.includes(':') || !/^[0-9A-Fa-f:.]+$/.test(v)) return 'unknown'
+  let a
+  try { a = new URL(`http://[${v}]/`).hostname.slice(1, -1) } catch { return 'unknown' }
+  const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(a)
+  if (!mapped) return a
+  const hi = parseInt(mapped[1], 16), lo = parseInt(mapped[2], 16)
+  return [hi >> 8, hi & 255, lo >> 8, lo & 255].join('.')
+}
 
 // 默认内存 store / Default in-memory voucher store.
 export function memoryStore() {
@@ -150,6 +168,16 @@ export function createProvider(opts = {}) {
   // 'x-forwarded-for'。列表形式的头取**最后**一项，即你的代理追加的那一项；最左边那项是客户端自己写的。
   const clientIpHeader = typeof opts.clientIpHeader === 'string' ? opts.clientIpHeader.toLowerCase() : null
   const lastHop = (v) => { const parts = String(v || '').split(',').map((x) => x.trim()).filter(Boolean); return parts.length ? parts[parts.length - 1] : '' }
+  // The configured header's last hop as one canonical address ('' when the header is absent, 'unknown' when it is not an
+  // address). / 配置头最后一跳的规范地址（头不存在为 ''，不是地址为 'unknown'）。
+  let warnedBadIp = false
+  const headerIp = (v) => {
+    const s = lastHop(v)
+    if (!s) return ''
+    const ip = canonicalIp(s)
+    if (ip === 'unknown' && !warnedBadIp) { warnedBadIp = true; log(`clientIpHeader ${clientIpHeader} carried a value that is not an IP address; callers sending such values share the rate-limit bucket "unknown"`) }
+    return ip
+  }
   const FAIL_BUDGET = 20   // failed paid attempts per window before an IP out of free budget is refused up front / 每窗口失败的付费尝试次数上限
   if (!Number.isInteger(minVoucherLifeS) || minVoucherLifeS < 0) throw new TapeAPIError('INVALID_ARGUMENT', 'minVoucherLifeS must be a non-negative integer')
   const contributionCacheMs = opts.contributionCacheMs ?? 60_000
@@ -414,8 +442,11 @@ export function createProvider(opts = {}) {
   // TAPI-21 §3.2：对已解析请求对象的回答签在什么之上。无效 `id`（缺失、非字符串、空、超过 128 个 UTF-16 单元）不可信，
   // 它旁边的 params 也不可信：("", {})。没有规范形式的 params：(id, {})。否则就是请求自己的 (id, params)。
   // 正常路径与崩溃路径共用一个函数，使按规范实现的客户端能验证每一个回答。
+  // An id with a lone UTF-16 surrogate has no canonical form (canon.js): every envelope binding it would fail to sign or
+  // to verify, so it binds as no id at all (FIXED ID-LS). / 含孤立代理项的 id 没有规范形式，按没有 id 处理。
   function bindingOf(body, method) {
-    const id = typeof body?.id === 'string' && body.id.length >= 1 && body.id.length <= 128 ? body.id : ''
+    let id = typeof body?.id === 'string' && body.id.length >= 1 && body.id.length <= 128 ? body.id : ''
+    if (id) { try { canonicalJSON(id) } catch { id = '' } }
     let params = id && isPlainObject(body?.params) ? body.params : {}
     let paramsError = null
     try { canonicalJSON({ method, params }) } catch (e) { paramsError = e; params = {} }
@@ -444,7 +475,7 @@ export function createProvider(opts = {}) {
     // budget (runtime audit F-01). / 未经验证的工作都从该 IP 的免费预算里扣；只有验过的凭证才让调用改走付费预算。
     const spendFree = () => (rl ? rateLimited(`free:${ip}`, rl.free) : 0)
     try {
-      if (!id) { const w = spendFree(); if (w) return { rateLimited: w }; throw new TapeAPIError('BAD_REQUEST', 'id (string, 1..128 chars) required') }
+      if (!id) { const w = spendFree(); if (w) return { rateLimited: w }; throw new TapeAPIError('BAD_REQUEST', 'id (string, 1..128 chars, well-formed Unicode) required') }
       if (paramsError) { const w = spendFree(); if (w) return { rateLimited: w }; throw new TapeAPIError('BAD_REQUEST', `params have no canonical form: ${paramsError.message}`) }
       // TAPI-21 §3.1: a body `method` that disagrees with the path is refused, never silently overwritten (D14)
       // 与路径不一致的 body `method` 被拒绝，而不是被悄悄覆盖
@@ -525,7 +556,7 @@ export function createProvider(opts = {}) {
     // Identity as it always was here: the configured proxy header's last hop, else the socket peer -- never a header
     // nobody configured (runtime audit F-03 / F-04). Handed over as clientIp, so handleRequest reads no header itself.
     // 身份与以往一致：配置过的代理头的最后一跳，否则是 socket 对端；绝不用未配置的头。作为 clientIp 交给 handleRequest。
-    const ip = (clientIpHeader && lastHop(req.headers[clientIpHeader])) || req.socket?.remoteAddress || 'unknown'
+    const ip = (clientIpHeader && headerIp(req.headers[clientIpHeader])) || req.socket?.remoteAddress || 'unknown'
     const method = FETCH_FORBIDDEN.has(req.method) ? 'PUT' : req.method
     const headers = new Headers()
     for (let i = 0; i + 1 < req.rawHeaders.length; i += 2) { try { headers.append(req.rawHeaders[i], req.rawHeaders[i + 1]) } catch { /* not a fetch header */ } }
@@ -617,7 +648,7 @@ export function createProvider(opts = {}) {
     // Identity comes from the host (a Worker passes the edge's cf-connecting-ip as clientIp) or from a configured
     // proxy header -- never from a header the client could have written itself (runtime audit F-04).
     // 身份来自宿主（Worker 把边缘设置的 cf-connecting-ip 作为 clientIp 传入）或配置过的代理头，绝不来自客户端能自己写的头。
-    const ip = clientIp || (clientIpHeader && lastHop(request.headers.get(clientIpHeader))) || 'unknown'
+    const ip = clientIp || (clientIpHeader && headerIp(request.headers.get(clientIpHeader))) || 'unknown'
     if (!clientIp && !clientIpHeader && !warnedNoIp) { warnedNoIp = true; log('handleRequest called without clientIp and no clientIpHeader is set: every caller shares one rate-limit bucket') }
     const tooMany = (wait) => {
       stats.rateLimited++

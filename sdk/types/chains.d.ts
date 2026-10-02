@@ -65,4 +65,17 @@ export declare function parseTapeInput(input: unknown):
   | { kind: 'container'; container: Address }
   | { kind: 'pair'; circuits: Address; tokenId: string }
   | { error: string }
+/** @experimental (1.5) What a TAP-10 messaging client accepts behind the DeWEB hub of one chain (TAP-10 §13.2, §13.8,
+ *  Deployments): `hub` the one current hub implementation, `factory` the factory implementation of the factory seal, and
+ *  the hub's constructor arguments `circuitBeacon`, `circuitImplementation`, `circuitCodehash`. Read back on chain 2026-10-02. */
+export interface Tap10Seals {
+  readonly hub: Address
+  readonly factory: Address
+  readonly circuitBeacon: Address
+  readonly circuitImplementation: Address
+  readonly circuitCodehash: string
+}
+export declare const TAP10_SEALS: Readonly<Record<56 | 196 | 8453, Tap10Seals>> & Readonly<Record<number, Tap10Seals | undefined>>
+/** @experimental (1.5) TAP-10 §12.1: an endpoint's chainId above this (2^53 − 1) is not a supported chain. */
+export declare const TAP10_MAX_CHAIN_ID: bigint
 export declare function formatTapeName(parts: { tokenId: bigint | number | string; processor: bigint | number | string; chainId?: number }, opts?: { suffix?: boolean }): string

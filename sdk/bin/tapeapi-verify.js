@@ -49,6 +49,11 @@ const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
 const DROP_RESPONSE = new Set(['connection', 'keep-alive', 'transfer-encoding', 'content-length', 'content-encoding', 'trailer', 'upgrade'])
 
 const log = (...a) => console.error('[tapeapi-verify]', ...a)
+// What is logged about the shapes of a stream that no receipt covers (FIXED SSE-END, SSE-EOF, SSE-BOM; the same words as
+// ai.createVerifyingFetch). / 对不受任何回执覆盖的流形态的记录（与 ai.createVerifyingFetch 措辞相同）。
+const LATE_EVENT = 'an event after the end of the stream is not covered by its receipt'
+const UNFINISHED_EVENT = 'an unfinished event at the close of the stream (no blank line after it) is not covered by its receipt, and some clients dispatch it'
+const AMBIGUOUS_LINE = 'a line that starts with U+FEFF (a byte order mark) is read differently by different clients: the stream cannot be verified'
 
 const USAGE = `tapeapi-verify ${VERSION}: a local proxy that verifies the signed usage receipt of every AI call.
 
@@ -333,19 +338,31 @@ async function main() {
       return res.end(bytes)
     }
     // A stream: passed on as it arrives. It ends at the format's final event, at its sentinel ([DONE]) or when the upstream
-    // closes, whichever comes first (the openai SDKs stop reading at [DONE]). Strict: only whole events are passed on (the
-    // bytes after a chunk's last blank line wait for the rest of their event), and the event that ends the stream waits
-    // until a receipt that came before it verifies, then goes on at once; with none, a format-shaped error event is sent
-    // in its place, and the client never holds half an event that the error could complete (review G1 M14, RC-2). After
-    // a verified end, an event the receipt does not cover is not passed on. Not strict: nothing is held; the verdict is
-    // logged when the upstream closes. The upstream breaking off after the end (strict: once verified) is not a failure
-    // (review RC-4).
-    // 流：到达即转交。流在格式的最终事件、sentinel（[DONE]）或上游关闭时结束（先到者为准；openai SDK 读到 [DONE] 就停止）。严格模式：
-    // 只转交完整的事件（块中最后一个空行之后的字节等待其事件的其余部分），结束流的那个事件要等结束之前到达的回执核验通过，随即放出；
-    // 否则改发一个该格式的错误事件，客户端手里也不会有半个会被错误事件补全的事件。核验通过之后，回执不覆盖的事件不再转交。
-    // 非严格模式不扣留，上游关闭时记录结论。上游在结束之后断开（严格模式：须已核验通过）不算失败。
+    // closes, whichever comes first (the openai SDKs stop reading at [DONE]); what is checked there is the stream as it
+    // stood at that point, whatever else came in the same chunk (FIXED SSE-END). Strict: only whole events are passed on
+    // (the bytes after a chunk's last blank line wait for the rest of their event), and the event that ends the stream
+    // waits until a receipt that came before it verifies; then the stream goes on up to its end only and the answer ends
+    // there, so nothing after the end reaches the client however the bytes were cut. With no receipt that verifies, a
+    // format-shaped error event is sent in its place, and the client never holds half an event that the error could
+    // complete (review G1 M14, RC-2). The same error ends a stream with a line that starts with U+FEFF (clients disagree on
+    // it; FIXED SSE-BOM) and one whose upstream closes, before its end, on an event left without its blank line (the
+    // receipt rule discards it, the openai SDK dispatches it; FIXED SSE-EOF). Not strict: nothing is held or cut; the
+    // receipts that came before the end are checked and logged as soon as it is passed on (with none, when the upstream
+    // closes), also when the client hangs up there (FIXED SSE-LOG), and an event after the end, an unfinished event at the
+    // close and a line that starts with U+FEFF are each logged once as a failure. The upstream breaking off after the end
+    // is not a failure (review RC-4).
+    // 流：到达即转交。流在格式的最终事件、sentinel（[DONE]）或上游关闭时结束（先到者为准；openai SDK 读到 [DONE] 就停止）；在那里
+    // 核验的是流在那一点的样子，与同一块里还有什么无关。严格模式：只转交完整的事件（块中最后一个空行之后的字节等待其事件的其余部分），
+    // 结束流的那个事件要等结束之前到达的回执核验通过；之后只转交到结束点为止，回答随即结束，无论字节怎样切分，结束之后的内容都不会
+    // 到达客户端。没有核验通过的回执时改发一个该格式的错误事件，客户端手里也不会有半个会被错误事件补全的事件。含以 U+FEFF 开头的行的
+    // 流（客户端理解不一致），以及上游在结束之前关闭、留下缺少空行的未结束事件的流（回执规则丢弃它，openai SDK 却分派它），同样以
+    // 这个错误事件结束。非严格模式不扣留、不截断；流一结束就核验并记录结束之前到达的回执（没有时等上游关闭），客户端在那里挂断时也
+    // 记录；结束之后的事件、关闭时未结束的事件、以 U+FEFF 开头的行，各记一次失败。上游在结束之后断开不算失败。
     const st = format.streamState()
-    const scanner = ai.createSseScanner({ sentinel: format.stream.sentinel ?? null, final: format.stream.final ?? null, onEvent: (j, n) => { try { st.event(j, n) } catch { /* the adapter's problem is the verdict's */ } } })
+    // The adapter reads the answer up to its end only, the final event included (onEvent runs before receiptsAtEnd is set,
+    // and only from scanner.push, after this initialiser; the check stays outside the try) (FIXED SSE-END).
+    // 适配器只读到结束处（含最终事件；onEvent 在 receiptsAtEnd 设置之前运行，且只由 scanner.push 调用；判断放在 try 之外）。
+    const scanner = ai.createSseScanner({ sentinel: format.stream.sentinel ?? null, final: format.stream.final ?? null, onEvent: (j, n) => { if (scanner.info.receiptsAtEnd !== null) return; try { st.event(j, n) } catch { /* the adapter's problem is the verdict's */ } } })
     // The last receipt first (the outermost sidecar's); an earlier one only if the last does not verify.
     // 先看最后一个回执（最外层旁路的）；它核验不过时才看更早的。
     async function verify(receipts, atEnd) {
@@ -353,7 +370,9 @@ async function main() {
       for (let i = receipts.length - 1; i >= 0; i--) {
         let envelope
         try { envelope = ai.decodeReceiptHeader(receipts[i]) } catch { continue }
-        const v = await check({ ...common, envelope, responseSha256: scanner.digest(), stream: true, answer: st.result() })
+        // The hash where the stream first ended; the whole stream's only when it never ended (FIXED SSE-END).
+        // 流第一次结束处的哈希；只有流从未结束时才用整条流的。
+        const v = await check({ ...common, envelope, responseSha256: scanner.info.digestAtEnd ?? scanner.digest(), stream: true, answer: st.result() })
         if (v.ok || !rep) rep = v
         if (v.ok) break
       }
@@ -371,21 +390,30 @@ async function main() {
     let partial = [], partialLen = 0
     const flushPartial = () => { for (const p of partial) res.write(p); partial = []; partialLen = 0 }
     let verdict = null
+    const ended = () => scanner.info.receiptsAtEnd !== null
+    // Shapes no receipt covers, each logged once (FIXED SSE-END, SSE-EOF, SSE-BOM). / 不受任何回执覆盖的形态，各记录一次。
+    const flagged = new Set()
+    const flag = (problem) => { const rep = { ...base, ok: false, problems: [problem], warnings: [], unchecked: [], receipt: verdict?.receipt ?? null, stream: true }; if (!flagged.has(problem)) { flagged.add(problem); report(rep) } return rep }
+    const late = () => ended() && scanner.info.events > scanner.info.eventsAtEnd
+    const unfinished = () => { const t = scanner.state(); return t.eventHasData || t.eventHasFields || !t.atLineStart }
     res.writeHead(up.status, out)
     try {
       for await (const c of up.body) {
         const chunk = new Uint8Array(c)
-        const events = scanner.info.events, wasEnded = scanner.info.receiptsAtEnd !== null
+        const wasEnded = ended()
         const cut = scanner.push(chunk)
-        if (!opts.strict) { res.write(chunk); continue }
-        if (wasEnded) {
-          if (scanner.info.events > events) {
-            report({ ...base, ok: false, problems: ['an event after the end of the stream is not covered by its receipt'], warnings: [], unchecked: [], receipt: verdict?.receipt ?? null, stream: true })
-            res.end(); ac.abort(); return
-          }
-          res.write(chunk); continue
+        if (!opts.strict) {
+          res.write(chunk)
+          if (scanner.info.ambiguous) flag(AMBIGUOUS_LINE)
+          // Checked and logged as soon as the stream ends: the client may hang up right there (FIXED SSE-LOG).
+          // 流一结束就核验并记录：客户端可能就在那里挂断。
+          if (!wasEnded && ended() && scanner.info.receiptsAtEnd > 0) verdict = await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
+          if (late()) flag(LATE_EVENT)
+          continue
         }
-        if (scanner.info.receiptsAtEnd === null) {
+        if (!ended()) {
+          // A line read differently by different clients: nothing more goes on (FIXED SSE-BOM). / 各客户端理解不一致的行：不再转交。
+          if (scanner.info.ambiguous) { verdict = flag(AMBIGUOUS_LINE); return fail(verdict) }
           if (cut < 0) {
             partial.push(chunk); partialLen += chunk.length
             if (partialLen > ai.EVENT_PARSE_LIMIT) { report(verdict = { ...base, ok: false, problems: [`an event larger than ${ai.EVENT_PARSE_LIMIT} bytes`], warnings: [], unchecked: [], receipt: null, stream: true }); return fail(verdict) }
@@ -395,15 +423,23 @@ async function main() {
           if (cut < chunk.length) { partial.push(chunk.subarray(cut)); partialLen = chunk.length - cut }
           continue
         }
+        // This chunk ends the stream: once a receipt that came before the end verifies, the stream goes on up to its end
+        // and the answer ends there (FIXED SSE-END). / 流在这一块中结束：结束之前的回执核验通过后，只转交到结束点，回答随即结束。
+        if (scanner.info.ambiguousAtEnd) { verdict = flag(AMBIGUOUS_LINE); return fail(verdict) }
         verdict = await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
         if (!verdict.ok) return fail(verdict)
-        flushPartial(); res.write(chunk)
+        const endAt = scanner.info.endOffset
+        // A CR that ends the chunk and the stream: the LF that may follow is not waited for. / 块末的 CR 结束流：不等可能随后的 LF。
+        flushPartial(); res.write(chunk.subarray(0, endAt))
+        res.end(); ac.abort(); return
       }
     } catch (e) {
-      // After the end the answer is whole: the upstream breaking off then is not a failure (strict: once verified).
-      // 结束之后回答已完整：此时上游断开不算失败（严格模式：须已核验通过）。
-      if (!ac.signal.aborted && scanner.info.receiptsAtEnd !== null && (!opts.strict || verdict?.ok)) {
-        if (!verdict) await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
+      // After the end the answer is whole: the upstream breaking off then is not a failure, and a client that hangs up
+      // there still gets its verdict logged (FIXED SSE-LOG; strict never reads past the end).
+      // 结束之后回答已完整：此时上游断开不算失败；客户端在那里挂断，结论也照样记录（严格模式不会读到结束之后）。
+      if (ended() && !opts.strict) {
+        if (!verdict) verdict = await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
+        if (!ac.signal.aborted && unfinished()) flag(UNFINISHED_EVENT)
         return res.end()
       }
       if (!ac.signal.aborted) log(`FAIL ${verb} ${url.pathname}: the stream broke off (${e?.message || e})`)
@@ -413,8 +449,11 @@ async function main() {
     if (!verdict) {
       verdict = await verify(scanner.info.receipts, false)
       if (!verdict.ok && opts.strict) return fail(verdict)
-      flushPartial()
     }
+    // An event left without its blank line: discarded by the receipt rule, dispatched by the openai SDK (FIXED SSE-EOF).
+    // 缺少空行的未结束事件：回执规则丢弃它，openai SDK 却分派它。
+    if (unfinished()) { const rep = flag(UNFINISHED_EVENT); if (opts.strict) return fail(rep) }
+    flushPartial()
     res.end()
   })
   // No overall request timeout: a stream may run for minutes. / 不设整体请求超时：流可能持续数分钟。

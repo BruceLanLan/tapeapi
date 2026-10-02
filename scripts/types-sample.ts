@@ -8,6 +8,7 @@ import {
   group, deliverGroupUpdate, checkGroupInvites, type GroupDelivery, type GroupDeliveryResult, type GroupInviteCheck,
   type ResolvedService, type CallResult, type TapeAPI, type Rpc,
 } from '@tapeapi/sdk'
+import { TAP10_SEALS, TAP10_MAX_CHAIN_ID, tapesend } from '@tapeapi/sdk'   // 1.5
 import { exposeTapeAPI, manifestToTools } from '@tapeapi/sdk/webmcp'
 import { createInvite, acceptInvite, completeInvite, generateIdentity, fanIn } from '@tapeapi/sdk/channel'
 import { busPrivacyReader, type BusPrivacyStats } from '@tapeapi/sdk/bus-privacy'
@@ -313,3 +314,37 @@ async function conform14() {
   void [status, isLive, lag, b.lag]
 }
 void conform14
+
+// @experimental 1.5: the conformance mode's messaging path / 一致模式的消息路径
+async function conform15() {
+  const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: 'tap10', sealStatusStore: new Map<string, unknown>() })
+  const k = await api.chain.tapeSendKey('0x86DDaEF00401E3F10418398D67D7189fc458eA95')
+  const key: string = k.staticPublic
+  const sealed: boolean | undefined = k.tap10?.seal.factory
+  const block: number | undefined = k.tap10?.pinned.number
+  const rec = await api.chain.channelKeys('0x86DDaEF00401E3F10418398D67D7189fc458eA95')
+  const accepted: boolean | undefined = rec.tap10?.implementations[0]?.accepted
+  const beacon: string = TAP10_SEALS[56].circuitBeacon
+  const max: bigint = TAP10_MAX_CHAIN_ID
+  const ep: Uint8Array = tapesend.endpoint('0x86DDaEF00401E3F10418398D67D7189fc458eA95', 8453, { conform: 'tap10' })
+  void tapesend.endpoint('0x86DDaEF00401E3F10418398D67D7189fc458eA95', 56, null)
+  const id: string = tapesend.messageId({ chainId: 56, toChainId: 8453, hub: MAINNET.hub, to: '0x86DDaEF00401E3F10418398D67D7189fc458eA95', inboxIndex: 0, conform: 'tap10' })
+  void [key, sealed, block, accepted, beacon, max, ep, id]
+}
+void conform15
+
+// @experimental 1.5: input without chain information on every chain / 无链信息的输入在所有链上解析
+async function conform15all() {
+  const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: 'tap10', allChains: true })
+  const s = await api.siteStatus('0x86DDaEF00401E3F10418398D67D7189fc458eA95')
+  const chains: Array<{ chainId: number; status: string }> | undefined = s.chains
+  const live: boolean | undefined = s.activation?.isLive
+  try { await api.resolve('0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b#1') } catch (e) {
+    if (e instanceof TapeAPIError && e.data?.status === 'ambiguous') { const c: unknown = e.data.candidates; void c }
+  }
+  const svc = await api.resolve('4246.0.tape')
+  const seen: Array<{ chainId: number; status: string }> | undefined = svc.conform?.chains
+  createTapeAPI({ allChains: null }); createTapeAPI({ allChains: false })
+  void [chains, live, seen]
+}
+void conform15all

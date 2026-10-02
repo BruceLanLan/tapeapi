@@ -392,6 +392,8 @@ for (const mode of [undefined, 'cover']) test(`integration (${mode ?? 'default: 
   const a = channel.generateIdentity(), b = channel.generateIdentity()
   const inbox = channel.inboxRoom(B.container)
   const got = []
+  let gotTwo
+  const twoFrames = new Promise((ok) => { gotTwo = ok })
   // B: one cover reader for its inbox and, once invited, the channel room / B：一个掩护读者读收件房间，受邀后再加通道房间
   const readerB = busPrivacyReader({ ...(mode ? { mode } : {}), rpc, bus: BUS, rooms: [inbox], fromBlock: start, confirmations: 0, pollMs: 5, warn: quiet })
   // A: plain busTransport (A's own reading is not under test here) / A 用普通 busTransport
@@ -406,14 +408,22 @@ for (const mode of [undefined, 'cover']) test(`integration (${mode ?? 'default: 
   assert.equal(sealed.room, inbox)
   const opened = channel.openInvite(sealed.wire, { self: { ...B, staticSecret: b.x25519.secretKey } })
   const { accept, session: bob } = acceptInvite({ self: { ...B, staticSecret: b.x25519.secretKey }, peer: { ...A, staticPublic: a.x25519.publicKey }, invite: opened })
-  readerB.add(rooms.toResponder, (wire) => got.push(wire))
+  readerB.add(rooms.toResponder, (wire) => { got.push(wire); if (got.length >= 2) gotTwo() })
   await sendB.send(encodeWire(accept)); chain.mine(1)
   const { ready, session: alice } = completeInvite(pending, decodeWire((await busA.poll())[0]).handshake)
   await busA.sendMany([encodeWire(ready), encodeWire(alice.seal('hello over covers'))]); chain.mine(1)
   const errors = []
-  readerB.start(undefined, { onError: (e) => errors.push(e) })
-  for (let i = 0; i < 200 && got.length < 2; i++) await new Promise((r) => setTimeout(r, 5))
-  readerB.stop()
+  // FIXED (deflake): this polled `got` 200 times at 5 ms (a fixed 1 s and a bit of wall time) and then asserted, so a machine
+  // too busy to run a few polls in that second failed it with nothing wrong. It now waits for the event it is about: the
+  // callback receiving the second frame (or the reader reporting an error, which fails at once). The 30 s timer only ends a
+  // hang; delivery of both frames and no reader error are asserted exactly as before.
+  // 修复（去抖）：原先每 5 ms 查一次 `got`，共 200 次（约 1 秒多的墙钟）然后断言，机器忙到那一秒里跑不完几次轮询就无故失败。现在
+  // 等它真正关心的事件：回调收到第二帧（或读取方报告错误，立即失败）。30 秒的定时器只用来结束挂死；两帧送达且读取方无错误的断言不变。
+  let abort, guard
+  const failed = new Promise((_, no) => { abort = no })
+  readerB.start(undefined, { onError: (e) => { errors.push(e); abort(e) } })
+  guard = setTimeout(() => abort(new Error(`only ${got.length} of 2 frames arrived in 30 s`)), 30_000)
+  try { await Promise.race([twoFrames, failed]) } finally { clearTimeout(guard); readerB.stop() }
   assert.deepEqual(errors, [])
   assert.equal(got.length, 2)
   bob.confirm(decodeWire(got[0]).handshake)

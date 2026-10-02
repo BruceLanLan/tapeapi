@@ -14,7 +14,12 @@ import { validateManifest, findMethod, methodPrice, parseUnits, formatUnits, MET
 import { canonicalJSON, safeParseJSON } from './canon.js'
 import { validateAIField, MANIFEST_FIELD as AI_FIELD } from './ai.js'
 import { CHAIN_IDS, chainById, parseTapeName, parseTapeInput, formatTapeName, IMPL_SLOT, MAX_TOKEN_ID } from './chains.js'
+import { TAP10_SEALS } from './chains.js'
 import { rpcUrlsFor } from './rpc-defaults.js'
+// TAP-10 §4.3 processor tables (about 75 KB), read only by the conformance mode and siteStatus. A static import: the SDK
+// runs in the browser as plain modules, without dynamic imports (scripts/build-playground.mjs).
+// TAP-10 §4.3 处理器表（约 75 KB），只有一致模式与 siteStatus 读取。静态导入：SDK 在浏览器里以普通模块运行，不用动态导入。
+import { PROCESSORS_SNAPSHOT } from './processors-snapshot.js'
 import { erc6551Account } from './security.js'
 import { verifyAccountProof, STORAGE, LAYOUT_IMPLEMENTATIONS, addressOfWord } from './proof.js'
 
@@ -22,6 +27,8 @@ import { verifyAccountProof, STORAGE, LAYOUT_IMPLEMENTATIONS, addressOfWord } fr
 export { RPC_DEFAULTS, rpcUrlsFor, operatorOf } from './rpc-defaults.js'
 // The TapeOut chains (BNB Smart Chain, X Layer, Base) and names with area codes / TapeOut 各链与带区号的名字
 export { CHAINS, CHAIN_IDS, HOME_CHAIN_ID, IMPL_SLOT, chainById, chainByArea, chainByKey, parseTapeName, formatTapeName, isNameShaped, parseTapeInput, MAX_TOKEN_ID, MAX_PROCESSOR } from './chains.js'
+// @experimental (1.5) TAP-10 §13.8 messaging constants and the §12.1 endpoint chainId bound / TAP-10 消息层常量
+export { TAP10_SEALS, TAP10_MAX_CHAIN_ID } from './chains.js'
 export { TapeAPIError, createRpc, canonicalJSON, safeParseJSON, validateManifest, parseUnits, formatUnits, labelToBytes32, METHOD_NAME_RE, BEM_DECIMALS }
 export * as abi from './abi.js'
 export * as sig from './sig.js'
@@ -215,6 +222,10 @@ const early = (read) => {
   p.catch(() => {})
   return p
 }
+// Each client's own TAP-10 identity steps, for the client of another chain that resolves input without chain information
+// on every chain (allChains, TAP-10 §4.1). Not exported. / 每个客户端自己的 TAP-10 身份步骤，供另一条链的客户端在所有链上解析
+// 无链信息的输入时调用（allChains）。不导出。
+const TAP10_LOCAL = new WeakMap()
 const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : toHex(crypto.getRandomValues(new Uint8Array(16))).slice(2))
 
 // 选项 / options:
@@ -287,13 +298,44 @@ export function createTapeAPI(opts = {}) {
   //                       回答矛盾时，两种模式都拒绝（PROOF_INVALID）。拿不到可用证明时（没有节点提供、都核验不过、布局未知），
   //                       true 警告并沿用法定数读取（只是检测）；'strict' 拒绝。
   //   conform             @experimental (1.4) 'tap10': resolve as TAP-10 v1.1 and TAP-11 §2.2 say (the resolution path; see
-  //                       docs/guides/upgrade-1.0.md "TAP-10 conformance mode"). Implies pin: 'tap10'.
-  //                       按 TAP-10 v1.1 与 TAP-11 §2.2 解析（解析路径）。隐含 pin: 'tap10'。
+  //                       docs/guides/upgrade-1.0.md "TAP-10 conformance mode"). Implies pin: 'tap10'. Since 1.5 also the
+  //                       messaging path: chain.tapeSendKey and chain.channelKeys read as TAP-10 §12.2 / §14.4 say. Since
+  //                       1.5.0 resolve checks eth_chainId and reads ownerOf and a contract holder's EIP-1271 calls under
+  //                       strict agreement.
+  //                       按 TAP-10 v1.1 与 TAP-11 §2.2 解析（解析路径）。隐含 pin: 'tap10'。1.5 起也包括消息路径。1.5.0 起
+  //                       resolve 用严格共识检查 eth_chainId、读取 ownerOf 与合约持有人的 EIP-1271 调用。
+  //   allChains           @experimental (1.5) true: input without chain information (a container address or a processor
+  //                       contract#ID string, TAP-10 §4.1) is resolved on EVERY TapeOut chain, each at its own pinned block:
+  //                       `ambiguous` when more than one resolves it, and the status of a chain that could not be read instead
+  //                       of `not-tapeout`. This sends reads to the nodes of Base and X Layer as well (chains[id].rpcUrls, or
+  //                       the SDK's defaults for that chain), which is why it is a separate switch: a client given only its
+  //                       own BNB Smart Chain node never talks to other chains' public nodes unless asked. It applies to the
+  //                       TAP-10 path only: resolve under conform: 'tap10', and siteStatus in any mode; the default resolve
+  //                       never reads it. Only `true` turns it on; any other value is ignored, as 1.4 ignored the option.
+  //                       Off: a container address is resolved on this client's chain when it is a container of this chain
+  //                       (an ERC-6551 address commits to one chain, TAP-10 §4.1), and is `unsupported` otherwise; under
+  //                       conform: 'tap10' a processor contract#ID string is `unsupported` before any request, because
+  //                       TAP-10 resolves it only when exactly one chain does (siteStatus on a default client resolves it on
+  //                       this client's chain, as in 1.4). { circuits, tokenId, chainId? } names its chain (this client's
+  //                       when chainId is left out) and { chainId, container } names its own: neither is searched;
+  //                       { container } without chainId is an input error (as in 1.4).
+  //                       true：无链信息的输入（容器地址或"处理器合约#ID"字符串，TAP-10 §4.1）在**每条** TapeOut 链上各自钉块解析：
+  //                       多条链命中即 ambiguous，某条链读不到时报该链的状态而不报 not-tapeout。这会向 Base 与 X Layer 的节点发请求
+  //                       （chains[id].rpcUrls 或 SDK 对该链的默认节点），所以是单独的开关：只配了自己 BSC 节点的客户端，不明确要求
+  //                       就绝不访问别的链的公共节点。只作用于 TAP-10 路径：一致模式下的 resolve，以及任何模式下的 siteStatus；默认的
+  //                       resolve 从不读它。只有 true 才开启，其它值一律忽略（1.4 就忽略这个选项）。关闭时：容器地址是本链容器即在本链
+  //                       解析（ERC-6551 地址只属于一条链），否则 unsupported；一致模式下"处理器合约#ID"字符串在发出任何请求之前即为
+  //                       unsupported，因为 TAP-10 只在恰好一条链命中时才解析它（默认客户端的 siteStatus 与 1.4 一样在本链解析）。
+  //                       { circuits, tokenId, chainId? } 指明链（不给 chainId 即本客户端的链），{ chainId, container } 自带链：都不搜索；
+  //                       不带 chainId 的 { container } 是输入错误（与 1.4 相同）。
   const now = clockOf(opts.clock)
   // undefined, null and false all mean off: 1.3 ignored the option, so a value it ignored must not start failing in 1.4
   // undefined、null、false 都表示关闭：1.3 会忽略这个选项，它忽略过的值在 1.4 不能开始报错
   if (opts.conform !== undefined && opts.conform !== null && opts.conform !== false && opts.conform !== 'tap10') throw new TapeAPIError('INVALID_ARGUMENT', "conform: pass 'tap10' (TAP-10 v1.1), or leave it out (undefined, null or false)")
   const conformMode = opts.conform === 'tap10'
+  // Only true turns allChains on; any other value is ignored, never refused: 1.4 ignored the option, so a value it ignored
+  // must not start failing (the same rule as conform above). / 只有 true 开启；其它值忽略而不报错：1.4 忽略这个选项。
+  const allChains = opts.allChains === true
   if (conformMode && opts.pin !== undefined && opts.pin !== 'tap10') throw new TapeAPIError('INVALID_ARGUMENT', "conform: 'tap10' pins every resolution as TAP-10 §5.3 does (pin: 'tap10'); it cannot be combined with another pin option (false, 'latest', true or { tag })")
   const pinConf = pinOptionsOf(conformMode ? 'tap10' : opts.pin, chainById(chainId))
   const proofMode = proofOptionOf(opts.proofs, pinConf)
@@ -306,6 +348,14 @@ export function createTapeAPI(opts = {}) {
     for (const [role, a] of [['opener', opener], ['binding', binding], ['siteRegistry', siteRegistry], ['factory', factory]]) if (!isAddress(a)) throw new TapeAPIError('INVALID_ARGUMENT', `conform: 'tap10' needs the ${role} address of chain ${chainId}`)
     for (const [role, a] of [['siteRegistry', siteRegistry], ['binding', binding]]) {
       if (!known?.expectedImpl?.[String(a).toLowerCase()]) throw new TapeAPIError('INVALID_ARGUMENT', `conform: 'tap10' accepts only the ${role} proxies TAP-10 lists with their accepted implementations (chains.js expectedImpl); ${a} on chain ${chainId} has none`)
+    }
+    // 1.5, the messaging path: only the hub TAP-10 lists, whose current implementation is known (chains.js TAP10_SEALS);
+    // another would be hub-changed for ever / 1.5 消息路径：只接受 TAP-10 列出的中枢，否则永远是 hub-changed
+    if (!eqAddr(hub, known?.hub) || !TAP10_SEALS[Number(chainId)]) throw new TapeAPIError('INVALID_ARGUMENT', `conform: 'tap10' accepts only the DeWEB hub TAP-10 lists for chain ${chainId} (${known?.hub}), whose current implementation is in chains.js TAP10_SEALS; got ${hub}`)
+    // TAP-10 §2.2: only the addresses listed for that chain, never learned elsewhere: the factory and the opener too
+    // TAP-10 §2.2：只用该链列出的地址；工厂与开通器同样如此
+    for (const [role, a] of [['factory', factory], ['opener', opener]]) {
+      if (!eqAddr(a, known?.[role])) throw new TapeAPIError('INVALID_ARGUMENT', `conform: 'tap10' uses only the ${role} TAP-10 lists for chain ${chainId} (${known?.[role]}; TAP-10 §2.2); got ${a}`)
     }
   }
   if (opts.requireContentSig !== undefined && typeof opts.requireContentSig !== 'boolean') throw new TapeAPIError('INVALID_ARGUMENT', 'requireContentSig must be a boolean')
@@ -320,6 +370,13 @@ export function createTapeAPI(opts = {}) {
   // Highest `issued` seen per container's channel record (arch B4). Pass a persistent Map-like { get, set } to keep it
   // across restarts. / 每个容器通道记录见过的最高 `issued`；传入持久化的 { get, set } 可跨重启保留。
   const recordFloor = opts.channelRecordFloor ?? new Map()
+  // @experimental (1.5) The conformance mode's sticky TAP-10 §13.8 statuses (circuits-changed, a factory seal seen and then
+  // lost), kept per `${chainId}:${hub, lowercase}`. Default: this client instance only. Pass a persistent Map-like
+  // { get, set } (as for channelRecordFloor) to keep them across restarts; every chain's client shares it (forChain).
+  // Value: { circuitsChangedAt: number | null, factorySealSeenAt: number | null, factorySealLost: boolean } (block numbers).
+  // 一致模式的 §13.8 粘性状态，按 `${chainId}:${小写 hub}` 保存。默认只在本客户端实例内；传入持久化的 { get, set } 可跨重启保留。
+  if (opts.sealStatusStore !== undefined && !isFloorStore(opts.sealStatusStore)) throw new TapeAPIError('INVALID_ARGUMENT', 'sealStatusStore must be a { get, set } store')
+  const sealStatusStore = opts.sealStatusStore ?? new Map()
   // The key is `${chainId}:${container, lowercase}` and the value an integer (Unix seconds), frozen for 1.x (review G1 M7).
   // A 0.x store keyed by the container alone is read once and moved under the new key: an ERC-6551 address commits to
   // one chainId, so an old entry can only belong to that chain. Every chain's client shares the one store (forChain).
@@ -420,15 +477,26 @@ export function createTapeAPI(opts = {}) {
      * 最多缓存 300 秒，与 groupVerifier 共用：密封邀请发送免费，反复用同一 `from` 伪造的邀请不再触发链上读取，并发查询
      * 共享一次读取。确定的"否"（CHANNEL_INVALID、NOT_FOUND）也缓存；RPC 故障绝不缓存。`{ fresh: true }` 立即读链并刷新缓存。
      * 因此"自动失效"在缓存窗口内生效。
+     *
+     * @experimental (1.5) With conform: 'tap10' the record is read as the private-channels draft §3.3 says (readChannelKeysTap10):
+     * a fresh TAP-10 pinned block, strict agreement, the container from the opener, both site-store implementations
+     * accepted; never activation or opening (TAP-10 §12.2). The result then carries `tap10`, errors `data.status`. A record
+     * served from the cache keeps the `tap10.pinned` of the read that filled it; `{ fresh: true }` pins anew.
+     * 一致模式下按私密通道草稿 §3.3 读取：新鲜钉块、严格共识、开通器、两个站点合约实现都被接受；绝不判激活或开通。
      */
     channelKeys: (container, { fresh = false } = {}) => {
-      if (!isAddress(container)) return Promise.reject(new TapeAPIError('INVALID_ARGUMENT', 'channelKeys takes a container address'))
-      return identities.lookup(container, { fresh })
+      if (!isAddress(container)) return Promise.reject(conformMode ? withStatus(new TapeAPIError('INVALID_ARGUMENT', 'channelKeys takes a container address')) : new TapeAPIError('INVALID_ARGUMENT', 'channelKeys takes a container address'))
+      // the conformance mode: every error carries data.status / 一致模式：每个错误都带 data.status
+      return conformMode ? identities.lookup(container, { fresh }).catch((e) => { throw withStatus(e) }) : identities.lookup(container, { fresh })
     },
     // TAPI-26 §3.1 fallback: a container's TapeSend (TAP-10) X25519 key. The hub withholds it unless the holder who
     // published it still holds the circuit; we still re-derive the container and check the endpoint, suite and flag.
     // TAPI-26 §3.1 备用：容器的 TapeSend 密钥。只要发布者已不再持有电路，hub 就不返回它；我们仍核对端点、套件与可用标志。
+    // @experimental (1.5) With conform: 'tap10': TAP-10 §12.2, §13.8 and §14.4 steps 1-3 (tapeSendKeyTap10); the result
+    // carries `tap10`, errors `data.status`. / 一致模式下按 TAP-10 §12.2、§13.8、§14.4 第 1–3 步读取。
     tapeSendKey: async (target) => {
+      // 1.5: the conformance mode resolves and reads the TAP-10 way (tapeSendKeyTap10) / 1.5：一致模式按 TAP-10 读取
+      if (conformMode) { try { return await tapeSendKeyTap10(target) } catch (e) { throw withStatus(e) } }
       let circuits, tokenId, expect = null
       if (typeof target === 'string') {
         if (!isAddress(target)) throw new TapeAPIError('INVALID_ARGUMENT', 'tapeSendKey takes a container address or { circuits, tokenId }')
@@ -478,6 +546,8 @@ export function createTapeAPI(opts = {}) {
   // TAPI-26 §3.1 channel record, read from the chain every time: no cache here (the cache is `identities`, below).
   // 从链上读取通道记录，每次都读：这里不缓存（缓存在下面的 `identities`）。
   async function readChannelKeys(container) {
+    // 1.5: the conformance mode reads the record the TAP-10 way (below) / 1.5：一致模式按 TAP-10 读取记录（见下）
+    if (conformMode) return readChannelKeysTap10(container)
     const { circuits, tokenId } = await tokenOf(container)
     // The container's own token() is only a claim: the hub must derive this very address from that circuit, as
     // the manifest path checks (TAPI-20 §3.6). / 容器自己的 token() 只是声称；中枢必须由该电路推导出同一地址。
@@ -485,8 +555,21 @@ export function createTapeAPI(opts = {}) {
     if (!eqAddr(derived, container)) throw new TapeAPIError('CHANNEL_INVALID', `hub.accountOf(${circuits}, ${tokenId}) is ${derived}, not ${container}`)
     await requireCPU(circuits, 'CHANNEL_INVALID')
     const file = await readVerifiedFile(container, CHANNEL_KEYS_KEY, { limit: CHANNEL_KEYS_LIMIT, code: 'CHANNEL_INVALID' })
+    const { r, inbox, digest } = channelRecordOf(() => new TextDecoder('utf-8', { fatal: true }).decode(file.bytes), container)
+    let recovered = null
+    if (r.sig.length === 132) { try { recovered = recoverAddress(digest, r.sig) } catch { /* a contract holder signs no ECDSA / 合约持有人没有 ECDSA 签名 */ } }
+    const holder = await chain.ownerOf(circuits, tokenId)
+    if (!(recovered && eqAddr(recovered, holder)) && !(await holderApproves(holder, digest, r.sig))) {
+      throw new TapeAPIError('CHANNEL_INVALID', `${container}: channel keys were not authorised by the current holder ${holder}`)
+    }
+    await raiseRecordFloor(container, r)
+    return channelRecordResult(container, circuits, tokenId, holder, r, inbox)
+  }
+  // The record's own checks, the same in both modes (TAPI-26 §3.1): no request. `decode` gives the text.
+  // 记录本身的检查，两种模式相同：不发请求。`decode` 给出文本。
+  function channelRecordOf(decode, container) {
     let r
-    try { r = safeParseJSON(new TextDecoder('utf-8', { fatal: true }).decode(file.bytes), { code: 'CHANNEL_INVALID' }) }
+    try { r = safeParseJSON(decode(), { code: 'CHANNEL_INVALID' }) }
     catch (e) { throw new TapeAPIError('CHANNEL_INVALID', `${CHANNEL_KEYS_KEY}: ${e.message}`) }
     const bad = (m) => { throw new TapeAPIError('CHANNEL_INVALID', `${CHANNEL_KEYS_KEY} of ${container}: ${m}`) }
     if (!r || typeof r !== 'object' || r.tapechannel !== '1') bad('tapechannel must be "1"')
@@ -509,22 +592,235 @@ export function createTapeAPI(opts = {}) {
     const inbox = r.inbox ?? {}
     try { channelLib.checkRelays(inbox.relays ?? []); channelLib.checkBus(inbox.bus) } catch (e) { bad(`inbox: ${e.message}`) }
     const digest = channelKeysDigest(chainId, hub, { container, x25519: r.x25519, ed25519: r.ed25519, inbox, issued: r.issued, expires: r.expires })
+    return { r, inbox, digest }
+  }
+  // Only an authorised record moves the floor, and never down. / 只有已授权的记录能抬高下限，且绝不降低。
+  async function raiseRecordFloor(container, r) {
+    const floor = await readFloor(container)
+    if (r.issued < floor) throw new TapeAPIError('CHANNEL_INVALID', `${CHANNEL_KEYS_KEY} of ${container}: issued ${r.issued} is older than a record already seen (${floor}): a replaced record was put back`)
+    if (r.issued > floor) await recordFloor.set(floorKey(container), r.issued)
+  }
+  const channelRecordResult = (container, circuits, tokenId, holder, r, inbox) => ({
+    container: checksumAddress(container), chainId, circuits: checksumAddress(circuits), tokenId: tokenId.toString(),
+    staticPublic: r.x25519.toLowerCase(), x25519: r.x25519.toLowerCase(), ed25519: r.ed25519.toLowerCase(), issued: r.issued, expires: r.expires,
+    holder: checksumAddress(holder), keys: channelLib.KEYS_CHANNEL,
+    inbox: { room: channelLib.inboxRoom(container, chainId), relays: inbox.relays ?? [], ...(inbox.bus ? { bus: inbox.bus } : {}) },
+  })
+
+  // ════ TAP-10 conformance mode, the messaging path (@experimental, 1.5) / TAP-10 一致模式：消息路径 ══════════════════
+  // With conform: 'tap10', api.chain.tapeSendKey resolves the endpoint as TAP-10 §12.2 says and reads the key as §14.4
+  // steps 1-3 say, and api.chain.channelKeys reads the channel record as the private-channels draft §3.3 says (TAPI-26
+  // §3.1 under TAP-10's read rules). Both: a fresh TAP-10 pinned block (§5.3), every read under STRICT agreement (§5.2:
+  // every configured node, all equal, from max(2, min(3, operators)) operators), after an eth_chainId check that is itself
+  // strict (§5.4, a MUST for messaging; resolve's default-agreement check does not count), the container from the opener
+  // (§4.2, §4.3), only results and reverts as answers (§1). NEVER activation or opening: §12.2 says an unpaid name, a
+  // changed site-store implementation or a blocklist entry MUST NOT prevent messaging, so tapeSendKey reads neither the
+  // site store nor the payment contract. The channel record is a site file, so its read needs both site-store
+  // implementations accepted (store-changed, TAP-10 §6.1) but still not activation or opening. tapeSendKey also reads the
+  // hub's seal status at the same block (§13.8): a hub implementation other than the current one TAP-10 lists is
+  // hub-changed, a circuit beacon not on circuitImplementation is circuits-changed, kept for good by this client.
+  // Every error carries data.status; the codes are the default mode's for the same situation.
+  // 一致模式下，api.chain.tapeSendKey 按 TAP-10 §12.2 解析端点、按 §14.4 第 1–3 步读密钥；api.chain.channelKeys 按私密通道草稿 §3.3
+  // 读通道记录。两者：新鲜的 TAP-10 钉块、每个读取都用严格共识、先做严格共识的 eth_chainId 检查（§5.4 对消息是 MUST；resolve 的默认共识
+  // 检查不算）、容器取自开通器、只有结果与回滚算回答。**绝不**判激活或开通：§12.2 规定未付费、站点存储实现变更或阻止名单都不得阻止消息，
+  // 所以 tapeSendKey 既不读站点存储也不读付费合约。通道记录是站点文件，所以读它要求两个站点合约的实现都被接受（store-changed），但仍不判
+  // 激活或开通。tapeSendKey 还在同一块上读中枢的封存状态（§13.8）：中枢实现不是 TAP-10 列为当前的那个即 hub-changed，电路信标不在
+  // circuitImplementation 即 circuits-changed，本客户端永久保留。每个错误都带 data.status；错误码与默认模式同一情形相同。
+  const TAP10_STRICT = { answers: 'tap10', strict: true }
+  const sealsOf = TAP10_SEALS[Number(chainId)] ?? null
+  async function viewStrict(to, name, args, at) { return decodeReturn(name, await needRpc().ethCall(to, encodeCall(name, args), at, TAP10_STRICT)) }
+  const readsWrong = (e) => isRevert(e) || (e instanceof TapeAPIError && e.code === 'ABI_INVALID')
+  // One 32-byte word of a no-argument call, or null when it reverts or is not one word (§13.8 "any revert ... counts as not
+  // in effect") / 无参调用的一个 32 字节字；回滚或不是一个字时为 null
+  async function wordStrict(to, sig, at) {
+    let raw
+    try { raw = String(await needRpc().ethCall(to, selector(sig), at, TAP10_STRICT)) } catch (e) { if (isRevert(e)) return null; throw e }
+    return /^0x[0-9a-fA-F]{64}$/.test(raw) ? raw.toLowerCase() : null
+  }
+  // A canonical address word (upper 96 bits zero), else null / 规范的地址字（高 96 位为零），否则为 null
+  const addressOfWordStrict = (w) => (w && /^0x0{24}[0-9a-f]{40}$/.test(w) ? '0x' + w.slice(26) : null)
+  async function implSlotStrict(proxy, at) {
+    const word = String(await needRpc().call('eth_getStorageAt', [proxy, IMPL_SLOT, at], TAP10_STRICT))
+    if (!/^0x[0-9a-fA-F]{64}$/.test(word)) throw tapErr('RPC_ERROR', 'unavailable', `eth_getStorageAt(${proxy}) answered ${word.slice(0, 80)}`)
+    return addressOfWordStrict(word.toLowerCase())
+  }
+  // §5.4 under strict agreement, once per client; only a success is kept / 严格共识的 §5.4，每个客户端一次；只保留成功
+  let chainCheckedStrict = null
+  function checkChainStrict() {
+    if (chainCheckedStrict) return chainCheckedStrict
+    const p = (async () => {
+      const got = Number(BigInt(await needRpc().call('eth_chainId', [], TAP10_STRICT)))
+      if (got !== Number(chainId)) throw tapErr('INVALID_ARGUMENT', 'wrong-chain', `wrong-chain: the nodes of this client answer eth_chainId ${got}, not ${chainId} (TAP-10 §5.4)`, { expected: Number(chainId), answered: got })
+      return true
+    })()
+    chainCheckedStrict = p
+    p.catch(() => { if (chainCheckedStrict === p) chainCheckedStrict = null })
+    return p
+  }
+  // A fresh pinned block for one key lookup or one record read (§5.3, §14.4 step 1). The pin's eth_blockNumber and
+  // eth_getBlockByNumber go out concurrently with the strict eth_chainId; no state read is sent until both succeeded.
+  // 一次查询一个新鲜钉块。钉块的 eth_blockNumber、eth_getBlockByNumber 与严格的 eth_chainId 并发；两者都成功之后才发出任何状态读取。
+  async function messagingPin() { const [pinned] = await Promise.all([tap10Pin(), checkChainStrict()]); return pinned }
+  const pinnedView = (b) => ({ number: b.number, hash: b.hash, lag: b.lag, maxLag: b.maxLag })
+
+  // §12.2 identity: §4.3 for a container address (token(), isCPU, opener.accountOf equal to it), §4.2 steps 3-5 for a
+  // processor contract and #ID, at one pinned block under strict agreement. The processor number (§4.3 step 3) is not
+  // needed to message and is not looked up. `also` reads go out in the same turn as accountOf. No site status.
+  // §12.2 的身份：容器地址按 §4.3，处理器合约与 #ID 按 §4.2 第 3–5 步，在一个钉块上严格共识读取。消息不需要处理器号，不查。无站点状态。
+  async function endpointAt(target, at, { opened: wantOpened = true } = {}) {
+    let circuits, tokenId, given = null
+    if (typeof target === 'string') {
+      given = target
+      let tok
+      // As resolve does in this mode: an address that is no container HERE, or whose token() names another chain, may be
+      // one elsewhere, and TAP-10 §4.1 forbids not-tapeout until every active chain was read: unsupported (never cached).
+      // 与本模式的 resolve 相同：在本链不是容器、或 token() 声称别的链的地址，可能是别处的容器，TAP-10 §4.1 规定读遍所有活跃链之前
+      // 不得报 not-tapeout：报 unsupported（绝不缓存）。
+      try { tok = await viewStrict(target, 'token', [], at) }
+      catch (e) { if (readsWrong(e)) throw otherChain(target, 'does not answer ERC-6551 token() here'); throw e }
+      if (BigInt(tok[0]) !== BigInt(chainId)) throw otherChain(target, `answers token() for chain ${BigInt(tok[0])}`)
+      if (BigInt(tok[2]) < 1n || BigInt(tok[2]) > MAX_TOKEN_ID) throw tapErr('CHANNEL_INVALID', 'not-tapeout', `not-tapeout: ${target} names #${BigInt(tok[2])}, outside TAP-10 §3.1`)
+      circuits = tok[1]; tokenId = BigInt(tok[2])
+    } else ({ circuits, tokenId } = target)
+    const cpuP = early(() => viewStrict(factory, 'isCPU', [circuits], at))
+    const accountP = early(() => viewStrict(opener, 'accountOf', [circuits, tokenId], at))
+    const holderP = early(() => viewStrict(circuits, 'ownerOf', [tokenId], at))
+    const openedP = wantOpened ? early(() => viewStrict(opener, 'isOpened', [circuits, tokenId], at)) : null
+    let cpu
+    try { cpu = (await cpuP) === true } catch (e) { if (!readsWrong(e)) throw e; cpu = false }
+    // A processor contract#ID whose contract is no processor here may be one on another chain (resolve: the same); a
+    // container of this chain naming a counterfeit is not-tapeout / 处理器合约#ID 同 resolve；本链容器指向仿冒处理器为 not-tapeout
+    if (!cpu && !given) throw otherChain(checksumAddress(circuits), 'is not a TapeOut processor here')
+    if (!cpu) throw tapErr('CHANNEL_INVALID', 'not-tapeout', `not-tapeout: ${circuits} is not a TapeOut processor (factory.isCPU is false)`)
+    if (knownCPUs.size < 4096) knownCPUs.add(String(circuits).toLowerCase())
+    const container = checksumAddress(await accountP)
+    if (given && !eqAddr(container, given)) throw tapErr('CHANNEL_INVALID', 'not-tapeout', `not-tapeout: opener.accountOf(${circuits}, ${tokenId}) is ${container}, not ${given} (TAP-10 §4.3 step 4)`)
+    let holder
+    try { holder = checksumAddress(await holderP) } catch (e) { if (readsWrong(e)) throw tapErr('NOT_FOUND', 'no-such-token', `no-such-token: ${circuits} has no circuit #${tokenId} (ownerOf reverts)`); throw e }
+    return { circuits: checksumAddress(circuits), tokenId, container, holder, ...(openedP ? { opened: (await openedP) === true } : {}) }
+  }
+
+  // §13.8 at the pinned block: is the hub accepted, have the circuits changed, are the seals in effect. A client that once
+  // saw circuits-changed keeps it; a client that once saw the factory seal in effect and later does not (at a block not
+  // earlier) keeps treating it as lost. Per client, so per chain and hub (forChain: one client per chain).
+  // §13.8：中枢是否被接受、电路是否变更、封存是否生效。见过 circuits-changed 就一直保留；见过工厂封存生效、之后（不早于那一块）又不生效，
+  // 就一直当作已失去。按客户端保存，即按链与中枢。
+  const sealKey = `${chainId}:${String(hub).toLowerCase()}`
+  const minBlock = (a, b) => (a === null ? b : b === null ? a : Math.min(a, b))
+  async function hubTrustAt(at, pinned) {
+    // The sticky part, from sealStatusStore (this client's Map unless one was given) / 粘性部分，取自 sealStatusStore
+    const saved = (await sealStatusStore.get(sealKey)) ?? {}
+    const num = (v) => (Number.isSafeInteger(v) ? v : null)
+    let circuitsChangedAt = num(saved.circuitsChangedAt), factorySealSeenAt = num(saved.factorySealSeenAt), factorySealLost = saved.factorySealLost === true
+    const before = JSON.stringify([circuitsChangedAt, factorySealSeenAt, factorySealLost])
+    const [hubImpl, beaconImpl, beaconOwner, factorySealed, factoryImpl, hubSealed, hubOwner] = await Promise.all([
+      implSlotStrict(hub, at),
+      wordStrict(sealsOf.circuitBeacon, 'implementation()', at), wordStrict(sealsOf.circuitBeacon, 'owner()', at),
+      wordStrict(factory, 'isSealed()', at), implSlotStrict(factory, at),
+      wordStrict(hub, 'isSealed()', at), wordStrict(hub, 'owner()', at),
+    ])
+    const accepted = eqAddr(hubImpl, sealsOf.hub)
+    const circuitsOk = eqAddr(addressOfWordStrict(beaconImpl), sealsOf.circuitImplementation)
+    if (!circuitsOk) circuitsChangedAt = minBlock(circuitsChangedAt, pinned.number)
+    const one = '0x' + '0'.repeat(63) + '1'
+    const factorySeal = factorySealed === one && eqAddr(factoryImpl, sealsOf.factory) && eqAddr(addressOfWordStrict(beaconOwner), factory) && circuitsOk
+    if (factorySeal) factorySealSeenAt = minBlock(factorySealSeenAt, pinned.number)
+    if (!factorySeal && factorySealSeenAt !== null && pinned.number >= factorySealSeenAt) factorySealLost = true
+    const hubSeal = accepted && hubSealed === one && addressOfWordStrict(hubOwner) === ZERO_ADDRESS
+    if (JSON.stringify([circuitsChangedAt, factorySealSeenAt, factorySealLost]) !== before) await sealStatusStore.set(sealKey, { circuitsChangedAt, factorySealSeenAt, factorySealLost })
+    return {
+      circuitsChangedAt,
+      hub: { implementation: hubImpl, accepted }, circuits: circuitsChangedAt === null ? 'ok' : 'circuits-changed',
+      seal: { factory: factorySeal && !factorySealLost, hub: hubSeal, ...(factorySealLost ? { factoryLost: true } : {}) },
+    }
+  }
+
+  // api.chain.tapeSendKey under conform: 'tap10' (TAP-10 §12.2, §13.8, §14.4 steps 1-3). Step 4 (the recipient reads the
+  // sending chain) is the caller's: the result carries the raw bitmap. / 一致模式下的 tapeSendKey。第 4 步（收件方是否读发送链）
+  // 由调用方判断：结果带原始位图。
+  async function tapeSendKeyTap10(target) {
+    let input
+    if (typeof target === 'string') {
+      if (!isAddress(target)) throw tapErr('INVALID_ARGUMENT', 'input-error', 'tapeSendKey takes a container address or { circuits, tokenId }')
+      input = target
+    } else if (target && isAddress(target.circuits) && target.tokenId != null) {
+      let t
+      try { t = BigInt(target.tokenId) } catch { throw tapErr('INVALID_ARGUMENT', 'input-error', 'tokenId must be a whole number') }
+      if (t < 1n || t > MAX_TOKEN_ID) throw tapErr('INVALID_ARGUMENT', 'input-error', 'tokenId is out of range: 1 <= #ID <= 10^18 (TAP-10 §3.1)')
+      input = { circuits: target.circuits, tokenId: t }
+    } else throw tapErr('INVALID_ARGUMENT', 'input-error', 'tapeSendKey takes a container address or { circuits, tokenId }')
+    const pinned = await messagingPin()
+    const at = tapAt(pinned)
+    // The hub's state goes out with the identity reads; it is judged after the identity outcome.
+    // 中枢状态与身份读取同一轮发出；在身份结果之后才判断。
+    const trustP = early(() => hubTrustAt(at, pinned))
+    const keyP = typeof input === 'string' ? null : early(() => viewStrict(hub, 'keyFor', [input.circuits, input.tokenId], at))
+    const id = await endpointAt(input, at)
+    const trust = await trustP
+    const where = { chainId: Number(chainId), container: id.container, circuits: id.circuits, tokenId: id.tokenId.toString(), pinned: pinnedView(pinned) }
+    if (!trust.hub.accepted) throw tapErr('CONTRACT_UNKNOWN', 'hub-changed', `hub-changed: the hub ${checksumAddress(hub)} runs implementation ${trust.hub.implementation ?? '(not an address)'}, not the one TAP-10 lists as current on chain ${chainId} (${sealsOf.hub}); do not seal to keys it serves (TAP-10 §13.8)`, { ...where, implementation: trust.hub.implementation })
+    if (trust.circuits !== 'ok') throw tapErr('CONTRACT_UNKNOWN', 'circuits-changed', `circuits-changed: the circuit beacon ${sealsOf.circuitBeacon} no longer runs ${sealsOf.circuitImplementation} (seen at block ${trust.circuitsChangedAt}); messaging through this hub has stopped (TAP-10 §13.8)`, where)
+    const [container, endpoint, , , suite, keyIndex, key, usable, version, chains] = await (keyP ?? viewStrict(hub, 'keyFor', [id.circuits, id.tokenId], at))
+    // §12.2: the hub's container and endpoint must be the resolved ones / 中枢的容器与端点须等于解析结果
+    const want = '0x' + '00'.repeat(4) + BigInt(chainId).toString(16).padStart(16, '0') + id.container.slice(2).toLowerCase()
+    if (!eqAddr(container, id.container) || String(endpoint).toLowerCase() !== want) throw tapErr('CHANNEL_INVALID', 'hub-mismatch', `hub-mismatch: hub.keyFor gives container ${container}, endpoint ${endpoint}; resolved ${id.container}, endpoint ${want} (TAP-10 §12.2)`, where)
+    // §14.4 step 2 / 第 2 步
+    if (!usable) throw tapErr('NOT_FOUND', Number(version) === 0 ? 'no-key' : 'key-stale', `${Number(version) === 0 ? 'no-key' : 'key-stale'}: ${id.container} has no usable TapeSend key (${Number(version) === 0 ? 'never published' : 'revoked, or the circuit changed hands since'})`, { ...where, version: Number(version) })
+    if (Number(suite) !== 1) throw tapErr('CHANNEL_INVALID', 'bad-key', `bad-key: unsupported key suite ${suite}; TAP-10 suite 1 is X25519 (TAP-10 §14.4 step 2)`, where)
+    // §14.4 step 3 / 第 3 步
+    try { channelLib.assertUsablePublicKey(channelLib.fromHex(key, 32, 'key'), 'the TapeSend key') } catch (e) { throw tapErr('CHANNEL_INVALID', 'bad-key', `bad-key: ${e.message} (TAP-10 §14.4 step 3)`, where) }
+    return {
+      container: id.container, chainId, circuits: id.circuits, tokenId: id.tokenId.toString(),
+      staticPublic: String(key).toLowerCase(), keyIndex: Number(keyIndex), version: Number(version),
+      holder: id.holder, opened: id.opened, chainsBitmap: BigInt(chains).toString(2),
+      tap10: { version: TAP10_VERSION, status: 'ok', endpoint: want, pinned: pinnedView(pinned), hub: trust.hub, circuits: trust.circuits, seal: trust.seal },
+    }
+  }
+
+  // The channel record under conform: 'tap10' (the private-channels draft §3.3: TAPI-26 §3.1 under TAP-10's read rules).
+  // TapeAPI's names for a record that cannot be used: not-found (chunkCount 0, TAP-10 §7.1), no-hash, incomplete, and
+  // record-invalid for everything about its content (including a byte order mark).
+  // 一致模式下的通道记录。记录不可用时 TapeAPI 的结果名：not-found、no-hash、incomplete，内容问题（含字节序标记）为 record-invalid。
+  async function readChannelKeysTap10(container) {
+    const pinned = await messagingPin()
+    const at = tapAt(pinned)
+    const implsP = early(() => Promise.all([['siteRegistry', siteRegistry], ['binding', binding]].map(async ([role, proxy]) => {
+      const implementation = await implSlotStrict(proxy, at)
+      return { role, proxy: checksumAddress(proxy), implementation, accepted: (known?.expectedImpl?.[String(proxy).toLowerCase()] ?? []).includes(implementation) }
+    })))
+    const settle = async (p) => { try { return { v: await p } } catch (e) { return { e } } }
+    const [impls, idr] = await Promise.all([settle(implsP), settle(endpointAt(container, at, { opened: false }))])
+    // TAP-10 §6.2: store-changed before any identity outcome / store-changed 先于任何身份结果
+    if (impls.e) throw impls.e
+    const x = impls.v.find((i) => !i.accepted)
+    if (x) throw tapErr('CONTRACT_UNKNOWN', 'store-changed', `store-changed: ${x.role} ${x.proxy} runs implementation ${x.implementation}, which TAP-10 and this SDK do not accept (chains.js expectedImpl); the channel record, a site file, is not read (TAP-10 §6.1)`, { implementations: impls.v })
+    if (idr.e) throw idr.e
+    const id = idr.v
+    const rec = (status, m) => tapErr('CHANNEL_INVALID', status, `${status}: ${CHANNEL_KEYS_KEY} of ${container}: ${m}`)
+    // Only now the site store is read: §6.1 "MUST NOT read the site" when store-changed / 到这里才读站点存储（§6.1）
+    const info = await viewStrict(siteRegistry, 'fileInfo', [container, CHANNEL_KEYS_KEY], at)
+    const size = Number(info.size)
+    if (BigInt(info.chunkCount) === 0n) throw rec('not-found', 'no such file (fileInfo.chunkCount = 0, TAP-10 §7.1)')
+    if (size < 1 || size > CHANNEL_KEYS_LIMIT) throw rec('record-invalid', `declares ${size} bytes; a record has 1 to ${CHANNEL_KEYS_LIMIT}`)
+    if (typeof info.sha256Hash !== 'string' || info.sha256Hash.toLowerCase() === ZERO_HASH) throw rec('no-hash', 'no on-chain SHA-256 (fileInfo.sha256Hash is zero)')
+    let raw
+    try { raw = hexToBytes(await viewStrict(siteRegistry, 'read', [container, CHANNEL_KEYS_KEY], at)) } catch (e) { if (isRevert(e)) throw rec('incomplete', `read() reverted: ${e.message}`); throw e }
+    if (raw.length !== size) throw rec('incomplete', `read ${raw.length} bytes, fileInfo.size declares ${size}`)
+    if (toHex(sha256(raw)) !== info.sha256Hash.toLowerCase()) throw rec('incomplete', `the bytes hash to ${toHex(sha256(raw))}, fileInfo.sha256Hash declares ${info.sha256Hash}`)
+    // The draft §2 and TAP-10 §16: a byte order mark is refused, not stripped / 字节序标记直接拒绝，不去掉
+    if (raw.length >= 3 && raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf) throw rec('record-invalid', 'begins with a byte order mark')
+    let checked
+    try { checked = channelRecordOf(() => new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(raw), container) }
+    catch (e) { if (e instanceof TapeAPIError && e.code === 'CHANNEL_INVALID') throw tapErr('CHANNEL_INVALID', 'record-invalid', `record-invalid: ${e.message}`); throw e }
+    const { r, inbox, digest } = checked
+    // The holder read at the pinned block (step 1), EIP-1271 at the same block, strict (step 7) / 钉块上的持有人；EIP-1271 同块严格读取
     let recovered = null
     if (r.sig.length === 132) { try { recovered = recoverAddress(digest, r.sig) } catch { /* a contract holder signs no ECDSA / 合约持有人没有 ECDSA 签名 */ } }
-    const holder = await chain.ownerOf(circuits, tokenId)
-    if (!(recovered && eqAddr(recovered, holder)) && !(await holderApproves(holder, digest, r.sig))) {
-      throw new TapeAPIError('CHANNEL_INVALID', `${container}: channel keys were not authorised by the current holder ${holder}`)
+    if (!(recovered && eqAddr(recovered, id.holder)) && !(await holderApproves(id.holder, digest, r.sig, at, TAP10_STRICT))) {
+      throw tapErr('CHANNEL_INVALID', 'record-invalid', `record-invalid: ${container}: channel keys were not authorised by the current holder ${id.holder}`)
     }
-    // Only an authorised record moves the floor, and never down. / 只有已授权的记录能抬高下限，且绝不降低。
-    const floor = await readFloor(container)
-    if (r.issued < floor) bad(`issued ${r.issued} is older than a record already seen (${floor}): a replaced record was put back`)
-    if (r.issued > floor) await recordFloor.set(floorKey(container), r.issued)
-    return {
-      container: checksumAddress(container), chainId, circuits: checksumAddress(circuits), tokenId: tokenId.toString(),
-      staticPublic: r.x25519.toLowerCase(), x25519: r.x25519.toLowerCase(), ed25519: r.ed25519.toLowerCase(), issued: r.issued, expires: r.expires,
-      holder: checksumAddress(holder), keys: channelLib.KEYS_CHANNEL,
-      inbox: { room: channelLib.inboxRoom(container, chainId), relays: inbox.relays ?? [], ...(inbox.bus ? { bus: inbox.bus } : {}) },
-    }
+    try { await raiseRecordFloor(container, r) } catch (e) { if (e instanceof TapeAPIError && e.code === 'CHANNEL_INVALID') throw tapErr('CHANNEL_INVALID', 'record-invalid', `record-invalid: ${e.message}`); throw e }
+    return { ...channelRecordResult(container, id.circuits, id.tokenId, id.holder, r, inbox), tap10: { version: TAP10_VERSION, status: 'ok', pinned: pinnedView(pinned), implementations: impls.v } }
   }
 
   // Identity resolver shared by TAPI-26 (invite.from, invite.owner) and TAPI-27 (groupVerifier) (arch B7). Keyed by the
@@ -541,7 +837,7 @@ export function createTapeAPI(opts = {}) {
   const identities = (() => {
     const cache = new Map()      // key -> { at, rec } | { at, err: { code, message } }, oldest first / 旧的在前
     const inflight = new Map()   // key -> Promise
-    const copy = (rec) => ({ ...rec, inbox: { ...rec.inbox, relays: rec.inbox.relays.map((r) => ({ ...r })) } })
+    const copy = (rec) => ({ ...rec, inbox: { ...rec.inbox, relays: rec.inbox.relays.map((r) => ({ ...r })) }, ...(rec.tap10 ? { tap10: structuredClone(rec.tap10) } : {}) })
     const put = (key, entry) => {
       if (identityTtlS === 0) return
       cache.delete(key); cache.set(key, entry)
@@ -563,7 +859,8 @@ export function createTapeAPI(opts = {}) {
           put(key, { at: now(), rec })
           return rec
         } catch (e) {
-          if (e instanceof TapeAPIError && (e.code === 'CHANNEL_INVALID' || e.code === 'NOT_FOUND')) put(key, { at: now(), err: { code: e.code, message: e.message } })
+          // the conformance mode keeps data (data.status) with the verdict / 一致模式连同 data（data.status）一起保留
+          if (e instanceof TapeAPIError && (e.code === 'CHANNEL_INVALID' || e.code === 'NOT_FOUND')) put(key, { at: now(), err: { code: e.code, message: e.message, ...(conformMode && e.data !== undefined ? { data: structuredClone(e.data) } : {}) } })
           throw e
         } finally { inflight.delete(key) }
       })()
@@ -574,7 +871,7 @@ export function createTapeAPI(opts = {}) {
       async lookup(container, { fresh = false } = {}) {
         const key = container.toLowerCase()
         const e = fresh ? null : await hit(key)
-        if (e?.err) throw new TapeAPIError(e.err.code, e.err.message)
+        if (e?.err) throw (e.err.data !== undefined ? new TapeAPIError(e.err.code, e.err.message, { data: structuredClone(e.err.data) }) : new TapeAPIError(e.err.code, e.err.message))
         return copy(e ? e.rec : await read(container, key))
       },
       get size() { return cache.size },
@@ -717,7 +1014,9 @@ export function createTapeAPI(opts = {}) {
   // dev 只在没有配置 RPC 时才跳过 holder 比对；配置了 rpcUrls 的 dev 客户端照样读 ownerOf（M-06b）。
   // Dev mode skips the holder comparison only when no RPC is configured; a dev client with rpcUrls still reads ownerOf.
   // `holder`: an ownerOf(m.circuits, m.tokenId) read already under way (resolve starts it early) / 已经发出的 ownerOf 读取
-  async function verifyDelegation(m, { dev, holder: holderP = null, at = 'latest' }) {
+  // `read`: the conformance mode's strict read for the EIP-1271 calls (TAP-11 §2.2); none in the default mode.
+  // `read`：一致模式下 EIP-1271 调用用的严格读取（TAP-11 §2.2）；默认模式不传。
+  async function verifyDelegation(m, { dev, holder: holderP = null, at = 'latest', read }) {
     if (!m.delegation) {
       if (dev) return { delegation: false, holder: null, dev: true }
       throw new TapeAPIError('DELEGATION_INVALID', 'delegation missing')
@@ -730,7 +1029,9 @@ export function createTapeAPI(opts = {}) {
     const checkHolder = !(dev && !rpc)
     let holder
     if (checkHolder) {
-      try { holder = await (holderP ?? view(m.circuits, 'ownerOf', [BigInt(m.tokenId)], at)) } catch (e) {
+      // with `read` and no read under way, the fallback ownerOf is read the same way (FIXED Fable 5a) / 有 read 时兜底 ownerOf 同样读取
+      const ownerRead = () => (read ? needRpc().ethCall(m.circuits, encodeCall('ownerOf', [BigInt(m.tokenId)]), at, read).then((raw) => decodeReturn('ownerOf', raw)) : view(m.circuits, 'ownerOf', [BigInt(m.tokenId)], at))
+      try { holder = await (holderP ?? ownerRead()) } catch (e) {
         if (isRevert(e)) throw new TapeAPIError('MANIFEST_INVALID', `ownerOf(${m.circuits}, ${m.tokenId}) reverted: the manifest names a circuit that does not exist`)
         throw e
       }
@@ -753,7 +1054,7 @@ export function createTapeAPI(opts = {}) {
       if (!ecdsa) throw new TapeAPIError('DELEGATION_INVALID', 'a delegation signed under EIP-1271 can only be checked on chain: configure rpcUrls')
       return { delegation: true, holder: recovered, dev: true, checked: false }
     }
-    if (!(recovered && eqAddr(holder, recovered)) && !(await holderApproves(holder, digest, m.delegation.sig, at))) {
+    if (!(recovered && eqAddr(holder, recovered)) && !(await holderApproves(holder, digest, m.delegation.sig, at, read))) {
       throw new TapeAPIError('DELEGATION_INVALID', recovered ? `delegation signed by ${recovered}, holder is ${holder}` : `holder ${holder} does not accept this delegation signature under EIP-1271`)
     }
     return dev ? { delegation: true, holder: checksumAddress(holder), dev: true, checked: true } : { delegation: true, holder: checksumAddress(holder) }
@@ -768,12 +1069,14 @@ export function createTapeAPI(opts = {}) {
   // 只有 isValidSignature 回滚或返回乱码才算"不认可"。RPC 故障（此处或 eth_getCode 的）原样抛出：若变成 CHANNEL_INVALID，
   // 会被缓存，且会让 Safe 持有的成员在故障期间被移出群。
   const EIP1271_MAGIC = '0x1626ba7e'
-  async function holderApproves(holder, digest, sig, at = 'latest') {
+  // `opts`: the conformance mode's strict read ({ answers: 'tap10', strict: true }); none in the default mode.
+  // `opts`：一致模式的严格读取；默认模式不传。
+  async function holderApproves(holder, digest, sig, at = 'latest', opts) {
     if (!rpc) return false
-    if ((await rpc.call('eth_getCode', [holder, at])) === '0x') return false
+    if ((await (opts ? rpc.call('eth_getCode', [holder, at], opts) : rpc.call('eth_getCode', [holder, at]))) === '0x') return false
     const data = selector('isValidSignature(bytes32,bytes)') + bytesToHex(encodeParams(['bytes32', 'bytes'], [toHex(digest), sig]))
     let out
-    try { out = String(await rpc.ethCall(holder, data, at)).toLowerCase() }
+    try { out = String(await (opts ? rpc.ethCall(holder, data, at, opts) : rpc.ethCall(holder, data, at))).toLowerCase() }
     catch (e) { if (isRevert(e) || (e instanceof TapeAPIError && e.code === 'ABI_INVALID')) return false; throw e }
     // the whole first word, as OpenZeppelin's SignatureChecker reads it: a contract that echoes its calldata
     // starts with the magic too (review M-2) / 核对完整的第一个字：回显调用数据的合约开头同样是魔数
@@ -800,7 +1103,7 @@ export function createTapeAPI(opts = {}) {
         chainId: n, rpcUrls: conf.rpcUrls ?? rpcUrlsFor(n), quorum: conf.quorum ?? 2, rpcTimeoutMs: conf.rpcTimeoutMs ?? opts.rpcTimeoutMs,
         allowSingleNode: conf.allowSingleNode === true, quiet: (conf.quiet ?? opts.quiet) === true, hub: conf.hub, factory: conf.factory, siteRegistry: conf.siteRegistry,
         fetch: opts.fetch, dev: opts.dev, allowHttp: opts.allowHttp, maxSkewS: opts.maxSkewS,
-        identityCacheS: opts.identityCacheS, identityCacheSize: opts.identityCacheSize, channelRecordFloor: recordFloor, _router: forChain,
+        identityCacheS: opts.identityCacheS, identityCacheSize: opts.identityCacheSize, channelRecordFloor: recordFloor, sealStatusStore, _router: forChain,
         // security 1.1: the same choices on every chain, but each chain's own finality tag and age limit unless
         // chains[n].pin says otherwise / 各链沿用同样的选择，但标签与时限取各链自己的，除非 chains[n].pin 另有规定
         clock: opts.clock, sentinel: opts.sentinel, requireContentSig: opts.requireContentSig, onWarning: opts.onWarning,
@@ -810,6 +1113,9 @@ export function createTapeAPI(opts = {}) {
         // 1.4: the conformance mode on every chain, with each chain's own opener and payment contract (TAP-10 §2.2)
         // 1.4：每条链都跑一致模式，开通器与付费合约取各链自己的
         conform: conformMode ? 'tap10' : undefined, opener: conf.opener, binding: conf.binding,
+        // 1.5: the same consent to read every chain, so api.forChain(id) searches as this client does (TAP-10 §4.1)
+        // 1.5：同样的"读取所有链"许可，使 api.forChain(id) 与本客户端一样搜索
+        allChains: allChains || undefined,
       })
       subClients.set(n, sub)
     }
@@ -1291,8 +1597,9 @@ export function createTapeAPI(opts = {}) {
     return svc
   }
 
-  // The holder's content signature (TAPI-20 §3.10): null when valid, else why not. / 持有人的内容签名：有效返回 null，否则返回原因。
-  async function contentSigProblem(raw, container, holder, at) {
+  // The holder's content signature (TAPI-20 §3.10): null when valid, else why not. `read`: as for verifyDelegation.
+  // 持有人的内容签名：有效返回 null，否则返回原因。`read`：同 verifyDelegation。
+  async function contentSigProblem(raw, container, holder, at, read) {
     const sig = raw?.[MANIFEST_CONTENT_FIELD]
     if (sig === undefined) return 'the manifest carries no contentSig'
     if (typeof sig !== 'string' || !/^0x(?:[0-9a-fA-F]{2}){65,1024}$/.test(sig)) return 'contentSig must be a signature of 65 to 1024 bytes'
@@ -1302,23 +1609,26 @@ export function createTapeAPI(opts = {}) {
     let recovered = null
     if (sig.length === 132) { try { recovered = recoverAddress(digest, sig) } catch { /* not ECDSA / 不是 ECDSA */ } }
     if (recovered && eqAddr(recovered, holder)) return null
-    if (await holderApproves(holder, digest, sig, at)) return null
+    if (await holderApproves(holder, digest, sig, at, read)) return null
     return recovered ? `contentSig is signed by ${recovered}, the holder is ${holder}` : `holder ${holder} does not accept contentSig under EIP-1271`
   }
 
   // ════ TAP-10 conformance mode (@experimental, 1.4: the resolution path) / TAP-10 一致模式（1.4：解析路径） ════════════
   // createTapeAPI({ conform: 'tap10' }) resolves as TAP-10 v1.1 §3–§7 and TAP-11 §2.2 say, at one TAP-10 pinned block
-  // (§5.3): identity (§4.2, §4.3 without the processor-number scan), the site status in the order of §6.2 (store-changed,
-  // identity outcome, not-opened, unpaid), then the manifest (TAP-11 §2.2 steps 3–8). Every error carries the TAP name in
-  // data.status. api.siteStatus(target) gives the first two parts in any mode, without throwing on a site status.
-  // Not here yet (1.5): input without chain information on every chain (`ambiguous`), the processor-number reverse scan,
-  // the messaging reads (channelKeys, tapeSendKey stay as in the default mode: TAP-10 §12.2 says activation MUST NOT stop
-  // messaging, so neither checks it in any mode).
+  // (§5.3): identity (§4.2, §4.3 with the processor number found from the shipped snapshot or a paged cpuAt scan), the site
+  // status in the order of §6.2 (store-changed, identity outcome, not-opened, unpaid), then the manifest (TAP-11 §2.2 steps
+  // 3–8). The eth_chainId check, ownerOf and a contract holder's EIP-1271 calls are read under strict agreement (TAP-11
+  // §2.2), everything else under default agreement. Every error carries the TAP name in data.status. api.siteStatus(target) gives the first two parts in any mode,
+  // without throwing on a site status. With allChains (1.5), input without chain information is resolved on every chain
+  // (§4.1, everyChain below). The messaging reads (channelKeys, tapeSendKey) have their own TAP-10 path, after
+  // readChannelKeys above; activation is never checked there, in any mode (TAP-10 §12.2 says it MUST NOT stop messaging).
   // createTapeAPI({ conform: 'tap10' }) 按 TAP-10 v1.1 §3–§7 与 TAP-11 §2.2 解析，全部读取钉在一个 TAP-10 钉块上（§5.3）：身份
-  // （§4.2，§4.3 不含处理器号反查）、按 §6.2 顺序的站点状态（store-changed、身份结果、not-opened、unpaid），然后是清单（TAP-11 §2.2
-  // 第 3–8 步）。每个错误的 data.status 带 TAP 的名字。api.siteStatus(target) 在任何模式下给出前两部分，站点状态不抛错。
-  // 尚未包含（1.5）：无链信息的输入在所有链上解析（ambiguous）、处理器号反查、消息读取（channelKeys、tapeSendKey 保持默认模式：
-  // TAP-10 §12.2 规定激活不得阻止消息，所以任何模式下它们都不查激活）。
+  // （§4.2；§4.3 的处理器号来自随版本发布的快照或分页扫描 cpuAt）、按 §6.2 顺序的站点状态（store-changed、身份结果、not-opened、
+  // unpaid），然后是清单（TAP-11 §2.2 第 3–8 步）。eth_chainId 检查、ownerOf 与合约持有人的 EIP-1271 调用用严格共识（TAP-11 §2.2），其余用默认共识。
+  // 每个错误的 data.status 带 TAP 的名字。api.siteStatus(target) 在任何模式下给出
+  // 前两部分，站点状态不抛错。开启 allChains（1.5）时，无链信息的输入在所有链上解析（§4.1，见下面的 everyChain）。消息读取
+  // （channelKeys、tapeSendKey）有自己的 TAP-10 路径，在上面 readChannelKeys 之后；那里任何模式下都不查激活（TAP-10 §12.2 规定激活
+  // 不得阻止消息）。
   const TAP10_VERSION = '1.1'
   const TAP10_READ = { answers: 'tap10' }
   // A TapeAPIError carrying the TAP-10 / TAP-11 outcome name / 带 TAP-10 / TAP-11 结果名的错误
@@ -1345,13 +1655,19 @@ export function createTapeAPI(opts = {}) {
     return yes
   }
 
-  // §5.4: one eth_chainId per client before its first adopted read; only a success is kept. Default agreement (quorum
-  // operators, every answer equal), not strict: TAP-10 §5.4 makes strict a MUST for messaging clients only and TAP-11 §2.2
-  // a SHOULD for resolution, and strict would make one node down stop the conformance mode where the default mode goes on.
-  // Strict stays for the messaging path (1.5). A node on another chain still disagrees, and all of them is wrong-chain.
-  // §5.4：每个客户端在第一次采用读取之前做一次 eth_chainId；只保留成功的结果。用默认共识（quorum 家运营方、所有回答一致），不用严格共识：
-  // TAP-10 §5.4 只对消息客户端规定严格共识为 MUST，TAP-11 §2.2 对解析只是 SHOULD；严格共识会让一个节点宕机就停掉一致模式，而默认模式照常。
-  // 严格共识留给消息路径（1.5）。别的链上的节点照样造成分歧，全都在别的链上即 wrong-chain。
+  // §5.4 for siteStatus (any mode): one eth_chainId per client before its first adopted read; only a success is kept.
+  // Default agreement (quorum operators, every answer equal), not strict: siteStatus authorises nothing, TAP-10 §5.4 makes
+  // strict a MUST for messaging clients only, and strict would let one node down stop siteStatus where the default mode
+  // goes on. The conformance mode's resolve uses checkChainStrict instead (shared with the messaging path): it reads ownerOf
+  // and a contract holder's EIP-1271 calls (eth_getCode, isValidSignature, for the delegation and for contentSig) under
+  // strict agreement anyway (TAP-11 §2.2), so a node that cannot answer stops it before any state is read. Every other read
+  // of a resolution stays under default agreement (TAP-11 §2.2's MUST). A node on another chain disagrees in both checks,
+  // and all of them is wrong-chain.
+  // siteStatus（任何模式）的 §5.4：每个客户端在第一次采用读取之前做一次 eth_chainId；只保留成功的结果。用默认共识，不用严格共识：
+  // siteStatus 不授权任何东西，TAP-10 §5.4 只对消息客户端规定严格共识为 MUST，严格共识会让一个节点宕机就停掉 siteStatus 而默认模式照常。
+  // 一致模式的 resolve 改用 checkChainStrict（与消息路径共用）：它反正要用严格共识读 ownerOf 与合约持有人的 EIP-1271 调用（TAP-11
+  // §2.2），所以作答不了的节点让它在读任何状态之前就停下。解析的其它读取仍用默认共识（TAP-11 §2.2 的 MUST）。别的链上的节点在两种检查里
+  // 都造成分歧，全都在别的链上即 wrong-chain。
   let chainChecked = null
   function checkChain() {
     if (chainChecked) return chainChecked
@@ -1372,8 +1688,96 @@ export function createTapeAPI(opts = {}) {
   }
   // §4.3: the processor table may be kept for good (numbers are append-only); only an answer is kept.
   // §4.3：处理器表可以永久保留（编号只增不减）；只保留回答。
+  // Every entry was read at a pinned block (a name's cpuAt, a checked snapshot hit, a scan), never taken unread.
+  // 每一项都是在钉块上读到的（名字的 cpuAt、核实过的快照命中、扫描），绝不未读即用。
   const processorTable = new Map()   // processor number (string) -> processor contract / 处理器号 -> 处理器合约
-  const numberOf = (circuits) => { for (const [n, a] of processorTable) if (eqAddr(a, circuits)) return n; return null }
+  const processorNumbers = new Map() // processor contract (lowercase) -> processor number / 处理器合约 -> 处理器号
+  // `_processorTableMax` is for tests only (a full table) / 仅供测试（表满的情形）
+  const PROCESSOR_TABLE_MAX = Number.isSafeInteger(opts._processorTableMax) ? opts._processorTableMax : 65_536
+  // Returns false when the table is full and the entry was not kept / 表满、没有保留时返回 false
+  const keepProcessor = (n, circuits) => {
+    if (processorTable.has(String(n))) return true
+    if (processorTable.size >= PROCESSOR_TABLE_MAX) return false
+    processorTable.set(String(n), circuits); processorNumbers.set(String(circuits).toLowerCase(), String(n))
+    return true
+  }
+  const numberOf = (circuits) => processorNumbers.get(String(circuits).toLowerCase()) ?? null
+
+  // §4.3 step 3, the processor number of a processor contract (isCPU already true). The factory has no reverse table, so
+  // TAP-10 scans cpuAt(i); cold, that is over a thousand reads per node on BNB Smart Chain, which public nodes rate-limit
+  // (design risk 2). So, in order:
+  //   1. the kept table;
+  //   2. the snapshot shipped with this version (processors-snapshot.js, scripts/gen-processors-snapshot.mjs), used only for
+  //      this chain's own factory: a hit is checked with ONE cpuAt(i) at the pinned block before it is used or kept;
+  //   3. a scan of cpuAt at the pinned block, in pages of SCAN_PAGE reads (the rpc client batches each page per node), at
+  //      most SCAN_MAX numbers per resolution, resuming on the next one where it stopped (`unavailable` until then). It
+  //      covers only the numbers after the snapshot when the chain agrees with the snapshot (cpuCount >= its count and the
+  //      snapshot's last entry read back unchanged), all numbers otherwise. Numbers are append-only and never reused
+  //      (TAP-10 §1), which is what makes both the snapshot and the resumed scan sound.
+  // Returns the number as a string, or null when the processor is not in the factory's list (not-tapeout).
+  // §4.3 第 3 步：处理器合约的处理器号（isCPU 已为真）。工厂没有反查表，TAP-10 逐个扫 cpuAt(i)；冷启动在 BNB 上每个节点要上千次读取，
+  // 会被公共节点限流（设计风险 2）。所以依次：1. 已保留的表；2. 随版本发布的快照，只用于本链自己的工厂，命中后先在钉块上读一次 cpuAt(i)
+  // 核实才用、才保留；3. 在钉块上分页扫描 cpuAt，每页 SCAN_PAGE 个（rpc 客户端按节点合并为批量），每次解析至多 SCAN_MAX 个，下次从停下处
+  // 继续（之前报 unavailable）。链与快照一致时（cpuCount 不小于快照数量、快照最后一项读回不变）只扫快照之后的编号，否则全部扫描。
+  // 编号只增不减、永不复用（TAP-10 §1），快照与续扫因此成立。返回字符串编号；不在工厂列表里返回 null（not-tapeout）。
+  const SCAN_PAGE = 8
+  const SCAN_MAX = 256
+  const snapshot = (() => { const t = PROCESSORS_SNAPSHOT[Number(chainId)]; return t && eqAddr(t.factory, factory) ? t : null })()
+  let snapshotIndex = null           // processor contract (lowercase) -> snapshot number, built on first use / 首次用到时建立
+  let snapshotAgrees = null          // null: not checked yet; true / false: what the chain said / 尚未核对；链的回答
+  let scan = null                    // { from, next }: the numbers scanned so far, from `from` / 已扫描的编号
+  async function processorNumberOf(circuits, at) {
+    const kept = numberOf(circuits)
+    if (kept !== null) return kept
+    if (snapshot && snapshotAgrees !== false) {
+      snapshotIndex ??= new Map(snapshot.list.map((a, i) => [a, i]))
+      const i = snapshotIndex.get(String(circuits).toLowerCase())
+      if (i !== undefined) {
+        let got = null
+        try { got = await viewTap(factory, 'cpuAt', [BigInt(i)], at) } catch (e) { if (!reverted(e)) throw e }
+        if (got !== null && eqAddr(got, circuits)) { keepProcessor(i, checksumAddress(got)); return String(i) }
+        snapshotAgrees = false   // the chain says otherwise: no longer trusted, scan everything / 链给出不同答案：不再信任，全部扫描
+      }
+    }
+    return scanProcessors(circuits, at)
+  }
+  // One scan at a time per client: two resolutions scanning together would otherwise share `scan.next` and skip numbers.
+  // 每个客户端同一时间只有一次扫描：否则两次解析同时扫描会共用 scan.next 而漏掉编号。
+  let scanQueue = Promise.resolve()
+  function scanProcessors(circuits, at) {
+    const run = scanQueue.then(() => scanNow(circuits, at))
+    scanQueue = run.catch(() => {})
+    return run
+  }
+  async function scanNow(circuits, at) {
+    const kept = numberOf(circuits)   // found by the scan this one waited for / 前一次扫描已找到
+    if (kept !== null) return kept
+    const checkLast = snapshot && snapshotAgrees === null && snapshot.count > 0
+    const countP = early(() => viewTap(factory, 'cpuCount', [], at))
+    const lastP = checkLast ? early(() => viewTap(factory, 'cpuAt', [BigInt(snapshot.count - 1)], at).catch((e) => { if (reverted(e)) return null; throw e })) : null
+    const count = Number(await countP)
+    if (checkLast) {
+      const last = await lastP
+      snapshotAgrees = count >= snapshot.count && last !== null && eqAddr(last, snapshot.list[snapshot.count - 1])
+    }
+    const from = snapshot && snapshotAgrees ? snapshot.count : 0
+    if (!scan || scan.from !== from) scan = { from, next: from }
+    for (let budget = SCAN_MAX; scan.next < count && budget > 0;) {
+      const idx = Array.from({ length: Math.min(SCAN_PAGE, count - scan.next, budget) }, (_, k) => scan.next + k)
+      const page = await Promise.all(idx.map((i) => processorTable.get(String(i)) ?? viewTap(factory, 'cpuAt', [BigInt(i)], at)))
+      const hit = page.findIndex((a) => eqAddr(a, circuits))
+      // A full table keeps nothing more: the scan must not move past numbers it could not keep, or a later lookup of one of
+      // them would find nothing and say not-tapeout. / 表满后不再保留：扫描不得越过没能保留的编号，否则之后查它们会误报 not-tapeout。
+      const kept = idx.map((i, k) => keepProcessor(i, checksumAddress(page[k])))
+      if (hit >= 0) { if (kept.every(Boolean)) scan.next += idx.length; return String(idx[hit]) }
+      if (!kept.every(Boolean)) {
+        throw tapErr('RPC_UNAVAILABLE', 'unavailable', `unavailable: the processor table this client keeps is full (${PROCESSOR_TABLE_MAX} entries), so the scan for ${circuits} stops at number ${scan.next} of ${count} (TAP-10 §4.3 step 3); use a new client`, { scan: { from, next: scan.next, count, full: true } })
+      }
+      scan.next += idx.length; budget -= idx.length
+    }
+    if (scan.next >= count) return null
+    throw tapErr('RPC_UNAVAILABLE', 'unavailable', `unavailable: ${circuits} is a TapeOut processor (isCPU), but its processor number is not among the ${scan.next - from} read so far (numbers ${from} to ${scan.next - 1} of ${count}); the scan reads at most ${SCAN_MAX} per resolution and goes on from there next time (TAP-10 §4.3 step 3)`, { scan: { from, next: scan.next, count } })
+  }
 
   // The site store and payment contract implementations at the pinned block (§6.1), read fresh every time.
   // 钉块上站点存储与付费合约的实现（§6.1），每次重读。
@@ -1388,12 +1792,15 @@ export function createTapeAPI(opts = {}) {
   }
 
   // Parse a target into what TAP-10 §3.4 accepts (input errors thrown) and the chain it names (null: this client's).
-  // 把目标解析为 TAP-10 §3.4 接受的形式（输入错误直接抛出）以及它所指的链（null 为本客户端的链）。
+  // `chainless`: a container address or processor contract#ID STRING, TAP-10's input without chain information (§4.1);
+  // the object forms name their chain (default: this client's).
+  // 把目标解析为 TAP-10 §3.4 接受的形式（输入错误直接抛出）以及它所指的链（null 为本客户端的链）。chainless：容器地址或
+  // "处理器合约#ID"**字符串**，即 TAP-10 的无链信息输入（§4.1）；对象形式自带链（默认本客户端的链）。
   function conformInput(target) {
     if (typeof target === 'string') {
       const p = parseTapeInput(target)
       if (p.error) throw tapErr('INVALID_ARGUMENT', 'input-error', p.error)
-      return { input: p, where: p.kind === 'name' ? p.chainId : null }
+      return { input: p, where: p.kind === 'name' ? p.chainId : null, chainless: p.kind !== 'name' }
     }
     if (target && typeof target === 'object' && !('dev' in target)) {
       let where = null
@@ -1405,9 +1812,9 @@ export function createTapeAPI(opts = {}) {
         let t
         try { t = BigInt(target.tokenId) } catch { throw tapErr('INVALID_ARGUMENT', 'input-error', 'target.tokenId must be a whole number') }
         if (t < 1n || t > MAX_TOKEN_ID) throw tapErr('INVALID_ARGUMENT', 'input-error', 'target.tokenId is out of range: 1 <= #ID <= 10^18 (TAP-10 §3.1)')
-        return { input: { kind: 'pair', circuits: target.circuits, tokenId: t.toString() }, where }
+        return { input: { kind: 'pair', circuits: target.circuits, tokenId: t.toString() }, where, chainless: false }
       }
-      if (isAddress(target.container) && where !== null) return { input: { kind: 'container', container: target.container }, where }
+      if (isAddress(target.container) && where !== null) return { input: { kind: 'container', container: target.container }, where, chainless: false }
     }
     throw tapErr('INVALID_ARGUMENT', 'input-error', 'unsupported resolve target: give a TAP-10 input form (TAP-10 §3.4), { circuits, tokenId } or { chainId, container }')
   }
@@ -1417,7 +1824,16 @@ export function createTapeAPI(opts = {}) {
   // 在一个钉块上做 §4 身份与 §6.2 站点状态。返回 TAP-10 视图：status 为 'ok' 或第一个适用的站点状态；无法采用的读取直接抛出。
   // TAP-10 reads pin to the block's hash (EIP-1898), whatever the client's own pin option / TAP-10 的读取钉在区块哈希上
   const tapAt = (b) => ({ blockHash: b.hash, requireCanonical: true })
-  async function identifyAt(input, pinned, { proofs = null, issue = null } = {}) {
+  // `unsure`: a container address string read on this chain only (no allChains), which may be a container of another chain
+  // that is not being read: what is no container HERE is `unsupported`, not not-tapeout (TAP-10 §4.1). Otherwise (every
+  // chain is being read, or an object form names this chain) it is this chain's not-tapeout.
+  // unsure：只在本链读取（未开 allChains）的容器地址字符串，可能是没有读取的别的链上的容器：在本链不是容器即报 unsupported，
+  // 不报 not-tapeout（TAP-10 §4.1）。否则（所有链都在读取，或对象形式指明了本链）即为本链的 not-tapeout。
+  // `strictHolder`: read ownerOf under strict agreement (TAP-11 §2.2: a forged holder would authorise a signer). Set by the
+  // conformance mode's resolve only; siteStatus, in either mode, keeps default agreement (it authorises nothing).
+  // strictHolder：ownerOf 用严格共识读取（TAP-11 §2.2：伪造的持有人会授权签名者）。只有一致模式的 resolve 设置；siteStatus 在两种
+  // 模式下都保持默认共识（它不授权任何东西）。
+  async function identifyAt(input, pinned, { proofs = null, issue = null, unsure = false, strictHolder = false } = {}) {
     const at = tapAt(pinned)
     const out = {
       version: TAP10_VERSION, status: null, chainId: Number(chainId), name: null, processor: null, tokenId: null, circuits: null,
@@ -1438,23 +1854,24 @@ export function createTapeAPI(opts = {}) {
         if (!circuits) {
           if (BigInt(await countP) <= BigInt(input.processor)) return 'no-such-cpu'
           try { circuits = await cpuP } catch (e) { if (reverted(e)) return 'no-such-cpu'; throw e }
-          if (processorTable.size < 4096) processorTable.set(input.processor, circuits)
+          keepProcessor(input.processor, circuits)
         }
         out.circuits = checksumAddress(circuits)
         return null
       })()
     } else if (input.kind === 'container') {
       // §4.3 step 1: token(); its chainId must be this chain. An address that is no container HERE may be one on another
-      // chain, and TAP-10 §4.1 forbids not-tapeout until every active chain was read: 1.4 reads this chain only, so it says
-      // `unsupported` instead. A token() naming this chain is a claim no container of another chain can make (ERC-6551
-      // addresses commit to their chainId), so a later failed check is not-tapeout.
+      // chain, and TAP-10 §4.1 forbids not-tapeout until every active chain was read: without allChains this client reads
+      // this chain only, so it says `unsupported` instead. A token() naming this chain is a claim no container of another
+      // chain can make (ERC-6551 addresses commit to their chainId), so a later failed check is not-tapeout.
       // 第 1 步：token()，其链号须为本链。在本链上不是容器的地址可能是别的链上的容器，而 TAP-10 §4.1 规定读遍所有活跃链之前不得报
-      // not-tapeout：1.4 只读本链，所以改报 unsupported。token() 声称本链时，别的链上的容器不可能如此声称（ERC-6551 地址包含链号），
-      // 之后的检查失败即为 not-tapeout。
+      // not-tapeout：不开 allChains 时只读本链，所以改报 unsupported。token() 声称本链时，别的链上的容器不可能如此声称（ERC-6551
+      // 地址包含链号），之后的检查失败即为 not-tapeout。
+      const elsewhere = (why) => { if (!unsure) return 'not-tapeout'; throw otherChain(input.container, why) }
       identity = (async () => {
         let tok
-        try { tok = await viewTap(input.container, 'token', [], at) } catch (e) { if (reverted(e)) throw otherChain(input.container, 'does not answer ERC-6551 token() here'); throw e }
-        if (BigInt(tok[0]) !== BigInt(chainId)) throw otherChain(input.container, `answers token() for chain ${BigInt(tok[0])}`)
+        try { tok = await viewTap(input.container, 'token', [], at) } catch (e) { if (reverted(e)) return elsewhere('does not answer ERC-6551 token() here'); throw e }
+        if (BigInt(tok[0]) !== BigInt(chainId)) return elsewhere(`answers token() for chain ${BigInt(tok[0])}`)
         // A #ID outside TAP-10 §3.1 (0, or above 10^18) names no circuit: a contract claiming it is not a container
         // 超出 TAP-10 §3.1 的 #ID（0 或大于 10^18）不是任何电路：这样声称的合约不是容器
         if (BigInt(tok[2]) < 1n || BigInt(tok[2]) > MAX_TOKEN_ID) return 'not-tapeout'
@@ -1474,22 +1891,33 @@ export function createTapeAPI(opts = {}) {
     if (impls.v.some((x) => !x.accepted)) return stop('store-changed')
     if (id.e) throw id.e
     if (id.v) return stop(id.v)
-    // §4.3 step 2 (container address, processor contract#ID): a TapeOut processor; step 3 from the cached table only (1.5
-    // scans). / 第 2 步：是 TapeOut 处理器；第 3 步只查缓存的表（1.5 才扫描）。
+    // §4.3 steps 2-3 (container address, processor contract#ID): a TapeOut processor, then its processor number (snapshot,
+    // then scan: processorNumberOf), read with the steps of §4.2 below in one turn.
+    // 第 2、3 步：是 TapeOut 处理器，再找它的处理器号（快照，然后扫描），与下面 §4.2 的读取同一轮发出。
+    // A container whose token() names this chain is this chain's or nothing: not-tapeout below is a verdict. A processor
+    // contract#ID string gets here unsure only from siteStatus on a default client (under conform it is refused first).
+    // token() 指明本链的容器只能是本链的：下面的 not-tapeout 是结论。不确定的"处理器合约#ID"字符串只会来自默认客户端的 siteStatus。
+    let numberP = null
     if (input.kind !== 'name') {
-      // A processor contract#ID whose contract is no processor here may be one on another chain (the Base and X Layer
-      // factories share an address): unsupported, as above. / 处理器合约#ID 在本链不是处理器时可能是别的链上的处理器：同上。
-      const notCpu = () => (input.kind === 'pair' ? otherChain(out.circuits, 'is not a TapeOut processor here') : null)
+      // siteStatus on a default client reads a processor contract#ID string on this chain only (unsure): one that is no
+      // processor here may be one on another chain (1.4's unsupported) / 默认客户端的 siteStatus 只在本链读"处理器合约#ID"字符串
+      const notCpu = () => { if (unsure && input.kind === 'pair') throw otherChain(out.circuits, 'is not a TapeOut processor here'); return stop('not-tapeout') }
       let cpu
-      try { cpu = await isCPUTap(out.circuits, at) } catch (e) { if (reverted(e)) { if (notCpu()) throw notCpu(); return stop('not-tapeout') } throw e }
-      if (!cpu) { if (notCpu()) throw notCpu(); return stop('not-tapeout') }
-      out.processor = numberOf(out.circuits)
+      try { cpu = await isCPUTap(out.circuits, at) } catch (e) { if (reverted(e)) return notCpu(); throw e }
+      if (!cpu) return notCpu()
+      numberP = early(() => processorNumberOf(out.circuits, at))
     }
-    if (out.processor !== null) out.name = formatTapeName({ tokenId: out.tokenId, processor: out.processor, chainId })
     // §4.2 steps 3-5: the container from the OPENER, the holder, opened; one turn / 第 3-5 步：开通器推导容器、持有人、是否开通；同一轮
     const accountP = early(() => viewTap(opener, 'accountOf', [out.circuits, BigInt(out.tokenId)], at))
-    const holderP = early(() => viewTap(out.circuits, 'ownerOf', [BigInt(out.tokenId)], at))
+    const holderP = early(() => (strictHolder ? viewStrict : viewTap)(out.circuits, 'ownerOf', [BigInt(out.tokenId)], at))
     const openedP = early(() => viewTap(opener, 'isOpened', [out.circuits, BigInt(out.tokenId)], at))
+    if (numberP) {
+      // §4.3 step 3: not in the factory's list -> not-tapeout / 不在工厂列表里即 not-tapeout
+      const n = await numberP
+      if (n === null) return stop('not-tapeout')
+      out.processor = n
+    }
+    out.name = formatTapeName({ tokenId: out.tokenId, processor: out.processor, chainId })
     const derived = checksumAddress(await accountP)
     // §4.3 step 4: the opener must derive the very address given / 第 4 步：开通器必须推导出给定的那个地址
     if (input.kind === 'container' && !eqAddr(derived, input.container)) return stop('not-tapeout')
@@ -1507,39 +1935,40 @@ export function createTapeAPI(opts = {}) {
     }
     try { out.holder = checksumAddress(await holderP) } catch (e) { if (reverted(e)) return stop('no-such-token'); throw e }
     out.opened = (await openedP) === true
-    if (proofs) out.proof = { factory: factoryProof(proofs, out.circuits, input.kind === 'name' ? BigInt(out.processor) : null), owner: proofs.request(out.circuits, [STORAGE.ownerOf(out.tokenId)]) }
+    // the processor number is known for every input since 1.5 (a name, or found above) / 1.5 起每种输入都已知处理器号
+    if (proofs) out.proof = { factory: factoryProof(proofs, out.circuits, out.processor !== null ? BigInt(out.processor) : null), owner: proofs.request(out.circuits, [STORAGE.ownerOf(out.tokenId)]) }
     if (!out.opened) return stop('not-opened')
-    // §6.3: isLive(on-chain name, derived container) or isContainerLive(derived container); a revert is false. Without a
-    // processor number (1.4: container address or processor contract#ID not in the table) isLive cannot be asked.
-    // §6.3：isLive(链上名字, 推导出的容器) 或 isContainerLive(推导出的容器)；回滚即为假。没有处理器号时（1.4：容器地址或不在表里的
-    // 处理器合约#ID）无法查询 isLive。
-    const liveP = out.name ? early(() => viewTap(binding, 'isLive', [out.name, out.container], at)) : null
+    // §6.3: isLive(on-chain name, derived container) or isContainerLive(derived container); a revert is false. The name is
+    // known for every input by now (1.5: the processor number of a container or processor contract#ID is found above).
+    // §6.3：isLive(链上名字, 推导出的容器) 或 isContainerLive(推导出的容器)；回滚即为假。此时每种输入都已有名字（1.5：容器与处理器合约#ID
+    // 的处理器号已在上面找到）。
+    const liveP = early(() => viewTap(binding, 'isLive', [out.name, out.container], at))
     const containerLiveP = early(() => viewTap(binding, 'isContainerLive', [out.container], at))
     const a = { live: false, isLive: null, isContainerLive: false }
     // TAP-10 §6.3 says a revert counts as false for isContainerLive only. isLive is counted the same way here: no accepted
     // implementation reverts on isLive, so this branch can only meet an unknown implementation, which the implementation
     // check above has already refused (store-changed). / TAP-10 §6.3 只对 isContainerLive 规定回滚算假。这里 isLive 同样处理：
     // 接受列表里的实现对 isLive 不会回滚，这个分支只可能遇到未知实现，而未知实现已被上面的实现钉住拒绝（store-changed）。
-    if (liveP) { try { a.isLive = (await liveP) === true } catch (e) { if (!reverted(e)) throw e; a.isLive = false; a.isLiveReverted = true } }
+    try { a.isLive = (await liveP) === true } catch (e) { if (!reverted(e)) throw e; a.isLive = false; a.isLiveReverted = true }
     try { a.isContainerLive = (await containerLiveP) === true } catch (e) { if (!reverted(e)) throw e; a.isContainerLive = false; a.isContainerLiveReverted = true }
     a.live = a.isLive === true || a.isContainerLive
-    // Without a processor number there is no on-chain name, so isLive cannot be asked: a container that paid for its name
-    // only (isLive true, isContainerLive false, TAP-10 §6.3) would look unpaid. 1.4 gives no verdict then.
-    // 没有处理器号就没有链上名字，无法查询 isLive：只按名字付过费的容器（isLive 真、isContainerLive 假）会被看成未付费。1.4 此时不下结论。
-    if (!a.live && out.name === null) {
-      throw tapErr('INVALID_ARGUMENT', 'unsupported', `unsupported: ${input.kind === 'container' ? input.container : `${out.circuits}#${out.tokenId}`} gives no processor number, so the conformance mode of 1.4 cannot decide its activation (isContainerLive is ${a.isContainerLiveReverted ? 'reverted' : 'false'}, and isLive needs the on-chain name): pass the name (for example 4246.7.tape); reverse resolution of a container address comes in 1.5`, { chainId: Number(chainId), circuits: out.circuits, tokenId: out.tokenId, container: out.container, holder: out.holder, opened: out.opened, activation: a })
-    }
     out.activation = a
     return stop(a.live ? 'ok' : 'unpaid')
   }
 
-  // Input this 1.4 client cannot decide because it may belong to another chain (TAP-10 §4.1) / 可能属于别的链、1.4 无法判定的输入
-  const otherChain = (what, why) => tapErr('INVALID_ARGUMENT', 'unsupported', `unsupported: ${what} ${why} on chain ${chainId}; it may be one on another chain, which the conformance mode of 1.4 does not search (TAP-10 §4.1 forbids not-tapeout until every active chain was read): use api.forChain(chainId) or pass the on-chain name; resolution on every chain comes in 1.5`, { chainId: Number(chainId), input: what })
+  // Input this client cannot decide without allChains because it may belong to another chain (TAP-10 §4.1)
+  // 不开 allChains 时无法判定、可能属于别的链的输入
+  const otherChain = (what, why) => tapErr('INVALID_ARGUMENT', 'unsupported', `unsupported: ${what} ${why} on chain ${chainId}; it may be one on another chain, and TAP-10 §4.1 forbids not-tapeout until every active chain was read: pass allChains: true to createTapeAPI (it then also reads Base and X Layer), { chainId, container } for one chain, or the on-chain name`, { chainId: Number(chainId), input: what })
+  // A processor contract#ID string without allChains: TAP-10 §4.1 resolves it only when exactly one chain does, which one
+  // chain's reads cannot tell. Refused before any request. / 不开 allChains 的"处理器合约#ID"字符串：TAP-10 只在恰好一条链命中时解析，
+  // 只读一条链无从得知。发请求之前就拒绝。
+  const pairNeedsAllChains = (input) => tapErr('INVALID_ARGUMENT', 'unsupported', `unsupported: ${input.circuits}#${input.tokenId} is a processor contract#ID, which TAP-10 §4.1 resolves only when exactly one active chain resolves it (the Base and X Layer factories share an address, so one processor contract can exist on both); this client reads other chains for such input only with allChains: true (it then also asks the nodes of Base and X Layer). Or pass the on-chain name, or { circuits, tokenId, chainId } for one chain`, { chainId: Number(chainId), input: `${input.circuits}#${input.tokenId}` })
 
-  // The site status as an error, for resolve / 把站点状态变成 resolve 的错误
-  function siteError(v, given) {
+  // The site status as an error, for resolve. `chains`: what every chain said, when the input was searched on every chain.
+  // 把站点状态变成 resolve 的错误。chains：输入在所有链上搜索时，各链的结果。
+  function siteError(v, given, chains = null) {
     const what = v.name ?? (v.circuits ? `${v.circuits}#${v.tokenId}` : given)
-    const data = { chainId: v.chainId, name: v.name, processor: v.processor, tokenId: v.tokenId, circuits: v.circuits, container: v.container, holder: v.holder, opened: v.opened, activation: v.activation, implementations: v.implementations, pinned: v.pinned }
+    const data = { chainId: v.chainId, name: v.name, processor: v.processor, tokenId: v.tokenId, circuits: v.circuits, container: v.container, holder: v.holder, opened: v.opened, activation: v.activation, implementations: v.implementations, pinned: v.pinned, ...(chains ? { chains } : {}) }
     switch (v.status) {
       case 'store-changed': {
         const x = v.implementations.find((i) => !i.accepted)
@@ -1547,9 +1976,9 @@ export function createTapeAPI(opts = {}) {
       }
       case 'no-such-cpu': return tapErr('NOT_FOUND', 'no-such-cpu', `no-such-cpu: processor ${v.processor} does not exist on chain ${v.chainId}`, data)
       case 'no-such-token': return tapErr('NOT_FOUND', 'no-such-token', `no-such-token: ${what} has no circuit (ownerOf reverts)`, data)
-      case 'not-tapeout': return tapErr('NOT_FOUND', 'not-tapeout', `not-tapeout: ${given} is not a TapeOut circuit container or processor on chain ${v.chainId} (TAP-10 §4.3)`, data)
+      case 'not-tapeout': return tapErr('NOT_FOUND', 'not-tapeout', `not-tapeout: ${given} is not a TapeOut circuit container or processor on ${chains ? `any TapeOut chain (read: ${chains.map((c) => c.chainId).join(', ')})` : `chain ${v.chainId}`} (TAP-10 §4.3)`, data)
       case 'not-opened': return tapErr('SITE_STATUS', 'not-opened', `not-opened: the container ${v.container} of ${what} has not been opened (TAP-10 §6.2)`, data)
-      case 'unpaid': return tapErr('SITE_STATUS', 'unpaid', `unpaid: ${what} is not activated: ${v.activation.isLive === null ? 'isContainerLive is false (isLive was not checked: give the on-chain name for that check)' : 'isLive and isContainerLive are both false'}; its holder activates it with DomainBinding.bind (TAP-10 §6.3)`, data)
+      case 'unpaid': return tapErr('SITE_STATUS', 'unpaid', `unpaid: ${what} is not activated: isLive and isContainerLive are both false; its holder activates it with DomainBinding.bind (TAP-10 §6.3)`, data)
       default: return tapErr('INTERNAL', v.status, `unexpected site status ${v.status}`, data)
     }
   }
@@ -1558,21 +1987,91 @@ export function createTapeAPI(opts = {}) {
    * @experimental (1.4) TAP-10 site status of a target, in any mode: identity (§4) and site status (§6.2) at one TAP-10 pinned
    * block (§5.3), with no manifest read. Resolves to { version, status, chainId, name, processor, tokenId, circuits, container,
    * holder, opened, activation, implementations, pinned }; `status` is 'ok', 'unpaid', 'not-opened', 'store-changed',
-   * 'no-such-cpu', 'no-such-token' or 'not-tapeout' and is never thrown. Throws only for an input error, wrong-chain and
-   * reads that cannot be adopted (stale-block, unavailable). Activation is a site rule (TAP-10 §6.3): messaging is never
-   * gated by it (§12.2).
+   * 'no-such-cpu', 'no-such-token' or 'not-tapeout' and is never thrown. Throws only for an input error, `ambiguous`,
+   * `unsupported`, wrong-chain and reads that cannot be adopted (stale-block, unavailable). With allChains (1.5) a container
+   * address or processor contract#ID string is looked up on every chain, and the result carries `chains`, what each chain
+   * said. Activation is a site rule (TAP-10 §6.3): messaging is never gated by it (§12.2).
    * @experimental（1.4）目标的 TAP-10 站点状态，任何模式可用：在一个 TAP-10 钉块上做身份（§4）与站点状态（§6.2），不读清单。status
-   * 绝不抛出；只有输入错误、wrong-chain 与无法采用的读取才抛错。激活是站点规则（§6.3），绝不限制消息（§12.2）。
+   * 绝不抛出；只有输入错误、ambiguous、unsupported、wrong-chain 与无法采用的读取才抛错。开启 allChains（1.5）时，容器地址或
+   * "处理器合约#ID"字符串在每条链上查找，结果带 chains（各链的结果）。激活是站点规则（§6.3），绝不限制消息（§12.2）。
    */
   async function siteStatus(target) {
     try {
-      const { input, where } = conformInput(target)
+      const { input, where, chainless } = conformInput(target)
       if (where !== null && where !== Number(chainId)) return forChain(where).siteStatus(target)
-      const [pinned] = await Promise.all([tap10Pin(), checkChain()])
-      const v = await identifyAt(input, pinned)
-      delete v.proof
-      return v
+      if (chainless && allChains) {
+        const { winner, chains, candidates } = await everyChain(input, givenOf(target), (local) => local.site(input))
+        return { ...winner.v, chains, ...(candidates ? { candidates } : {}) }
+      }
+      // Under conform: 'tap10' a processor contract#ID string needs every chain (TAP-10 §4.1). siteStatus on a default
+      // client keeps 1.4's answer: resolved on this client's chain, `unsupported` when it is no processor here.
+      // 一致模式下"处理器合约#ID"字符串需要所有链。默认客户端的 siteStatus 保持 1.4 的回答：在本链解析，在本链不是处理器即 unsupported。
+      if (chainless && input.kind === 'pair' && conformMode) throw pairNeedsAllChains(input)
+      return (await siteHere(input, { unsure: chainless })).v
     } catch (e) { throw withStatus(e) }
+  }
+  // This chain's site status at a fresh TAP-10 pinned block / 本链在新的 TAP-10 钉块上的站点状态
+  async function siteHere(input, { unsure = false } = {}) {
+    const [pinned] = await Promise.all([tap10Pin(), checkChain()])
+    const v = await identifyAt(input, pinned, { unsure })
+    delete v.proof
+    return { v }
+  }
+  const givenOf = (target) => (typeof target === 'string' ? target.trim().slice(0, 80) : (target.container ?? `${target.circuits}#${target.tokenId}`))
+
+  // TAP-10 §4.1 with allChains: input without chain information on every TapeOut chain, each through that chain's client at
+  // its own pinned block (`run` gets the client's TAP10_LOCAL steps). What a chain says is one of:
+  //   resolved   identity reached a circuit with a holder: ok, unpaid or not-opened;
+  //   problem    the chain could not be read (unavailable, stale-block, wrong-chain, ...), or its site store or payment
+  //              contract runs an implementation that is not accepted (store-changed): its identity is unknown;
+  //   miss       not-tapeout or no-such-token.
+  // Then: two or more resolved -> ambiguous (INVALID_ARGUMENT, data.candidates), whatever the rest say. One resolved -> that
+  // chain, except a processor contract#ID while another chain is a problem -> that problem (§4.1 "report the other chain's
+  // status rather than guess"); a container address can be a container of one chain only (its ERC-6551 address commits to
+  // the chainId), so a container that resolves is that chain's whatever the others say. None resolved -> the first
+  // problem, never not-tapeout; with no problem, no-such-token where a chain has the processor but not the #ID, else
+  // not-tapeout. Chains go in a fixed order (this client's first, then CHAIN_IDS), and `chains` lists what each said.
+  // TAP-10 §4.1（allChains）：无链信息的输入在每条 TapeOut 链上解析，各由该链的客户端在自己的钉块上进行。每条链的结果为：
+  //   resolved（身份解析到有持有人的电路：ok、unpaid、not-opened）；problem（读不到：unavailable、stale-block、wrong-chain 等，或站点
+  //   存储、付费合约的实现不被接受：store-changed；这条链上的身份未知）；miss（not-tapeout、no-such-token）。
+  // 判定：两条及以上 resolved 即 ambiguous（无论其余如何）。一条 resolved 即用那条链；但"处理器合约#ID"在另有 problem 链时报那条链的
+  // 状态（§4.1"报告另一条链的状态而不是猜"）；容器地址只可能是一条链的容器（ERC-6551 地址包含链号），命中即用，不论其余。都没有
+  // resolved：报第一个 problem，绝不报 not-tapeout；没有 problem 时，某链有该处理器却没有该 #ID 即 no-such-token，否则 not-tapeout。
+  // 链的顺序固定（本客户端的链在前，然后按 CHAIN_IDS），chains 列出每条链的结果。
+  const RESOLVED = new Set(['ok', 'unpaid', 'not-opened'])
+  async function everyChain(input, given, run) {
+    const own = Number(chainId)
+    const ids = [...(CHAIN_IDS.includes(own) ? [own] : []), ...CHAIN_IDS.filter((id) => id !== own)]
+    // Every chain's client first, outside the per-chain verdicts: a configuration mistake (chains[id] with too few
+    // operators, ...) is thrown as it is, never reported as a chain that "could not be decided".
+    // 先取齐各链的客户端，不放进各链的结论里：配置错误（chains[id] 运营方不足等）原样抛出，绝不报成"无法判定"的链。
+    const locals = ids.map((id) => [id, TAP10_LOCAL.get(id === own ? api : forChain(id))])
+    const settled = await Promise.all(locals.map(async ([id, local]) => {
+      try { return { id, ...(await run(local)) } } catch (e) {
+        if (!(e instanceof TapeAPIError)) throw e
+        return { id, error: withStatus(e) }
+      }
+    }))
+    const statusOf = (r) => (r.error ? r.error.data.status : r.v.status)
+    const chains = settled.map((r) => ({ chainId: r.id, status: statusOf(r) }))
+    const resolved = settled.filter((r) => !r.error && RESOLVED.has(r.v.status))
+    const problems = settled.filter((r) => r.error || r.v.status === 'store-changed')
+    // `warnings`: what identity on that chain would have reported (held, e.g. CONTAINER_MISMATCH) / 该链身份阶段留住的警告
+    const candidates = resolved.map((r) => ({ chainId: r.id, name: r.v.name, processor: r.v.processor, tokenId: r.v.tokenId, circuits: r.v.circuits, container: r.v.container, status: r.v.status, ...(r.held?.length ? { warnings: [...r.held] } : {}) }))
+    const nameOf = (r) => `${chainById(r.id).name}${r.v?.name ? ` (${r.v.name})` : ''}`
+    if (resolved.length > 1) {
+      throw tapErr('INVALID_ARGUMENT', 'ambiguous', `ambiguous: ${given} resolves on ${resolved.map(nameOf).join(' and ')}; give the on-chain name, which carries its chain (TAP-10 §4.1)`, { input: given, candidates, chains })
+    }
+    if (resolved.length === 1 && (input.kind === 'container' || problems.length === 0)) return { winner: resolved[0], chains }
+    if (problems.length) {
+      const p = problems[0]
+      const why = resolved.length
+        ? `${given} resolves on ${nameOf(resolved[0])}, but TAP-10 §4.1 adopts a processor contract#ID only when no other chain resolves it, and ${chainById(p.id).name} could not be decided`
+        : `${given} resolves on no chain that could be read, and TAP-10 §4.1 forbids not-tapeout while ${chainById(p.id).name} could not be decided`
+      if (p.error) throw tapErr(p.error.code, statusOf(p), `${p.error.message} [${why}]`, { ...p.error.data, chainId: p.id, input: given, chains, ...(resolved.length ? { candidates } : {}) })
+      return { winner: p, chains, candidates: resolved.length ? candidates : null }
+    }
+    return { winner: settled.find((r) => r.v.status === 'no-such-token') ?? settled[0], chains }
   }
 
   // TAP-11 §2.2 step 3 under TAP-10 §7.1: the exact key, chunkCount 0 is no-manifest, at most 65,536 bytes, length and
@@ -1611,16 +2110,50 @@ export function createTapeAPI(opts = {}) {
     try { return await resolveConformNow(target) } catch (e) { throw withStatus(e) }
   }
   async function resolveConformNow(target) {
-    const { input, where } = conformInput(target)
+    const { input, where, chainless } = conformInput(target)
     if (where !== null && where !== Number(chainId)) return forChain(where).resolve(target)
+    const given = givenOf(target)
+    if (chainless && allChains) {
+      // TAP-10 §4.1: identity on every chain; the manifest steps run on the one chain chosen, at that chain's pinned block
+      // (the winner's continuation), never as a second resolution / 身份在所有链上解析；清单步骤只在选中的那条链上、在它的钉块上继续
+      const { winner, chains, candidates } = await everyChain(input, given, (local) => local.prepare(input))
+      if (winner.v.status !== 'ok') {
+        const e = siteError(winner.v, given, chains)
+        if (candidates) e.data.candidates = candidates
+        throw e
+      }
+      return winner.finish(target, chains)
+    }
+    if (chainless && input.kind === 'pair') throw pairNeedsAllChains(input)
+    const p = await prepareConform(input, { unsure: chainless })
+    if (p.v.status !== 'ok') throw siteError(p.v, given)
+    return p.finish(target)
+  }
+  // TAP-11 §2.2 steps 1-2 at this chain's pinned block; `finish(target)` makes steps 3-8 at the same block. `hold` keeps
+  // the warnings of identity until finish (a chain of the every-chain search that is not chosen reports none).
+  // TAP-11 §2.2 第 1、2 步在本链钉块上；finish(target) 在同一块上做第 3–8 步。hold：身份阶段的警告留到 finish 才报告（所有链搜索中
+  // 没被选中的链不报告任何警告）。
+  async function prepareConform(input, { unsure = false, hold = false } = {}) {
     const warnings = []
-    const issue = (code, message, extra = {}) => { const w = { code, message, ...extra }; warnings.push(w); try { onWarning(w) } catch { /* a reporter never breaks resolve / 报告函数绝不影响解析 */ } }
-    const [pinned] = await Promise.all([pinnedBlock(), checkChain()])
-    const at = tapAt(pinned)
+    const held = []
+    const report = (w) => { try { onWarning(w) } catch { /* a reporter never breaks resolve / 报告函数绝不影响解析 */ } }
+    const issue = (code, message, extra = {}) => { const w = { code, message, ...extra }; warnings.push(w); if (hold) held.push(w); else report(w) }
+    // §5.4 under strict agreement, as the messaging path checks it (shared, once per client): a node down or on another
+    // chain stops the resolution before any state is read / 严格共识的 §5.4，与消息路径共用、每个客户端一次：节点宕机或在别的链上，
+    // 解析在读任何状态之前就停下
+    const [pinned] = await Promise.all([pinnedBlock(), checkChainStrict()])
     const proofs = proofMode ? proofSession(pinned) : null
     // TAP-11 §2.2 steps 1-2 / 第 1、2 步
-    const v = await identifyAt(input, pinned, { proofs, issue })
-    if (v.status !== 'ok') throw siteError(v, typeof target === 'string' ? target.trim().slice(0, 80) : (target.container ?? `${target.circuits}#${target.tokenId}`))
+    const v = await identifyAt(input, pinned, { proofs, issue, unsure, strictHolder: true })
+    const finish = (target, chains = null) => {
+      hold = false
+      for (const w of held.splice(0)) report(w)
+      return finishConform({ v, pinned, proofs, issue, warnings, target, chains })
+    }
+    return { v, finish, held }
+  }
+  async function finishConform({ v, pinned, proofs, issue, warnings, target, chains }) {
+    const at = tapAt(pinned)
     // Steps 3-4: the manifest; the hub's implementation (TapeAPI's sentinel) goes out with read() / 第 3、4 步；hub 实现槽与 read() 同轮发出
     let hubP = null
     const sentinelOn = sentinelProxies.length > 0
@@ -1642,8 +2175,11 @@ export function createTapeAPI(opts = {}) {
     }
     const contributionP = early(() => readContribution(manifest, at))
     if (proofs) await settleFactory(proofs, v.proof.factory)
-    // Step 6: the delegation against the holder read in step 1 / 第 6 步：委托对照第 1 步读到的持有人
-    const verified = await verifyDelegation(manifest, { dev: false, holder: Promise.resolve(v.holder), at })
+    // Step 6: the delegation against the holder read in step 1 (strict, the only ownerOf of the resolution: none is read
+    // again here); a contract holder's eth_getCode and isValidSignature strict as well (TAP-11 §2.2, §4.4)
+    // 第 6 步：委托对照第 1 步读到的持有人（严格共识，本次解析唯一的 ownerOf，这里不再读）；合约持有人的 eth_getCode 与
+    // isValidSignature 同样严格读取
+    const verified = await verifyDelegation(manifest, { dev: false, holder: Promise.resolve(v.holder), at, read: TAP10_STRICT })
     if (proofs) {
       const slot = STORAGE.ownerOf(manifest.tokenId)
       await proofs.settle('ownerOf', manifest.circuits, v.proof.owner, { detail: { tokenId: String(manifest.tokenId) }, check: (w) => {
@@ -1652,11 +2188,12 @@ export function createTapeAPI(opts = {}) {
       } })
     }
     const contribution = await contributionP
-    // Step 7: the content signature, exactly as in the default mode / 第 7 步：内容签名，与默认模式相同
+    // Step 7: the content signature as in the default mode, a contract holder's EIP-1271 reads strict (TAP-11 §5)
+    // 第 7 步：内容签名与默认模式相同，合约持有人的 EIP-1271 读取用严格共识
     let contentSig = null
     if (requireContentSig || src.manifest?.[MANIFEST_CONTENT_FIELD] !== undefined) {
       let why
-      try { why = await contentSigProblem(src.manifest, manifest.container, verified.holder, at) } catch (e) {
+      try { why = await contentSigProblem(src.manifest, manifest.container, verified.holder, at, TAP10_STRICT) } catch (e) {
         if (requireContentSig) throw e
         why = undefined
         contentSig = { valid: false, checked: false }
@@ -1696,7 +2233,7 @@ export function createTapeAPI(opts = {}) {
     const svc = { manifest, container: checksumAddress(manifest.container), chainId, verified, contribution, file: src.file, target, fetchedAt: now() }
     if (aiProblems) svc.aiProblems = aiProblems
     svc.pinned = { number: pinned.number, hash: pinned.hash, timestamp: pinned.timestamp, tag: 'tap10', by: 'hash', mode: 'tap10', lag: pinned.lag, maxLag: pinned.maxLag }
-    svc.conform = { ...site, status: 'resolved', site: 'ok' }
+    svc.conform = { ...site, status: 'resolved', site: 'ok', ...(chains ? { chains } : {}) }
     if (sentinel) svc.sentinel = sentinel
     if (contentSig) svc.contentSig = contentSig
     if (proofs) {
@@ -1810,7 +2347,10 @@ export function createTapeAPI(opts = {}) {
     // 提供者只接受 1..128 字符的 id；本地先挡住，否则拿回来的是一个 id='' 的错误信封，永远验不过签。
     // Providers only accept ids of 1..128 chars: reject locally, or the answer is an id='' error envelope that can
     // never match the request and surfaces as BAD_SIGNATURE instead of the caller's own mistake.
+    // A lone UTF-16 surrogate has no canonical form (canon.js), so no envelope could bind it (FIXED ID-LS).
+    // 孤立代理项没有规范形式，任何信封都无法绑定它。
     if (id != null && (typeof id !== 'string' || !id || id.length > 128)) throw new TapeAPIError('BAD_REQUEST', 'id must be a string of 1..128 characters')
+    if (id != null) { try { canonicalJSON(id) } catch { throw new TapeAPIError('BAD_REQUEST', 'id must be well-formed Unicode (no lone UTF-16 surrogate)') } }
     // One id for the whole call, retry included: it is the idempotency key the provider may dedup on, and it
     // is covered by the TAPI-21 v2 digest, so a retry must not change it.
     // 整次调用（含重试）共用一个 id：它是提供者可用于去重的幂等键，且被 TAPI-21 v2 摘要覆盖，重试不得更换。
@@ -2520,5 +3060,14 @@ export function createTapeAPI(opts = {}) {
   // `forChain(id)`: the client for another TapeOut chain (this one for its own); `chainOfContainer(address)`: which chain a
   // container lives on. / `forChain(id)`：另一条 TapeOut 链的客户端；`chainOfContainer(address)`：容器在哪条链上。
   const api = { resolve, refresh, acceptPrice, acceptedPrice, call, callQuorum, payer, tx, rpc, chain, chainId, groupVerifier, addresses: { hub, siteRegistry, factory, directory, escrow }, randomPrivateKey, forChain, chainOfContainer, clearDelegationFloor, siteStatus }
+  // This chain's part of the every-chain search (everyChain): siteStatus and, in the conformance mode, resolve.
+  // 本链在所有链搜索（everyChain）中的那一份：siteStatus，以及一致模式下的 resolve。
+  TAP10_LOCAL.set(api, {
+    site: (input) => siteHere(input),
+    prepare: (input) => {
+      if (!conformMode) throw new TapeAPIError('INTERNAL', `the client of chain ${chainId} is not in the conformance mode`)
+      return prepareConform(input, { hold: true })
+    },
+  })
   return api
 }

@@ -4,10 +4,10 @@
 // Everything in a receipt is untrusted text: it reaches the page through textContent only, never as HTML.
 // 回执核验页：从链接的 #r= 片段或用户粘贴的内容读出回执，恢复签名者，用真实 SDK 在链上解析服务，并用平实的话说明结论。
 // 手写；SDK 用调试台 vendor/ 里的同一份，纯逻辑在 lib.js（离线测试）。回执里的一切都是不可信文本，只经 textContent 进入页面。
-import { createTapeAPI, sig, abi, rpcUrlsFor, operatorOf, CHAINS, parseTapeName } from '../playground/vendor/1a83f4098b/tapeapi-sdk/index.js'
-import { readAny, verifyReceipt, verifyUsage, signedBlock, utc, ReceiptError, chainOfReceipt } from './lib.js?v=fd0179eaa6'
-import { modelEntryOf, validateAIField, formatOfMethod, MANIFEST_FIELD } from '../playground/vendor/1a83f4098b/tapeapi-sdk/ai.js'
-import { T } from './strings.js?v=b6e1b1e716'
+import { createTapeAPI, sig, abi, rpcUrlsFor, operatorOf, CHAINS, parseTapeName } from '../playground/vendor/2149b3f2fc/tapeapi-sdk/index.js'
+import { readAny, verifyReceipt, verifyUsage, signedBlock, utc, ReceiptError, chainOfReceipt } from './lib.js?v=c35b3c3d0c'
+import { modelEntryOf, validateAIField, formatOfMethod, MANIFEST_FIELD } from '../playground/vendor/2149b3f2fc/tapeapi-sdk/ai.js'
+import { T } from './strings.js?v=8314b354a1'
 
 // The SDK's default nodes: three distinct operators (NodeReal, Alchemy, 48 Club); the SDK counts agreement by operator.
 // A receipt of a service on X Layer or Base (its name carries area code 2 or 3; an AI receipt's container answers token()
@@ -136,10 +136,11 @@ function renderVerdict(r, o) {
     text.push(t('x.other-key'))
     text.push(t('x.other-key.why'))
   } else if (o.verdict === 'invalid') {
-    let msg = t(`x.invalid.${o.failed}`)
+    let msg = o.failed === 'response' && o.responseShape ? t(`x.invalid.response.${o.responseShape}`) : t(`x.invalid.${o.failed}`)
     if (o.failed === 'resolve' && o.resolveError) msg += `${o.resolveError.code ? `${o.resolveError.code}: ` : ''}${o.resolveError.message || ''}`
     text.push(msg)
     if (o.failed === 'amount') text.push(...o.amountProblems)
+    if (o.failed === 'answer') text.push(...o.answerProblems)
   } else {
     text.push(t('x.unchecked'))
     const e = o.resolveError || o.name?.error
@@ -169,7 +170,7 @@ function renderChecks(r, o) {
   for (const { id, state } of o.checks) {
     if (id === 'name' && state === 'skip') continue   // the receipt names no name / 回执没有名字
     let value = null, how = null
-    if ((id === 'request' || id === 'response') && state === 'skip') value = t('c.notPasted')
+    if ((id === 'request' || id === 'response' || id === 'answer') && state === 'skip') value = t('c.notPasted')
     else if (state === 'skip') value = t('c.notRun')
     else if (id === 'sig') {
       if (state === 'pass') { value = code(o.recovered); how = t('c.sig.how') } else value = errText(o.recoverError)
@@ -200,7 +201,13 @@ function renderChecks(r, o) {
       how = state === 'pass' ? t('c.amount.how') : o.amountProblems.join('; ')
     } else if (id === 'request' || id === 'response') {
       value = code(id === 'request' ? r.params.requestSha256 : r.result.responseSha256)
-      how = t(state === 'pass' ? 'c.hash.how' : 'c.hash.bad')
+      how = state === 'pass' ? t('c.hash.how') : id === 'response' && o.responseShape ? t(o.responseShape === 'whole' ? 'c.shape.whole' : 'c.shape.bad') : t('c.hash.bad')
+    } else if (id === 'answer') {
+      // TAPI-21 §3.5 check 4: the pasted answer as its format reads it. / 第 4 项：按格式读出的回答。
+      if (state === 'unknown') { value = '—'; how = t('c.answer.unknown') } else {
+        value = t(state === 'pass' ? 'c.answer.pass' : 'c.answer.fail')
+        how = state === 'fail' ? o.answerProblems.join('; ') : o.answerUnchecked.some((x) => x.startsWith('usage')) ? t('c.answer.partial', o.checks.some((c) => c.id === 'request' && c.state !== 'skip')) : t('c.answer.how')
+      }
     }
     rows.push(checkRow(state, t(`c.${id}`), value, how))
   }

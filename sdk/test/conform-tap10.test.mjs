@@ -62,8 +62,10 @@ test('conform: only the string \'tap10\'; it implies pin: \'tap10\' and refuses 
 // ── resolution / 解析 ───────────────────────────────────────────────────────────────────────────────────────────────
 test('every TAP-10 input form of one name resolves to the same service, through the opener, at one pinned block hash', async () => {
   const { chain, c } = world()
+  // The processor contract#ID string (`0x…#4246`) is input without chain information that needs every chain (allChains):
+  // conform-allchains.test.mjs. / "处理器合约#ID"字符串是需要所有链的无链信息输入（allChains）：见 conform-allchains.test.mjs。
   const forms = ['4246.7.tape', '4246.7', '4246.7.TAPE', '#4246@7', '4246@7', 'tape://4246.7.tape/', 'TAPE://4246.7/docs/index.html', 'web+tape://4246.7.tape/', ' 4246.7.tape ',
-    `${c.circuits}#4246`, c.container, { circuits: c.circuits, tokenId: 4246 }, { chainId: 56, container: c.container }]
+    c.container, { circuits: c.circuits, tokenId: 4246 }, { chainId: 56, container: c.container }, { chainId: 56, circuits: c.circuits, tokenId: 4246 }]
   const api = conformApi(chain)
   for (const f of forms) {
     const from = chain.conform.log.length
@@ -71,7 +73,7 @@ test('every TAP-10 input form of one name resolves to the same service, through 
     assert.equal(svc.container, c.container, JSON.stringify(f))
     assert.deepEqual(svc.verified, { delegation: true, holder })
     assert.equal(svc.conform.status, 'resolved'); assert.equal(svc.conform.site, 'ok'); assert.equal(svc.conform.version, '1.1')
-    assert.equal(svc.conform.name, '4246.7.tape', JSON.stringify(f))   // a container input finds the number in the kept processor table
+    assert.equal(svc.conform.name, '4246.7.tape', JSON.stringify(f))   // a container input finds the number (kept table or scan, 1.5)
     assert.equal(svc.conform.holder, holder); assert.equal(svc.conform.opened, true)
     assert.deepEqual(svc.conform.activation, { live: true, isLive: false, isContainerLive: true })
     assert.equal(svc.pinned.mode, 'tap10'); assert.equal(svc.pinned.by, 'hash'); assert.equal(svc.pinned.maxLag, 400); assert.equal(svc.pinned.lag, 2)
@@ -156,47 +158,55 @@ test('TAP-10 §6.3: on the previous DomainBinding (0x4E86…, still accepted) is
   assert.deepEqual(svc.conform.activation, { live: true, isLive: true, isContainerLive: false, isContainerLiveReverted: true })
 })
 
-test('a container address or processor contract#ID without a known processor number gives no activation verdict unless isContainerLive is true (1.4; the reverse scan is 1.5)', async () => {
+test('1.5: a container address or processor contract#ID finds its processor number (TAP-10 §4.3 step 3), so isLive is asked and unpaid is a verdict', async () => {
   const { chain, c } = world()
-  const api = conformApi(chain)
-  // isContainerLive true: ok without the name / isContainerLive 为真：不需要名字即可 ok
-  assert.equal((await api.resolve(c.container)).conform.activation.isContainerLive, true)
-  // paid for the name only: isLive would say yes, but it cannot be asked without the name: unsupported, not unpaid
-  // 只按名字付费：isLive 本会说是，但没有名字无法查询：报 unsupported，不报 unpaid
+  // paid for the name only: 1.4 could not ask isLive without the name and said unsupported; 1.5 finds processor 7
+  // 只按名字付费：1.4 没有名字无法查询 isLive，报 unsupported；1.5 能找到 7 号处理器
   chain.setUnactivated(); chain.setLiveName('4246.7.tape', c.container)
-  const fresh = conformApi(chain)
-  for (const input of [c.container, `${c.circuits}#4246`, { circuits: c.circuits, tokenId: 4246 }]) {
-    await assert.rejects(fresh.resolve(input), (e) => isStatus('INVALID_ARGUMENT', 'unsupported', /gives no processor number.*pass the name \(for example 4246\.7\.tape\).*comes in 1\.5/)(e) && e.data.activation.isLive === null, JSON.stringify(input))
-    await assert.rejects(fresh.siteStatus(input), isStatus('INVALID_ARGUMENT', 'unsupported'))
+  for (const input of [c.container, { circuits: c.circuits, tokenId: 4246 }, { chainId: 56, container: c.container }]) {
+    const api = conformApi(chain)
+    const svc = await api.resolve(input)
+    assert.equal(svc.conform.name, '4246.7.tape', JSON.stringify(input)); assert.equal(svc.conform.processor, '7')
+    assert.deepEqual(svc.conform.activation, { live: true, isLive: true, isContainerLive: false })
+    assert.equal((await api.siteStatus(input)).status, 'ok')
   }
-  chain.setContainerLive(null, 'revert')
-  await assert.rejects(fresh.resolve(c.container), isStatus('INVALID_ARGUMENT', 'unsupported', /isContainerLive is reverted/))
-  chain.setContainerLive(null, false)
-  // the name resolves, and puts processor 7 in the processor table the client keeps (TAP-10 §4.3): then the container
-  // input has a name too / 名字解析成功并把 7 号处理器放进客户端保留的处理器表：之后容器输入也有了名字
-  assert.equal((await fresh.resolve('4246.7.tape')).container, c.container)
-  const svc = await fresh.resolve(c.container)
-  assert.equal(svc.conform.name, '4246.7.tape'); assert.equal(svc.conform.activation.isLive, true)
   chain.setLiveName('4246.7.tape', c.container, false)
-  await assert.rejects(fresh.resolve(c.container), isStatus('SITE_STATUS', 'unpaid'), 'with the name known, unpaid is a verdict again')
+  await assert.rejects(conformApi(chain).resolve(c.container), isStatus('SITE_STATUS', 'unpaid', /isLive and isContainerLive are both false/))
+  chain.setContainerLive(null, 'revert')
+  await assert.rejects(conformApi(chain).resolve(c.container), (e) => isStatus('SITE_STATUS', 'unpaid')(e) && e.data.activation.isContainerLiveReverted === true)
+  // a TapeOut processor (isCPU) that is not in the factory's list is not-tapeout (§4.3 step 3) / 是处理器却不在工厂列表里即 not-tapeout
+  const stray = '0x' + 'e7'.repeat(20)
+  chain.setContainerToken('0x' + 'c4'.repeat(20), { circuits: stray, tokenId: 1, chainId: 56 })
+  await assert.rejects(conformApi(chain).resolve('0x' + 'c4'.repeat(20)), isStatus('NOT_FOUND', 'not-tapeout'))
+  assert.equal((await conformApi(chain).siteStatus({ circuits: stray, tokenId: 1 })).status, 'not-tapeout')
 })
 
-test('TAP-10 §4.1: an input that may belong to another chain is unsupported in 1.4, never not-tapeout', async () => {
+test('TAP-10 §4.1 without allChains: input that may belong to another chain is unsupported (never not-tapeout), a processor contract#ID string before any request', async () => {
   const { chain, c } = world()
   const api = conformApi(chain)
   const baseContainer = '0x4591b393399452eA24ECB10424CdBA194F1c4E64'           // a Base container: no code on this chain
-  await assert.rejects(api.resolve(baseContainer), isStatus('INVALID_ARGUMENT', 'unsupported', /does not answer ERC-6551 token\(\) here on chain 56; it may be one on another chain.*api\.forChain/))
+  await assert.rejects(api.resolve(baseContainer), isStatus('INVALID_ARGUMENT', 'unsupported', /does not answer ERC-6551 token\(\) here on chain 56; it may be one on another chain.*allChains: true/))
   await assert.rejects(api.siteStatus(baseContainer), isStatus('INVALID_ARGUMENT', 'unsupported'))
   const other = '0x' + 'c1'.repeat(20)
   chain.setContainerToken(other, { circuits: c.circuits, tokenId: 4246, chainId: 8453 })
   await assert.rejects(api.resolve(other), isStatus('INVALID_ARGUMENT', 'unsupported', /answers token\(\) for chain 8453/))
-  const l2Processor = '0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b'
-  chain.setCounterfeit(l2Processor)                                              // not a processor HERE / 在本链不是处理器
-  await assert.rejects(api.resolve(`${l2Processor}#1`), isStatus('INVALID_ARGUMENT', 'unsupported', /is not a TapeOut processor here/))
-  // a contract that claims THIS chain and fails a check is not-tapeout / 声称本链却通不过检查的合约是 not-tapeout
+  // a processor contract#ID string: TAP-10 resolves it only when exactly one chain does, which one chain cannot tell
+  // "处理器合约#ID"字符串：TAP-10 只在恰好一条链命中时才解析，只读一条链无从得知
+  const from = chain.conform.log.length
+  for (const pair of [`${c.circuits}#4246`, '0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b#1']) {
+    await assert.rejects(api.resolve(pair), isStatus('INVALID_ARGUMENT', 'unsupported', /resolves only when exactly one active chain resolves it.*allChains: true/))
+    await assert.rejects(api.siteStatus(pair), isStatus('INVALID_ARGUMENT', 'unsupported'))
+  }
+  assert.equal(chain.conform.log.length, from, 'refused before any request')
+  // a contract that claims THIS chain and fails a check is not-tapeout; an object form names its chain, so its verdict is
+  // that chain's / 声称本链却通不过检查的合约是 not-tapeout；对象形式指明了链，结论就是那条链的
   const liar = '0x' + 'c2'.repeat(20)
   chain.setContainerToken(liar, { circuits: c.circuits, tokenId: 4246, chainId: 56 })
   await assert.rejects(api.resolve(liar), isStatus('NOT_FOUND', 'not-tapeout'))
+  await assert.rejects(api.resolve({ chainId: 56, container: baseContainer }), isStatus('NOT_FOUND', 'not-tapeout'))
+  const l2Processor = '0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b'
+  chain.setCounterfeit(l2Processor)
+  await assert.rejects(api.resolve({ circuits: l2Processor, tokenId: 1 }), isStatus('NOT_FOUND', 'not-tapeout'))
 })
 
 // ── pinned block / 钉块 ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -250,7 +260,7 @@ test('a head that has not arrived within the grace period after Q operators answ
 })
 
 // ── chain check and answers / 链检查与回答 ─────────────────────────────────────────────────────────────────────────
-test('TAP-10 §5.4: one eth_chainId per client before any adopted read, by default agreement; wrong-chain is INVALID_ARGUMENT', async () => {
+test('TAP-10 §5.4: one eth_chainId per client before any adopted read (siteStatus by default agreement, resolve strict); wrong-chain is INVALID_ARGUMENT', async () => {
   const { chain, c } = world()
   for (const u of RPC) chain.setChainIdAnswer(u, 97)
   const api = conformApi(chain)
@@ -260,15 +270,22 @@ test('TAP-10 §5.4: one eth_chainId per client before any adopted read, by defau
   // one node on another chain: a disagreement, refused (never a majority) / 一个节点在别的链上：分歧，拒绝（绝不按多数）
   chain.setChainIdAnswer('http://rpc3', 97); chain.setChainIdAnswer('http://rpc1', null); chain.setChainIdAnswer('http://rpc2', null)
   await assert.rejects(api.resolve('4246.7'), isStatus('RPC_DISAGREE', 'unavailable', /eth_chainId/))
+  await assert.rejects(api.siteStatus('4246.7'), isStatus('RPC_DISAGREE', 'unavailable', /eth_chainId/))
   assert.equal(fnsOf(chain).length, 0, 'still no eth_call adopted')
-  // rpc3 down: the conformance mode resolves, as the default mode does (1.4 design decision; strict is for messaging, 1.5)
-  // rpc3 宕机：一致模式照常解析，与默认模式相同（1.4 的决定；严格共识留给消息路径，1.5）
+  // rpc3 down: siteStatus's chain check is by default agreement (1.4 design decision), so it goes on; resolve's is strict
+  // since 1.5.0, as the messaging path's (Fable review, finding 3), so it stops before any state is read
+  // rpc3 宕机：siteStatus 的链检查用默认共识，照常；resolve 的链检查 1.5.0 起与消息路径一样用严格共识，在读任何状态之前就停下
   chain.setChainIdAnswer('http://rpc3', null)
   chain.setFault('http://rpc3', 'http500')
-  assert.equal((await api.resolve('4246.7')).container, c.container)
+  assert.equal((await api.siteStatus('4246.7')).container, c.container)
+  const before = chain.conform.log.length
+  await assert.rejects(api.resolve('4246.7'), isStatus('RPC_UNAVAILABLE', 'unavailable', /eth_chainId: only 2\/3 nodes answered .*strict agreement \(TAP-10 §5.2\).* = 3 operators/))
+  assert.ok(!chain.conform.log.slice(before).some((x) => x.method === 'eth_call' || x.method === 'eth_getStorageAt'), 'no state read before the strict chain check')
   chain.setFault('http://rpc3', null)
-  const n = chain.conform.log.filter((x) => x.method === 'eth_chainId').length
+  // each check once per client: the strict one now succeeds, then neither is sent again / 两种检查各自每个客户端一次
   await api.resolve('4246.7')
+  const n = chain.conform.log.filter((x) => x.method === 'eth_chainId').length
+  await api.resolve('4246.7'); await api.siteStatus('4246.7'); await api.chain.tapeSendKey(c.container).catch(() => {})
   assert.equal(chain.conform.log.filter((x) => x.method === 'eth_chainId').length, n, 'checked once per client')
 })
 
@@ -353,7 +370,7 @@ test('the manifest: chunkCount 0 is no-manifest, no-hash, incomplete, a byte ord
 test('activation is a site rule only: an unactivated container is unpaid to resolve and siteStatus, while its channel record and TapeSend key read as before', async () => {
   const { chain, c } = world()
   chain.setUnactivated()
-  chain.setAccount(4246, c.container)   // the hub's derivation, which the messaging reads use (1.4) / 消息读取用的 hub 推导
+  chain.setAccount(4246, c.container)   // the hub's derivation (the messaging reads use the opener since 1.5) / hub 推导（1.5 起消息读取用开通器）
   const id = channel.generateIdentity()
   const hex = (b) => '0x' + Buffer.from(b).toString('hex')
   const keys = { container: c.container, x25519: hex(id.x25519.publicKey), ed25519: hex(id.ed25519.publicKey), inbox: {}, issued: T - 60, expires: T + 86_400 }
@@ -507,7 +524,7 @@ test('isCPU in the conformance mode and siteStatus is read under the TAP-10 rule
   const urls = [...RPC, 'http://rpc4']
   chain.setFault('http://rpc4', 'rpcerror')   // -32000 "node says no": a node failure here, a disagreement under the default rule
   for (const api of [conformApi(chain, { rpcUrls: urls }), createTapeAPI({ rpcUrls: urls, fetch: chain.fetch, quiet: true, clock: () => T })]) {
-    const s = await api.siteStatus(`${c.circuits}#4246`)
+    const s = await api.siteStatus({ circuits: c.circuits, tokenId: 4246 })
     assert.equal(s.status, 'ok'); assert.equal(s.container, c.container)
   }
   const isCPU = chain.conform.log.filter((x) => x.fn === 'isCPU')

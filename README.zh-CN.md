@@ -18,7 +18,7 @@ TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上�
 
 [English](README.md) · [网站](https://tapeapi.fun) · [手册](https://tapeapi.fun/docs/zh/) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [更新日志](CHANGELOG.md) · [路线图](docs/ROADMAP.md)
 
-> **状态：正式版（1.4.0）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAPI-22）是实验性的，没有部署。
+> **状态：正式版（1.5.0）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAPI-22）是实验性的，没有部署。
 > 所有代码和合约都没有经过第三方审计。
 
 ## 从这里开始
@@ -42,11 +42,11 @@ curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/
 curl 只显示签名信封，不做任何核对；核对交给 SDK。SDK 还没发到 npm，从 GitHub Release 安装（Node.js 20 或以上）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz
 ```
 
 服务端包（`@tapeapi/server`：服务提供方、AI 旁路、MCP 代理）依赖这个 SDK，而 SDK 也不在 npm 上，所以单独安装服务端包会报 404：
-请用一条命令同时安装两者，`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-server-1.4.0.tgz`。
+请用一条命令同时安装两者，`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-server-1.5.0.tgz`。
 
 ```js
 // try.mjs：node try.mjs
@@ -84,7 +84,7 @@ console.log(r.choices[0].message.content)
 
 ```bash
 # 终端 1（会一直运行）。42.1013.tape 是示例名：换成 AI 服务方的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash
@@ -197,7 +197,7 @@ flowchart LR
 | TAPI-20 §3.9、TAPI-21 §3.5 | AI 用量回执，[#26](https://github.com/TapeOutProtocol/TAPs/pull/26) | 评审中，无编号 |
 | TAPI-20 §3.2（证明模式，说明性） | 证明核验读取，[#28](https://github.com/TapeOutProtocol/TAPs/pull/28) | 评审中，无编号 |
 
-TAPI-22、TAPI-24、TAPI-25 没有提交。#10、#16、#18 已通过编辑的格式审查，等排在 TAP-11 之后合并。这些草稿按官方 TAP-10 写；参考实现（我们的 SDK）目前有几处还没对齐，各草稿在 Backwards Compatibility 里如实列出，SDK 会以可选模式跟上。
+TAPI-22、TAPI-24、TAPI-25 没有提交。#10、#16、#18 已通过编辑的格式审查，等排在 TAP-11 之后合并。这些草稿按官方 TAP-10 写；参考实现（我们的 SDK）目前有几处还没对齐，各草稿在 Backwards Compatibility 里如实列出，SDK 以可选模式（`conform: 'tap10'`，1.4 起、实验性）跟上。
 
 | 规范 | 标题 | 状态 |
 |---|---|---|

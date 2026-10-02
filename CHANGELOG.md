@@ -7,6 +7,206 @@ interfaces.
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-10-03
+
+### Added
+
+- **TAP-10 conformance mode: the messaging path** (experimental). Under `createTapeAPI({ conform: 'tap10' })`,
+  `api.chain.tapeSendKey` resolves the endpoint as TAP-10 §12.2 says and reads the key as §14.4 steps 1–3 say, and
+  `api.chain.channelKeys` (so `groupVerifier` too) reads the channel record under the same rules: a fresh TAP-10 pinned
+  block per lookup, strict agreement on every read (every configured node, all equal, at least max(2, min(3, operators))
+  operators) and on `eth_chainId` (§5.4), the container from the opener. `tapeSendKey` also checks the hub at that block
+  (§13.8): an implementation other than the current one TAP-10 lists is `hub-changed`, a circuit beacon off its
+  implementation is `circuits-changed` (kept by the client), and the seal status is reported in `result.tap10.seal`; the
+  key must belong to the resolved container and endpoint (`hub-mismatch`), be usable (`no-key`, `key-stale`) and pass the
+  X25519 checks (`bad-key`). `channelKeys` needs both site-store implementations accepted (`store-changed`) and refuses a
+  record with a byte order mark. Neither judges activation or opening (§12.2): the same unactivated container is `unpaid`
+  to `resolve` and has its record and key read as usual. One node down or behind the pin now stops these reads in this mode
+  on BNB Smart Chain's three default operators (strict; Base's four leave one spare, X Layer's two need no more than the
+  quorum), not in the default mode, which is unchanged. Also new: `tapesend.endpoint`, `seal`, `open`, `messageId` and `sendTx` take
+  `conform: 'tap10'`, which refuses a chainId above 2^53 − 1 (§12.1); `TAP10_SEALS` (the beacon, circuit implementation
+  and current hub implementation of each chain, read back on chain 2026-10-02) and `TAP10_MAX_CHAIN_ID`. Input that may
+  belong to another chain (an address that is no container here, a `token()` naming another chain, a processor contract
+  that is no processor here) is `unsupported`, as in `resolve`, and never cached. A client with `conform: 'tap10'` now
+  accepts only the hub, the processor factory and the container opener TAP-10 lists for its chain (`hub`, `factory`,
+  `opener` set to anything else are `INVALID_ARGUMENT`, TAP-10 §2.2), a tightening of the experimental mode of 1.4 for
+  `factory` and `opener`. The new option `sealStatusStore` (a `{ get, set }` store, like `channelRecordFloor`) keeps
+  the sticky §13.8 statuses across restarts; without it they last as long as the client. The
+  [guide](docs/guides/upgrade-1.0.md) has the statuses and codes.
+- **TAP-10 conformance mode: the rest of the resolution path (experimental).** A container address or processor
+  contract#ID now finds its processor number (TAP-10 §4.3), so it gets its on-chain name and a full activation check
+  (`isLive` as well as `isContainerLive`): the SDK ships each chain's processor table (`sdk/src/processors-snapshot.js`,
+  read-only through the default nodes before each release; on 2026-10-01 (UTC; the snapshot's times are UTC) BNB Smart
+  Chain 1,174, X Layer 263, Base 101 processors, each recorded with its block, count and node operators), uses a hit only
+  after one `cpuAt` at the pinned block gives back the same address, and otherwise scans `cpuAt` at the pinned block in
+  pages of 8, at most 256 numbers per resolution, resuming at the next one (`unavailable` with `data.scan` until then);
+  only the numbers after the snapshot are scanned once the chain agrees with it, so a cold client does not send a
+  thousand requests to one node. The new option `createTapeAPI({ allChains: true })` resolves a container address or
+  processor contract#ID string on every TapeOut chain, each at its own pinned block (TAP-10 §4.1): two chains resolving
+  it is `INVALID_ARGUMENT` with `data.status` `ambiguous` and `data.candidates`; a chain that cannot be read, or whose
+  site contracts are `store-changed`, is reported with its own status (and `data.chainId`) instead of a guess or
+  `not-tapeout`; results and these errors carry `chains`, what each chain said (`siteStatus(...).chains`,
+  `svc.conform.chains`, `data.chains`). It sends reads to the nodes of Base and X Layer, which is why it is off unless
+  asked: only `true` turns it on, any other value is ignored. It applies to `resolve` under `conform: 'tap10'` and to
+  `siteStatus` in any mode, never to the default `resolve`, and `forChain` passes it on. With it, all 23 TAP-10 Test
+  Cases that `node scripts/tap10-gap.mjs` judges offline conform (18 in 1.4). The [guide](docs/guides/upgrade-1.0.md)
+  has the rules; `resolve` and the `chain.*` reads of the default mode are unchanged (GOLDEN TAP10-0).
+  `resolve` in this mode now reads what would authorise a signer under strict agreement (TAP-11 §2.2, TAP-10 §5.2):
+  `ownerOf`, and for a holder that is a contract the EIP-1271 calls (`eth_getCode` and `isValidSignature`, for the
+  delegation and for `contentSig`); its `eth_chainId` check is the strict one the messaging path makes, before any state
+  is read. Strict needs every configured node to agree, from max(2, min(3, operators)) operators, and a node that does
+  not answer or has not reached the pinned block yet (TAP-10 §1: "no such block" is no answer) counts against that. On
+  the default nodes: BNB Smart Chain (3 operators) now stops with one node down or behind the pin where 1.4 resolved;
+  Base (4 operators) still resolves with one node down, not with two; X Layer (2 operators) is unchanged. With
+  `contentSig` present and `requireContentSig` off, a contentSig check that fails this way is the warning
+  `CONTENT_SIG_UNCHECKED`, as before. Every other read of a resolution, and `siteStatus` (its chain check included), keep
+  default agreement; a strict read's `RPC_UNAVAILABLE` now says how many operators it needed. With the messaging path
+  above, this closes the resolve and messaging paths of the mode; the hub's `Upgraded` log scan (TAP-10 §13.8, a
+  conditional SHOULD) is not done.
+
+### Changed
+
+- **TAPI-26 erratum: an invite sent by TapeSend is sealed to the recipient's usable TAP-10 key**, read from the hub,
+  never to the recipient's channel key: TAP-10 §14.4 and §15.3 allow a sender no other key, and TAP-10 then governs the
+  message completely. §3.2 said "sealed to B's static key". The durable fallback therefore reaches only a recipient that
+  also holds its TAP-10 key (a TAP-10 client, or a channel with `keys: "tapesend/v1"`); a TAPI-26 client with channel
+  keys alone (`keys: "tape-channel/v1"`) cannot receive it, and §3.1 already asks other implementations not to derive a
+  TapeSend key. §5 records the correction: no implementation had sent or received such an invite, and no code changed
+  (the SDK never built one). Six section references in §3.1 and §3.2 (both languages) now follow TAP-10 v1.1 (§14.2;
+  §15 and §16; §16). Keyword counts and frozen constants such as the `TAP-26/…` labels are unchanged.
+- **Input without chain information, and `siteStatus` in any mode.** Under `conform: 'tap10'` without `allChains`, a
+  processor contract#ID string (`0x…#ID`) is now `INVALID_ARGUMENT` with `data.status` `unsupported` before any
+  request, because TAP-10 §4.1 resolves it only when exactly one chain does (in 1.4 it was resolved on the client's own
+  chain when that chain had the processor); `{ circuits, tokenId, chainId? }` resolves it on one named chain as before.
+  A container address is still resolved on the client's chain when it is a container of that chain, and is
+  `unsupported` otherwise; the error now names `allChains: true`. The 1.4 `unsupported` for a container or processor
+  contract#ID whose processor number was unknown is gone, along with `activation.isLive: null`. `siteStatus`, in any
+  mode (it is the TAP-10 path on a default client too), changes with it: a container address or processor contract#ID
+  gets its `name` and `processor` (null in 1.4) and a cold client reads `cpuCount` and `cpuAt` to find them; an object
+  form that names its chain (`{ circuits, tokenId }`, `{ chainId, container }`) gets that chain's `not-tapeout` where 1.4
+  said `unsupported`; on a default client a processor contract#ID string is still resolved on the client's chain, as in
+  1.4.
+
+### Security
+
+Streamed AI receipts: four related fixes to `ai.createVerifyingFetch` and `tapeapi-verify`, with matching changes to the
+offline check (`verifyUsageReceipt({ responseBytes })`, `scanSse`, the verification page) and the sidecar. The receipt
+hash (TAPI-21 §3.5) and its test vectors are unchanged; TAPI-21 §8 gains an informative note on streams that parsers read
+differently, with no new requirement.
+
+- **A stream cut short could verify (1.0.0–1.4.0).** Both clients check a stream where it first ends (its final event,
+  `[DONE]` or the upstream closing, whichever comes first), but they took the receipt hash, and let the format adapter
+  read the answer, only after processing the whole network chunk that carried the end. Events after the end that came
+  in that same chunk were counted as part of the checked answer, although a client that stops at the end (the official
+  OpenAI SDKs stop at `[DONE]`) never sees them. So a party on the path (a proxy, a CDN, or the service itself) that
+  moved the receipt comment earlier and inserted a `[DONE]` could hand the client an OpenAI Chat or Responses stream
+  cut off before its real end that was reported as verified, and that strict mode released, whenever the inserted
+  `[DONE]` and the rest reached the client in one chunk. `tapeapi-verify` without `--strict` checked the receipt against
+  the whole stream when the upstream closed, so it logged such a stream as verified however it was cut. Anthropic
+  Messages streams, which have no sentinel, were not affected by this one. The scanner now keeps the hash, event count
+  and offset where the stream first ended (`info.digestAtEnd`, `info.eventsAtEnd`, `info.endOffset`), the receipt is
+  checked against them, and the adapter reads up to the end only.
+- **Strict passes the stream on up to its end and closes it there.** Strict used to release the whole chunk that carried
+  the end, so whatever followed the end in it (a comment, an event without data, half an event, a second `[DONE]`)
+  reached the application, and an event after the end in a later chunk failed the stream. Now the chunk goes on up to
+  the end only, the stream closes and the upstream is cancelled (`tapeapi-verify --strict` ends the answer there), so
+  what the application receives does not depend on how the bytes were cut, save one byte: when the blank line that ends
+  the stream is a CR at the end of a chunk, the stream ends at that CR and an LF that may follow is not waited for (every
+  client dispatches the event without it, and an upstream that then sent nothing used to hang the stream). Not strict still passes every byte on and
+  reports an event after the end once as a failure (`an event after the end of the stream is not covered by its
+  receipt`), in the chunk that ended the stream or a later one; before, `strict: false` reported nothing for it.
+- **Two stream shapes that clients parse differently from the receipt rule now fail closed (all versions with streamed
+  receipts).** An event the stream closes on before its blank line is discarded by the rule, but the OpenAI SDK
+  dispatches it when the body ends: content appended that way after a verified Chat stream with its `[DONE]` removed,
+  or after a Responses `response.completed`, reached the application as verified. And a line that starts with U+FEFF
+  (other than at the very start of the stream) is an unknown field to the rule, but both official SDKs, OpenAI and
+  Anthropic alike, strip a byte order mark from every line and read it as a data line: content could be inserted
+  anywhere in a signed stream of any of the three formats without changing its hash. Strict now ends such a stream with
+  `RECEIPT_INVALID` (a line led by U+FEFF is not passed on), `tapeapi-verify --strict` with its error event, and not
+  strict reports each once as a failure. The offline check reports both shapes as problems too (`scanSse` now returns
+  `ambiguous` and `unfinished`; the verification page fails the response check and says why), so a stream that verified
+  offline although clients were shown more than the hash covers no longer does. The reference sidecar no longer signs a
+  stream with such a line before the point where it signs (one after it, past the end, is cut off by strict clients and
+  reported by the others). A few rare honest shapes are refused as well, since clients would read them differently: a
+  stream whose upstream broke off in the middle of an event, after which the sidecar added its receipt line; a stream
+  that starts with two byte order marks; a line that is only a byte order mark; and a data line led by a byte order
+  mark after a CR line end.
+- **`tapeapi-verify` without `--strict` could log nothing.** It checked the receipt only when the upstream closed, so a
+  client that hung up at the end (the openai SDKs stop at `[DONE]`) while the upstream kept the connection open left no
+  verdict. The receipt is now checked and logged as soon as the stream ends, and when the client hangs up after the end.
+
+`verifyUsageReceipt({ responseBytes })` over a whole stream hashes every event in it, as TAPI-21 §3.5 says, so for a
+stream with events after its end its verdict can differ from the streaming check. Tests replay signed streams of each
+format, honest and edited, under many cuttings (one event per chunk, whole, byte by byte, seeded random cuts, LF and
+CRLF), strict and not, and assert that the verdict, and in strict mode the bytes handed on, do not depend on the cutting.
+
+Two more, from an adversarial review of the 1.5.0 candidate:
+
+- **A receipt could switch off its own usage check (every version with AI usage receipts).** `verifyUsageReceipt`,
+  and so `ai.createVerifyingFetch`, skipped the usage comparison whenever the receipt said `usageInjected: true`, even
+  when the client held a whole answer whose usage it could read. A receipt signed with the service's own key (which
+  whoever runs the sidecar holds) could therefore claim any usage and matching prices and still verify against the
+  answer it came with. The flag now counts only where the client's copy can lack the usage: a stream, of a format that
+  injects (OpenAI Chat), for a request that did not itself ask for usage. A whole answer is always compared, and a
+  stream whose request already asked, or of a format that never injects, that claims the flag is a problem. The honest
+  sidecar's receipts all still verify, including the one for a stream request answered as JSON. The verification page
+  compared only the hashes of pasted bytes; it now also reads the pasted answer with its format (a new `answer` check:
+  id, model, usage, completeness), as TAPI-21 §3.5 check 4 asks. The wording of that check now says when the usage
+  cannot be compared, with no new requirement. A verifier with no content type of its own (the page, and
+  `verifyUsageReceipt` called without `stream`) took the receipt's own `stream` on trust, so a whole JSON answer under a
+  receipt re-signed as a stream with the flag was read as a stream without usage and its usage skipped; such a pairing
+  now fails (`ai.isWholeJson`; on the page, the response check says why). `createVerifyingFetch` was not affected: it
+  passes `stream` from the response's content type.
+  Remaining by design: the usage of an injected stream (a streamed OpenAI Chat request that did not set
+  `stream_options.include_usage`) cannot be checked by anyone, since the client never receives the usage chunk; a client
+  that asks for the usage itself avoids that. Having the verifying fetch ask for it is a candidate for 1.6.
+- **Hidden text in MCP tool definitions (every version with the invisible-character check).** `mcp.invisibleProblems`, used by
+  the signing proxy, `tapeapi-mcp` and the holder console, refused format characters (category Cf) and controls only.
+  Variation selectors (U+FE00–FE0F, U+E0100–E01EF: 256 invisible code points, enough to spell any text) and code points
+  that render blank although they are not Cf passed: every Default_Ignorable_Code_Point outside Cf, assigned or not
+  (U+034F, the Hangul fillers, the Mongolian free variation selectors U+180B–180D and U+180F, U+2065, U+FFF0–FFF8,
+  U+E0080–E00FF, U+E01F0–E0FFF, ...), the braille blank U+2800 and U+1D159. So a description or another pinned field could
+  carry instructions a model reads and the holder approving the digest cannot see. They are now refused, except a single
+  U+FE0E or U+FE0F directly after an emoji character ("⚠️" stays allowed); a battery of real descriptions in a dozen
+  scripts, with emoji, keycaps, NBSP and combining accents, still passes. A tool set already pinned that uses any of them, an ideographic
+  variation selector in Japanese text included, is now refused (`INVISIBLE_CHARACTERS`) until it is changed and
+  republished.
+
+### Fixed
+
+- AI sidecar: an `x-tapeapi-sidecar-error` header from the upstream is no longer passed on (a client reads it as "the
+  sidecar answered itself" and reports a transport failure for a signed answer).
+- AI sidecar: a path with an encoded `/` or backslash (`%2F`, `%5C`, any case) is refused with HTTP 400 `bad_path`
+  before anything is forwarded, since an upstream may decode it into a separator; `ai.loosePath` reads both as `/`, so
+  the verifying fetch (and `tapeapi-verify`) reports the same URLs as a path mismatch (strict refuses them).
+- An `id` with a lone UTF-16 surrogate has no canonical form: the provider binds it as no id (a signed `BAD_REQUEST`,
+  where it could fail with HTTP 500), and `api.call()` refuses it with `BAD_REQUEST` before sending.
+- JSON-RPC: a single (not batched) answer whose `id` is not the request's, or is missing or `null`, now counts as a node
+  that did not answer, as a batch element with the wrong id already did: an `id: null` answer that is not a node limit
+  (a result, or a revert) is no longer taken as an answer about the chain. A node-limit refusal with `id: null` stays a
+  refusal.
+- MCP: an upstream `isError` that is not a boolean is refused before signing by the signing proxy, and `tapeapi-mcp`
+  refuses such a signed result as not an MCP tool result: what was signed and what was shown could disagree (a signed
+  `"true"` was shown as a success). Text imitating the provenance line is now labelled in an embedded resource's `text`
+  and a resource link's `name`, `title` and `description` too; the instructions name `structuredContent` as data.
+- AI receipts: a usage count of `-0` from the upstream is read as 0; the sidecar answered HTTP 500 because canonical JSON
+  has no `-0`.
+- `canonicalJSON` refuses the holes of a sparse array (it wrote `[1,,2]`, which is not JSON); the holder console's copy
+  does the same.
+- With `clientIpHeader` set, the header's address is written one way per address (IPv6 compressed and lowercase, an
+  IPv4-mapped IPv6 address as its IPv4, anything that is not an address `"unknown"`), so one client cannot take several
+  rate-limit keys by spelling its address differently; the new-api and LiteLLM sidecar examples do the same. Without
+  `clientIpHeader` nothing changes.
+
+### Documentation
+
+- *Calling services for people you do not trust* (consume guide): the SDK does not refuse private or internal endpoint
+  URLs, which are valid in a manifest; a server or agent that resolves services for others should pass
+  `createTapeAPI({ fetch })` a wrapper that refuses them (an example is given).
+- Upgrade guide: on a chain with two operators (X Layer's default nodes) one operator can hold a pinned read back as far
+  as `maxPinAgeS` (`pin: true`) or `tap10MaxPinLag` (TAP-10 mode) allows, and the client then reads the manifest as it
+  stood then; `delegationFloor` does not cover it. A third operator's node closes the window.
+
 ## [1.4.0] — 2026-10-01
 
 ### Added
@@ -1003,7 +1203,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.1.0...v1.2.0

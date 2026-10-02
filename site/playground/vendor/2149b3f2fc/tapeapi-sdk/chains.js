@@ -246,3 +246,38 @@ export function formatTapeName({ tokenId, processor, chainId = 56 }, { suffix = 
   const short = `${dec(tokenId, '#ID', 1n, MAX_TOKEN_ID)}.${chain.area === null ? '' : `${chain.area}.`}${dec(processor, 'processor', 0n, MAX_PROCESSOR)}`
   return suffix ? `${short}.${chain.nameSuffix}` : short
 }
+
+// ── TAP-10 messaging: what a client accepts behind the DeWEB hub (§13.2, §13.8, Deployments) ─────────────────────────
+// For the conformance mode's messaging reads (conform: 'tap10': api.chain.tapeSendKey). `hub` is the ONE implementation
+// TAP-10 lists as current on that chain (§13.8 accepts no other; chains.js expectedImpl is the sentinel's list, which may
+// hold rollback entries). `factory` is the factory implementation of the factory seal (§13.8 ①). `circuitBeacon`,
+// `circuitImplementation` and `circuitCodehash` are the hub's constructor arguments: beacon.implementation() other than
+// circuitImplementation is `circuits-changed`. Read back on chain 2026-10-02, read-only, at one TAP-10 pinned block per
+// chain (BNB Smart Chain 125144083, Base 52043989, X Layer 72108297) through the SDK's default nodes: hub.circuitBeacon(),
+// hub.circuitImplementation(), hub.circuitCodehash(), beacon.implementation(), beacon.owner() (= the factory), the hub and
+// factory ERC-1967 slots and the code hash of processor 0, all equal to TAP-10's Deployments table
+// (sdk/test/fixtures/tap10-seal-onchain.json; sdk/test/conform-messaging.test.mjs pins it). Nothing was sealed.
+// TAP-10 消息层：客户端在 DeWEB 中枢背后接受什么。`hub` 是 TAP-10 列为该链"当前"的唯一实现（§13.8 不接受其它；expectedImpl
+// 是哨兵的列表，可能含回滚项）。`factory` 是工厂封存所需的工厂实现。`circuitBeacon`、`circuitImplementation`、`circuitCodehash`
+// 是中枢的构造参数：beacon.implementation() 不等于 circuitImplementation 即 `circuits-changed`。2026-10-02 在链上只读核对，
+// 与 TAP-10 的 Deployments 表一致（录制见 fixtures/tap10-seal-onchain.json）。当时都没有封存。
+const L2_SEALS = {
+  factory: '0x74956236Ab64eD143933040B4137E8A352e4d17b',
+  circuitBeacon: '0xf70d1ed4f62CF3780157B0b421b7E2F45bD0991C',
+  circuitImplementation: '0x977f217887E085D298Cb3819cDAD5A0ee35F29B2',
+  circuitCodehash: '0x57aa306fd0be97087da3534e03398f5ff4efd533b5be4e45a405ce86fa6717d5',
+}
+export const TAP10_SEALS = deepFreeze({
+  56: {
+    hub: '0x80aFE7B77F2dFD08e9feab7675780baC34a7EE85',   // v3, current since block 122623031 (v1, v2 are not accepted)
+    factory: '0xa68cCF4931d98ad0A4BE15eE40542eDc0DEc6422',
+    circuitBeacon: '0xf8D6d8EB894d6971c8976Ad8b4971cbEFE028156',
+    circuitImplementation: '0x8E1D125Def6d3826C278299273a0760D47626068',
+    circuitCodehash: '0xd8c4b0216e0aadd615fbd134465b6af060a11769edc7c844d8f14d1b8a783992',
+  },
+  196: { hub: '0xdCC57797089eBD9f26e686379A4323f353a3F9C6', ...L2_SEALS },
+  8453: { hub: '0x38A2d320b8984Bbac9b0a2691B6c0FD829A23867', ...L2_SEALS },
+})
+// TAP-10 §12.1: an endpoint's chainId above 2^53 − 1 is not a supported chain (the conformance mode refuses it).
+// TAP-10 §12.1：端点 chainId 大于 2^53 − 1 的链不受支持（一致模式拒绝）。
+export const TAP10_MAX_CHAIN_ID = 2n ** 53n - 1n

@@ -22,7 +22,7 @@
 <link rel="stylesheet" href="../status/status.css?v=67b9097263">
 <link rel="stylesheet" href="directory.css?v=c7aeb9d152">
 <!-- In <head> so the theme and language apply before the first paint. / 放在 head 里，主题与语言在首次绘制前生效。 -->
-<script src="directory.js?v=b705eeeebf"></script>
+<script src="directory.js?v=6a7c6b18b1"></script>
 </head>
 <body>
 <header class="hd-bar">
@@ -76,7 +76,7 @@
       <li>
         <span lang="zh">让你的服务通过诊断，全部检查通过（退出码 0，允许警告）。<a href="../docs/zh/ai-providers">AI 服务方指南</a>一步步带你做到这一点。</span>
         <span lang="en">Make your service pass the doctor: every check passes (exit status 0; warnings allowed). The <a href="../docs/en/ai-providers">guide for AI providers</a> takes you there step by step.</span>
-        <pre><code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-doctor &lt;name&gt;</code></pre>
+        <pre><code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-doctor &lt;name&gt;</code></pre>
       </li>
       <li>
         <span lang="zh">提一个拉取请求，按名字的顺序在 <a href="https://github.com/BruceLanLan/tapeapi/edit/main/site/directory/providers.json"><code>site/directory/providers.json</code></a> 里加上你自己的一条（<code>name</code>、<code>added</code>、可选的 <code>contact</code>），并在描述里贴上诊断的最后一行与<a href="https://github.com/BruceLanLan/tapeapi/issues/new?template=service_listing.yml">服务登记表</a>里的确认项。</span>

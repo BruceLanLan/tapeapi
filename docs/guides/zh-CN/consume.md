@@ -18,7 +18,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz
 ```
 
 把下面的脚本保存为 `.mjs` 文件，放在能解析到 `@tapeapi/sdk` 的地方，然后用 `node <文件>.mjs` 运行：用克隆时，**放在 `tapeapi`
@@ -176,6 +176,37 @@ SDK 只在收到经过验证的回答之后才推进本地计量，并在提供�
 SDK 是普通的 ES 模块。在 DeWEB 站点上，按相对路径导入它，并用 import map 映射 `@noble/*`；完整页面见
 [`examples/demo-site/`](../../../examples/demo-site/)，更多代码片段见
 [`examples/consumer-snippets.md`](../../../examples/consumer-snippets.md)。
+
+## 7. 替不可信的用户解析和调用服务
+
+核验站点、智能体，或任何按用户给出的名字去解析并调用服务的服务器，都会向陌生人写下的网址发请求：清单里的端点就是持有人发布的
+内容。SDK 会检查它们是 `https` 网址（开发模式下可为 `http`），但**不会**拒绝内网或保留地址。`https://127.0.0.1/`、
+`https://[::1]/` 与 `https://169.254.169.254/` 都是合法的 `endpoints.live`，域名也可能解析到内网地址。在你自己的机器上这正是你
+想要的；在服务器上，这会让用户把你的服务器指向它自己的内网。
+
+这类部署应当给 `createTapeAPI({ fetch })` 传入一个拒绝内网目标的包装。RPC 请求也走同一个 `fetch`，所以要显式放行你自己的节点：
+
+```js
+import { createTapeAPI } from '@tapeapi/sdk'
+
+// 你自己的、可以是内网的主机（比如你的 RPC 节点）；其余主机是内网地址时一律拒绝。
+const ALLOWED = new Set(['rpc.internal.example:8545'])
+const isPrivate = (host) => {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  if (h === 'localhost' || /\.(localhost|local|internal|lan|home\.arpa)$/.test(h)) return true
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(h)) return /^(0|10|127|169\.254|172\.(1[6-9]|2\d|3[01])|192\.168|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7]))\./.test(h)
+  return h.includes(':') && (h === '::' || h === '::1' || /^(f[cd]|fe[89ab])/.test(h) || h.startsWith('::ffff:'))
+}
+const guardedFetch = (input, init) => {
+  const url = new URL(input instanceof Request ? input.url : String(input))
+  if (!ALLOWED.has(url.host) && isPrivate(url.hostname)) return Promise.reject(new TypeError(`refused: ${url.origin} is a private address`))
+  return fetch(input, { ...init, redirect: 'error' })   // 也不让公网主机重定向到内网
+}
+const api = createTapeAPI({ rpcUrls: [/* ... */], fetch: guardedFetch })
+```
+
+这只检查写出来的网址。解析到内网地址的公网域名能绕过它：在服务器上，还要在建立连接的地方执行同一规则（HTTP agent 的解析钩子，
+或拒绝内网网段的出口代理、防火墙）。浏览器对页面有自己的规则，所以这一点主要关系到服务器与智能体。
 
 ## 不使用 SDK 进行验证
 

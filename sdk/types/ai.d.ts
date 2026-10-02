@@ -143,14 +143,18 @@ export interface SseScanner {
   end(): void
   /** `final`: the format's final event (createSseScanner({ final })) has been dispatched. */
   /** `receiptsAtEnd`: how many receipt comments had arrived when the stream first ended (its final event or its sentinel); null before. */
-  info: { events: number; done: boolean; receipts: string[]; final: boolean; receiptsAtEnd: number | null }
+  /** `eventsAtEnd`, `digestAtEnd`: the event count and the receipt hash at that same point (the final event included), whatever arrived after it in the same chunk; null before. */
+  /** `endOffset`: where that point lies in the bytes of the push() that reached it (just after the blank line that dispatched the ending event); null before. */
+  /** `ambiguous`: lines that start with U+FEFF other than at the very start of the stream (clients that strip a byte order mark from every line read them differently); `ambiguousAtEnd`: that count at the end, null before. */
+  info: { events: number; done: boolean; receipts: string[]; final: boolean; receiptsAtEnd: number | null; eventsAtEnd: number | null; digestAtEnd: string | null; endOffset: number | null; ambiguous: number; ambiguousAtEnd: number | null }
   /** The receipt hash of the events dispatched so far. */
   digest(): string
   state(): { atLineStart: boolean; pendingCR: boolean; eventHasData: boolean; eventHasFields: boolean }
 }
 /** An incremental byte-level server-sent-events parser that hashes data payloads by the receipt rule. @internal */
 export declare function createSseScanner(o?: { sentinel?: string | null; onEvent?: (json: unknown, eventName: string) => void; eventParseLimit?: number; final?: { data?: readonly string[]; event?: readonly string[] } | null }): SseScanner
-export declare function scanSse(body: Uint8Array | ArrayBuffer | string, o?: { format?: AIFormat; sentinel?: string | null }): { responseSha256: string; id: string | null; model: string | null; usage: Usage | null; complete: boolean; events: number; done: boolean; receipts: string[] }
+/** `ambiguous`: lines that start with U+FEFF other than at the very start (clients read them differently); `unfinished`: the stream closes on an event before its blank line (some clients dispatch it). verifyUsageReceipt reports both. */
+export declare function scanSse(body: Uint8Array | ArrayBuffer | string, o?: { format?: AIFormat; sentinel?: string | null }): { responseSha256: string; id: string | null; model: string | null; usage: Usage | null; complete: boolean; events: number; done: boolean; receipts: string[]; ambiguous: number; unfinished: boolean }
 
 export declare function usageOf(u: unknown): Usage | null
 /** The entry whose id or an alias equals `model` exactly, allowed for `format`; null when none. @internal */

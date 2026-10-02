@@ -16,7 +16,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 
 [中文说明](README.zh-CN.md) · [Website](https://tapeapi.fun) · [Docs](https://tapeapi.fun/docs/) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md)
 
-> **Status: released, 1.4.0.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
+> **Status: released, 1.5.0.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
 > breaking changes come only in 2.0. Paid channels (TAPI-22) are experimental and not deployed. Nothing here has had a
 > third-party audit.
 
@@ -42,12 +42,12 @@ curl shows the signed envelope but checks nothing. The SDK checks it. It is not 
 release (Node.js 20 or later):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz
 ```
 
 The server package (`@tapeapi/server`: providers, the AI sidecar, the MCP proxy) depends on this SDK, which is not on
 npm either, so installed alone it fails with a 404: install both in one command,
-`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-server-1.4.0.tgz`.
+`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-server-1.5.0.tgz`.
 
 ```js
 // try.mjs: node try.mjs
@@ -85,7 +85,7 @@ No outside provider has published a price table on chain yet, so this was run ag
 
 ```bash
 # Terminal 1 (it keeps running). 42.1013.tape is an example name: put your AI provider's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash
@@ -207,7 +207,7 @@ These are TapeAPI's own specifications, not TAPs. On 2026-09-30 and 2026-10-01 w
 | TAPI-20 §3.9, TAPI-21 §3.5 | AI usage receipts, [#26](https://github.com/TapeOutProtocol/TAPs/pull/26) | Under review, no number |
 | TAPI-20 §3.2 (proof mode, informative) | Proof-verified reads, [#28](https://github.com/TapeOutProtocol/TAPs/pull/28) | Under review, no number |
 
-TAPI-22, TAPI-24 and TAPI-25 have not been submitted. #10, #16 and #18 have passed the editors' format review and wait to be merged after TAP-11. The drafts are written against TAP-10; the reference implementation (our SDK) does not yet match it in a few places, which each draft lists under Backwards Compatibility, and the SDK will follow in an optional mode.
+TAPI-22, TAPI-24 and TAPI-25 have not been submitted. #10, #16 and #18 have passed the editors' format review and wait to be merged after TAP-11. The drafts are written against TAP-10; the reference implementation (our SDK) does not yet match it in a few places, which each draft lists under Backwards Compatibility, and the SDK follows them in an optional mode (`conform: 'tap10'`, experimental since 1.4).
 
 | Spec | Title | Status |
 |---|---|---|

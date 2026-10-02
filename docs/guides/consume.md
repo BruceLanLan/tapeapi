@@ -16,7 +16,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 Or install just the SDK into your own project from the GitHub release (not the npm registry):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz
 ```
 
 Save the scripts below as `.mjs` files where `@tapeapi/sdk` resolves, and run them with `node <file>.mjs`: in a clone,
@@ -179,6 +179,40 @@ count differs. Pass `store: { get, set }` to keep the meter across restarts.
 The SDK is plain ES modules. On a DeWEB site, import it by relative path and map `@noble/*` with an import map; a
 complete page is in [`examples/demo-site/`](../../examples/demo-site/) and more snippets are in
 [`examples/consumer-snippets.md`](../../examples/consumer-snippets.md).
+
+## 7. Resolve and call services for people you do not trust
+
+A verify site, an agent, or any server that resolves and calls whatever service a user names makes requests to URLs a
+stranger wrote: the endpoints in a manifest are whatever the holder published. The SDK checks that they are `https`
+URLs (or `http` in dev); it does **not** refuse private or internal addresses. `https://127.0.0.1/`, `https://[::1]/`
+and `https://169.254.169.254/` are valid `endpoints.live` entries, and a name can resolve to a private address too. On
+your own machine that is what you want; on a server it lets a user aim your server at its own network.
+
+Such a deployment should pass `createTapeAPI({ fetch })` a wrapper that refuses private targets. The same `fetch` carries
+the RPC requests, so allow your own nodes explicitly:
+
+```js
+import { createTapeAPI } from '@tapeapi/sdk'
+
+// Hosts of your own that may be private (your RPC node, say); everything else is refused when it is.
+const ALLOWED = new Set(['rpc.internal.example:8545'])
+const isPrivate = (host) => {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  if (h === 'localhost' || /\.(localhost|local|internal|lan|home\.arpa)$/.test(h)) return true
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(h)) return /^(0|10|127|169\.254|172\.(1[6-9]|2\d|3[01])|192\.168|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7]))\./.test(h)
+  return h.includes(':') && (h === '::' || h === '::1' || /^(f[cd]|fe[89ab])/.test(h) || h.startsWith('::ffff:'))
+}
+const guardedFetch = (input, init) => {
+  const url = new URL(input instanceof Request ? input.url : String(input))
+  if (!ALLOWED.has(url.host) && isPrivate(url.hostname)) return Promise.reject(new TypeError(`refused: ${url.origin} is a private address`))
+  return fetch(input, { ...init, redirect: 'error' })   // and no redirect from a public host to a private one
+}
+const api = createTapeAPI({ rpcUrls: [/* ... */], fetch: guardedFetch })
+```
+
+This checks the URL as written. A public name that resolves to a private address gets past it: on a server, enforce the
+rule where the connection is made as well (a resolver hook in your HTTP agent, or an egress proxy or firewall that
+refuses private ranges). A browser applies its own rules to pages, so this matters for servers and agents.
 
 ## Verify without the SDK
 

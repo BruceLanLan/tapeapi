@@ -50,7 +50,7 @@ the [changelog](../CHANGELOG.md).
   channels [#12](https://github.com/TapeOutProtocol/TAPs/pull/12), MCP tool binding [#16](https://github.com/TapeOutProtocol/TAPs/pull/16), attested reads [#18](https://github.com/TapeOutProtocol/TAPs/pull/18), private groups [#20](https://github.com/TapeOutProtocol/TAPs/pull/20), AI usage receipts [#26](https://github.com/TapeOutProtocol/TAPs/pull/26)
   and proof-verified reads [#28](https://github.com/TapeOutProtocol/TAPs/pull/28); #10, #16 and #18 have passed the format review and wait to be merged after TAP-11.
   The reference implementation (our SDK) does not yet match TAP-10 in a few places, which the drafts list under
-  Backwards Compatibility; the SDK will follow in an optional mode, and its default behaviour stays the same. TAPI-20 to
+  Backwards Compatibility; the SDK follows them in an optional mode (`conform: 'tap10'`, experimental since 1.4), and its default behaviour stays the same. TAPI-20 to
   TAPI-27 remain the basis of the 1.x compatibility promise.
 
 ## 3. Later
@@ -112,7 +112,7 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
   服务身份与清单已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)，2026-10-01）；合并为 Draft 不等于被采纳。另有 7 份在评审中、
   尚无编号：签名响应 [#10](https://github.com/TapeOutProtocol/TAPs/pull/10)、私密通道 [#12](https://github.com/TapeOutProtocol/TAPs/pull/12)、MCP 工具绑定 [#16](https://github.com/TapeOutProtocol/TAPs/pull/16)、多家交叉验证读取 [#18](https://github.com/TapeOutProtocol/TAPs/pull/18)、私密群聊 [#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、
   AI 用量回执 [#26](https://github.com/TapeOutProtocol/TAPs/pull/26)、证明核验读取 [#28](https://github.com/TapeOutProtocol/TAPs/pull/28)；其中 #10、#16、#18 已通过格式审查，等排在 TAP-11 之后合并。参考实现
-  （我们的 SDK）目前有几处还没对齐 TAP-10，草稿在 Backwards Compatibility 里如实列出；SDK 会以可选模式跟上，默认行为
+  （我们的 SDK）目前有几处还没对齐 TAP-10，草稿在 Backwards Compatibility 里如实列出；SDK 以可选模式（`conform: 'tap10'`，1.4 起、实验性）跟上，默认行为
   不变。TAPI-20 至 TAPI-27 仍是 1.x 兼容性承诺的依据。
 
 ## 3. 更远

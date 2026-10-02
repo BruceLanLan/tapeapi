@@ -1,7 +1,7 @@
 // Receipt checker: every string the script shows, in Chinese and English (the two must have the same keys:
 // scripts/verify-page.test.mjs). Plain text only: the page puts these in with textContent.
 // 回执核验页脚本显示的全部文字，中英两套键必须一致（由测试检查）。只是纯文本：页面用 textContent 放入。
-import { MAX_INPUT } from './lib.js?v=fd0179eaa6'
+import { MAX_INPUT } from './lib.js?v=c35b3c3d0c'
 
 export const T = {
   zh: {
@@ -60,11 +60,21 @@ export const T = {
     'x.invalid.amount': '回执由这个服务的密钥签署，但金额或单价与它链上清单的价目表不符：',
     'x.invalid.request': '你粘贴的请求体不是这份回执绑定的请求字节（哈希不同）。',
     'x.invalid.response': '你粘贴的回应不是这份回执绑定的回应字节（哈希不同）。',
+    'x.invalid.response.ambiguous': '你粘贴的流里有以 U+FEFF（字节序标记）开头的行：官方 SDK 逐行去掉这个标记，把它读成回执哈希没有覆盖的内容，所以这份流不能算作已核验。',
+    'x.invalid.response.unfinished': '你粘贴的流在一个事件的空行之前就结束了：有些客户端（openai SDK）仍会分派这个未结束的事件，而回执哈希不覆盖它，所以这份流不能算作已核验。',
     'c.method': '方法与接口路径', 'c.method.pass': '回执方法对应这个 API 路径', 'c.method.fail': '回执方法不对应这个 API 路径',
     'c.method.unknown': '本页不认识这种 API 格式，无法核对路径', 'c.method.skip': '未执行',
     'c.amount': '金额符合价目表', 'c.amount.how': '按回执里的模型在清单价目表中精确匹配，用回执里各类 token 数（输入、缓存读写、输出、推理）重算，向上取整到 8 位小数',
     'c.request': '请求字节', 'c.response': '回应字节',
     'c.hash.how': '你粘贴的字节与回执里的哈希一致', 'c.hash.bad': '你粘贴的字节与回执里的哈希不一致（换行、空格也算）',
+    'c.shape.bad': '各客户端对这份流的读法不一致，哈希无法说明客户端看到了什么',
+    'c.shape.whole': '回执说是流，粘贴的却是一整段 JSON 回答',
+    'x.invalid.response.whole': '回执说这个回答是流，但你粘贴的是一整段 JSON 回答，不是事件流：按流读它，读不到其中的任何用量，所以这份回执无法对照它核验，不能算作已核验。',
+    'x.invalid.answer': '回执由这个服务的密钥签署，但按该 API 格式读你粘贴的回答，它的 id、模型、用量或完成状态与回执所说的不一致：',
+    'c.answer': '回答内容', 'c.answer.pass': '与回执一致', 'c.answer.fail': '与回执不一致',
+    'c.answer.how': '按该 API 格式读你粘贴的回答：id、模型、用量与完成状态都与回执一致',
+    'c.answer.partial': (req) => `按该 API 格式读你粘贴的回答：id、模型与完成状态与回执一致；用量没有比较，因为回执说旁路替客户端向上游要了用量、并从这份流里去掉了那一块（usageInjected）${req ? '' : '；粘贴请求体才能核对这一说法'}`,
+    'c.answer.unknown': '本页不认识这种 API 格式，无法读取回答',
     'c.notPasted': '未粘贴，未核对',
     'd.path': '接口路径', 'd.model': '模型（上游报告）', 'd.tokens': 'token 数',
     'd.model.request': '上游没有报告模型；按请求里的模型计价', 'd.model.alias': (id) => `价目表条目 ${id} 的别名`,
@@ -138,11 +148,21 @@ export const T = {
     'x.invalid.amount': 'The receipt is signed by this service\'s key, but its amount or prices differ from the price table in its on-chain manifest: ',
     'x.invalid.request': 'The request body you pasted is not the request bytes this receipt binds (the hash differs).',
     'x.invalid.response': 'The response you pasted is not the response bytes this receipt binds (the hash differs).',
+    'x.invalid.response.ambiguous': 'The stream you pasted has a line that starts with U+FEFF (a byte order mark): the official SDKs strip that mark from every line and read the line as content the receipt hash does not cover, so this stream cannot count as verified.',
+    'x.invalid.response.unfinished': 'The stream you pasted ends before the blank line of an event: some clients (the openai SDK) still dispatch that unfinished event, which the receipt hash does not cover, so this stream cannot count as verified.',
     'c.method': 'Method and API path', 'c.method.pass': 'the receipt method belongs to this API path', 'c.method.fail': 'the receipt method does not belong to this API path',
     'c.method.unknown': 'this page does not know this API format, so the path is not checked', 'c.method.skip': 'not run',
     'c.amount': 'Amount follows the price table', 'c.amount.how': 'the receipt\'s model matched exactly in the manifest\'s price table, recomputed from the receipt\'s token counts (input, cache reads and writes, output, reasoning), rounded up to 8 decimals',
     'c.request': 'Request bytes', 'c.response': 'Response bytes',
     'c.hash.how': 'the bytes you pasted match the hash in the receipt', 'c.hash.bad': 'the bytes you pasted do not match the hash in the receipt (line ends and spaces count)',
+    'c.shape.bad': 'clients read this stream differently, so the hash cannot say what a client was shown',
+    'c.shape.whole': 'the receipt says stream, but what you pasted is one whole JSON answer',
+    'x.invalid.response.whole': 'The receipt says this answer was a stream, but what you pasted is one whole JSON answer, not an event stream: read as a stream it shows none of its usage, so the receipt cannot be checked against it and does not count as verified.',
+    'x.invalid.answer': 'The receipt is signed by this service\'s key, but the answer you pasted, read by its API format, has an id, model, usage or completeness other than the receipt says: ',
+    'c.answer': 'Answer as read', 'c.answer.pass': 'matches the receipt', 'c.answer.fail': 'differs from the receipt',
+    'c.answer.how': 'the answer you pasted, read by its API format: its id, model, usage and completeness are what the receipt says',
+    'c.answer.partial': (req) => `the answer you pasted, read by its API format: its id, model and completeness are what the receipt says; the usage is not compared, because the receipt says the sidecar asked the upstream for it on the client's behalf and took that chunk out of this stream (usageInjected)${req ? '' : '; paste the request body to check that claim'}`,
+    'c.answer.unknown': 'this page does not know this API format, so the answer is not read',
     'c.notPasted': 'not pasted; not checked',
     'd.path': 'API path', 'd.model': 'Model (as the upstream reported)', 'd.tokens': 'Tokens',
     'd.model.request': 'the upstream reported no model; priced as the model the request asked for', 'd.model.alias': (id) => `an alias of the price-table entry ${id}`,

@@ -2157,7 +2157,9 @@ test('FIXED R9-1: every recorded BSC node answer, taken through rpc.js as it arr
   for (const a of ANSWERS) {
     const w = want(a)
     if (!a.body.error || !w) continue
-    const rpc = createRpc({ urls: ['http://n1'], quorum: 1, allowSingleNode: true, fetch: async () => new Response(JSON.stringify(a.body), { status: a.status, headers: { 'content-type': a.contentType } }) })
+    // The recorded body answered a request with id 7; replayed, it answers this request's id, as the node would (FIXED RPC-ID).
+    // 录制的回答对应 id 7 的请求；回放时按本次请求的 id 作答，与节点一样。
+    const rpc = createRpc({ urls: ['http://n1'], quorum: 1, allowSingleNode: true, fetch: async (u, init) => new Response(JSON.stringify({ ...a.body, id: JSON.parse(init.body).id }), { status: a.status, headers: { 'content-type': a.contentType } }) })
     const e = await rpc.call(a.method || 'eth_getLogs', [{}]).then(() => null, (x) => x)
     assert.ok(e, `${a.node} ${a.case}: an error`)
     const k = channel._busKindOf(e)

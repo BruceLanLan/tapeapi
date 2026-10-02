@@ -521,7 +521,12 @@ export function canonicalJSON(v, path = '') {
     return JSON.stringify(v)
   }
   if (t !== 'object') throw new Error(`unsupported ${t} at ${path || '$'}`)
-  if (Array.isArray(v)) return '[' + v.map((x, i) => canonicalJSON(x, `${path}[${i}]`)).join(',') + ']'
+  if (Array.isArray(v)) {
+    // By index: a hole of a sparse array is undefined and refused, never written as '[1,,2]'. / 按下标：稀疏数组的空位按 undefined 拒绝。
+    const items = []
+    for (let i = 0; i < v.length; i++) items.push(canonicalJSON(v[i], `${path}[${i}]`))
+    return '[' + items.join(',') + ']'
+  }
   if (typeof v.toJSON === 'function') throw new Error(`value at ${path || '$'} has a toJSON() method`)
   const parts = []
   for (const k of Object.keys(v).sort()) {
@@ -556,18 +561,34 @@ export async function toolsDigest(tools, sha256 = webSha256) {
 }
 
 /** Text a model reads but a person does not see, in any string of the pinned tool fields (keys included, any depth):
- *  Unicode format characters (category Cf: tag characters, zero-width, bidi controls, soft hyphen) and C0/C1 controls,
- *  except a line feed or a tab inside a `description`. One "tool X: field path: U+XXXX" line per offending string.
+ *  Unicode format characters (category Cf: tag characters, zero-width, bidi controls, soft hyphen), C0/C1 controls
+ *  except a line feed or a tab inside a `description`, Default_Ignorable code points (assigned or not) and the braille
+ *  blank and U+1D159, and variation selectors except one U+FE0E / U+FE0F directly after an emoji character. One "tool X: field path: U+XXXX" line per offending string.
  *  The SDK's mcp.invisibleProblems, character for character (the page loads no library; sdk/test/mcp-review.test.mjs
- *  keeps the two equal). / 模型能读、人看不见的文本：Unicode 格式字符（Cf）和 C0/C1 控制符（description 里的换行、制表符除外）。
+ *  keeps the two equal). / 模型能读、人看不见的文本：Unicode 格式字符（Cf）、C0/C1 控制符（description 里的换行、制表符除外）、Default_Ignorable
+ *  码点（无论是否已分配）、盲文空白与 U+1D159，以及变体选择符（紧跟 emoji 字符的单个 U+FE0E / U+FE0F 除外）。
  *  与 SDK 的 mcp.invisibleProblems 逐字相同（页面不加载库；由测试保证一致）。 */
 export function invisibleProblems(tools) {
   const FIELDS = ['name', 'title', 'description', 'inputSchema', 'outputSchema', 'annotations']
   const obj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
   const u = (c) => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
-  const bad = (c, text) => /\p{Cf}/u.test(c) || (/\p{Cc}/u.test(c) && !(text && (c === '\n' || c === '\t')))
-  const first = (s, text) => { for (const c of s) if (bad(c, text)) return c; return null }
-  const show = (s) => Array.from(s).slice(0, 64).map((c) => (bad(c, false) ? `<${u(c)}>` : c)).join('')
+  // Default_Ignorable_Code_Point: what renderers draw as nothing, assigned or not (the combining grapheme joiner, the
+  // Hangul fillers, the Mongolian free variation selectors, U+2065, U+FFF0-FFF8, U+E0080-E0FFF, ...; FIXED MCP-DI).
+  // Two blanks it does not cover are listed: the braille blank and the musical null notehead.
+  // Default_Ignorable_Code_Point：渲染时不画出任何东西的码点（无论是否已分配）。它不覆盖的两个空白另列：盲文空白与音乐空符头。
+  const BLANK = new Set([0x2800, 0x1D159])
+  // Variation selectors are 256 invisible symbols, enough to spell any text (FIXED MCP-VS). Only VS15 / VS16 directly
+  // after an emoji character passes ("⚠️", "❤️", "1️⃣"), decided before the Default_Ignorable rule, which covers them
+  // too; the ideographic ones (U+E0100-E01EF) never pass. / 变体选择符是 256 个不可见符号，足以拼出任何文本。只放行紧跟
+  // emoji 字符的 VS15/VS16（先于 Default_Ignorable 规则判断，它也覆盖它们）；表意文字变体选择符一律拒绝。
+  const vs = (p) => (p >= 0xFE00 && p <= 0xFE0F) || (p >= 0xE0100 && p <= 0xE01EF)
+  const bad = (c, text, prev) => {
+    const p = c.codePointAt(0)
+    if (vs(p)) return !((p === 0xFE0E || p === 0xFE0F) && prev !== null && /\p{Emoji}/u.test(prev))
+    return /\p{Cf}/u.test(c) || /\p{Default_Ignorable_Code_Point}/u.test(c) || BLANK.has(p) || (/\p{Cc}/u.test(c) && !(text && (c === '\n' || c === '\t')))
+  }
+  const first = (s, text) => { let prev = null; for (const c of s) { if (bad(c, text, prev)) return c; prev = c } return null }
+  const show = (s) => { let prev = null; return Array.from(s).slice(0, 64).map((c) => { const x = bad(c, false, prev) ? `<${u(c)}>` : c; prev = c; return x }).join('') }
   const out = []
   for (const t of Array.isArray(tools) ? tools : []) {
     if (!obj(t)) continue

@@ -21,7 +21,7 @@ import { runAll, runAllConform } from '../sdk/test/helpers/tap10-gap.mjs'
 
 const esc = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ')
 const { rows, structural, summary, fixture } = await runAll()
-// 1.4: the same cases under createTapeAPI({ conform: 'tap10' }) / 同样的用例在一致模式下
+// 1.4/1.5: the same cases under createTapeAPI({ conform: 'tap10', allChains: true }) / 同样的用例在一致模式下（开 allChains）
 const conform = await runAllConform()
 
 if (process.argv.includes('--json')) {
@@ -39,15 +39,15 @@ if (process.argv.includes('--json')) {
   console.log('A "conforms" verdict covers only what is judged offline; the on-chain halves (container, opened, site status, payment) of rows 1, 7, 8 and 9 are not judged.')
   console.log(`\nStructural finding (qualifies those on-chain halves): a full resolution of a valid service issued the reads ${JSON.stringify(structural.calls)}; ` +
     `of the TAP-10 reads cpuCount, isOpened, isLive, isContainerLive it never issued: ${Object.entries(structural.neverIssued).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none'}.`)
-  console.log(`\n## The conformance mode (createTapeAPI({ conform: 'tap10' }), 1.4, @experimental)\n`)
+  console.log(`\n## The conformance mode (createTapeAPI({ conform: 'tap10', allChains: true }), 1.4 and 1.5, @experimental)\n`)
   console.log('| Case | Input | Default mode | conform: \'tap10\' does | Verdict |')
   console.log('|---|---|---|---|---|')
   const byN = new Map(rows.map((r) => [r.n, r]))
   for (const r of conform.rows) {
     if (r.verdict === 'NOT-JUDGED') continue
     const was = byN.get(r.n)?.verdict === 'CONFORMS' ? 'conforms' : 'DIFFERS'
-    console.log(`| ${r.id} | \`${esc(r.input)}\` | ${was} | ${esc(r.ours)} | ${r.verdict === 'CONFORMS' ? (was === 'DIFFERS' ? 'conforms (flipped)' : 'conforms') : 'DIFFERS (1.5)'} |`)
+    console.log(`| ${r.id} | \`${esc(r.input)}\` | ${was} | ${esc(r.ours)} | ${r.verdict === 'CONFORMS' ? (was === 'DIFFERS' ? 'conforms (flipped)' : 'conforms') : 'DIFFERS'} |`)
   }
-  console.log(`\nConformance mode: judged ${conform.summary.judged}; conforms: ${conform.summary.conforms}; differs: ${conform.summary.gaps} (reverse resolution and input without chain information on every chain, planned for 1.5).`)
+  console.log(`\nConformance mode: judged ${conform.summary.judged}; conforms: ${conform.summary.conforms}; differs: ${conform.summary.gaps}.`)
   console.log(`A full resolution in the conformance mode issues ${Object.entries(conform.structural.neverIssued).filter(([, v]) => !v).map(([k]) => k).join(', ')}.`)
 }

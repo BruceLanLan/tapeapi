@@ -29,7 +29,7 @@
 <p>The packages are not on npm yet, so you work inside a clone of the repository (Node.js 20 or later):</p>
 <div class="code"><pre data-lang="bash"><code>git clone https://github.com/BruceLanLan/tapeapi.git &amp;&amp; cd tapeapi &amp;&amp; npm install</code></pre></div>
 <p>Or install just the SDK into your own project from the GitHub release (not the npm registry):</p>
-<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz</code></pre></div>
 <p>Save the scripts below as <code>.mjs</code> files where <code>@tapeapi/sdk</code> resolves, and run them with <code>node &lt;file&gt;.mjs</code>: in a clone, <strong>inside the <code>tapeapi</code> directory</strong> (the package resolves through the repository's workspace); after installing the release package, in that project. Anywhere else a script fails with <code>ERR_MODULE_NOT_FOUND</code>.</p>
 <h3 id="call-the-live-public-service"><a class="anchor" href="#call-the-live-public-service" aria-hidden="true">#</a>Call the live public service</h3>
 <p>A free public service runs at <code>https://api.tapeapi.fun</code> under the TapeOut name <code>11.1013.tape</code>. With curl:</p>
@@ -104,6 +104,26 @@ const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code><
 <p>The SDK advances its local meter only after a verified answer and resynchronises automatically if the provider's count differs. Pass <code>store: { get, set }</code> to keep the meter across restarts.</p>
 <h2 id="6-use-it-in-a-browser-or-a-deweb-site"><a class="anchor" href="#6-use-it-in-a-browser-or-a-deweb-site" aria-hidden="true">#</a>6. Use it in a browser or a DeWEB site</h2>
 <p>The SDK is plain ES modules. On a DeWEB site, import it by relative path and map <code>@noble/*</code> with an import map; a complete page is in <a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/demo-site" rel="noopener"><code>examples/demo-site/</code></a> and more snippets are in <a href="https://github.com/BruceLanLan/tapeapi/blob/main/examples/consumer-snippets.md" rel="noopener"><code>examples/consumer-snippets.md</code></a>.</p>
+<h2 id="7-resolve-and-call-services-for-people-you-do-not-trust"><a class="anchor" href="#7-resolve-and-call-services-for-people-you-do-not-trust" aria-hidden="true">#</a>7. Resolve and call services for people you do not trust</h2>
+<p>A verify site, an agent, or any server that resolves and calls whatever service a user names makes requests to URLs a stranger wrote: the endpoints in a manifest are whatever the holder published. The SDK checks that they are <code>https</code> URLs (or <code>http</code> in dev); it does <strong>not</strong> refuse private or internal addresses. <code>https://127.0.0.1/</code>, <code>https://[::1]/</code> and <code>https://169.254.169.254/</code> are valid <code>endpoints.live</code> entries, and a name can resolve to a private address too. On your own machine that is what you want; on a server it lets a user aim your server at its own network.</p>
+<p>Such a deployment should pass <code>createTapeAPI({ fetch })</code> a wrapper that refuses private targets. The same <code>fetch</code> carries the RPC requests, so allow your own nodes explicitly:</p>
+<div class="code"><pre data-lang="js"><code>import { createTapeAPI } from '@tapeapi/sdk'
+
+// Hosts of your own that may be private (your RPC node, say); everything else is refused when it is.
+const ALLOWED = new Set(['rpc.internal.example:8545'])
+const isPrivate = (host) =&gt; {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  if (h === 'localhost' || /\.(localhost|local|internal|lan|home\.arpa)$/.test(h)) return true
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(h)) return /^(0|10|127|169\.254|172\.(1[6-9]|2\d|3[01])|192\.168|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7]))\./.test(h)
+  return h.includes(':') &amp;&amp; (h === '::' || h === '::1' || /^(f[cd]|fe[89ab])/.test(h) || h.startsWith('::ffff:'))
+}
+const guardedFetch = (input, init) =&gt; {
+  const url = new URL(input instanceof Request ? input.url : String(input))
+  if (!ALLOWED.has(url.host) &amp;&amp; isPrivate(url.hostname)) return Promise.reject(new TypeError(`refused: ${url.origin} is a private address`))
+  return fetch(input, { ...init, redirect: 'error' })   // and no redirect from a public host to a private one
+}
+const api = createTapeAPI({ rpcUrls: [/* ... */], fetch: guardedFetch })</code></pre></div>
+<p>This checks the URL as written. A public name that resolves to a private address gets past it: on a server, enforce the rule where the connection is made as well (a resolver hook in your HTTP agent, or an egress proxy or firewall that refuses private ranges). A browser applies its own rules to pages, so this matters for servers and agents.</p>
 <h2 id="verify-without-the-sdk"><a class="anchor" href="#verify-without-the-sdk" aria-hidden="true">#</a>Verify without the SDK</h2>
 <p>Any language can check an answer. For a request <code>{ id, params }</code> sent to method <code>m</code> of container <code>c</code>, the service signs, with EIP-191 <code>personal_sign</code>:</p>
 <div class="code"><pre><code>digest = keccak256( &quot;TAPI-1/resp/v2&quot; ‖ c ‖ keccak256(id) ‖ keccak256(canonicalJSON({method: m, params}))
@@ -113,7 +133,7 @@ const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code><
 <nav class="pn"><a class="prev" href="mcp"><span>Previous</span>Use TapeAPI from Claude, Cursor and other MCP clients</a><a class="next" href="provide"><span>Next</span>Run a service</a></nav>
 <p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/consume.md" rel="noopener">Edit this page on GitHub</a></p>
 </main>
-<aside class="toc"><p class="gtitle">On this page</p><ul><li class="l2"><a href="#1-try-it">1. Try it</a></li><li class="l3"><a href="#set-up-once">Set up once</a></li><li class="l3"><a href="#call-the-live-public-service">Call the live public service</a></li><li class="l3"><a href="#run-a-service-locally">Run a service locally</a></li><li class="l2"><a href="#2-resolve-a-real-service-on-bnb-chain">2. Resolve a real service on BNB Chain</a></li><li class="l2"><a href="#3-handle-errors">3. Handle errors</a></li><li class="l2"><a href="#4-require-agreement-between-providers">4. Require agreement between providers</a></li><li class="l2"><a href="#5-pay-for-calls">5. Pay for calls</a></li><li class="l2"><a href="#6-use-it-in-a-browser-or-a-deweb-site">6. Use it in a browser or a DeWEB site</a></li><li class="l2"><a href="#verify-without-the-sdk">Verify without the SDK</a></li></ul></aside>
+<aside class="toc"><p class="gtitle">On this page</p><ul><li class="l2"><a href="#1-try-it">1. Try it</a></li><li class="l3"><a href="#set-up-once">Set up once</a></li><li class="l3"><a href="#call-the-live-public-service">Call the live public service</a></li><li class="l3"><a href="#run-a-service-locally">Run a service locally</a></li><li class="l2"><a href="#2-resolve-a-real-service-on-bnb-chain">2. Resolve a real service on BNB Chain</a></li><li class="l2"><a href="#3-handle-errors">3. Handle errors</a></li><li class="l2"><a href="#4-require-agreement-between-providers">4. Require agreement between providers</a></li><li class="l2"><a href="#5-pay-for-calls">5. Pay for calls</a></li><li class="l2"><a href="#6-use-it-in-a-browser-or-a-deweb-site">6. Use it in a browser or a DeWEB site</a></li><li class="l2"><a href="#7-resolve-and-call-services-for-people-you-do-not-trust">7. Resolve and call services for people you do not trust</a></li><li class="l2"><a href="#verify-without-the-sdk">Verify without the SDK</a></li></ul></aside>
 </div>
 </body>
 </html>

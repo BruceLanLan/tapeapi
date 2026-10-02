@@ -22,7 +22,7 @@ import { receiptOf, toolResultOf, verifyLink, toBase64Url, hashReceipt } from '.
 import { recoverResponseSignerFromHashes } from '../sdk/src/sig.js'
 import { TapeAPIError } from '../sdk/src/errors.js'
 import { readAny, parseUsageReceipt, usageEnvelopeOf, verifyUsage, isUsageShape } from '../site/verify/lib.js'
-import { encodeReceipt, receiptComment } from '../sdk/src/ai.js'
+import { encodeReceipt, receiptComment, pricingOf, scanSse, completeOf, formatOfMethod } from '../sdk/src/ai.js'
 import { createAIProxy } from '../server/src/ai-proxy.js'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -410,8 +410,8 @@ test('verify page: Chinese and English go in pairs, in the page and in the scrip
   const families = {
     'err.': ['empty', 'too-large', 'unreadable', 'bad-base64', 'bad-json', 'duplicate-key', 'no-receipt', 'shape'],
     'v.': ['valid', 'other-key', 'invalid', 'unchecked'],
-    'x.invalid.': ['sig', 'resolve', 'container', 'delegation', 'name', 'method', 'amount', 'request', 'response'],
-    'c.': ['sig', 'resolve', 'container', 'delegation', 'name', 'signer', 'method', 'amount', 'request', 'response'],
+    'x.invalid.': ['sig', 'resolve', 'container', 'delegation', 'name', 'method', 'amount', 'request', 'response', 'answer'],
+    'c.': ['sig', 'resolve', 'container', 'delegation', 'name', 'signer', 'method', 'amount', 'request', 'response', 'answer'],
     'c.method.': ['pass', 'fail', 'unknown', 'skip'],
     's.': ['pass', 'fail', 'unknown', 'skip'],
   }
@@ -531,10 +531,10 @@ test('verify: AI receipt verdicts: valid; other key when altered; invalid amount
   const state = (out, id) => out.checks.find((c) => c.id === id).state
   let out = await verifyUsage(r, aiIo(manifest))
   assert.equal(out.verdict, 'valid', JSON.stringify(out.checks))
-  assert.deepEqual(out.checks.map((c) => c.id), ['sig', 'resolve', 'container', 'delegation', 'signer', 'method', 'amount', 'request', 'response'])
-  assert.equal(state(out, 'request'), 'skip'); assert.equal(state(out, 'response'), 'skip')
+  assert.deepEqual(out.checks.map((c) => c.id), ['sig', 'resolve', 'container', 'delegation', 'signer', 'method', 'amount', 'request', 'response', 'answer'])
+  assert.equal(state(out, 'request'), 'skip'); assert.equal(state(out, 'response'), 'skip'); assert.equal(state(out, 'answer'), 'skip')
   out = await verifyUsage(r, { ...aiIo(manifest), request: AI_REQ, response: AI_JSON })
-  assert.equal(out.verdict, 'valid'); assert.equal(state(out, 'request'), 'pass'); assert.equal(state(out, 'response'), 'pass')
+  assert.equal(out.verdict, 'valid'); assert.equal(state(out, 'request'), 'pass'); assert.equal(state(out, 'response'), 'pass'); assert.equal(state(out, 'answer'), 'pass')
   out = await verifyUsage(r, { ...aiIo(manifest), request: AI_REQ + ' ', response: AI_JSON })
   assert.deepEqual([out.verdict, out.failed], ['invalid', 'request'])
   out = await verifyUsage(r, { ...aiIo(manifest), response: AI_JSON.replace('20', '21') })
@@ -542,6 +542,14 @@ test('verify: AI receipt verdicts: valid; other key when altered; invalid amount
   const sr = readAny(streamText).receipt
   out = await verifyUsage(sr, { ...aiIo(manifest), request: streamReq, response: streamText })
   assert.equal(out.verdict, 'valid', 'a stream: its data payloads are hashed, the receipt comment is ignored')
+  // FIXED SSE-BOM, SSE-EOF: a pasted stream whose hash still matches but which clients read differently (a data line led
+  // by U+FEFF inserted, an unterminated event appended) fails the response check and says why. / 哈希仍一致、但各客户端读法
+  // 不同的流（插入以 U+FEFF 开头的 data 行、追加未结束的事件）不通过回应检查，并说明原因。
+  const extra = 'data: {"id":"x","object":"chat.completion.chunk","created":1,"model":"demo-chat","choices":[{"index":0,"delta":{"content":" INJECTED"},"finish_reason":null}]}'
+  for (const [shape, text] of [['ambiguous', streamText.replace(/: ?tapeapi-receipt /, (m) => `\uFEFF${extra}\n\n${m}`)], ['unfinished', streamText + extra]]) {
+    out = await verifyUsage(readAny(text).receipt, { ...aiIo(manifest), request: streamReq, response: text })
+    assert.deepEqual([out.verdict, out.failed, out.responseShape], ['invalid', 'response', shape], shape)
+  }
   // Altered after signing: another key. / 签名后被改：别的密钥。
   const altered = structuredClone(r); altered.result.usage.completion_tokens = 2
   assert.equal((await verifyUsage(altered, aiIo(manifest))).verdict, 'other-key')
@@ -569,4 +577,69 @@ test('verify: AI receipt verdicts: valid; other key when altered; invalid amount
   wrongPath.sig = signResponse(usageEnvelopeOf(wrongPath), KEY)
   assert.equal((await verifyUsage(parseUsageReceipt(wrongPath), aiIo(manifest))).failed, 'method')
   assert.ok(encodeReceipt(env).length < MAX_INPUT)
+})
+
+// FIXED AI-INJ: the page compared only the hashes, never the answer itself (TAPI-21 §3.5 check 4). A receipt signed by the
+// right key whose usage was raised, with or without usageInjected, now fails the `answer` check when the answer is pasted.
+// FIXED AI-INJ：本页以前只比较哈希，从不比较回答本身。用量被抬高的回执（无论带不带 usageInjected）在粘贴回答后不通过 answer 检查。
+test('FIXED AI-INJ: verify page: the pasted answer is read by its format; raised usage, with or without usageInjected, fails', async () => {
+  const { header, streamText, manifest, p } = await aiReceipts()
+  const env = JSON.parse(Buffer.from(header, 'base64url').toString())
+  const state = (out, id) => out.checks.find((c) => c.id === id).state
+  const forge = (patch) => {
+    const x = structuredClone(env); Object.assign(x.result, patch)
+    if (patch.usage) x.result.prices = pricingOf(manifest.ai.models, { reported: x.result.model, usage: x.result.usage, format: 'openai-chat' }).prices
+    x.sig = signResponse(usageEnvelopeOf(x), KEY)
+    return parseUsageReceipt(x)
+  }
+  const raised = { prompt_tokens: 1_000_010, completion_tokens: 20, total_tokens: 1_000_030 }
+  for (const [name, patch] of [['raised', { usage: raised }], ['raised + usageInjected', { usage: raised, usageInjected: true }]]) {
+    const r = forge(patch)
+    assert.equal((await verifyUsage(r, aiIo(manifest))).verdict, 'valid', `${name}: without the answer the page cannot tell`)
+    const out = await verifyUsage(r, { ...aiIo(manifest), request: AI_REQ, response: AI_JSON })
+    assert.deepEqual([out.verdict, out.failed, state(out, 'response')], ['invalid', 'answer', 'pass'], name)
+    assert.ok(out.answerProblems.length, name)
+  }
+  // An honest injected stream: passes, with the usage listed as not compared. / 诚实的注入流：通过，用量列为未比较。
+  const streamReq = AI_REQ.replace('{', '{"stream":true,')
+  const text = await (await p.handleRequest(new Request('https://ai.example/v1/chat/completions', { method: 'POST', body: streamReq }), { clientIp: '1.1.1.1' })).text()
+  const sr = readAny(text).receipt
+  assert.equal(sr.result.usageInjected, true)
+  const out = await verifyUsage(sr, { ...aiIo(manifest), request: streamReq, response: text })
+  assert.deepEqual([out.verdict, state(out, 'answer')], ['valid', 'pass'])
+  assert.ok(out.answerUnchecked.some((x) => x.startsWith('usage')))
+  // The stream that did ask for usage carries it, and it is compared. / 本来就要了用量的流带着用量，照常比较。
+  const asked = await verifyUsage(readAny(streamText).receipt, { ...aiIo(manifest), response: streamText })
+  assert.deepEqual([asked.verdict, state(asked, 'answer'), asked.answerUnchecked], ['valid', 'pass', []])
+})
+
+// FIXED AI-WHOLE: the page has no content type of its own and read the receipt's `stream`. A whole JSON answer to a stream
+// request (without include_usage), under a receipt re-signed as stream: true, usageInjected, raised usage and the stream
+// rule's hash of those bytes, was valid with the usage skipped. / 本页没有自己的 content-type，只读回执的 stream：整段 JSON
+// 回答配上改签为流、带 usageInjected 的回执，曾经显示有效、用量被跳过。
+test('FIXED AI-WHOLE: verify page: a receipt that calls a pasted whole JSON answer a stream fails the response check, saying why', async () => {
+  const p = createAIProxy({
+    upstream: { baseUrl: 'https://up.example/v1' }, signerKey: KEY, models: AI_MODELS, log: () => {},
+    manifestBase: { name: 'AI', circuits: CIRCUITS, tokenId: '11', container: CONTAINER, delegation: null, endpoints: { live: ['https://ai.example/tapeapi/v1'], async: false } },
+    fetch: async () => new Response(AI_JSON + '\n\n', { headers: { 'content-type': 'application/json' } }),
+  })
+  const manifest = p.manifest()
+  const streamReq = AI_REQ.replace('{', '{"stream":true,')
+  const res = await p.handleRequest(new Request('https://ai.example/v1/chat/completions', { method: 'POST', body: streamReq }), { clientIp: '1.1.1.1' })
+  const text = await res.text()
+  const env = JSON.parse(Buffer.from(res.headers.get('x-tapeapi-receipt'), 'base64url').toString())
+  const state = (out, id) => out.checks.find((c) => c.id === id).state
+  // The honest receipt (stream: false, usageInjected) is valid, usage compared. / 诚实回执有效，用量照常比较。
+  const honest = await verifyUsage(parseUsageReceipt(env), { ...aiIo(manifest), request: streamReq, response: text })
+  assert.deepEqual([honest.verdict, state(honest, 'answer'), honest.answerUnchecked], ['valid', 'pass', []])
+  const scanned = scanSse(text, { format: formatOfMethod(env.method) })
+  const x = structuredClone(env)
+  Object.assign(x.result, { stream: true, usageInjected: true, usage: { prompt_tokens: 1_000_010, completion_tokens: 20, total_tokens: 1_000_030 }, responseSha256: scanned.responseSha256, complete: completeOf({ status: 200, stream: true, read: scanned }), modelMatchedBy: 'request' })
+  x.result.prices = pricingOf(manifest.ai.models, { reported: x.result.model, requested: x.result.model, usage: x.result.usage, format: 'openai-chat' }).prices
+  x.sig = signResponse(usageEnvelopeOf(x), KEY)
+  for (const request of [streamReq, undefined]) {
+    const out = await verifyUsage(parseUsageReceipt(x), { ...aiIo(manifest), request, response: text })
+    assert.deepEqual([out.verdict, out.failed, out.responseShape], ['invalid', 'response', 'whole'], `request ${request ? 'pasted' : 'not pasted'}`)
+  }
+  assert.ok(T.en['x.invalid.response.whole'] && T.zh['x.invalid.response.whole'] && T.en['c.shape.whole'] && T.zh['c.shape.whole'])
 })

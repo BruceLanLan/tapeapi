@@ -29,7 +29,7 @@
 <p>这些包尚未发布到 npm，所以要在仓库的克隆里操作（Node.js 20 或更高版本）：</p>
 <div class="code"><pre data-lang="bash"><code>git clone https://github.com/BruceLanLan/tapeapi.git &amp;&amp; cd tapeapi &amp;&amp; npm install</code></pre></div>
 <p>或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：</p>
-<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz</code></pre></div>
 <p>把下面的脚本保存为 <code>.mjs</code> 文件，放在能解析到 <code>@tapeapi/sdk</code> 的地方，然后用 <code>node &lt;文件&gt;.mjs</code> 运行：用克隆时，<strong>放在 <code>tapeapi</code> 目录之内</strong>（包通过仓库的 workspace 解析）；装了发布包时，放在那个项目里。放在其它位置的脚本会以 <code>ERR_MODULE_NOT_FOUND</code> 失败。</p>
 <h3 id="调用线上的公共服务"><a class="anchor" href="#调用线上的公共服务" aria-hidden="true">#</a>调用线上的公共服务</h3>
 <p>一个免费的公共服务运行在 <code>https://api.tapeapi.fun</code>，TapeOut 名称为 <code>11.1013.tape</code>。用 curl：</p>
@@ -104,6 +104,26 @@ const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code><
 <p>SDK 只在收到经过验证的回答之后才推进本地计量，并在提供者的计数不一致时自动重新同步。传入 <code>store: { get, set }</code> 可在重启之间保留计量。</p>
 <h2 id="6-在浏览器或-deweb-站点中使用"><a class="anchor" href="#6-在浏览器或-deweb-站点中使用" aria-hidden="true">#</a>6. 在浏览器或 DeWEB 站点中使用</h2>
 <p>SDK 是普通的 ES 模块。在 DeWEB 站点上，按相对路径导入它，并用 import map 映射 <code>@noble/*</code>；完整页面见 <a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/demo-site" rel="noopener"><code>examples/demo-site/</code></a>，更多代码片段见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/examples/consumer-snippets.md" rel="noopener"><code>examples/consumer-snippets.md</code></a>。</p>
+<h2 id="7-替不可信的用户解析和调用服务"><a class="anchor" href="#7-替不可信的用户解析和调用服务" aria-hidden="true">#</a>7. 替不可信的用户解析和调用服务</h2>
+<p>核验站点、智能体，或任何按用户给出的名字去解析并调用服务的服务器，都会向陌生人写下的网址发请求：清单里的端点就是持有人发布的内容。SDK 会检查它们是 <code>https</code> 网址（开发模式下可为 <code>http</code>），但<strong>不会</strong>拒绝内网或保留地址。<code>https://127.0.0.1/</code>、 <code>https://[::1]/</code> 与 <code>https://169.254.169.254/</code> 都是合法的 <code>endpoints.live</code>，域名也可能解析到内网地址。在你自己的机器上这正是你想要的；在服务器上，这会让用户把你的服务器指向它自己的内网。</p>
+<p>这类部署应当给 <code>createTapeAPI({ fetch })</code> 传入一个拒绝内网目标的包装。RPC 请求也走同一个 <code>fetch</code>，所以要显式放行你自己的节点：</p>
+<div class="code"><pre data-lang="js"><code>import { createTapeAPI } from '@tapeapi/sdk'
+
+// 你自己的、可以是内网的主机（比如你的 RPC 节点）；其余主机是内网地址时一律拒绝。
+const ALLOWED = new Set(['rpc.internal.example:8545'])
+const isPrivate = (host) =&gt; {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  if (h === 'localhost' || /\.(localhost|local|internal|lan|home\.arpa)$/.test(h)) return true
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(h)) return /^(0|10|127|169\.254|172\.(1[6-9]|2\d|3[01])|192\.168|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7]))\./.test(h)
+  return h.includes(':') &amp;&amp; (h === '::' || h === '::1' || /^(f[cd]|fe[89ab])/.test(h) || h.startsWith('::ffff:'))
+}
+const guardedFetch = (input, init) =&gt; {
+  const url = new URL(input instanceof Request ? input.url : String(input))
+  if (!ALLOWED.has(url.host) &amp;&amp; isPrivate(url.hostname)) return Promise.reject(new TypeError(`refused: ${url.origin} is a private address`))
+  return fetch(input, { ...init, redirect: 'error' })   // 也不让公网主机重定向到内网
+}
+const api = createTapeAPI({ rpcUrls: [/* ... */], fetch: guardedFetch })</code></pre></div>
+<p>这只检查写出来的网址。解析到内网地址的公网域名能绕过它：在服务器上，还要在建立连接的地方执行同一规则（HTTP agent 的解析钩子，或拒绝内网网段的出口代理、防火墙）。浏览器对页面有自己的规则，所以这一点主要关系到服务器与智能体。</p>
 <h2 id="不使用-sdk-进行验证"><a class="anchor" href="#不使用-sdk-进行验证" aria-hidden="true">#</a>不使用 SDK 进行验证</h2>
 <p>任何语言都可以检查回答。对于发往容器 <code>c</code> 的方法 <code>m</code> 的请求 <code>{ id, params }</code>，服务使用 EIP-191 <code>personal_sign</code> 对以下内容签名：</p>
 <div class="code"><pre><code>digest = keccak256( &quot;TAPI-1/resp/v2&quot; ‖ c ‖ keccak256(id) ‖ keccak256(canonicalJSON({method: m, params}))
@@ -113,7 +133,7 @@ const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code><
 <nav class="pn"><a class="prev" href="mcp"><span>上一篇</span>在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a><a class="next" href="provide"><span>下一篇</span>运行服务</a></nav>
 <p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/consume.md" rel="noopener">在 GitHub 上编辑此页</a></p>
 </main>
-<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#1-试用">1. 试用</a></li><li class="l3"><a href="#一次性准备">一次性准备</a></li><li class="l3"><a href="#调用线上的公共服务">调用线上的公共服务</a></li><li class="l3"><a href="#在本地运行服务">在本地运行服务</a></li><li class="l2"><a href="#2-在-bnb-chain-上解析真实服务">2. 在 BNB Chain 上解析真实服务</a></li><li class="l2"><a href="#3-处理错误">3. 处理错误</a></li><li class="l2"><a href="#4-要求多个提供者之间达成一致">4. 要求多个提供者之间达成一致</a></li><li class="l2"><a href="#5-为调用付费">5. 为调用付费</a></li><li class="l2"><a href="#6-在浏览器或-deweb-站点中使用">6. 在浏览器或 DeWEB 站点中使用</a></li><li class="l2"><a href="#不使用-sdk-进行验证">不使用 SDK 进行验证</a></li></ul></aside>
+<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#1-试用">1. 试用</a></li><li class="l3"><a href="#一次性准备">一次性准备</a></li><li class="l3"><a href="#调用线上的公共服务">调用线上的公共服务</a></li><li class="l3"><a href="#在本地运行服务">在本地运行服务</a></li><li class="l2"><a href="#2-在-bnb-chain-上解析真实服务">2. 在 BNB Chain 上解析真实服务</a></li><li class="l2"><a href="#3-处理错误">3. 处理错误</a></li><li class="l2"><a href="#4-要求多个提供者之间达成一致">4. 要求多个提供者之间达成一致</a></li><li class="l2"><a href="#5-为调用付费">5. 为调用付费</a></li><li class="l2"><a href="#6-在浏览器或-deweb-站点中使用">6. 在浏览器或 DeWEB 站点中使用</a></li><li class="l2"><a href="#7-替不可信的用户解析和调用服务">7. 替不可信的用户解析和调用服务</a></li><li class="l2"><a href="#不使用-sdk-进行验证">不使用 SDK 进行验证</a></li></ul></aside>
 </div>
 </body>
 </html>

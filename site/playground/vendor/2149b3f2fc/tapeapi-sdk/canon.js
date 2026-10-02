@@ -133,7 +133,14 @@ function canonicalize(v, path) {
   if (t === 'undefined' || t === 'function' || t === 'symbol' || t === 'bigint') {
     throw new TapeAPIError('CANON_INVALID', `unsupported ${t} at ${path || '$'}`)
   }
-  if (Array.isArray(v)) return '[' + v.map((x, i) => canonicalize(x, `${path}[${i}]`)).join(',') + ']'
+  // By index, not map(): map skips the holes of a sparse array and join would write '[1,,2]', which is not JSON. A hole
+  // reads as undefined and is refused like one. / 按下标而不是 map()：map 跳过稀疏数组的空位，join 会写出不是 JSON 的
+  // '[1,,2]'。空位读作 undefined，按 undefined 拒绝。
+  if (Array.isArray(v)) {
+    const items = []
+    for (let i = 0; i < v.length; i++) items.push(canonicalize(v[i], `${path}[${i}]`))
+    return '[' + items.join(',') + ']'
+  }
   // `toJSON` exists only in JavaScript. A Date, a BigNumber or a class carrying one canonicalises here to
   // something a Go or Python verifier computing over the same logical value would never produce, and the
   // mismatch surfaces as a signature failure nobody can explain. Refuse; let the caller convert explicitly.

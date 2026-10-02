@@ -151,14 +151,20 @@ An MCP server in front of a service (`createMcpProxy`) reports its own refusals 
 ## The TAP-10 conformance mode (1.4, experimental)
 
 `createTapeAPI({ conform: 'tap10' })` resolves services the way the official TAP-10 v1.1 (§3–§7) and TAP-11 §2.2 describe.
-It is off by default: without it, 1.x behaves exactly as before (a test pins every request and result of the default
-mode). It covers **the resolution path only**; the rest of TAP-10 follows in later releases (see the end of this
-section). It is `@experimental` and follows TAP-10 while TAP-10 is a draft: results record `version: '1.1'`.
+It is off by default: without it, `resolve` and the `chain.*` reads behave exactly as before (a test pins every request
+and result of the default mode). `api.siteStatus()` is the TAP-10 path in any mode, so it changed in 1.5 on a default
+client too (see *What changed in siteStatus* below). It covers the resolution path (1.4, completed in 1.5) and, since 1.5, the messaging path (see
+the end of this section). It is `@experimental` and follows TAP-10 while TAP-10 is a draft: results record
+`version: '1.1'`.
 
 ```js
 const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: 'tap10' })
 const svc = await api.resolve('#11@1013')          // any TAP-10 input form
 const site = await api.siteStatus('11.1013.tape')   // any mode: identity and site status only
+
+// 1.5: a container address or processor contract#ID, looked up on every chain (reads Base and X Layer too)
+const everywhere = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: 'tap10', allChains: true })
+await everywhere.siteStatus('0x4591b393399452eA24ECB10424CdBA194F1c4E64')   // Base, 1.3.1.tape
 ```
 
 It implies `pin: 'tap10'`; passing another `pin` with it is `INVALID_ARGUMENT`. Names on Base and X Layer, and
@@ -170,16 +176,32 @@ rest.
 - **One pinned block per resolution** (TAP-10 §5.3): each operator counts once at its lowest head; the block is the
   second highest of those minus 2, read by its hash. It is refused as `stale-block` when it is more than 400 (BNB Smart
   Chain), 150 (Base) or 300 (X Layer) blocks behind the highest head. Only block numbers are compared, never your clock.
-- **Chain check**: once per client, every node is asked `eth_chainId`, adopted by the usual agreement (nodes of `quorum`
-  operators, every answer equal): one node down does not stop the mode, a node on another chain is a disagreement
-  (refused), and nodes all on another chain are `wrong-chain`. (Strict agreement, which TAP-10 §5.4 requires of
-  messaging clients, comes with the messaging path.) Only a result or a revert counts as a node's answer; any other
-  JSON-RPC error is a node failure.
+- **Chain check** (TAP-10 §5.4): once per client, every node is asked `eth_chainId` before any state is read. `resolve`
+  makes it under strict agreement (next item), the same check the messaging path makes, so one check per client serves
+  both; `siteStatus` makes it under the usual agreement (nodes of `quorum` operators, every answer equal). In both, a
+  node on another chain is a disagreement (refused) and nodes all on another chain are `wrong-chain`. Only a result or a
+  revert counts as a node's answer; any other JSON-RPC error is a node failure.
+- **Strict agreement for what authorises a signer** (TAP-11 §2.2): `ownerOf`, and for a holder that is a contract the
+  EIP-1271 reads (`eth_getCode` and `isValidSignature`, for the delegation and for `contentSig`), are adopted only when
+  every configured node answers the same and the answers come from at least max(2, min(3, operators)) operators (TAP-10
+  §5.2), as is `resolve`'s chain check. A node that does not answer, or has not reached the pinned block yet (TAP-10 §1:
+  "no such block" is no answer), counts against that number. With the default nodes:
+  - BNB Smart Chain, 3 operators (NodeReal, Alchemy, 48 Club): strict needs all 3, so one node down or behind the
+    pinned block makes `resolve` `unavailable` (`RPC_UNAVAILABLE`) where the default mode goes on;
+  - Base, 4 operators (Coinbase, Allnodes, dRPC, Tenderly): strict needs 3, so one node down still resolves, two do not;
+  - X Layer, 2 operators (OKX, dRPC): strict needs 2, the same as the quorum: nothing changes.
+
+  Every other read of a resolution keeps the usual agreement, and so does `api.siteStatus()`, which authorises nothing.
+  A node that answers differently is refused in both modes, as always (never a majority). The error says when a read
+  was strict and how many operators it needed.
 - **Input**: an on-chain name (`4246.0.tape`), a short name (`4246.0`), a display label (`#4246@0`, `#1@3.1`), a
   `tape://` or `web+tape://` URL, a container address, or a processor contract#ID (`0x50A9…9DD9#4246`). Anything else,
-  including a directory label, is an input error.
+  including a directory label, is an input error. The last two carry no chain: see *Input without chain information*
+  below.
 - **Identity**: `cpuCount` and `cpuAt`, the container from the container opener (and checked against a local ERC-6551
-  derivation by the `sentinel`), `ownerOf`, `isOpened`.
+  derivation by the `sentinel`), `ownerOf`, `isOpened`. For a container address (`token()`, `isCPU`, then the opener must
+  derive that very address) and a processor contract#ID, the processor number is found too (since 1.5), so they get
+  their on-chain name and a full activation check (see *Finding the processor number* below).
 - **Site status**, in TAP-10 §6.2's order: `store-changed` (the SiteRegistry or the DomainBinding runs an implementation
   this SDK does not list: refused whatever `sentinel` says), then `no-such-cpu` / `no-such-token` / `not-tapeout`, then
   `not-opened`, then `unpaid` (neither `isLive(on-chain name, container)` nor `isContainerLive(container)` is true; on the
@@ -204,14 +226,62 @@ svc.pinned   // { number, hash, timestamp, tag: 'tap10', by: 'hash', mode: 'tap1
 
 `api.siteStatus(target)` returns the same object with `status` set to `ok`, `unpaid`, `not-opened`, `store-changed`,
 `no-such-cpu`, `no-such-token` or `not-tapeout`; it reads no manifest, works in any mode, and never throws for a site
-status (only for an input error, `unsupported`, `wrong-chain` and reads that cannot be made).
+status (only for an input error, `unsupported`, `ambiguous`, `wrong-chain` and reads that cannot be made). Input
+searched on every chain adds `chains` (to `svc.conform` too): what each chain said, this client's chain first, for
+example `[{ chainId: 56, status: 'not-tapeout' }, { chainId: 196, status: 'not-tapeout' }, { chainId: 8453, status: 'ok' }]`.
+
+**Input without chain information (1.5, `allChains`).** A container address or a processor contract#ID typed as a
+string names no chain. TAP-10 §4.1 resolves it on every active chain, each at its own pinned block, and that means
+requests to the nodes of Base and X Layer (yours from `chains[id].rpcUrls`, or the SDK's defaults for that chain). A
+client given only your own BNB Smart Chain node should not start talking to other chains' public nodes on its own, so
+this is a separate switch, `allChains: true`, passed on by `api.forChain()`:
+
+| What the chains say | Result |
+|---|---|
+| Two or more chains resolve it (the Base and X Layer factories share an address, so processor 1 there is the same contract) | `INVALID_ARGUMENT`, `data.status` `ambiguous`, `data.candidates` (one per chain, with its on-chain name), whatever the third chain says: pass the on-chain name |
+| One chain resolves it | that chain; except a processor contract#ID while another chain could not be read (`unavailable`, `stale-block`, `wrong-chain`) or is `store-changed`: that chain's status, with `data.chainId` and `data.candidates`. A container address can be a container of one chain only, so a container that resolves is that chain's |
+| No chain resolves it | the status of a chain that could not be read, never `not-tapeout`; otherwise `no-such-token` (a chain has the processor but not the #ID) or `not-tapeout` |
+
+Without `allChains` nothing is sent to another chain: a container address is resolved on this client's chain when it
+is a container of this chain (its ERC-6551 address commits to one chain, so that is a full answer) and is
+`unsupported` otherwise. Under `conform: 'tap10'` a processor contract#ID string is `unsupported` before any request,
+because TAP-10 resolves it only when exactly one chain does; `siteStatus` on a default client resolves it on this
+client's chain, as 1.4 did. Only `true` turns `allChains` on; any other value is ignored (1.4 ignored the option).
+`{ circuits, tokenId, chainId? }` names its chain (this client's when `chainId` is left out) and `{ chainId, container }`
+names its own: neither is searched. `{ container }` without `chainId` is an input error, as before. `allChains` applies
+to the TAP-10 path only (`resolve` under `conform: 'tap10'`, and `siteStatus` in any mode); the default `resolve` never
+reads it.
+
+With the `sentinel` (TapeAPI's own check, not TAP-10's), the every-chain search behaves as follows. In the default
+`'warn'` mode, the warnings identity would give on a chain that is not chosen are not reported; on `ambiguous` they are
+in `data.candidates[i].warnings`. Under `sentinel: 'strict'` a chain whose container opener derives another address than
+ERC-6551 fails closed: it shows as `container-mismatch` in `chains[].status`, TapeAPI's own name, not one of TAP-10
+§4.1's, and counts as a chain that could not be decided.
+
+**What changed in siteStatus (1.5, any mode).** It finds the processor number of a container address or processor
+contract#ID (the result's `name` and `processor` are no longer null, and `isLive` is asked; a cold client reads
+`cpuCount` and `cpuAt` for it, see below); `{ chainId, container }` for an address with no code there is `not-tapeout`
+(1.4: `unsupported`); with `allChains` it searches every chain.
+
+**Finding the processor number (1.5).** The factory has no reverse table, so TAP-10 §4.3 scans `cpuAt(i)`; cold, that
+is over a thousand requests per node on BNB Smart Chain, which public nodes rate-limit. The SDK ships a snapshot of every
+chain's processor table (`sdk/src/processors-snapshot.js`, read-only through the default nodes before a release; on
+2026-10-01 (UTC): 1,174 processors on BNB Smart Chain, 263 on X Layer, 101 on Base, each with the block, count and node
+operators it was read with; the snapshot's time is UTC, which was already 2026-10-02 in UTC+8). A hit costs one `cpuAt` at the pinned block, which must give back the same address before it is used. A
+processor created after the snapshot is found by a scan of the newer numbers only, once the chain agrees with the
+snapshot (`cpuCount` is not lower and its last entry reads back the same); otherwise, or for a factory other than the
+chain's own, every number is scanned. A scan reads pages of 8, at most 256 numbers per resolution, and goes on where it
+stopped at the next one; until it finds the number the answer is `unavailable` (`data.scan`). Everything read is kept
+for the life of the client (numbers are append-only), as is every number a name resolved. The snapshot is about 75 KB
+of source, loaded with the SDK in every mode (the SDK is plain browser modules, without dynamic imports), even where only
+names are resolved.
 
 **Errors.** Every error of the mode carries the TAP-10 / TAP-11 name in `error.data.status`; branch on it. The codes are
 the existing ones, plus one:
 
 | `data.status` | `code` |
 |---|---|
-| `input-error`, `unsupported` (see below), `wrong-chain` | `INVALID_ARGUMENT` |
+| `input-error`, `unsupported` (see below), `ambiguous` (1.5), `wrong-chain` | `INVALID_ARGUMENT` |
 | `no-such-cpu`, `no-such-token`, `not-tapeout` | `NOT_FOUND` |
 | `unavailable`, `stale-block` | `RPC_UNAVAILABLE` / `RPC_DISAGREE`, `RPC_STALE` |
 | `store-changed`, and `hub-changed`\* | `CONTRACT_UNKNOWN` |
@@ -227,10 +297,10 @@ computed here.
 `SITE_STATUS` means the name exists and its manifest may well be valid, but TAP-10 says not to use the site. Retrying
 does not help; only the circuit's holder can change it (activate with `DomainBinding.bind`, or open the container).
 
-**Why our own services are `unpaid`.** `11.1013.tape` (api.tapeapi.fun) and `12.1013.tape` (relay.tapeapi.fun) have not
-been activated: `isLive` and `isContainerLive` were both false for both on 2026-09-30, and again for `11.1013.tape` on
-2026-10-01. Under `conform: 'tap10'` they resolve as
-`SITE_STATUS` with `data.status` `unpaid` until their holder pays; the default mode resolves them as before.
+**Our own services.** `11.1013.tape` (api.tapeapi.fun) and `12.1013.tape` (relay.tapeapi.fun) were `unpaid` under
+`conform: 'tap10'` until their holder activated them on 2026-10-01 (`DomainBinding.bind`, 120 months, paid until
+2036-08-09); both now resolve (`status: 'resolved'`). A name that is not activated, or whose payment has run out, is
+`SITE_STATUS` with `data.status` `unpaid` in this mode; the default mode resolves it as before.
 
 **Activation binds compliant clients only.** TAP-10 §6.3 says it plainly: the fee is enforced by compliant clients
 showing only activated sites, not by any technical block. The data stays public and readable; the default mode does not
@@ -239,25 +309,110 @@ check activation, and neither do the messaging reads in any mode (`chain.channel
 
 **Limits you should know about.**
 
-- *Container addresses and processor contract#IDs* (`unsupported`). Such input carries no processor number, and 1.4
-  cannot find it, so it has no on-chain name and `isLive` cannot be asked. When `isContainerLive` is true the site is
-  `ok`; when it is false or reverts, the mode does not say `unpaid` (the container may have paid for its name only) but
-  throws `INVALID_ARGUMENT` with `data.status` `unsupported`: pass the on-chain name (for example `4246.0.tape`). Once
-  the client has resolved a name of that processor, it knows the number and such input is decided in full. Input that
-  may belong to another chain (an address that is no container here, a `token()` naming another chain, a processor
-  contract that is no processor here) is `unsupported` too, never `not-tapeout`: TAP-10 §4.1 allows that verdict only
-  after every active chain was read. Use `api.forChain(chainId)` or the name.
+- *Container addresses and processor contract#IDs without `allChains`* (`unsupported`). An address that is no
+  container here, or whose `token()` names another chain, may be a container of another chain, and a processor
+  contract#ID string may resolve on more than one chain: without `allChains` both are `INVALID_ARGUMENT` with
+  `data.status` `unsupported`, never `not-tapeout` (TAP-10 §4.1 allows that verdict only after every active chain was
+  read). Pass `allChains: true`, an object form with its `chainId`, or the on-chain name. (In 1.4, a container or
+  processor contract#ID without a known processor number was `unsupported` too, unless `isContainerLive` was true; 1.5
+  finds the number, so that case is gone, and under `conform: 'tap10'` a processor contract#ID string is now refused
+  without `allChains` even where 1.4 resolved it on this client's chain.) The cost is real: TAP-10's own first Test Case,
+  `0x50A994E71615474b55559fF4F500928fbc339DD9#4246`, is `unsupported` in the conformance mode until you pass
+  `allChains: true`, and with it a BNB Smart Chain processor contract#ID depends on Base and X Layer being readable: X
+  Layer's defaults have two operators, so one of them down makes such input `unavailable`. A name (`4246.0.tape`) has
+  neither cost.
+- *A new processor on a public node.* A processor created after the snapshot costs a scan of the numbers created since
+  (a handful of requests per release cycle); against a factory the snapshot does not cover, the first lookups can take
+  several resolutions, each `unavailable` until the scan reaches it. Each release ships a fresh snapshot, so keeping the
+  SDK current keeps the scan short.
 - *Chains with two operators.* The pinned block is the second highest operator head minus 2. Where a chain's nodes come
   from two operators only (X Layer's defaults, OKX and dRPC), one operator reporting a low head drags the pin back by up
   to the chain's max pin lag (300 blocks on X Layer, about five minutes) and the reads are made there: honest nodes serve
   that older state, and it is accepted, where the default mode's `latest` reads would only disagree. With three or more
-  operators (BNB Smart Chain, Base) one low head is ignored. Add a third operator's node to `chains[196].rpcUrls` if this
-  matters to you.
+  operators (BNB Smart Chain, Base) one low head does not move the pin. It still counts for the strict reads: with
+  BNB Smart Chain's three default operators, a node whose head is below the pinned block cannot answer `ownerOf` there,
+  so `resolve` is `unavailable` until that node catches up (Base's four operators leave one spare). Add a third
+  operator's node to `chains[196].rpcUrls` if the pin on X Layer matters to you.
 
-**Not covered yet.** This is not "TapeAPI conforms to TAP-10". Still to come (planned for 1.5): resolving input without
-chain information on every active chain, with `ambiguous`; finding the processor number from a container or a
-processor contract (which removes the first limit above); the messaging path (strict `eth_chainId` and `keyFor`,
-channel records, endpoint limits); strict agreement for `ownerOf` and EIP-1271.
+  What that window means for a manifest: on a chain whose nodes come from two operators (X Layer, with its default
+  nodes), one operator that is down or dishonest can hold the pinned block back as far as the limits allow: a block up
+  to `maxPinAgeS` old under `pin: true` (600 s on X Layer, about 600 blocks), and up to `tap10MaxPinLag` blocks behind
+  the head under `pin: 'tap10'` or `conform: 'tap10'` (300 on X Layer). Inside that window the client reads the manifest
+  as it stood then, before a signer change, a price rise or a shortened delegation. `delegationFloor` refuses only a
+  delegation whose `expires` is lower than one already seen, so it does not refuse the older, longer one. This is lag
+  the pin tolerates by design (for the TAP-10 pin, as TAP-10 §5.3 states), not a way around a check; a third operator's
+  node is what closes it.
+
+### The messaging path (1.5)
+
+Under `conform: 'tap10'`, `api.chain.tapeSendKey(target)` and `api.chain.channelKeys(container)` (and so `groupVerifier`)
+read the TAP-10 way too. The default mode is unchanged.
+
+- **Reads.** Each lookup pins a fresh block (TAP-10 §5.3) and makes every read under **strict agreement** (§5.2): every
+  configured node is asked and every answer must be equal, from at least max(2, min(3, operators)) operators. On BNB
+  Smart Chain's three default operators, one node down or behind the pinned block therefore stops the messaging path
+  (`RPC_UNAVAILABLE`, `unavailable`) where the default mode and `siteStatus` go on (`resolve` in this mode stops too);
+  Base's four leave one spare, and on X Layer's two strict needs no more than the quorum. That is what TAP-10 asks of
+  messaging, where a few colluding nodes could otherwise misdirect encryption. Before the first lookup the client checks
+  `eth_chainId` under strict agreement too (§5.4); `resolve`'s check is the same strict one and counts for it,
+  `siteStatus`'s does not. (The pin's block requests go out alongside that check; no state is read until both
+  succeeded.) The container comes from the container opener (§4.3: `token()`, `isCPU`, `opener.accountOf` equal to the
+  address given), the holder from `ownerOf` at the same block. As in `resolve`, input that may belong to another chain
+  (an address that is no container here, a `token()` naming another chain, a processor contract that is no processor
+  here) is `INVALID_ARGUMENT` with `data.status` `unsupported`, never `not-tapeout` (TAP-10 §4.1), and is not cached:
+  use `api.forChain(chainId)`.
+- **Never activation or opening.** TAP-10 §12.2: an unpaid name, a changed site-store implementation or a blocklist
+  entry must not stop messaging. A container that `resolve` and `siteStatus` call `unpaid` or `not-opened` still has
+  its TapeSend key and channel record read as usual (`opened` is reported). `tapeSendKey` reads neither the SiteRegistry
+  nor the DomainBinding. The channel record is a file of the container's site, so `channelKeys` needs both of their
+  implementations accepted (`store-changed`), as the private-channels draft §3.3 says.
+- **The hub** (`tapeSendKey`, TAP-10 §13.8): at the same block the hub's implementation must be the one TAP-10 lists
+  as current for that chain (`hub-changed` otherwise, whatever `sentinel` says), and the circuit beacon must still run
+  the circuit implementation the hub was built with (`circuits-changed` otherwise; once seen, this client keeps it).
+  The seal status is read and reported in `result.tap10.seal` (`{ factory, hub }`, both `false` today: nothing is
+  sealed yet), never required. A client created with `conform: 'tap10'` accepts only the hub, processor factory and
+  container opener TAP-10 lists for its chain (TAP-10 §2.2; anything else is `INVALID_ARGUMENT`). The sticky statuses
+  last as long as the client (sub-clients from `forChain` included); to keep them across restarts pass
+  `sealStatusStore`, a `{ get, set }` store like `channelRecordFloor`, keyed `<chainId>:<hub, lowercase>`, value
+  `{ circuitsChangedAt, factorySealSeenAt, factorySealLost }`.
+- **The key** (§12.2, §14.4 steps 1-3): `hub.keyFor` must name the resolved container and its endpoint
+  (`hub-mismatch`), be usable (`no-key` when never published, `key-stale` otherwise), suite 1, and pass the X25519 key
+  checks (`bad-key`), which the default mode leaves to the handshake. Step 4, whether the recipient reads the chain you
+  send from, is yours: the result carries `chainsBitmap`, the bitmap in binary, where bit 0 (the rightmost digit) is BNB
+  Smart Chain, bit 1 Base and bit 2 X Layer (TAP-10 §2.1). Sending (TAP-10 §20) stays yours too: resolving your own
+  endpoint and checking it is opened and held by the connected wallet (step 2), comparing the recipient's key, `keyIndex`
+  and holder with what you recorded (step 3, `key-changed`), and reading the key again right before signing (step 6).
+- **The record**: read as TAP-10 §7.1 reads a file (`not-found` when `chunkCount` is 0, `no-hash`, `incomplete`), as
+  strict UTF-8 without a byte order mark (the default mode strips one), then the TAPI-26 §3.1 checks (`record-invalid`),
+  with the holder's EIP-1271 approval read at the same block. The site store is not read at all once it is
+  `store-changed`. Records and verdicts are cached as before (at most 300 s), verdicts with their `data.status`; node
+  failures and `unsupported` never are. A record served from the cache carries the `tap10.pinned` block of the read
+  that put it there; pass `{ fresh: true }` for a new one.
+- **Endpoints**: `tapesend.endpoint`, `seal`, `open`, `messageId` and `sendTx` take `conform: 'tap10'`, which refuses any
+  chainId above 2^53 − 1 (TAP-10 §12.1), including the chain inside a 32-byte endpoint. Without it the bound stays
+  2^64 − 1.
+
+The results carry `tap10`: `{ version: '1.1', status: 'ok', pinned, endpoint, hub, circuits, seal }` from `tapeSendKey`,
+`{ version: '1.1', status: 'ok', pinned, implementations }` from `channelKeys`. The errors:
+
+| `data.status` | `code` |
+|---|---|
+| `wrong-chain`, `input-error`, `unsupported` | `INVALID_ARGUMENT` |
+| `unavailable`, `stale-block` | `RPC_UNAVAILABLE` / `RPC_DISAGREE`, `RPC_STALE` |
+| `hub-changed`, `circuits-changed`, `store-changed` | `CONTRACT_UNKNOWN` |
+| `no-such-token`, `no-key`, `key-stale` | `NOT_FOUND` |
+| `not-tapeout` (a container of this chain whose circuit fails a check), `hub-mismatch`, `bad-key`, `not-found`, `no-hash`, `incomplete`, `record-invalid` | `CHANNEL_INVALID` |
+
+`not-found` and `record-invalid` are TapeAPI's names (TAP-10 names no outcome for a record); the others are TAP-10's.
+The hub's `Upgraded` logs (§13.8, a SHOULD that needs `eth_getLogs`) are not read.
+
+**Not covered yet.** With 1.5.0 the conformance mode covers the resolve path (strict agreement for `ownerOf` and
+EIP-1271 included) and the messaging path above, input without chain information on every chain with `ambiguous`, and
+the processor number of a container or processor contract. Within those paths one thing is still not done: the hub's
+`Upgraded` log scan of TAP-10 §13.8, a conditional SHOULD (when nodes that serve `eth_getLogs` are available, read every
+`Upgraded` log of the hub and accept it only if each implementation named is the boot implementation or one TAP-10
+lists). `tapeSendKey` checks the hub's current implementation slot only, which cannot see an upgrade that rewrote
+storage and restored an accepted implementation within one transaction.
 
 ## Formats that are now frozen
 

@@ -2,7 +2,8 @@
 // - the answer's id is compared with the receipt's only when it is one the sidecar would use (1 to 128 characters in
 //   U+0021–U+007E); an envelope id is at most 128 characters;
 // - holding the answer, the client re-reads model, usage and complete from it with the format's own adapter and requires
-//   the receipt to say the same (the usage cannot be compared when usageInjected is set: reported as not made);
+//   the receipt to say the same (the usage of a stream whose request did not ask for it cannot be compared when
+//   usageInjected is set: reported as not made; ai-usage-injected.test.mjs);
 // - a check that could not be made is listed in `unchecked`, never passed;
 // - an invalid `ai` field is dropped on resolve (svc.aiProblems) without failing the rest of the manifest, and the
 //   verifying fetch uses only validated endpoints;

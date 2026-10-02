@@ -328,13 +328,42 @@ test('FIXED PROOF-12: proofs is off by default and needs pin; it adds no round, 
     m.fetch = async (url, init) => { if (m.inflight++ === 0) m.rounds++; m.requests++; try { return await r.fetch(url, init) } finally { m.inflight-- } }
     return m
   }
-  const off = replay(), mOff = metered(off)
-  const plain = await at(() => createTapeAPI({ rpcUrls: RPC, quorum: 2, fetch: mOff.fetch, pin: true }).resolve(fx.name))
+  // FIXED PROOF-12 (deflake): a "round" counts the stretches of the timeline with a request in flight, which measures the
+  // longest chain of dependent requests only if requests take fixed time and concurrent ones overlap. With the real 2 ms
+  // timer of the replay (and the rpc layer's setTimeout 0 batch window) that held only on an idle machine: a busy one let one
+  // chain's request answer before a sibling chain issued its own, and the gap counted as one more round (once in 5..40 runs
+  // alone, with proofs 6 against 5). Both resolutions now run on mocked timers that a pump advances 1 ms at a time, once the
+  // event loop has drained all work that needs no timer (setImmediate): every request takes exactly 2 simulated ms, and
+  // nothing else takes time, so the rounds are a function of the code's request graph alone. The asserted property is
+  // unchanged: with proofs the resolution takes no more rounds than without, and exactly 3 more requests (the eth_getProof's).
+  // 修复 PROOF-12（去抖）：轮数统计"有请求在途的时间段"，只有在请求耗时固定、并发请求互相重叠时才度量最长的依赖请求链。回放里真实的
+  // 2 ms 定时器（以及 rpc 层 setTimeout 0 的合批窗口）只在空闲机器上满足这点：忙的机器让某条链的请求在兄弟链发出请求之前就应答，
+  // 缝隙多算一轮。现在两次解析都跑在模拟定时器上，由泵在事件循环排空所有不需要定时器的工作（setImmediate）之后每次推进 1 ms：
+  // 每个请求恰好 2 个模拟毫秒，其余不耗时，轮数只取决于代码的请求图。断言的性质不变：开启证明后轮数不多于关闭，且恰好多 3 个请求。
+  const atTicking = async (fn) => {
+    mock.timers.enable({ apis: ['Date', 'setTimeout'], now: (fx.block.timestamp + 1) * 1000 })
+    try {
+      const p = fn()
+      let settled = false
+      p.then(() => { settled = true }, () => { settled = true })
+      for (let i = 0; !settled; i++) {
+        assert.ok(i < 10_000, 'the resolution did not settle within 10 simulated seconds')
+        await new Promise((r) => setImmediate(r))
+        mock.timers.tick(1)
+      }
+      return await p
+    } finally { mock.timers.reset() }
+  }
+  const resolveMetered = async (o, apiOpts) => {
+    const r = replay(o), m = metered(r)
+    const svc = await atTicking(() => createTapeAPI({ rpcUrls: RPC, quorum: 2, fetch: m.fetch, pin: true, ...apiOpts }).resolve(fx.name))
+    return { r, m, svc }
+  }
+  const { r: off, m: mOff, svc: plain } = await resolveMetered({}, {})
   assert.equal(plain.proofs, undefined)
   assert.equal(off.log.filter((x) => x.method === 'eth_getProof').length, 0, 'no proof is asked for by default')
   assert.ok(off.log.filter((x) => x.method === 'eth_getBlockByNumber').every((x) => x.params[0] === 'finalized'))
-  const on = replay({ prover: () => true }), mOn = metered(on)
-  await at(() => createTapeAPI({ rpcUrls: RPC, quorum: 2, fetch: mOn.fetch, pin: true, proofs: 'strict' }).resolve(fx.name))
+  const { m: mOn } = await resolveMetered({ prover: () => true }, { proofs: 'strict' })
   assert.ok(mOn.rounds <= mOff.rounds, `rounds ${mOn.rounds} with proofs, ${mOff.rounds} without`)
   assert.equal(mOn.requests - mOff.requests, 3, 'one eth_getProof per contract: factory, circuits, SiteRegistry')
   // the proof mode checks against the rpc layer's confirmedBlock stateRoot, which is opt-in there / stateRoot 在 rpc 层是可选的

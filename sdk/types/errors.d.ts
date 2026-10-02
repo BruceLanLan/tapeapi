@@ -13,7 +13,8 @@
  * `data.block`, `data.stateRoot`).
  *
  * @experimental (1.4) Under `conform: 'tap10'` every error also carries `data.status`, the TAP-10 / TAP-11 outcome name
- * ('input-error', 'unsupported' (1.4 cannot decide that input: see api.siteStatus), 'wrong-chain', 'stale-block', 'unavailable', 'store-changed', 'no-such-cpu', 'no-such-token',
+ * ('input-error', 'unsupported' (input without chain information that needs `allChains`), 'ambiguous' (1.5, with
+ * `data.candidates` (each with the identity `warnings` it held back, if any) and `data.chains`), 'wrong-chain', 'stale-block', 'unavailable', 'store-changed', 'no-such-cpu', 'no-such-token',
  * 'not-tapeout', 'not-opened', 'unpaid', 'no-manifest', 'incomplete', 'no-hash', 'manifest-invalid', 'delegation-invalid',
  * and TapeAPI's own 'hub-changed', 'container-mismatch'); `SITE_STATUS` (not-opened, unpaid) is the one code the mode adds.
  * The default mode's errors are unchanged.

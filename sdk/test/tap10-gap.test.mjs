@@ -124,11 +124,11 @@ test('the run is offline: global fetch is back in place and no case reached the 
 })
 
 // ── the conformance mode (createTapeAPI({ conform: 'tap10' }), 1.4) ───────────────────────────────────────────────────
-// The KNOWN GAP assertions above stay: they are the default mode, which 1.4 does not change. Here the same cases run in the
-// conformance mode; FLIPPED marks a case that is a KNOWN GAP above and conforms here. What still differs is the reverse
-// direction (container or processor contract to a name) and resolution on every chain (`ambiguous`), both planned for 1.5.
-// 一致模式（1.4）。上面的 KNOWN GAP 断言保留：那是默认模式，1.4 不改变它。这里同样的用例在一致模式下运行；FLIPPED 标出上面是
-// KNOWN GAP、这里一致的用例。仍不一致的是反方向（容器或处理器合约到名字）与在所有链上解析（ambiguous），都计划在 1.5。
+// The KNOWN GAP assertions above stay: they are the default mode, which 1.4 and 1.5 do not change. Here the same cases run
+// in the conformance mode with allChains (1.5); FLIPPED marks a case that is a KNOWN GAP above and conforms here. Since 1.5
+// (the processor-number lookup and the every-chain search) none of the 23 cases judged offline differs.
+// 一致模式。上面的 KNOWN GAP 断言保留：那是默认模式，1.4 与 1.5 都不改变它。这里同样的用例在一致模式（开 allChains，1.5）下运行；
+// FLIPPED 标出上面是 KNOWN GAP、这里一致的用例。1.5（处理器号反查与所有链搜索）之后，23 个可离线判定的用例全部一致。
 const cByN = new Map(conform.rows.map((r) => [r.n, r]))
 const ID = (chainId, processor, tokenId, name, container) => ({ chainId, processor, tokenId, name, ...(container ? { container } : {}) })
 const BSC_4246 = ID(56, '0', '4246', '4246.0.tape', '0x86DDaEF00401E3F10418398D67D7189fc458eA95')
@@ -136,27 +136,27 @@ const BASE_1 = ID(8453, '1', '1', '1.3.1.tape', '0x4591b393399452eA24ECB10424CdB
 const INPUT_ERROR = { code: 'INVALID_ARGUMENT', status: 'input-error', rpcTotal: 0 }
 const CONFORM_MODE = {
   1: { obs: BSC_4246 }, 2: { obs: BSC_4246 }, 3: { obs: BSC_4246, flipped: true }, 4: { obs: BSC_4246, flipped: true },
-  11: { obs: BASE_1 }, 12: { obs: BASE_1, flipped: true }, 14: { obs: ID(8453, '5', '1', '1.3.5.tape') },
+  // 1.5: the processor number from the snapshot (checked by cpuAt), and the input searched on every chain
+  // 1.5：处理器号来自快照（经 cpuAt 核实），输入在所有链上搜索
+  5: { obs: BSC_4246, flipped: true },
+  6: { obs: { chainId: 56, status: 'ok', name: '4246.0.tape', processor: '0' }, flipped: true },
+  11: { obs: BASE_1 }, 12: { obs: BASE_1, flipped: true },
+  13: { obs: { chainId: 8453, status: 'ok', name: '1.3.1.tape', processor: '1' }, flipped: true },
+  14: { obs: ID(8453, '5', '1', '1.3.5.tape') },
   15: { obs: ID(196, '1', '1', '1.2.1.tape', '0x374fa57399f356030847Eb0c56851bE9a1194E5D'), flipped: true },
   17: { obs: { code: 'NOT_FOUND', status: 'no-such-cpu', chainsRead: [196] } }, 18: { obs: { code: 'NOT_FOUND', status: 'no-such-cpu', chainsRead: [56] } },
+  16: { obs: { code: 'INVALID_ARGUMENT', status: 'ambiguous' }, flipped: true },
   19: { obs: { code: 'NOT_FOUND', status: 'no-such-token', controlCode: 'MANIFEST_INVALID', controlStatus: 'no-manifest' }, flipped: true },
+  20: { obs: { code: 'NOT_FOUND', status: 'not-tapeout' }, flipped: true },
   21: { obs: INPUT_ERROR }, 22: { obs: INPUT_ERROR }, 23: { obs: INPUT_ERROR, flipped: true }, 24: { obs: INPUT_ERROR }, 25: { obs: INPUT_ERROR }, 26: { obs: INPUT_ERROR },
   27: { obs: { problems: [] } },
 }
-const CONFORM_GAPS = {
-  5: { wants: 'processor number 0 (4246.0.tape)', obs: { chainId: 56, processor: null, tokenId: '4246', name: null, container: '0x86DDaEF00401E3F10418398D67D7189fc458eA95' } },
-  6: { wants: 'reverse-resolves to 4246.0.tape', obs: { chainId: 56, status: 'ok', name: null, processor: null } },
-  13: { wants: 'Base, processor 1, #1 (resolved on every chain, then reversed)', obs: { code: 'INVALID_ARGUMENT', status: 'unsupported' } },
-  16: { wants: 'ambiguous (Base and X Layer)', obs: { chainId: 56, chainsRead: [56] } },
-  // TAP-10 §4.1: not-tapeout only once every active chain was read; 1.4 reads one, so it says unsupported (never a wrong
-  // not-tapeout for a container of another chain) / 读遍所有活跃链才可报 not-tapeout；1.4 只读一条，所以报 unsupported
-  20: { wants: 'not-tapeout (after reading every active chain)', obs: { code: 'INVALID_ARGUMENT', status: 'unsupported' } },
-}
+const CONFORM_GAPS = {}
 
-test('conformance mode: 23 judged, 18 conform, 5 differ (5, 6, 13, 16, 20: reverse resolution and every-chain input, 1.5); 6 cases flipped', () => {
-  assert.deepEqual(conform.summary, { rows: 16, cases: 27, judged: 23, conforms: 18, gaps: 5, notJudged: 4 })
+test('conformance mode (allChains): 23 judged, all 23 conform; 11 cases flipped (5, 6, 13, 16, 20 by 1.5)', () => {
+  assert.deepEqual(conform.summary, { rows: 16, cases: 27, judged: 23, conforms: 23, gaps: 0, notJudged: 4 })
   const flipped = Object.entries(CONFORM_MODE).filter(([, r]) => r.flipped).map(([n]) => Number(n))
-  assert.deepEqual(flipped, [3, 4, 12, 15, 19, 23])
+  assert.deepEqual(flipped, [3, 4, 5, 6, 12, 13, 15, 16, 19, 20, 23])
   for (const n of flipped) assert.ok(GAPS[n], `${n} is a KNOWN GAP in the default mode`)
   assert.deepEqual(Object.keys(CONFORM_GAPS).map(Number).sort((a, b) => a - b), Object.keys(GAPS).map(Number).filter((n) => !flipped.includes(n)))
 })

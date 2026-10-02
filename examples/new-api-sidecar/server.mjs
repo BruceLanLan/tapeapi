@@ -27,6 +27,7 @@
 //
 //   node examples/new-api-sidecar/server.mjs          (Docker: see docker-compose.yml and README.md)
 import http from 'node:http'
+import { isIP } from 'node:net'
 import { readFileSync, realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createAIProxy } from '@tapeapi/server/ai-proxy'
@@ -197,15 +198,29 @@ export function createSidecar(env = process.env, { fetch, profile = NEW_API_PROF
 }
 
 /** The client's address: the trusted header when configured (the right-most entry of a list: the one your proxy added),
- *  else the TCP peer. / 客户端地址：配置了可信请求头时取它（列表取最右一项，即你的代理加上的那项），否则取 TCP 对端。 */
+ *  else the TCP peer. The header's address is written one way per address (IPv6 compressed and lowercase, an
+ *  IPv4-mapped IPv6 address as its IPv4), so one client is one rate-limit key; a value that is not an address is
+ *  'unknown'. / 客户端地址：配置了可信请求头时取它（列表取最右一项，即你的代理加上的那项），否则取 TCP 对端。头里的地址每个
+ *  只有一种写法（一个客户端只占一个限流键）；不是地址的值为 'unknown'。 */
 export function clientIpOf(req, header) {
   if (header) {
     const v = req.headers[header]
     const s = Array.isArray(v) ? v[v.length - 1] : v
     const last = typeof s === 'string' ? s.split(',').map((x) => x.trim()).filter(Boolean).pop() : null
-    if (last) return last.slice(0, 64)
+    if (last) return canonicalIp(last)
   }
   return req.socket.remoteAddress || 'unknown'
+}
+function canonicalIp(s) {
+  const kind = isIP(s)
+  if (kind === 4) return s
+  if (kind !== 6) return 'unknown'
+  let a
+  try { a = new URL(`http://[${s}]/`).hostname.slice(1, -1) } catch { return 'unknown' }   // a zone id ('%eth0') / 带区域标识
+  const m = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(a)
+  if (!m) return a
+  const hi = parseInt(m[1], 16), lo = parseInt(m[2], 16)
+  return [hi >> 8, hi & 255, lo >> 8, lo & 255].join('.')
 }
 
 /**

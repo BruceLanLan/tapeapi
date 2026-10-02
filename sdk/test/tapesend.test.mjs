@@ -5,7 +5,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { x25519 } from '@noble/curves/ed25519'
-import { tapesend, TapeAPIError, channel } from '../src/index.js'
+import { tapesend, TapeAPIError, channel, createTapeAPI } from '../src/index.js'
+import { createConformChain } from './helpers/conform-chain.mjs'
 import { hexToBytes, toHex, decodeParams } from '../src/abi.js'
 import { keccak_256 } from '@noble/hashes/sha3'
 
@@ -37,17 +38,32 @@ test('public payloads, rejected recipient keys and message ids match the referen
   for (const m of V.messageIds) assert.equal(tapesend.messageId(m), m.id)
 })
 
-test('a TAPI-26 invite rides a sealed TapeSend message; a TapeSend client sees an unsupported kind, B opens it', () => {
-  const ka = channel.generateKeyPair(), kb = channel.generateKeyPair()
+// TAPI-26 §3.2 "TapeSend (durable fallback)", as corrected in 1.5 (erratum): TAP-10 governs such a message completely, so the
+// invite is sealed to B's USABLE TAP-10 key, read from the hub (TAP-10 §14.4, §15.3 step 2), never to B's channel key. A key
+// TAP-10 clients never seal to could only ever be not-for-key to the official app. Here B's key comes from
+// api.chain.tapeSendKey, in the conformance mode (strict, §14.4 steps 1-3), on a fake chain.
+// TAPI-26 §3.2 的 TapeSend 兜底（1.5 勘误）：此时消息完全由 TAP-10 支配，邀请封给 B 在中枢上**可用**的 TAP-10 密钥，绝不封给通道密钥。
+test('a TAPI-26 invite sent by TapeSend is sealed to the recipient\'s usable TAP-10 key from the hub (erratum, 1.5); a TapeSend client sees an unsupported kind, B opens it', async () => {
+  const ka = channel.generateKeyPair(), kb = channel.generateKeyPair()   // channel (static) keys of the handshake / 握手的通道密钥
+  const tb = channel.generateKeyPair()                                   // B's TapeSend (TAP-10) key pair / B 的 TapeSend 密钥对
+  const fake = createConformChain()
+  const b = fake.circuit(4246, { holder: '0x' + '0b'.repeat(20) })
+  fake.setTapeSendKey(b.container, { circuits: b.circuits, tokenId: 4246, key: toHex(tb.publicKey), holder: '0x' + '0b'.repeat(20) })
+  const api = createTapeAPI({ conform: 'tap10', rpcUrls: ['http://rpc1', 'http://rpc2', 'http://rpc3'], fetch: fake.fetch, quiet: true, onWarning: () => {} })
+  const bKey = await api.chain.tapeSendKey(b.container)
+  assert.equal(bKey.tap10.status, 'ok')
   const A = { container: '0x86DDaEF00401E3F10418398D67D7189fc458eA95', chainId: 56 }
-  const B = { container: '0x19366c3c69ffeb3b286d9fa6cc5e616375baafd3', chainId: 56 }
+  const B = { container: b.container, chainId: 56 }
   const HUB = '0xe61A9C7213a6Aa616C246a2B569e555B417b25ee'
   const { invite } = channel.createInvite({ self: { ...A, staticSecret: ka.secretKey }, peer: { ...B, staticPublic: kb.publicKey }, relays: [{ url: 'https://relay.example/tapeapi/v1', container: '0x3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a' }] })
   const content = channel.encodeInviteContent(invite)
-  const payload = tapesend.seal({ content, recipients: [kb.publicKey], to: B.container, from: A.container, hub: HUB })
+  const payload = tapesend.seal({ content, recipients: [hexToBytes(bKey.staticPublic)], to: B.container, from: A.container, hub: HUB, conform: 'tap10' })
   assert.ok(payload.length <= tapesend.MAX_PAYLOAD)
-  const opened = tapesend.open({ payload, secretKey: kb.secretKey, to: B.container, from: A.container, hub: HUB })
+  // B opens it with its TapeSend secret, as the official app would; the channel secret does not open it
+  // B 用 TapeSend 私钥打开（与官方应用相同）；通道私钥打不开
+  const opened = tapesend.open({ payload, secretKey: tb.secretKey, to: B.container, from: A.container, hub: HUB })
   assert.deepEqual(channel.decodeInviteContent(opened.content), invite)
+  assert.throws(() => tapesend.open({ payload, secretKey: kb.secretKey, to: B.container, from: A.container, hub: HUB }), (e) => e.reason === 'not-for-key')
   // the TapeSend content rules: v is 1 and kind is not "message", so the official app shows it as unsupported
   // TapeSend 内容规则：v 为 1、kind 不是 "message"，官方应用显示为"不支持"
   const asJson = JSON.parse(new TextDecoder().decode(opened.content))

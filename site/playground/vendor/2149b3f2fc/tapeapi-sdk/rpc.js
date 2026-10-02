@@ -194,10 +194,11 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
   async function once(url, method, params) {
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), timeoutMs)
+    const id = nextId++
     try {
       const res = await f(url, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: nextId++, method, params }), signal: ac.signal,
+        body: JSON.stringify({ jsonrpc: '2.0', id, method, params }), signal: ac.signal,
       })
       if (!res.ok) {
         // An HTTP error may still carry the node's JSON-RPC answer: publicnode refuses history older than its window
@@ -215,7 +216,17 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
         if (j && typeof j === 'object' && j.error && typeof j.error === 'object') throw refused(j.error, `http ${res.status}, `)
         throw new Error(`http ${res.status}`)
       }
-      return answerOf(await readJsonBounded(res, bodyLimit))
+      // An answer to another request (or to none: no id, id null) is not an answer to this one: the node did not answer,
+      // as a batch element with the wrong id (FIXED RPC-ID). A node-limit refusal addressed to no request (id null, as a
+      // front end may send it) stays a refusal: it is still not an answer. / 回答的是别的请求（或没有 id、id 为 null）就不是对
+      // 这个请求的回答：该节点没有作答，与批量里 id 不对的元素一样。不针对任何请求的节点限流拒绝仍记为拒绝：它同样不是回答。
+      const j = await readJsonBounded(res, bodyLimit)
+      const obj = !!j && typeof j === 'object' && !Array.isArray(j)
+      if (!obj || !('id' in j) || j.id === null || String(j.id) !== String(id)) {
+        if (obj && (j.id ?? null) === null && j.error && typeof j.error === 'object' && isNodeLimit(j.error)) throw refused(j.error)
+        throw new Error('the answer is for another request (id mismatch)')
+      }
+      return answerOf(j)
     } catch (e) {
       // our timer fired: a timeout / 自己的计时器触发：超时
       if (ac.signal.aborted && e && typeof e === 'object') { try { e.timedOut = true } catch { /* frozen / 不可写 */ } }
@@ -384,7 +395,11 @@ export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl
     // `refusals`：仅当每个失败的节点都以节点限制错误作答（没有连不上的）时给出
     // `tooLarge`: every node that failed sent an answer over bodyLimit -- set by this client, never read from a node's words
     // `tooLarge`：每个失败的节点发来的回答都超过 bodyLimit——由本客户端标记，绝不从节点的话里推断
-    if (answered < needHere) throw new TapeAPIError('RPC_UNAVAILABLE', `${method}: only ${answered}/${needHere} ${answeredIdx.length > answered ? 'operators' : 'nodes'} answered (${failures.join('; ')})`, { ...(refusals.length && refusals.length === failures.length ? { refusals } : {}), ...(tooLarge && tooLarge === failures.length ? { tooLarge: true } : {}) })
+    // A strict read says why it needs that many; a default read's message is unchanged (GOLDEN TAP10-0)
+    // 严格读取说明为何需要这么多家；默认读取的信息不变
+    const strictWhy = !opts?.strict ? '' : degraded ? `; strict agreement on this allowSingleNode set needs ${needHere}`
+      : `; strict agreement (TAP-10 §5.2) needs every configured node to agree, from max(2, min(3, ${operators.length} operators), quorum ${need}) = ${needHere} operators`
+    if (answered < needHere) throw new TapeAPIError('RPC_UNAVAILABLE', `${method}: only ${answered}/${needHere} ${answeredIdx.length > answered ? 'operators' : 'nodes'} answered (${failures.join('; ')})${strictWhy}`, { ...(refusals.length && refusals.length === failures.length ? { refusals } : {}), ...(tooLarge && tooLarge === failures.length ? { tooLarge: true } : {}) })
     if (buckets.size > 1) throw new TapeAPIError('RPC_DISAGREE', `${method}: ${answeredIdx.length} nodes answered with ${buckets.size} different results`)
     const [b] = buckets.values()
     if (b.r.kind === 'error') {

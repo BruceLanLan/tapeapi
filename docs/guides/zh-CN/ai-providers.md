@@ -24,7 +24,7 @@ npm ci --no-audit --no-fund
 在任何目录都能运行，不需要克隆仓库：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-doctor <你的名字>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-doctor <你的名字>
 ```
 
 在检出的根目录里，`node sdk/bin/tapeapi-doctor.js <你的名字>` 效果相同。两种方式下，报告给出的下一条命令都按你的运行方式书写。
@@ -64,7 +64,8 @@ DNS：请重试）；`--json` 输出供 CI 使用的报告；`--lang en` 或 `--
   每个模型、每个币种一个价格，按每百万 token 计，需要时再加缓存价与推理价。任何人都能重算一次调用应当多少钱。
 - **每次调用一份签名的用量回执**（[TAPI-21 §3.5](../../../spec/TAPI-21.md)）：模型、token 数、各币种金额、回答是否完整，以及确切的
   请求字节与回应字节的哈希，由电路持有人委托的密钥签名。回执随回答一起送达（一个响应头，或官方 SDK 会忽略的 SSE 注释），
-  不读回执的客户端什么都不受影响。
+  不读回执的客户端什么都不受影响。唯一的例外：在旁路签名点之前出现以 U+FEFF 开头的行的流不会得到回执，因为各客户端对这种行的
+  读法不同，没有哪份回执能说明它们看到了什么。
 - **不托管任何东西。** TapeAPI 不持有你的密钥、资金或流量。旁路跑在你自己的机器上；身份和价目表在链上，不经过我们的任何服务器就能读取。
 - **用户不用改代码。** OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 与 OpenAI Embeddings 逐字节透传，流式也一样。
   Claude Code、Codex 和官方 SDK 照常使用。
@@ -182,7 +183,11 @@ const client = new OpenAI({ baseURL, apiKey: process.env.API_KEY, fetch })  // �
 报告为 `not verified: path mismatch`。
 流式回答同样会核验。流在最终事件、`[DONE]` 或连接关闭时结束（先到者为准）；在默认的 `strict: true` 下，结束的那一段要等结束
 之前到达的回执核验通过才放出，核验不过的流会让 SDK 的迭代器抛出 `RECEIPT_INVALID`。`strict: false` 时不扣留任何内容，结论交给
-`onReport`。strict 下，核验不过的整体（非流式）回答会变成一个 HTTP 502：按该 API 的错误格式，code 为 `RECEIPT_INVALID`，
+`onReport`。回执核对的是流在结束那一点的样子，与网络怎样把字节切成块无关。strict 下流只转交到结束处并在那里关闭，结束之后的
+内容不会到达应用；连接在某个事件中途关闭的流，或含以 U+FEFF 开头的行的流（SDK 与回执规则对这两者的读法不同），以
+`RECEIPT_INVALID` 失败。`strict: false` 时这些只报告出来，结束之后的事件也一样（下面的 `tapeapi-verify` 同样如此）。
+对手里的整条流调用 `verifyUsageReceipt({ responseBytes })` 会对其中每个事件取哈希（TAPI-21 §3.5），所以对结束之后还有事件的流，
+它的结论可能与流式核验不同。strict 下，核验不过的整体（非流式）回答会变成一个 HTTP 502：按该 API 的错误格式，code 为 `RECEIPT_INVALID`，
 带 `x-should-retry: false` 与 `x-tapeapi-verify-error: RECEIPT_INVALID` 两个头；官方 SDK 抛出 `APIError` 且不重试，自己调用
 这个 fetch 的代码检查 `res.ok`。付费调用在其它 5xx 上是否自动重试，由你自己决定（SDK 的 `maxRetries`）。
 
@@ -191,7 +196,7 @@ const client = new OpenAI({ baseURL, apiKey: process.env.API_KEY, fetch })  // �
 
 ```sh
 # 终端 1。42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh

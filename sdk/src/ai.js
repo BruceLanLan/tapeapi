@@ -201,14 +201,16 @@ export function apiPath(pathname, rootPath) {
   return typeof pathname === 'string' && pathname.startsWith(rp + '/') ? pathname.slice(rp.length) : null
 }
 /**
- * A URL path as a lenient server reads it: percent-encoded unreserved characters decoded ('%63' -> 'c'), runs of '/'
- * collapsed, a trailing '/' dropped. OpenAI and Anthropic serve '/v1//chat/completions' and '/v1/chat/%63ompletions';
+ * A URL path as a lenient server reads it: percent-encoded unreserved characters decoded ('%63' -> 'c'), an encoded '/'
+ * or backslash ('%2F', '%5C') read as '/', runs of '/' collapsed, a trailing '/' dropped. OpenAI and Anthropic serve
+ * '/v1//chat/completions' and '/v1/chat/%63ompletions';
  * a metered path must still be written exactly, so a path that only matches a format this way is refused, never signed
- * or verified as if it did (review P2-O1). / 宽松服务器眼中的路径：解码百分号编码的非保留字符、合并连续斜杠、去掉结尾斜杠。
+ * or verified as if it did (review P2-O1). / 宽松服务器眼中的路径：解码百分号编码的非保留字符、把编码的 '/' 与反斜杠读作 '/'、
+ * 合并连续斜杠、去掉结尾斜杠。
  * 计量路径必须按原样书写：只有这样才能匹配某个格式的路径会被拒绝，而不是当作匹配来签名或核验。
  */
 export function loosePath(path) {
-  const p = String(path).replace(/%([0-9A-Fa-f]{2})/g, (m, h) => { const c = String.fromCharCode(parseInt(h, 16)); return /[A-Za-z0-9._~-]/.test(c) ? c : m }).replace(/\/{2,}/g, '/')
+  const p = String(path).replace(/%([0-9A-Fa-f]{2})/g, (m, h) => { const c = String.fromCharCode(parseInt(h, 16)); return c === '/' || c === '\\' ? '/' : /[A-Za-z0-9._~-]/.test(c) ? c : m }).replace(/\/{2,}/g, '/')
   return p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p
 }
 /** The service root of an endpoint's baseUrl (the baseUrl minus the format's suffix), or null. / 端点 baseUrl 对应的服务根。 */
@@ -261,12 +263,25 @@ export function sseDigestOfPayloads(payloads, { sentinel = null } = {}) {
  * hashed as it arrives and not parsed. Vendor-neutral: the proxy and every verifier run this same code.
  * 增量的、字节级的 SSE 解析器（WHATWG 规则）。按回执规则对每个已分派事件的数据取哈希，把每个事件的 JSON 交给 onEvent
  * （适配器的 streamState），并收集 `: tapeapi-receipt` 注释。内存与流长无关。与厂商无关：旁路与各核验方运行同一份代码。
- * @param {{ sentinel?: string|null, onEvent?: (json: any, eventName: string) => void, eventParseLimit?: number }} [o]
+ * @param {{ sentinel?: string|null, onEvent?: (json: any, eventName: string) => void, eventParseLimit?: number, final?: { data?: string[], event?: string[] }|null }} [o]
+ * @returns {{ push(chunk: Uint8Array|ArrayBuffer|string): number, end(): void, digest(): string, state(): object, info: { events: number, done: boolean, receipts: string[], final: boolean, receiptsAtEnd: number|null, eventsAtEnd: number|null, digestAtEnd: string|null, endOffset: number|null, ambiguous: number, ambiguousAtEnd: number|null } }}
+ *   info: see below (the end of the stream, FIXED SSE-END; lines led by U+FEFF, FIXED SSE-BOM). / info 见下。
  */
 // `final` (a format's stream.final: { data?, event? }) sets info.final once the format's final event has been dispatched, so
 // a verifier can hold that event back until the receipt is checked (review G1 M14). info.receiptsAtEnd is the number of
-// receipt comments seen when the stream first ended, by its final event or its sentinel (review RC-2), null before.
-// 格式的最终事件分派后置 info.final。info.receiptsAtEnd：流第一次结束（最终事件或 sentinel）时已见到的回执注释数，之前为 null。
+// receipt comments seen when the stream first ended, by its final event or its sentinel (review RC-2), null before;
+// info.eventsAtEnd and info.digestAtEnd are the event count and the receipt hash at that same point, and info.endOffset is
+// where that point lies in the bytes of the push() that reached it (just after the blank line that dispatched the ending
+// event), so a verifier can pass on exactly the stream up to its end (FIXED SSE-END). info.ambiguous counts the lines that
+// start with U+FEFF other than at the very start of the stream: this parser reads such a line as an unknown field, but
+// parsers that strip a byte order mark from every line (the official OpenAI and Anthropic SDKs) read it as the field after
+// it, so a stream that has one says different things to different clients and cannot be verified (FIXED SSE-BOM);
+// info.ambiguousAtEnd is that count at the end.
+// 格式的最终事件分派后置 info.final。info.receiptsAtEnd：流第一次结束（最终事件或 sentinel）时已见到的回执注释数，之前为 null；
+// info.eventsAtEnd 与 info.digestAtEnd 是同一点的事件数与回执哈希，info.endOffset 是这一点在到达它的那次 push() 的字节中的位置
+// （分派结束事件的空行之后），核验方据此恰好转交到结束为止的流。info.ambiguous 统计流最开头之外以 U+FEFF 开头的行：本解析器把它
+// 读作未知字段，而逐行去掉字节序标记的解析器（OpenAI 与 Anthropic 官方 SDK）把它读作其后的字段，含这种行的流对不同客户端说的
+// 不是同一回事，无法核验；info.ambiguousAtEnd 是结束处的这个计数。
 export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = EVENT_PARSE_LIMIT, final = null } = {}) {
   const LF = 0x0a, CR = 0x0d, COLON = 0x3a, SPACE = 0x20
   const COMMENT_LIMIT = 64 * 1024
@@ -274,13 +289,14 @@ export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = E
   const BOM = [0xef, 0xbb, 0xbf]
   const end = sentinel == null ? null : enc.encode(sentinel)
   const hash = sha256.create()
-  const info = { events: 0, done: false, receipts: [], final: false, receiptsAtEnd: null }
+  const info = { events: 0, done: false, receipts: [], final: false, receiptsAtEnd: null, eventsAtEnd: null, digestAtEnd: null, endOffset: null, ambiguous: 0, ambiguousAtEnd: null }
   const finalData = (final?.data ?? []).map((d) => enc.encode(d))
   const finalEvents = final?.event ?? []
   let bomMatched = 0, bomDone = false
   let lastCR = false
   // the line / 当前行
   let lineLen = 0, comment = false, commentParts = [], commentLen = 0, colon = false, field = [], fieldLen = 0, fieldOver = false
+  let lineBom = 0   // bytes of U+FEFF matched at the start of the line; -1 once it cannot be one / 行首已匹配的 U+FEFF 字节数；不可能时为 -1
   let isData = false, isEvent = false, eventParts = [], eventLen = 0, skipSpace = false
   // the event / 当前事件
   let evData = false, evFields = false, evName = '', pieces = [], size = 0, over = false
@@ -310,7 +326,13 @@ export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = E
           if (onEvent) { let v; try { v = JSON.parse(new TextDecoder().decode(data)) } catch { v = undefined } if (v !== undefined) onEvent(v, evName) }
         }
       }
-      if (info.receiptsAtEnd === null && (info.final || info.done)) info.receiptsAtEnd = info.receipts.length
+      // The end is a point in the stream, not the chunk that carried it: what a verifier checks there is the event count
+      // and hash as they stood at that point (the final event included, the sentinel never hashed), whatever arrived after
+      // it in the same chunk (FIXED SSE-END). / 结束是流中的一点，而不是承载它的那一块：核验方在此核对的是那一点的事件数与哈希
+      // （含最终事件；sentinel 从不计入），同一块中其后到达的内容不算在内。
+      if (info.receiptsAtEnd === null && (info.final || info.done)) {
+        info.receiptsAtEnd = info.receipts.length; info.eventsAtEnd = info.events; info.digestAtEnd = bytesToHex(hash.clone().digest()); info.ambiguousAtEnd = info.ambiguous
+      }
     }
     evData = false; evFields = false; evName = ''; pieces = []; size = 0; over = false
   }
@@ -322,6 +344,10 @@ export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = E
   }
   function lineBytes(b) {
     if (lineLen === 0) comment = b[0] === COLON
+    if (lineBom >= 0) {
+      for (let x = 0; x < b.length && lineBom < 3; x++) { if (b[x] === BOM[lineBom]) lineBom++; else { lineBom = -1; break } }
+      if (lineBom === 3) { info.ambiguous++; lineBom = -1 }
+    }
     lineLen += b.length
     if (comment) {
       if (commentLen < COMMENT_LIMIT) { const take = b.subarray(0, COMMENT_LIMIT - commentLen); commentParts.push(take.slice()); commentLen += take.length }
@@ -354,7 +380,7 @@ export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = E
       if (name === 'data') startDataLine()
       if (isEvent || name === 'event') evName = new TextDecoder().decode(concat(eventParts, eventLen))
     }
-    lineLen = 0; comment = false; commentParts = []; commentLen = 0; colon = false; field = []; fieldLen = 0; fieldOver = false
+    lineLen = 0; comment = false; commentParts = []; commentLen = 0; colon = false; field = []; fieldLen = 0; fieldOver = false; lineBom = 0
     isData = false; isEvent = false; eventParts = []; eventLen = 0; skipSpace = false
   }
   let boundary = -1
@@ -370,11 +396,11 @@ export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = E
       const j = nextLF < 0 ? (nextCR < 0 ? n : nextCR) : nextCR < 0 ? nextLF : Math.min(nextLF, nextCR)
       if (j > i) lineBytes(chunk.subarray(i, j))
       if (j === n) break
-      const blank = lineLen === 0
+      const blank = lineLen === 0, open = info.receiptsAtEnd === null
       endLine()
       let k = j + 1
       if (chunk[j] === CR) { if (k < n) { if (chunk[k] === LF) k++ } else lastCR = true }
-      if (blank && own) boundary = k
+      if (blank && own) { boundary = k; if (open && info.receiptsAtEnd !== null) info.endOffset = k }
       i = k
     }
   }
@@ -404,6 +430,25 @@ export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = E
   }
 }
 
+// What a verifier reports about the shapes of a stream that no receipt covers (FIXED SSE-END, SSE-EOF, SSE-BOM), streaming or offline.
+// 核验方对不受任何回执覆盖的流形态的报告。
+const LATE_EVENT = 'an event after the end of the stream is not covered by its receipt'
+const UNFINISHED_EVENT = 'an unfinished event at the close of the stream (no blank line after it) is not covered by its receipt, and some clients dispatch it'
+const AMBIGUOUS_LINE = 'a line that starts with U+FEFF (a byte order mark) is read differently by different clients: the stream cannot be verified'
+const WHOLE_AS_STREAM = 'the receipt says the answer was a stream, but the response is one whole JSON value, not an event stream: read as a stream it reports no usage, so the receipt cannot be checked against it (pass `stream` from the response\'s content type)'
+/**
+ * Are these bytes one whole JSON object or array (whitespace around it allowed)? Such bytes hold no event-stream event (no
+ * line of a JSON text starts with `data:`), so a receipt that calls them a stream would be checked against nothing: a
+ * verifier with no content type of its own (the verify page, verifyUsageReceipt without `stream`) refuses that pairing
+ * (FIXED AI-WHOLE). / 这些字节是否是一个完整的 JSON 对象或数组？它不含任何事件流事件，所以说它是流的回执等于什么都没核对：
+ * 没有自己的 content-type 的核验方（核验页、不传 stream 的 verifyUsageReceipt）拒绝这种搭配。
+ */
+export function isWholeJson(bytes) {
+  const b = toBytes(bytes)
+  const v = b ? jsonOf(b) : undefined
+  return !!v && typeof v === 'object'
+}
+
 /**
  * A whole event stream at once: its receipt hash, what the adapter read from it (when `format` is given), and its
  * receipt comments. / 一次处理整段事件流：回执哈希、适配器读出的内容（给了 format 时）与回执注释。
@@ -417,7 +462,10 @@ export function scanSse(body, { format, sentinel } = {}) {
   const s = createSseScanner({ sentinel: sentinel !== undefined ? sentinel : format?.stream?.sentinel ?? null, onEvent: st ? (j, n) => st.event(j, n) : undefined })
   s.push(b); s.end()
   const read = st ? st.result() : { id: null, model: null, usage: null, complete: false }
-  return { responseSha256: s.digest(), id: read.id ?? null, model: read.model ?? null, usage: usageOf(read.usage), complete: read.complete === true, events: s.info.events, done: s.info.done, receipts: s.info.receipts.slice() }
+  // ambiguous: lines that clients read differently (FIXED SSE-BOM); unfinished: an event the stream closes on before its
+  // blank line, which some clients dispatch (FIXED SSE-EOF). / ambiguous：客户端读法不同的行；unfinished：流在空行之前关闭的事件。
+  const t = s.state()
+  return { responseSha256: s.digest(), id: read.id ?? null, model: read.model ?? null, usage: usageOf(read.usage), complete: read.complete === true, events: s.info.events, done: s.info.done, receipts: s.info.receipts.slice(), ambiguous: s.info.ambiguous, unfinished: t.eventHasData || t.eventHasFields || !t.atLineStart }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -431,20 +479,23 @@ const USAGE_SUBSETS = ['cache_read_tokens', 'cache_write_tokens', 'cache_write_1
  * cache_read_tokens?, cache_write_tokens?, cache_write_1h_tokens?, reasoning_tokens?, other? }, or null when they do not
  * say how many prompt tokens or do not add up (cache reads plus writes above prompt_tokens, 1-hour cache writes above
  * cache writes, reasoning above completion_tokens). completion_tokens defaults to 0 (embeddings have none) and
- * total_tokens to prompt + completion. `other` keeps the per-use counts above zero, sorted by name.
- * 适配器读出的计数 -> 回执的 usage（键顺序固定）；没有 prompt_tokens 或数目对不上时为 null。
+ * total_tokens to prompt + completion. `other` keeps the per-use counts above zero, sorted by name. A count of -0 (JSON
+ * allows it) is 0: canonical JSON has no -0, and a receipt carrying one could not be signed (FIXED AI-NZ: HTTP 500).
+ * 适配器读出的计数 -> 回执的 usage（键顺序固定）；没有 prompt_tokens 或数目对不上时为 null。-0 按 0 计（规范 JSON 没有 -0）。
  */
 export function usageOf(u) {
+  const z = (n) => (Object.is(n, -0) ? 0 : n)
   if (!isObj(u) || !safeCount(u.prompt_tokens)) return null
-  const completion = given(u.completion_tokens) ? u.completion_tokens : 0
+  const prompt = z(u.prompt_tokens)
+  const completion = given(u.completion_tokens) ? z(u.completion_tokens) : 0
   if (!safeCount(completion)) return null
-  const total = given(u.total_tokens) ? u.total_tokens : u.prompt_tokens + completion
+  const total = given(u.total_tokens) ? z(u.total_tokens) : prompt + completion
   if (!safeCount(total)) return null
-  const out = { prompt_tokens: u.prompt_tokens, completion_tokens: completion, total_tokens: total }
+  const out = { prompt_tokens: prompt, completion_tokens: completion, total_tokens: total }
   for (const k of USAGE_SUBSETS) {
     if (!given(u[k])) continue
     if (!safeCount(u[k])) return null
-    out[k] = u[k]
+    out[k] = z(u[k])
   }
   if ((out.cache_read_tokens ?? 0) + (out.cache_write_tokens ?? 0) > out.prompt_tokens || (out.cache_write_1h_tokens ?? 0) > (out.cache_write_tokens ?? 0) ||
     (out.reasoning_tokens ?? 0) > out.completion_tokens) return null
@@ -709,6 +760,50 @@ export function priceProblems(field, result, format) {
 }
 
 /**
+ * Does the sidecar change this request to obtain the usage (TAPI-21 §3.5, usage injection)? The sidecar's own rule: a
+ * non-empty body for which the format's prepareUpstream returns a change. / 旁路会不会为了拿到用量而改动这个请求：与旁路
+ * 同一条规则（非空请求体，且格式的 prepareUpstream 给出改动）。
+ */
+function injectsUsage(format, bytes) {
+  if (typeof format?.prepareUpstream !== 'function' || !bytes.length) return false
+  try { return !!format.prepareUpstream(jsonOf(bytes)) } catch { return false }
+}
+
+/**
+ * TAPI-21 §3.5 check 4, the part that compares the receipt with the client's own reading of the answer: its id (only
+ * when it is one the sidecar would use), model and usage. `read` is { id, model, usage } as the format's adapter reads the
+ * answer the client received (a stream: scanSse's result). The usage is left unchecked only where the client's copy can
+ * lack it: a stream, of a format that injects, for a request that did not itself ask for usage. A whole answer is always
+ * compared (nothing is taken out of it), and so is any other stream, where `usageInjected` is itself a problem: nothing
+ * was injected. Without `requestBytes` a stream's flag cannot be checked, and its usage is listed in `unchecked`, like
+ * the request itself (FIXED AI-INJ: the flag alone used to switch the comparison off).
+ * 第 4 项核验中与客户端自己读到的回答对比的部分：id（仅当旁路会采用它）、model 与 usage。只有客户端副本可能缺用量时才不比较
+ * usage：流式、格式会注入、且请求本身没有要用量。整体回答总是比较（其中没有被去掉任何东西）；其它流也比较，此时 usageInjected
+ * 本身就是问题（什么也没有注入）。没有 requestBytes 时流的这个标记无法核对，usage 与请求一样列入 unchecked
+ * （FIXED AI-INJ：过去仅凭这个标记就会关掉比较）。
+ * @returns {{ problems: string[], unchecked: string[] }}
+ */
+export function answerProblems({ envelope, read, format, requestBytes }) {
+  const r = envelope.result, problems = [], unchecked = []
+  if (isAnswerId(read.id) && read.id !== envelope.id) problems.push(`the receipt is for response ${envelope.id.slice(0, 80)}, the response's id is ${read.id.slice(0, 80)}`)
+  const said = typeof read.model === 'string' && read.model.length >= 1 && read.model.length <= MODEL_ID_MAX ? read.model : null
+  if (said !== null && r.model !== said) problems.push(`the receipt says model ${String(r.model).slice(0, 80)}, but the answer reports ${said.slice(0, 80)}`)
+  if (said === null && r.model !== null && r.modelMatchedBy !== 'request') problems.push(`the receipt says model ${String(r.model).slice(0, 80)}, but the answer reports none`)
+  // A whole answer keeps the usage chunk even when the sidecar asked for it (a stream request answered as JSON): the flag
+  // is honest there and the usage is compared. / 整体回答即使旁路要过用量也保留着它（流式请求以 JSON 作答）：标记如实，照常比较。
+  const injecting = r.stream === true && typeof format?.prepareUpstream === 'function'
+  const b = injecting && requestBytes !== undefined ? toBytes(requestBytes) : null
+  const injects = injecting ? (b ? injectsUsage(format, b) : null) : false   // null: not known (no request bytes) / 不知道
+  if (r.usageInjected && injects !== false) unchecked.push('usage (usageInjected: the answer the client received lacks the usage chunk the sidecar read)')
+  else {
+    if (r.usageInjected && r.stream === true) problems.push(injecting ? 'the receipt says usageInjected, but the request already asked for the usage: nothing was taken out of the stream' : `the receipt says usageInjected, but ${format?.name ?? 'this format'} never injects`)
+    const u = r.status >= 200 && r.status < 300 ? usageOf(read.usage) : null
+    if (!sameJSON(u, r.usage)) problems.push(`the receipt says usage ${JSON.stringify(r.usage)}, but the answer reports ${JSON.stringify(u)}`)
+  }
+  return { problems, unchecked }
+}
+
+/**
  * Check one AI usage receipt. Pure: no network. `manifest` must be a manifest you trust (api.resolve() checked its
  * delegation, which is what makes `manifest.signer` the service's key).
  * 核验一份 AI 用量回执。纯函数、不联网。`manifest` 必须可信（api.resolve() 核验过委托，signer 才是服务的密钥）。
@@ -719,10 +814,11 @@ export function priceProblems(field, result, format) {
  * Holding the answer, the client re-reads it with the format's adapter (TAPI-21 §3.5, check 4): its id (compared only when
  * it is one the sidecar would use, isAnswerId), model, usage and completeness must be what the receipt says. From
  * `responseBytes` this reading is done here; with only a hash, pass it as `answer` ({ id, model, usage, complete }, e.g.
- * an adapter's streamState().result()). The usage cannot be compared when the receipt says usageInjected (the client's
- * copy lacks the usage chunk): listed in `unchecked`, like every check that could not be made.
- * 持有回答时，客户端用格式适配器重读它：id（仅当旁路会用它时才比较）、model、usage 与完整性必须与回执一致。usageInjected 时
- * 无法比较 usage，列入 unchecked；做不了的检查一律列入 unchecked，绝不算通过。
+ * an adapter's streamState().result()). The usage cannot be compared only for a stream whose request did not ask for it
+ * and whose receipt says usageInjected (the client's copy lacks the usage chunk; answerProblems): listed in `unchecked`,
+ * like every check that could not be made.
+ * 持有回答时，客户端用格式适配器重读它：id（仅当旁路会用它时才比较）、model、usage 与完整性必须与回执一致。只有请求没要用量、
+ * 回执又标了 usageInjected 的流无法比较 usage，列入 unchecked；做不了的检查一律列入 unchecked，绝不算通过。
  * 两个哈希绑定确切字节：传入 requestBytes 与 responseBytes / sseDataPayloads / responseSha256 之一；没传的不核验，列在 unchecked。
  *
  * @returns {{ ok: boolean, problems: string[], warnings: string[], unchecked: string[], receipt: object|null }}
@@ -777,6 +873,13 @@ export function verifyUsageReceipt({ envelope, manifest, requestBytes, responseB
     else if (r.stream) {
       const s = scanSse(b, format ? { format } : { sentinel }); got = s.responseSha256
       if (format) read = s
+      // Shapes that clients parse differently from the hash rule: the bytes cannot say what a client showed (FIXED SSE-BOM,
+      // SSE-EOF). Events after the end are hashed as §3.5 says, and not flagged here. / 客户端与哈希规则解析不一致的形态。
+      if (s.ambiguous) problems.push(AMBIGUOUS_LINE)
+      if (s.unfinished) problems.push(UNFINISHED_EVENT)
+      // Only when the caller did not say: one that read the content type (createVerifyingFetch) passes `stream`.
+      // 只在调用方没有说明时检查：读过 content-type 的调用方（createVerifyingFetch）会传 stream。
+      if (stream === undefined && isWholeJson(b)) problems.push(WHOLE_AS_STREAM)
     } else {
       got = sha256Hex(b)
       if (format) read = format.response(jsonOf(b)) ?? null
@@ -787,15 +890,8 @@ export function verifyUsageReceipt({ envelope, manifest, requestBytes, responseB
   // The client's own reading of the answer (check 4). / 客户端自己对回答的读取。
   if (!read) unchecked.push('id', 'model', 'usage', ...(complete === undefined ? ['complete'] : []))
   else {
-    if (isAnswerId(read.id) && read.id !== envelope.id) problems.push(`the receipt is for response ${envelope.id.slice(0, 80)}, the response's id is ${read.id.slice(0, 80)}`)
-    const said = typeof read.model === 'string' && read.model.length >= 1 && read.model.length <= MODEL_ID_MAX ? read.model : null
-    if (said !== null && r.model !== said) problems.push(`the receipt says model ${String(r.model).slice(0, 80)}, but the answer reports ${said.slice(0, 80)}`)
-    if (said === null && r.model !== null && r.modelMatchedBy !== 'request') problems.push(`the receipt says model ${String(r.model).slice(0, 80)}, but the answer reports none`)
-    if (r.usageInjected) unchecked.push('usage (usageInjected: the answer the client received lacks the usage chunk the sidecar read)')
-    else {
-      const u = r.status >= 200 && r.status < 300 ? usageOf(read.usage) : null
-      if (!sameJSON(u, r.usage)) problems.push(`the receipt says usage ${JSON.stringify(r.usage)}, but the answer reports ${JSON.stringify(u)}`)
-    }
+    const a = answerProblems({ envelope, read, format, requestBytes })
+    problems.push(...a.problems); unchecked.push(...a.unchecked)
   }
   const seenComplete = complete !== undefined ? complete : read ? completeOf({ status: r.status, stream: r.stream, read }) : undefined
   if (seenComplete !== undefined && seenComplete !== r.complete) problems.push(`the receipt says complete ${r.complete}, but the answer ${seenComplete ? 'is' : 'is not'} complete`)
@@ -1076,24 +1172,46 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
     }
     // A stream (review G1 M14, RC-2, RC-4). It ends at the format's final event (response.completed, message_stop, ...), at its
     // sentinel ([DONE]) or when the upstream closes, whichever comes first: the official SDKs stop reading at [DONE] (openai
-    // does so for every format) and cancel the body, so nothing after the end can be relied on to be read.
+    // does so for every format) and cancel the body, so nothing after the end can be relied on to be read. What is checked
+    // at the end is the stream as it stood there, whatever else came in the same chunk (FIXED SSE-END).
     // Strict: every chunk goes on as it arrives until the one in which the stream ends; that chunk is held while the
-    // receipts that came before the end are checked, and released as soon as one verifies. No receipt, or none that
-    // verifies: the stream errors with RECEIPT_INVALID instead and the SDK's iterator throws. After a verified end, an event
-    // the receipt does not cover errors the stream, and the upstream breaking off does not.
-    // Not strict: nothing is held. The receipts that came before the end are checked right after it is passed on (with
-    // none, when the upstream closes) and reported; an upstream that breaks off after the end does not fail the call.
+    // receipts that came before the end are checked. Once one verifies, the chunk goes on up to the end only, and the stream
+    // closes there: nothing after the end reaches the application, however the bytes were cut. No receipt, or none that
+    // verifies: the stream errors with RECEIPT_INVALID instead and the SDK's iterator throws. Two shapes fail it as well,
+    // since clients disagree on them: a line that starts with U+FEFF (the SDKs strip it from every line, the receipt rule
+    // does not; FIXED SSE-BOM), before it is passed on; and, when the upstream closes before the end, an event left without
+    // its blank line (the receipt rule discards it, the openai SDK dispatches it; FIXED SSE-EOF).
+    // Not strict: nothing is held or cut. The receipts that came before the end are checked right after it is passed on
+    // (with none, when the upstream closes) and reported; an event after the end, an unfinished event at the close and a
+    // line that starts with U+FEFF are each reported once as a failure; an upstream that breaks off after the end does not
+    // fail the call.
     // 流：在格式的最终事件、sentinel（[DONE]）或上游关闭时结束（先到者为准）：官方 SDK 读到 [DONE]（openai 对所有格式都如此）就停止
-    // 读取并取消正文，结束之后的内容不能指望被读到。strict：结束之前逐块立即转交；流在其中结束的那一块被扣住，核验结束之前到达的
-    // 回执，一旦通过立即放出。没有回执或都不通过：以 RECEIPT_INVALID 结束流，SDK 的迭代器抛出。核验通过之后，回执不覆盖的事件让流出错，
-    // 上游断开则不算。非 strict：不扣留任何内容；结束处放出之后立即核验结束之前到达的回执（没有时等上游关闭）并报告；上游在结束之后
-    // 断开不算失败。
+    // 读取并取消正文，结束之后的内容不能指望被读到。结束处核验的是流在那一点的样子，与同一块里还有什么无关。
+    // strict：结束之前逐块立即转交；流在其中结束的那一块被扣住，核验结束之前到达的回执；一旦通过，只转交这一块到结束点为止的部分，
+    // 流随即关闭：无论字节怎样切分，结束之后的内容都不会到达应用。没有回执或都不通过：以 RECEIPT_INVALID 结束流，SDK 的迭代器抛出。
+    // 另有两种客户端之间理解不一致的形态同样让流失败：以 U+FEFF 开头的行（SDK 逐行去掉它，回执规则不去），在它转交之前；以及上游在
+    // 结束之前关闭时，缺少空行的未结束事件（回执规则丢弃它，openai SDK 却分派它）。
+    // 非 strict：不扣留、不截断。结束处放出之后立即核验结束之前到达的回执（没有时等上游关闭）并报告；结束之后的事件、关闭时未结束的
+    // 事件、以 U+FEFF 开头的行，各报告一次失败；上游在结束之后断开不算失败。
     const st = format.streamState()
-    const scanner = createSseScanner({ sentinel: format.stream.sentinel ?? null, final: format.stream.final ?? null, onEvent: (j, n) => st.event(j, n) })
+    // The adapter reads the answer up to its end only, the final event included (onEvent runs before receiptsAtEnd is set;
+    // it is called from scanner.push only, so never before `scanner` is initialised): the answer checked is the one an SDK
+    // that stops at the end has read (FIXED SSE-END). / 适配器只读到结束处（含最终事件；onEvent 在 receiptsAtEnd 设置之前运行，
+    // 且只由 scanner.push 调用，不会早于 scanner 初始化）：核对的回答就是在结束处停止读取的 SDK 读到的那个。
+    const scanner = createSseScanner({ sentinel: format.stream.sentinel ?? null, final: format.stream.final ?? null, onEvent: (j, n) => { if (scanner.info.receiptsAtEnd === null) st.event(j, n) } })
     const reader = res.body.getReader()
     const base = { url, stream: true, status: res.status, salted }
     let settled = false, verdict = null
     const ended = () => scanner.info.receiptsAtEnd !== null
+    // Shapes no receipt covers, each reported once (FIXED SSE-END, SSE-EOF, SSE-BOM). / 不受任何回执覆盖的形态，各报告一次。
+    const flagged = new Set()
+    const flag = (problem) => {
+      const rep = { ok: false, problems: [problem], warnings: [], unchecked: [], receipt: verdict?.receipt ?? null, ...base }
+      if (!flagged.has(problem)) { flagged.add(problem); report(rep) }
+      return rep
+    }
+    const late = () => ended() && scanner.info.events > scanner.info.eventsAtEnd
+    const unfinished = () => { const t = scanner.state(); return t.eventHasData || t.eventHasFields || !t.atLineStart }
     // The last receipt first (the outermost sidecar's); an earlier one only if the last does not verify.
     // 先看最后一个回执（最外层旁路的）；它核验不过时才看更早的。
     async function verify(receipts, atEnd) {
@@ -1102,7 +1220,9 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
       for (let i = receipts.length - 1; i >= 0; i--) {
         let envelope = null
         try { envelope = decodeReceiptHeader(receipts[i]) } catch { continue }
-        const r = await check(s, { ...common, envelope, responseSha256: scanner.digest(), stream: true, answer: st.result() })
+        // The hash where the stream first ended (FIXED SSE-END); the whole stream's only when it never ended (upstream closed).
+        // 流第一次结束处的哈希；只有流从未结束（上游关闭）时才用整条流的。
+        const r = await check(s, { ...common, envelope, responseSha256: scanner.info.digestAtEnd ?? scanner.digest(), stream: true, answer: st.result() })
         if (r.ok || !rep) rep = r
         if (r.ok) break
       }
@@ -1112,16 +1232,18 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
       return verdict
     }
     const stop = () => { reader.cancel().catch(() => {}) }
+    const fail = (controller, rep) => { settled = true; stop(); controller.error(failure(rep)) }
     const body = new ReadableStream({
       // One pull reads until it has something to hand on: a pull that enqueues nothing is not called again.
       // 一次 pull 读到有东西可转交为止：什么都没放入的 pull 不会再被调用。
       async pull(controller) { for (;;) {
         let got
         try { got = await reader.read() } catch (e) {
-          // After the end the answer is whole: the upstream breaking off then is not a failure (strict: once verified).
-          // 结束之后回答已完整：此时上游断开不算失败（strict：须已核验通过）。
-          if (ended() && (!strict || verdict?.ok)) {
+          // After the end the answer is whole: the upstream breaking off then is not a failure (strict never reads past it).
+          // 结束之后回答已完整：此时上游断开不算失败（strict 不会读到结束之后）。
+          if (ended() && !strict) {
             if (!settled) await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
+            if (unfinished()) flag(UNFINISHED_EVENT)
             return controller.close()
           }
           if (!settled) { settled = true; report({ ok: false, incomplete: true, problems: [], warnings: ['the upstream broke off before the stream ended; its receipt was not checked'], unchecked: ['request', 'response'], receipt: null, ...base }) }
@@ -1133,31 +1255,38 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
             const rep = await verify(scanner.info.receipts, false)
             if (!rep.ok && strict) return controller.error(failure(rep))
           }
+          // An event left without its blank line: discarded by the receipt rule, dispatched by some clients (FIXED SSE-EOF).
+          // 缺少空行的未结束事件：回执规则丢弃它，一些客户端却分派它。
+          if (unfinished()) { const rep = flag(UNFINISHED_EVENT); if (strict) return controller.error(failure(rep)) }
           return controller.close()
         }
         const chunk = got.value
-        const events = scanner.info.events, wasEnded = ended()
+        const wasEnded = ended()
         scanner.push(chunk)
         if (!strict) {
           controller.enqueue(chunk)
+          if (scanner.info.ambiguous) flag(AMBIGUOUS_LINE)
           // Just ended, with receipts before the end: check now (the SDK may stop reading here). / 刚结束且之前有回执：立即核验。
           if (!wasEnded && ended() && scanner.info.receiptsAtEnd > 0) await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
+          // Passed on, but said, once: an event after the end (in this chunk or a later one). / 已转交，但要报告一次：结束之后的事件。
+          if (late()) flag(LATE_EVENT)
           return
         }
-        if (wasEnded) {
-          if (scanner.info.events > events) {
-            const rep = { ok: false, problems: ['an event after the end of the stream is not covered by its receipt'], warnings: [], unchecked: [], receipt: verdict?.receipt ?? null, ...base }
-            report(rep); stop()
-            return controller.error(failure(rep))
-          }
+        if (!ended()) {
+          // A line read differently by different clients: this chunk does not go on (FIXED SSE-BOM). / 各客户端理解不一致的行：这一块不转交。
+          if (scanner.info.ambiguous) return fail(controller, flag(AMBIGUOUS_LINE))
           return controller.enqueue(chunk)
         }
-        if (!ended()) return controller.enqueue(chunk)
-        // This chunk ends the stream: it goes on only once a receipt that came before the end verifies.
-        // 流在这一块中结束：只有结束之前到达的回执核验通过，它才放出。
+        // This chunk ends the stream: once a receipt that came before the end verifies, it goes on up to the end and the
+        // stream closes (FIXED SSE-END). / 流在这一块中结束：结束之前到达的回执核验通过后，只放出到结束点为止，随即关闭流。
+        if (scanner.info.ambiguousAtEnd) return fail(controller, flag(AMBIGUOUS_LINE))
         const rep = await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
         if (!rep.ok) { stop(); return controller.error(failure(rep)) }
-        return controller.enqueue(chunk)
+        // A blank line that is a CR at the end of the chunk ends the stream there: the LF that may follow is not waited for
+        // (the upstream may send nothing more), and every client dispatches the event without it.
+        // 块末的 CR 作为空行时流就在那里结束：不等可能随后的 LF（上游可能不再发送任何字节），没有它各客户端也会分派该事件。
+        controller.enqueue(chunk.subarray(0, scanner.info.endOffset))
+        controller.close(); return stop()
       } },
       // The consumer stopped reading (break, abort): nothing to verify, which is not a receipt problem.
       // 消费方停止读取（break、abort）：没有可核验的内容，这不是回执问题。

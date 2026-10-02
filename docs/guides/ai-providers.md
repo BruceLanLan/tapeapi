@@ -23,7 +23,7 @@ The checks of steps 1 to 7 are `tapeapi-doctor` (experimental), which ships in t
 Every `tapeapi-doctor` in the table stands for this, run from any directory, with nothing to clone:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-doctor <your name>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-doctor <your name>
 ```
 
 In a checkout, `node sdk/bin/tapeapi-doctor.js <your name>` at its root does the same. Either way the report writes
@@ -76,7 +76,9 @@ guarantee or an audit; your service works the same without one.
 - **A signed usage receipt for every call** ([TAPI-21 §3.5](../../spec/TAPI-21.md)): the model, the token counts, the
   amount per currency, whether the answer completed, and the hashes of the exact request and response bytes, signed by
   the key your circuit's holder delegated. Receipts ride along with the answer (a response header, or an SSE comment the
-  official SDKs ignore), so nothing breaks for clients that do not read them.
+  official SDKs ignore), so nothing breaks for clients that do not read them. The one exception: a stream with a line
+  that starts with U+FEFF before the point where the sidecar signs gets no receipt, since clients read such a line
+  differently and no receipt could say what they were shown.
 - **No custody.** TapeAPI holds no keys, no funds and no traffic of yours. The sidecar runs on your own machine; the
   identity and the price list live on chain, readable without any server of ours.
 - **No change for your users.** OpenAI Chat Completions, OpenAI Responses, Anthropic Messages and OpenAI Embeddings pass
@@ -215,7 +217,13 @@ loosely (`/v1//chat/completions`, `/v1/chat/%63ompletions`, a trailing `/`), whi
 stream ends at its final event, at `[DONE]` or when the connection closes, whichever comes first; with the default
 `strict: true` the part in which it ends is passed on only once a receipt that came before it verifies, so a stream
 that fails makes the SDK's iterator throw `RECEIPT_INVALID`. With `strict: false` nothing is held back, and the
-verdict goes to `onReport`. A whole (not streamed) answer whose receipt fails comes back, in strict mode, as an HTTP
+verdict goes to `onReport`. The receipt is checked against the stream as it stood at its end, however the network cut
+the bytes into chunks. In strict mode the stream is passed on up to its end and closed there, so nothing after the end
+reaches the application; a stream that the connection closes on in the middle of an event, or that has a line starting
+with U+FEFF (the SDKs and the receipt rule read both differently), fails with `RECEIPT_INVALID`. With `strict: false`
+these are only reported, as is an event after the end (`tapeapi-verify` below does the same).
+`verifyUsageReceipt({ responseBytes })` over a whole stream you hold hashes every event in it (TAPI-21 §3.5), so for a
+stream with events after its end it can disagree with the streaming check. A whole (not streamed) answer whose receipt fails comes back, in strict mode, as an HTTP
 502 in the API's error shape with code `RECEIPT_INVALID` and the headers `x-should-retry: false` and
 `x-tapeapi-verify-error: RECEIPT_INVALID`: the official SDKs throw an `APIError` and do not retry it; code that calls
 the fetch itself checks `res.ok`. Whether a paid call is retried after other 5xx errors is up to you (the SDKs'
@@ -226,7 +234,7 @@ and point the client at it. `tapeapi-verify` keeps running in the foreground, so
 
 ```sh
 # Terminal 1. 42.1013.tape is an example name: put your service's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh

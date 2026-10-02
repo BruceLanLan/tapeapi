@@ -6,7 +6,7 @@
 // --key-env names the operator's own. Its own command, not a mode of tapeapi-verify, whose exit 0 means "stopped".
 // tapeapi-doctor（实验性）：服务方对自己 AI 服务的逐项检查，失败时用中英双语给出缺什么、去哪改、下一条命令；退出码供 CI 使用。只读。
 //
-//   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.4.0/tapeapi-sdk-1.4.0.tgz tapeapi-doctor 42.1013.tape
+//   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-doctor 42.1013.tape
 //   node sdk/bin/tapeapi-doctor.js --offline http://127.0.0.1:8080      (from a checkout / 从检出运行)
 import { readFileSync, realpathSync, existsSync } from 'node:fs'
 import { dirname, join, relative, isAbsolute } from 'node:path'
