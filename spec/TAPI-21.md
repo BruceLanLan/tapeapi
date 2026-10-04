@@ -181,6 +181,8 @@ A first line matches with or without the space after the colon.
 
 **Usage injection.** An OpenAI Chat stream reports usage only when the request sets `stream_options.include_usage` to `true`. When a streamed `openai-chat` request does not, the sidecar MAY send the upstream a copy of the request body with that member set. It then MUST remove from the client's copy every data event the change caused (an event whose data is a JSON object with a `usage` object and an empty `choices` array), MUST take the usage from it, and MUST set `usageInjected`. `requestSha256` stays the hash of the bytes the client sent, and the response hash covers what the client received, which is exactly what it asked for. A sidecar MUST NOT change the request body it sends upstream in any other way.
 
+A client that wants the usage of such a stream compared can ask for it itself, by setting `stream_options.include_usage` to `true` in its request; the reference clients do so when configured (`requestUsage`, `--request-usage`). The sidecar then finds the request already asking: it changes nothing, removes nothing and sets no `usageInjected`, so the usage chunk is part of the data events the response hash covers and of what the client receives, and the client's check 4 below compares it. This describes the consequence of the rules above and adds none.
+
 **Delivery.**
 
 - A whole answer carries the receipt in the response header `x-tapeapi-receipt`: the base64url (RFC 4648 §5, without padding) of the envelope's JSON text. The sidecar MUST drop any `x-tapeapi-receipt` header of the upstream, and SHOULD list the header in `Access-Control-Expose-Headers` so that browsers can read it.
@@ -424,6 +426,8 @@ sig = 对 32 字节 digest 的 secp256k1 EIP-191 personal_sign，即
   按顺序取每个已分派事件的 data，作为 UTF-8 字节；去掉 data 恰为该格式结束标记的事件；把其余每个 data 各接一个 `"\n"` 字节后拼接，取哈希。事件名、`id` 与 `retry` 字段以及注释都不计入哈希。最终事件与其它事件一样计入哈希，尽管线路上回执注释在它之前。
 
 **用量注入。** OpenAI Chat 的流只有在请求把 `stream_options.include_usage` 设为 `true` 时才报告用量。流式的 `openai-chat` 请求没有这样设时，旁路 MAY 向上游发送把该成员设好的请求体副本。此时它 MUST 从客户端的副本中去掉这一改动引起的每个 data 事件（data 是带 `usage` 对象且 `choices` 为空数组的 JSON 对象的事件），MUST 从中取得用量，并 MUST 设置 `usageInjected`。`requestSha256` 仍是客户端发出的字节的哈希，回应哈希覆盖的是客户端收到的内容，恰好是它所要的。旁路 MUST NOT 以任何其它方式改动发往上游的请求体。
+
+希望这类流的用量能被比对的客户端，可以自己要用量：在请求里把 `stream_options.include_usage` 设为 `true`；参考客户端在配置后会这样做（`requestUsage`、`--request-usage`）。旁路此时发现请求已经要了：它什么都不改、什么都不去掉，也不设 `usageInjected`，所以用量块属于回应哈希所覆盖的 data 事件，也属于客户端收到的内容，客户端下面的第 4 项检查会比对它。这段话描述上述规则的结果，不增加任何规则。
 
 **送达。**
 

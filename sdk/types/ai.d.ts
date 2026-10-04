@@ -66,6 +66,12 @@ export interface AIFormat {
   /** May change the body sent upstream (e.g. to ask for usage); `strip` removes the events that caused (isInjectedEvent). */
   prepareUpstream?(body: unknown): { body: unknown; strip: boolean } | null
   isInjectedEvent?(json: unknown): boolean
+  /**
+   * @since 1.6 The member prepareUpstream sets, as [object, member] set to true (openai-chat: ['stream_options',
+   * 'include_usage']), so it can be set in the request's bytes instead of re-serialising them. A format with
+   * prepareUpstream and without it is never rewritten by requestUsage (reason 'no-member').
+   */
+  usageMember?: readonly [string, string]
   /** A whole answer's id, model and usage; `complete: false` marks an answer the format itself says is unfinished. */
   response(json: unknown): { id: string | null; model: string | null; usage: RawUsage | null; complete?: boolean }
   /** Folds a stream's JSON events; `complete`: the format's final success event was seen (and no error event). */
@@ -201,6 +207,19 @@ export declare function verifyUsageReceipt(o: {
   formats?: readonly AIFormat[]
 }): VerifyReport
 
+/**
+ * Why a request the sidecar would change to obtain the usage was left alone by requestUsage (1.6), in the order checked:
+ * a compressed body, a Content-Type that is not JSON, not UTF-8, not a JSON object (a byte order mark, an array), a format
+ * without usageMember, a key twice (or the member's name in another case) at the top level or in the member's object,
+ * the self-check failed.
+ */
+export type UsageRequestSkip = 'content-encoding' | 'content-type' | 'not-utf8' | 'not-object' | 'no-member' | 'duplicate-member' | 'self-check'
+/**
+ * The request with the format's usage member set in its bytes (one splice, every other byte kept), when the sidecar would
+ * change it to obtain the usage; null when it would not; { skipped } when it cannot be done that way. @internal
+ */
+export declare function requestUsageBody(bytes: Uint8Array | ArrayBuffer | string, o: { format: AIFormat; headers?: Headers | Record<string, string> }): { bytes: Uint8Array } | { skipped: UsageRequestSkip } | null
+
 /** The clients' session headers among the forwarded ones: x-claude-code-session-id, session-id, thread-id. @internal */
 export declare const SESSION_HEADERS: readonly string[]
 /** @internal Used by the reference sidecar or the website; not part of the API. */
@@ -227,9 +246,21 @@ export declare function createVerifyingFetch(o: {
   api?: { resolve(target: any): Promise<any>; refresh?(svc: any): Promise<any> }
   fetch?: FetchLike
   /** sidecarError: an answer the sidecar made itself (code PROVIDER_UNAVAILABLE, or RATE_LIMITED for 429), never verified. */
-  onReport?: (report: VerifyReport & { url: string; stream: boolean; status: number; salted: boolean; incomplete?: boolean; sidecarError?: true; code?: 'PROVIDER_UNAVAILABLE' | 'RATE_LIMITED'; mismatch?: true; expected?: string }) => void
+  /**
+   * usageRequested (@since 1.6, only with requestUsage): this fetch set the usage member in the request; usageRequestSkipped:
+   * it could not (not strict), and the sidecar asks for the usage itself.
+   */
+  onReport?: (report: VerifyReport & { url: string; stream: boolean; status: number; salted: boolean; incomplete?: boolean; sidecarError?: true; code?: 'PROVIDER_UNAVAILABLE' | 'RATE_LIMITED'; mismatch?: true; expected?: string; usageRequested?: boolean; usageRequestSkipped?: UsageRequestSkip }) => void
   /** Append 64 random JSON whitespace characters to a JSON request body on a receipt path (the request hash becomes unguessable); default true. */
   salt?: boolean
+  /**
+   * @since 1.6 Only true turns it on; default false. A request the sidecar would change to obtain the usage (a stream
+   * OpenAI Chat request without stream_options.include_usage) is sent with that member set in its bytes, before the salt:
+   * the usage chunk then reaches the application (one more chunk, `choices: []`) and the receipt's usage is compared
+   * with it. A body that cannot be changed that way: strict throws INVALID_ARGUMENT before sending (data.reason), not
+   * strict sends it as it is and reports usageRequestSkipped. It does not prove the upstream's own count.
+   */
+  requestUsage?: boolean
   /** On a problem: an HTTP 502 RECEIPT_INVALID for a whole answer, an error for a stream, a throw before sending for an endpoint mismatch; default true. */
   strict?: boolean
   /** Default 300. */

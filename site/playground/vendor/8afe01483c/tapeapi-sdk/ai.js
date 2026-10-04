@@ -435,6 +435,7 @@ export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = E
 const LATE_EVENT = 'an event after the end of the stream is not covered by its receipt'
 const UNFINISHED_EVENT = 'an unfinished event at the close of the stream (no blank line after it) is not covered by its receipt, and some clients dispatch it'
 const AMBIGUOUS_LINE = 'a line that starts with U+FEFF (a byte order mark) is read differently by different clients: the stream cannot be verified'
+const NO_USAGE_ASKED = 'the request asked for the usage (requestUsage), but the stream carries none: the upstream did not send it, or something on the way took it out'
 const WHOLE_AS_STREAM = 'the receipt says the answer was a stream, but the response is one whole JSON value, not an event stream: read as a stream it reports no usage, so the receipt cannot be checked against it (pass `stream` from the response\'s content type)'
 /**
  * Are these bytes one whole JSON object or array (whitespace around it allowed)? Such bytes hold no event-stream event (no
@@ -966,6 +967,168 @@ export function saltRequestBody(bytes, headers) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Asking for the usage in the request's bytes / 在请求字节里要用量
+// ---------------------------------------------------------------------------------------------------------------
+// A minimal reader of a JSON text the caller has already parsed with JSON.parse: it finds the members of one object
+// (their keys decoded, the byte ranges of their values) and nothing else. Byte-level, since every structural character is
+// ASCII and every byte of a multi-byte UTF-8 character is >= 0x80; iterative, so depth costs no stack. Out of range
+// throws, which the caller treats as a refusal. / 一个最小的 JSON 读取器，输入已经过 JSON.parse：只找出一个对象的成员（解码后的键、
+// 值的字节区间）。按字节读（结构字符都是 ASCII，多字节 UTF-8 的每个字节都 >= 0x80）；迭代实现，深度不占栈。越界即抛出，调用方按拒绝处理。
+const QUOTE = 0x22, BSL = 0x5c, COMMA = 0x2c, COLON_B = 0x3a, LBRACE = 0x7b, RBRACE = 0x7d, LBRACK = 0x5b, RBRACK = 0x5d
+const at = (b, i) => { if (i >= b.length) throw new RangeError('past the end of the JSON text'); return b[i] }
+const skipWs = (b, i) => { while (i < b.length && isWs(b[i])) i++; return i }
+function skipString(b, i) {   // b[i] is '"'; returns the offset after the closing '"' / 返回结束引号之后的偏移
+  i++
+  for (;;) { const c = at(b, i); if (c === BSL) i += 2; else if (c === QUOTE) return i + 1; else i++ }
+}
+function skipValue(b, i) {    // returns the offset after the value / 返回值之后的偏移
+  const c = at(b, i)
+  if (c === QUOTE) return skipString(b, i)
+  if (c !== LBRACE && c !== LBRACK) { while (i < b.length && !isWs(b[i]) && b[i] !== COMMA && b[i] !== RBRACE && b[i] !== RBRACK) i++; return i }
+  let depth = 0
+  for (;;) {
+    const x = at(b, i)
+    if (x === QUOTE) { i = skipString(b, i); continue }
+    if (x === LBRACE || x === LBRACK) depth++
+    else if (x === RBRACE || x === RBRACK) { if (--depth === 0) return i + 1 }
+    i++
+  }
+}
+const utf8 = (b) => new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(b)
+// The members of the object whose '{' is at b[i]: [{ key, vs, ve }] (the value's bytes are b[vs..ve)) and the offset of
+// its '}'. / b[i] 处 '{' 开始的对象的成员（值的字节为 b[vs..ve)）及其 '}' 的偏移。
+function membersOf(b, i) {
+  const members = []
+  i = skipWs(b, i + 1)
+  if (at(b, i) === RBRACE) return { members, close: i }
+  for (;;) {
+    const ks = i, ke = skipString(b, i)
+    i = skipWs(b, ke)
+    if (at(b, i) !== COLON_B) throw new RangeError('no colon after a key')
+    const vs = skipWs(b, i + 1), ve = skipValue(b, vs)
+    members.push({ key: JSON.parse(utf8(b.subarray(ks, ke))), vs, ve })
+    i = skipWs(b, ve)
+    const c = at(b, i)
+    if (c === COMMA) { i = skipWs(b, i + 1); continue }
+    if (c !== RBRACE) throw new RangeError('no comma or brace after a value')
+    return { members, close: i }
+  }
+}
+const twice = (members) => new Set(members.map((m) => m.key)).size !== members.length
+// A key that is the member's name in another case (after its escapes are decoded): parsers that match keys without
+// regard to case, the last one winning (Go's encoding/json, in gateways such as new-api and one-api), read it as the
+// member, so `{"include_usage":true,"INCLUDE_USAGE":false}` would mean false upstream (Fable review F1). Folded through
+// upper then lower case, so the Unicode letters Go folds onto ASCII ones (U+017F long s, U+212A Kelvin sign) count too.
+// 与成员名只差大小写的键（解码转义之后）：不区分大小写、后者覆盖的解析器（Go 的 encoding/json，new-api、one-api 等网关）把它读作
+// 该成员。先转大写再转小写，Go 折叠到 ASCII 字母的 Unicode 字母（U+017F 长 s、U+212A 开尔文符号）也算在内。
+const fold = (k) => k.toUpperCase().toLowerCase()
+const caseTwin = (members, name) => members.some((m) => m.key !== name && fold(m.key) === fold(name))
+function splice(b, from, to, text) {
+  const t = enc.encode(text), out = new Uint8Array(b.length - (to - from) + t.length)
+  out.set(b.subarray(0, from)); out.set(t, from); out.set(b.subarray(to), from + t.length)
+  return out
+}
+// Set b's top-level member `top`, an object, to have `inner: true`, touching one place: a new member is appended after
+// the last member's value (a new `top` holding only `inner`; `inner` added to an existing object), a value that is not an
+// object is replaced by `{"inner":true}`, an existing `inner` has its value replaced by `true`. Every other byte stays.
+// This is the key order of `{ ...body, [top]: { ...(isObj(so) ? so : {}), [inner]: true } }`, so the parsed result can be
+// compared with prepareUpstream's exactly. A key that appears twice in the top-level object, or in `top`'s object, is a
+// refusal ('duplicate-member'): parsers disagree on which one counts (the rule reads those members); so is a key that
+// is `top` at the top level, or `inner` in its object, in another case (caseTwin above). A duplicate deeper down is never
+// touched and stays as it was. / 让 b 的顶层成员 top（对象）带上 inner: true，只动一处：新成员追加在最后一个成员
+// 的值之后，不是对象的值整体替换为 {"inner":true}，已有的 inner 只替换其值。其余字节不变。键序与 prepareUpstream 的结果相同，
+// 可以逐字比较。顶层或 top 对象里出现两次的键：拒绝（解析器对哪个算数看法不一，而规则读的正是这些成员）；更深处的重复键不被触碰，原样保留。
+function setUsageMember(b, [top, inner]) {
+  const root = membersOf(b, skipWs(b, 0))
+  if (twice(root.members) || caseTwin(root.members, top)) return 'duplicate-member'
+  const it = J(inner) + ':true'
+  const so = root.members.find((m) => m.key === top)
+  if (!so) {
+    const last = root.members[root.members.length - 1]
+    return last ? splice(b, last.ve, last.ve, `,${J(top)}:{${it}}`) : splice(b, root.close, root.close, `${J(top)}:{${it}}`)
+  }
+  if (b[so.vs] !== LBRACE) return splice(b, so.vs, so.ve, `{${it}}`)
+  const obj = membersOf(b, so.vs)
+  if (twice(obj.members) || caseTwin(obj.members, inner)) return 'duplicate-member'
+  const u = obj.members.find((m) => m.key === inner)
+  if (u) return splice(b, u.vs, u.ve, 'true')
+  const last = obj.members[obj.members.length - 1]
+  return last ? splice(b, last.ve, last.ve, `,${it}`) : splice(b, so.vs + 1, so.vs + 1, it)
+}
+const J = (v) => JSON.stringify(v)
+const JSON_TYPE = /(^|[/+])json\b/i
+/**
+ * Why requestUsageBody left a request alone although the sidecar would change it (TAPI-21 §3.5, usage injection), in
+ * the order the gates are checked. / requestUsageBody 没有改写一个旁路本会改动的请求的原因（按检查顺序）。
+ *   content-encoding  a Content-Encoding other than identity: the bytes are not JSON text
+ *   content-type      a Content-Type that is not JSON (the sidecar does not look at it, so it still injects)
+ *   not-utf8          not UTF-8
+ *   not-object        the first byte after whitespace is not '{' (a byte order mark, an array)
+ *   no-member         the format has prepareUpstream but no usageMember (a custom adapter)
+ *   duplicate-member  a key appears twice at the top level, or in the object the member goes in; or a key there is the
+ *                     member's name in another case (case-insensitive parsers would read it as the member)
+ *   self-check        the bytes with the member set do not parse to exactly prepareUpstream's body, or the sidecar would
+ *                     still change them
+ */
+export const USAGE_REQUEST_SKIPS = Object.freeze(['content-encoding', 'content-type', 'not-utf8', 'not-object', 'no-member', 'duplicate-member', 'self-check'])
+const SKIP_WHY = {
+  'content-encoding': 'the body is compressed (a Content-Encoding other than identity), so its bytes are not JSON text',
+  'content-type': 'its Content-Type is not JSON',
+  'not-utf8': 'the body is not UTF-8',
+  'not-object': 'the body does not start with a JSON object (a byte order mark, an array, ...)',
+  'no-member': 'the format changes the request but names no usageMember, so the member to set is not known',
+  'duplicate-member': 'a key appears twice at the top level of the body, or in the object the member goes in, or a key there is the member\'s name in another case, and parsers disagree on which counts',
+  'self-check': 'setting the member in the bytes did not give exactly the body the sidecar would send',
+}
+/**
+ * The request with its format's usage member set in its bytes, when the sidecar would otherwise change it to obtain the
+ * usage (TAPI-21 §3.5, usage injection: today, a stream OpenAI Chat request that did not set
+ * stream_options.include_usage). The sidecar's own rule decides whether it applies (the format's prepareUpstream gives a
+ * change for the body as the sidecar parses it); null when it does not (nothing to do, nothing to report).
+ * The change is one splice in the bytes (setUsageMember above): no re-serialising, so every other byte, number, escape
+ * and the trailing whitespace stay as they were. It is checked before it is used: the new bytes must parse to exactly
+ * what prepareUpstream gives (JSON.stringify of both equal, key order included) and prepareUpstream must give nothing for
+ * them (the sidecar then sends them on unchanged). Otherwise, and for the gates in USAGE_REQUEST_SKIPS, the result is
+ * { skipped: reason } and the bytes are not touched. Used by createVerifyingFetch({ requestUsage }) and
+ * tapeapi-verify --request-usage before the salt, and by the reference sidecar in place of JSON.stringify (falling back
+ * to it when skipped).
+ * 旁路本会为了拿到用量而改动请求时（目前：没设 stream_options.include_usage 的流式 OpenAI Chat 请求），返回在字节里设好格式的用量
+ * 成员的请求。是否适用由旁路自己的规则决定；不适用时为 null（无事可做，也不报告）。改动是字节里的一次拼接，不重新序列化：其余字节、
+ * 数字、转义与尾随空白原样保留。使用前先自检：新字节解析后必须与 prepareUpstream 的结果完全相同（两者的 JSON.stringify 相等，含键序），
+ * 且 prepareUpstream 对新字节不再给出改动。否则，以及 USAGE_REQUEST_SKIPS 的各项门槛，结果为 { skipped: 原因 }，字节不动。
+ * @param {Uint8Array|ArrayBuffer|string} bytes  the request body / 请求正文
+ * @param {{ format: object, headers?: Headers|Record<string, string> }} o
+ * @returns {{ bytes: Uint8Array } | { skipped: string } | null}
+ */
+export function requestUsageBody(bytes, { format, headers } = {}) {
+  const b = toBytes(bytes)
+  if (!b || !b.length || typeof format?.prepareUpstream !== 'function') return null
+  let prepared = null
+  try { prepared = format.prepareUpstream(jsonOf(b)) } catch { prepared = null }
+  if (!prepared) return null
+  const skip = (reason) => ({ skipped: reason })
+  const h = headers instanceof Headers ? headers : new Headers(headers || {})
+  const coding = (h.get('content-encoding') || '').trim().toLowerCase()
+  if (coding && coding !== 'identity') return skip('content-encoding')
+  const type = h.get('content-type')
+  if (type && !JSON_TYPE.test(type)) return skip('content-type')
+  try { utf8(b) } catch { return skip('not-utf8') }
+  if (b[skipWs(b, 0)] !== LBRACE) return skip('not-object')
+  const member = format.usageMember
+  if (!Array.isArray(member) || member.length !== 2 || !member.every((k) => typeof k === 'string')) return skip('no-member')
+  let out
+  try { out = setUsageMember(b, member) } catch { return skip('self-check') }
+  if (out === 'duplicate-member') return skip('duplicate-member')
+  try {
+    const after = JSON.parse(utf8(out))
+    if (J(after) !== J(prepared.body) || format.prepareUpstream(after)) return skip('self-check')
+  } catch { return skip('self-check') }
+  return { bytes: out }
+}
+/** The words for a USAGE_REQUEST_SKIPS reason. / 跳过原因的说明。 */
+export const usageRequestSkipWhy = (reason) => SKIP_WHY[reason] ?? String(reason)
+
+// ---------------------------------------------------------------------------------------------------------------
 // A verifying fetch for official SDKs / 给官方 SDK 用的核验 fetch
 // ---------------------------------------------------------------------------------------------------------------
 // In place of a whole answer whose receipt fails (strict, review RC-5): an HTTP 502 in the request format's error shape,
@@ -1027,9 +1190,24 @@ async function bodyBytes(url, init) {
  * @param {number} [o.maxSkewS=300]  the receipt's ts must be this close to now / 回执时间与当前时间的最大偏差
  * @param {object[]} [o.formats]  the adapters (default FORMATS); each that streams must name its final event (stream.final):
  *        strict refuses one without it with INVALID_ARGUMENT, otherwise it is reported once / 适配器；会流式的必须有 stream.final
+ * @param {boolean} [o.requestUsage=false]  (1.6) only true turns it on. A request the sidecar would change to obtain the
+ *        usage (TAPI-21 §3.5, usage injection; today a stream OpenAI Chat request without stream_options.include_usage)
+ *        is sent with that member set to true in its bytes (requestUsageBody: one splice, checked against the sidecar's
+ *        own change), before the salt. The sidecar then injects and strips nothing, the usage chunk is part of the signed
+ *        stream the application receives (it sees one more chunk, `choices: []`, as when it sets include_usage itself),
+ *        and the receipt's usage is compared with it like a whole answer's. A body that cannot be changed that way
+ *        (USAGE_REQUEST_SKIPS): strict throws INVALID_ARGUMENT before sending; otherwise it is sent as it is and the
+ *        report says usageRequestSkipped. Reports then carry usageRequested (true when this fetch set the member).
+ *        It does not prove the upstream's own count: the signer also produces the stream.
+ *        只有 true 开启。旁路本会为拿到用量而改动的请求（目前：没设 stream_options.include_usage 的流式 OpenAI Chat 请求），在加盐之前
+ *        于字节里把该成员设为 true 再发出。旁路随之不注入、不剥离，用量块成为应用收到的、被签名的流的一部分（应用多看到一个
+ *        choices: [] 的块，与它自己设 include_usage 时相同），回执的用量像整体回答一样与之比对。不能这样改写的正文：strict 在发送前抛
+ *        INVALID_ARGUMENT；否则原样发出，报告写 usageRequestSkipped。报告随之带 usageRequested。它不证明上游自己的计数：签名方同时产出流。
  */
-export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport, strict = true, maxSkewS = 300, formats = FORMATS, salt = true } = {}) {
+export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport, strict = true, maxSkewS = 300, formats = FORMATS, salt = true, requestUsage = false } = {}) {
   const doFetch = fetchImpl || ((...a) => globalThis.fetch(...a))
+  // Only true turns it on (1.6; off by default, so 1.x sends and reports exactly what it did). / 只有 true 开启（默认关）。
+  const askUsage = requestUsage === true
   let svc = isObj(service) && isObj(service.manifest) ? service : null
   let resolving = null
   async function current() {
@@ -1138,6 +1316,21 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
     if (!(got instanceof Uint8Array) && got.contentType) {
       const h = new Headers(init.headers); if (!h.has('content-type')) h.set('content-type', got.contentType); sendInit.headers = h
     }
+    // requestUsage: the member is set in the bytes before the salt (which goes after the JSON text), and the request
+    // hash is checked over the bytes finally sent. `asked` is spread into every report, and only exists when it is on.
+    // requestUsage：在加盐之前于字节里设好成员（盐加在 JSON 文本之后），请求哈希按最终发出的字节核对。asked 只在开启时存在，并入每份报告。
+    let asked = null
+    if (askUsage) {
+      const h = new Headers(sendInit.headers)
+      const u = requestUsageBody(requestBytes, { format, headers: h })
+      asked = { usageRequested: !!u?.bytes }
+      if (u?.bytes) { requestBytes = u.bytes; h.delete('content-length'); sendInit.headers = h; sendInit.body = u.bytes }
+      else if (u?.skipped) {
+        const why = `requestUsage: the usage of this ${format.name} request cannot be asked for in its bytes (${u.skipped}: ${usageRequestSkipWhy(u.skipped)}), so the sidecar would ask for it itself and its usage could not be checked; send the body as a UTF-8 JSON object without such keys, or turn requestUsage or strict off`
+        if (strict) throw new TapeAPIError('INVALID_ARGUMENT', why, { data: { reason: u.skipped, format: format.name } })
+        asked.usageRequestSkipped = u.skipped
+      }
+    }
     // The salt goes on the bytes that are sent, and the request hash is checked over exactly those bytes.
     // 盐加在实际发出的字节上，请求哈希也按这些字节核对。
     let salted = false
@@ -1156,7 +1349,7 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
       if (res.headers.get(SIDECAR_ERROR_HEADER) === '1' && !res.headers.get(RECEIPT_HEADER)) {
         let why = ''
         try { why = String(JSON.parse(new TextDecoder().decode(bytes))?.error?.message ?? '').slice(0, 200) } catch { /* not JSON */ }
-        const rep = { ok: false, sidecarError: true, code: res.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_UNAVAILABLE', problems: [`the sidecar answered HTTP ${res.status} itself${why ? ` (${why})` : ''}: no upstream answer, no receipt`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: res.status, salted }
+        const rep = { ok: false, sidecarError: true, code: res.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_UNAVAILABLE', problems: [`the sidecar answered HTTP ${res.status} itself${why ? ` (${why})` : ''}: no upstream answer, no receipt`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: res.status, salted, ...asked }
         report(rep)
         if (strict) throw failure(rep)
         return new Response(bytes, { status: res.status, statusText: res.statusText, headers: res.headers })
@@ -1165,7 +1358,7 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
       try { envelope = decodeReceiptHeader(res.headers.get(RECEIPT_HEADER)) } catch (e) { headerError = e.message }
       const r = await check(s, { ...common, envelope, responseBytes: bytes, stream: false })
       if (headerError && !envelope) r.problems.splice(0, r.problems.length, headerError === 'no receipt' ? `no ${RECEIPT_HEADER} header` : headerError)
-      const rep = { ...r, url, stream: false, status: res.status, salted }
+      const rep = { ...r, url, stream: false, status: res.status, salted, ...asked }
       report(rep)
       if (!rep.ok && strict) return verifyErrorResponse(format, `usage receipt: ${rep.problems.join('; ')}`)
       return new Response(res.status === 204 || res.status === 205 || res.status === 304 ? null : bytes, { status: res.status, statusText: res.statusText, headers: res.headers })
@@ -1200,7 +1393,7 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
     // 且只由 scanner.push 调用，不会早于 scanner 初始化）：核对的回答就是在结束处停止读取的 SDK 读到的那个。
     const scanner = createSseScanner({ sentinel: format.stream.sentinel ?? null, final: format.stream.final ?? null, onEvent: (j, n) => { if (scanner.info.receiptsAtEnd === null) st.event(j, n) } })
     const reader = res.body.getReader()
-    const base = { url, stream: true, status: res.status, salted }
+    const base = { url, stream: true, status: res.status, salted, ...asked }
     let settled = false, verdict = null
     const ended = () => scanner.info.receiptsAtEnd !== null
     // Shapes no receipt covers, each reported once (FIXED SSE-END, SSE-EOF, SSE-BOM). / 不受任何回执覆盖的形态，各报告一次。
@@ -1227,6 +1420,9 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
         if (r.ok) break
       }
       if (!rep) rep = { ok: false, problems: [atEnd ? 'no tapeapi-receipt comment before the end of the event stream' : 'no tapeapi-receipt comment in the event stream'], warnings: [], unchecked: [], receipt: null }
+      // Asked for, and none came: the upstream ignored the member, or something on the way took the chunk out (then the
+      // receipt's usage, if any, is already a problem). / 要了却没有：上游没理会，或途中有人去掉了这一块。
+      if (asked?.usageRequested && usageOf(st.result().usage) === null) rep = { ...rep, warnings: [...rep.warnings, NO_USAGE_ASKED] }
       verdict = { ...rep, ...base }
       report(verdict)
       return verdict

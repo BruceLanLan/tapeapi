@@ -24,7 +24,7 @@ npm ci --no-audit --no-fund
 在任何目录都能运行，不需要克隆仓库：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-doctor <你的名字>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.6.0/tapeapi-sdk-1.6.0.tgz tapeapi-doctor <你的名字>
 ```
 
 在检出的根目录里，`node sdk/bin/tapeapi-doctor.js <你的名字>` 效果相同。两种方式下，报告给出的下一条命令都按你的运行方式书写。
@@ -196,7 +196,7 @@ const client = new OpenAI({ baseURL, apiKey: process.env.API_KEY, fetch })  // �
 
 ```sh
 # 终端 1。42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.6.0/tapeapi-sdk-1.6.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -233,6 +233,91 @@ $env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex
 - **尚未实测：** 按 JSON 语法，所有上游都必须接受尾随空白，测试也对参考旁路验证过；对 OpenAI Chat、OpenAI Responses、
   Anthropic Messages 线上接口的实测还没有做。
 
+## 流式 Chat 的用量：三条路
+
+OpenAI Chat 的流只有在请求把 `stream_options.include_usage` 设为 `true` 时才报告 token 用量：流的末尾会多一个块，`choices: []`，带着用量。
+官方 `openai` 包不会自己设它（写作时为 7.x），所以普通的 `chat.completions.create({ stream: true })` 根本拿不到用量。本节说的就是这种情形：
+流式调用 `/v1/chat/completions` 的 OpenAI Chat 客户端（`openai` 各语言 SDK 与说同一种 API 的工具）。Claude Code（Anthropic Messages）与
+Codex（OpenAI Responses）不受影响：它们的流不论要不要都带用量，回执的用量会与之比对。Embeddings 不流式。
+
+| | 谁向上游要用量 | 应用是否收到用量块 | 回执的用量是否与流比对 |
+|---|---|---|---|
+| 1. 默认 | 旁路自己 | 否：旁路把它去掉 | 否：列入 `unchecked` |
+| 2. 应用自己要 | 应用，在它的请求里 | 是，多一个块 | 是 |
+| 3. `requestUsage` / `--request-usage` | 核验方，在请求的字节里 | 是，多一个块 | 是 |
+
+### 1. 默认：旁路替你要，你比对不了
+
+流式请求没要用量时，旁路向上游发一份要用量的副本，从由此多出的那个块里读到用量，并把这个块从你的客户端收到的内容里去掉，所以你拿到的恰好是你要的回答。
+回执写 `usageInjected: true`，并给出旁路读到的用量。你的客户端从没见过那个块，没有东西可以拿来比对这个数：它的报告把用量列入 `unchecked`
+（"usage (usageInjected: the answer the client received lacks the usage chunk the sidecar read)"），核验页也会说用量没有比较。
+
+- **能保证的：** 签名方、模型、回答是否完成，以及请求与响应的哈希确实是你发出与收到的字节的哈希。价格按回执里的用量重算。
+- **不能保证的：** 用量这个数。它是旁路的一句陈述，你手里没有任何东西能反驳它：旁路可以签一个更高的数，其余所有检查照样通过。整体（非流式）
+  回答与其它 API 格式没有这个缺口。
+
+### 2. 自己要用量
+
+在请求里设 `stream_options: { include_usage: true }`（Python：`stream_options={"include_usage": True}`）。旁路看到请求已经要了，就不注入、
+不去掉、也不设 `usageInjected`。用量块是回执所哈希的流的一部分，也是应用收到的内容的一部分，核验的客户端因此会拿回执的用量与它比对。
+不花任何费用，也不需要我们的任何选项：
+
+```js
+const stream = await client.chat.completions.create({
+  model: 'your-model', stream: true,
+  stream_options: { include_usage: true },        // 最后一个块 choices: []，带着用量
+  messages: [{ role: 'user', content: 'Hello' }],
+})
+for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.content ?? '')
+```
+
+### 3. 让核验方替你要：`requestUsage`
+
+应用不想改，或者改不了（一个从不设 `stream_options` 的工具）时，由核验方替它设这个成员。`createVerifyingFetch({ requestUsage: true })`，或
+`tapeapi-verify --request-usage`（1.6.0 起），默认关；只有 `true` 才会开启这个选项。
+
+```js
+const fetch = ai.createVerifyingFetch({ api, service: svc, requestUsage: true })
+```
+
+```sh
+tapeapi-verify --request-usage 42.1013.tape        # 启动方式见“你的用户要做什么”
+```
+
+效果与第 2 条相同：旁路什么都不注入，用量块在应用收到的、被签名的流里。这个选项做什么、不做什么：
+
+- **只在旁路本来会改的地方改请求：** 没有把 `stream_options.include_usage` 设为 `true` 的流式 OpenAI Chat 请求。已经要了用量的请求、
+  不是流的请求、其它 API 格式，都原样发送。
+- **只改字节里的一处，其余字节一概保留。** 没有 `stream_options`：在最后一个成员之后加 `,"stream_options":{"include_usage":true}`。
+  有 `stream_options` 对象但没有 `include_usage`：在它里面加 `,"include_usage":true`。`include_usage` 是别的值（`false`、`null`、`"true"`……）：
+  把值替换成 `true`。`stream_options` 不是对象（`null`、数组、字符串）：整个值替换成 `{"include_usage":true}`。改写结果在发送前要对照旁路自己的规则
+  自检。然后加盐、发出；`requestSha256` 是最终发出的字节的哈希。
+- **改不安全时不改：** 压缩过的正文；Content-Type 不是 JSON；正文不是 UTF-8 或以字节序标记开头；自定义格式没有给出要设的成员；顶层或
+  `stream_options` 里有重复的键；改写结果没通过自检。在 `strict` 下（`createVerifyingFetch` 的默认），SDK 在发送任何东西之前抛
+  `INVALID_ARGUMENT`（`data.reason` 写明原因），`tapeapi-verify --strict` 回 HTTP 400（`usage_request_skipped`，带 `x-should-retry: false`）且不转发。
+  非 strict 时请求原样发出，报告写 `usageRequestSkipped: <原因>`，用量与第 1 条一样是 `unchecked`。
+- **报告。** 选项开启时每份报告带 `usageRequested`：这个 fetch 设了成员为 `true`，没设为 `false`（应用自己要了、不是 Chat 流，或改写被跳过）。
+  选项关闭时没有这个字段。`tapeapi-verify` 把同样的字段写进 `--log`，并在结论行打印 `usage=asked` 或 `usage-request-skipped=<原因>`。
+  要了用量而流里没有（上游没发，或途中有人去掉了），会有一条相应的警告。
+
+**应用会看到什么（第 2、3 条）。** `[DONE]` 之前多一个块，`choices: []`，带着用量；客户端什么都不剥。不先检查列表是否为空就读 `chunk.choices[0]`
+的代码会在这个块上出错（JavaScript SDK 里是 `TypeError`），改读 `chunk.choices[0]?.delta`。`openai` 包的 `.stream()` 助手照常工作，
+`finalChatCompletion().usage` 有值。不剥块的理由：这样应用手里的字节恰好就是回执所哈希的字节，存档的流还能离线核验（核验页、争议）。
+
+**第 2、3 条保证什么，不保证什么。** 回执里的用量就是应用收到的、被签名的流里的用量，与整体回答已有的标准相同。旁路在回执里写一个数、在流里发另一个数，
+核验会失败（`RECEIPT_INVALID`）；在两处都夸大用量的旁路，则是把它签进了一个你可以拿给别人看的回答：可归责，而不是不可能。两条路都不能说明上游
+真正数了多少：签回执的旁路同时也产出这个流。请照实告诉你的用户。
+
+**局限，以及第 3 条为什么默认关。**
+
+- JSON 正文配了非 JSON 的 Content-Type 时，客户端会跳过，但旁路不看 Content-Type，照样注入：这次调用的用量无法核验，strict 下会在本地被拒绝。
+- 不理会 `include_usage` 的上游不会发用量块：此时回执以用量 `null` 通过，报告会给出警告。
+- 如果你的上游不认 `stream_options`、所以你的旁路不替客户端要用量（参考旁路没有这个开关，只有传入自定义 `formats`、让其中 Chat 适配器没有
+  `prepareUpstream` 这一条路），客户端一旦开了第 2 或第 3 条，就会从你的上游收到 HTTP 400。明明请求已经要了用量、
+  却把用量块去掉的旁路，在 `strict` 下会通不过核验（按规则是对的，但损失了可用性）。
+- 盐现在也会到达这类请求的上游（重新序列化请求的旁路以前会把它丢掉）：它是 JSON 文本之后的空白，JSON 允许。
+- `strict` 下，官方 SDK 可能把 `INVALID_ARGUMENT` 当作连接错误包装起来，并按 `maxRetries` 重试（未实测；每次重试都不会发出任何请求）。
+
 ## 费用
 
 没有强制协议费，今天协议也不收任何费用：`ai` 字段里的价格只是公示、不结算，付费调用用的托管合约还没有部署（要先通过独立审计）。
@@ -242,6 +327,7 @@ $env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex
 ## 局限
 
 - 回执证明谁回答的、声称了什么，不证明运行的是哪个模型（见上）。
+- 流式 OpenAI Chat 回答的用量，只有请求要了用量（`stream_options.include_usage`，由应用或由 `requestUsage` 设置）才会被核验；默认情况下它只是旁路的一句陈述（见[上文](#流式-chat-的用量三条路)）。
 - 带回执的格式：OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、OpenAI Embeddings。`/v1` 下的其它路径原样透传、不带回执。
   暂不支持：Gemini 原生接口、WebSocket 模式（Realtime、Responses WebSocket）、Batch。
 - 回执在旁路内存里保留一小时（可配置）；随回答送达的那一份才是主要的。免费的 `receipt` 方法按 IP 单独限流。如果你的上游回答 id

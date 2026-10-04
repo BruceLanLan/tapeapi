@@ -12,4 +12,6 @@ export {
   // @internal: the reference sidecar and the website / 参考旁路与网站使用
   FORWARD_HEADERS, MODEL_ID_MAX, SESSION_HEADERS, apiPath, completeOf, createSseScanner, encodeReceipt, envelopeProblems,
   formatOfMethod, forwardsHeader, isAnswerId, isSessionHeader, modelEntryOf, priceProblems, pricingOf, receiptComment,
+  // @internal (1.6): the reference sidecar sets the usage member in the request's bytes / 参考旁路按字节设置用量成员
+  requestUsageBody,
 } from './ai.js'

@@ -1,7 +1,7 @@
 // Receipt checker: every string the script shows, in Chinese and English (the two must have the same keys:
 // scripts/verify-page.test.mjs). Plain text only: the page puts these in with textContent.
 // 回执核验页脚本显示的全部文字，中英两套键必须一致（由测试检查）。只是纯文本：页面用 textContent 放入。
-import { MAX_INPUT } from './lib.js?v=c35b3c3d0c'
+import { MAX_INPUT } from './lib.js?v=9a424b66b2'
 
 export const T = {
   zh: {
@@ -73,7 +73,7 @@ export const T = {
     'x.invalid.answer': '回执由这个服务的密钥签署，但按该 API 格式读你粘贴的回答，它的 id、模型、用量或完成状态与回执所说的不一致：',
     'c.answer': '回答内容', 'c.answer.pass': '与回执一致', 'c.answer.fail': '与回执不一致',
     'c.answer.how': '按该 API 格式读你粘贴的回答：id、模型、用量与完成状态都与回执一致',
-    'c.answer.partial': (req) => `按该 API 格式读你粘贴的回答：id、模型与完成状态与回执一致；用量没有比较，因为回执说旁路替客户端向上游要了用量、并从这份流里去掉了那一块（usageInjected）${req ? '' : '；粘贴请求体才能核对这一说法'}`,
+    'c.answer.partial': (req) => `按该 API 格式读你粘贴的回答：id、模型与完成状态与回执一致；用量没有比较，因为回执说旁路替客户端向上游要了用量、并从这份流里去掉了那一块（usageInjected）${req ? '' : '；粘贴请求体才能核对这一说法'}。客户端可以让核验方替它向上游要用量，那样这一块会留在流里、用量就能比较（见手册“接入 AI 服务”的“流式 Chat 的用量：三条路”）`,
     'c.answer.unknown': '本页不认识这种 API 格式，无法读取回答',
     'c.notPasted': '未粘贴，未核对',
     'd.path': '接口路径', 'd.model': '模型（上游报告）', 'd.tokens': 'token 数',
@@ -161,7 +161,7 @@ export const T = {
     'x.invalid.answer': 'The receipt is signed by this service\'s key, but the answer you pasted, read by its API format, has an id, model, usage or completeness other than the receipt says: ',
     'c.answer': 'Answer as read', 'c.answer.pass': 'matches the receipt', 'c.answer.fail': 'differs from the receipt',
     'c.answer.how': 'the answer you pasted, read by its API format: its id, model, usage and completeness are what the receipt says',
-    'c.answer.partial': (req) => `the answer you pasted, read by its API format: its id, model and completeness are what the receipt says; the usage is not compared, because the receipt says the sidecar asked the upstream for it on the client's behalf and took that chunk out of this stream (usageInjected)${req ? '' : '; paste the request body to check that claim'}`,
+    'c.answer.partial': (req) => `the answer you pasted, read by its API format: its id, model and completeness are what the receipt says; the usage is not compared, because the receipt says the sidecar asked the upstream for it on the client's behalf and took that chunk out of this stream (usageInjected)${req ? '' : '; paste the request body to check that claim'}. A client can have the verifying side ask for the usage on its behalf: the chunk then stays in the stream and the usage can be compared (see "The usage of a streamed Chat answer: three ways" in the AI providers guide)`,
     'c.answer.unknown': 'this page does not know this API format, so the answer is not read',
     'c.notPasted': 'not pasted; not checked',
     'd.path': 'API path', 'd.model': 'Model (as the upstream reported)', 'd.tokens': 'Tokens',

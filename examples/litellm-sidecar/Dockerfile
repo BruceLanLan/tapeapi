@@ -10,7 +10,7 @@
 #
 # Without compose / 不用 compose 时:
 #   docker build --build-context sdk=../../sdk --build-context server=../../server \
-#     --build-context newapi=../new-api-sidecar -t tapeapi-litellm-sidecar:1.5.0 .
+#     --build-context newapi=../new-api-sidecar -t tapeapi-litellm-sidecar:1.6.0 .
 FROM node:22-alpine
 WORKDIR /app
 RUN printf '{"private":true,"type":"module","workspaces":["sdk","server"]}\n' > package.json

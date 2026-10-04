@@ -20,7 +20,7 @@ TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上�
 
 > **1.5：让“已核验”真的等于“已核验”。** 1.0 给每次调用附一张签名回执；1.5 把核验本身收紧，并与 TapeOut 官方 TAP 标准对齐。**安全更新：**1.0.0 至 1.4.0 的流式 AI 回执核验，在特定分块下可能把被截断或被注入内容的流显示为“已核验”，请升级到 1.5.0（[更新说明](https://github.com/BruceLanLan/tapeapi/releases/tag/v1.5.0)）。
 
-> **状态：正式版（1.5.0）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAPI-22）是实验性的，没有部署。
+> **状态：正式版（1.6.0）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAPI-22）是实验性的，没有部署。
 > 所有代码和合约都没有经过第三方审计。
 
 ## 从这里开始
@@ -44,11 +44,11 @@ curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/
 curl 只显示签名信封，不做任何核对；核对交给 SDK。SDK 还没发到 npm，从 GitHub Release 安装（Node.js 20 或以上）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.6.0/tapeapi-sdk-1.6.0.tgz
 ```
 
 服务端包（`@tapeapi/server`：服务提供方、AI 旁路、MCP 代理）依赖这个 SDK，而 SDK 也不在 npm 上，所以单独安装服务端包会报 404：
-请用一条命令同时安装两者，`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-server-1.5.0.tgz`。
+请用一条命令同时安装两者，`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.6.0/tapeapi-sdk-1.6.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.6.0/tapeapi-server-1.6.0.tgz`。
 
 ```js
 // try.mjs：node try.mjs
@@ -86,7 +86,7 @@ console.log(r.choices[0].message.content)
 
 ```bash
 # 终端 1（会一直运行）。42.1013.tape 是示例名：换成 AI 服务方的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.6.0/tapeapi-sdk-1.6.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash

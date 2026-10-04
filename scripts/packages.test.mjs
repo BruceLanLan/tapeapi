@@ -5,7 +5,8 @@
 // 以及 `npm pack` 将发布的确切文件列表。不联网。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, statSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, dirname, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync } from 'node:child_process'
@@ -73,6 +74,53 @@ for (const [dir, pkg] of Object.entries(PKGS)) {
     // group format 2 took the SDK to about 1.06 MB). / 防止误打包的护栏（文件清单已在上面逐项检查），不是性能预算：tgz 约
     // 300 KB，浏览器只加载它引用的模块。1.2.1 由 1 MiB 提到 1.5 MiB（安全加固、诊断与群聊格式 2 使 SDK 约 1.06 MB）。
     assert.ok(info.unpackedSize < 1.5 * 1024 * 1024, `unpacked size ${info.unpackedSize} under 1.5 MiB`)
+  })
+
+  // 1.6 release integrity: the packed list IS the package.json `files` whitelist (plus package.json), no more and no
+  // less, and nothing that must never ship is in it, whatever the whitelist says. A new directory under src/ cannot
+  // slip into a tarball, and a file the whitelist promises cannot be left out.
+  // 1.6 发布完整性：打包清单恰好等于 package.json 的 `files` 白名单（加 package.json），不多不少；无论白名单怎么写，
+  // 不该出现的东西都不能出现。src/ 下新增的目录不会悄悄进入 tarball，白名单承诺的文件也不会漏掉。
+  test(`${pkg.name}: the packed list equals the files whitelist, with no test, fixture, env, key, tarball or staging file`, () => {
+    const out = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+      cwd: join(ROOT, dir), encoding: 'utf8', env: { ...process.env, npm_config_workspace: '', npm_config_workspaces: '' },
+    })
+    const packed = JSON.parse(out)[0].files.map((f) => f.path).sort()
+    const expected = new Set(['package.json'])
+    const walk = (rel) => {
+      const abs = join(ROOT, dir, rel)
+      if (!statSync(abs).isDirectory()) { expected.add(rel); return }
+      for (const n of readdirSync(abs)) if (n !== 'node_modules' && n !== '.DS_Store') walk(`${rel}/${n}`)
+    }
+    for (const entry of pkg.files) walk(entry)
+    assert.deepEqual(packed, [...expected].sort(), 'npm pack --dry-run lists exactly the files whitelist')
+    const NEVER = /(^|\/)(node_modules|tests?|fixtures?|\.git|\.github)(\/|$)|\.test\.m?js$|(^|\/)\.env|\.(tgz|key|pem|log|map)$|STAGING-REPORT|\.DS_Store/i
+    assert.deepEqual(packed.filter((f) => NEVER.test(f)), [], 'nothing that must never ship')
+  })
+
+  // Packing the same tree twice with the same toolchain gives the same bytes: npm stamps every entry with a fixed time
+  // (1985-10-26), sorts them, and zeroes owner and group. This catches a build step or a generated file that would
+  // make the tarball differ run to run. It does NOT claim the bytes match across Node/npm versions: the tar inside is
+  // identical, but the gzip layer is compressor-dependent (Node 22 / npm 10 vs Node 26 / npm 11 measured 2026-10-04:
+  // same tar, different .tgz), so the published SHA256SUMS is the checksum of record, not a rebuild. (Node 22.22.3 / npm 10.9.8
+  // rebuilt v1.5.0's sdk and server tarballs from a different checkout, byte for byte equal to the published assets.)
+  // 同一工具链下对同一棵树打包两次，字节相同：npm 给每个条目写固定时间（1985-10-26）、排序并清零属主。这能抓出让 tarball 每次不同的
+  // 构建步骤或生成文件。它不声称跨 Node/npm 版本字节一致：里面的 tar 相同，但 gzip 层取决于压缩器（Node 22 / npm 10 与
+  // Node 26 / npm 11 实测：tar 相同、.tgz 不同），所以发布的 SHA256SUMS 才是校验依据，而不是重新构建。
+  test(`${pkg.name}: two npm packs of the same tree are byte-identical (same toolchain)`, () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'tapeapi-pack-'))
+    try {
+      const pack = (n) => {
+        const to = join(tmp, String(n))
+        mkdirSync(to)
+        execFileSync('npm', ['pack', '--ignore-scripts', '--pack-destination', to], {
+          cwd: join(ROOT, dir), stdio: 'pipe', env: { ...process.env, npm_config_workspace: '', npm_config_workspaces: '' },
+        })
+        const [name] = readdirSync(to)
+        return readFileSync(join(to, name))
+      }
+      assert.ok(pack(1).equals(pack(2)), 'the two tarballs differ')
+    } finally { rmSync(tmp, { recursive: true, force: true }) }
   })
 }
 
@@ -187,4 +235,30 @@ test('FIXED RC-12: the server is installed from the release, after the SDK from 
     const t = readFileSync(join(ROOT, f), 'utf8')
     assert.doesNotMatch(t, /server package has no release file|服务端包也还没有\s*发布文件/, f)
   }
+})
+
+// Release integrity (1.6): a tag such as actions/checkout@v4 can be moved by whoever controls that repository, and
+// these workflows run with a write-capable token (directory-recheck commits to the public repository). So every
+// third-party action is pinned to a 40-hex commit SHA, with the tag it was read from in a comment, and every workflow
+// declares its permissions and none runs on pull_request_target. Bumping a pin is a reviewed change.
+// 发布完整性（1.6）：actions/checkout@v4 这样的标签可以被该仓库的控制者移动，而这些工作流带着可写的令牌运行（directory-recheck 会
+// 向公开仓库提交）。所以每个第三方 action 都钉在 40 位提交 SHA 上，注释里写明它来自哪个标签；每个工作流都声明权限，且没有
+// pull_request_target。升级钉住的版本是一次需要审阅的改动。
+test('workflows: every action is pinned to a commit SHA, permissions are declared, no pull_request_target', () => {
+  const dir = join(ROOT, '.github/workflows')
+  const names = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f))
+  assert.ok(names.length >= 3, 'the scan sees the workflows')
+  let pinned = 0
+  for (const name of names) {
+    const text = readFileSync(join(dir, name), 'utf8')
+    assert.match(text, /^permissions:\n  [a-z-]+: (read|write)\b/m, `${name}: top-level permissions are declared`)
+    assert.doesNotMatch(text, /pull_request_target/, `${name}: no pull_request_target`)
+    for (const m of text.matchAll(/^\s*(?:-\s+)?uses:\s*(\S+)(.*)$/gm)) {
+      if (m[1].startsWith('./')) continue
+      assert.match(m[1], /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(\/[A-Za-z0-9_./-]+)?@[0-9a-f]{40}$/, `${name}: ${m[1]} must be pinned to a commit SHA`)
+      assert.match(m[2], /^\s+# v\d+(\.\d+)*\s*$/, `${name}: ${m[1]} carries its tag in a comment`)
+      pinned++
+    }
+  }
+  assert.ok(pinned >= 10, `${pinned} pinned uses`)
 })

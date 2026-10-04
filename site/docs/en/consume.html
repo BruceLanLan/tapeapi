@@ -29,7 +29,7 @@
 <p>The packages are not on npm yet, so you work inside a clone of the repository (Node.js 20 or later):</p>
 <div class="code"><pre data-lang="bash"><code>git clone https://github.com/BruceLanLan/tapeapi.git &amp;&amp; cd tapeapi &amp;&amp; npm install</code></pre></div>
 <p>Or install just the SDK into your own project from the GitHub release (not the npm registry):</p>
-<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.6.0/tapeapi-sdk-1.6.0.tgz</code></pre></div>
 <p>Save the scripts below as <code>.mjs</code> files where <code>@tapeapi/sdk</code> resolves, and run them with <code>node &lt;file&gt;.mjs</code>: in a clone, <strong>inside the <code>tapeapi</code> directory</strong> (the package resolves through the repository's workspace); after installing the release package, in that project. Anywhere else a script fails with <code>ERR_MODULE_NOT_FOUND</code>.</p>
 <h3 id="call-the-live-public-service"><a class="anchor" href="#call-the-live-public-service" aria-hidden="true">#</a>Call the live public service</h3>
 <p>A free public service runs at <code>https://api.tapeapi.fun</code> under the TapeOut name <code>11.1013.tape</code>. With curl:</p>

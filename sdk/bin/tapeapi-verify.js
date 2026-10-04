@@ -26,6 +26,19 @@
 // they are; --no-salt turns it off. The receipt is checked against the bytes actually sent.
 // 加盐：在计量路径上，JSON 请求正文转发前在末尾追加 64 个随机空白字符，回执里的请求哈希因此无法靠对猜测的提示词取哈希来确认。
 // 上游解析出的请求不变（不改字段、不增加 token、不影响提示词缓存）；压缩过的正文原样发送；--no-salt 关闭。回执按实际发出的字节核验。
+//
+// --request-usage (1.6, off by default; the same rule as createVerifyingFetch({ requestUsage: true })): a request the
+// sidecar would change to obtain the usage (a stream OpenAI Chat request without stream_options.include_usage) is
+// forwarded with that member set in its bytes (ai.requestUsageBody: one splice, checked against the sidecar's own
+// change), before the salt. The sidecar then injects and strips nothing, the client receives the usage chunk (one more
+// chunk, `choices: []`) inside the signed stream, and the receipt's usage is compared with it. A body that cannot be
+// changed that way: --strict answers HTTP 400 (usage_request_skipped) without forwarding it; otherwise it is forwarded as
+// it is and the verdict says usage-request-skipped. Only OpenAI Chat clients are concerned: Claude Code (Anthropic
+// Messages) and Codex (Responses) streams carry their usage already.
+// --request-usage（默认关，与 createVerifyingFetch({ requestUsage: true }) 同一规则）：旁路本会为拿到用量而改动的请求（没设
+// stream_options.include_usage 的流式 OpenAI Chat 请求），在加盐之前于字节里设好该成员再转发。旁路随之不注入、不剥离，客户端在被签名的
+// 流里收到用量块（多一个 choices: [] 的块），回执的用量与之比对。不能这样改写的正文：--strict 回 HTTP 400（usage_request_skipped）且不转发；
+// 否则原样转发，结论行注明 usage-request-skipped。只与 OpenAI Chat 客户端有关：Claude Code 与 Codex 的流本来就带用量。
 
 import http from 'node:http'
 import { appendFileSync, readFileSync, realpathSync } from 'node:fs'
@@ -54,6 +67,7 @@ const log = (...a) => console.error('[tapeapi-verify]', ...a)
 const LATE_EVENT = 'an event after the end of the stream is not covered by its receipt'
 const UNFINISHED_EVENT = 'an unfinished event at the close of the stream (no blank line after it) is not covered by its receipt, and some clients dispatch it'
 const AMBIGUOUS_LINE = 'a line that starts with U+FEFF (a byte order mark) is read differently by different clients: the stream cannot be verified'
+const NO_USAGE_ASKED = 'the request asked for the usage (requestUsage), but the stream carries none: the upstream did not send it, or something on the way took it out'
 
 const USAGE = `tapeapi-verify ${VERSION}: a local proxy that verifies the signed usage receipt of every AI call.
 
@@ -72,6 +86,12 @@ Usage: tapeapi-verify [options] <service>
   --strip-session-headers
                        do not pass the client's session headers (x-claude-code-session-id, session-id,
                        thread-id) to the service; they let it tie your requests into one session
+  --request-usage      ask for the usage of a streamed OpenAI Chat request that does not ask for it
+                       (stream_options.include_usage, set in the request's bytes), so the receipt's usage
+                       is checked against the stream; the client then sees one more chunk, choices: [].
+                       A body that cannot be changed that way: refused with --strict, else sent as is
+                       替未要用量的流式 OpenAI Chat 请求在字节里要用量，回执的用量因此可与流比对；客户端会多收到
+                       一个 choices: [] 的块。无法这样改写的正文：--strict 时拒绝，否则原样发送
   --rpc <url,url,...>  BNB Chain nodes; each chain read needs 2 to agree (default: ${DEFAULT_RPC.length} public nodes of distinct operators)
   --rpc-xlayer <urls>  X Layer nodes, for a name with area code 2 (default: ${rpcUrlsFor(196).length} public nodes of 2 operators, no spare)
   --rpc-base <urls>    Base nodes, for a name with area code 3 (default: ${rpcUrlsFor(8453).length} public nodes of distinct operators)
@@ -95,7 +115,7 @@ or a verification link made with its content, contains that conversation.
 `
 
 function parseArgs(argv) {
-  const o = { target: null, dev: null, rpc: null, chainRpc: {}, port: DEFAULT_PORT, host: '127.0.0.1', log: null, strict: false, maxSkew: 300, quiet: false, salt: true, stripSession: false }
+  const o = { target: null, dev: null, rpc: null, chainRpc: {}, port: DEFAULT_PORT, host: '127.0.0.1', log: null, strict: false, maxSkew: 300, quiet: false, salt: true, stripSession: false, requestUsage: false }
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i], v
     const eq = a.startsWith('--') ? a.indexOf('=') : -1
@@ -115,6 +135,7 @@ function parseArgs(argv) {
       case '--quiet': o.quiet = true; break
       case '--no-salt': o.salt = false; break
       case '--strip-session-headers': o.stripSession = true; break
+      case '--request-usage': o.requestUsage = true; break
       case '--max-skew': o.maxSkew = Number(value()); if (!Number.isFinite(o.maxSkew) || o.maxSkew <= 0) throw new Error('--max-skew must be a positive number of seconds'); break
       case '--rpc': o.rpc = value().split(',').map((s) => s.trim()).filter(Boolean); break
       case '--rpc-xlayer': case '--rpc-base': o.chainRpc[chainByKey(a.slice(6)).chainId] = value().split(',').map((s) => s.trim()).filter(Boolean); break
@@ -196,6 +217,9 @@ function verdictLine(rep) {
   const r = rep.receipt?.result
   const u = r?.usage
   const bits = [rep.ok ? 'OK  ' : 'FAIL', `${rep.method} ${rep.path}`, rep.stream ? 'stream' : 'json', String(rep.status)]
+  // Only with --request-usage. / 只在 --request-usage 时。
+  if (rep.usageRequested) bits.push('usage=asked')
+  if (rep.usageRequestSkipped) bits.push(`usage-request-skipped=${rep.usageRequestSkipped}`)
   if (r) bits.push(`model=${short(r.model ?? 'null', 60)}`, u ? `tokens in=${u.prompt_tokens} out=${u.completion_tokens}${u.cache_read_tokens ? ` cache_read=${u.cache_read_tokens}` : ''}${u.cache_write_tokens ? ` cache_write=${u.cache_write_tokens}` : ''}${u.cache_write_1h_tokens ? ` (1h ${u.cache_write_1h_tokens})` : ''}` : 'usage=null', r.prices ? `price=${r.prices.map((p) => `${p.amount} ${p.currency}`).join(' / ')}${r.modelMatchedBy === 'request' ? ' (model from the request)' : ''}` : 'price=null', ...(r.complete ? [] : ['INCOMPLETE']), `id=${short(rep.receipt.id, 48)}`)
   if (rep.problems.length) bits.push(`problems: ${rep.problems.join('; ')}`)
   if (rep.warnings.length) bits.push(`warnings: ${rep.warnings.join('; ')}`)
@@ -241,7 +265,7 @@ async function main() {
   const stats = { calls: 0, ok: 0, failed: 0, passThrough: 0, sidecarErrors: 0 }
   const writeLog = (rep) => {
     if (!opts.log) return
-    const line = { ts: new Date().toISOString(), method: rep.method, path: rep.path, status: rep.status, stream: rep.stream, format: rep.format, ok: rep.ok, ...(rep.sidecarError ? { sidecarError: true, code: rep.code } : {}), problems: rep.problems, warnings: rep.warnings, unchecked: rep.unchecked, receipt: rep.receipt }
+    const line = { ts: new Date().toISOString(), method: rep.method, path: rep.path, status: rep.status, stream: rep.stream, format: rep.format, ok: rep.ok, ...(rep.sidecarError ? { sidecarError: true, code: rep.code } : {}), ...(rep.usageRequested !== undefined ? { usageRequested: rep.usageRequested } : {}), ...(rep.usageRequestSkipped ? { usageRequestSkipped: rep.usageRequestSkipped } : {}), problems: rep.problems, warnings: rep.warnings, unchecked: rep.unchecked, receipt: rep.receipt }
     try { appendFileSync(opts.log, JSON.stringify(line) + '\n', { mode: 0o600 }) } catch (e) { log(`cannot write ${opts.log}: ${e.message}`) }
   }
   // Check one receipt; once more after re-reading the manifest when another key signed it (the service may have
@@ -290,6 +314,19 @@ async function main() {
     try { body = verb === 'GET' || verb === 'HEAD' ? null : await readAll(req, REQUEST_LIMIT) } catch (e) {
       return sendError(e.tooLarge ? 413 : 400, anthropic, 'bad_request', e.tooLarge ? `the request is larger than ${REQUEST_LIMIT} bytes` : 'the request body could not be read')
     }
+    // --request-usage: the member is set in the bytes before the salt; `asked` goes into every verdict of this call and
+    // only exists when the option is on. / 在加盐之前于字节里设好成员；asked 只在开启时存在，并入本次调用的每个结论。
+    let asked = null
+    if (r.metered && opts.requestUsage) {
+      const u = body && body.length ? ai.requestUsageBody(body, { format: r.format, headers }) : null
+      asked = { usageRequested: !!u?.bytes }
+      if (u?.bytes) body = u.bytes
+      else if (u?.skipped) {
+        const why = `requestUsage: the usage of this ${r.format.name} request cannot be asked for in its bytes (${u.skipped}: ${ai.usageRequestSkipWhy(u.skipped)}), so the sidecar would ask for it itself and its usage could not be checked`
+        if (opts.strict) { stats.failed++; log(`FAIL ${verb} ${url.pathname}: ${why}; not forwarded (--strict)`); return sendError(400, anthropic, 'usage_request_skipped', `${why}; send the body as a UTF-8 JSON object without such keys, or run without --request-usage or --strict`) }
+        asked.usageRequestSkipped = u.skipped
+      }
+    }
     // The salt goes on the bytes forwarded, and the receipt is checked over exactly those. / 盐加在转发的字节上，回执按这些字节核验。
     if (r.metered && opts.salt && body && body.length) { const more = ai.saltRequestBody(body, headers); if (more) body = more }
     const target = r.root + url.pathname + url.search
@@ -311,7 +348,7 @@ async function main() {
     }
     const format = r.format
     const common = { requestBytes: body ?? new Uint8Array(0), path: url.pathname, status: up.status }
-    const base = { method: verb, path: url.pathname, status: up.status, format: format.name }
+    const base = { method: verb, path: url.pathname, status: up.status, format: format.name, ...asked }
     const stream = !!format.stream && (up.headers.get('content-type') || '').toLowerCase().includes('text/event-stream') && !nullBody
     if (!stream) {
       let bytes
@@ -377,6 +414,8 @@ async function main() {
         if (v.ok) break
       }
       if (!rep) rep = { ok: false, problems: [atEnd ? 'no tapeapi-receipt comment before the end of the event stream' : 'no tapeapi-receipt comment in the event stream'], warnings: [], unchecked: [], receipt: null }
+      // Asked for, and none came (the same words as createVerifyingFetch). / 要了却没有。
+      if (asked?.usageRequested && ai.usageOf(st.result().usage) === null) rep = { ...rep, warnings: [...rep.warnings, NO_USAGE_ASKED] }
       rep = { ...base, ...rep, stream: true }
       report(rep)
       return rep
@@ -468,7 +507,7 @@ async function main() {
   log(`service ${short(m.name, 80)}  ${svc.chainId && svc.chainId !== 56 ? `on ${CHAINS[svc.chainId]?.name ?? `chain ${svc.chainId}`}  ` : ''}container ${svc.container}  signer ${m.signer}${svc.verified.dev ? '  (DEV: not checked on chain)' : `  holder ${svc.verified.holder}`}`)
   for (const r of routes) log(`  ${r.format.name.padEnd(18)} -> ${r.root}${r.format.baseSuffix}`)
   log(`models priced: ${m[ai.MANIFEST_FIELD].models.map((x) => x.id).slice(0, 12).join(', ')}${m[ai.MANIFEST_FIELD].models.length > 12 ? ', ...' : ''}`)
-  log(`listening on ${local}${opts.strict ? '  (strict)' : ''}${opts.salt ? '' : '  (no salt)'}${opts.stripSession ? '  (session headers stripped)' : ''}${opts.log ? `  log ${opts.log}` : ''}`)
+  log(`listening on ${local}${opts.strict ? '  (strict)' : ''}${opts.salt ? '' : '  (no salt)'}${opts.stripSession ? '  (session headers stripped)' : ''}${opts.requestUsage ? '  (usage requested)' : ''}${opts.log ? `  log ${opts.log}` : ''}`)
   log(`  ANTHROPIC_BASE_URL=${local}    OPENAI_BASE_URL=${local}/v1`)
   const stop = (sig) => { log(`${sig}: ${stats.ok} verified, ${stats.failed} failed, ${stats.sidecarErrors} sidecar errors, ${stats.passThrough} passed through; exiting`); process.exit(0) }
   process.on('SIGTERM', () => stop('SIGTERM'))

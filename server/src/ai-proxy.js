@@ -266,6 +266,11 @@ export function createAIProxy(opts = {}) {
   if (!Number.isFinite(idleMs) || idleMs < 0) throw new TapeAPIError('INVALID_ARGUMENT', 'streamIdleMs must be 0 or a positive number')
   const signer = sig.privateKeyToAddress(signerKey)
   const log = opts.log || ((...a) => console.error('[tapeapi/ai-proxy]', ...a))
+  // The usage member is set in the client's bytes with the SDK's ai.requestUsageBody (1.6); an older SDK lacks it, and
+  // the body is then re-serialised as 1.5 did (FIXED AI-RESER not in effect). Said once, here (Fable review F2).
+  // 用量成员由 SDK 的 ai.requestUsageBody 按字节设置；更早的 SDK 没有它，正文便按 1.5 的方式重新序列化。在此说一次。
+  const exactUsage = typeof ai.requestUsageBody === 'function'
+  if (!exactUsage) log('@tapeapi/server 1.6 needs @tapeapi/sdk 1.6 or later: the request is re-serialised the way 1.5 did / @tapeapi/server 1.6 需要 @tapeapi/sdk 1.6 或更高版本：请求按 1.5 的方式重新序列化')
   const fetchImpl = opts.fetch || ((...a) => globalThis.fetch(...a))
   const label = up.origin + upPath
   // An operator key sent on every request means the sidecar serves anyone who reaches it with that key: it does no
@@ -608,10 +613,26 @@ export function createAIProxy(opts = {}) {
     for (const [k, v] of operatorHeaders) headers.set(k, v)
     // A format may change what goes upstream (to ask for usage); the receipt still hashes what the client sent.
     // 格式可以改变发往上游的内容（为了要到 usage）；回执哈希的仍是客户端发来的字节。
+    // The change is made in the client's bytes (ai.requestUsageBody: the format's usageMember set with one splice, checked
+    // against prepareUpstream), so nothing else changes on the way, as TAPI-21 §3.5 requires: re-serialising with
+    // JSON.stringify changed integers beyond 2^53, turned 1e400 into null, merged duplicate keys, rewrote whitespace and
+    // escapes and dropped the client's salt (FIXED AI-RESER, 1.6). Where the splice refuses (a key twice at the top level,
+    // a byte order mark, a Content-Type that is not JSON, a custom format without usageMember, ...) the body is
+    // re-serialised as before. / 改动在客户端字节上做（按字节设置格式的 usageMember，一次拼接并对照 prepareUpstream 自检），途中
+    // 不改动其它任何东西；拼接拒绝时（顶层重复键、字节序标记、非 JSON 的 Content-Type、没有 usageMember 的自定义格式……）照旧重新序列化。
     let upstreamBody = body, prepared = null
     if (format?.prepareUpstream && body && body.length) {
       try { prepared = format.prepareUpstream(jsonOf(body)) } catch (e) { log(`${format.name}: preparing the upstream request failed: ${e?.message || e}`) }
-      if (prepared) { upstreamBody = enc.encode(JSON.stringify(prepared.body)); st.usageInjected++ }
+      if (prepared) {
+        let exact = null
+        if (exactUsage) { try { exact = ai.requestUsageBody(body, { format, headers: request.headers })?.bytes ?? null } catch { exact = null } }
+        // Nested too deeply for JSON.stringify (thousands of levels; the splice refuses it too): the sidecar's own 400, not
+        // a crash answered with HTTP 500. / 嵌套过深，JSON.stringify 无法处理（拼接也拒绝）：旁路自己的 400，而不是崩溃后的 500。
+        try { upstreamBody = exact ?? enc.encode(JSON.stringify(prepared.body)) } catch {
+          return oaError(400, 'request_too_deep', 'the request body is nested too deeply for this sidecar to ask the upstream for the usage; set stream_options.include_usage to true yourself (the body then goes upstream as it is), or nest it less', { 'x-should-retry': 'false' })
+        }
+        st.usageInjected++
+      }
     }
     const ac = new AbortController()
     let timedOut = false

@@ -159,7 +159,7 @@ test('FIXED G1-S6: every tokenId and processor the SDK returns is a decimal stri
 // public `group` namespace. The whole bus-privacy subpath is @experimental.
 // FIXED RC-7：能 import 到的都算 1.0 的承诺，所以缩小冻结面。ai 走公开门面；group 去掉 senderKey、buildEpoch；bus-privacy 整体实验性。
 const AI_STABLE = ['FORMATS', 'MANIFEST_FIELD', 'RECEIPT_HEADER', 'RECEIPT_METHOD', 'SIDECAR_ERROR_HEADER', 'VERIFY_ERROR_HEADER', 'createVerifyingFetch', 'decodeReceiptHeader', 'formatFor', 'readSseReceipt', 'scanSse', 'sha256Hex', 'usageOf', 'validateAIField', 'verifyUsageReceipt']
-const AI_INTERNAL = ['FORWARD_HEADERS', 'MODEL_ID_MAX', 'SESSION_HEADERS', 'apiPath', 'completeOf', 'createSseScanner', 'encodeReceipt', 'envelopeProblems', 'formatOfMethod', 'forwardsHeader', 'isAnswerId', 'isSessionHeader', 'modelEntryOf', 'priceProblems', 'pricingOf', 'receiptComment']
+const AI_INTERNAL = ['FORWARD_HEADERS', 'MODEL_ID_MAX', 'SESSION_HEADERS', 'apiPath', 'completeOf', 'createSseScanner', 'encodeReceipt', 'envelopeProblems', 'formatOfMethod', 'forwardsHeader', 'isAnswerId', 'isSessionHeader', 'modelEntryOf', 'priceProblems', 'pricingOf', 'receiptComment', 'requestUsageBody']
 // The JSDoc block right above each `export` line of a declaration file (null when there is none).
 // 声明文件里每个 export 行正上方的 JSDoc 块（没有时为 null）。
 function docsOfExports(text) {

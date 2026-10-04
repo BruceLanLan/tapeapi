@@ -130,7 +130,7 @@ const claude = new Anthropic({ baseURL: base('anthropic-messages'), apiKey: '<�
   **可追责**：回执不可抵赖，配合抽检（任何人定期发测试题、公开结果，A9），掺水就留下证据。
 - 回执只在签发它的进程（或 Worker 隔离实例）里保留 1 小时、至多 5 万份；随回答送达的那一份才是主要的。
 - 不带 `event:` 行的 Responses 流无法在首行认出最终事件，回执改为追加在末尾（读到 `response.completed` 就停的客户端看不到它，可事后取回）。
-- 除了替客户端要 usage（只在 Chat 流里加 `include_usage`），旁路不改动发往上游的请求；那时每个 data 事件都要等到完整才转发
+- 除了替客户端要 usage（只在 Chat 流里加 `include_usage`，按字节设置，请求的其余字节不变；遇到顶层或 `stream_options` 里的重复键、BOM、非 JSON 的 Content-Type 等情形会退回重新序列化，那时数字、转义和空白可能被改写），旁路不改动发往上游的请求；那时每个 data 事件都要等到完整才转发
   （SSE 客户端本来也要等空行才处理事件）。
 - 旁路自己不做鉴权：调用方的密钥原样转给上游，所以旁路只能由服务方自己运营，不交给第三方托管。只转发格式需要的请求头：
   `content-type`、`content-encoding`、`accept`，各格式的鉴权、版本与 beta 头（`authorization`、`x-api-key`、`anthropic-version`、
@@ -267,7 +267,10 @@ not have unless you paste them too.
 - A Responses stream without `event:` lines cannot be recognised at its first line: its receipt is appended at the end
   (a client that stops at `response.completed` does not see it; it can be fetched by id).
 - The only change the sidecar makes to what goes upstream is `include_usage` in a Chat stream request that did not ask
-  for usage; then every data event is forwarded once complete (SSE clients wait for the blank line anyway).
+  for usage; it is set on the bytes, and the rest of the request is unchanged (a duplicate member at the top level or in
+  `stream_options`, a byte order mark, a Content-Type that is not JSON and a few other cases fall back to re-serialising
+  the request, which can rewrite numbers, escapes and white space). Then every data event is forwarded once complete
+  (SSE clients wait for the blank line anyway).
 - The sidecar authenticates no one: callers' keys go upstream as they are, which is why only the provider itself runs
   its sidecar, never a third-party host. Only the headers the formats need are forwarded: `content-type`,
   `content-encoding`, `accept`; each format's auth, version and beta headers (`authorization`, `x-api-key`,

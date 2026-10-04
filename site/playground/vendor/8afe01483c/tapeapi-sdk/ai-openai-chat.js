@@ -49,6 +49,9 @@ export const openaiChat = Object.freeze({
     if (so.include_usage === true) return null
     return { body: { ...body, stream_options: { ...so, include_usage: true } }, strip: true }
   },
+  // The member prepareUpstream sets, [object, member] (to true), so a client or the sidecar can set it in the request's
+  // bytes instead of re-serialising them (ai.requestUsageBody, 1.6). / prepareUpstream 设置的成员，供按字节设置。
+  usageMember: Object.freeze(['stream_options', 'include_usage']),
   // The chunk the added include_usage causes: a usage object and choices that carry nothing -- `[]` (OpenAI), or entries
   // with an empty delta and nothing else (LiteLLM: `[{ index: 0, delta: {} }]`, FIXED P101-b). A choice with any content,
   // a finish_reason, logprobs or any other member makes it a real chunk, never taken out.

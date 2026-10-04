@@ -23,7 +23,7 @@ The checks of steps 1 to 7 are `tapeapi-doctor` (experimental), which ships in t
 Every `tapeapi-doctor` in the table stands for this, run from any directory, with nothing to clone:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-doctor <your name>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.6.0/tapeapi-sdk-1.6.0.tgz tapeapi-doctor <your name>
 ```
 
 In a checkout, `node sdk/bin/tapeapi-doctor.js <your name>` at its root does the same. Either way the report writes
@@ -234,7 +234,7 @@ and point the client at it. `tapeapi-verify` keeps running in the foreground, so
 
 ```sh
 # Terminal 1. 42.1013.tape is an example name: put your service's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.5.0/tapeapi-sdk-1.5.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.6.0/tapeapi-sdk-1.6.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -278,6 +278,118 @@ the JSON text of each request body on a receipt path, and the receipt is checked
   against the reference sidecar; a check against the live OpenAI Chat, OpenAI Responses and Anthropic Messages APIs is
   still to be done.
 
+## The usage of a streamed Chat answer: three ways
+
+An OpenAI Chat stream reports its token usage only when the request sets `stream_options.include_usage` to `true`: the
+stream then ends with one more chunk, `choices: []` and the usage. The official `openai` package does not set it (at the
+time of writing, 7.x), so a plain `chat.completions.create({ stream: true })` gets no usage at all. This section is about
+that case: OpenAI Chat clients (the `openai` SDKs and tools that speak the same API) streaming `/v1/chat/completions`.
+Claude Code (Anthropic Messages) and Codex (OpenAI Responses) are not affected: their streams carry the usage whether or
+not they ask, and the receipt's usage is compared with it. Embeddings do not stream.
+
+| | Who asks the upstream for the usage | Does the application get the usage chunk | Is the receipt's usage compared with the stream |
+|---|---|---|---|
+| 1. Default | the sidecar, on its own | no: the sidecar takes it out | no: listed in `unchecked` |
+| 2. The application asks | the application, in its request | yes, one more chunk | yes |
+| 3. `requestUsage` / `--request-usage` | the verifying side, in the request's bytes | yes, one more chunk | yes |
+
+### 1. The default: the sidecar asks, you cannot compare
+
+When a streamed request does not ask for the usage, the sidecar sends the upstream a copy that does, reads the usage from
+the chunk that causes, and removes the chunk from what your client receives, so you get exactly the answer you asked for.
+The receipt says `usageInjected: true` and states the usage the sidecar read. Your client never saw that chunk and has
+nothing to compare the number with: its report lists the usage in `unchecked` ("usage (usageInjected: the answer the
+client received lacks the usage chunk the sidecar read)"), and the verification page says the usage was not compared.
+
+- **Guaranteed:** the signer, the model, whether the answer completed, and that the request and response hashes are those
+  of the bytes you sent and received. The price is recomputed from the receipt's usage.
+- **Not guaranteed:** the usage figure. It is the sidecar's statement, and nothing you hold can contradict it: a sidecar
+  could sign a higher number and every other check would still pass. For a whole (not streamed) answer, or any other API
+  format, this gap does not exist.
+
+### 2. Ask for the usage yourself
+
+Set `stream_options: { include_usage: true }` in the request (Python: `stream_options={"include_usage": True}`). The
+sidecar sees that the request already asks, so it injects nothing, removes nothing and sets no `usageInjected`. The usage
+chunk is part of the stream the receipt hashes and part of what your application receives, so the verifying client
+compares the receipt's usage with it. It costs nothing and needs no option of ours:
+
+```js
+const stream = await client.chat.completions.create({
+  model: 'your-model', stream: true,
+  stream_options: { include_usage: true },        // the last chunk has choices: [] and the usage
+  messages: [{ role: 'user', content: 'Hello' }],
+})
+for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.content ?? '')
+```
+
+### 3. Let the verifying side ask: `requestUsage`
+
+For an application you do not want to change, or one you cannot (a tool that never sets `stream_options`), the verifying
+side sets the member for it. `createVerifyingFetch({ requestUsage: true })`, or `tapeapi-verify --request-usage` (1.6.0
+and later), is off by default; only `true` turns the option on.
+
+```js
+const fetch = ai.createVerifyingFetch({ api, service: svc, requestUsage: true })
+```
+
+```sh
+tapeapi-verify --request-usage 42.1013.tape        # started as in "What your users do"
+```
+
+The effect is the same as in way 2: the sidecar injects nothing, and the usage chunk is in the signed stream the
+application receives. What the option does and does not do:
+
+- **It changes a request only where the sidecar would have changed it:** a stream OpenAI Chat request whose
+  `stream_options.include_usage` is not `true`. A request that already asks, a request that is not a stream, and any other
+  API format are sent as they are.
+- **It changes one place in the bytes and keeps every other byte.** No `stream_options`: `,"stream_options":{"include_usage":true}`
+  goes after the last member. A `stream_options` object without `include_usage`: `,"include_usage":true` goes inside it.
+  An `include_usage` of another value (`false`, `null`, `"true"`, ...): the value is replaced by `true`. A `stream_options`
+  that is not an object (`null`, an array, a string): it is replaced by `{"include_usage":true}`. The result is checked
+  against the sidecar's own rule before it is sent. Then the salt is added and the request goes; `requestSha256` is the
+  hash of the bytes finally sent.
+- **It leaves a request alone when it cannot change it safely:** a compressed body; a Content-Type that is not JSON; a
+  body that is not UTF-8 or starts with a byte order mark; a custom format that names no member to set; a key that appears
+  twice at the top level or in `stream_options`; a result that fails the check. With `strict` (the default for
+  `createVerifyingFetch`), the SDK throws `INVALID_ARGUMENT` before sending anything (`data.reason` names the cause) and
+  `tapeapi-verify --strict` answers HTTP 400 (`usage_request_skipped`, with `x-should-retry: false`) without forwarding.
+  Without `strict` the request goes as it is, the report says `usageRequestSkipped: <reason>`, and the usage is
+  `unchecked` as in way 1.
+- **Reports.** With the option on, each report carries `usageRequested`: `true` when this fetch set the member, `false`
+  when it did not (the application asked itself, it is not a Chat stream, or the change was skipped). With the option off,
+  the field does not exist. `tapeapi-verify` writes the same fields to `--log` and prints `usage=asked` or
+  `usage-request-skipped=<reason>` on the verdict line. If the request asked for the usage and the stream carries none (the
+  upstream did not send it, or something on the way took it out), there is a warning to that effect.
+
+**What the application sees (ways 2 and 3).** One more chunk before `[DONE]`, with `choices: []` and the usage; nothing is
+taken out on the client. Code that reads `chunk.choices[0]` without checking that the list is not empty fails on it (a
+`TypeError` in the JavaScript SDK), so read `chunk.choices[0]?.delta` instead. The `openai` package's `.stream()` helper
+works unchanged, and `finalChatCompletion().usage` has the value. The reason nothing is removed: the bytes your application
+holds are then exactly the bytes the receipt hashes, which keeps an archived stream checkable offline (the verification
+page, a dispute).
+
+**What ways 2 and 3 guarantee, and what they do not.** The usage in the receipt is the usage in the signed stream your
+application received, the standard a whole answer already has. A sidecar that states one number in the receipt and sends
+another in the stream fails the check (`RECEIPT_INVALID`), and one that overstates the usage in both has signed it into an
+answer you can show to others: attributable, not impossible. Neither way shows what the upstream really counted: the
+sidecar that signs the receipt also produces the stream. Say it to your users as it is.
+
+**Limits, and why way 3 is off by default.**
+
+- A JSON body sent with a Content-Type that is not JSON is skipped by the client, but the sidecar does not look at
+  Content-Type and still injects: that call's usage cannot be checked, and under `strict` it is refused locally.
+- An upstream that ignores `include_usage` sends no usage chunk: the receipt then passes with usage `null`, and the report
+  warns.
+- If your upstream rejects `stream_options`, so that your sidecar does not ask for the usage itself (the reference has no
+  switch for it; it takes a custom `formats` table whose Chat adapter has no `prepareUpstream`), clients that turn on way
+  2 or 3 get HTTP 400 from your upstream. A sidecar that takes the usage chunk out although the request asked for it fails the check under
+  `strict` (correct by the rules, but a loss of availability).
+- The salt now also reaches the upstream for these requests (a sidecar that re-serialised the request used to drop it): it
+  is whitespace after the JSON text, which JSON allows.
+- Under `strict`, the official SDKs may wrap the `INVALID_ARGUMENT` as a connection error and retry it up to `maxRetries`
+  times (not measured; no request is sent in any retry).
+
 ## Fees
 
 There is no mandatory protocol fee, and today nothing is charged by the protocol: prices in the `ai` field are
@@ -289,6 +401,8 @@ See [`docs/FEES.md`](../FEES.md).
 ## Limits
 
 - A receipt proves who answered and what was claimed, not which model ran (above).
+- The usage of a streamed OpenAI Chat answer is checked only when the request asks for it (`stream_options.include_usage`,
+  by the application or by `requestUsage`); by default it is the sidecar's statement ([above](#the-usage-of-a-streamed-chat-answer-three-ways)).
 - Formats with receipts: OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, OpenAI Embeddings. Other paths
   under `/v1` pass through without a receipt. Not yet: Gemini's native API, WebSocket modes (Realtime, Responses
   WebSocket), Batch.

@@ -7,6 +7,109 @@ interfaces.
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-10-04
+
+### Added
+
+- **`createVerifyingFetch({ requestUsage: true })` and `tapeapi-verify --request-usage`: the usage of a streamed OpenAI
+  Chat answer can be checked** (opt-in; off by default, and only `true` turns it on). An OpenAI Chat stream carries usage
+  only when the request sets `stream_options.include_usage`, and the official `openai` package does not set it (at the
+  time of writing, 7.x). When a
+  streamed request does not, the sidecar asks the upstream for the usage itself and takes the usage chunk out of the
+  client's copy (`usageInjected`), so no client could compare the receipt's usage with anything (it was listed in
+  `unchecked`, 1.5's "remaining by design"). With the option, the verifying fetch (or the proxy) sets
+  `include_usage: true` in the request's bytes before sending: the sidecar then injects and strips nothing, sets no
+  `usageInjected`, and the usage chunk is part of the signed stream the application receives, so the receipt's usage is
+  compared with it as a whole answer's is. This changes no wire format, digest or vector. It does not prove the
+  upstream's own count: it gives usage the standard a whole answer already has, that the receipt states what the
+  application was handed, so an overstated usage is signed into an answer the application can see (attributable), and a
+  receipt that disagrees with the stream fails (`RECEIPT_INVALID`; FIXED AI-ASK-1, AI-ASK-END). Details:
+  - *What changes in the request.* Only for a request the sidecar would itself change (a stream OpenAI Chat request whose
+    `stream_options.include_usage` is not `true`), one splice in the bytes, every other byte kept: no `stream_options` gets
+    `,"stream_options":{"include_usage":true}` after the last member; an object without `include_usage` gets
+    `,"include_usage":true` inside it; an existing `include_usage` (`false`, `null`, `0`, `"true"`, ...) has its value
+    replaced by `true`; a `stream_options` that is not an object (`null`, an array, a string, `false`) is replaced by
+    `{"include_usage":true}`. The result is checked before it is used: it must parse to exactly what the sidecar's own
+    rule (`prepareUpstream`) gives, and the sidecar's rule must have nothing left to change. The order is body, splice,
+    salt, `content-length` removed, send; `requestSha256` is the hash of the bytes finally sent.
+  - *What is left alone, and what then happens.* A compressed body (`content-encoding`), a Content-Type that is not JSON
+    (`content-type`), a body that is not UTF-8 (`not-utf8`) or starts with a byte order mark (`not-object`), a format with
+    `prepareUpstream` but no `usageMember` (`no-member`), a key that appears twice at the top level or inside
+    `stream_options` (`duplicate-member`; a duplicate deeper down is kept as it was), and a splice whose self-check fails
+    (`self-check`; a body nested deeper than `JSON.stringify` can go is one). With `strict` the SDK throws
+    `INVALID_ARGUMENT` before sending (`data: { reason, format }`) and `tapeapi-verify --strict` answers HTTP 400
+    (`usage_request_skipped`, with `x-should-retry: false`) without forwarding; otherwise the request goes as it is, the
+    report says `usageRequestSkipped: <reason>`, and the usage stays in `unchecked`. A request that asks for usage
+    itself, is not a stream, or is not an OpenAI Chat request is not touched (no skip reason).
+  - *Reports.* With the option on, every report on a receipt path carries a boolean `usageRequested` (`false`: this
+    fetch did not set the member, because the application asked itself, it is not a Chat stream, or the splice was
+    skipped), and possibly `usageRequestSkipped`; with it off neither field exists. `tapeapi-verify --log` writes the same
+    fields, the verdict line says `usage=asked` or `usage-request-skipped=<reason>`, and the start-up line says
+    `(usage requested)`. If the request asked for the usage and the stream carries none, there is a warning ("the request
+    asked for the usage (requestUsage), but the stream carries none: the upstream did not send it, or something on the way
+    took it out"). If the receipt states a usage the stream lacks, that is a failure as before; if it states none, it
+    passes with usage `null`.
+  - *What an application sees.* One more chunk before `[DONE]` with `choices: []` and the usage, as when it sets
+    `include_usage` itself; nothing is taken out on the client, which is why the bytes it holds are the bytes the receipt
+    hashes. Code that reads `chunk.choices[0]` without a guard throws a `TypeError` on that chunk; the `.stream()` helper of
+    the `openai` package works, and `finalChatCompletion().usage` has the value. Claude Code (Anthropic Messages) and
+    Codex (Responses) streams carry their usage already and are not touched; Embeddings do not stream.
+  - *Limits and risks (the reasons it is off).* A JSON body sent with a non-JSON Content-Type is skipped by the client
+    while the sidecar, which does not look at Content-Type, still injects: that call's usage is not checkable (strict
+    refuses it locally). An upstream that ignores `include_usage` leaves a verified receipt with usage `null` and the
+    warning above. A sidecar that does not inject (the reference has no switch for it; it takes a custom `formats` table
+    whose Chat adapter has no `prepareUpstream`), because its upstream rejects `stream_options`, will see these calls
+    fail with HTTP 400 once clients turn this on. A third-party sidecar that strips the usage chunk although the
+    request asked for it fails under `strict`. The salt now also reaches the upstream for these requests (the sidecar's
+    re-serialising used to drop it): it is whitespace after the JSON text, which JSON allows, and is not yet measured
+    against the live APIs. Under `strict`, the
+    official SDKs may wrap the `INVALID_ARGUMENT` as a connection error and retry it up to `maxRetries` times (not
+    measured; no request is sent in any retry).
+  - *Interfaces.* New: `requestUsage` (`createVerifyingFetch`), `usageRequested` and `usageRequestSkipped` on the
+    `onReport` report, `usageMember` on `AIFormat` (`['stream_options', 'include_usage']` for `openai-chat`; a custom
+    adapter without it is never rewritten), `UsageRequestSkip`, and `ai.requestUsageBody` (`@internal`, used by the
+    sidecar and `tapeapi-verify`). With the option off nothing new runs and the default client path is byte for byte
+    1.5.0's (GOLDEN AI-1.5, recorded on 1.5.0 before this change). The [guide](docs/guides/ai-providers.md) has the three
+    ways to get a stream's usage checked.
+
+### Fixed
+
+- **The reference sidecar re-serialised the request it sent upstream (FIXED AI-RESER; every version with usage
+  injection).** To ask the upstream for the usage of a streamed Chat request, it sent `JSON.stringify` of the parsed
+  body, which changed more than that one member: `seed: 12345678901234567890` reached the upstream as
+  `12345678901234567000`, `1e400` became `null`, a repeated key was merged, whitespace and escapes were rewritten and the
+  client's salt was dropped, against TAPI-21 §3.5 ("MUST NOT change … in any other way"). It now sets `include_usage` in the
+  client's bytes with the same function the client uses (above), so every other byte arrives as sent; receipts are
+  unchanged. Where the splice refuses, the sidecar re-serialises as before: a key repeated at the top level or inside
+  `stream_options` (the repeated keys are merged), a byte order mark, a Content-Type that is not JSON, a custom format
+  without `usageMember`. This needs `@tapeapi/sdk` 1.6: `@tapeapi/server` takes the function from the SDK's root entry, and
+  with an earlier SDK installed it falls back, silently, to re-serialising (the server's dependency range moves to
+  `^1.6.0` with the release).
+- **Three smaller fixes around `requestUsage` and the sidecar** (FIXED AI-ASK-CASE, AI-RESER-SDK). A key that differs from
+  `stream_options` (at the top level) or from `include_usage` (inside `stream_options`) only in letter case, after the JSON
+  escapes are decoded, now makes `requestUsage` skip the request (`duplicate-member`): a gateway whose JSON decoder ignores
+  case and lets the later member win (new-api and one-api are Go programs) would otherwise read `include_usage` as false.
+  The sidecar logs one line when `@tapeapi/server` 1.6 runs with an `@tapeapi/sdk` older than 1.6 (the request is then
+  re-serialised the way 1.5 did, so the fix above does not apply; the server's dependency range is raised to `^1.6.0` with
+  the release). And a streamed Chat request nested thousands of levels deep, which made the sidecar answer HTTP 500, now
+  gets its HTTP 400 `request_too_deep` (with `x-should-retry: false`; setting `include_usage` yourself sends it on as it is).
+
+### Security
+
+- **Release integrity.** Every GitHub Action in the workflows is pinned to a commit SHA (with its tag in a comment), and a
+  test keeps it so. From v1.6.0 on, every Release carries a `SHA256SUMS` file next to the two tarballs, made by
+  `scripts/release-checksums.mjs` from the uploaded files, and the release notes repeat it. SECURITY.md gains §5,
+  "Verifying a release": how to check, what a checksum on the release page proves and what it does not, and why there is
+  no build attestation (releases are built by hand, not by CI).
+
+### Documentation
+
+- The [AI providers guide](docs/guides/ai-providers.md) gets "The usage of a streamed Chat answer: three ways", with what
+  each way guarantees and what it does not. TAPI-21 §3.5 (usage injection) gets one explanatory paragraph in both
+  languages: a client can ask for the usage itself, and the sidecar then changes and strips nothing and sets no
+  `usageInjected`. It adds no MUST, SHOULD or MAY and changes no frozen constant or vector. The verification page's note
+  on an unchecked usage now says the client can ask for it.
+
 ## [1.5.0] — 2026-10-03
 
 ### Added
@@ -1203,7 +1306,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.2.0...v1.3.0

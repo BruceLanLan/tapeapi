@@ -19,7 +19,7 @@ import { encodeCall } from '@tapeapi/sdk/abi'
 import { createRpc as createRpc2 } from '@tapeapi/sdk/rpc'
 import { createProvider, memoryStore, VERSION, type Provider } from '@tapeapi/server'
 import { ai } from '@tapeapi/sdk'
-import { createVerifyingFetch, verifyUsageReceipt, FORMATS, type AIFormat, type UsageReceipt } from '@tapeapi/sdk/ai'
+import { createVerifyingFetch, verifyUsageReceipt, FORMATS, type AIFormat, type UsageReceipt, type UsageRequestSkip } from '@tapeapi/sdk/ai'
 import { createAIProxy, type AIProxy } from '@tapeapi/server/ai-proxy'
 import { createMcpServer, receiptOf, hashReceipt, verifyLink, toolResultOf, toolsDigest, invisibleProblems, quoteProvenance, RECEIPT_META_KEY, type Receipt, type HashedReceipt, type McpTool, type CallToolResult } from '@tapeapi/sdk/mcp'
 import { CHAINS as CHAINS2, chainById, parseTapeName, formatTapeName, isNameShaped, type TapeOutChain, type ParsedTapeName } from '@tapeapi/sdk/chains'
@@ -113,7 +113,10 @@ async function aiSidecar(): Promise<void> {
   const base: string = px.manifest().ai.endpoints[0].baseUrl
   const fetch = createVerifyingFetch({ service: {}, api: createTapeAPI({}), onReport: (r) => void r.receipt?.result.usage?.cache_read_tokens })
   const receipt: UsageReceipt | null = verifyUsageReceipt({ envelope: null, manifest: { container: '0x', signer: '0x' } }).receipt
-  void [chat.method, base, fetch, receipt?.result.prices?.[0]?.amount, receipt?.result.unpriced, receipt?.result.complete, receipt?.result.modelMatchedBy, receipt?.result.usage?.cache_write_1h_tokens, ai.MANIFEST_FIELD]
+  // 1.6: the client asks for the usage itself; the report says whether it did, or why not. / 客户端自己要用量；报告说明是否做到、为何没有。
+  const asking = createVerifyingFetch({ service: {}, requestUsage: true, strict: false, onReport: (r) => { const asked: boolean | undefined = r.usageRequested; const why: UsageRequestSkip | undefined = r.usageRequestSkipped; void [asked, why] } })
+  const member: readonly [string, string] | undefined = chat.usageMember
+  void [chat.method, base, fetch, asking, member, receipt?.result.prices?.[0]?.amount, receipt?.result.unpriced, receipt?.result.complete, receipt?.result.modelMatchedBy, receipt?.result.usage?.cache_write_1h_tokens, ai.MANIFEST_FIELD]
 }
 
 // TAPI-27 groups: the owner delivers epoch message and invites in one call; the member checks its inbox.
