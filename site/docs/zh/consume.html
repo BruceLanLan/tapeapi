@@ -29,7 +29,7 @@
 <p>这些包尚未发布到 npm，所以要在仓库的克隆里操作（Node.js 20 或更高版本）：</p>
 <div class="code"><pre data-lang="bash"><code>git clone https://github.com/BruceLanLan/tapeapi.git &amp;&amp; cd tapeapi &amp;&amp; npm install</code></pre></div>
 <p>或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：</p>
-<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.6.0/tapeapi-sdk-1.6.0.tgz</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.0/tapeapi-sdk-1.7.0.tgz</code></pre></div>
 <p>把下面的脚本保存为 <code>.mjs</code> 文件，放在能解析到 <code>@tapeapi/sdk</code> 的地方，然后用 <code>node &lt;文件&gt;.mjs</code> 运行：用克隆时，<strong>放在 <code>tapeapi</code> 目录之内</strong>（包通过仓库的 workspace 解析）；装了发布包时，放在那个项目里。放在其它位置的脚本会以 <code>ERR_MODULE_NOT_FOUND</code> 失败。</p>
 <h3 id="调用线上的公共服务"><a class="anchor" href="#调用线上的公共服务" aria-hidden="true">#</a>调用线上的公共服务</h3>
 <p>一个免费的公共服务运行在 <code>https://api.tapeapi.fun</code>，TapeOut 名称为 <code>11.1013.tape</code>。用 curl：</p>
@@ -99,7 +99,7 @@ const payer = api.payer({
 })
 const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code></pre></div>
 <p>为避免每次调用都弹出钱包提示，可以一次性授权一把会话密钥（<code>api.tx.authorizeSession(svc, sessionAddress, expires)</code>），然后改为传入 <code>{ consumer, sessionKey, sessionExpiry }</code>。为通道充值需要两笔交易，由 SDK 为你的钱包构建：先 <code>api.tx.approve({ amount })</code>，再 <code>api.tx.fund(svc, amount)</code>。</p>
-<p>你只付提供者标明的价格：TapeAPI 不在消费者这一侧加任何费用。维护贡献（如果提供者保留它）从提供者的所得中划出（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/FEES.md" rel="noopener"><code>docs/FEES.md</code></a>）。规范目前用 BEM 结算；下一版托管计划支持 BNB Smart Chain 上的 BEM、BNB（包装为 WBNB）、USDT、USDC、ETH 与 USD1。</p>
+<p>你只付提供者标明的价格：TapeAPI 不在消费者这一侧加任何费用。维护贡献（如果提供者保留它）从提供者的所得中划出（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/FEES.md" rel="noopener"><code>docs/FEES.md</code></a>）。规范目前用 BEM 结算；下一版托管计划在 BNB Smart Chain 上首先支持 USDT（Binance-Peg），BEM 与 WBNB（包装的 BNB）按需、用同一份字节码（见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/FEES.md" rel="noopener"><code>docs/FEES.md</code></a>）。</p>
 <blockquote><p>托管合约尚未部署，因此付费服务还没有在主网上线。以上内容都可以针对示例运行（本地使用 <code>FREE_ALL=1</code> 跳过付费）。</p></blockquote>
 <p>SDK 只在收到经过验证的回答之后才推进本地计量，并在提供者的计数不一致时自动重新同步。传入 <code>store: { get, set }</code> 可在重启之间保留计量。</p>
 <h2 id="6-在浏览器或-deweb-站点中使用"><a class="anchor" href="#6-在浏览器或-deweb-站点中使用" aria-hidden="true">#</a>6. 在浏览器或 DeWEB 站点中使用</h2>

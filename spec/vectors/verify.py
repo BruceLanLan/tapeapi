@@ -194,6 +194,16 @@ def addr32(a):
     return bytes(12) + bytes.fromhex(a[2:])
 
 # ------------------------------------------------------------------- runner ----
+def _no_negative_zero_int(t):
+    # TAP-11 §6 item 2: negative zero has no canonical form. json.loads reads the integer literal -0 as 0, which
+    # canonical() could then not tell apart, so a vector file is read with this hook. / 整数字面量 -0 在读入时就拒绝
+    if t.lstrip('-') == '0' and t.startswith('-'):
+        raise CanonError('negative zero')
+    return int(t)
+
+def load_vec(name):
+    return json.loads((HERE / name).read_text(), parse_int=_no_negative_zero_int)
+
 HERE = pathlib.Path(__file__).parent
 fail = []
 checked = 0
@@ -204,7 +214,7 @@ def check(label, got, want):
     if got != want:
         fail.append('%s\n    got  %s\n    want %s' % (label, got, want))
 
-canon = json.loads((HERE / 'tapi-21-canon.json').read_text())
+canon = load_vec('tapi-21-canon.json')
 for c in canon['positive']:
     try:
         got = canonical(c['input'])
@@ -251,14 +261,14 @@ for c in canon['negative']:
         except CanonError:
             checked += 1
 
-env = json.loads((HERE / 'tapi-21-envelope.json').read_text())
+env = load_vec('tapi-21-envelope.json')
 for c in env['cases']:
     check('envelope-canonreq/' + c['name'], canonical({'method': c['method'], 'params': c['params']}), c['intermediate']['canonicalRequest'])
     check('envelope-canonbody/' + c['name'], canonical(c['body']), c['intermediate']['canonicalBody'])
     got = response_digest(env['prefix'], env['container'], c['id'], c['method'], c['params'], c['ok'], c['body'], c['ts'])
     check('envelope-digest/' + c['name'], h(got), c['digest'])
 
-dele = json.loads((HERE / 'tapi-20-delegation.json').read_text())
+dele = load_vec('tapi-20-delegation.json')
 d = dele['domain']
 dom = eip712_domain(d['name'], d['version'], d['chainId'], d['verifyingContract'])
 th = keccak256(dele['typeHash'].encode())
@@ -266,7 +276,7 @@ for c in dele['cases']:
     sh = keccak256(th + addr32(c['container']) + addr32(c['signer']) + u64(c['expires']).rjust(32, b'\x00'))
     check('delegation/' + c['name'], h(typed_digest(dom, sh)), c['digest'])
 
-vou = json.loads((HERE / 'tapi-22-voucher.json').read_text())
+vou = load_vec('tapi-22-voucher.json')
 d = vou['domain']
 dom = eip712_domain(d['name'], d['version'], d['chainId'], d['verifyingContract'])
 th = keccak256(vou['typeHash'].encode())
@@ -364,7 +374,7 @@ def chacha20poly1305_seal(key, nonce, aad, pt):
     mac = aad + _pad16(aad) + ct + _pad16(ct) + len(aad).to_bytes(8, 'little') + len(ct).to_bytes(8, 'little')
     return ct + _poly1305(otk, mac)
 
-ch = json.loads((HERE / 'tapi-26-channel.json').read_text())
+ch = load_vec('tapi-26-channel.json')
 I, R, X = ch['initiator'], ch['responder'], ch['intermediate']
 bx = bytes.fromhex
 sA, sB, eA, eB = bx(I['staticSecret']), bx(R['staticSecret']), bx(I['ephemeralSecret']), bx(R['ephemeralSecret'])
@@ -429,7 +439,7 @@ check('xchacha/hchacha20 draft vector',
       _hchacha20(bytes(range(32)), bytes.fromhex('000000090000004a0000000031415927')).hex(),
       '82413b4227b27bfed30e42508a877d73a0f9e4d58a74a853c12ec41326d3ecdc')
 
-idv = json.loads((HERE / 'tapi-26-identity.json').read_text())
+idv = load_vec('tapi-26-identity.json')
 ck = idv['channelKeys']
 d = ck['domain']
 dom = eip712_domain(d['name'], d['version'], d['chainId'], d['verifyingContract'])
@@ -519,7 +529,7 @@ for name, sk, pk, msg, sgn in [
     check('ed25519/' + name + ' verifies', str(ed25519_verify(bytes.fromhex(pk), bytes.fromhex(msg), bytes.fromhex(sgn))), 'True')
 
 # ---------- TAPI-27: rebuild the epoch message and the messages from the secrets alone ----------
-gv = json.loads((HERE / 'tapi-27-group.json').read_text())
+gv = load_vec('tapi-27-group.json')
 bh = lambda x: bytes.fromhex(x[2:] if x.startswith('0x') else x)
 people = gv['members']
 for p_ in people:
@@ -555,7 +565,7 @@ for m in gv['messages']:
 # Written from §3.8 only: the epoch field carries the format-2 mark in its high half, the roster is binary, every label
 # is "…/v2". A format-1 reader (§3.3: n at most 2^32 - 1) must refuse every format-2 wire, and a format-2 reader the
 # format-1 epoch message above. / 只按 §3.8 的文字实现；格式 1 读者必须拒收每条格式 2 线路消息，格式 2 读者必须拒收上面的格式 1 纪元消息。
-g2 = json.loads((HERE / 'tapi-27-group-v2.json').read_text())
+g2 = load_vec('tapi-27-group-v2.json')
 MARK2 = 0x54470200
 gid = bh(g2['gid'])
 ef2 = lambda n: MARK2.to_bytes(4, 'big') + n.to_bytes(4, 'big')
@@ -707,7 +717,7 @@ def amount(p, u):
          + out * (u['completion_tokens'] - rs) + (D('reasoning', Decimal(0)) * rs))
     return format((s / Decimal(1000000)).quantize(Decimal('0.00000001'), rounding=ROUND_CEILING), 'f')
 
-AIV = json.loads((HERE.parent.parent / 'sdk' / 'test' / 'fixtures' / 'ai-receipt-vectors.json').read_text())
+AIV = json.loads((HERE.parent.parent / 'sdk' / 'test' / 'fixtures' / 'ai-receipt-vectors.json').read_text(), parse_int=_no_negative_zero_int)
 AI_PREFIX = 'TAPI-1/resp/v2'
 check('ai/prefix is the TAPI-21 §3.3 prefix', AI_PREFIX, env['prefix'])
 for c in AIV['cases']:
@@ -723,11 +733,11 @@ for c in AIV['cases']:
     check(name + '/prices', json.dumps(want), json.dumps(res['prices']))
     check(name + '/modelMatchedBy present exactly when an entry matches', 'modelMatchedBy' in res, entry is not None)
     if entry is not None and res.get('modelMatchedBy') == 'request':
-        check(name + '/requested model', json.loads(req.decode())['model'], res['model'])
+        check(name + '/requested model', json.loads(req.decode(), parse_int=_no_negative_zero_int)['model'], res['model'])
     digest = response_digest(AI_PREFIX, envl['container'], envl['id'], envl['method'], envl['params'], True, res, envl['ts'])
     check(name + '/signer', recover_address(eip191(digest), envl['sig']), AIV['signer'].lower())
     if c['receiptDelivery'] == 'header':
-        check(name + '/header', json.loads(base64.urlsafe_b64decode(e['encoded'] + '=' * (-len(e['encoded']) % 4))), envl)
+        check(name + '/header', json.loads(base64.urlsafe_b64decode(e['encoded'] + '=' * (-len(e['encoded']) % 4)), parse_int=_no_negative_zero_int), envl)
     else:
         check(name + '/comment', (': tapeapi-receipt ' + e['encoded'] + '\n').encode() in body, True)
 # The worked amount of TAPI-20 §6.3. / TAPI-20 §6.3 的算例。
@@ -743,7 +753,7 @@ check('ai/exact past float precision', amount({'input': '999999999999999999.9999
 # the EIP-191 message of TAPI-21).
 # 录下的主网回答（BSC，钉在一个区块上），只按 TAPI-20 §3.2-§3.6 的文字核对：调用数据在此重新编码，结果在此 ABI 解码，
 # 清单字节在此哈希并解析，委托的 EIP-712 摘要在此重算并恢复出 ownerOf 的回答（原始 EIP-712 摘要，不是 TAPI-21 的 EIP-191）。
-MF = json.loads((HERE.parent.parent / 'sdk' / 'test' / 'fixtures' / 'mainnet-11-1013-manifest.json').read_text())
+MF = json.loads((HERE.parent.parent / 'sdk' / 'test' / 'fixtures' / 'mainnet-11-1013-manifest.json').read_text(), parse_int=_no_negative_zero_int)
 HUB, FACTORY, SITE_REGISTRY = '0xe61a9c7213a6aa616c246a2b569e555b417b25ee', '0x68224f668083c29e9800be2a646d42d18cedf7e2', '0xd006ffdd5ae313b17729621a00999cd3c71ce5e6'
 
 def sel(signature):
@@ -819,7 +829,7 @@ check('tapi20-6.1/manifest offers no TAPI-23 attestedRead method', any('attested
 # Each envelope's TAPI-21 digest is rebuilt here and its signer recovered; agreement is then decided by the text of
 # §3.4 step 4 alone and compared with each case's expectation. / 每个信封的 TAPI-21 摘要在此重建并恢复签名者；
 # 然后只按 §3.4 第 4 步的文字判定一致，再与各用例的期望比较。
-AR = json.loads((HERE / 'tapi-23-attested.json').read_text())
+AR = load_vec('tapi-23-attested.json')
 PA, PB = AR['providers']
 check('tapi23/test keys are declared as such', 'TEST KEYS' in AR['testKeys'], True)
 check('tapi23/different containers', PA['container'].lower() != PB['container'].lower(), True)
@@ -849,7 +859,7 @@ check('tapi23/at least one agreeing and one disagreeing case', {c['expect'] for 
 # contentHash = keccak256(UTF-8(canonicalJSON(manifest without contentSig))); ManifestContent(address container,bytes32
 # contentHash) in the delegation's EIP-712 domain; the holder's ECDSA signature recovers to the holder.
 # contentHash 为去掉 contentSig 的清单的规范 JSON 的 keccak256；在委托的 EIP-712 域中签署 ManifestContent。
-CS = json.loads((HERE / 'tapi-20-content.json').read_text())
+CS = load_vec('tapi-20-content.json')
 d = CS['domain']
 dom = eip712_domain(d['name'], d['version'], d['chainId'], d['verifyingContract'])
 th = keccak256(CS['typeHash'].encode())
@@ -1086,7 +1096,7 @@ def account_and_slots(state_root, acc):
         values['0x%x' % n] = '0x%x' % v
     return {'exists': exists, 'storageRoot': h(sroot), 'codeHash': h(chash), 'values': values}
 
-PV = json.loads((HERE / 'tapi-20-proof.json').read_text())
+PV = load_vec('tapi-20-proof.json')
 def _tb(s):
     return bytes.fromhex(s[2:]) if s.startswith('0x') else s.encode('utf-8')
 for c in PV['trie']:
@@ -1177,6 +1187,76 @@ for acc in MN['accounts']:
     except ProofError:
         bad_root += 1
 check('proof/mainnet a wrong stateRoot refuses every account', bad_root, len(MN['accounts']))
+
+# ================================================ Container agents, phase 0 (experimental) ====
+# Written from EIP-712 and the field lists below (docs/DESIGN-container-agent.md): the holder's four types in the TAP-11
+# delegation domain. encodeType appends referenced struct types; a struct array hashes as keccak256 of the concatenated
+# hashStruct of its items, a bytes32 array as keccak256 of the concatenated elements, an empty one as keccak256("").
+# 只按 EIP-712 与下面的字段表实现：持有人的四个类型，在 TAP-11 委托域中。
+ca = load_vec('container-agent.json')
+d = ca['domain']
+ca_dom = eip712_domain(d['name'], d['version'], d['chainId'], d['verifyingContract'])
+def ca_word(n):
+    return int(n).to_bytes(32, 'big')
+def ca_b32(x):
+    b = bytes.fromhex(x[2:])
+    assert len(b) == 32
+    return b
+CA_FIELDS = {
+    'Scope': [('address', 'provider'), ('address', 'token'), ('uint256', 'cap')],
+    'Mandate': [('address', 'principal'), ('address', 'agent'), ('address', 'agentKey'), ('uint8', 'mode'), ('bytes32', 'taskHash'),
+                ('Scope[]', 'scope'), ('address', 'feeToken'), ('uint256', 'feeCap'), ('uint64', 'notBefore'), ('uint64', 'expires'),
+                ('uint256', 'nonce'), ('bool', 'subdelegate')],
+    'TaskOffer': [('address', 'principal'), ('address', 'agent'), ('bytes32', 'taskHash'), ('uint8', 'mode'), ('address', 'feeToken'),
+                  ('uint256', 'fee'), ('uint64', 'deadline'), ('uint64', 'exp'), ('uint256', 'nonce')],
+    'TaskVerdict': [('bytes32', 'mandateHash'), ('bytes32', 'deliverableHash'), ('uint8', 'verdict'), ('bytes32', 'reasonHash'), ('uint64', 'issued')],
+    'MandateRevocation': [('address', 'principal'), ('bytes32[]', 'mandateHashes'), ('uint64', 'revokedBefore'), ('uint64', 'issued')],
+}
+def ca_type(name):
+    own = '%s(%s)' % (name, ','.join('%s %s' % f for f in CA_FIELDS[name]))
+    refs = sorted({t[:-2] if t.endswith('[]') else t for t, _ in CA_FIELDS[name]} & set(CA_FIELDS) - {name})
+    return own + ''.join(ca_type(r) for r in refs)
+ca_th = {n: keccak256(ca_type(n).encode()) for n in CA_FIELDS}
+for n in CA_FIELDS:
+    check('agent/encodeType ' + n, ca_type(n), ca['types'][n])
+    check('agent/typehash ' + n, h(ca_th[n]), ca['typeHashes'][n])
+def ca_struct(name, v):
+    out = ca_th[name]
+    for t, f in CA_FIELDS[name]:
+        x = v[f]
+        if t == 'address': out += addr32(x)
+        elif t == 'bytes32': out += ca_b32(x)
+        elif t == 'bool': out += ca_word(1 if x else 0)
+        elif t.startswith('uint'): out += ca_word(x)
+        elif t == 'Scope[]': out += keccak256(b''.join(ca_struct('Scope', s) for s in x))
+        elif t == 'bytes32[]': out += keccak256(b''.join(ca_b32(e) for e in x))
+        else: raise ValueError(t)
+    return keccak256(out)
+t = ca['task']
+check('agent/task canonical', canonical(t['value']), t['canonical'])
+check('agent/taskHash', h(keccak256(canonical(t['value']).encode('utf-8'))), t['taskHash'])
+for c in ca['mandates']:
+    for i, s in enumerate(c['scope']):
+        check('agent/mandate scope hash %d/%s' % (i, c['name']), h(ca_struct('Scope', s)), c['intermediate']['scopeHashes'][i])
+    sh = ca_struct('Mandate', c)
+    check('agent/mandate structHash/' + c['name'], h(sh), c['intermediate']['structHash'])
+    check('agent/mandate digest/' + c['name'], h(typed_digest(ca_dom, sh)), c['digest'])
+oc = ca['otherChain']
+check('agent/mandate on another chain', h(typed_digest(eip712_domain(d['name'], d['version'], oc['chainId'], d['verifyingContract']), ca_struct('Mandate', ca['mandates'][oc['mandate']]))), oc['digest'])
+check('agent/another chain gives another hash', str(oc['digest'] != ca['mandates'][oc['mandate']]['digest']), 'True')
+for key, name in [('offers', 'TaskOffer'), ('verdicts', 'TaskVerdict'), ('revocations', 'MandateRevocation')]:
+    for c in ca[key]:
+        sh = ca_struct(name, c)
+        check('agent/%s structHash/%s' % (name, c['name']), h(sh), c['structHash'])
+        check('agent/%s digest/%s' % (name, c['name']), h(typed_digest(ca_dom, sh)), c['digest'])
+# none of the holder's agent types shares a typehash with the other types of the same domain (or the voucher's)
+other = [b'Delegation(address container,address signer,uint64 expires)',
+         b'ChannelKeys(address container,bytes32 x25519,bytes32 ed25519,bytes32 inbox,uint64 issued,uint64 expires)',
+         b'ManifestContent(address container,bytes32 contentHash)',
+         b'Voucher(address consumer,address provider,uint256 cumulative,uint64 expires)']
+allth = list(ca_th.values()) + [keccak256(o) for o in other]
+check('agent/every typehash in the hub domain differs', len(set(allth)), len(allth))
+
 
 if fail:
     print('FAIL: %d of %d checks disagreed with the reference implementation\n' % (len(fail), checked))

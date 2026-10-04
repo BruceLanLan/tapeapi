@@ -25,6 +25,10 @@ export function parseUnits(str, decimals = BEM_DECIMALS) {
   return BigInt(i) * 10n ** BigInt(decimals) + BigInt((f + '0'.repeat(decimals)).slice(0, decimals) || '0')
 }
 export function formatUnits(wei, decimals = BEM_DECIMALS) {
+  decimals = Number(decimals)
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) throw new TapeAPIError('INVALID_ARGUMENT', 'decimals must be a whole number from 0 to 255')
+  // 0 decimals: the whole string is the integer part (slice(0, -0) would be empty) / 0 位小数：整串都是整数部分
+  if (decimals === 0) return BigInt(wei).toString()
   const s = BigInt(wei).toString().padStart(decimals + 1, '0')
   const i = s.slice(0, -decimals), f = s.slice(-decimals).replace(/0+$/, '')
   return f ? `${i}.${f}` : i
@@ -124,5 +128,70 @@ export function validateManifest(m, { requireDelegation = true, allowHttp = fals
     payment: { escrow: pay.escrow ?? null, unit: 'BEM', decimals: BEM_DECIMALS },
   }
 }
+// @experimental (1.7) The optional `agent` member of a manifest (container agents, phase 0; the format of the public
+// Idea TapeOutProtocol/TAPs#41): what the agent does, the FORMAT of its prices (never a price list of ours), whether it
+// accepts mandates, and the hash of the terms it publishes. validateManifest does not look at it (TAP-11 §3.1: clients
+// ignore members they do not know), so no 1.x resolution changes; a client that wants the member calls this on
+// `svc.manifest.agent`. Unknown members are ignored (left out of the copy). Every text here is data, never instructions,
+// and `name` of the manifest is still display only. Throws MANIFEST_INVALID.
+// 清单的可选 `agent` 成员：能力、价格**格式**、是否接受授权书、条款哈希。validateManifest 不看它，1.x 的解析行为不变。
+export const AGENT_PRICING_MODES = Object.freeze(['free', 'fixed', 'quote'])
+export const AGENT_MAX_TASKS = 32
+export const AGENT_MAX_CAPABILITIES = 32
+const AGENT_WORD_RE = /^[a-z0-9][a-z0-9._/-]{0,63}$/
+const AMOUNT_RE = /^(0|[1-9][0-9]{0,77})$/
+export function validateAgentMember(agent) {
+  const bad = (m) => fail(`agent: ${m}`)
+  if (!agent || typeof agent !== 'object' || Array.isArray(agent)) bad('must be an object')
+  const capabilities = agent.capabilities === undefined ? [] : agent.capabilities
+  if (!Array.isArray(capabilities) || capabilities.length > AGENT_MAX_CAPABILITIES) bad(`capabilities must be an array of at most ${AGENT_MAX_CAPABILITIES} words`)
+  for (const c of capabilities) if (typeof c !== 'string' || !AGENT_WORD_RE.test(c)) bad(`capability ${JSON.stringify(c)?.slice(0, 40)} must be 1..64 of a-z 0-9 . _ / - (starting with a letter or digit)`)
+  if (new Set(capabilities).size !== capabilities.length) bad('capabilities repeat')
+  if (!Array.isArray(agent.tasks) || agent.tasks.length === 0 || agent.tasks.length > AGENT_MAX_TASKS) bad(`tasks must be a non-empty array of at most ${AGENT_MAX_TASKS}`)
+  const kinds = new Set()
+  const tasks = agent.tasks.map((t, i) => {
+    if (!t || typeof t !== 'object' || Array.isArray(t)) bad(`tasks[${i}] must be an object`)
+    if (typeof t.kind !== 'string' || !AGENT_WORD_RE.test(t.kind)) bad(`tasks[${i}].kind must be 1..64 of a-z 0-9 . _ / -`)
+    if (kinds.has(t.kind)) bad(`task kind ${t.kind} repeats`); kinds.add(t.kind)
+    const p = t.pricing
+    if (!p || typeof p !== 'object' || !AGENT_PRICING_MODES.includes(p.mode)) bad(`tasks[${i}].pricing.mode must be one of ${AGENT_PRICING_MODES.join(', ')}`)
+    const pricing = { mode: p.mode }
+    if (p.mode === 'fixed') {
+      // token: the asset contract, or the zero address for the chain's native coin; amount: an integer in the token's
+      // smallest unit (decimals are read from the token on chain, never assumed); unit: what one amount buys
+      if (!isSpecAddress(p.token)) bad(`tasks[${i}].pricing.token must be an address (the zero address for the native coin)`)
+      if (typeof p.amount !== 'string' || !AMOUNT_RE.test(p.amount)) bad(`tasks[${i}].pricing.amount must be an integer string in the token's smallest unit`)
+      if (typeof p.unit !== 'string' || !AGENT_WORD_RE.test(p.unit)) bad(`tasks[${i}].pricing.unit must be 1..64 of a-z 0-9 . _ / - (for example "task")`)
+      Object.assign(pricing, { token: p.token, amount: p.amount, unit: p.unit })
+    } else if (p.mode === 'quote') {
+      if (p.token !== undefined) { if (!isSpecAddress(p.token)) bad(`tasks[${i}].pricing.token must be an address`); pricing.token = p.token }
+    } else if (p.token !== undefined || p.amount !== undefined) bad(`tasks[${i}].pricing: a free task names no token or amount`)
+    const out = { kind: t.kind, pricing }
+    if (t.maxDurationS !== undefined) {
+      if (!Number.isSafeInteger(t.maxDurationS) || t.maxDurationS <= 0) bad(`tasks[${i}].maxDurationS must be a positive whole number of seconds`)
+      out.maxDurationS = t.maxDurationS
+    }
+    if (t.description !== undefined) {
+      if (typeof t.description !== 'string' || codePoints(t.description) > 256) bad(`tasks[${i}].description must be a string of at most 256 code points`)
+      out.description = t.description
+    }
+    return out
+  })
+  const md = agent.mandates
+  if (!md || typeof md !== 'object' || typeof md.accepts !== 'boolean') bad('mandates.accepts must be a boolean')
+  const mandates = { accepts: md.accepts }
+  if (md.enforcement !== undefined) {
+    // what the agent accepts as enforcement; phase 0 knows only 'none'. Unknown words are kept out, not refused.
+    if (!Array.isArray(md.enforcement) || md.enforcement.some((e) => typeof e !== 'string')) bad('mandates.enforcement must be an array of strings')
+    mandates.enforcement = md.enforcement.filter((e) => e === 'none')
+  }
+  let terms
+  if (agent.terms !== undefined) {
+    if (typeof agent.terms !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(agent.terms)) bad('terms must be "sha256:" and 64 lowercase hex digits (the SHA-256 of the terms text the agent publishes)')
+    terms = agent.terms
+  }
+  return { capabilities: [...capabilities], tasks, mandates, ...(terms ? { terms } : {}) }
+}
+
 export function findMethod(manifest, name) { return manifest.methods.find(x => x.name === name) || null }
 export function methodPrice(method) { return parseUnits(method.priceBEM || '0', BEM_DECIMALS) }

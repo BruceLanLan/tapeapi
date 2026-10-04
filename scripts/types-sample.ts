@@ -13,7 +13,9 @@ import { exposeTapeAPI, manifestToTools } from '@tapeapi/sdk/webmcp'
 import { createInvite, acceptInvite, completeInvite, generateIdentity, fanIn } from '@tapeapi/sdk/channel'
 import { busPrivacyReader, type BusPrivacyStats } from '@tapeapi/sdk/bus-privacy'
 import { canonicalJSON } from '@tapeapi/sdk/canon'
-import { validateManifest } from '@tapeapi/sdk/manifest'
+import { validateManifest, validateAgentMember, type AgentMember } from '@tapeapi/sdk/manifest'
+import * as agentKit from '@tapeapi/sdk/agent'
+import { createAgentKit, createPaymentKit, paymentOrder, mandateTypedData, encodeContent, decodeContent, type Mandate, type ThreadCheck, type MandateCheck, type AttachmentCheck, type ThreadMessage } from '@tapeapi/sdk/agent'
 import { voucherDigest } from '@tapeapi/sdk/sig'
 import { encodeCall } from '@tapeapi/sdk/abi'
 import { createRpc as createRpc2 } from '@tapeapi/sdk/rpc'
@@ -351,3 +353,31 @@ async function conform15all() {
   void [chains, live, seen]
 }
 void conform15all
+
+// @experimental 1.7: container agents, phase 0 (the whole @tapeapi/sdk/agent subpath) / 容器代理阶段 0
+async function agent17() {
+  const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })
+  const kit = createAgentKit(api, { nonces: new Map(), revocationFloor: new Map(), clock: () => 1789000000 })
+  const m: Mandate = { principal: '0x86DDaEF00401E3F10418398D67D7189fc458eA95', agent: '0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3', agentKey: '0x' + '77'.repeat(20), mode: agentKit.MODE_PAY, taskHash: agentKit.taskHashOf({ kind: 'x' }), scope: [], feeToken: '0x' + '00'.repeat(20), feeCap: '0', notBefore: 1, expires: 2, nonce: 1n, subdelegate: false }
+  const typed = mandateTypedData(56, MAINNET.hub, m, { task: { kind: 'x' } })
+  const w: agentKit.WalletRequest = agentKit.forWallet(typed, { chainId: 56, hub: MAINNET.hub })
+  const fileBytes: Uint8Array = agentKit.revocationFileBytes({ chainId: 56, revocation: { principal: m.principal, mandateHashes: [], revokedBefore: 0, issued: 1 }, sig: '0x' })
+  void [w, fileBytes]
+  const checked: MandateCheck = await kit.verifyMandate({ mandate: m, sig: '0x' }, { agentKey: m.agentKey, readSite: true })
+  const none: 'none' = checked.enforcement
+  const msgs: ThreadMessage[] = []
+  const t: ThreadCheck = await kit.verifyTaskThread(msgs, { at: 1789000000 })
+  const self: boolean = t.selfHire
+  const pay = createPaymentKit(api, { tokenAllowed: () => false })
+  const tx = await pay.transferToContainer({ name: '12.1013.tape', token: '0x' + 'b0'.repeat(20), amount: '1' })
+  const lines: string[] = tx.summary
+  const msg = await pay.readMessage({ recipient: '0x' + 'a6'.repeat(20), inboxIndex: 0 })
+  const r: AttachmentCheck = await pay.verifyAttachment(msg, msg.attachments[0])
+  const order = paymentOrder({ clock: () => 1 })
+  order.recordTransfer({ recipient: '0x' + 'a6'.repeat(20), tx: '0x' + '12'.repeat(32) })
+  const bytes: Uint8Array = encodeContent({ body: 'paid', attachments: [{ type: 'erc20', chainId: 56, token: '0x' + 'b0'.repeat(20), amount: '1', tx: '0x' + '12'.repeat(32) }] })
+  const decoded = decodeContent(bytes)
+  const member: AgentMember = validateAgentMember({ tasks: [{ kind: 'x', pricing: { mode: 'free' } }], mandates: { accepts: true } })
+  void [typed, none, self, lines, r, decoded, member, agentKit.THREAD_KINDS]
+}
+void agent17

@@ -44,6 +44,8 @@ export * as proof from './proof.js'
 /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export declare const MAX_CONTRIBUTION_BPS: number
 /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
+export declare const DEFAULT_CONTRIBUTION_BPS: number
+/** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export declare const RECOMMENDED_CONTRIBUTION_BPS: number
 /** BNB Smart Chain mainnet contract addresses (the defaults). */
 export declare const MAINNET: {

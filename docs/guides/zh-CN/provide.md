@@ -135,10 +135,11 @@ const svc = await createTapeAPI({ rpcUrls: [/* ... */], quorum: 2 }).resolve('0x
 在方法上设置 `priceBEM`，并在 `payment` 中指定一个托管合约。运行时会验证每张凭证、按消费者计量，并拒绝低于价格的
 任何凭证。同一个付费服务的所有端点必须共享同一个原子计量存储（在 Cloudflare 上为 D1，见
 [`examples/cloudflare-worker/`](../../../examples/cloudflare-worker/)），否则同一张凭证可能被服务两次。结算者会把凭证
-分批提交给托管合约。
+分批提交给托管合约。（实验性、未部署：计划送审的托管一个实例只托管一种代币，首个是 USDT 锚定币。默认计价单位将是 USDT，
+托管金额按代币合约自己的 `decimals()` 读取，而不是 BEM 的 8 位；`priceBEM` 保持不变，仍是目前唯一的按次价格字段。哪些代币、为什么：[`docs/FEES.md`](../../FEES.md)。）
 
 结算时，维护贡献从你的所得中划出，不会加到消费者的价格上。默认是 1%（100 bps，托管合约里的常量）。你可以用电路持有者
-的钱包发送 `api.tx.setContribution({ circuits, tokenId, bps })`，为自己的服务把它设为 0（关闭），或最高 50% 的任意值。
+的钱包发送 `api.tx.setContribution({ circuits, tokenId, bps })`，为自己的服务把它设为 0（关闭），或最高 20% 的任意值。
 设为 0 的服务得到完全相同的对待。见 [`docs/FEES.md`](../../FEES.md)。
 
 > 托管合约尚未在主网上部署。付费方法目前可以针对示例运行，不收取任何费用。仓库里的参考托管合约仍从 0 开始；默认 1%

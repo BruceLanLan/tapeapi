@@ -57,8 +57,7 @@ the [changelog](../CHANGELOG.md).
 - **Escrow audit, then paid calls.** The paid-call escrow (TAPI-22, `contracts/src/TapeAPIEscrow.sol`) is written and
   tested but **not deployed**. It will be deployed only after an independent third-party audit; paid calls start
   after that. Until then every live method is free. The version that goes to audit is the next one: it adds the
-  default 1% contribution (provider can set 0) and is planned to settle in BEM, BNB (as WBNB), USDT, USDC, ETH and
-  USD1. See [SECURITY.md](../SECURITY.md).
+  default 1% contribution (provider can set 0) and is planned to settle in USDT (Binance-Peg) first, with BEM and WBNB on demand. See [SECURITY.md](../SECURITY.md).
 - **Service directory.** A place to find services by what they do. It is for discovery only: resolution always goes
   to the chain, and a listing never changes what a client trusts.
 
@@ -117,7 +116,7 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
 
 - **托管合约审计，然后才有付费调用。** 付费调用的托管合约（TAPI-22，`contracts/src/TapeAPIEscrow.sol`）已写好并有
   测试，但**未部署**。只有通过独立第三方审计后才会部署，付费调用在那之后才开始。在此之前所有线上方法都免费。
-  送审的是下一版：它加入默认 1% 的维护贡献（提供者可设为 0），并计划支持 BEM、BNB（包装为 WBNB）、USDT、USDC、ETH、USD1 结算。
+  送审的是下一版：它加入默认 1% 的维护贡献（提供者可设为 0），并计划首先支持 USDT（Binance-Peg）结算，BEM 与 WBNB 按需。
   见 [SECURITY.md](../SECURITY.md)。
 - **服务目录。** 按功能查找服务的地方，只用于发现：解析永远以链上为准，登记与否不改变客户端信任什么。
 

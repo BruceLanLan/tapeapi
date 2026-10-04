@@ -37,7 +37,7 @@ contract ClockBoundariesTest is Test {
 
     event WithdrawRequested(address indexed consumer, address indexed provider, uint256 amount, uint64 availableAt);
     event Withdrawn(address indexed consumer, address indexed provider, uint256 amount);
-    event Settled(address indexed consumer, address indexed provider, uint256 paid, uint256 contribution);
+    event Settled(address indexed consumer, address indexed provider, uint256 paid, uint256 contribution, uint16 bps);
 
     function setUp() public {
         vm.warp(1_758_300_000);
@@ -53,6 +53,13 @@ contract ClockBoundariesTest is Test {
         bem.approve(address(escrow), type(uint256).max);
         escrow.fund(provider, CHANNEL);
         vm.stopPrank();
+        // These tests replay channel mechanics, where "paid in full" means the whole amount: the providers opt out of the
+        // TAPI-22 §3.4 default contribution (1%) here. The contribution split, the default included, has its own tests in
+        // TapeAPIEscrow.t.sol, and EscrowInvariant.t.sol starts every provider at the default.
+        // 这些测试重放通道机制，"足额"指全额：此处让提供者关闭 TAPI-22 §3.4 的默认贡献（1%）。贡献拆分（含默认值）
+        // 另有测试（TapeAPIEscrow.t.sol），EscrowInvariant.t.sol 让每个提供者从默认值开始。
+        nft.mint(address(0xA11CE), 1);
+        vm.prank(address(0xA11CE)); escrow.setContribution(address(nft), 1, 0);
     }
 
     function _sig(uint256 pk, uint256 cum, uint64 exp) internal view returns (bytes memory) {

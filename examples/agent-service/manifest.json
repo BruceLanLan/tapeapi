@@ -1,0 +1,49 @@
+{
+  "tapeapi": "0.1",
+  "name": "Block Height Agent (experimental container-agent example)",
+  "circuits": "0x0000000000000000000000000000000000000000",
+  "tokenId": "0",
+  "container": "0x0000000000000000000000000000000000000000",
+  "signer": "0x0000000000000000000000000000000000000000",
+  "delegation": null,
+  "endpoints": { "live": ["http://127.0.0.1:8799/tapeapi/v1"], "async": false },
+  "methods": [
+    {
+      "name": "task_offer",
+      "priceBEM": "0",
+      "description": "[no-quorum] answers a signed tape.agent/offer with a signed tape.agent/accept announcing a fresh agentKey for this order (every answer is signed at its own time)",
+      "params": { "message": "object" },
+      "returns": { "kind": "string", "offerHash": "bytes32", "agentKey": "address", "exp": "number" }
+    },
+    {
+      "name": "task_mandate",
+      "priceBEM": "0",
+      "description": "[no-quorum] hands over the holder-signed mandate; the work starts only if it verifies (phase 0: enforcement none, every cap 0)",
+      "params": { "offerHash": "bytes32", "message": "object" },
+      "returns": { "state": "string", "offerHash": "bytes32", "mandateHash": "bytes32", "enforcement": "string" }
+    },
+    {
+      "name": "task_deliver",
+      "priceBEM": "0",
+      "description": "[no-quorum] the signed tape.agent/deliver: deliverableHash, hash-only receipts of every upstream call, receiptsHash",
+      "params": { "mandateHash": "bytes32" },
+      "returns": { "kind": "string", "mandateHash": "bytes32", "deliverableHash": "bytes32", "receipts": "object[]", "receiptsHash": "bytes32", "exp": "number" }
+    },
+    {
+      "name": "task_status",
+      "priceBEM": "0",
+      "description": "[no-quorum] where an order stands; with the signed mandate it also returns the deliverable, with a signed revocation message it stops the order",
+      "params": { "offerHash": "bytes32?", "mandateHash": "bytes32?", "mandate": "object?", "revocation": "object?" },
+      "returns": { "state": "string", "offerHash": "bytes32", "enforcement": "string", "taskKind": "string", "title": "string" }
+    }
+  ],
+  "payment": { "escrow": "0x0000000000000000000000000000000000000000", "unit": "BEM", "decimals": 8 },
+  "agent": {
+    "capabilities": ["chain.block-height"],
+    "tasks": [
+      { "kind": "chain.block-height", "pricing": { "mode": "quote" }, "maxDurationS": 60, "description": "Reads the BNB Smart Chain block height from the providers a mandate lists, and answers with every answer it got." }
+    ],
+    "mandates": { "accepts": true, "enforcement": ["none"] }
+  },
+  "dev": true
+}

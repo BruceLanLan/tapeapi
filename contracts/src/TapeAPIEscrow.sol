@@ -14,13 +14,16 @@ import {
 ///         on-chain out of that channel only. The channel balance IS the cap: there is no separate allowance, no
 ///         shared pool, and therefore no way for a voucher toward one provider to touch money funded toward another
 ///         (the v1 C-01 self-dealing drain is structurally inexpressible, see docs/DECISION-escrow-v2.md).
-///         Zero protocol fee. Each provider (service container) may opt in to a voluntary `contributionBps`
-///         (default 0, hard cap 50%) routed to the standard-maintenance treasury at settlement. The owner can only
-///         rotate the treasury address.
+///         Zero protocol fee. Each provider (service container) carries a maintenance contribution, carved out of
+///         its own share at settlement and routed to the standard-maintenance treasury: DEFAULT_CONTRIBUTION_BPS
+///         (1%) until the circuit holder sets a value, then that value (0 included), hard cap MAX_CONTRIBUTION_BPS
+///         (20%). Both are constants. The owner can only rotate the treasury address.
 ///         预付 BEM 托管 v2：每个 (消费者, 提供者) 一条独立通道。消费者向某个提供者充值通道、链下签发单调递增的
 ///         累计凭证；任何人可上链结算，且只能从该通道支付。通道余额即上限：没有额度、没有共享池，因此对一个
 ///         提供者的凭证永远碰不到充给另一个提供者的钱（v1 的 C-01 自付自收在结构上无法表达）。
-///         零协议费；提供者可自愿设置 `contributionBps`（默认 0，硬上限 50%）；owner 唯一权限是更换金库地址。
+///         零协议费；维护贡献在结算时从提供者自己的份额中划出、付给金库：电路持有人设定之前为
+///         DEFAULT_CONTRIBUTION_BPS（1%），设定之后为所设之值（含 0），硬上限 MAX_CONTRIBUTION_BPS（20%），两者均为常量；
+///         owner 唯一权限是更换金库地址。
 ///
 ///         Provider protection is ONE delay: a withdrawal must be requested (`WithdrawRequested` is public) and is
 ///         executable only after WITHDRAW_COOLDOWN (48h), for WITHDRAW_WINDOW (7d). The provider MUST watch that
@@ -39,7 +42,8 @@ import {
 ///         同一张凭证在消费者补充通道后可续结余额。
 contract TapeAPIEscrow is Ownable {
     // ---------- Constants / 常量 ----------
-    uint16 public constant MAX_CONTRIBUTION_BPS = 5000;   // 50% hard cap against fat-finger / 防误操作上限
+    uint16 public constant DEFAULT_CONTRIBUTION_BPS = 100; // 1% until the holder sets a value (TAPI-22 §3.4) / 持有人设定前的默认值
+    uint16 public constant MAX_CONTRIBUTION_BPS = 2000;   // 20% hard cap / 硬上限
     uint64 public constant WITHDRAW_COOLDOWN = 48 hours;  // the provider's settlement window / 提供者的结算窗口
     uint64 public constant WITHDRAW_WINDOW = 7 days;      // execution window after the cooldown; a request cannot stay armed for weeks / 冷静期后的执行窗口
     uint64 public constant MAX_SESSION = 30 days;         // a session key cannot be authorised further ahead than this / 会话密钥最长授权期
@@ -68,7 +72,13 @@ contract TapeAPIEscrow is Ownable {
     mapping(address consumer => mapping(address provider => uint256)) private _claimed;   // cumulative already paid, monotone / 已结算累计额，单调不减
     mapping(address consumer => mapping(address provider => mapping(address key => uint64))) private _session; // key expiry, per channel / 会话到期，按通道
     mapping(address consumer => mapping(address provider => PendingWithdraw)) private _pending;
-    mapping(address provider => uint16) private _contributionBps;  // provider-set, default 0 / 提供者自设
+    /// @dev `isSet` is what tells "never set" (DEFAULT_CONTRIBUTION_BPS applies) apart from "set to 0" (no
+    ///      contribution); a bare uint16 cannot, because its zero value is both. One slot per provider. Read ONLY
+    ///      through `_contributionOf`.
+    ///      `isSet` 区分"从未设定"（适用默认值）与"设为 0"（不贡献）；单个 uint16 做不到，因为它的零值同时表示两者。
+    ///      每个提供者一个存储槽；只能经 `_contributionOf` 读取。
+    struct Contribution { uint16 bps; bool isSet; }
+    mapping(address provider => Contribution) private _contribution;
 
     uint256 private _lock = 1;       // reentrancy guard / 重入锁
 
@@ -80,7 +90,9 @@ contract TapeAPIEscrow is Ownable {
     event Withdrawn(address indexed consumer, address indexed provider, uint256 amount);
     event WithdrawCancelled(address indexed consumer, address indexed provider);
     event SessionAuthorized(address indexed consumer, address indexed provider, address indexed key, uint64 expires);
-    event Settled(address indexed consumer, address indexed provider, uint256 paid, uint256 contribution);
+    /// @dev `bps` is the rate this settlement applied, so `contribution == paid * bps / 10000` is checkable from the
+    ///      log alone. / `bps` 为本次结算实际适用的比例，仅凭日志即可核验 `contribution == paid * bps / 10000`。
+    event Settled(address indexed consumer, address indexed provider, uint256 paid, uint256 contribution, uint16 bps);
     event ContributionSet(address indexed provider, uint16 bps);
     event TreasuryChanged(address indexed oldTreasury, address indexed newTreasury);
 
@@ -191,17 +203,22 @@ contract TapeAPIEscrow is Ownable {
 
     // ---------- Provider actions / 提供者操作 ----------
 
-    /// @notice Set the voluntary contribution for the service identified by (circuits, tokenId).
+    /// @notice Set the contribution for the service identified by (circuits, tokenId).
     ///         Caller must be the current circuit holder; provider = hub.accountOf(circuits, tokenId).
-    ///         `bps` is in basis points, 0 disables, hard cap MAX_CONTRIBUTION_BPS.
-    ///         为电路 (circuits, tokenId) 对应的服务设置自愿贡献比例。调用者必须是当前电路持有人；
-    ///         provider = hub.accountOf(circuits, tokenId)。万分比，0 为关闭，硬上限 MAX_CONTRIBUTION_BPS。
+    ///         `bps` is in basis points, 0 disables, hard cap MAX_CONTRIBUTION_BPS. Once set, the value (0 included)
+    ///         replaces DEFAULT_CONTRIBUTION_BPS for good. It takes effect at the next `settle` and is never
+    ///         retroactive: past settlements are final, and a voucher not yet settled is split at the rate in force
+    ///         when it settles. `ContributionSet` carries the new effective rate.
+    ///         为电路 (circuits, tokenId) 对应的服务设置贡献比例。调用者必须是当前电路持有人；
+    ///         provider = hub.accountOf(circuits, tokenId)。万分比，0 为关闭，硬上限 MAX_CONTRIBUTION_BPS。设定之后
+    ///         （含 0）永久取代默认值；自下一次 `settle` 起生效，绝不追溯：已结算的不重算，尚未结算的凭证按结算时
+    ///         的比例拆分。`ContributionSet` 携带新的有效比例。
     function setContribution(address circuits, uint256 tokenId, uint16 bps) external {
         if (IERC721(circuits).ownerOf(tokenId) != msg.sender) revert NotHolder();
         if (bps > MAX_CONTRIBUTION_BPS) revert ContributionTooHigh(bps);
         address provider = hub.accountOf(circuits, tokenId);
         if (provider == address(0)) revert ZeroAddress();
-        _contributionBps[provider] = bps;
+        _contribution[provider] = Contribution({bps: bps, isSet: true});
         emit ContributionSet(provider, bps);
     }
 
@@ -212,7 +229,8 @@ contract TapeAPIEscrow is Ownable {
     ///         live at settlement (`sessionExpiry(consumer, provider, signer) >= block.timestamp`); it does not have to
     ///         outlive the voucher. `provider` may be neither the zero address nor this contract (M-01). Pays
     ///         `pay = min(cumulative - claimed, channel)`: `pay - contribution` to provider and
-    ///         `contribution = pay * contributionBps[provider] / 10000` to treasury (skipped when 0); `claimed += pay`.
+    ///         `contribution = pay * contributionOf(provider) / 10000` to treasury (skipped when 0), at the rate in
+    ///         force now; `claimed += pay`.
     ///         `pay < delta` is partial settlement, a supported credit flow: the provider served beyond the channel,
     ///         and the same voucher settles the rest once the consumer funds again.
     ///         从 (consumer, provider) 通道结算凭证，任何人可调；`block.timestamp <= expires` 期间有效。签名者 MUST
@@ -237,14 +255,15 @@ contract TapeAPIEscrow is Ownable {
         uint256 pay = delta > bal ? bal : delta;   // partial settlement / 部分结算
         if (pay == 0) revert InsufficientBalance();
 
-        uint256 contribution = (pay * _contributionBps[provider]) / 10_000;
+        uint16 bps = _contributionOf(provider);   // the rate in force at this settlement / 本次结算时有效的比例
+        uint256 contribution = (pay * bps) / 10_000;
         // effects / 先改状态
         _claimed[consumer][provider] = already + pay;
         _channel[consumer][provider] = bal - pay;
         // interactions / 后转账
         _safeTransfer(provider, pay - contribution);
         if (contribution > 0) _safeTransfer(treasury, contribution);
-        emit Settled(consumer, provider, pay, contribution);
+        emit Settled(consumer, provider, pay, contribution, bps);
     }
 
     // ---------- Views / 查询 ----------
@@ -261,8 +280,9 @@ contract TapeAPIEscrow is Ownable {
         PendingWithdraw memory p = _pending[consumer][provider];
         return (p.amount, p.requestedAt);
     }
-    /// @notice Contribution in basis points a provider has opted in to (0 = none) / 提供者自设的贡献比例（万分比）
-    function contributionOf(address provider) external view returns (uint16) { return _contributionBps[provider]; }
+    /// @notice Effective contribution in basis points: DEFAULT_CONTRIBUTION_BPS until the holder sets a value, then
+    ///         that value (0 = none). / 有效贡献比例（万分比）：持有人设定前为默认值，设定后为所设之值（0 为不贡献）
+    function contributionOf(address provider) external view returns (uint16) { return _contributionOf(provider); }
 
     /// @notice EIP-712 domain separator; rebuilt if chain id changed (fork) / 域分隔符
     function DOMAIN_SEPARATOR() public view returns (bytes32) {
@@ -298,6 +318,12 @@ contract TapeAPIEscrow is Ownable {
     ///      使这类通道根本不可能存在。
     function _checkProvider(address provider) private view {
         if (provider == address(0) || provider == address(this)) revert BadProvider();
+    }
+
+    /// @dev The only reader of `_contribution`. / `_contribution` 的唯一读取处。
+    function _contributionOf(address provider) private view returns (uint16) {
+        Contribution memory c = _contribution[provider];
+        return c.isSet ? c.bps : DEFAULT_CONTRIBUTION_BPS;
     }
 
     // SafeERC20 风格转账 / SafeERC20-style transfers

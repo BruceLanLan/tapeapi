@@ -7,6 +7,48 @@ interfaces.
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-10-05
+
+### Added
+
+- **`@tapeapi/sdk/agent` (experimental): container agents, phase 0.** A new subpath, outside the 1.x compatibility
+  promise (the formats follow the public Ideas TapeOutProtocol/TAPs#40 and #41 and may change with that discussion).
+  Phase 0 has no enforcement: a mandate is a holder's signed statement, every check says `enforcement: 'none'`, a
+  mandate naming any amount is refused, and a payment is a plain transfer verified read-only (TAP-10 §19). It adds four
+  holder-signed EIP-712 types (`Mandate`, `TaskOffer`, `TaskVerdict`, `MandateRevocation`; domain "TapeAPI", hub as
+  `verifyingContract`), `createAgentKit` (verify a mandate, a task thread and an evidence bundle; read revocations;
+  `identityOf`), `createPaymentKit` (payment orders, `transferToContainer`, `viaContainer`, `recipientOf`,
+  `describeTx`, and a 15-step payment check), `revocationFileBytes`, and `forWallet(td, { chainId, hub })`, which every
+  typed-data result must pass through before it reaches a wallet (it strips `warnings` and `display`, and rejects a
+  payload whose chain or hub is not the one the console expects). A task is the message sequence offer, accept, mandate,
+  deliver, acceptance, revocation. Test vectors:
+  `spec/vectors/container-agent.json` (the vector set goes from 480 to 514 checks; `verify.py` agrees with the SDK).
+- **`validateAgentMember` and the manifest's optional `agent` member** (experimental).
+- **`examples/agent-service/`: a runnable agent service and a hiring script** (offline demo world with a fixed clock).
+- **`tapeapi-verify task <thread.json> [--payment <recipient> <index>] [--rpc <url>...]`: check a task thread** (and,
+  with `--payment`, the payment) from the command line. The first argument `task` used to be an error and is now this
+  subcommand; every other invocation behaves as in 1.6 (the output of ten argument shapes is pinned byte for byte).
+- **`DEFAULT_CONTRIBUTION_BPS = 100`** is exported next to `MAX_CONTRIBUTION_BPS`.
+
+### Changed
+
+- **Maintenance contribution: the contract cap is 20% (was 50%), the default stays 1%.** `MAX_CONTRIBUTION_BPS` goes from
+  5000 to 2000 in the SDK and in `contracts/src/TapeAPIEscrow.sol`; `setContribution` refuses more than 2000. The
+  escrow now keeps "never set" apart from "set to 0" (a provider set to 0 contributes nothing; one never set pays the
+  default 1%), and `Settled` carries the `bps` that was applied. TAPI-22 says the directory MUST NOT rank or badge
+  services by contribution. The escrow is still not deployed and not audited, so no live channel is affected. Guides,
+  FAQ and `BUSINESS.md` now say 20%.
+- **Revenue share: the basis changes from 2026-10-05.** The permanent 10% for @Theairresearch is now 10% of each
+  calendar quarter's revenue after the direct cash costs paid to third parties (rented services and infrastructure, audit fees, gas,
+  related compliance and legal fees; never labour), settled quarterly with public accounts of income, deductions and
+  payout. Payments received before 2026-10-05 are still shared under the earlier promise (10% of any revenue). See
+  `BUSINESS.md`.
+
+### Fixed
+
+- `formatUnits` returned a wrong string for a token with 0 decimals (`10` showed as `.1`); the payment summary was the
+  first caller to pass a decimals value read from a chain.
+
 ## [1.6.0] — 2026-10-04
 
 ### Added
@@ -1306,7 +1348,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.3.0...v1.4.0

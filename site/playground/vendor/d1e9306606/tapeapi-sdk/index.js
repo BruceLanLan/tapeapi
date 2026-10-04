@@ -50,8 +50,9 @@ export * as security from './security.js'
 export * as proof from './proof.js'
 
 // TAPI-22 §3.4 贡献比例常量 / contribution constants (basis points).
-export const MAX_CONTRIBUTION_BPS = 5000          // contract hard cap / 合约硬上限
-export const RECOMMENDED_CONTRIBUTION_BPS = 100   // spec recommendation, not enforced anywhere / 规范建议值，不强制
+export const MAX_CONTRIBUTION_BPS = 2000          // contract hard cap, 20% (5000 before 2026-10-05) / 合约硬上限 20%（2026-10-05 前为 5000）
+export const DEFAULT_CONTRIBUTION_BPS = 100       // contract constant: applies until the holder sets a value / 合约常量：持有人设定前适用
+export const RECOMMENDED_CONTRIBUTION_BPS = 100   // older name for the same 100; since 2026-09-28 it is the contract default / 旧名，同一个 100，现为合约默认值
 
 // 主网默认地址 / Mainnet defaults (DESIGN.md).
 export const MAINNET = {
@@ -2964,7 +2965,7 @@ export function createTapeAPI(opts = {}) {
     // per channel, extend-only, expires <= now + 30d; there is no revoke / 按通道授权，只可延长，最长 30 天，无撤销
     authorizeSession: (provider, key, expires) => onChannel(provider, 'authorizeSession', [key, BigInt(expires)]),
     settle: (v, svc) => ({ to: svc ? channelOf(svc).to : needEscrow(), data: encodeCall('settle', [v.consumer, v.provider, BigInt(v.cumulative), BigInt(v.expires), v.sig]), value: '0x0' }),
-    // 持有人为自己的服务设置贡献比例（万分比，0..5000）/ holder opts a service in to a contribution (bps, 0..5000)
+    // 持有人为自己的服务设置贡献比例（万分比，0..MAX_CONTRIBUTION_BPS）/ holder sets a service's contribution (bps, 0..MAX_CONTRIBUTION_BPS)
     setContribution: ({ circuits, tokenId, bps, escrow: esc }) => {
       const n = Number(bps)
       if (!Number.isInteger(n) || n < 0 || n > MAX_CONTRIBUTION_BPS) throw new TapeAPIError('INVALID_ARGUMENT', `bps must be an integer 0..${MAX_CONTRIBUTION_BPS}`)

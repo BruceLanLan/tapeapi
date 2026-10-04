@@ -93,7 +93,7 @@ contract TapeAPIEscrowTest is Test {
     event SessionAuthorized(address indexed consumer, address indexed provider, address indexed key, uint64 expires);
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event Settled(address indexed consumer, address indexed provider, uint256 paid, uint256 contribution);
+    event Settled(address indexed consumer, address indexed provider, uint256 paid, uint256 contribution, uint16 bps);
     event ContributionSet(address indexed provider, uint16 bps);
     event TreasuryChanged(address indexed oldTreasury, address indexed newTreasury);
 
@@ -159,11 +159,12 @@ contract TapeAPIEscrowTest is Test {
         assertEq(address(e.hub()), address(hub));
         assertEq(e.treasury(), treasury);
         assertEq(e.owner(), address(this));
-        assertEq(uint256(e.MAX_CONTRIBUTION_BPS()), 5000);
+        assertEq(uint256(e.MAX_CONTRIBUTION_BPS()), 2000);
+        assertEq(uint256(e.DEFAULT_CONTRIBUTION_BPS()), 100);
         assertEq(uint256(e.WITHDRAW_COOLDOWN()), 48 hours);
         assertEq(uint256(e.WITHDRAW_WINDOW()), 7 days);
         assertEq(uint256(e.MAX_SESSION()), 30 days);
-        assertEq(uint256(e.contributionOf(provider)), 0); // default: no contribution / 默认不贡献
+        assertEq(uint256(e.contributionOf(provider)), 100); // TAPI-22 §3.4 default 1% until the holder sets one / 默认 1%
         assertEq(e.channelOf(consumer, provider), 0);
     }
 
@@ -186,16 +187,55 @@ contract TapeAPIEscrowTest is Test {
 
     function test_setContribution_cap() public {
         vm.prank(holder);
-        vm.expectRevert(abi.encodeWithSelector(ContributionTooHigh.selector, uint16(5001)));
-        escrow.setContribution(address(nft), TOKEN, 5001);
-        _setContribution(5000);
-        assertEq(uint256(escrow.contributionOf(provider)), 5000);
+        vm.expectRevert(abi.encodeWithSelector(ContributionTooHigh.selector, uint16(2001)));
+        escrow.setContribution(address(nft), TOKEN, 2001);
+        vm.prank(holder);
+        vm.expectRevert(abi.encodeWithSelector(ContributionTooHigh.selector, type(uint16).max));
+        escrow.setContribution(address(nft), TOKEN, type(uint16).max);
+        assertEq(uint256(escrow.contributionOf(provider)), 100, "a refused value leaves the default in place");
+        _setContribution(2000);
+        assertEq(uint256(escrow.contributionOf(provider)), 2000);
+        vm.prank(holder);
+        vm.expectRevert(abi.encodeWithSelector(ContributionTooHigh.selector, uint16(2001)));
+        escrow.setContribution(address(nft), TOKEN, 2001);
+        assertEq(uint256(escrow.contributionOf(provider)), 2000, "a refused value leaves the set value in place");
     }
 
     function test_setContribution_zeroDisables() public {
         _setContribution(250);
         _setContribution(0);
         assertEq(uint256(escrow.contributionOf(provider)), 0);
+    }
+
+    /// 2026-10-05: "never set" reads the default, "set to 0" reads 0, and setting the default's own value is
+    /// just a value. A bare uint16 slot could not tell the first two apart.
+    /// "从未设定"读到默认值，"设为 0"读到 0；设成与默认值相同的数也只是一个值。单个 uint16 槽区分不了前两者。
+    function test_setContribution_unsetIsDefault_zeroIsZero() public {
+        assertEq(uint256(escrow.contributionOf(provider)), uint256(escrow.DEFAULT_CONTRIBUTION_BPS()), "never set: default");
+        assertEq(uint256(escrow.contributionOf(address(0xBEEF))), 100, "any address never set reads the default");
+        _setContribution(0);
+        assertEq(uint256(escrow.contributionOf(provider)), 0, "set to 0 is 0, not the default");
+        _setContribution(100);
+        assertEq(uint256(escrow.contributionOf(provider)), 100);
+        _setContribution(0);
+        assertEq(uint256(escrow.contributionOf(provider)), 0, "0 again after 100: never falls back to the default");
+        // a circuit transfer keeps the value; the new holder can change it / 电路转手保留原值，新持有人可改
+        nft.mint(stranger, TOKEN);
+        assertEq(uint256(escrow.contributionOf(provider)), 0);
+        vm.prank(stranger);
+        escrow.setContribution(address(nft), TOKEN, 2000);
+        assertEq(uint256(escrow.contributionOf(provider)), 2000);
+    }
+
+    /// `ContributionSet` carries the new effective rate, 0 included. / `ContributionSet` 携带新的有效比例，含 0。
+    function test_setContribution_eventCarriesEffectiveRate() public {
+        vm.expectEmit(true, false, false, true);
+        emit ContributionSet(provider, 0);
+        _setContribution(0);
+        vm.expectEmit(true, false, false, true);
+        emit ContributionSet(provider, 2000);
+        _setContribution(2000);
+        assertEq(uint256(escrow.contributionOf(provider)), 2000);
     }
 
     function test_setContribution_followsCircuitTransfer() public {
@@ -221,7 +261,7 @@ contract TapeAPIEscrowTest is Test {
         vm.prank(stranger);
         escrow.setContribution(address(nft), 7, 300);
         assertEq(uint256(escrow.contributionOf(p7)), 300);
-        assertEq(uint256(escrow.contributionOf(provider)), 0);
+        assertEq(uint256(escrow.contributionOf(provider)), 100); // still the default / 仍是默认值
     }
 
     // ----- fund / 充值通道 -----
@@ -367,12 +407,14 @@ contract TapeAPIEscrowTest is Test {
 
     // ----- settle math / 结算数学 -----
 
-    function test_settle_defaultZeroContribution_noTreasuryTransfer() public {
+    /// Before 2026-10-05 this was the default; now the holder has to set 0. / 2026-10-05 前这是默认；现在需持有人设 0。
+    function test_settle_zeroContribution_noTreasuryTransfer() public {
+        _setContribution(0);
         uint64 exp = _future();
         bytes memory sig = _voucher(CONSUMER_PK, 1_000 ether, exp);
         uint256 transfersBefore = bem.transfers();
         vm.expectEmit(true, true, false, true);
-        emit Settled(consumer, provider, 1_000 ether, 0);
+        emit Settled(consumer, provider, 1_000 ether, 0, 0);
         vm.prank(stranger); // anyone can settle / 任何人可结算
         escrow.settle(consumer, provider, 1_000 ether, exp, sig);
 
@@ -383,12 +425,26 @@ contract TapeAPIEscrowTest is Test {
         assertEq(escrow.claimedOf(consumer, provider), 1_000 ether);
     }
 
+    /// TAPI-22 §3.4: a provider whose holder never called setContribution pays the 1% default.
+    /// 持有人从未调用 setContribution 的提供者按默认 1% 贡献。
+    function test_settle_defaultContribution_isOnePercent_withoutAnySet() public {
+        uint64 exp = _future();
+        uint256 transfersBefore = bem.transfers();
+        vm.expectEmit(true, true, false, true);
+        emit Settled(consumer, provider, 1_000 ether, 10 ether, 100);
+        escrow.settle(consumer, provider, 1_000 ether, exp, _voucher(CONSUMER_PK, 1_000 ether, exp));
+        assertEq(bem.balanceOf(provider), 990 ether);
+        assertEq(bem.balanceOf(treasury), 10 ether);
+        assertEq(bem.transfers() - transfersBefore, 2);
+        assertEq(escrow.channelOf(consumer, provider), CHANNEL - 1_000 ether, "the consumer pays the price, no more");
+    }
+
     function test_settle_contributionSplit_100bps() public {
         _setContribution(100); // 1%
         uint64 exp = _future();
         uint256 transfersBefore = bem.transfers();
         vm.expectEmit(true, true, false, true);
-        emit Settled(consumer, provider, 1_000 ether, 10 ether);
+        emit Settled(consumer, provider, 1_000 ether, 10 ether, 100);
         escrow.settle(consumer, provider, 1_000 ether, exp, _voucher(CONSUMER_PK, 1_000 ether, exp));
         assertEq(bem.balanceOf(provider), 990 ether);
         assertEq(bem.balanceOf(treasury), 10 ether);
@@ -429,20 +485,70 @@ contract TapeAPIEscrowTest is Test {
     }
 
     function test_settle_maxContribution() public {
-        _setContribution(5000);
+        _setContribution(2000);
         uint64 exp = _future();
+        vm.expectEmit(true, true, false, true);
+        emit Settled(consumer, provider, 1_000 ether, 200 ether, 2000);
         escrow.settle(consumer, provider, 1_000 ether, exp, _voucher(CONSUMER_PK, 1_000 ether, exp));
-        assertEq(bem.balanceOf(provider), 500 ether);
-        assertEq(bem.balanceOf(treasury), 500 ether);
+        assertEq(bem.balanceOf(provider), 800 ether);
+        assertEq(bem.balanceOf(treasury), 200 ether);
+        assertEq(escrow.channelOf(consumer, provider), CHANNEL - 1_000 ether, "the consumer pays the price, no more");
     }
 
     function test_settle_contributionAppliesPerSettlement_notRetroactively() public {
         uint64 exp = _future();
-        escrow.settle(consumer, provider, 1_000 ether, exp, _voucher(CONSUMER_PK, 1_000 ether, exp)); // 0 bps
+        escrow.settle(consumer, provider, 1_000 ether, exp, _voucher(CONSUMER_PK, 1_000 ether, exp)); // default 100 bps
         _setContribution(1000); // 10% from now on / 之后 10%
         escrow.settle(consumer, provider, 1_200 ether, exp, _voucher(CONSUMER_PK, 1_200 ether, exp)); // delta 200
-        assertEq(bem.balanceOf(provider), 1_000 ether + 180 ether);
-        assertEq(bem.balanceOf(treasury), 20 ether);
+        assertEq(bem.balanceOf(provider), 990 ether + 180 ether);
+        assertEq(bem.balanceOf(treasury), 10 ether + 20 ether);
+    }
+
+    /// The rate is read at settlement: a voucher signed before a change settles at the rate in force when it settles,
+    /// what was settled before stays settled, and each `Settled` names the rate it applied. Every change takes effect
+    /// at the very next settle, both up and down.
+    /// 比例在结算时读取：修改前签的凭证按结算时有效的比例拆分，已结算的不重算，每个 `Settled` 写明所用比例；
+    /// 调高或调低都从下一次结算起立即生效。
+    function test_settle_rateChange_immediate_notRetroactive_eventNamesRate() public {
+        uint64 exp = _future();
+        bytes memory v1 = _voucher(CONSUMER_PK, 1_000 ether, exp);
+        bytes memory v2 = _voucher(CONSUMER_PK, 1_500 ether, exp);   // signed now, settled after two changes
+        bytes memory v3 = _voucher(CONSUMER_PK, 2_500 ether, exp);
+        vm.expectEmit(true, true, false, true);
+        emit Settled(consumer, provider, 1_000 ether, 10 ether, 100);
+        escrow.settle(consumer, provider, 1_000 ether, exp, v1);
+        _setContribution(2000);
+        _setContribution(0);                                           // last write wins, at once / 最后一次写入立即生效
+        vm.expectEmit(true, true, false, true);
+        emit Settled(consumer, provider, 500 ether, 0, 0);
+        escrow.settle(consumer, provider, 1_500 ether, exp, v2);
+        assertEq(bem.balanceOf(treasury), 10 ether, "the 10 settled at 1% is neither refunded nor recomputed");
+        _setContribution(2000);
+        vm.expectEmit(true, true, false, true);
+        emit Settled(consumer, provider, 1_000 ether, 200 ether, 2000);
+        escrow.settle(consumer, provider, 2_500 ether, exp, v3);
+        assertEq(bem.balanceOf(provider), 990 ether + 500 ether + 800 ether);
+        assertEq(bem.balanceOf(treasury), 10 ether + 200 ether);
+        assertEq(escrow.claimedOf(consumer, provider), 2_500 ether);
+        assertEq(escrow.channelOf(consumer, provider), CHANNEL - 2_500 ether, "the consumer paid exactly the vouchers");
+    }
+
+    /// The rate can never change what the consumer pays: at 0, at the default and at the cap the channel moves by
+    /// exactly `paid`. / 比例永远改变不了消费者付多少：0、默认、上限三种情况下通道都恰好减少 `paid`。
+    function testFuzz_settle_consumerPriceIndependentOfRate(uint16 bpsSeed, uint256 amount, bool setIt) public {
+        amount = bound(amount, 1, CHANNEL);
+        uint16 bps = uint16(bound(bpsSeed, 0, escrow.MAX_CONTRIBUTION_BPS()));
+        if (setIt) _setContribution(bps);
+        uint16 eff = setIt ? bps : escrow.DEFAULT_CONTRIBUTION_BPS();
+        uint64 exp = _future();
+        bytes memory sig = _voucher(CONSUMER_PK, amount, exp);
+        uint256 c = amount * eff / 10_000;
+        vm.expectEmit(true, true, false, true);
+        emit Settled(consumer, provider, amount, c, eff);
+        escrow.settle(consumer, provider, amount, exp, sig);
+        assertEq(escrow.channelOf(consumer, provider), CHANNEL - amount);
+        assertEq(bem.balanceOf(provider), amount - c);
+        assertEq(bem.balanceOf(treasury), c);
     }
 
     function test_settle_contributionGoesToCurrentTreasury() public {
@@ -480,7 +586,7 @@ contract TapeAPIEscrowTest is Test {
         bytes memory over = _voucher(CONSUMER_PK, CHANNEL + 1_000 ether, exp);
 
         vm.expectEmit(true, true, false, true);
-        emit Settled(consumer, provider, CHANNEL, CHANNEL / 100);
+        emit Settled(consumer, provider, CHANNEL, CHANNEL / 100, 100);
         escrow.settle(consumer, provider, CHANNEL + 1_000 ether, exp, over);
         assertEq(escrow.claimedOf(consumer, provider), CHANNEL, "claimed advances by what was paid, not by cumulative");
         assertEq(escrow.channelOf(consumer, provider), 0);
@@ -496,7 +602,7 @@ contract TapeAPIEscrowTest is Test {
         vm.prank(consumer);
         escrow.fund(provider, 1_500 ether);
         vm.expectEmit(true, true, false, true);
-        emit Settled(consumer, provider, 1_000 ether, 10 ether);
+        emit Settled(consumer, provider, 1_000 ether, 10 ether, 100);
         escrow.settle(consumer, provider, CHANNEL + 1_000 ether, exp, over);
         assertEq(escrow.claimedOf(consumer, provider), CHANNEL + 1_000 ether);
         assertEq(escrow.channelOf(consumer, provider), 500 ether);
@@ -551,7 +657,8 @@ contract TapeAPIEscrowTest is Test {
         vm.prank(consumer);
         escrow.authorizeSession(provider, sessionKey, uint64(block.timestamp + 1 days));
         escrow.settle(consumer, provider, 1 ether, exp, _voucher(SESSION_PK, 1 ether, exp));
-        assertEq(bem.balanceOf(provider), 1 ether);
+        assertEq(bem.balanceOf(provider), 0.99 ether);   // default 1% to the treasury / 默认 1% 进金库
+        assertEq(escrow.claimedOf(consumer, provider), 1 ether);
     }
 
     function test_settle_sessionKey_expired_reverts() public {
@@ -717,7 +824,7 @@ contract TapeAPIEscrowTest is Test {
         escrow.withdraw(provider);
         assertEq(bem.balanceOf(consumer) - before, 1_000 ether, "only what the settlement left");
         assertEq(escrow.channelOf(consumer, provider), 0);
-        assertEq(bem.balanceOf(provider), 4_000 ether, "the provider that settled in time was paid in full");
+        assertEq(bem.balanceOf(provider) + bem.balanceOf(treasury), 4_000 ether, "the provider that settled in time was paid in full");
     }
 
     function test_withdraw_channelDrained_reverts_requestSurvives() public {

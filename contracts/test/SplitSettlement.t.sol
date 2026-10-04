@@ -112,22 +112,24 @@ contract SplitSettlementTest is Test {
         assertEq(bem.balanceOf(address(escrow)), escrow.channelOf(consumer, pSplit) + escrow.channelOf(consumer, pSingle));
     }
 
-    /// The N−1 bound is tight: at 33.33% a 3-unit settle contributes floor(0.9999) = 0, so N such settles give the
-    /// provider all 3N units, while one settle of 3N sends floor(0.9999 N) = N − 1 to the treasury.
-    /// N−1 的上界是紧的：33.33% 下每笔 3 单位的贡献为 floor(0.9999) = 0；一次结算 3N 则贡献 N − 1。
+    /// The N−1 bound is tight: at 19.99% (under the 20% cap since 2026-10-05; was 33.33% under the old 50% cap) a
+    /// 5-unit settle contributes floor(0.9995) = 0, so N such settles give the provider all 5N units, while one
+    /// settle of 5N sends floor(0.9995 N) = N − 1 to the treasury.
+    /// N−1 的上界是紧的：19.99%（2026-10-05 起上限 20%；旧上限 50% 时用 33.33%）下每笔 5 单位的贡献为
+    /// floor(0.9995) = 0；一次结算 5N 则贡献 N − 1。
     function test_splitSettlement_dustBoundIsTight() public {
-        vm.prank(holder); escrow.setContribution(address(nft), 1, 3333);
-        vm.prank(holder); escrow.setContribution(address(nft), 2, 3333);
-        uint256 total = 3 * MAX_N;
+        vm.prank(holder); escrow.setContribution(address(nft), 1, 1999);
+        vm.prank(holder); escrow.setContribution(address(nft), 2, 1999);
+        uint256 total = 5 * MAX_N;
         bem.mint(consumer, 2 * total);
         vm.startPrank(consumer);
         escrow.fund(pSplit, total);
         escrow.fund(pSingle, total);
         vm.stopPrank();
         uint64 exp = uint64(block.timestamp + 1 days);
-        for (uint256 i = 1; i <= MAX_N; i++) _settle(pSplit, 3 * i, exp);
+        for (uint256 i = 1; i <= MAX_N; i++) _settle(pSplit, 5 * i, exp);
         _settle(pSingle, total, exp);
-        assertEq(bem.balanceOf(pSplit), total, "every 3-unit contribution floors to 0");
+        assertEq(bem.balanceOf(pSplit), total, "every 5-unit contribution floors to 0");
         assertEq(bem.balanceOf(treasury), MAX_N - 1, "single settle contributes N - 1");
         assertEq(bem.balanceOf(pSplit) - bem.balanceOf(pSingle), MAX_N - 1, "difference reaches exactly N - 1");
     }

@@ -18,7 +18,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.6.0/tapeapi-sdk-1.6.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.0/tapeapi-sdk-1.7.0.tgz
 ```
 
 把下面的脚本保存为 `.mjs` 文件，放在能解析到 `@tapeapi/sdk` 的地方，然后用 `node <文件>.mjs` 运行：用克隆时，**放在 `tapeapi`
@@ -163,8 +163,7 @@ expires)`），然后改为传入 `{ consumer, sessionKey, sessionExpiry }`。�
 先 `api.tx.approve({ amount })`，再 `api.tx.fund(svc, amount)`。
 
 你只付提供者标明的价格：TapeAPI 不在消费者这一侧加任何费用。维护贡献（如果提供者保留它）从提供者的所得中划出
-（[`docs/FEES.md`](../../FEES.md)）。规范目前用 BEM 结算；下一版托管计划支持 BNB Smart Chain 上的 BEM、BNB（包装为
-WBNB）、USDT、USDC、ETH 与 USD1。
+（[`docs/FEES.md`](../../FEES.md)）。规范目前用 BEM 结算；下一版托管计划在 BNB Smart Chain 上首先支持 USDT（Binance-Peg），BEM 与 WBNB（包装的 BNB）按需、用同一份字节码（见 [`docs/FEES.md`](../../FEES.md)）。
 
 > 托管合约尚未部署，因此付费服务还没有在主网上线。以上内容都可以针对示例运行（本地使用 `FREE_ALL=1` 跳过付费）。
 

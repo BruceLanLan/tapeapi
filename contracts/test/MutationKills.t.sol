@@ -24,13 +24,15 @@ contract MutationKillsTest is Test {
     }
 
     /// Kills M38 (drop `provider == address(0)` check in setContribution): a hub that derives no container must
-    /// not let a holder write bps for address(0).
+    /// not let a holder write bps for address(0). The value written is not the default (100 since 2026-10-05), so a
+    /// write would be visible in `contributionOf(address(0))`.
+    /// 写入的值不是默认值（2026-10-05 起为 100），若被写入就会在 `contributionOf(address(0))` 中可见。
     function test_mut_M38_setContribution_zeroContainerReverts() public {
         TapeAPIEscrow esc = new TapeAPIEscrow(address(bem), address(new Mal_ZeroHub()), treasury);
         vm.prank(holder);
         vm.expectRevert(ZeroAddress.selector);
-        esc.setContribution(address(nft), 1, 100);
-        assertEq(esc.contributionOf(address(0)), 0);
+        esc.setContribution(address(nft), 1, 250);
+        assertEq(esc.contributionOf(address(0)), esc.DEFAULT_CONTRIBUTION_BPS());
     }
 
     /// Kills M31 (drop `signer == address(0)` check in settle): an unrecoverable signature is BadSignature even

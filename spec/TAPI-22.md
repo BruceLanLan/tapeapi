@@ -3,10 +3,10 @@
 | Title | TapeAPI: Metered Payment Voucher and Escrow |
 | Author | Bruce (@BruceLanLan) |
 | Status | Experimental |
-| Implementation | Not deployed (2026-09-27). `contracts/src/TapeAPIEscrow.sol` (v2) is implemented and tested, and the SDK and server implement the voucher, but no escrow is deployed on BNB Chain and it needs an independent audit before it holds real funds. The live services (`11.1013.tape`, `12.1013.tape`) are free and name no escrow. The v2 contract predates the 2026-09-28 revision of §3.4 and still starts every provider at 0; the escrow version that goes to audit and deployment implements §3.4 as written (§7). |
+| Implementation | Not deployed (2026-09-27). `contracts/src/TapeAPIEscrow.sol` (v2) is implemented and tested, and the SDK and server implement the voucher, but no escrow is deployed on BNB Chain and it needs an independent audit before it holds real funds. The live services (`11.1013.tape`, `12.1013.tape`) are free and name no escrow. Since 2026-10-05 the v2 contract implements §3.4 as written (default 100 bps, cap 2000 bps, "never set" kept apart from 0); it is still unaudited (§7). |
 | Type | Standards |
 | Created | 2026-09-20 |
-| Revision | v2 (2026-09-21): per-(consumer, provider) channels. Supersedes the v1 shared-pool + commitment-accounting escrow; the v1 contract and its tests are archived under `contracts/archive/`. The voucher (§3.1) is unchanged. 2026-09-28, before any deployment: the §3.4 contribution defaults to 100 bps and each provider can set it from 0 to 5000 (was: default 0, 100 recommended). |
+| Revision | v2 (2026-09-21): per-(consumer, provider) channels. Supersedes the v1 shared-pool + commitment-accounting escrow; the v1 contract and its tests are archived under `contracts/archive/`. The voucher (§3.1) is unchanged. 2026-09-28, before any deployment: the §3.4 contribution defaults to 100 bps and each provider can set it from 0 to 5000 (was: default 0, 100 recommended). 2026-10-05, before any deployment: the cap is 2000 bps (20%; was 5000), directories are no longer allowed to rank or badge services by the contribution (previously allowed to rank by it), the escrow keeps "never set" (default applies) apart from "set to 0", and `Settled` carries the applied `bps`. Also 2026-10-05: new informative §3.5 (custody assets): USDT-pegged token first, admission criteria, planned changes for the audited version; the token list in §3.4 is replaced by a pointer to it. |
 | Requires | TAPI-20, TAPI-21 |
 | License | CC0-1.0 |
 
@@ -20,7 +20,7 @@ RFC 2119 keywords apply.
 
 ## 1. Abstract
 
-Defines an off-chain, cumulative payment voucher signed by a consumer and an on-chain escrow contract interface, built from independent `(consumer, provider)` channels, that lets a provider settle vouchers in BEM out of the channel funded toward it. Payments go directly to the service container. The protocol charges no mandatory fee: a default maintenance contribution of 1% is carved out of the provider's own share at settlement, the consumer's price does not change, and each provider MAY set it to any value from 0 to 50% (§3.4).
+Defines an off-chain, cumulative payment voucher signed by a consumer and an on-chain escrow contract interface, built from independent `(consumer, provider)` channels, that lets a provider settle vouchers in BEM out of the channel funded toward it. Payments go directly to the service container. The protocol charges no mandatory fee: a default maintenance contribution of 1% is carved out of the provider's own share at settlement, the consumer's price does not change, and each provider MAY set it to any value from 0 to 20% (§3.4).
 
 ## 2. Motivation
 
@@ -66,16 +66,16 @@ requestWithdraw(address provider, uint256 amount)                // amount ≤ c
 cancelWithdraw(address provider)                                 // clears the caller's pending request on that channel
 withdraw(address provider)                                       // inside [requestedAt + 48 h, requestedAt + 48 h + 7 d]; pays min(requested, channel)
 authorizeSession(address provider, address key, uint64 expires)  // per channel; now < expires ≤ now + 30 d; extend-only; no revoke
-setContribution(address circuits, uint256 tokenId, uint16 bps)   // holder only; provider = hub.accountOf(circuits, tokenId); 0 ≤ bps ≤ 5000
+setContribution(address circuits, uint256 tokenId, uint16 bps)   // holder only; provider = hub.accountOf(circuits, tokenId); 0 ≤ bps ≤ 2000
 settle(address consumer, address provider, uint256 cumulative, uint64 expires, bytes sig)
 setTreasury(address) / transferOwnership(address) / acceptOwnership()   // owner / nominee only; nothing else is owner-gated
 channelOf(consumer, provider), claimedOf(consumer, provider), sessionExpiry(consumer, provider, key),
 pendingWithdraw(consumer, provider) → (amount, requestedAt), contributionOf(provider), treasury, hub, bem,
-DEFAULT_CONTRIBUTION_BPS (= 100), MAX_CONTRIBUTION_BPS (= 5000), WITHDRAW_COOLDOWN (= 48 h), WITHDRAW_WINDOW (= 7 d), MAX_SESSION (= 30 d),
+DEFAULT_CONTRIBUTION_BPS (= 100), MAX_CONTRIBUTION_BPS (= 2000), WITHDRAW_COOLDOWN (= 48 h), WITHDRAW_WINDOW (= 7 d), MAX_SESSION (= 30 d),
 DOMAIN_SEPARATOR, VOUCHER_TYPEHASH, voucherDigest   // views
 events: Funded(consumer, provider, amount), WithdrawRequested(consumer, provider, amount, availableAt),
         WithdrawCancelled(consumer, provider), Withdrawn(consumer, provider, amount), SessionAuthorized(consumer, provider, key, expires),
-        Settled(consumer, provider, paid, contribution), ContributionSet(provider, bps), TreasuryChanged(old, new),
+        Settled(consumer, provider, paid, contribution, bps), ContributionSet(provider, bps), TreasuryChanged(old, new),
         OwnershipTransferStarted(old, new), OwnershipTransferred(old, new)
 errors: ZeroAddress, ZeroAmount, BadProvider, InsufficientBalance, NoPendingWithdraw, CooldownActive(uint64 availableAt),
         WithdrawWindowClosed, AmountTooLarge, Expired, SessionTooLong(uint64 max), SessionShorteningNotSupported,
@@ -85,7 +85,7 @@ errors: ZeroAddress, ZeroAmount, BadProvider, InsufficientBalance, NoPendingWith
 
 `fund` MUST revert `ZeroAmount()` for `amount == 0` and `BadProvider()` when `provider` is the zero address or the escrow itself; it MUST credit `channelOf(msg.sender, provider)` before pulling the tokens and emit `Funded`. A channel toward a provider that will never settle can only be recovered by the consumer through `requestWithdraw` / `withdraw`.
 
-`settle` MUST: be callable by anyone; require `block.timestamp ≤ expires` (`Expired()`); revert `BadProvider()` when `provider` is the zero address or the escrow itself; recover the signer and accept it only if it is `consumer` or `sessionExpiry(consumer, provider, signer) ≥ block.timestamp` (`BadSignature()` otherwise); require `cumulative > claimed[consumer][provider]` (`NothingToSettle()`); compute `delta = cumulative − claimed[consumer][provider]` and `paid = min(delta, channel[consumer][provider])`, and require `paid > 0` (`InsufficientBalance()`); compute `contribution = paid × contributionBps[provider] / 10000`; set `claimed += paid` and `channel −= paid`; transfer `paid − contribution` to `provider` and, only when `contribution > 0`, `contribution` to `treasury`; emit `Settled(consumer, provider, paid, contribution)`. `paid < delta` is **partial settlement**, a supported flow (§3.3.1): `claimed` advances by what was paid, and the same voucher MAY be settled again for the remainder, until `expires`, once the channel has been funded again.
+`settle` MUST: be callable by anyone; require `block.timestamp ≤ expires` (`Expired()`); revert `BadProvider()` when `provider` is the zero address or the escrow itself; recover the signer and accept it only if it is `consumer` or `sessionExpiry(consumer, provider, signer) ≥ block.timestamp` (`BadSignature()` otherwise); require `cumulative > claimed[consumer][provider]` (`NothingToSettle()`); compute `delta = cumulative − claimed[consumer][provider]` and `paid = min(delta, channel[consumer][provider])`, and require `paid > 0` (`InsufficientBalance()`); compute `bps = contributionOf(provider)` as it stands at this settlement and `contribution = paid × bps / 10000`; set `claimed += paid` and `channel −= paid`; transfer `paid − contribution` to `provider` and, only when `contribution > 0`, `contribution` to `treasury`; emit `Settled(consumer, provider, paid, contribution, bps)`. `paid < delta` is **partial settlement**, a supported flow (§3.3.1): `claimed` advances by what was paid, and the same voucher MAY be settled again for the remainder, until `expires`, once the channel has been funded again.
 
 #### 3.3.1 Consumer-side delay (provider protection)
 
@@ -102,13 +102,65 @@ Solvency identity (checked by the reference invariant suite): `bem.balanceOf(esc
 ### 3.4 Maintenance Contribution (No Mandatory Fee)
 
 - **No operator fee.** The escrow MUST NOT charge a fee of its own and MUST NOT expose any operator-settable rate, pause, or access to user balances. The only rate in the contract is the provider's contribution, and only the provider controls it.
-- **Default 100 bps, set by the provider.** Until a provider has set a value, `contributionOf(provider)` MUST return `DEFAULT_CONTRIBUTION_BPS = 100` (1%). The default is a constant of the contract, not a parameter: nobody can change it after deployment. The contribution MAY be changed only by the current holder of the service circuit via `setContribution(circuits, tokenId, bps)`, where `provider = hub.accountOf(circuits, tokenId)`; any value from 0 (no contribution) to `MAX_CONTRIBUTION_BPS = 5000` is accepted, and once set, that value, 0 included, replaces the default. The escrow MUST enforce `bps ≤ MAX_CONTRIBUTION_BPS` and MUST emit `ContributionSet(provider, bps)`. A circuit transfer moves this right to the new holder.
-- **What it funds, and no penalty for 0.** The contribution funds standard maintenance: specification upkeep, the reference implementation, audits, and directory operation. A provider at 0 bps MUST receive identical treatment from the escrow, the SDK, and other providers; directories MAY display the value and MAY use it in ranking but MUST NOT withhold functionality.
-- **Carved from the provider's share.** The contribution is deducted at settlement from what the provider would otherwise receive; the consumer's price is unchanged. A change to `bps` applies to settlements after the change, never retroactively. When the amount rounds to 0 no transfer takes place.
+- **Default 100 bps, set by the provider.** Until a provider has set a value, `contributionOf(provider)` MUST return `DEFAULT_CONTRIBUTION_BPS = 100` (1%). The default is a constant of the contract, not a parameter: nobody can change it after deployment. The contribution MAY be changed only by the current holder of the service circuit via `setContribution(circuits, tokenId, bps)`, where `provider = hub.accountOf(circuits, tokenId)`; any value from 0 (no contribution) to `MAX_CONTRIBUTION_BPS = 2000` (20%, also a constant) is accepted, and once set, that value, 0 included, replaces the default. The escrow MUST keep "never set" apart from "set to 0" in storage, so that a provider set to 0 reads 0 and contributes nothing, never the default. The escrow MUST enforce `bps ≤ MAX_CONTRIBUTION_BPS` and MUST emit `ContributionSet(provider, bps)`. A circuit transfer moves this right to the new holder.
+- **What it funds, and no penalty for 0.** The contribution funds standard maintenance: specification upkeep, the reference implementation, audits, and directory operation. A provider at 0 bps MUST receive identical treatment from the escrow, the SDK, and other providers; directories MAY display the value, but MUST NOT use it to rank or order services or to give them any badge or mark, and MUST NOT withhold functionality because of it.
+- **Carved from the provider's share.** The contribution is deducted at settlement from what the provider would otherwise receive; the consumer's price is unchanged. A change to `bps` applies to settlements after the change, never retroactively: what was settled before is never recomputed, and a voucher not yet settled is split at the rate in force when it settles. When the amount rounds to 0 no transfer takes place.
 - **Treasury.** `treasury` is set in the constructor and MUST be published in §6 (and the repository README) before Final. It MAY be changed only by the owner via `setTreasury`, which MUST emit `TreasuryChanged(old, new)` and MUST reject the zero address. The owner MUST have no other power: no fee switch, no pause, no access to balances, no ability to change any provider's `bps` or the default.
 - **Alternative deployments.** Any escrow implementing §3.1–§3.3 is conforming; it MAY omit `setContribution` / `contributionOf`, in which case clients MUST treat the contribution as 0. A service selects its escrow via `manifest.payment.escrow`; clients MUST use that address and MUST NOT assume a canonical deployment. If the community ever wants a uniform protocol fee, the path is a new TAP and a new escrow deployment, never a change to an existing one.
 
-**Planned for the next escrow version (informative; not specified here).** The escrow that will be audited and deployed is planned to settle in several tokens on BNB Smart Chain — BEM (primary), BNB (wrapped as WBNB by the contract), USDT, USDC, ETH and USD1 — and to add `upto` settlement by measured usage. This document does not specify either yet: the voucher and the interface above name BEM only. A later revision of this specification will specify them before that escrow is audited. Until an escrow is deployed, no call is charged anything.
+**Planned for the next escrow version (informative; not specified here).** The escrow that will be audited and deployed is planned to hold one ERC-20 token per instance on BNB Smart Chain, the USDT-pegged token first, with BEM, WBNB and (through WBNB) BNB on demand (§3.5), and to add `upto` settlement by measured usage. This document does not specify either yet: the voucher and the interface above name BEM only. A later revision of this specification will specify them before that escrow is audited. Until an escrow is deployed, no call is charged anything.
+
+### 3.5 Custody assets (informative)
+
+Experimental, not deployed, not audited. This subsection records which token the escrow that goes to audit is planned to hold, how a token is admitted, and what that means for the contract and the SDK. It specifies no interface: the voucher and §3.3 still name one token (`bem`) until a later revision specifies the per-token escrow (§3.4, last paragraph). The evidence is two rounds of read-only on-chain evaluation (2026-10-04) against three independent RPC operators, the second round re-checking the first.
+
+**Which asset (decision of 2026-10-05).** The first supported instance holds the USDT-pegged token on BNB Smart Chain: Binance-Peg "BSC-USD", `0x55d398326f99059fF775485246999027B3197955`. It is issued by Binance, not by Tether, and its `name()` reads "Tether USD", so an SDK or console SHOULD show it as "USDT (Binance-Peg)" together with the address. BEM, WBNB and BNB (through WBNB) are planned on demand, from the same bytecode, one instance per token, with the token an immutable constructor argument; they are not part of the first deployment. No contract holds a token table that an owner can edit.
+
+**Admission criteria.** A token is eligible for an instance only if every item holds. Each is checkable on chain or against verified source, and the result is recorded per instance.
+
+1. Not upgradeable: not a proxy (EIP-1967, EIP-1822 and beacon slots empty), no `upgradeTo*`, no `DELEGATECALL` or `SELFDESTRUCT` in its runtime code. A proxy fails whoever holds the admin key; an admin that is a single externally owned account is the extreme case.
+2. No function that freezes, pauses or blacklists an address or burns another address's balance, or none that anyone can reach (a scan of the dispatch selectors plus a simulated call from the owner or admin account).
+3. Plain ERC-20 transfers: no fee on transfer, no rebase, one entry point for balances, no receiver hook; `transfer` and `transferFrom` return `true` or nothing; a transfer into a contract address succeeds (simulated, including `approve` + `transferFrom`, on at least two operators).
+4. `decimals` fixed, read from the token's own `decimals()`, and 8 ≤ `decimals` ≤ 18.
+5. Verified source that matches the deployed bytecode, and a published table of who can mint, upgrade, pause or freeze (externally owned account, multisig or contract, with the threshold), with reads that agree across at least two operators.
+
+Mint authority and issuer backing are value risk, not lock-up risk: they are disclosed per instance and do not decide admission. Items 1 and 2 are not relaxed. The reason is the shape of the escrow: one instance is one address holding every channel of its token, and it has no rescue path by design. A freeze of that address stops `fund`, `settle` and `withdraw` on every channel at once. A pause is worse: `requestWithdraw` does not touch the token, so a withdrawal cooldown can run out while every provider's `settle` reverts, and when the pause ends the consumer's `withdraw` and the provider's `settle` race for the same funds. Pausable tokens are therefore excluded, not handled in the contract.
+
+**Why the USDT-peg qualifies (evaluation of 2026-10-04).**
+
+- Item 1: 4,413 bytes of runtime code; every proxy slot is zero; no `DELEGATECALL`, `SELFDESTRUCT` or `CALL` opcode (so no receiver hook); the same code hash on three operators.
+- Item 2: all 30 `PUSH4` constants in the bytecode are accounted for: 20 dispatch selectors (ERC-20 with `increaseAllowance` and `decreaseAllowance`, `mint(uint256)`, `burn(uint256)`, `owner`, `getOwner`, `renounceOwnership`, `transferOwnership`, and the public `_name`, `_symbol` and `_decimals` getters) and 10 constants that are not selectors (a compiler metadata marker, a mask, revert-string fragments, bytes inside a 24-byte constant). None is a freeze, pause, blacklist, rescue or upgrade function. The owner is a single externally owned account (`0xF68a4b64162906efF0fF6aE34E2bB1Cd42FEf62d`) that can mint to itself and burn its own tokens and nothing else: a simulated `mint` from the owner credits only the owner, from anyone else it reverts, and there is no `burnFrom` and no `mint(address,uint256)`.
+- Item 3: simulated `transfer` and `approve` + `transferFrom` from a liquidity pool into a contract address and into an externally owned account return `true` and move both balances by exactly the amount; a second hop between two accounts is exact too.
+- Item 4: `decimals()` is 18, not the 6 of the token of the same name on Ethereum.
+- Item 5, still open: verification of the source on the block explorer and the concentration of holders have not been checked, and both are required before any deployment.
+
+What remains is value risk: a claim on reserves held off chain by the issuer, and one key that can mint without limit, so the token can lose its peg while the escrow keeps working. The exposure is asymmetric: on a depeg a provider can settle at any moment, while a consumer must `requestWithdraw` and wait out the 48-hour cooldown, which is one more reason for modest channels (§8).
+
+**Not admitted.**
+
+| Token | Why not (failed items) |
+|---|---|
+| USDC (Binance-Peg) on BNB Chain, `0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d` | Transparent proxy whose admin is a single externally owned account; `upgradeTo` takes effect at once with no time lock, so any audit is void the moment it is used (1) |
+| USD1 on BNB Chain, `0x8d0D000Ee44948FC98c9B98A4FA4921476f08B0d` | Upgradeable (multisig admin); `freeze` blocks transfers into and out of a frozen address, `transferFrom` into it included, and `pause` stops all transfers; neither has a time lock (1, 2) |
+| FDUSD on BNB Chain, `0xc5f0f7b66764F6ec8C8Dff7BA683102295E16409` | The same as USD1 (1, 2) |
+| USD₮0 on X Layer | 6 decimals; upgradeable proxy; a block list whose entries' balances can be destroyed (1, 2, 4) |
+
+Also not planned: Binance-Peg BUSD, ETH and DAI (no custody use), and lisUSD (upgrade time lock of one day, shorter than the 48-hour cooldown). Issuer-native USDC and USDT, where they exist on a chain, carry issuer blacklists by design and would fail item 2.
+
+**Prices and amounts.** The default unit is USDT. Escrowed amounts (`fund`, `channelOf`, a voucher's `cumulative`, a withdrawal) are in the token's own base units, as its `decimals()` defines them: the USDT-peg has 18, so 10 USDT is `10000000000000000000`. An SDK and the documentation SHOULD read `decimals()` from the token and SHOULD NOT hard-code the 8 decimals of BEM into a custody amount; that convention belongs to `priceBEM`, which stays exactly as it is for compatibility. No conversion between tokens is ever made: an instance counts only its own token. Prices in several tokens (a `prices` map keyed by token address), how a manifest lists several escrows, and the form of `data.price` for a token other than BEM are not yet specified.
+
+**Client behaviour (experimental).** An SDK SHOULD, by default, build `approve` and `fund` transactions only for escrows on a list of audited deployments (shipped with the SDK or supplied by the caller), and SHOULD require an explicit opt-in for any other escrow. `approve` gives an escrow the right to pull tokens, and a hostile manifest can name a contract that reports a real token's address while its `fund` takes everything approved. No escrow is deployed, so the list is empty today. The `payment.escrow` address a service names still decides which escrow a voucher is signed for (§3.4).
+
+**Planned for the version that goes to audit** (planned content, not yet implemented in the v2 contract):
+
+- The `bem` constructor argument becomes an immutable `token`; one instance per token, the same bytecode.
+- The solvency identity is stated as `token.balanceOf(escrow) ≥ Σ channelOf(c, p)`, not `==`: anyone can transfer tokens straight to the escrow, such a donation stays there (no sweep, by design), and the equality in §3.3 holds only while nobody does. The invariant suite gains a direct-transfer case.
+- The contribution is accrued to the treasury and withdrawn by the treasury in a separate call (pull), instead of being transferred inside `settle`, so that a treasury that cannot receive the token can never block a provider's settlement.
+- No pause, and none to handle: pausable tokens are not admitted (above).
+- Left to the audit: whether the voucher should name the token as well as the escrow. `verifyingContract` already pins a voucher to one escrow, and a client that computes `cumulative` with the wrong decimals is not helped by an extra field; the field would, though, put the token's address in the wallet prompt.
+
+**Native BNB is not a custody asset.** The escrow holds ERC-20 only, and BNB is held as WBNB, which the payer wraps (`WBNB.deposit`) before `approve` and `fund`; the contract never unwraps. Two tests on 2026-10-04 (state override and `eth_estimateGas`) show why. A service container accepts native BNB only when the sender supplies enough gas (a plain transfer needs about 32,000 gas in total, and a push with 2,300 gas fails). WBNB's `withdraw` pushes native BNB with exactly 2,300 gas, so a container cannot unwrap WBNB itself: the call reverts, while the same call from an ordinary address succeeds. WBNB received by a container has to be moved to the holder's wallet and unwrapped there. Native BNB remains a way to top up a container directly, with enough gas; it is a top-up path, not an escrowed asset.
+
 
 ## 4. Rationale
 
@@ -129,7 +181,7 @@ Adds nothing to `SPEC.md`; no change to name grammar or §15.1 invariants. TAPI-
 
 ## 7. Reference Implementation
 
-`contracts/src/TapeAPIEscrow.sol` (v1 archived as `contracts/archive/TapeAPIEscrow.v1.sol`); regression suite `contracts/test/Attacks.t.sol` (every audited v1 attack replayed against v2) and `contracts/test/EscrowInvariant.t.sol` (solvency, monotone `claimed`, no over-payment, in-range vouchers payable in full inside the cooldown). SDK `api.payer` (accepts `sessionExpiry` only to refuse issuing once the session has lapsed; `voucher.expires` is bounded by `ttl` alone), `api.tx.fund / requestWithdraw / cancelWithdraw / withdraw / authorizeSession(provider, key, expires) / settle / setContribution`, `api.chain.escrow.channelOf / claimedOf / sessionExpiry / pendingWithdraw`, and `svc.contribution` from `api.resolve`; server voucher verification reads `channelOf`, `claimedOf` and `pendingWithdraw(consumer, provider)` per §3.2, `pendingSettlements` / `settleTx`, and `provider.contribution()` (not exposed in `/tapeapi/v1/health`). Not deployed: see the header. The v2 contract predates the 2026-09-28 revision of §3.4: it starts every provider at 0 and has no `DEFAULT_CONTRIBUTION_BPS`. The next escrow version implements §3.4 as written, and only that version will be audited and deployed.
+`contracts/src/TapeAPIEscrow.sol` (v1 archived as `contracts/archive/TapeAPIEscrow.v1.sol`); regression suite `contracts/test/Attacks.t.sol` (every audited v1 attack replayed against v2) and `contracts/test/EscrowInvariant.t.sol` (solvency, monotone `claimed`, no over-payment, in-range vouchers payable in full inside the cooldown). SDK `api.payer` (accepts `sessionExpiry` only to refuse issuing once the session has lapsed; `voucher.expires` is bounded by `ttl` alone), `api.tx.fund / requestWithdraw / cancelWithdraw / withdraw / authorizeSession(provider, key, expires) / settle / setContribution`, `api.chain.escrow.channelOf / claimedOf / sessionExpiry / pendingWithdraw`, and `svc.contribution` from `api.resolve`; server voucher verification reads `channelOf`, `claimedOf` and `pendingWithdraw(consumer, provider)` per §3.2, `pendingSettlements` / `settleTx`, and `provider.contribution()` (not exposed in `/tapeapi/v1/health`). Not deployed: see the header. Since 2026-10-05 the v2 contract implements §3.4 as written: `DEFAULT_CONTRIBUTION_BPS = 100`, `MAX_CONTRIBUTION_BPS = 2000`, "never set" kept apart from "set to 0", and the applied `bps` in `Settled`. It is still unaudited; the escrow version that goes to audit and deployment builds on it with the planned items noted under §3.4 and §3.5, and only that version will be audited and deployed.
 
 ## 8. Security Considerations
 
@@ -141,7 +193,7 @@ Adds nothing to `SPEC.md`; no change to name grammar or §15.1 invariants. TAPI-
 - **Self-dealing is harmless.** A consumer MAY fund a channel toward itself and settle it back; that moves only its own money and cannot reach any other channel. There is no shared pool for a second exit to drain.
 - Boundary: a voucher is valid while `block.timestamp ≤ expires`; all three of escrow, provider and SDK use this inclusive bound.
 - `chainId` and `verifyingContract` prevent cross-chain and cross-escrow replay. A voucher for one escrow is meaningless in another.
-- The contribution can only reduce the provider's own payout and is capped at 50%; it can never increase what a consumer pays or move consumer channels. The 1% default is a constant fixed at deployment, so nobody can raise it later. Treasury rotation is the owner's sole power and is always visible on-chain through `TreasuryChanged`.
+- The contribution can only reduce the provider's own payout and is capped at 20%; it can never increase what a consumer pays or move consumer channels. The 1% default is a constant fixed at deployment, so nobody can raise it later. Treasury rotation is the owner's sole power and is always visible on-chain through `TreasuryChanged`.
 - The rewrite has been through the regression suite of every previously found attack but MUST pass a fresh independent adversarial audit before it is considered deployable, and is deployed only when there is real paid demand.
 
 ## 9. Copyright
@@ -156,7 +208,7 @@ Copyright and related rights waived via CC0-1.0.
 
 > **不是 TAP。** “TAPI-22”是 TapeAPI 给本文档起的名字，2026-09-30 之前叫“TAP-22”。它不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。
 
-> **实现状态（2026-09-27）：** 未部署。`contracts/src/TapeAPIEscrow.sol`（v2）已实现并有测试，SDK 与服务端实现了凭证，但 BNB Chain 上没有部署任何托管合约，在它持有真实资金之前需要一次独立审计。运行中的服务（`11.1013.tape`、`12.1013.tape`）免费，不指定托管合约。v2 合约早于 2026-09-28 对 §3.4 的修订，仍让每个提供者从 0 开始；送审并部署的那一版托管按本文 §3.4 实现（§7）。
+> **实现状态（2026-09-27）：** 未部署。`contracts/src/TapeAPIEscrow.sol`（v2）已实现并有测试，SDK 与服务端实现了凭证，但 BNB Chain 上没有部署任何托管合约，在它持有真实资金之前需要一次独立审计。运行中的服务（`11.1013.tape`、`12.1013.tape`）免费，不指定托管合约。自 2026-10-05 起，v2 合约按本文 §3.4 实现（默认 100 bps、上限 2000 bps、区分"从未设定"与 0）；它仍未经审计（§7）。
 
 > **状态：** Experimental（实验性，见 [TAPI-1](TAPI-1.md) §4.1）：不在 TapeAPI 1.0 的稳定承诺之内，可能不兼容地修改或撤回。
 
@@ -164,7 +216,7 @@ RFC 2119 关键词适用。
 
 ## 1. 摘要
 
-定义由消费者签署的链下累计支付凭证，以及由相互独立的 `(consumer, provider)` 通道构成的链上托管合约接口，允许提供者从消费者充给它的那条通道中以 BEM 结算凭证。款项直接进入服务容器。协议不收取强制费用：结算时默认从提供者自己的份额中划出 1% 作为维护贡献，消费者的价格不变；每个提供者 MAY 把它设为 0 到 50% 之间的任意值（§3.4）。
+定义由消费者签署的链下累计支付凭证，以及由相互独立的 `(consumer, provider)` 通道构成的链上托管合约接口，允许提供者从消费者充给它的那条通道中以 BEM 结算凭证。款项直接进入服务容器。协议不收取强制费用：结算时默认从提供者自己的份额中划出 1% 作为维护贡献，消费者的价格不变；每个提供者 MAY 把它设为 0 到 20% 之间的任意值（§3.4）。
 
 ## 2. 动机
 
@@ -210,16 +262,16 @@ requestWithdraw(address provider, uint256 amount)                // amount ≤ c
 cancelWithdraw(address provider)                                 // 清除调用者在该通道上的待处理请求
 withdraw(address provider)                                       // 在 [requestedAt + 48 h, requestedAt + 48 h + 7 d] 内；支付 min(所请求, 通道余额)
 authorizeSession(address provider, address key, uint64 expires)  // 按通道；now < expires ≤ now + 30 d；只可延长；无撤销
-setContribution(address circuits, uint256 tokenId, uint16 bps)   // 仅持有人；provider = hub.accountOf(circuits, tokenId)；0 ≤ bps ≤ 5000
+setContribution(address circuits, uint256 tokenId, uint16 bps)   // 仅持有人；provider = hub.accountOf(circuits, tokenId)；0 ≤ bps ≤ 2000
 settle(address consumer, address provider, uint256 cumulative, uint64 expires, bytes sig)
 setTreasury(address) / transferOwnership(address) / acceptOwnership()   // 仅 owner / 被提名者；除此之外没有任何 owner 权限
 channelOf(consumer, provider), claimedOf(consumer, provider), sessionExpiry(consumer, provider, key),
 pendingWithdraw(consumer, provider) → (amount, requestedAt), contributionOf(provider), treasury, hub, bem,
-DEFAULT_CONTRIBUTION_BPS (= 100), MAX_CONTRIBUTION_BPS (= 5000), WITHDRAW_COOLDOWN (= 48 h), WITHDRAW_WINDOW (= 7 d), MAX_SESSION (= 30 d),
+DEFAULT_CONTRIBUTION_BPS (= 100), MAX_CONTRIBUTION_BPS (= 2000), WITHDRAW_COOLDOWN (= 48 h), WITHDRAW_WINDOW (= 7 d), MAX_SESSION (= 30 d),
 DOMAIN_SEPARATOR, VOUCHER_TYPEHASH, voucherDigest   // 只读
 events: Funded(consumer, provider, amount), WithdrawRequested(consumer, provider, amount, availableAt),
         WithdrawCancelled(consumer, provider), Withdrawn(consumer, provider, amount), SessionAuthorized(consumer, provider, key, expires),
-        Settled(consumer, provider, paid, contribution), ContributionSet(provider, bps), TreasuryChanged(old, new),
+        Settled(consumer, provider, paid, contribution, bps), ContributionSet(provider, bps), TreasuryChanged(old, new),
         OwnershipTransferStarted(old, new), OwnershipTransferred(old, new)
 errors: ZeroAddress, ZeroAmount, BadProvider, InsufficientBalance, NoPendingWithdraw, CooldownActive(uint64 availableAt),
         WithdrawWindowClosed, AmountTooLarge, Expired, SessionTooLong(uint64 max), SessionShorteningNotSupported,
@@ -229,7 +281,7 @@ errors: ZeroAddress, ZeroAmount, BadProvider, InsufficientBalance, NoPendingWith
 
 `fund` 在 `amount == 0` 时 MUST 以 `ZeroAmount()` 回滚，在 `provider` 为零地址或托管自身时以 `BadProvider()` 回滚；MUST 先记入 `channelOf(msg.sender, provider)` 再划转代币，并发出 `Funded`。充给一个永不结算的提供者的通道，只能由消费者经 `requestWithdraw` / `withdraw` 取回。
 
-`settle` MUST：任何人可调用；要求 `block.timestamp ≤ expires`（`Expired()`）；当 `provider` 为零地址或托管自身时以 `BadProvider()` 回滚；恢复签名者，仅当其为 `consumer` 或满足 `sessionExpiry(consumer, provider, signer) ≥ block.timestamp` 时接受（否则 `BadSignature()`）；要求 `cumulative > claimed[consumer][provider]`（`NothingToSettle()`）；计算 `delta = cumulative − claimed[consumer][provider]` 与 `paid = min(delta, channel[consumer][provider])`，并要求 `paid > 0`（`InsufficientBalance()`）；计算 `contribution = paid × contributionBps[provider] / 10000`；`claimed += paid`、`channel −= paid`；将 `paid − contribution` 转给 `provider`，且仅当 `contribution > 0` 时将 `contribution` 转给 `treasury`；发出 `Settled(consumer, provider, paid, contribution)`。`paid < delta` 即**部分结算**，是受支持的流程（§3.3.1）：`claimed` 按实付推进，同一张凭证在通道再次充值后 MAY 于 `expires` 前就剩余部分再次结算。
+`settle` MUST：任何人可调用；要求 `block.timestamp ≤ expires`（`Expired()`）；当 `provider` 为零地址或托管自身时以 `BadProvider()` 回滚；恢复签名者，仅当其为 `consumer` 或满足 `sessionExpiry(consumer, provider, signer) ≥ block.timestamp` 时接受（否则 `BadSignature()`）；要求 `cumulative > claimed[consumer][provider]`（`NothingToSettle()`）；计算 `delta = cumulative − claimed[consumer][provider]` 与 `paid = min(delta, channel[consumer][provider])`，并要求 `paid > 0`（`InsufficientBalance()`）；取本次结算时的 `bps = contributionOf(provider)`，计算 `contribution = paid × bps / 10000`；`claimed += paid`、`channel −= paid`；将 `paid − contribution` 转给 `provider`，且仅当 `contribution > 0` 时将 `contribution` 转给 `treasury`；发出 `Settled(consumer, provider, paid, contribution, bps)`。`paid < delta` 即**部分结算**，是受支持的流程（§3.3.1）：`claimed` 按实付推进，同一张凭证在通道再次充值后 MAY 于 `expires` 前就剩余部分再次结算。
 
 #### 3.3.1 消费者侧延迟（提供者保护）
 
@@ -246,13 +298,65 @@ errors: ZeroAddress, ZeroAmount, BadProvider, InsufficientBalance, NoPendingWith
 ### 3.4 维护贡献（无强制费用）
 
 - **没有运营方费用。** 托管 MUST NOT 收取属于它自己的费用，MUST NOT 暴露任何运营方可设的费率、暂停开关或对用户余额的访问。合约中唯一的比例是提供者的贡献比例，且只有提供者自己能控制。
-- **默认 100 bps，由提供者设定。** 在提供者设定之前，`contributionOf(provider)` MUST 返回 `DEFAULT_CONTRIBUTION_BPS = 100`（1%）。默认值是合约常量，不是参数：部署后任何人都改不了它。贡献比例 MAY 仅由服务电路的当前持有人通过 `setContribution(circuits, tokenId, bps)` 修改，其中 `provider = hub.accountOf(circuits, tokenId)`；接受 0（不贡献）到 `MAX_CONTRIBUTION_BPS = 5000` 之间的任意值，一旦设定，该值（包括 0）即取代默认值。托管 MUST 强制 `bps ≤ MAX_CONTRIBUTION_BPS`，且 MUST 发出 `ContributionSet(provider, bps)`。电路转让后该权利随之转移给新持有人。
-- **用途，以及设为 0 不受任何惩罚。** 贡献用于标准维护：规范维护、参考实现、审计、目录站运营。设为 0 bps 的提供者 MUST 得到托管、SDK 与其他提供者完全相同的对待；目录站 MAY 展示该值、MAY 用于排序，但 MUST NOT 据此限制功能。
-- **从提供者份额中划出。** 贡献在结算时从提供者本应收到的金额中扣除；消费者的价格不变。`bps` 的修改只作用于修改之后的结算，绝不追溯。金额取整为 0 时不发生转账。
+- **默认 100 bps，由提供者设定。** 在提供者设定之前，`contributionOf(provider)` MUST 返回 `DEFAULT_CONTRIBUTION_BPS = 100`（1%）。默认值是合约常量，不是参数：部署后任何人都改不了它。贡献比例 MAY 仅由服务电路的当前持有人通过 `setContribution(circuits, tokenId, bps)` 修改，其中 `provider = hub.accountOf(circuits, tokenId)`；接受 0（不贡献）到 `MAX_CONTRIBUTION_BPS = 2000`（20%，同样是常量）之间的任意值，一旦设定，该值（包括 0）即取代默认值。托管 MUST 在存储中区分"从未设定"与"设为 0"，使设为 0 的提供者读到 0、不贡献任何金额，而绝不会读到默认值。托管 MUST 强制 `bps ≤ MAX_CONTRIBUTION_BPS`，且 MUST 发出 `ContributionSet(provider, bps)`。电路转让后该权利随之转移给新持有人。
+- **用途，以及设为 0 不受任何惩罚。** 贡献用于标准维护：规范维护、参考实现、审计、目录站运营。设为 0 bps 的提供者 MUST 得到托管、SDK 与其他提供者完全相同的对待；目录站 MAY 展示该值，但 MUST NOT 据此给服务排序、排位或打任何标记，也 MUST NOT 据此限制功能。
+- **从提供者份额中划出。** 贡献在结算时从提供者本应收到的金额中扣除；消费者的价格不变。`bps` 的修改只作用于修改之后的结算，绝不追溯：此前已结算的金额不重算，尚未结算的凭证按结算时有效的比例拆分。金额取整为 0 时不发生转账。
 - **金库。** `treasury` 在构造函数中设定，MUST 在 Final 前发布于 §6（及仓库 README）。它 MAY 仅由 owner 通过 `setTreasury` 修改，该函数 MUST 发出 `TreasuryChanged(old, new)` 且 MUST 拒绝零地址。owner MUST 没有任何其它权力：没有费率开关、不能暂停、不能动余额、不能修改任何 provider 的 `bps`，也不能修改默认值。
 - **替代部署。** 任何实现 §3.1–§3.3 的托管即为合规；它 MAY 省略 `setContribution` / `contributionOf`，此时客户端 MUST 将贡献视为 0。服务通过 `manifest.payment.escrow` 选择其托管；客户端 MUST 使用该地址，MUST NOT 假定存在规范部署。若社区将来希望有统一协议费，正确路径是新的 TAP 与新的托管部署，而不是修改现有合约。
 
-**计划用于下一版托管（说明性内容，本文不作规定）。** 将送审并部署的托管计划支持在 BNB Smart Chain 上用多种代币结算——BEM（主推）、BNB（由合约包装为 WBNB）、USDT、USDC、ETH 与 USD1——并增加按实际用量结算的 `upto`。本文目前对两者都不作规定：上面的凭证与接口只涉及 BEM。本规范 的后续修订会在该托管送审之前规定它们。在托管部署之前，任何调用都不收取任何费用。
+**计划用于下一版托管（说明性内容，本文不作规定）。** 将送审并部署的托管计划在 BNB Smart Chain 上每个实例只托管一种 ERC-20，首个是 USDT 锚定币，BEM、WBNB 与（经 WBNB 的）BNB 按需（§3.5），并增加按实际用量结算的 `upto`。本文目前对两者都不作规定：上面的凭证与接口只涉及 BEM。本规范的后续修订会在该托管送审之前规定它们。在托管部署之前，任何调用都不收取任何费用。
+
+### 3.5 托管资产（说明性）
+
+实验性，未部署，未经审计。本小节记录送审的那一版托管计划托管哪种代币、一种代币如何被准入，以及这对合约与 SDK 意味着什么。它不规定任何接口：在后续修订规定按代币的托管之前，凭证与 §3.3 仍只涉及一种代币（`bem`）（§3.4 最后一段）。依据是 2026-10-04 对三家独立 RPC 运营方做的两轮只读链上评估，第二轮复核第一轮。
+
+**托管什么（2026-10-05 的决定）。** 首个支持的实例托管 BNB Smart Chain 上的 USDT 锚定币：Binance-Peg "BSC-USD"，`0x55d398326f99059fF775485246999027B3197955`。它由 Binance 而非 Tether 发行，其 `name()` 写着 "Tether USD"，所以 SDK 与控制台 SHOULD 把它显示为 "USDT (Binance-Peg)" 并附上地址。BEM、WBNB 与 BNB（经 WBNB）按需，用同一份字节码，每种代币一个实例，代币是不可变的构造参数；它们不是首次部署的一部分。没有任何合约持有可由 owner 编辑的代币表。
+
+**准入标准。** 一种代币只有在下面每一项都成立时才有资格拥有实例。每一项都能在链上或对照已验证的源码核查，结果按实例记录。
+
+1. 不可升级：不是代理（EIP-1967、EIP-1822 与 beacon 槽均为空），没有 `upgradeTo*`，运行时代码里没有 `DELEGATECALL` 或 `SELFDESTRUCT`。代理无论由谁持有管理员钥匙都不合格；管理员是单个外部账户是最极端的情形。
+2. 没有冻结、暂停或拉黑某个地址、或销毁他人余额的函数，或这些函数任何人都不可达（扫描分发选择器，并模拟 owner 或管理员账户的调用）。
+3. 标准 ERC-20 转账：转账不扣费、不变基、余额只有一个入口、没有收款方钩子；`transfer` 与 `transferFrom` 返回 `true` 或不返回；向合约地址转账成功（至少在两家运营方上模拟，包括 `approve` + `transferFrom`）。
+4. `decimals` 固定，由代币合约自己的 `decimals()` 读取，且 8 ≤ `decimals` ≤ 18。
+5. 源码已验证且与已部署字节码一致，并公开一张表，写明谁能增发、升级、暂停或冻结（外部账户、多签或合约，及阈值），读数在至少两家运营方之间一致。
+
+增发权与发行方背书是价值风险，不是锁死风险：它们按实例披露，不决定准入。第 1、2 项不放宽。原因在于托管的形状：一个实例就是一个地址，持有该代币的全部通道，且按设计没有救援路径。该地址被冻结，会让每条通道的 `fund`、`settle` 与 `withdraw` 同时停止。暂停更糟：`requestWithdraw` 不碰代币，所以提现冷静期可能在每个提供者的 `settle` 都回滚的时候走完，暂停结束时，消费者的 `withdraw` 与提供者的 `settle` 会抢同一笔钱。因此可暂停的代币被排除，而不是在合约里处理。
+
+**USDT 锚定币为什么合格（2026-10-04 评估）。**
+
+- 第 1 项：运行时代码 4,413 字节；所有代理槽均为零；没有 `DELEGATECALL`、`SELFDESTRUCT` 或 `CALL` 操作码（因此没有收款方钩子）；三家运营方读到的代码哈希相同。
+- 第 2 项：字节码里全部 30 个 `PUSH4` 常量都已认领：20 个分发选择器（ERC-20 及 `increaseAllowance`、`decreaseAllowance`，`mint(uint256)`、`burn(uint256)`，`owner`、`getOwner`、`renounceOwnership`、`transferOwnership`，以及公开的 `_name`、`_symbol`、`_decimals` getter）与 10 个不是选择器的常量（编译器元数据标记、一个掩码、revert 字符串片段、一个 24 字节常量内部的字节）。没有一个是冻结、暂停、拉黑、救援或升级函数。owner 是单个外部账户（`0xF68a4b64162906efF0fF6aE34E2bB1Cd42FEf62d`），只能给自己增发、销毁自己的代币，别无其它：模拟 owner 调 `mint` 只增加 owner 自己的余额，其他任何人调用都回滚，也没有 `burnFrom` 与 `mint(address,uint256)`。
+- 第 3 项：从流动性池向合约地址与外部账户模拟 `transfer` 与 `approve` + `transferFrom`，都返回 `true`，双方余额的变化恰好等于金额；两个账户之间的第二跳同样精确。
+- 第 4 项：`decimals()` 为 18，不是以太坊上同名代币的 6。
+- 第 5 项，仍未完成：区块浏览器上的源码验证与持有人集中度尚未核查，二者都是任何部署之前必须完成的。
+
+剩下的是价值风险：对发行方链下持有的储备的债权，以及一把可以无限增发的钥匙，所以代币可能脱锚而托管照常运转。敞口是不对称的：脱锚时提供者可以随时结算，而消费者必须先 `requestWithdraw` 再等 48 小时冷静期，这是通道宜小额的又一个理由（§8）。
+
+**不予准入。**
+
+| 代币 | 不予准入的原因（不满足的项） |
+|---|---|
+| BNB Chain 上的 USDC（Binance-Peg），`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d` | 透明代理，管理员是单个外部账户；`upgradeTo` 立即生效、没有时间锁，任何审计在被使用的那一刻就失效（1） |
+| BNB Chain 上的 USD1，`0x8d0D000Ee44948FC98c9B98A4FA4921476f08B0d` | 可升级（多签管理员）；`freeze` 阻止转入与转出被冻结的地址，包括向它的 `transferFrom`，`pause` 则停止全部转账；两者都没有时间锁（1、2） |
+| BNB Chain 上的 FDUSD，`0xc5f0f7b66764F6ec8C8Dff7BA683102295E16409` | 同 USD1（1、2） |
+| X Layer 上的 USD₮0 | 6 位小数；可升级代理；有黑名单，被列入者的余额可被销毁（1、2、4） |
+
+另外不在计划内的：Binance-Peg 的 BUSD、ETH 与 DAI（没有托管用途），以及 lisUSD（升级时间锁为一天，短于 48 小时冷静期）。发行方原生的 USDC 与 USDT，凡在某条链上存在的，按设计带有发行方黑名单，都过不了第 2 项。
+
+**价格与金额。** 默认计价单位是 USDT。托管金额（`fund`、`channelOf`、凭证的 `cumulative`、提现）一律用代币自己的最小单位，以其 `decimals()` 定义：USDT 锚定币是 18 位，所以 10 USDT 是 `10000000000000000000`。SDK 与文档 SHOULD 从代币读取 `decimals()`，SHOULD NOT 把 BEM 的 8 位小数硬编码进托管金额；8 位小数的约定只属于 `priceBEM`，它为兼容起见保持不变。永远不在代币之间换算：一个实例只记自己的代币。多币种价格（以代币地址为键的 `prices` 映射）、清单如何列出多个托管，以及 BEM 以外的代币的 `data.price` 的形式，目前尚未规定。
+
+**客户端行为（实验性）。** SDK SHOULD 默认只为已审计部署名单内的托管构造 `approve` 与 `fund` 交易（名单随 SDK 发布，或由调用方提供），对名单以外的托管 SHOULD 要求明确选择启用。`approve` 把拉取代币的权利交给托管，而恶意清单可以指向一个报出真实代币地址的合约，其 `fund` 却会拿走全部已授权的额度。托管尚未部署，所以这份名单今天是空的。服务所指定的 `payment.escrow` 地址仍决定凭证为哪个托管而签（§3.4）。
+
+**送审那一版的计划内容**（计划，尚未在 v2 合约中实现）：
+
+- 构造参数 `bem` 改为不可变的 `token`；每种代币一个实例，同一份字节码。
+- 偿付恒等式写成 `token.balanceOf(escrow) ≥ Σ channelOf(c, p)`，而不是 `==`：任何人都可以把代币直接转给托管，这样的捐赠留在原处（按设计没有清扫），§3.3 中的等式只在没有人这样做时成立。不变量套件增加一个直接转入的用例。
+- 贡献记入金库的应收额，由金库在单独的调用里提取（拉取式），而不是在 `settle` 内转出，这样无法接收该代币的金库永远不会阻塞提供者的结算。
+- 没有暂停，也无需处理：可暂停的代币不予准入（见上）。
+- 留给审计：凭证除托管外是否还应写明代币。`verifyingContract` 已把凭证钉在一个托管上，而用错小数位计算 `cumulative` 的客户端并不会因多一个字段而受益；不过该字段会让钱包弹窗显示代币地址。
+
+**原生 BNB 不是托管资产。** 托管只持有 ERC-20，BNB 以 WBNB 持有，由付款方在 `approve` 与 `fund` 之前自己包装（`WBNB.deposit`）；合约永不拆包。2026-10-04 的两项测试（状态覆盖与 `eth_estimateGas`）说明了原因。服务容器只有在发送方提供足够 gas 时才能收下原生 BNB（一笔普通转账总共需要约 32,000 gas，2,300 gas 的推送会失败）。WBNB 的 `withdraw` 恰好用 2,300 gas 推送原生 BNB，所以容器自己无法拆 WBNB：调用回滚，而同一调用从普通地址发出则成功。容器收到的 WBNB 必须转到持有人钱包再在那里拆包。原生 BNB 仍可在 gas 足够时直接充值到容器；它是充值路径，不是托管资产。
+
 
 ## 4. 原理
 
@@ -273,7 +377,7 @@ errors: ZeroAddress, ZeroAmount, BadProvider, InsufficientBalance, NoPendingWith
 
 ## 7. 参考实现
 
-`contracts/src/TapeAPIEscrow.sol`（v1 归档于 `contracts/archive/TapeAPIEscrow.v1.sol`）；回归套件 `contracts/test/Attacks.t.sol`（v1 审计中的每个攻击对 v2 重放）与 `contracts/test/EscrowInvariant.t.sol`（偿付恒等式、`claimed` 单调、不超付、通道内凭证在冷静期内足额兑付）。SDK `api.payer`（接受 `sessionExpiry` 仅用于在会话已失效时拒绝签发；`voucher.expires` 只受 `ttl` 约束）、`api.tx.fund / requestWithdraw / cancelWithdraw / withdraw / authorizeSession(provider, key, expires) / settle / setContribution`、`api.chain.escrow.channelOf / claimedOf / sessionExpiry / pendingWithdraw`，以及 `api.resolve` 返回的 `svc.contribution`；服务端凭证校验按 §3.2 读取 `channelOf`、`claimedOf` 与 `pendingWithdraw(consumer, provider)`，`pendingSettlements` / `settleTx` 与 `provider.contribution()`（不在 `/tapeapi/v1/health` 中公开）。尚未部署：见本译文开头的实现状态。v2 合约早于 2026-09-28 对 §3.4 的修订：它让每个提供者从 0 开始，也没有 `DEFAULT_CONTRIBUTION_BPS`。下一版托管按本文 §3.4 实现，只有那一版会送审并部署。
+`contracts/src/TapeAPIEscrow.sol`（v1 归档于 `contracts/archive/TapeAPIEscrow.v1.sol`）；回归套件 `contracts/test/Attacks.t.sol`（v1 审计中的每个攻击对 v2 重放）与 `contracts/test/EscrowInvariant.t.sol`（偿付恒等式、`claimed` 单调、不超付、通道内凭证在冷静期内足额兑付）。SDK `api.payer`（接受 `sessionExpiry` 仅用于在会话已失效时拒绝签发；`voucher.expires` 只受 `ttl` 约束）、`api.tx.fund / requestWithdraw / cancelWithdraw / withdraw / authorizeSession(provider, key, expires) / settle / setContribution`、`api.chain.escrow.channelOf / claimedOf / sessionExpiry / pendingWithdraw`，以及 `api.resolve` 返回的 `svc.contribution`；服务端凭证校验按 §3.2 读取 `channelOf`、`claimedOf` 与 `pendingWithdraw(consumer, provider)`，`pendingSettlements` / `settleTx` 与 `provider.contribution()`（不在 `/tapeapi/v1/health` 中公开）。尚未部署：见本译文开头的实现状态。自 2026-10-05 起，v2 合约按本文 §3.4 实现：`DEFAULT_CONTRIBUTION_BPS = 100`、`MAX_CONTRIBUTION_BPS = 2000`、区分"从未设定"与"设为 0"，并在 `Settled` 中给出所用的 `bps`。它仍未经审计；送审并部署的那一版托管在此基础上加入 §3.4 末尾与 §3.5 所列的计划内容，只有那一版会送审并部署。
 
 ## 8. 安全考量
 
@@ -285,7 +389,7 @@ errors: ZeroAddress, ZeroAmount, BadProvider, InsufficientBalance, NoPendingWith
 - **自我交易无害。** 消费者 MAY 给自己开通道并结算回来；那只搬动了自己的钱，碰不到任何其它通道。没有共享池可供第二条出口榨干。
 - 边界：凭证在 `block.timestamp ≤ expires` 期间有效；托管、提供者与 SDK 三方均使用这一含等号的边界。
 - `chainId` 与 `verifyingContract` 防止跨链与跨托管重放。一个托管的凭证在另一个托管中无意义。
-- 贡献只能减少提供者自己的收款且上限 50%；它永远不能增加消费者的支出或移动消费者通道。1% 的默认值是部署时固定的常量，之后谁都不能调高。更换金库是 owner 的唯一权力，且总是通过 `TreasuryChanged` 在链上可见。
+- 贡献只能减少提供者自己的收款且上限 20%；它永远不能增加消费者的支出或移动消费者通道。1% 的默认值是部署时固定的常量，之后谁都不能调高。更换金库是 owner 的唯一权力，且总是通过 `TreasuryChanged` 在链上可见。
 - 重写已通过全部既往攻击的回归套件，但 MUST 再经一轮独立对抗审计才算可部署，且仅在有真实付费需求时部署。
 
 ## 9. 版权

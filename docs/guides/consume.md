@@ -16,7 +16,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 Or install just the SDK into your own project from the GitHub release (not the npm registry):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.6.0/tapeapi-sdk-1.6.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.0/tapeapi-sdk-1.7.0.tgz
 ```
 
 Save the scripts below as `.mjs` files where `@tapeapi/sdk` resolves, and run them with `node <file>.mjs`: in a clone,
@@ -166,7 +166,7 @@ SDK builds for your wallet: `api.tx.approve({ amount })` then `api.tx.fund(svc, 
 
 You pay the provider's listed price and nothing more: TapeAPI adds no fee on the consumer side. The maintenance
 contribution, if the provider keeps it, comes out of the provider's share ([`docs/FEES.md`](../FEES.md)). The spec
-settles in BEM; the next escrow version plans BEM, BNB (wrapped as WBNB), USDT, USDC, ETH and USD1 on BNB Smart Chain.
+settles in BEM; the next escrow version plans USDT (Binance-Peg) on BNB Smart Chain first, with BEM and WBNB (wrapped BNB) on demand, from the same bytecode ([`docs/FEES.md`](../FEES.md)).
 
 > The escrow contract is not deployed yet, so paid services are not live on mainnet. Everything above works against
 > the examples (`FREE_ALL=1` to skip payment locally).

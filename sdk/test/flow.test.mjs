@@ -407,8 +407,9 @@ test('tx builders produce calldata for escrow and directory', async () => {
   assert.equal(abi.bytes32ToLabel(args[2]), 'reader'); assert.equal(args[3], '/.well-known/tapeapi.json')
 })
 test('tx.setContribution builds setContribution(address,uint256,uint16) calldata and validates bps', async () => {
-  const { abi, MAX_CONTRIBUTION_BPS, RECOMMENDED_CONTRIBUTION_BPS } = await import('../src/index.js')
-  assert.equal(MAX_CONTRIBUTION_BPS, 5000); assert.equal(RECOMMENDED_CONTRIBUTION_BPS, 100)
+  const { abi, MAX_CONTRIBUTION_BPS, DEFAULT_CONTRIBUTION_BPS, RECOMMENDED_CONTRIBUTION_BPS } = await import('../src/index.js')
+  // the escrow's constants (contracts/src/TapeAPIEscrow.sol, TAPI-22 §3.4); the cap is 2000 since 2026-10-05 (was 5000)
+  assert.equal(MAX_CONTRIBUTION_BPS, 2000); assert.equal(DEFAULT_CONTRIBUTION_BPS, 100); assert.equal(RECOMMENDED_CONTRIBUTION_BPS, 100)
   const tx = api.tx.setContribution({ circuits: ADDR.circuits, tokenId: '4246', bps: 100 })
   assert.equal(tx.to, ADDR.escrow); assert.equal(tx.value, '0x0')
   assert.equal(abi.signatureOf('setContribution'), 'setContribution(address,uint256,uint16)')
@@ -417,7 +418,10 @@ test('tx.setContribution builds setContribution(address,uint256,uint16) calldata
   assert.equal(args[0].toLowerCase(), ADDR.circuits); assert.equal(args[1], 4246n); assert.equal(args[2], 100n)
   // escrow override for services on another deployment / 可指定其它托管
   assert.equal(api.tx.setContribution({ circuits: ADDR.circuits, tokenId: 1, bps: 0, escrow: '0x' + '41'.repeat(20) }).to, '0x' + '41'.repeat(20))
-  for (const bad of [5001, -1, 1.5, 'x']) assert.throws(() => api.tx.setContribution({ circuits: ADDR.circuits, tokenId: 1, bps: bad }), (e) => e.code === 'INVALID_ARGUMENT')
+  // the cap is inclusive and follows the contract: 2000 builds, 2001 (and the old 5000) is refused before any request
+  // 上限含端点且与合约一致：2000 可构造，2001（以及旧上限 5000）在发请求前就被拒绝
+  assert.equal(abi.decodeCall('setContribution', api.tx.setContribution({ circuits: ADDR.circuits, tokenId: 1, bps: 2000 }).data)[2], 2000n)
+  for (const bad of [2001, 5000, 5001, -1, 1.5, 'x']) assert.throws(() => api.tx.setContribution({ circuits: ADDR.circuits, tokenId: 1, bps: bad }), (e) => e.code === 'INVALID_ARGUMENT')
   assert.equal(abi.signatureOf('contributionOf'), 'contributionOf(address)'); assert.equal(abi.signatureOf('treasury'), 'treasury()')
   assert.equal(await api.chain.escrow.treasury(), abi.checksumAddress(ADDR.treasury))
 })

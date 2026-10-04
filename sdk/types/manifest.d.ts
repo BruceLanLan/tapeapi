@@ -35,3 +35,27 @@ export declare function formatUnits(wei: bigint | number | string, decimals?: nu
 export declare function validateManifest(m: unknown, opts?: { requireDelegation?: boolean; allowHttp?: boolean; now?: number }): Manifest
 export declare function findMethod(manifest: Manifest, name: string): ManifestMethod | null
 export declare function methodPrice(method: ManifestMethod): bigint
+
+/** @experimental (1.7) The optional `agent` member of a manifest (container agents; Idea TapeOutProtocol/TAPs#41). */
+export interface AgentMember {
+  capabilities: string[]
+  tasks: Array<{
+    kind: string
+    /** the FORMAT of a price: free, fixed (token, amount in the smallest unit, unit) or by quote; never a price list of ours */
+    pricing: { mode: 'free' | 'fixed' | 'quote'; token?: string; amount?: string; unit?: string }
+    maxDurationS?: number
+    description?: string
+  }>
+  mandates: { accepts: boolean; enforcement?: string[] }
+  /** "sha256:" and 64 hex digits: the SHA-256 of the terms text the agent publishes */
+  terms?: string
+}
+/** @experimental (1.7) */
+export declare const AGENT_PRICING_MODES: readonly ['free', 'fixed', 'quote']
+/** @experimental (1.7) */
+export declare const AGENT_MAX_TASKS: number
+/** @experimental (1.7) */
+export declare const AGENT_MAX_CAPABILITIES: number
+/** @experimental (1.7) Validates `manifest.agent` and returns a copy without unknown members; throws MANIFEST_INVALID.
+ *  validateManifest never calls it: a manifest's validity does not depend on this member. */
+export declare function validateAgentMember(agent: unknown): AgentMember

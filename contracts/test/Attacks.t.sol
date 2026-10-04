@@ -173,6 +173,19 @@ contract EscrowAttacksTest is Test {
         bem.approve(address(escrow), type(uint256).max);
         escrow.fund(provider, CHANNEL);
         vm.stopPrank();
+
+        // These tests replay channel mechanics, where "paid in full" means the whole amount: the providers opt out of the
+        // TAPI-22 §3.4 default contribution (1%) here. The contribution split, the default included, has its own tests in
+        // TapeAPIEscrow.t.sol, and EscrowInvariant.t.sol starts every provider at the default.
+        // 这些测试重放通道机制，"足额"指全额：此处让提供者关闭 TAPI-22 §3.4 的默认贡献（1%）。贡献拆分（含默认值）
+        // 另有测试（TapeAPIEscrow.t.sol），EscrowInvariant.t.sol 让每个提供者从默认值开始。
+        address opHolder = vm.addr(0x0F0F);
+        nft.mint(opHolder, TOKEN1);
+        nft.mint(opHolder, TOKEN2);
+        vm.startPrank(opHolder);
+        escrow.setContribution(address(nft), TOKEN1, 0);
+        escrow.setContribution(address(nft), TOKEN2, 0);
+        vm.stopPrank();
     }
 
     // ----- helpers / 工具 -----
@@ -529,6 +542,7 @@ contract EscrowAttacksTest is Test {
         bem.approve(address(escrowB), type(uint256).max);
         escrowB.fund(provider, CHANNEL);
         vm.stopPrank();
+        vm.prank(vm.addr(0x0F0F)); escrowB.setContribution(address(nft), TOKEN1, 0);   // as in setUp / 同 setUp
         assertTrue(escrow.DOMAIN_SEPARATOR() != escrowB.DOMAIN_SEPARATOR());
 
         uint64 expires = uint64(block.timestamp + 1 hours);
@@ -584,7 +598,12 @@ contract EscrowAttacksTest is Test {
         vm.prank(consumer);
         escrow.fund(consumer, CHANNEL);
         escrow.settle(consumer, consumer, CHANNEL, expires, selfVoucher);
-        assertEq(bem.balanceOf(consumer), wallet, "self-settlement is a round trip of the consumer's own money");
+        // The consumer's own address is no circuit's container, so nobody can set its contribution: the TAPI-22 §3.4
+        // default (1%) goes to the treasury and the rest comes back. / 消费者自己的地址不是任何电路的容器，没人能为它
+        // 设贡献比例：默认 1% 进金库，其余原路返回。
+        uint256 dflt = CHANNEL * escrow.DEFAULT_CONTRIBUTION_BPS() / 10_000;
+        assertEq(bem.balanceOf(consumer), wallet - dflt, "self-settlement is a round trip of the consumer's own money, less the default contribution");
+        assertEq(bem.balanceOf(treasury), dflt, "the default contribution is the only thing that leaves");
         assertEq(escrow.channelOf(consumer, provider), CHANNEL, "still untouched");
 
         // The honest provider is paid in full. / 诚实 provider 足额收款。
@@ -782,13 +801,15 @@ contract EscrowAttacksTest is Test {
     // I-02 (round 1, Info) — "贡献向下取整；`pay` 极小时金库拿 0。provider 永远拿不到 0（bps ≤ 50%）。"
     // E-09 (REVIEW-CONTRACTS) — "`expires == now` 有效：合约用 `<`，与 server 有 1 秒判定差异。"
     //
-    // v2: both unchanged; pinned. / v2：两者不变；固定下来。
+    // v2: both unchanged; pinned. The cap is 20% since 2026-10-05, so the bound only got tighter.
+    // v2：两者不变；固定下来。上限自 2026-10-05 起为 20%，这个界只会更紧。
     // ------------------------------------------------------------------------------------
     function test_attack_I02_E09_roundingNeverStarvesProvider_andExpiryIsInclusive() public {
         vm.prank(vm.addr(0xA11CE));
         nft.mint(vm.addr(0xA11CE), TOKEN1);
+        uint16 cap = escrow.MAX_CONTRIBUTION_BPS();   // 2000 since 2026-10-05 (was 5000) / 自 2026-10-05 起为 2000
         vm.prank(vm.addr(0xA11CE));
-        escrow.setContribution(address(nft), TOKEN1, 5000);
+        escrow.setContribution(address(nft), TOKEN1, cap);
         uint64 expires = uint64(block.timestamp + 10);
         bytes memory one = _voucher(CONSUMER_PK, provider, 1, expires);
         vm.warp(expires);                                              // E-09: the last valid second / 最后一秒仍有效

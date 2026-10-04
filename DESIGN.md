@@ -102,7 +102,7 @@ constructor(address hub, address factory, address domainBinding)   // hub、fact
 
 ### TapeAPIEscrow.sol（不可升级，零协议费；Ownable 仅能更换金库地址，两步转移）
 constructor(address bem, address hub, address treasury)   // 均非零；hub 用于 accountOf
-常量：WITHDRAW_COOLDOWN = 48h，WITHDRAW_WINDOW = 7d，MAX_SESSION = 30d，MAX_CONTRIBUTION_BPS = 5000。
+常量：WITHDRAW_COOLDOWN = 48h，WITHDRAW_WINDOW = 7d，MAX_SESSION = 30d，DEFAULT_CONTRIBUTION_BPS = 100，MAX_CONTRIBUTION_BPS = 2000。
 （v2，按提供者分账；决策理由见 spec/TAPI-22.md §3.3。v1 归档于 contracts/archive/。）
 
 - fund(address provider, uint256 amount)                         // transferFrom；channel[msg.sender][provider] += amount；provider 不得为零或托管自身

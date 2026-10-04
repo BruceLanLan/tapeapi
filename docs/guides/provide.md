@@ -146,10 +146,13 @@ generate a new key in step 3, sign for it in step 4 and publish in step 5 at onc
 Set `priceBEM` on a method and name an escrow in `payment`. The runtime verifies each voucher, meters per consumer and
 refuses anything below the price. Every endpoint of one paid service must share one atomic meter store (D1 on
 Cloudflare, see [`examples/cloudflare-worker/`](../../examples/cloudflare-worker/)), or the same voucher could be served
-twice. A settler submits vouchers to the escrow in batches.
+twice. A settler submits vouchers to the escrow in batches. (Experimental, not deployed: the escrow planned for audit holds one
+token per instance and starts with the USDT-pegged token. The default pricing unit will be USDT and escrowed amounts are read
+from the token's own `decimals()`, not BEM's 8; `priceBEM` is unchanged and is still the only per-call price field. Which
+tokens and why: [`docs/FEES.md`](../FEES.md).)
 
 At settlement, a maintenance contribution comes out of your share, never out of the consumer's price. It defaults to
-1% (100 bps, a constant in the escrow). You can set it to 0 to turn it off, or to anything up to 50%, for your own
+1% (100 bps, a constant in the escrow). You can set it to 0 to turn it off, or to anything up to 20%, for your own
 service with `api.tx.setContribution({ circuits, tokenId, bps })`, sent from the circuit holder's wallet. A service at 0
 gets exactly the same treatment. See [`docs/FEES.md`](../FEES.md).
 

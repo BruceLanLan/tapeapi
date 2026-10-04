@@ -466,3 +466,62 @@ console.log('done')
     },
   })
 }
+
+// ---------- Container agents, phase 0 (experimental; internal draft docs/DESIGN-container-agent.md) ----------
+// The four EIP-712 types a circuit's holder signs, in the TAP-11 delegation domain (the hub). A message hash is the full
+// typed digest. Scope[] is keccak256 of the concatenated hashStruct of its items; bytes32[] keccak256 of the concatenated
+// elements; an empty array hashes as keccak256 of nothing.
+// 容器代理阶段 0：持有人签的四个 EIP-712 类型，在 TAP-11 委托域（hub）中。消息哈希就是完整的类型化摘要。
+{
+  const A = await import('../sdk/src/agent-sig.js')
+  const hx = (b) => toHex(b)
+  const ZERO = '0x' + '00'.repeat(20)
+  const PRINCIPAL = CONTAINER, AGENT = '0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3'
+  const AGENT_KEY = sig.privateKeyToAddress('0x' + '77'.repeat(32))
+  const P1 = '0x00000000000000000000000000000000000005e1', P2 = '0x00000000000000000000000000000000000005e2'
+  const BEM = '0x5ce033B2bFCa3Af30b3e8C8457DeaF776A8b695a'
+  const task = { kind: 'report.attested-read', spec: 'BEM holders at block 1', deliverables: ['report.json'], deadline: 1789086400 }
+  const taskHash = A.taskHashOf(task)
+  const mandateCase = (name, m) => ({
+    name, ...m,
+    intermediate: { scopeHashes: m.scope.map((s) => hx(A.hashScope(s))), structHash: hx(A.hashMandate(m)) },
+    digest: A.mandateHashOf(CHAIN_ID, HUB, m), sig: A.signMandate(CHAIN_ID, HUB, m, HOLDER_KEY, { allowFunds: true }), recoversTo: sig.privateKeyToAddress(HOLDER_KEY),
+  })
+  // phase 0 names no asset: tokens and feeToken are the zero address (a token with a cap of 0 would train "there is a
+  // token, its cap is 0, confirm"); the third mandate shows a funded one, which phase 0 refuses but every side can hash
+  const base = { principal: PRINCIPAL, agent: AGENT, agentKey: AGENT_KEY, mode: 0, taskHash, feeToken: ZERO, feeCap: '0', notBefore: 1789000000, expires: 1789086400, nonce: '1', subdelegate: false }
+  const mandates = [
+    mandateCase('phase 0: two providers in scope, every cap 0 and every token the zero address, the agent is paid', { ...base, scope: [{ provider: P1, token: ZERO, cap: '0' }, { provider: P2, token: ZERO, cap: '0' }] }),
+    mandateCase('an empty scope hashes as keccak256 of nothing', { ...base, scope: [] }),
+    mandateCase('mode 1 (the agent spends), a large nonce, a token and non-zero caps (refused by phase 0, signed only with allowFunds, still hashable)', { ...base, mode: 1, nonce: '115792089237316195423570985008687907853269984665640564039457584007913129639935', scope: [{ provider: P1, token: BEM, cap: '100000000' }], feeToken: BEM, feeCap: '5' }),
+  ]
+  const offer = { principal: PRINCIPAL, agent: AGENT, taskHash, mode: 0, feeToken: ZERO, fee: '0', deadline: 1789086400, exp: 1789003600, nonce: '1' }
+  const verdict = (v) => ({ mandateHash: mandates[0].digest, deliverableHash: k('deliverable'), verdict: v, reasonHash: v === 1 ? '0x' + '00'.repeat(32) : k('missing section 2'), issued: 1789050000 })
+  const revocation = (hashes, revokedBefore) => ({ principal: PRINCIPAL, mandateHashes: hashes, revokedBefore, issued: 1789060000 })
+  const hashedCase = (name, value, hashFn, digestFn, signFn) => ({ name, ...value, structHash: hx(hashFn(value)), digest: hx(digestFn(CHAIN_ID, HUB, value)), sig: signFn(CHAIN_ID, HUB, value, HOLDER_KEY) })
+  write('container-agent.json', {
+    tap: 'Container agents, phase 0 (experimental; Ideas TapeOutProtocol/TAPs#40 and #41): Mandate, TaskOffer, TaskVerdict, MandateRevocation', note,
+    domain: { name: 'TapeAPI', version: '1', chainId: CHAIN_ID, verifyingContract: HUB, comment: 'The TAP-11 delegation domain, shared with Delegation, ChannelKeys and ManifestContent; the type name separates them.' },
+    encoding: {
+      messageHash: 'keccak256(0x1901 || domainSeparator || hashStruct(message)): the typed digest the holder signs is the message hash (mandateHash, offerHash, verdictHash)',
+      scopeArray: 'Scope[] = keccak256(hashStruct(scope[0]) || hashStruct(scope[1]) || ...); empty = keccak256("")',
+      bytes32Array: 'bytes32[] = keccak256(element[0] || element[1] || ...); empty = keccak256("")',
+      taskHash: 'keccak256(UTF-8(canonicalJSON(task))), TAP-11 §6 rules',
+    },
+    types: { Scope: A.SCOPE_TYPE, Mandate: A.MANDATE_TYPE, TaskOffer: A.TASK_OFFER_TYPE, TaskVerdict: A.TASK_VERDICT_TYPE, MandateRevocation: A.MANDATE_REVOCATION_TYPE },
+    typeHashes: { Scope: hx(A.SCOPE_TYPEHASH), Mandate: hx(A.MANDATE_TYPEHASH), TaskOffer: hx(A.TASK_OFFER_TYPEHASH), TaskVerdict: hx(A.TASK_VERDICT_TYPEHASH), MandateRevocation: hx(A.MANDATE_REVOCATION_TYPEHASH) },
+    holderKey: HOLDER_KEY, holderAddress: sig.privateKeyToAddress(HOLDER_KEY),
+    task: { value: task, canonical: canonicalJSON(task), taskHash },
+    mandates,
+    otherChain: { chainId: 196, mandate: 0, digest: A.mandateHashOf(196, HUB, mandates[0]), comment: 'the same mandate on X Layer has another hash: the chain is in the domain' },
+    offers: [hashedCase('the offer behind mandate 0', offer, A.hashTaskOffer, A.taskOfferDigest, A.signTaskOffer)],
+    verdicts: [
+      hashedCase('acceptance of the delivery under mandate 0', verdict(1), A.hashTaskVerdict, A.taskVerdictDigest, A.signTaskVerdict),
+      hashedCase('rejection, with the hash of a reason', verdict(2), A.hashTaskVerdict, A.taskVerdictDigest, A.signTaskVerdict),
+    ],
+    revocations: [
+      hashedCase('two mandates revoked by hash', revocation([mandates[0].digest, mandates[1].digest], 0), A.hashMandateRevocation, A.mandateRevocationDigest, A.signMandateRevocation),
+      hashedCase('every mandate with notBefore below a date, no list', revocation([], 1789050000), A.hashMandateRevocation, A.mandateRevocationDigest, A.signMandateRevocation),
+    ],
+  })
+}

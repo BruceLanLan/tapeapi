@@ -41,7 +41,7 @@
 // 否则原样转发，结论行注明 usage-request-skipped。只与 OpenAI Chat 客户端有关：Claude Code 与 Codex 的流本来就带用量。
 
 import http from 'node:http'
-import { appendFileSync, readFileSync, realpathSync } from 'node:fs'
+import { appendFileSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createTapeAPI, rpcUrlsFor, operatorOf, parseTapeName, CHAINS, chainByKey } from '../src/index.js'
 import * as ai from '../src/ai.js'
@@ -51,6 +51,7 @@ const DEFAULT_RPC = rpcUrlsFor(56)
 const DEFAULT_PORT = 8790
 const REQUEST_LIMIT = 64 * 1024 * 1024
 const RESPONSE_LIMIT = 64 * 1024 * 1024
+const THREAD_LIMIT = 8 * 1024 * 1024   // `task`: the size of a thread.json
 // A TapeOut name on any supported chain, canonical form (11.1013.tape; 1.2.344.tape on X Layer) / 任一已支持链上的规范名字
 const isTapeName = (s) => { const p = parseTapeName(s); return !!p && !p.error }
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
@@ -227,9 +228,11 @@ function verdictLine(rep) {
 }
 
 async function main() {
+  // `task` (experimental, 1.7) is taken first and only as the very first word; everything else below is as it was in 1.6
+  if (process.argv[2] === 'task') { process.exitCode = await taskMain(process.argv.slice(3)); return }
   let opts
   try { opts = parseArgs(process.argv.slice(2)) } catch (e) { process.stderr.write(`tapeapi-verify: ${e.message}\n\n${USAGE}`); process.exit(2) }
-  if (opts.help) { process.stdout.write(USAGE); return }
+  if (opts.help) { process.stdout.write(USAGE + TASK_USAGE); return }
   if (opts.version) { process.stdout.write(`${VERSION}\n`); return }
   if (!opts.target && !opts.dev) { process.stderr.write(`tapeapi-verify: name the AI service\n\n${USAGE}`); process.exit(2) }
   if (opts.dev) {
@@ -512,6 +515,162 @@ async function main() {
   const stop = (sig) => { log(`${sig}: ${stats.ok} verified, ${stats.failed} failed, ${stats.sidecarErrors} sidecar errors, ${stats.passThrough} passed through; exiting`); process.exit(0) }
   process.on('SIGTERM', () => stop('SIGTERM'))
   process.on('SIGINT', () => stop('SIGINT'))
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// `tapeapi-verify task <thread.json>` (EXPERIMENTAL, 1.7, outside the 1.x compatibility promise): check a container-agent task
+// thread with createAgentKit(...).verifyTaskThread (@tapeapi/sdk/agent), and optionally the payment that belongs to it. It reads the
+// chain; it signs nothing, sends nothing and pays for nothing. Phase 0 has no enforcement: every result says `enforcement: none`.
+// `task`（实验性，1.7，不受 1.x 兼容承诺约束）：用 createAgentKit(...).verifyTaskThread 核验容器代理的任务线程，可选再核验对应的付款。
+// 只读链；不签名、不发送、不付款。阶段 0 没有强制执行：每个结果都写 `enforcement: none`。
+// ---------------------------------------------------------------------------------------------------------------
+const TASK_USAGE = `
+tapeapi-verify task (experimental, 1.7; not covered by the 1.x compatibility promise): check a container-agent task thread.
+
+Usage: tapeapi-verify task <thread.json> [--payment <recipient> <index>] [--rpc <url,url,...>]
+
+  <thread.json>        a JSON array of the thread's messages in the order they were received (tape.agent/offer, accept, mandate,
+                       deliver, acceptance, revocation). Prints the state, the problems, whether it is a self-hire, who the two
+                       parties are (container address and on-chain name; a name the manifest gives is marked untrusted), and
+                       \`enforcement: none\`: a phase-0 mandate is a signed statement, nothing enforces it.
+  --payment <recipient> <index>
+                       also check the payment: the TapeSend message at <index> in the inbox of the container <recipient>, which must be
+                       the thread's agent, sent by the thread's principal, with every asset attachment verified (TAP-10 section 19).
+                       Public (unsealed) messages only.
+  --rpc <url,url,...>  BNB Chain nodes; each chain read needs 2 to agree (default: ${DEFAULT_RPC.length} public nodes of distinct operators)
+
+Exit status: 0 the thread verifies (and the payment, with --payment), 1 it does not, or a runtime failure (the file cannot be read,
+the chain cannot be read), 2 a usage mistake (an unknown option, no file, a file that is not a JSON array of messages, --rpc with fewer
+than 2 operators). The revocation floor and nonce store of one run start empty: a one-shot check cannot see an older list put back or a
+reused nonce. A receipt proves who answered which call, not that the work is right.
+
+tapeapi-verify task（实验性，1.7；不受 1.x 兼容承诺约束）：核验容器代理的任务线程。
+用法：tapeapi-verify task <thread.json> [--payment <收款容器> <序号>] [--rpc <url,url,...>]
+<thread.json> 是按收到顺序排列的消息 JSON 数组；打印状态、问题、是否自雇自、双方身份（容器地址与链上名字；清单给的名字标 untrusted）与
+enforcement: none（阶段 0 的授权书只是签名声明，没有任何东西强制执行）。--payment 另核验付款：收款容器必须是线程里的代理，发件方必须是线程里的
+委托方，每个资产附件按 TAP-10 第 19 节核验（只支持公开、未加密的消息）。退出码：0 通过，1 未通过或运行失败，2 用法错误。
+`
+
+function parseTaskArgs(argv) {
+  const o = { file: null, rpc: null, payment: null, help: false }
+  for (let i = 0; i < argv.length; i++) {
+    let a = argv[i], v
+    const eq = a.startsWith('--') ? a.indexOf('=') : -1
+    if (eq > 0) { v = a.slice(eq + 1); a = a.slice(0, eq) }
+    const value = () => {
+      if (v !== undefined) return v
+      if (i + 1 >= argv.length) throw new Error(`${a} needs a value`)
+      return argv[++i]
+    }
+    switch (a) {
+      case '--help': case '-h': o.help = true; break
+      case '--rpc': o.rpc = value().split(',').map((x) => x.trim()).filter(Boolean); break
+      case '--payment': {
+        if (v !== undefined || i + 2 >= argv.length) throw new Error('--payment needs <recipient> <index>')
+        const recipient = argv[++i], index = argv[++i]
+        if (!ADDRESS_RE.test(recipient)) throw new Error(`--payment: ${recipient} is not a container address (0x...)`)
+        if (!/^(0|[1-9][0-9]{0,15})$/.test(index)) throw new Error(`--payment: ${index} is not an inbox index (a whole number)`)
+        o.payment = { recipient, index: Number(index) }
+        break
+      }
+      default:
+        if (a.startsWith('-')) throw new Error(`unknown option ${a}`)
+        if (o.file) throw new Error('name one thread file')
+        o.file = a
+    }
+  }
+  return o
+}
+
+/**
+ * The `task` subcommand. `argv` is what follows the word `task`; `api` a createTapeAPI() client with rpcUrls of at least two
+ * operators (tests pass one, with a fixed `clock`; taskMain makes it from --rpc). Returns the exit status: 0, 1 or 2 (see TASK_USAGE).
+ * @experimental
+ */
+export async function runTask(argv, { api, clock, out = (t) => process.stdout.write(t), err = (t) => process.stderr.write(t) } = {}) {
+  let o
+  try { o = parseTaskArgs(argv) } catch (e) { err(`tapeapi-verify task: ${e.message}\n${TASK_USAGE}`); return 2 }
+  if (o.help) { out(TASK_USAGE.replace(/^\n/, '')); return 0 }
+  if (!o.file) { err(`tapeapi-verify task: name the thread file\n${TASK_USAGE}`); return 2 }
+  let text
+  try {
+    const st = statSync(o.file)
+    if (!st.isFile() || st.size > THREAD_LIMIT) throw new Error(st.isFile() ? `larger than ${THREAD_LIMIT} bytes` : 'not a file')
+    text = readFileSync(o.file, 'utf8')
+  } catch (e) { err(`tapeapi-verify task: cannot read ${o.file}: ${e.code ?? e.message}\n`); return 1 }
+  let messages
+  try { messages = JSON.parse(text) } catch (e) { err(`tapeapi-verify task: ${o.file} is not JSON: ${e.message}\n`); return 2 }
+  if (!Array.isArray(messages) || messages.length === 0 || messages.length > 64 || messages.some((m) => !m || typeof m !== 'object' || Array.isArray(m))) {
+    err(`tapeapi-verify task: ${o.file} must be a JSON array of 1 to 64 messages (objects)\n`); return 2
+  }
+  const agent = await import('../src/agent-public.js')
+  const { plainText } = agent
+  let check, payment = null
+  try {
+    const kit = agent.createAgentKit(api, clock ? { clock } : {})   // `clock` is for tests; a run of the command reads the system clock
+    check = await kit.verifyTaskThread(messages)
+    if (o.payment) payment = await checkPayment(agent, api, check, o.payment)
+  } catch (e) { err(`tapeapi-verify task: cannot check the thread: ${e?.code ? e.code + ': ' : ''}${e?.message ?? e}\n`); return 1 }
+  const lines = []
+  const who = (i) => (i ? `${i.container}  name ${i.name ?? '(none on the chain\'s processor table)'}` : 'unknown')
+  lines.push(`tapeapi-verify task: ${messages.length} message(s), chain ${api.chainId}   EXPERIMENTAL`)
+  lines.push(`state:       ${check.state ?? 'none'}`)
+  lines.push(`result:      ${check.ok ? 'ok' : 'NOT ok'}`)
+  lines.push(`enforcement: ${check.enforcement} (phase 0: a mandate is a signed statement; nothing enforces it)`)
+  lines.push(`self-hire:   ${check.selfHire ? `YES (${check.selfHireReasons.join(', ')}): reputation rules should leave this thread out` : 'no'}`)
+  lines.push(`principal:   ${who(check.principal)}${check.principal ? `  holder ${check.principal.holder}` : ''}`)
+  lines.push(`agent:       ${who(check.agent)}${check.agent?.signer ? `  signer ${check.agent.signer}` : ''}`)
+  if (check.agent?.displayName) lines.push(`             manifest name (untrusted: the agent wrote it, it is not an identity): "${plainText(check.agent.displayName.text, 64)}"`)
+  if (check.offerHash) lines.push(`offer:       ${check.offerHash}`)
+  if (check.mandateHash) lines.push(`mandate:     ${check.mandateHash}${check.mandateCheck?.revocation ? `  revocation list: ${check.mandateCheck.revocation.status}` : ''}`)
+  for (const d of check.deliveries) lines.push(`delivery:    deliverable ${d.deliverableHash} at ${d.ts}, ${d.evidence.receipts.length} receipt(s), evidence ${d.evidence.ok ? 'ok' : 'NOT ok'}`)
+  if (check.evidence) lines.push(`evidence:    proves: ${check.evidence.proves}; does NOT prove: ${check.evidence.doesNotProve.join('; ')}`)
+  lines.push(`verdict:     ${check.verdict ? `${check.verdict.verdict} at ${check.verdict.issued} (verdictHash ${check.verdict.verdictHash})` : 'none'}`)
+  lines.push(`revoked:     ${check.revoked ? `yes, at ${check.revoked.at} (${check.revoked.via})` : 'no'}`)
+  if (check.unaccepted) lines.push('unaccepted:  yes (delivered, and no verdict before the delivery\'s own exp; there is no arbiter)')
+  lines.push(`problems:    ${check.problems.length ? check.problems.length : 'none'}`)
+  for (const p of check.problems) lines.push(`  - ${p.code}: ${plainText(p.message, 200)}`)
+  if (payment) {
+    lines.push(`payment:     message ${o.payment.index} in the inbox of ${o.payment.recipient}: ${payment.ok ? 'ok' : 'NOT ok'}`)
+    for (const l of payment.lines) lines.push(`  ${l}`)
+  }
+  out(lines.join('\n') + '\n')
+  return check.ok && (!payment || payment.ok) ? 0 : 1
+}
+
+// The payment that belongs to a thread (--payment): read-only TAP-10 §19 checks of one inbox message, plus what only this command
+// can add: the message must be for the thread's agent and from the thread's principal. Nothing is signed or sent.
+async function checkPayment(agent, api, check, { recipient, index }) {
+  const lines = []
+  let ok = true
+  const bad = (m) => { ok = false; lines.push(m) }
+  const pay = agent.createPaymentKit(api)
+  // identityOf reads ownerOf: an agent without `circuits` here did not resolve as a minted TapeOut container, and a payment sent
+  // to the address derived for a #ID nobody holds could never be moved by anyone
+  if (!check.agent?.circuits) bad('the thread\'s agent is not a minted TapeOut container (no holder on the chain): a payment to it could never be moved')
+  if (!check.agent?.container || recipient.toLowerCase() !== check.agent.container.toLowerCase()) bad(`the recipient ${recipient} is not the thread's agent (${check.agent?.container ?? 'unknown'}): this is not a payment to it`)
+  const msg = await pay.readMessage({ recipient, inboxIndex: index })
+  if (msg.status !== 'ok') { bad(`the message cannot be read: ${msg.status}`); return { ok, lines } }
+  if (!check.principal?.container || msg.entry.from.toLowerCase() !== check.principal.container.toLowerCase()) bad(`the message is from ${msg.entry.from}, not the thread's principal (${check.principal?.container ?? 'unknown'})`)
+  const results = await pay.verifyAttachments(msg)
+  if (!results.length) bad('the message carries no asset attachment: nothing to verify')
+  for (const r of results) {
+    const a = r.attachment
+    if (r.result !== 'ok') ok = false
+    lines.push(`${a.type}${a.token ? ` ${a.token}` : ''} ${a.amount ?? `#${a.tokenId}`} in ${a.tx}: ${r.result}${r.step ? ` (step ${r.step})` : ''}${r.reason ? `: ${agent.plainText(r.reason, 120)}` : ''}`)
+  }
+  const named = check.verdict && typeof msg.message?.body === 'string' && msg.message.body.includes(check.verdict.verdictHash)
+  lines.push(`the message body ${check.verdict ? (named ? 'names' : 'does not name') + ' the thread\'s verdictHash (information only)' : 'cannot name a verdict: the thread has none'}`)
+  return { ok, lines }
+}
+
+async function taskMain(argv) {
+  let o
+  try { o = parseTaskArgs(argv) } catch (e) { process.stderr.write(`tapeapi-verify task: ${e.message}\n${TASK_USAGE}`); return 2 }
+  if (o.help || !o.file) return runTask(argv, { api: null })
+  const rpcUrls = o.rpc ?? DEFAULT_RPC
+  if (new Set(rpcUrls.map(operatorOf)).size < 2) { process.stderr.write('tapeapi-verify: --rpc needs nodes of at least 2 independent operators (every chain read must be agreed by 2)\n'); return 2 }
+  return runTask(argv, { api: createTapeAPI({ rpcUrls, quorum: 2 }) })
 }
 
 // Run as a program, not when imported (tests import routesOf / route). / 作为程序运行时才启动（测试只导入函数）。

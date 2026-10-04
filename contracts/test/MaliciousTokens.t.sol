@@ -325,6 +325,9 @@ contract MaliciousTokensTest is Test {
     function test_feeOnTransfer_solvencyIdentityBreaksAsDocumented() public {
         Mal_FeeOnTransferToken tok = new Mal_FeeOnTransferToken(100);   // 1%
         TapeAPIEscrow esc = new TapeAPIEscrow(address(tok), address(hub), treasury);
+        // one payout leg, so the shortfall below is the token's fee alone (the default 1% contribution would add a
+        // second leg) / 只留一条付款腿，下面的差额只来自代币自身的转账费（默认 1% 贡献会多出一条腿）
+        vm.prank(holder); esc.setContribution(address(nft), TOKEN, 0);
         tok.mint(consumer, CHANNEL);
         tok.mint(consumer2, CHANNEL);
         vm.prank(consumer); tok.approve(address(esc), type(uint256).max);

@@ -146,6 +146,12 @@ contract Audit2_EscrowTest is Test {
         bem.approve(address(escrow), type(uint256).max);
         escrow.fund(provider, CHANNEL);
         vm.stopPrank();
+        // These tests replay channel mechanics, where "paid in full" means the whole amount: the providers opt out of the
+        // TAPI-22 §3.4 default contribution (1%) here. The contribution split, the default included, has its own tests in
+        // TapeAPIEscrow.t.sol, and EscrowInvariant.t.sol starts every provider at the default.
+        // 这些测试重放通道机制，"足额"指全额：此处让提供者关闭 TAPI-22 §3.4 的默认贡献（1%）。贡献拆分（含默认值）
+        // 另有测试（TapeAPIEscrow.t.sol），EscrowInvariant.t.sol 让每个提供者从默认值开始。
+        vm.prank(address(0xA11CE)); escrow.setContribution(address(nft), 1, 0);
     }
 
     // ----- helpers -----
@@ -426,27 +432,27 @@ contract Audit2_EscrowTest is Test {
         vm.prank(attacker); vm.expectRevert(NotOwner.selector); escrow.setTreasury(attacker);
         vm.expectRevert(ZeroAddress.selector); escrow.setTreasury(address(0));
         // the owner (this test contract) does not hold circuit 1
-        vm.expectRevert(NotHolder.selector); escrow.setContribution(address(nft), 1, 5000);
+        vm.expectRevert(NotHolder.selector); escrow.setContribution(address(nft), 1, 2000);
         // a hostile owner rotates the treasury to itself: it redirects contributions only
-        vm.prank(address(0xA11CE)); escrow.setContribution(address(nft), 1, 5000);
+        vm.prank(address(0xA11CE)); escrow.setContribution(address(nft), 1, 2000);
         escrow.setTreasury(attacker);
         uint64 exp = uint64(block.timestamp + 1 hours);
         escrow.settle(consumer, provider, 100 * BEM, exp, _v(CONSUMER_PK, consumer, provider, 100 * BEM, exp));
-        assertEq(bem.balanceOf(attacker), 50 * BEM); assertEq(bem.balanceOf(provider), 50 * BEM);
+        assertEq(bem.balanceOf(attacker), 20 * BEM); assertEq(bem.balanceOf(provider), 80 * BEM);
         assertEq(escrow.channelOf(consumer, provider), 900 * BEM, "channels are untouchable by the owner");
         // the holder resets it; the owner cannot stop that
         vm.prank(address(0xA11CE)); escrow.setContribution(address(nft), 1, 0);
         escrow.settle(consumer, provider, 200 * BEM, exp, _v(CONSUMER_PK, consumer, provider, 200 * BEM, exp));
-        assertEq(bem.balanceOf(attacker), 50 * BEM);
+        assertEq(bem.balanceOf(attacker), 20 * BEM);
     }
 
     /// setContribution has no isCPU gate: a home-made ERC-721 can only set bps for its OWN derived container.
     function test_A2_claim_fakeCircuitsCannotSetAnotherProvidersBps() public {
         A2_FakeCircuits fake = new A2_FakeCircuits(attacker);
-        vm.prank(attacker); escrow.setContribution(address(fake), 1, 5000);
-        assertEq(escrow.contributionOf(provider), 0);
-        assertEq(escrow.contributionOf(hub.accountOf(address(fake), 1)), 5000);
-        vm.prank(attacker); vm.expectRevert(NotHolder.selector); escrow.setContribution(address(nft), 1, 5000);
+        vm.prank(attacker); escrow.setContribution(address(fake), 1, 2000);
+        assertEq(escrow.contributionOf(provider), 0);   // as setUp left it / 保持 setUp 设定的值
+        assertEq(escrow.contributionOf(hub.accountOf(address(fake), 1)), 2000);
+        vm.prank(attacker); vm.expectRevert(NotHolder.selector); escrow.setContribution(address(nft), 1, 2000);
     }
 
     /// Third-party griefing with settle: an old voucher settled by a stranger, or a front-run of the provider's
@@ -467,6 +473,7 @@ contract Audit2_EscrowTest is Test {
     function test_A2_claim_reentrancyViaTokenHooksIsClosed() public {
         A2_HookToken tok = new A2_HookToken();
         TapeAPIEscrow esc = new TapeAPIEscrow(address(tok), address(hub), treasury);
+        vm.prank(address(0xA11CE)); esc.setContribution(address(nft), 1, 0);   // as in setUp / 同 setUp
         A2_Reenterer re = new A2_Reenterer(esc, provider);
         tok.setHook(address(re));
         tok.mint(address(re), 10 * CHANNEL);
@@ -554,9 +561,9 @@ contract Audit2_EscrowTest is Test {
         bytes memory late = _v(CONSUMER_PK, consumer, provider, 2, exp);
         vm.warp(exp + 1); vm.expectRevert(Expired.selector); escrow.settle(consumer, provider, 2, exp, late);
         // §3.4: bps cap and holder-only, event emitted with the container as key
-        vm.prank(address(0xA11CE)); vm.expectRevert(abi.encodeWithSelector(ContributionTooHigh.selector, uint16(5001))); escrow.setContribution(address(nft), 1, 5001);
-        vm.prank(address(0xA11CE)); escrow.setContribution(address(nft), 1, 5000);
-        assertEq(escrow.contributionOf(provider), 5000);
+        vm.prank(address(0xA11CE)); vm.expectRevert(abi.encodeWithSelector(ContributionTooHigh.selector, uint16(2001))); escrow.setContribution(address(nft), 1, 2001);
+        vm.prank(address(0xA11CE)); escrow.setContribution(address(nft), 1, 2000);
+        assertEq(escrow.contributionOf(provider), 2000);
         // §3.1: `provider` MUST be the service container -- NOT enforced on-chain (A2-07): any EOA works
         vm.prank(consumer); escrow.fund(stranger, 1);
         assertEq(escrow.channelOf(consumer, stranger), 1);
@@ -657,6 +664,7 @@ contract Audit2_EscrowTest is Test {
     function test_A2_claim_tokenReturnQuirks() public {
         A2_NoReturnToken nr = new A2_NoReturnToken();
         TapeAPIEscrow e1 = new TapeAPIEscrow(address(nr), address(hub), treasury);
+        vm.prank(address(0xA11CE)); e1.setContribution(address(nft), 1, 0);   // as in setUp / 同 setUp
         nr.mint(consumer, CHANNEL);
         vm.startPrank(consumer); nr.approve(address(e1), CHANNEL); e1.fund(provider, CHANNEL); vm.stopPrank();
         assertEq(nr.balanceOf(address(e1)), CHANNEL);

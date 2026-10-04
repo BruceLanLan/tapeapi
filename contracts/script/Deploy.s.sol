@@ -542,7 +542,8 @@ contract Deploy is Script {
         require(escrow.WITHDRAW_COOLDOWN() == 48 hours, "POST: WITHDRAW_COOLDOWN != 48h");
         require(escrow.WITHDRAW_WINDOW() == 7 days, "POST: WITHDRAW_WINDOW != 7d");
         require(escrow.MAX_SESSION() == 30 days, "POST: MAX_SESSION != 30d");
-        require(escrow.MAX_CONTRIBUTION_BPS() == 5000, "POST: MAX_CONTRIBUTION_BPS != 5000");
+        require(escrow.MAX_CONTRIBUTION_BPS() == 2000, "POST: MAX_CONTRIBUTION_BPS != 2000");
+        require(escrow.DEFAULT_CONTRIBUTION_BPS() == 100, "POST: DEFAULT_CONTRIBUTION_BPS != 100");
 
         // Unlike the directory, the escrow's voucher domain is anchored on the escrow itself.
         // 与目录不同，托管的凭证域锚定在托管合约自身。
