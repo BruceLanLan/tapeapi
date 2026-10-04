@@ -204,17 +204,18 @@ TAPI-1 and TAPI-20 to TAPI-27 (so that TAP numbers stay with the editors: TAP-20
 between 2026-09-30 and 2026-10-01 we submitted eight TAP drafts for parts of them. Editors review the format, not the merits
 (TAP-01 §4), so a merge into Draft is not adoption. TAPI-20 to TAPI-27 remain the basis of the 1.x compatibility promise.
 
-| Our spec | Draft (pull request) | The editors' response, as of 2026-10-03 |
+| Our spec | Draft (pull request) | The editors' response, as of 2026-10-05 |
 |---|---|---|
 | TAPI-20 (core: §3.1 to §3.4, §3.6, §3.10) | Service identity and manifest, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8) | Merged on 2026-10-01 as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md), Draft |
-| TAPI-21 | Signed responses, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10) | Passed the format check; to be merged after TAP-11. We made the two requested changes (it requires TAP-11; the references use its number) and applied their notes: `voucher` and the payment codes are reserved names, `METHOD_NOT_FOUND` is widened |
-| TAPI-20 §3.8, TAPI-21 | MCP tool binding, [#16](https://github.com/TapeOutProtocol/TAPs/pull/16) | Passed the format check; to be merged after #8 and #10. References updated to TAP-11 |
-| TAPI-23 | Attested reads from independent services, [#18](https://github.com/TapeOutProtocol/TAPs/pull/18) | Passed the format check; to be merged after #8 and #10. Their notes applied: services sharing a signer count as one party, and attested reads alone must not release funds (a SHOULD NOT in §7) |
-| TAPI-26 | Private channels, [#12](https://github.com/TapeOutProtocol/TAPs/pull/12) | No response yet |
+| TAPI-21 | Signed responses, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10) | Merged on 2026-10-04 as [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md), Draft. We made the two requested changes and applied their notes: `voucher` and the payment codes are reserved names, `METHOD_NOT_FOUND` is widened |
+| TAPI-20 §3.8, TAPI-21 | MCP tool binding, [#16](https://github.com/TapeOutProtocol/TAPs/pull/16) | Passed the format check; the drafts it requires are now merged (TAP-11, TAP-13). References updated to TAP-11 and TAP-13 |
+| TAPI-23 | Attested reads from independent services, [#18](https://github.com/TapeOutProtocol/TAPs/pull/18) | Passed the format check; the drafts it requires are now merged (TAP-11, TAP-13). References updated to TAP-11 and TAP-13. Their notes applied: services sharing a signer count as one party, and attested reads alone must not release funds (a SHOULD NOT in §7) |
+| TAPI-26 | Private channels, [#12](https://github.com/TapeOutProtocol/TAPs/pull/12) | References to TAP-13 updated; no response yet |
 | TAPI-27 (format 1 only) | Private groups, [#20](https://github.com/TapeOutProtocol/TAPs/pull/20) | No response yet |
-| TAPI-20 §3.9, TAPI-21 §3.5 | AI usage receipts, [#26](https://github.com/TapeOutProtocol/TAPs/pull/26) | No response yet |
+| TAPI-20 §3.9, TAPI-21 §3.5 | AI usage receipts, [#26](https://github.com/TapeOutProtocol/TAPs/pull/26) | References to TAP-13 updated; no response yet |
 | TAPI-20 §3.2 (proof mode, informative) | Proof-verified reads, [#28](https://github.com/TapeOutProtocol/TAPs/pull/28) | No response yet |
 | Follow-ups to TAP-11 | A Security Considerations note on `verifyingContract`, [#35](https://github.com/TapeOutProtocol/TAPs/pull/35); an informative Chinese translation, [#36](https://github.com/TapeOutProtocol/TAPs/pull/36) | No response yet |
+| Follow-up to TAP-13 | Wording on reserved names, [#46](https://github.com/TapeOutProtocol/TAPs/pull/46) | No response yet |
 
 TAPI-22, TAPI-24 and TAPI-25 have not been submitted. When the editors assign numbers to the other drafts, we rename our references to them. The drafts are written against the official TAP-10 and list, under Backwards Compatibility, where TapeAPI's own 1.x behaviour differs. The SDK follows TAP-10 in an optional conformance mode (`conform: 'tap10'`, experimental: the resolution path since 1.4; all-chain resolution, the messaging path and strict reads since 1.5). Its default behaviour does not change before 2.0.
 

@@ -188,17 +188,18 @@ flowchart LR
 
 这些是 TapeAPI 自己的规范，不是 TAP。TapeOut 的标准以 TAP 的形式发布，由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 编号。这套流程出来之后，我们把自己的文档改名为 TAPI-1 与 TAPI-20 至 TAPI-27（让 TAP 编号留给编辑：例如 TAP-20 现在属于另一份提案），并在 2026-09-30 至 2026-10-01 就其中部分内容提交了 8 份 TAP 草稿。编辑审的是格式而不是方案本身（TAP-01 §4），所以合并为 Draft 不等于被采纳。TAPI-20 至 TAPI-27 仍是 1.x 兼容性承诺的依据。
 
-| 我们的规范 | 草稿（拉取请求） | 编辑的回应（截至 2026-10-03） |
+| 我们的规范 | 草稿（拉取请求） | 编辑的回应（截至 2026-10-05） |
 |---|---|---|
 | TAPI-20（核心：§3.1 至 §3.4、§3.6、§3.10） | 服务身份与清单，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8) | 2026-10-01 合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)，Draft |
-| TAPI-21 | 签名响应，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10) | 已通过格式审查，等排在 TAP-11 之后合并。要求的两处改动已做（`requires` 加上 TAP-11、正文引用改用编号），评审意见也已采纳：`voucher` 与支付相关错误码标为保留名，放宽 `METHOD_NOT_FOUND` 的含义 |
-| TAPI-20 §3.8、TAPI-21 | MCP 工具绑定，[#16](https://github.com/TapeOutProtocol/TAPs/pull/16) | 已通过格式审查，等排在 #8、#10 之后合并。引用已改为 TAP-11 |
-| TAPI-23 | 多家独立服务的交叉验证读取，[#18](https://github.com/TapeOutProtocol/TAPs/pull/18) | 已通过格式审查，等排在 #8、#10 之后合并。意见已采纳：签名者相同的服务算一方；只靠证明读取不得放款（§7 的 SHOULD NOT） |
-| TAPI-26 | 私密通道，[#12](https://github.com/TapeOutProtocol/TAPs/pull/12) | 暂无回复 |
+| TAPI-21 | 签名响应，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10) | 2026-10-04 合并为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)，Draft。要求的两处改动已做，评审意见也已采纳：`voucher` 与支付相关错误码标为保留名，放宽 `METHOD_NOT_FOUND` 的含义 |
+| TAPI-20 §3.8、TAPI-21 | MCP 工具绑定，[#16](https://github.com/TapeOutProtocol/TAPs/pull/16) | 已通过格式审查，它要求的草稿现已合并（TAP-11、TAP-13）。引用已改为 TAP-11 与 TAP-13 |
+| TAPI-23 | 多家独立服务的交叉验证读取，[#18](https://github.com/TapeOutProtocol/TAPs/pull/18) | 已通过格式审查，它要求的草稿现已合并（TAP-11、TAP-13）。引用已改为 TAP-11 与 TAP-13。意见已采纳：签名者相同的服务算一方；只靠证明读取不得放款（§7 的 SHOULD NOT） |
+| TAPI-26 | 私密通道，[#12](https://github.com/TapeOutProtocol/TAPs/pull/12) | 对 TAP-13 的引用已更新；暂无回复 |
 | TAPI-27（仅格式 1） | 私密群聊，[#20](https://github.com/TapeOutProtocol/TAPs/pull/20) | 暂无回复 |
-| TAPI-20 §3.9、TAPI-21 §3.5 | AI 用量回执，[#26](https://github.com/TapeOutProtocol/TAPs/pull/26) | 暂无回复 |
+| TAPI-20 §3.9、TAPI-21 §3.5 | AI 用量回执，[#26](https://github.com/TapeOutProtocol/TAPs/pull/26) | 对 TAP-13 的引用已更新；暂无回复 |
 | TAPI-20 §3.2（证明模式，说明性） | 证明核验读取，[#28](https://github.com/TapeOutProtocol/TAPs/pull/28) | 暂无回复 |
 | TAP-11 的后续修改 | 在安全说明里补一句 `verifyingContract`，[#35](https://github.com/TapeOutProtocol/TAPs/pull/35)；说明性的中文译文，[#36](https://github.com/TapeOutProtocol/TAPs/pull/36) | 暂无回复 |
+| TAP-13 的后续修改 | 保留名的措辞，[#46](https://github.com/TapeOutProtocol/TAPs/pull/46) | 暂无回复 |
 
 TAPI-22、TAPI-24、TAPI-25 没有提交。编辑给其它草稿分配编号后，我们会把引用改成对应编号。这些草稿按官方 TAP-10 写，并在 Backwards Compatibility 里列出 TapeAPI 自己的 1.x 行为有哪些不同。SDK 以可选的一致模式跟上 TAP-10（`conform: 'tap10'`，实验性：解析路径自 1.4，全链解析、消息路径与 strict 读取自 1.5）；2.0 之前默认行为不变。
 

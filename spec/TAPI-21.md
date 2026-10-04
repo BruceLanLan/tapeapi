@@ -13,7 +13,7 @@
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
 
-> **Not a TAP.** "TAPI-21" is TapeAPI's own name for this document; until 2026-09-30 it was called "TAP-21". It is not a TAP: TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01 §6.1. Part of it has been submitted as TAP drafts under that process, under review and without a number yet: signed responses ([PR #10](https://github.com/TapeOutProtocol/TAPs/pull/10)) and AI usage receipts ([PR #26](https://github.com/TapeOutProtocol/TAPs/pull/26)); the MCP tool binding ([PR #16](https://github.com/TapeOutProtocol/TAPs/pull/16)) also relies on parts of it. A submission is not adoption, and each draft takes whatever number the editors give it. Frozen constants that contain an old name (for example the `TAP-26/…` labels) are historical constants and never change.
+> **Not a TAP.** "TAPI-21" is TapeAPI's own name for this document; until 2026-09-30 it was called "TAP-21". It is not a TAP: TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01 §6.1. Part of it has been submitted as TAP drafts under that process. Signed responses ([PR #10](https://github.com/TapeOutProtocol/TAPs/pull/10)) were merged on 2026-10-04 as [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md), a Draft (a merge is not adoption). AI usage receipts ([PR #26](https://github.com/TapeOutProtocol/TAPs/pull/26)) are under review and without a number yet; the MCP tool binding ([PR #16](https://github.com/TapeOutProtocol/TAPs/pull/16)) also relies on parts of it. A submission is not adoption, and each draft takes whatever number the editors give it. Frozen constants that contain an old name (for example the `TAP-26/…` labels) are historical constants and never change.
 
 > **Error codes and TAPI-22.** The error codes this document defines, `PAYMENT_REQUIRED` and `BAD_VOUCHER` among them, are frozen with it: what a code means can be fixed now, while the payment flow that uses them is in TAPI-22, which is Experimental.
 
@@ -257,7 +257,7 @@ Copyright and related rights waived via CC0-1.0.
 
 > 英文为权威文本，本译文与英文章节一一对应。
 
-> **不是 TAP。** “TAPI-21”是 TapeAPI 给本文档起的名字，2026-09-30 之前叫“TAP-21”。它不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配。其中部分内容已按该流程作为 TAP 草稿提交，在评审中、尚无编号：签名响应（[PR #10](https://github.com/TapeOutProtocol/TAPs/pull/10)）与 AI 用量回执（[PR #26](https://github.com/TapeOutProtocol/TAPs/pull/26)）；MCP 工具绑定（[PR #16](https://github.com/TapeOutProtocol/TAPs/pull/16)）也用到其中的部分内容。提交不等于被采纳，各草稿的编号以编辑分配为准。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。
+> **不是 TAP。** “TAPI-21”是 TapeAPI 给本文档起的名字，2026-09-30 之前叫“TAP-21”。它不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配。其中部分内容已按该流程作为 TAP 草稿提交。签名响应（[PR #10](https://github.com/TapeOutProtocol/TAPs/pull/10)）已于 2026-10-04 合并为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（Draft；合并不等于被采纳）。AI 用量回执（[PR #26](https://github.com/TapeOutProtocol/TAPs/pull/26)）在评审中、尚无编号；MCP 工具绑定（[PR #16](https://github.com/TapeOutProtocol/TAPs/pull/16)）也用到其中的部分内容。提交不等于被采纳，各草稿的编号以编辑分配为准。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。
 
 > **实现状态（2026-09-27）：** 运行中：`api.tapeapi.fun`（`11.1013.tape`）与 `relay.tapeapi.fun`（`12.1013.tape`）的每个回答（包括错误）都是由 `server/src/` 签名的 v2 信封；SDK 负责验证。未经第三方审计。
 
