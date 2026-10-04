@@ -1258,6 +1258,90 @@ allth = list(ca_th.values()) + [keccak256(o) for o in other]
 check('agent/every typehash in the hub domain differs', len(set(allth)), len(allth))
 
 
+# ---------- revocation in a thread (draft TAP §7.4-§7.6), an independent model over abstract cases ----------
+# Written from the draft text alone: the six messages reduced to the facts the state machine and the revocation rules
+# read (times, the mandate's window, whether the mandate is refused). R comes from a first pass without the
+# message-after-revocation checks; a second pass applies them and its problems are reported. Their order (the second
+# pass in message order, then the problems of the revocation messages) is the reference implementation's; the draft
+# does not fix one. The final checks put Cancelled before Expired. / 只按草稿文字实现的抽象模型；问题顺序是本实现的，草稿未规定。
+tr = ca['threadRevocation']
+
+def tr_pass(c, R):
+    probs, st = [], None
+    acc = mand = last = None
+    site = None
+    for name in c['messages']:
+        k, _, idx = name.partition(':')
+        if k == 'revocation':
+            continue
+        if k == 'offer':
+            if st is not None: probs.append('out-of-order'); continue
+            st = 'Offered'
+        elif k == 'accept':
+            if st != 'Offered': probs.append('out-of-order'); continue
+            a = c['accept']
+            if a['ts'] > c['offer']['exp']: probs.append('offer-expired'); continue
+            if a['ts'] > R: probs.append('message-after-revocation'); continue
+            acc, st = a, 'Accepted'
+        elif k == 'mandate':
+            if st != 'Accepted': probs.append('out-of-order'); continue
+            m = c['mandate']
+            if m['refused']: probs.append(m['refused']); continue
+            mand, st = m, 'Active'
+            sr = c['site']
+            if sr and ('mandate' in sr['hashes'] or m['notBefore'] < sr['revokedBefore']):
+                site = sr['issued']
+        elif k == 'deliver':
+            if st not in ('Active', 'Rejected'): probs.append('out-of-order'); continue
+            d = dict(c['deliveries'][int(idx)], index=int(idx))
+            if d['ts'] > R: probs.append('message-after-revocation'); continue
+            if not (mand['notBefore'] <= d['ts'] <= mand['expires']): probs.append('deliver-outside-mandate'); continue
+            if d['exp'] < d['ts']: probs.append('message-malformed'); continue
+            if d['ts'] < acc['ts']: probs.append('deliver-before-accept'); continue
+            if d['ts'] > c['offer']['deadline']: probs.append('deliver-after-deadline')
+            last, st = d, 'Delivered'
+        elif k == 'acceptance':
+            if st != 'Delivered': probs.append('out-of-order'); continue
+            v = c['verdict']
+            if v['of'] != last['index']: probs.append('verdict-mismatch'); continue
+            if v['issued'] < last['ts']: probs.append('verdict-before-delivery'); continue
+            st = 'Settled' if v['verdict'] == 1 else 'Rejected'
+    return {'problems': probs, 'state': st, 'accept': acc, 'mandate': mand, 'last': last, 'site': site}
+
+def tr_thread(c):
+    first = tr_pass(c, float('inf'))
+    rprobs, times = [], []
+    for name in c['messages']:
+        k, _, idx = name.partition(':')
+        if k != 'revocation':
+            continue
+        r = c['revocations'][int(idx)]
+        m = first['mandate']
+        applies = ('mandate' in r['hashes'] or m['notBefore'] < r['revokedBefore']) if m else r['revokedBefore'] > 0
+        if not applies: rprobs.append('revocation-mismatch'); continue
+        times.append((r['issued'], 'message'))
+    if first['site'] is not None:
+        times.append((first['site'], 'site'))
+    R = min(times, key=lambda t: t[0]) if times else None
+    p2 = tr_pass(c, R[0]) if R else first
+    st, at = p2['state'], c['at']
+    if st in ('Offered', 'Accepted', 'Active') and R and R[0] <= at: st = 'Cancelled'
+    elif st == 'Offered' and at > c['offer']['exp']: st = 'Expired'
+    elif st == 'Accepted' and at > p2['accept']['exp']: st = 'Expired'
+    elif st == 'Active' and at > p2['mandate']['expires']: st = 'Expired'
+    return {'R': R[0] if R else None, 'via': R[1] if R else None, 'state': st, 'problems': p2['problems'] + rprobs}
+
+tr_out = []
+for c in tr['cases']:
+    got = tr_thread(c)
+    tr_out.append(got)
+    check('thread-revocation/R/' + c['name'], (got['R'], got['via']), (c['expect']['R'], c['expect']['via']))
+    check('thread-revocation/state/' + c['name'], got['state'], c['expect']['state'])
+    check('thread-revocation/problems/' + c['name'], got['problems'], c['expect']['problems'])
+for a, b in tr['sameResult']:
+    check('thread-revocation/message and site list give the same result %d %d' % (a, b), (tr_out[a]['state'], tr_out[a]['problems'], tr_out[a]['R']), (tr_out[b]['state'], tr_out[b]['problems'], tr_out[b]['R']))
+
+
 if fail:
     print('FAIL: %d of %d checks disagreed with the reference implementation\n' % (len(fail), checked))
     for f in fail:

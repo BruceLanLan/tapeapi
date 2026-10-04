@@ -8,7 +8,7 @@ the [changelog](../CHANGELOG.md).
 
 ## 1. Now (live)
 
-The current release is **1.7.0** (2026-10-05): container agents, experimental, phase 0. What each release added is in
+The current release is **1.7.1** (2026-10-05): container agents, experimental, phase 0. What each release added is in
 the [changelog](../CHANGELOG.md); in short:
 
 - **Container agents** (1.7, experimental, phase 0): `@tapeapi/sdk/agent` (mandates, task threads, a read-only payment
@@ -99,7 +99,7 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
 
 ## 1. 现在（已上线）
 
-当前版本是 **1.7.0**（2026-10-05）：容器代理，实验性，阶段 0。每一版加了什么见[更新日志](../CHANGELOG.md)；简要如下：
+当前版本是 **1.7.1**（2026-10-05）：容器代理，实验性，阶段 0。每一版加了什么见[更新日志](../CHANGELOG.md)；简要如下：
 
 - **容器代理**（1.7，实验性，阶段 0）：`@tapeapi/sdk/agent`（授权书、任务线程、只读的付款核验、`forWallet`）、`tapeapi-verify task`
   与 [`examples/agent-service/`](../examples/agent-service/)。持有人签授权书，代理交付，委托方验收，付款是一笔任何人都能核验的普通转账；

@@ -8,7 +8,7 @@
 # 代码；npm 只下载 SDK 固定版本的三个 @noble 依赖。
 #
 # Without compose / 不用 compose 时:
-#   docker build --build-context sdk=../../sdk --build-context server=../../server -t tapeapi-new-api-sidecar:1.7.0 .
+#   docker build --build-context sdk=../../sdk --build-context server=../../server -t tapeapi-new-api-sidecar:1.7.1 .
 FROM node:22-alpine
 WORKDIR /app
 RUN printf '{"private":true,"type":"module","workspaces":["sdk","server"]}\n' > package.json

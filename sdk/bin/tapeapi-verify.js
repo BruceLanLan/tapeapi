@@ -626,7 +626,9 @@ export async function runTask(argv, { api, clock, out = (t) => process.stdout.wr
   for (const d of check.deliveries) lines.push(`delivery:    deliverable ${d.deliverableHash} at ${d.ts}, ${d.evidence.receipts.length} receipt(s), evidence ${d.evidence.ok ? 'ok' : 'NOT ok'}`)
   if (check.evidence) lines.push(`evidence:    proves: ${check.evidence.proves}; does NOT prove: ${check.evidence.doesNotProve.join('; ')}`)
   lines.push(`verdict:     ${check.verdict ? `${check.verdict.verdict} at ${check.verdict.issued} (verdictHash ${check.verdict.verdictHash})` : 'none'}`)
-  lines.push(`revoked:     ${check.revoked ? `yes, at ${check.revoked.at} (${check.revoked.via})` : 'no'}`)
+  // the revocation time R only refuses agent messages signed after it; it does not by itself cancel the thread (the state
+  // line says whether the final checks did) / 撤销时间只拒收其后签名的代理消息，本身不表示取消
+  lines.push(`revocation:  ${check.revoked ? `at ${check.revoked.at} (${check.revoked.via}); agent messages signed after it are refused` : 'none'}`)
   if (check.unaccepted) lines.push('unaccepted:  yes (delivered, and no verdict before the delivery\'s own exp; there is no arbiter)')
   lines.push(`problems:    ${check.problems.length ? check.problems.length : 'none'}`)
   for (const p of check.problems) lines.push(`  - ${p.code}: ${plainText(p.message, 200)}`)

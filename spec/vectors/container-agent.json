@@ -203,5 +203,747 @@
       "digest": "0x0b013f8ea7605944462183406bbf33c5123d4fe71729760d77328bf41cfd7f62",
       "sig": "0xf4c6b0ed03b8d99e0b67999a2f2147dfa48759157613ee777596cbb3c66412f87f8a762a7a522417a52b3bb3a8a7f821a5b73414c7b856b2ff9db8f084124cd21c"
     }
-  ]
+  ],
+  "threadRevocation": {
+    "rules": {
+      "passes": "R is found in a first pass without the message-after-revocation checks; a second pass applies them with that R; the problems reported are those of the second pass. Their order here (the second pass in message order, then those of the revocation messages) is this implementation's; the draft does not fix an order",
+      "applies": "a revocation applies when it covers the mandate applied in the first pass (its hash is listed, or the mandate notBefore < revokedBefore) or, when no mandate is applied, when revokedBefore > 0; the site revocation counts only for an applied mandate",
+      "final": "Offered, Accepted or Active with R <= at is Cancelled; then Expired; a revocation never changes the state when met; a verdict is allowed whatever its issued",
+      "order": "messages lists the message order: offer, accept, mandate, deliver:<i>, acceptance, revocation:<i>; the verdict judges delivery `of`"
+    },
+    "cases": [
+      {
+        "name": "a revocation message placed before the accept, issued before it: the accept is refused, the thread is cancelled",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791000100,
+        "messages": [
+          "offer",
+          "revocation:0",
+          "accept",
+          "mandate",
+          "deliver:0",
+          "acceptance"
+        ],
+        "deliveries": [
+          {
+            "ts": 1791000010,
+            "exp": 1791003600
+          }
+        ],
+        "verdict": {
+          "of": 0,
+          "issued": 1791000020,
+          "verdict": 1
+        },
+        "revocations": [
+          {
+            "issued": 1790999995,
+            "hashes": [
+              "mandate"
+            ],
+            "revokedBefore": 0
+          }
+        ],
+        "site": null,
+        "expect": {
+          "R": 1790999995,
+          "via": "message",
+          "state": "Cancelled",
+          "problems": [
+            "message-after-revocation",
+            "out-of-order",
+            "out-of-order",
+            "out-of-order"
+          ]
+        }
+      },
+      {
+        "name": "the same revocation from the site list: the same result",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791000100,
+        "messages": [
+          "offer",
+          "accept",
+          "mandate",
+          "deliver:0",
+          "acceptance"
+        ],
+        "deliveries": [
+          {
+            "ts": 1791000010,
+            "exp": 1791003600
+          }
+        ],
+        "verdict": {
+          "of": 0,
+          "issued": 1791000020,
+          "verdict": 1
+        },
+        "revocations": [],
+        "site": {
+          "issued": 1790999995,
+          "hashes": [
+            "mandate"
+          ],
+          "revokedBefore": 0
+        },
+        "expect": {
+          "R": 1790999995,
+          "via": "site",
+          "state": "Cancelled",
+          "problems": [
+            "message-after-revocation",
+            "out-of-order",
+            "out-of-order",
+            "out-of-order"
+          ]
+        }
+      },
+      {
+        "name": "a revocation message placed before the accept but issued after the delivery: where it appears does not matter",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791000100,
+        "messages": [
+          "offer",
+          "revocation:0",
+          "accept",
+          "mandate",
+          "deliver:0",
+          "acceptance"
+        ],
+        "deliveries": [
+          {
+            "ts": 1791000010,
+            "exp": 1791003600
+          }
+        ],
+        "verdict": {
+          "of": 0,
+          "issued": 1791000020,
+          "verdict": 1
+        },
+        "revocations": [
+          {
+            "issued": 1791000015,
+            "hashes": [
+              "mandate"
+            ],
+            "revokedBefore": 0
+          }
+        ],
+        "site": null,
+        "expect": {
+          "R": 1791000015,
+          "via": "message",
+          "state": "Settled",
+          "problems": []
+        }
+      },
+      {
+        "name": "a dated revocation and a refused mandate: the dated one applies, the site list found for the refused mandate does not count",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": "nonce-reused"
+        },
+        "at": 1791000100,
+        "messages": [
+          "offer",
+          "accept",
+          "mandate",
+          "revocation:0",
+          "deliver:0"
+        ],
+        "deliveries": [
+          {
+            "ts": 1791000010,
+            "exp": 1791003600
+          }
+        ],
+        "verdict": null,
+        "revocations": [
+          {
+            "issued": 1791000030,
+            "hashes": [],
+            "revokedBefore": 1791000000
+          }
+        ],
+        "site": {
+          "issued": 1790999900,
+          "hashes": [
+            "mandate"
+          ],
+          "revokedBefore": 0
+        },
+        "expect": {
+          "R": 1791000030,
+          "via": "message",
+          "state": "Cancelled",
+          "problems": [
+            "nonce-reused",
+            "out-of-order"
+          ]
+        }
+      },
+      {
+        "name": "two revocations, an early and a late one: R is the early one, a delivery between them is refused",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791000100,
+        "messages": [
+          "offer",
+          "accept",
+          "mandate",
+          "deliver:0",
+          "revocation:0",
+          "revocation:1",
+          "acceptance"
+        ],
+        "deliveries": [
+          {
+            "ts": 1791000010,
+            "exp": 1791003600
+          }
+        ],
+        "verdict": {
+          "of": 0,
+          "issued": 1791000060,
+          "verdict": 1
+        },
+        "revocations": [
+          {
+            "issued": 1791000050,
+            "hashes": [
+              "mandate"
+            ],
+            "revokedBefore": 0
+          },
+          {
+            "issued": 1791000005,
+            "hashes": [
+              "mandate"
+            ],
+            "revokedBefore": 0
+          }
+        ],
+        "site": null,
+        "expect": {
+          "R": 1791000005,
+          "via": "message",
+          "state": "Cancelled",
+          "problems": [
+            "message-after-revocation",
+            "out-of-order"
+          ]
+        }
+      },
+      {
+        "name": "a site revocation issued after the delivery and before the verdict: the thread stays Settled",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791000100,
+        "messages": [
+          "offer",
+          "accept",
+          "mandate",
+          "deliver:0",
+          "acceptance"
+        ],
+        "deliveries": [
+          {
+            "ts": 1791000010,
+            "exp": 1791003600
+          }
+        ],
+        "verdict": {
+          "of": 0,
+          "issued": 1791000060,
+          "verdict": 1
+        },
+        "revocations": [],
+        "site": {
+          "issued": 1791000030,
+          "hashes": [
+            "mandate"
+          ],
+          "revokedBefore": 0
+        },
+        "expect": {
+          "R": 1791000030,
+          "via": "site",
+          "state": "Settled",
+          "problems": []
+        }
+      },
+      {
+        "name": "the same revocation as a message after the verdict: the same result",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791000100,
+        "messages": [
+          "offer",
+          "accept",
+          "mandate",
+          "deliver:0",
+          "acceptance",
+          "revocation:0"
+        ],
+        "deliveries": [
+          {
+            "ts": 1791000010,
+            "exp": 1791003600
+          }
+        ],
+        "verdict": {
+          "of": 0,
+          "issued": 1791000060,
+          "verdict": 1
+        },
+        "revocations": [
+          {
+            "issued": 1791000030,
+            "hashes": [
+              "mandate"
+            ],
+            "revokedBefore": 0
+          }
+        ],
+        "site": null,
+        "expect": {
+          "R": 1791000030,
+          "via": "message",
+          "state": "Settled",
+          "problems": []
+        }
+      },
+      {
+        "name": "a revocation issued after `at`: not cancelled yet",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791000100,
+        "messages": [
+          "offer",
+          "accept",
+          "mandate",
+          "revocation:0"
+        ],
+        "deliveries": [],
+        "verdict": null,
+        "revocations": [
+          {
+            "issued": 1791000500,
+            "hashes": [
+              "mandate"
+            ],
+            "revokedBefore": 0
+          }
+        ],
+        "site": null,
+        "expect": {
+          "R": 1791000500,
+          "via": "message",
+          "state": "Active",
+          "problems": []
+        }
+      },
+      {
+        "name": "a revocation that covers neither the mandate nor any date: revocation-mismatch, no R",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791000100,
+        "messages": [
+          "offer",
+          "accept",
+          "mandate",
+          "deliver:0",
+          "acceptance",
+          "revocation:0"
+        ],
+        "deliveries": [
+          {
+            "ts": 1791000010,
+            "exp": 1791003600
+          }
+        ],
+        "verdict": {
+          "of": 0,
+          "issued": 1791000060,
+          "verdict": 1
+        },
+        "revocations": [
+          {
+            "issued": 1791000005,
+            "hashes": [],
+            "revokedBefore": 0
+          }
+        ],
+        "site": null,
+        "expect": {
+          "R": null,
+          "via": null,
+          "state": "Settled",
+          "problems": [
+            "revocation-mismatch"
+          ]
+        }
+      },
+      {
+        "name": "cancelled and expired at once: Cancelled comes first",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791090000,
+        "messages": [
+          "offer",
+          "accept",
+          "mandate",
+          "revocation:0"
+        ],
+        "deliveries": [],
+        "verdict": null,
+        "revocations": [
+          {
+            "issued": 1791000050,
+            "hashes": [
+              "mandate"
+            ],
+            "revokedBefore": 0
+          }
+        ],
+        "site": null,
+        "expect": {
+          "R": 1791000050,
+          "via": "message",
+          "state": "Cancelled",
+          "problems": []
+        }
+      },
+      {
+        "name": "no revocation, past the mandate's expiry: Expired",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791090000,
+        "messages": [
+          "offer",
+          "accept",
+          "mandate"
+        ],
+        "deliveries": [],
+        "verdict": null,
+        "revocations": [],
+        "site": null,
+        "expect": {
+          "R": null,
+          "via": null,
+          "state": "Expired",
+          "problems": []
+        }
+      },
+      {
+        "name": "an accept signed exactly at R is allowed (only after R is refused)",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791000100,
+        "messages": [
+          "offer",
+          "accept",
+          "mandate",
+          "revocation:0"
+        ],
+        "deliveries": [],
+        "verdict": null,
+        "revocations": [
+          {
+            "issued": 1791000000,
+            "hashes": [
+              "mandate"
+            ],
+            "revokedBefore": 0
+          }
+        ],
+        "site": null,
+        "expect": {
+          "R": 1791000000,
+          "via": "message",
+          "state": "Cancelled",
+          "problems": []
+        }
+      },
+      {
+        "name": "a delivery signed exactly at R is allowed, and accepted",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791000100,
+        "messages": [
+          "offer",
+          "accept",
+          "mandate",
+          "deliver:0",
+          "acceptance",
+          "revocation:0"
+        ],
+        "deliveries": [
+          {
+            "ts": 1791000010,
+            "exp": 1791003600
+          }
+        ],
+        "verdict": {
+          "of": 0,
+          "issued": 1791000020,
+          "verdict": 1
+        },
+        "revocations": [
+          {
+            "issued": 1791000010,
+            "hashes": [
+              "mandate"
+            ],
+            "revokedBefore": 0
+          }
+        ],
+        "site": null,
+        "expect": {
+          "R": 1791000010,
+          "via": "message",
+          "state": "Settled",
+          "problems": []
+        }
+      },
+      {
+        "name": "R equal to at cancels",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791000100,
+        "messages": [
+          "offer",
+          "accept",
+          "mandate",
+          "revocation:0"
+        ],
+        "deliveries": [],
+        "verdict": null,
+        "revocations": [
+          {
+            "issued": 1791000100,
+            "hashes": [
+              "mandate"
+            ],
+            "revokedBefore": 0
+          }
+        ],
+        "site": null,
+        "expect": {
+          "R": 1791000100,
+          "via": "message",
+          "state": "Cancelled",
+          "problems": []
+        }
+      },
+      {
+        "name": "R one second after at does not cancel yet",
+        "offer": {
+          "exp": 1791003600,
+          "deadline": 1791086400
+        },
+        "accept": {
+          "ts": 1791000000,
+          "exp": 1791003600
+        },
+        "mandate": {
+          "notBefore": 1790999940,
+          "expires": 1791086400,
+          "refused": null
+        },
+        "at": 1791000100,
+        "messages": [
+          "offer",
+          "accept",
+          "mandate",
+          "revocation:0"
+        ],
+        "deliveries": [],
+        "verdict": null,
+        "revocations": [
+          {
+            "issued": 1791000101,
+            "hashes": [
+              "mandate"
+            ],
+            "revokedBefore": 0
+          }
+        ],
+        "site": null,
+        "expect": {
+          "R": 1791000101,
+          "via": "message",
+          "state": "Active",
+          "problems": []
+        }
+      }
+    ],
+    "sameResult": [
+      [
+        0,
+        1
+      ],
+      [
+        5,
+        6
+      ]
+    ]
+  }
 }

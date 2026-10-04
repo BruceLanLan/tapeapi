@@ -105,7 +105,7 @@ test('a thread that verifies: state, ok, enforcement none, not a self-hire, both
   assert.match(r.stdout, new RegExp(`^agent: {7}${AG} {2}name 12\\.7\\.tape {2}signer 0x[0-9a-fA-F]{40}$`, 'mi'))
   assert.match(r.stdout, /manifest name \(untrusted: the agent wrote it, it is not an identity\): "Official TapeAPI Agenttnega"/)
   assert.doesNotMatch(r.stdout, /[‮​]/)
-  assert.match(r.stdout, /^revoked: {5}no$/m)
+  assert.match(r.stdout, /^revocation: {2}none$/m)
   assert.match(r.stdout, /^problems: {4}none$/m)
   assert.match(r.stdout, /does NOT prove: that the calls were needed; that the answers were right/)
   assert.doesNotMatch(r.stdout, /badge|verified by|certified/i)
@@ -123,7 +123,7 @@ test('FIXED TV-02: a self-hire is printed as such (exit status still follows the
   assert.match(r.stdout, /^self-hire: {3}YES \(same-holder\): reputation rules should leave this thread out$/m)
 })
 
-test('FIXED TV-03: a thread that does not verify exits 1 and says why, in order: forged signature, revoked mandate, cap above 0, out of order', async () => {
+test('FIXED TV-03: a thread that does not verify exits 1 and says why, in order: forged signature, delivered after a revocation, cap above 0, out of order', async () => {
   const x = standardWorld()
   const t = happyThread()
   const forged = { ...t.mandate, sig: mandateMsg(mandateOf(), KEYS.stranger).sig }
@@ -135,12 +135,23 @@ test('FIXED TV-03: a thread that does not verify exits 1 and says why, in order:
   const b = await run(x, [file('cap.json', c.messages)])
   assert.equal(b.code, 1)
   assert.match(b.stdout, /- phase0-no-funds: /)
+  // a site revocation issued before the delivery: the delivery is refused (draft §7.5; mandate-revoked is not a thread
+  // problem); one issued after the delivery and before the verdict leaves the thread Settled
   const y = standardWorld()
-  revocationFile(y, { mandateHashes: [t.mandateHash] })
+  revocationFile(y, { mandateHashes: [t.mandateHash], issued: t.deliver.receipt.ts - 30 })
   const d = await run(y, [file('revoked.json', t.messages)])
   assert.equal(d.code, 1)
-  assert.match(d.stdout, /- mandate-revoked: /)
-  assert.match(d.stdout, /^mandate: {5}0x[0-9a-f]{64} {2}revocation list: published$/m)
+  assert.match(d.stdout, /- message-after-revocation: /)
+  assert.doesNotMatch(d.stdout, /mandate-revoked/)
+  // the accept itself was signed after R: the second pass refuses it, so the mandate is never applied and the
+  // thread ends Cancelled / accept 也签在 R 之后：第二遍拒收，授权书未应用，线程最后为 Cancelled
+  assert.match(d.stdout, /^state: {7}Cancelled$/m)
+  assert.match(d.stdout, /^revocation: {2}at \d+ \(site\); agent messages signed after it are refused$/m)
+  const z = standardWorld()
+  revocationFile(z, { mandateHashes: [t.mandateHash], issued: t.deliver.receipt.ts })
+  const g = await run(z, [file('revoked-late.json', t.messages)])
+  assert.equal(g.code, 0)
+  assert.match(g.stdout, /^state: {7}Settled$/m)
   const e = await run(x, [file('order.json', [t.accept, t.offer])])
   assert.equal(e.code, 1)
   assert.match(e.stdout, /- out-of-order: /)
@@ -148,7 +159,7 @@ test('FIXED TV-03: a thread that does not verify exits 1 and says why, in order:
   const f = await run(standardWorld(), [file('cancel.json', [t.offer, t.accept, t.mandate, revocationMsg({ mandateHashes: [t.mandateHash] })])])
   assert.equal(f.code, 0)
   assert.match(f.stdout, /^state: {7}Cancelled$/m)
-  assert.match(f.stdout, /^revoked: {5}yes, at \d+ \(message\)$/m)
+  assert.match(f.stdout, /^revocation: {2}at \d+ \(message\); agent messages signed after it are refused$/m)
 })
 
 // a payment for the thread: the transfer, then the message that attaches it

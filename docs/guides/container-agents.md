@@ -71,6 +71,12 @@ The states are `Offered`, `Accepted`, `Active`, `Delivered` and `Settled`, with 
   agent may deliver again while the mandate is valid. There is no arbiter: a delivery left without a verdict past its
   own `exp` stays `Delivered` and is marked `unaccepted: true`.
 - Payment is not a state. It is a fact on the chain, checked separately.
+- A revocation, whether a message in the thread (wherever it sits) or the list on the principal's site, affects only
+  what is signed after it. It sets the thread's revocation time; an agent message signed after that time is refused
+  (`message-after-revocation`); a verdict is allowed whenever it was signed, so a delivery made before the revocation
+  can still be accepted or rejected; and only the final check turns a thread still `Offered`, `Accepted` or `Active`
+  into `Cancelled` (before `Expired`). The same revocation gives the same result by either path. In a thread,
+  `mandate-revoked` is not reported.
 - `quote`, `progress`, `reject`, `cancel` and `dispute` are names from Idea #41 that this version does not implement: a
   thread that carries one is refused (`kind-not-implemented`).
 
@@ -302,7 +308,7 @@ tapeapi-verify task thread.json --payment <agent container> <inbox index>
 tapeapi-verify task thread.json --rpc https://node-a.example,https://node-b.example
 ```
 
-Without installing anything, use `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.0/tapeapi-sdk-1.7.0.tgz tapeapi-verify task thread.json`;
+Without installing anything, use `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz tapeapi-verify task thread.json`;
 in a checkout, `node sdk/bin/tapeapi-verify.js task thread.json`.
 
 - `--payment <recipient> <index>` also checks the TapeSend message at that index in the recipient's inbox. The recipient
@@ -327,12 +333,16 @@ agent:       0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6  name (none on the chain
              manifest name (untrusted: the agent wrote it, it is not an identity): "Report agent"
 ...
 verdict:     accepted at 1791000000 (verdictHash 0x69bb45f4…df05c3)
-revoked:     no
+revocation:  none
 problems:    none
 payment:     message 0 in the inbox of 0xa6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6: ok
   erc20 0xb0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0 1000000000000000000 in 0xaaaaaaaa…aaaaa1: ok
   the message body names the thread's verdictHash (information only)
 ```
+
+The `revocation` line gives the thread's revocation time, when a revocation applies: agent messages signed after it
+are refused, and nothing else. It does not say the thread was cancelled; the `state` line does. A thread delivered and
+accepted before a revocation reads `result: ok` with `revocation: at <issued> (site); ...`.
 
 ## What a check proves, and what it does not
 
@@ -391,18 +401,24 @@ const putFile = {                                    // for the holder's wallet 
 ```
 
 Once the list is on the site, `kit.readRevocations(PRINCIPAL)` returns `status: 'published'`, and checking the mandate
-reports `mandate-revoked: revoked by the principal's holder at <issued> (site)`.
+on its own (`kit.verifyMandate`) reports `mandate-revoked: revoked by the principal's holder at <issued> (site)`. In a
+thread the list only sets the revocation time, as a revocation message does (see the task thread above).
 
 How the list is read:
 
-- It is read like a manifest: the bytes must match the size and SHA-256 the chain declares, and the current holder's
-  signature must verify. `issued` may be at most 300 seconds ahead of the verifier's clock.
+- It is read like a manifest: from the first site store of the chain that has any file for the container (one store
+  per chain in this version), only while
+  that store and the payment contract run code TAP-10 accepts; `chunkCount` 0 means no file; the bytes must match the
+  size and SHA-256 the chain declares, must not begin with a byte order mark, and the current holder's signature must
+  verify. `issued` may be at most 300 seconds ahead of the verifier's clock. A kit for a chain or a site store without
+  such a list of accepted implementations is refused when it is created (`INVALID_ARGUMENT`).
 - A verifier remembers the highest `issued` it has seen. An older list (someone put back a replaced one), or no list
   where one was seen before, makes every mandate of that principal `revocation-unavailable`: it fails closed instead of
   reading as "not revoked". A principal that never published one is `none-published`, which is not an error.
 - To clear the list, publish an empty one with a higher `issued`. Do not delete the file.
-- A revocation that arrives before the mandate (the thread is still `Offered` or `Accepted`) has no mandate hash to
-  name, so it applies only by date (`revokedBefore` above 0).
+- In a thread whose mandate was never applied (it is still `Offered` or `Accepted`), a revocation has no mandate hash to
+  match, so it applies only by date (`revokedBefore` above 0). A revocation found while checking a mandate that was
+  refused does not count.
 
 ## Problems and error codes
 
@@ -417,7 +433,7 @@ A failure caused by the counterparty is a problem, never an exception; a failing
 | `agent-key-mismatch`, `agent-mismatch` | mandate | It names another key than the agent announced, or another agent. |
 | `not-signed-by-holder` | holder messages | Not signed by the current holder of the principal's circuit. |
 | `nonce-reused` | mandate | This kit's nonce store has seen another mandate with the same chain, principal and nonce. |
-| `mandate-revoked`, `revocation-unavailable` | mandate | Revoked; or the principal's revocation list cannot be relied on. |
+| `mandate-revoked`, `revocation-unavailable` | mandate | Revoked (reported by `verifyMandate`, never in a thread); or the principal's revocation list cannot be relied on. |
 | `not-a-container`, `wrong-chain`, `not-tapeout`, `no-such-token` | identity | The address is not a TapeOut container of this chain whose #ID exists. |
 | `mandate-mismatch` | thread | The mandate's principal, task, mode or nonce differ from the offer, or a delivery names another mandate. |
 | `task-hash-mismatch`, `offer-mismatch`, `offer-expired` | thread | The task text, the offer an accept names, or an accept after the offer's `exp`. |
@@ -443,11 +459,11 @@ Thrown errors (`TapeAPIError`, details in `data`):
   verifying, and so do old threads; the same holds for TAP-11 delegations. A receipt from a provider that has since
   changed its signer stops verifying too.
 - **A revocation binds only whoever reads it.** A message binds its recipient; the site list costs a transaction.
-- **A site list also changes how old threads read.** The list is applied when the mandate is checked, so a thread that
-  was delivered and accepted, checked again after the holder listed its mandate, reads `Cancelled` with
-  `mandate-revoked`. A revocation message in the thread leaves an earlier delivery and verdict standing.
-  `verifyTaskThread(messages, { readSite: false })` checks a past thread without reading the list (and so without
-  seeing it).
+- **A revocation affects only what is signed after it.** Checked again after the holder lists its mandate, a thread
+  that was delivered and accepted before the revocation still reads `Settled`; only agent messages signed after the
+  revocation's `issued` are refused. (Before 1.7.1 a site list turned such a thread into `Cancelled` with
+  `mandate-revoked`.) Times are what the signers claim: the agent's `ts` and the holder's `issued` are not checked
+  against the chain. `verifyTaskThread(messages, { readSite: false })` checks a thread without reading the list.
 - **Nonce reuse is visible only to whoever keeps the nonce store**, and only if the principal uses a new nonce for
   every offer.
 - **No arbiter.** A principal can reject or stay silent; the agent can only keep its evidence (`unaccepted`).

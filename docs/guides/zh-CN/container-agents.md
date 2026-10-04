@@ -65,6 +65,10 @@
 - 晚于报价 `deadline` 的交付照样记录，但会报 `deliver-after-deadline`。被拒收后，代理可以在授权书有效期内重新交付。
   没有仲裁：交付过了自身的 `exp` 还没等到验收，状态仍是 `Delivered`，并标上 `unaccepted: true`。
 - 付款不是一个状态。它是链上的事实，单独核验。
+- 撤销不论是线程里的消息（放在哪个位置都一样），还是委托方站点上的清单，都只影响在它之后签名的东西。它只设定线程的
+  撤销时间：签名晚于这个时间的代理消息被拒（`message-after-revocation`）；验收不受这个时间限制，所以撤销之前的交付仍然
+  可以被验收或拒收；只有最后检查时，仍处在 `Offered`、`Accepted` 或 `Active` 的线程才判为 `Cancelled`（先于 `Expired`）。
+  同一份撤销走两条路，结果相同。线程里不报 `mandate-revoked`。
 - `quote`、`progress`、`reject`、`cancel`、`dispute` 是 Idea #41 里出现的名字，这一版没有实现：线程里出现其中任何一个，
   都会被拒（`kind-not-implemented`）。
 
@@ -279,7 +283,7 @@ tapeapi-verify task thread.json --payment <代理容器> <收件箱序号>
 tapeapi-verify task thread.json --rpc https://node-a.example,https://node-b.example
 ```
 
-不想安装，可以用 `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.0/tapeapi-sdk-1.7.0.tgz tapeapi-verify task thread.json`；
+不想安装，可以用 `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz tapeapi-verify task thread.json`；
 在仓库里则是 `node sdk/bin/tapeapi-verify.js task thread.json`。
 
 - `--payment <收款容器> <序号>` 另外核验该收件箱里那个序号的 TapeSend 消息。收款容器必须是线程里的代理，发件方必须是
@@ -301,12 +305,15 @@ agent:       0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6  name (none on the chain
              manifest name (untrusted: the agent wrote it, it is not an identity): "Report agent"
 ...
 verdict:     accepted at 1791000000 (verdictHash 0x69bb45f4…df05c3)
-revoked:     no
+revocation:  none
 problems:    none
 payment:     message 0 in the inbox of 0xa6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6: ok
   erc20 0xb0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0 1000000000000000000 in 0xaaaaaaaa…aaaaa1: ok
   the message body names the thread's verdictHash (information only)
 ```
+
+`revocation` 一行给出线程的撤销时间（有撤销适用时）：签名晚于它的代理消息被拒，仅此而已。它不表示线程被取消，是否取消看
+`state` 一行。一条在撤销之前已经交付并验收的线程，会显示 `result: ok` 和 `revocation: at <issued> (site); ...`。
 
 ## 核验能证明什么，不能证明什么
 
@@ -357,19 +364,22 @@ const putFile = {                                    // 交给持有人的钱包
 }
 ```
 
-清单上了站点之后，`kit.readRevocations(PRINCIPAL)` 返回 `status: 'published'`，核验那张授权书会报
-`mandate-revoked: revoked by the principal's holder at <issued> (site)`。
+清单上了站点之后，`kit.readRevocations(PRINCIPAL)` 返回 `status: 'published'`，单独核验那张授权书（`kit.verifyMandate`）
+会报 `mandate-revoked: revoked by the principal's holder at <issued> (site)`。在线程里，清单和撤销消息一样只设定撤销时间
+（见上面的任务线程）。
 
 清单是这样读的：
 
-- 读法和清单文件一样：字节必须与链上声明的长度和 SHA-256 一致，当前持有人的签名必须成立。`issued` 最多只能比核验方的
-  时钟超前 300 秒。
+- 读法和清单文件一样：从该链上第一个有该容器文件的站点存储读取（本版每条链只有一个站点存储），而且只在站点存储与付费合约运行的是 TAP-10 接受的代码时
+  才读；`chunkCount` 为 0 即没有文件；字节必须与链上声明的长度和 SHA-256 一致，不能以字节顺序标记（BOM）开头，当前持有人
+  的签名必须成立。`issued` 最多只能比核验方的时钟超前 300 秒。链或站点存储没有这样一份接受实现列表时，`createAgentKit`
+  在创建时就拒绝（`INVALID_ARGUMENT`）。
 - 核验方会记住见过的最高 `issued`。如果拿到更旧的清单（有人把被替换掉的旧清单放了回去），或者见过清单之后它又不见了，
   该委托方名下所有授权书都会变成 `revocation-unavailable`：失败时关闭，而不是当作"没撤销"。从没发布过清单的委托方是
   `none-published`，这不算错误。
 - 想清空清单，就发布一份 `issued` 更高的空清单。不要删除文件。
-- 在授权书之前到达的撤销（线程还在 `Offered` 或 `Accepted`）没有授权书哈希可列，所以只能按日期生效（`revokedBefore`
-  大于 0）。
+- 线程里的授权书从未被应用时（线程还在 `Offered` 或 `Accepted`），撤销没有授权书哈希可对，只能按日期生效（`revokedBefore`
+  大于 0）。核验一张被拒的授权书时查到的撤销不算数。
 
 ## 问题码与错误码
 
@@ -384,7 +394,7 @@ const putFile = {                                    // 交给持有人的钱包
 | `agent-key-mismatch`、`agent-mismatch` | 授权书 | 写的钥匙不是代理公布的那一把，或者写的是别的代理。 |
 | `not-signed-by-holder` | 持有人消息 | 不是委托方电路的当前持有人签的。 |
 | `nonce-reused` | 授权书 | 本 kit 的 nonce 存储里，同一条链、同一委托方、同一 nonce 已经对应了另一张授权书。 |
-| `mandate-revoked`、`revocation-unavailable` | 授权书 | 已撤销；或者委托方的撤销清单靠不住。 |
+| `mandate-revoked`、`revocation-unavailable` | 授权书 | 已撤销（由 `verifyMandate` 报告，线程里不报）；或者委托方的撤销清单靠不住。 |
 | `not-a-container`、`wrong-chain`、`not-tapeout`、`no-such-token` | 身份 | 该地址不是本链上 #ID 存在的 TapeOut 容器。 |
 | `mandate-mismatch` | 线程 | 授权书的委托方、任务、mode 或 nonce 与报价不同，或者交付指向了别的授权书。 |
 | `task-hash-mismatch`、`offer-mismatch`、`offer-expired` | 线程 | 任务原文不对、accept 指向的报价不对，或者在报价的 `exp` 之后才接单。 |
@@ -408,9 +418,10 @@ const putFile = {                                    // 交给持有人的钱包
 - **核验看的是当前持有人。** 电路转手之后，前任持有人签过的消息都不再通过，旧线程也一样；TAP-11 的委托同理。上游服务
   换了签名者之后，它以前的回执也会核验失败。
 - **撤销只约束读到它的人。** 消息只约束收件人；站点清单要花一笔交易。
-- **站点清单也会改变旧线程的读法。** 清单是在核验授权书时套用的，所以一条已经交付并验收的线程，在持有人把它的授权书
-  列进清单之后再核验，会显示 `Cancelled` 并报 `mandate-revoked`。放在线程里的撤销消息则不影响更早的交付和验收。
-  `verifyTaskThread(messages, { readSite: false })` 可以不读清单地核验一条过去的线程（当然也就看不到清单）。
+- **撤销只影响在它之后签名的东西。** 一条在撤销之前已经交付并验收的线程，在持有人把它的授权书列进清单之后再核验，
+  仍然是 `Settled`；只有签名晚于撤销 `issued` 的代理消息会被拒。（1.7.1 之前，站点清单会把这样的线程改成 `Cancelled`
+  并报 `mandate-revoked`。）时间都是签名者自己声称的：代理的 `ts` 和持有人的 `issued` 不与链上核对。
+  `verifyTaskThread(messages, { readSite: false })` 可以不读清单地核验一条线程。
 - **nonce 重用只有保存 nonce 存储的一方看得到**，而且前提是委托方每份报价都用新的 nonce。
 - **没有仲裁。** 委托方可以拒收，也可以一直不回应；代理只能保留证据（`unaccepted`）。
 - **自雇只能标出，不能阻止。**

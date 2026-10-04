@@ -10,7 +10,7 @@ import { toHex, keccak256, utf8ToBytes } from '../src/abi.js'
 import { PROCESSORS_SNAPSHOT } from '../src/processors-snapshot.js'
 import {
   standardWorld, createAgentChain, happyThread, mandateOf, mandateMsg, offerMsg, acceptMsg, deliverMsg, verdictMsg, revocationMsg,
-  revocationFile, providerReceipt, agentReceipt, KEYS, addrOf, P, AG, S, S2, ADDR, RPC, nowS, NOW, TASK,
+  revocationFile, providerReceipt, agentReceipt, KEYS, addrOf, P, AG, S, S2, ADDR, RPC, nowS, NOW, TASK, SITE_STORE,
 } from './helpers/agent-chain.mjs'
 
 const { createAgentKit, mandateHashOf, signMandate, offerHashOf } = agent
@@ -145,9 +145,12 @@ test('FIXED CA-08: the revocation race: an agent message signed after the revoca
   const t = happyThread()
   const late = deliverMsg({ mandateHash: t.mandateHash, ts: nowS() + 30 })
   const rev = revocationMsg({ mandateHashes: [t.mandateHash], issued: nowS() + 10 })
-  const r1 = await kitOf(x).verifyTaskThread([t.offer, t.accept, t.mandate, rev, late])
+  // the late delivery is refused; the state stays Active until the final checks, which cancel it once at >= R (§7.6)
+  const r1 = await kitOf(x).verifyTaskThread([t.offer, t.accept, t.mandate, rev, late], { at: nowS() + 60 })
   assert.equal(r1.state, 'Cancelled')
-  assert.ok(codes(r1).includes('out-of-order') || codes(r1).includes('message-after-revocation'))
+  assert.deepEqual(codes(r1), ['message-after-revocation'])
+  const r1now = await kitOf(x).verifyTaskThread([t.offer, t.accept, t.mandate, rev, late])
+  assert.equal(r1now.state, 'Active', 'R is after `at`: not cancelled yet')
   // delivered at T, revoked at T+10: the delivery stands and the principal may still accept it
   const early = deliverMsg({ mandateHash: t.mandateHash, ts: nowS() })
   const accept = verdictMsg({ mandateHash: t.mandateHash, deliverableHash: early.receipt.result.deliverableHash, issued: nowS() + 20 })
@@ -199,8 +202,7 @@ test('FIXED CA-09: the principal\'s revocation list: listed or dated mandates ar
     revocationFile(x, { mandateHashes: [], issued: nowS() - 20 })
     assert.deepEqual(codes(await kitOf(x, { revocationFloor: floor }).verifyMandate(signed(m))), ['revocation-unavailable'])
     // removed after one was seen / 见过之后被删
-    x.chain.writeFile(P, agent.MANDATES_KEY, '')
-    x.chain.setFileInfo(P, agent.MANDATES_KEY, { size: 0 })
+    x.chain.setFileInfo(P, agent.MANDATES_KEY, { size: 0, chunkCount: 0 })   // removed: chunkCount 0 (TAP-10 §7.1)
     assert.deepEqual(codes(await kitOf(x, { revocationFloor: floor }).verifyMandate(signed(m))), ['revocation-unavailable'])
   }
   {
@@ -314,7 +316,7 @@ test('FIXED CA-14: RPC forgery: one operator that lies about the holder or hides
   // node 2 hides the revocation list (fileInfo size 0) / 节点 2 隐藏撤销清单
   const y = standardWorld()
   revocationFile(y, { mandateHashes: [mandateHashOf(56, HUB, m)] })
-  y.lie('http://rpc2', (method, params, honest) => (method === 'eth_call' && params[0].data.startsWith('0x') && String(params[0].to).toLowerCase() === ADDR.siteRegistry.toLowerCase() ? '0x' + '00'.repeat(32 * 5) : honest))
+  y.lie('http://rpc2', (method, params, honest) => (method === 'eth_call' && params[0].data.startsWith('0x') && String(params[0].to).toLowerCase() === SITE_STORE.toLowerCase() ? '0x' + '00'.repeat(32 * 5) : honest))
   await assert.rejects(kitOf(y).verifyMandate(signed(m)), (e) => e.code === 'RPC_DISAGREE' || e.code === 'RPC_UNAVAILABLE')
   // a single configured node is not strict agreement: the client refuses before deciding anything
   const z = standardWorld()
@@ -708,4 +710,149 @@ test('FIXED D4: forWallet requires { chainId, hub }: left out, only one of them,
   const bad = [undefined, {}, { chainId: 56 }, { hub: HUB }, { chainId: '56', hub: HUB }, { chainId: 56, hub: 'garbage' }, null]
   for (const expect of bad) assert.throws(() => agent.forWallet(td, expect), (e) => e.code === 'AGENT_INVALID' && /must pass the chainId and hub it expects/.test(e.message), JSON.stringify(expect))
   assert.doesNotThrow(() => agent.forWallet(td, EXP))
+})
+
+// ---- 1.7.1: revocation in a thread as the draft TAP says (§7.4-§7.6) / 1.7.1：线程里的撤销按草稿 ----
+
+// Build one abstract case of spec/vectors/container-agent.json (threadRevocation) as a real signed thread on the fake
+// chain, and check the SDK's result against the hand-worked expectation. / 把向量里的抽象用例构造成真实线程并核对
+async function runThreadCase(c) {
+  const x = standardWorld()
+  const offer = offerMsg({ exp: c.offer.exp, deadline: c.offer.deadline })
+  const offerHash = offerHashOf(56, HUB, offer.offer)
+  const m = mandateOf({ notBefore: c.mandate.notBefore, expires: c.mandate.expires })
+  const mh = mandateHashOf(56, HUB, m)
+  const nonces = new Map()
+  if (c.mandate.refused === 'nonce-reused') nonces.set(`56:${P.toLowerCase()}:${m.nonce}`, '0x' + 'ab'.repeat(32))
+  const hashesOf = (r) => r.hashes.map((h) => (h === 'mandate' ? mh : h))
+  if (c.site) revocationFile(x, { mandateHashes: hashesOf(c.site), revokedBefore: c.site.revokedBefore, issued: c.site.issued })
+  const deliveries = c.deliveries.map((d, i) => deliverMsg({ mandateHash: mh, ts: d.ts, exp: d.exp, deliverable: { n: i } }))
+  const build = {
+    offer: () => offer,
+    accept: () => acceptMsg({ offerHash, agentKey: m.agentKey, ts: c.accept.ts, exp: c.accept.exp }),
+    mandate: () => mandateMsg(m),
+    acceptance: () => verdictMsg({ mandateHash: mh, deliverableHash: deliveries[c.verdict.of].receipt.result.deliverableHash, verdict: c.verdict.verdict, issued: c.verdict.issued }),
+  }
+  const messages = c.messages.map((name) => {
+    const [k, i] = name.split(':')
+    if (k === 'deliver') return deliveries[Number(i)]
+    if (k === 'revocation') { const r = c.revocations[Number(i)]; return revocationMsg({ mandateHashes: hashesOf(r), revokedBefore: r.revokedBefore, issued: r.issued }) }
+    return build[k]()
+  })
+  return kitOf(x, { nonces }).verifyTaskThread(messages, { at: c.at })
+}
+
+test('FIXED RV-01: every revocation case of spec/vectors/container-agent.json: R, state and problems as the draft TAP requires (§7.5 two passes, §7.6 final checks)', async () => {
+  const { readFileSync } = await import('node:fs')
+  const v = JSON.parse(readFileSync(new URL('../../spec/vectors/container-agent.json', import.meta.url), 'utf8')).threadRevocation
+  assert.ok(v.cases.length >= 9)
+  const results = []
+  for (const c of v.cases) {
+    const r = await runThreadCase(c)
+    results.push(r)
+    assert.equal(r.revoked?.at ?? null, c.expect.R, `${c.name}: R`)
+    assert.equal(r.revoked?.via ?? null, c.expect.via, `${c.name}: via`)
+    assert.equal(r.state, c.expect.state, `${c.name}: state`)
+    assert.deepEqual(codes(r), c.expect.problems, `${c.name}: problems`)
+    assert.ok(!codes(r).includes('mandate-revoked'), `${c.name}: mandate-revoked is not a thread problem`)
+  }
+  // the same revocation by message and by the site list gives the same result / 同一撤销走消息与站点文件结果相同
+  for (const [a, b] of v.sameResult) {
+    assert.equal(results[a].state, results[b].state)
+    assert.deepEqual(codes(results[a]), codes(results[b]))
+    assert.equal(results[a].revoked.at, results[b].revoked.at)
+  }
+})
+
+test('FIXED RV-02: a revocation never changes the state when met: a delivery made before it can still be accepted, whichever path the revocation took', async () => {
+  for (const path of ['message', 'site']) {
+    const x = standardWorld()
+    const t = happyThread()
+    const issued = t.deliver.receipt.ts + 1   // after the delivery, before the verdict
+    if (path === 'site') revocationFile(x, { mandateHashes: [t.mandateHash], issued })
+    const rev = revocationMsg({ mandateHashes: [t.mandateHash], issued })
+    const verdict = verdictMsg({ mandateHash: t.mandateHash, deliverableHash: t.deliver.receipt.result.deliverableHash, issued: issued + 5 })
+    const thread = path === 'message' ? [t.offer, t.accept, t.mandate, rev, t.deliver, verdict] : [t.offer, t.accept, t.mandate, t.deliver, verdict]
+    const r = await kitOf(x).verifyTaskThread(thread, { at: issued + 100 })
+    assert.deepEqual(r.problems, [], path)
+    assert.equal(r.state, 'Settled', path)
+    assert.deepEqual(r.revoked, { at: issued, via: path })
+  }
+})
+
+test('FIXED RV-03: a revocation found while checking a refused mandate sets no revocation time (draft §7.4: a refused message leaves no trace)', async () => {
+  const x = standardWorld()
+  const t = happyThread()
+  revocationFile(x, { mandateHashes: [t.mandateHash], issued: t.accept.receipt.ts - 30 })   // before the accept
+  const nonces = new Map([[`56:${P.toLowerCase()}:1`, '0x' + 'cd'.repeat(32)]])            // the mandate is nonce-reused
+  const r = await kitOf(x, { nonces }).verifyTaskThread([t.offer, t.accept, t.mandate], { at: nowS() + 100 })
+  assert.deepEqual(codes(r), ['nonce-reused'])
+  assert.equal(r.revoked, null)
+  assert.equal(r.state, 'Accepted', 'the accept is not refused by a revocation of a mandate that was never applied')
+})
+
+test('FIXED RV-04: revocation messages are not processed in order: no state change and no out-of-order in a cancelled thread', async () => {
+  const x = standardWorld()
+  const t = happyThread()
+  const rev1 = revocationMsg({ mandateHashes: [t.mandateHash], issued: nowS() + 5 })
+  const rev2 = revocationMsg({ mandateHashes: [t.mandateHash], issued: nowS() + 9 })
+  const r = await kitOf(x).verifyTaskThread([t.offer, t.accept, t.mandate, rev1, rev2], { at: nowS() + 100 })
+  assert.deepEqual(r.problems, [])
+  assert.equal(r.state, 'Cancelled')
+  assert.equal(r.revoked.at, nowS() + 5)
+})
+
+test('FIXED RF-01: the revocation file exists by chunkCount (TAP-10 §7.1), not by its size', async () => {
+  const m = mandateOf()
+  const h = mandateHashOf(56, HUB, m)
+  const x = standardWorld()
+  revocationFile(x, { mandateHashes: [h] })
+  x.chain.setFileInfo(P, agent.MANDATES_KEY, { chunkCount: 0 })            // no file, whatever size says
+  const r1 = await kitOf(x).verifyMandate(signed(m))
+  assert.equal(r1.ok, true); assert.equal(r1.revocation.status, 'none-published')
+  const y = standardWorld()
+  y.chain.writeFile(P, agent.MANDATES_KEY, '')                             // a file of 0 bytes exists: not JSON, invalid
+  assert.deepEqual(codes(await kitOf(y).verifyMandate(signed(m))), ['revocation-unavailable'])
+})
+
+test('FIXED RF-02: a revocation file that begins with a byte order mark is invalid, never read as a list', async () => {
+  const m = mandateOf()
+  const x = standardWorld()
+  const f = revocationFile(x, { mandateHashes: [], issued: NOW - 5 })
+  const bytes = new TextEncoder().encode(JSON.stringify(f))
+  x.chain.writeFile(P, agent.MANDATES_KEY, Uint8Array.of(0xef, 0xbb, 0xbf, ...bytes))
+  const r = await kitOf(x).verifyMandate(signed(m))
+  assert.deepEqual(codes(r), ['revocation-unavailable'])
+  assert.match(r.problems[0].message, /byte order mark/)
+})
+
+test('FIXED RF-03: the site store and the payment contract must run implementations TAP-10 accepts (§6.1), or the list is unavailable', async () => {
+  const { CHAINS } = await import('../src/chains.js')
+  const m = mandateOf()
+  for (const proxy of [SITE_STORE, CHAINS[56].binding]) {
+    const x = standardWorld()
+    x.chain.setImplementation(proxy, '0x' + '99'.repeat(20))
+    const r = await kitOf(x).verifyMandate(signed(m))
+    assert.deepEqual(codes(r), ['revocation-unavailable'], proxy)
+    assert.match(r.problems[0].message, /store-changed/)
+  }
+})
+
+test('FIXED RF-04: the site store is the first that has any path for the principal (TAP-11 §2.2 step 3): no path, no list', async () => {
+  const m = mandateOf()
+  const x = standardWorld()
+  revocationFile(x, { mandateHashes: [mandateHashOf(56, HUB, m)] })
+  const PATH_COUNT = toHex(keccak256(utf8ToBytes('pathCount(address)'))).slice(0, 10)
+  for (const u of RPC) x.lie(u, (method, params, honest) => (method === 'eth_call' && params[0].data.startsWith(PATH_COUNT) ? '0x' + '00'.repeat(32) : honest))
+  const r = await kitOf(x).verifyMandate(signed(m))
+  assert.equal(r.revocation.status, 'none-published')
+})
+
+test('FIXED RF-05: createAgentKit refuses, when it is created, a chain or a site store with no implementation TAP-10 lists as accepted (INVALID_ARGUMENT, as the conformance mode does)', async () => {
+  const x = standardWorld()
+  assert.throws(() => createAgentKit(x.api({ siteRegistry: ADDR.siteRegistry })), (e) => e.code === 'INVALID_ARGUMENT' && /site store/.test(e.message))
+  assert.throws(() => createAgentKit(x.api({ chainId: 97, factory: ADDR.factory })), (e) => e.code === 'INVALID_ARGUMENT' && /chain 97/.test(e.message))
+  assert.doesNotThrow(() => createAgentKit(x.api()))
+  const { createTapeAPI } = await import('../src/index.js')
+  for (const chainId of [56, 196, 8453]) assert.doesNotThrow(() => createAgentKit(createTapeAPI({ chainId })), String(chainId))
 })

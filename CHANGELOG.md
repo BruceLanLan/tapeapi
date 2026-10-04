@@ -7,6 +7,45 @@ interfaces.
 
 ## [Unreleased]
 
+## [1.7.1] — 2026-10-05
+
+### Changed
+
+- **`@tapeapi/sdk/agent` (experimental): revocation in a task thread follows the draft TAP (TAPs PR #47, §7.5-§7.6).**
+  The subpath is outside the 1.x compatibility promise; these change what 1.7.0 reports.
+  - A revocation, whether a `revocation` message in the thread (wherever it sits) or the principal's site list found
+    while checking the applied mandate, now only sets the thread's revocation time R, the smallest `issued` of the
+    revocations that apply. It never changes the state when met. An agent message signed after R is refused
+    (`message-after-revocation`); a verdict is allowed whatever its `issued`; only the final checks turn a thread still
+    `Offered`, `Accepted` or `Active` into `Cancelled`, before `Expired`, and only once R is not after `at`. Because R
+    depends on the applied mandate, which depends on the accept, the thread is read twice and the second reading's
+    problems are reported.
+  - In 1.7.0 a site list covering the mandate made the thread `Cancelled` at once with `mandate-revoked` and every
+    later message `out-of-order`, even a delivery and verdict signed before the revocation; a revocation message
+    cancelled `Offered`, `Accepted` or `Active` when met, and was accepted silently in `Cancelled`. Now a thread
+    delivered and accepted before the revocation still reads `Settled`, by either path, and the same revocation gives
+    the same result as a message or as a site list. `mandate-revoked` is no longer reported in a thread
+    (`verifyMandate` on its own still reports it).
+  - A revocation found while checking a mandate that the thread refuses (for example `nonce-reused`) no longer sets a
+    revocation time.
+  - `tapeapi-verify task` prints the new result for such threads, and its `revoked: yes, at N (via)` line is now
+    `revocation: at N (via); agent messages signed after it are refused` (or `revocation: none`): the revocation time
+    refuses later agent messages and does not by itself mean the thread was cancelled. The `revoked` member of a thread
+    result keeps its shape and now means that revocation time.
+- **`@tapeapi/sdk/agent` (experimental): the principal's revocation file is read as the draft's §6.2 says.** A missing
+  file is `fileInfo.chunkCount` 0 (it was `size` 0; TAP-10 §7.1); the file is read from the first site store of the
+  chain that has any path for the principal (TAP-11 §2.2 step 3), and only while the site store and the payment
+  contract run implementations TAP-10 lists as accepted (TAP-10 §6.1; otherwise the list is invalid, so every mandate
+  of that principal is `revocation-unavailable`, as for any unreadable list); a file that begins with a byte order mark
+  is invalid (it was silently stripped). `createAgentKit` now refuses, when it is created, a chain the SDK does not know
+  or a site store or payment contract with no implementation TAP-10 lists as accepted (`INVALID_ARGUMENT`, as the
+  conformance mode does), instead of reporting `revocation-unavailable` on every check.
+- **Test vectors:** `spec/vectors/container-agent.json` gains `threadRevocation`, fifteen abstract thread cases whose
+  results are worked out from the draft, the boundaries included (an accept or a delivery signed exactly at the
+  revocation time is allowed; a revocation time equal to `at` cancels, one second later does not); the SDK is checked
+  against them on real signed threads and `verify.py` checks them with an independent model of §7.4-§7.6 (514 to 561
+  checks).
+
 ## [1.7.0] — 2026-10-05
 
 ### Added
@@ -1348,7 +1387,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/BruceLanLan/tapeapi/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.4.0...v1.5.0

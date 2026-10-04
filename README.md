@@ -23,7 +23,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 > `@tapeapi/sdk/agent` subpath is experimental and outside the 1.x compatibility promise; this project has not had a
 > third-party audit. [New in 1.7](#new-in-17) · [Container agents guide](docs/guides/container-agents.md)
 
-> **Status: released, 1.7.0.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
+> **Status: released, 1.7.1.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
 > breaking changes come only in 2.0. Paid channels (TAPI-22) are experimental and not deployed. Nothing here has had a
 > third-party audit. **Security note:** on 1.0.0 to 1.4.0, streamed AI receipt verification could, under particular
 > chunking, report a truncated or content-injected stream as verified; it was fixed in 1.5.0, so please upgrade
@@ -105,12 +105,12 @@ curl shows the signed envelope but checks nothing. The SDK checks it. It is not 
 release (Node.js 20 or later):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.0/tapeapi-sdk-1.7.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz
 ```
 
 The server package (`@tapeapi/server`: providers, the AI sidecar, the MCP proxy) depends on this SDK, which is not on
 npm either, so installed alone it fails with a 404: install both in one command,
-`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.0/tapeapi-sdk-1.7.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.0/tapeapi-server-1.7.0.tgz`.
+`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-server-1.7.1.tgz`.
 
 ```js
 // try.mjs: node try.mjs
@@ -148,7 +148,7 @@ No outside provider has published a price table on chain yet, so this was run ag
 
 ```bash
 # Terminal 1 (it keeps running). 42.1013.tape is an example name: put your AI provider's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.0/tapeapi-sdk-1.7.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash

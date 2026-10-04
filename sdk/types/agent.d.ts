@@ -227,6 +227,9 @@ export interface ThreadCheck {
   deliveries: Array<{ deliverableHash: Hex; ts: number; exp: number; receiptsHash: Hex; evidence: EvidenceCheck }>
   evidence?: EvidenceCheck
   verdict: { verdict: 'accepted' | 'rejected'; issued: number; reasonHash: Hex; deliverableHash: Hex; verdictHash: Hex } | null
+  /** The revocation time R (draft TAP §7.5): the smallest `issued` of the revocations that apply, and where it came from.
+   *  It only refuses agent messages signed after it (message-after-revocation); it does not mean the thread was
+   *  cancelled: `state` is Cancelled only when the thread was still Offered, Accepted or Active and R <= at. */
   revoked: { at: number; via: 'site' | 'message' } | null
   /** Delivered and no verdict before the delivery's own exp (there is no arbiter) */
   unaccepted: boolean

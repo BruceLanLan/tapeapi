@@ -499,6 +499,85 @@ console.log('done')
   const verdict = (v) => ({ mandateHash: mandates[0].digest, deliverableHash: k('deliverable'), verdict: v, reasonHash: v === 1 ? '0x' + '00'.repeat(32) : k('missing section 2'), issued: 1789050000 })
   const revocation = (hashes, revokedBefore) => ({ principal: PRINCIPAL, mandateHashes: hashes, revokedBefore, issued: 1789060000 })
   const hashedCase = (name, value, hashFn, digestFn, signFn) => ({ name, ...value, structHash: hx(hashFn(value)), digest: hx(digestFn(CHAIN_ID, HUB, value)), sig: signFn(CHAIN_ID, HUB, value, HOLDER_KEY) })
+  // Revocation in a thread (draft TAP §7.4-§7.6), as abstract cases: what a thread holds, in the order presented, and
+  // the result the text requires. The expected values are worked out by hand from the draft, not produced by the SDK;
+  // sdk/test/agent.test.mjs builds each case as a real signed thread on the fake chain and checks the SDK against them,
+  // and spec/vectors/verify.py runs an independent model of §7.4-§7.6 over them.
+  // 线程里的撤销：抽象用例与草稿要求的结果（按草稿手算，不由 SDK 产生）。JS 测试把每个用例构造成真实线程核对，verify.py 用独立模型核对。
+  const N = 1791000000
+  const tbase = { offer: { exp: N + 3600, deadline: N + 86400 }, accept: { ts: N, exp: N + 3600 }, mandate: { notBefore: N - 60, expires: N + 86400, refused: null }, at: N + 100 }
+  const threadRevocation = {
+    rules: {
+      passes: 'R is found in a first pass without the message-after-revocation checks; a second pass applies them with that R; the problems reported are those of the second pass. Their order here (the second pass in message order, then those of the revocation messages) is this implementation\'s; the draft does not fix an order',
+      applies: 'a revocation applies when it covers the mandate applied in the first pass (its hash is listed, or the mandate notBefore < revokedBefore) or, when no mandate is applied, when revokedBefore > 0; the site revocation counts only for an applied mandate',
+      final: 'Offered, Accepted or Active with R <= at is Cancelled; then Expired; a revocation never changes the state when met; a verdict is allowed whatever its issued',
+      order: 'messages lists the message order: offer, accept, mandate, deliver:<i>, acceptance, revocation:<i>; the verdict judges delivery `of`',
+    },
+    cases: [
+      { name: 'a revocation message placed before the accept, issued before it: the accept is refused, the thread is cancelled', ...tbase,
+        messages: ['offer', 'revocation:0', 'accept', 'mandate', 'deliver:0', 'acceptance'], deliveries: [{ ts: N + 10, exp: N + 3600 }], verdict: { of: 0, issued: N + 20, verdict: 1 },
+        revocations: [{ issued: N - 5, hashes: ['mandate'], revokedBefore: 0 }], site: null,
+        expect: { R: N - 5, via: 'message', state: 'Cancelled', problems: ['message-after-revocation', 'out-of-order', 'out-of-order', 'out-of-order'] } },
+      { name: 'the same revocation from the site list: the same result', ...tbase,
+        messages: ['offer', 'accept', 'mandate', 'deliver:0', 'acceptance'], deliveries: [{ ts: N + 10, exp: N + 3600 }], verdict: { of: 0, issued: N + 20, verdict: 1 },
+        revocations: [], site: { issued: N - 5, hashes: ['mandate'], revokedBefore: 0 },
+        expect: { R: N - 5, via: 'site', state: 'Cancelled', problems: ['message-after-revocation', 'out-of-order', 'out-of-order', 'out-of-order'] } },
+      { name: 'a revocation message placed before the accept but issued after the delivery: where it appears does not matter', ...tbase,
+        messages: ['offer', 'revocation:0', 'accept', 'mandate', 'deliver:0', 'acceptance'], deliveries: [{ ts: N + 10, exp: N + 3600 }], verdict: { of: 0, issued: N + 20, verdict: 1 },
+        revocations: [{ issued: N + 15, hashes: ['mandate'], revokedBefore: 0 }], site: null,
+        expect: { R: N + 15, via: 'message', state: 'Settled', problems: [] } },
+      { name: 'a dated revocation and a refused mandate: the dated one applies, the site list found for the refused mandate does not count', ...tbase,
+        mandate: { ...tbase.mandate, refused: 'nonce-reused' },
+        messages: ['offer', 'accept', 'mandate', 'revocation:0', 'deliver:0'], deliveries: [{ ts: N + 10, exp: N + 3600 }], verdict: null,
+        revocations: [{ issued: N + 30, hashes: [], revokedBefore: N }], site: { issued: N - 100, hashes: ['mandate'], revokedBefore: 0 },
+        expect: { R: N + 30, via: 'message', state: 'Cancelled', problems: ['nonce-reused', 'out-of-order'] } },
+      { name: 'two revocations, an early and a late one: R is the early one, a delivery between them is refused', ...tbase,
+        messages: ['offer', 'accept', 'mandate', 'deliver:0', 'revocation:0', 'revocation:1', 'acceptance'], deliveries: [{ ts: N + 10, exp: N + 3600 }], verdict: { of: 0, issued: N + 60, verdict: 1 },
+        revocations: [{ issued: N + 50, hashes: ['mandate'], revokedBefore: 0 }, { issued: N + 5, hashes: ['mandate'], revokedBefore: 0 }], site: null,
+        expect: { R: N + 5, via: 'message', state: 'Cancelled', problems: ['message-after-revocation', 'out-of-order'] } },
+      { name: 'a site revocation issued after the delivery and before the verdict: the thread stays Settled', ...tbase,
+        messages: ['offer', 'accept', 'mandate', 'deliver:0', 'acceptance'], deliveries: [{ ts: N + 10, exp: N + 3600 }], verdict: { of: 0, issued: N + 60, verdict: 1 },
+        revocations: [], site: { issued: N + 30, hashes: ['mandate'], revokedBefore: 0 },
+        expect: { R: N + 30, via: 'site', state: 'Settled', problems: [] } },
+      { name: 'the same revocation as a message after the verdict: the same result', ...tbase,
+        messages: ['offer', 'accept', 'mandate', 'deliver:0', 'acceptance', 'revocation:0'], deliveries: [{ ts: N + 10, exp: N + 3600 }], verdict: { of: 0, issued: N + 60, verdict: 1 },
+        revocations: [{ issued: N + 30, hashes: ['mandate'], revokedBefore: 0 }], site: null,
+        expect: { R: N + 30, via: 'message', state: 'Settled', problems: [] } },
+      { name: 'a revocation issued after `at`: not cancelled yet', ...tbase,
+        messages: ['offer', 'accept', 'mandate', 'revocation:0'], deliveries: [], verdict: null,
+        revocations: [{ issued: N + 500, hashes: ['mandate'], revokedBefore: 0 }], site: null,
+        expect: { R: N + 500, via: 'message', state: 'Active', problems: [] } },
+      { name: 'a revocation that covers neither the mandate nor any date: revocation-mismatch, no R', ...tbase,
+        messages: ['offer', 'accept', 'mandate', 'deliver:0', 'acceptance', 'revocation:0'], deliveries: [{ ts: N + 10, exp: N + 3600 }], verdict: { of: 0, issued: N + 60, verdict: 1 },
+        revocations: [{ issued: N + 5, hashes: [], revokedBefore: 0 }], site: null,
+        expect: { R: null, via: null, state: 'Settled', problems: ['revocation-mismatch'] } },
+      { name: 'cancelled and expired at once: Cancelled comes first', ...tbase, at: N + 90000,
+        messages: ['offer', 'accept', 'mandate', 'revocation:0'], deliveries: [], verdict: null,
+        revocations: [{ issued: N + 50, hashes: ['mandate'], revokedBefore: 0 }], site: null,
+        expect: { R: N + 50, via: 'message', state: 'Cancelled', problems: [] } },
+      { name: 'no revocation, past the mandate\'s expiry: Expired', ...tbase, at: N + 90000,
+        messages: ['offer', 'accept', 'mandate'], deliveries: [], verdict: null,
+        revocations: [], site: null,
+        expect: { R: null, via: null, state: 'Expired', problems: [] } },
+      { name: 'an accept signed exactly at R is allowed (only after R is refused)', ...tbase,
+        messages: ['offer', 'accept', 'mandate', 'revocation:0'], deliveries: [], verdict: null,
+        revocations: [{ issued: N, hashes: ['mandate'], revokedBefore: 0 }], site: null,
+        expect: { R: N, via: 'message', state: 'Cancelled', problems: [] } },
+      { name: 'a delivery signed exactly at R is allowed, and accepted', ...tbase,
+        messages: ['offer', 'accept', 'mandate', 'deliver:0', 'acceptance', 'revocation:0'], deliveries: [{ ts: N + 10, exp: N + 3600 }], verdict: { of: 0, issued: N + 20, verdict: 1 },
+        revocations: [{ issued: N + 10, hashes: ['mandate'], revokedBefore: 0 }], site: null,
+        expect: { R: N + 10, via: 'message', state: 'Settled', problems: [] } },
+      { name: 'R equal to at cancels', ...tbase,
+        messages: ['offer', 'accept', 'mandate', 'revocation:0'], deliveries: [], verdict: null,
+        revocations: [{ issued: N + 100, hashes: ['mandate'], revokedBefore: 0 }], site: null,
+        expect: { R: N + 100, via: 'message', state: 'Cancelled', problems: [] } },
+      { name: 'R one second after at does not cancel yet', ...tbase,
+        messages: ['offer', 'accept', 'mandate', 'revocation:0'], deliveries: [], verdict: null,
+        revocations: [{ issued: N + 101, hashes: ['mandate'], revokedBefore: 0 }], site: null,
+        expect: { R: N + 101, via: 'message', state: 'Active', problems: [] } },
+    ],
+    sameResult: [[0, 1], [5, 6]],
+  }
   write('container-agent.json', {
     tap: 'Container agents, phase 0 (experimental; Ideas TapeOutProtocol/TAPs#40 and #41): Mandate, TaskOffer, TaskVerdict, MandateRevocation', note,
     domain: { name: 'TapeAPI', version: '1', chainId: CHAIN_ID, verifyingContract: HUB, comment: 'The TAP-11 delegation domain, shared with Delegation, ChannelKeys and ManifestContent; the type name separates them.' },
@@ -523,5 +602,6 @@ console.log('done')
       hashedCase('two mandates revoked by hash', revocation([mandates[0].digest, mandates[1].digest], 0), A.hashMandateRevocation, A.mandateRevocationDigest, A.signMandateRevocation),
       hashedCase('every mandate with notBefore below a date, no list', revocation([], 1789050000), A.hashMandateRevocation, A.mandateRevocationDigest, A.signMandateRevocation),
     ],
+    threadRevocation,
   })
 }

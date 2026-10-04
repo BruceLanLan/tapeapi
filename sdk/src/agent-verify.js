@@ -10,7 +10,7 @@ import { TapeAPIError } from './errors.js'
 import { safeParseJSON } from './canon.js'
 import { selector, encodeParams, encodeCall, decodeReturn, hexToBytes, toHex, bytesToHex, isAddress, eqAddr, checksumAddress, ZERO_ADDRESS } from './abi.js'
 import { recoverAddress, recoverResponseSigner, recoverResponseSignerFromHashes } from './sig.js'
-import { chainById, formatTapeName } from './chains.js'
+import { chainById, formatTapeName, IMPL_SLOT } from './chains.js'
 import { PROCESSORS_SNAPSHOT } from './processors-snapshot.js'
 import {
   normalizeMandate, mandateDigest, normalizeTaskOffer, taskOfferDigest, normalizeTaskVerdict, taskVerdictDigest,
@@ -85,6 +85,16 @@ export function createAgentKit(api, opts = {}) {
   if (opts.resolve !== undefined && typeof opts.resolve !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'resolve must be a function')
   const chainId = Number(api.chainId)
   const { hub, siteRegistry, factory } = api.addresses
+  // TAP-10 §6.1 needs, for this chain, the implementations accepted for the site store and the payment contract: without
+  // them every revocation list would read as invalid, so it is refused here, as the conformance mode does
+  // (INVALID_ARGUMENT), not reported as revocation-unavailable on every check. / 没有接受的实现列表即配置错误，构造时就拒绝
+  {
+    const known = chainById(chainId)
+    if (!known) throw new TapeAPIError('INVALID_ARGUMENT', `createAgentKit: chain ${chainId} is not a TapeOut chain this SDK knows`)
+    for (const [role, a] of [['site store (siteRegistry)', siteRegistry], ['payment contract', known.binding]]) {
+      if (!isAddress(a) || !known.expectedImpl?.[a.toLowerCase()]) throw new TapeAPIError('INVALID_ARGUMENT', `createAgentKit: the ${role} ${a ?? '(none)'} of chain ${chainId} has no implementation TAP-10 lists as accepted (chains.js expectedImpl); the principal's revocation list could never be read (TAP-10 §6.1)`)
+    }
+  }
   const clock = opts.clock ?? (() => Math.floor(Date.now() / 1000))
   const floors = opts.revocationFloor ?? new Map()
   // setIfAbsent in one step, so two mandates with one nonce checked at the same time cannot both pass; a Map is wrapped
@@ -169,19 +179,42 @@ export function createAgentKit(api, opts = {}) {
   // strict. Signed by the holder (MandateRevocation); `issued` may only grow (a floor, as TAPI-26 §3.1 does for channel
   // records), so whoever can write the site cannot put back a shorter list, nor remove it once one was seen.
   // 与清单一样读取并核对字节；持有人签名；issued 只增（下限），能写站点的人既不能放回更短的清单，也不能在见过之后删掉它。
+  // TAP-10 §6.1: the implementations of both proxies of this chain, the site store and the payment contract, must be
+  // ones TAP-10 lists as accepted (chains.js expectedImpl), read from the ERC-1967 slot (never implementation()). A
+  // store whose code was replaced is not read: the list is then invalid (revocation-unavailable), never "not revoked".
+  // TAP-10 §6.1：站点存储与付费合约两个代理的实现必须是 TAP-10 列为接受的；否则不读，清单视为无效（失败关闭）。
+  async function storeChanged() {
+    const known = chainById(chainId)
+    for (const [role, proxy] of [['site store', siteRegistry], ['payment contract', known?.binding]]) {
+      const accepted = isAddress(proxy) ? known?.expectedImpl?.[proxy.toLowerCase()] : null
+      if (!accepted) return `store-changed: no accepted implementation is listed for the ${role} ${proxy ?? '(none)'} on chain ${chainId}`
+      const word = String(await needRpc().call('eth_getStorageAt', [proxy, IMPL_SLOT, 'latest'], STRICT)).toLowerCase()
+      const impl = /^0x0{24}[0-9a-f]{40}$/.test(word) ? '0x' + word.slice(26) : null
+      if (!impl || !accepted.map((a) => a.toLowerCase()).includes(impl)) return `store-changed: the ${role} ${proxy} runs ${impl ?? word.slice(0, 66)}, not an implementation TAP-10 accepts`
+    }
+    return null
+  }
   async function readRevocations(container, identity) {
     const floorKey = `${chainId}:${String(container).toLowerCase()}`
     const floor = Number((await floors.get(floorKey)) ?? 0)
-    const info = await strictCall(siteRegistry, 'fileInfo', [container, MANDATES_KEY])
+    const changed = await storeChanged()
+    if (changed) return { status: 'invalid', reason: changed }
+    // TAP-11 §2.2 step 3: the first site store listed for the chain that has any path for the container (one per chain
+    // today); none with a path, or fileInfo's chunkCount 0 (TAP-10 §7.1 step 1), is no file
+    // TAP-11 §2.2 第 3 步：链上列出的第一个对该容器有路径的站点存储；没有路径或 chunkCount 为 0 即没有文件
+    const paths = BigInt(await strictCall(siteRegistry, 'pathCount', [container]))
+    const info = paths === 0n ? null : await strictCall(siteRegistry, 'fileInfo', [container, MANDATES_KEY])
+    if (!info || BigInt(info.chunkCount) === 0n) return floor > 0 ? { status: 'invalid', reason: `the revocation list (issued ${floor}) was removed from the site` } : { status: 'none-published' }
     const size = Number(info.size)
-    if (size === 0) return floor > 0 ? { status: 'invalid', reason: `the revocation list (issued ${floor}) was removed from the site` } : { status: 'none-published' }
     if (size > MANDATES_LIMIT) return { status: 'invalid', reason: `${MANDATES_KEY} declares ${size} bytes, limit ${MANDATES_LIMIT}` }
     if (String(info.sha256Hash).toLowerCase() === ZERO32) return { status: 'invalid', reason: `${MANDATES_KEY} has no on-chain SHA-256` }
     let raw
     try { raw = hexToBytes(await strictCall(siteRegistry, 'read', [container, MANDATES_KEY])) } catch (e) { if (isRevert(e)) return { status: 'invalid', reason: `read(${MANDATES_KEY}) reverted` }; throw e }
     if (raw.length !== size || toHex(sha256(raw)) !== String(info.sha256Hash).toLowerCase()) return { status: 'invalid', reason: `${MANDATES_KEY}: the bytes do not match fileInfo` }
     let f
-    try { f = safeParseJSON(new TextDecoder('utf-8', { fatal: true }).decode(raw)) } catch (e) { return { status: 'invalid', reason: `${MANDATES_KEY}: ${e.message}` } }
+    // a byte order mark makes the file invalid (TextDecoder would drop it silently) / 以 BOM 开头即无效
+    if (raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf) return { status: 'invalid', reason: `${MANDATES_KEY} begins with a byte order mark` }
+    try { f = safeParseJSON(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(raw)) } catch (e) { return { status: 'invalid', reason: `${MANDATES_KEY}: ${e.message}` } }
     if (!f || typeof f !== 'object' || f['tapeapi-mandates'] !== MANDATES_FORMAT || f.chainId !== chainId) return { status: 'invalid', reason: `${MANDATES_KEY}: not a format ${MANDATES_FORMAT} list for chain ${chainId}` }
     let r
     try { r = normalizeMandateRevocation(f.revocation) } catch (e) { return { status: 'invalid', reason: `${MANDATES_KEY}: ${e.message}` } }
@@ -340,115 +373,40 @@ export function createAgentKit(api, opts = {}) {
    * mandateHash, taskHash, mandate, deliveries, verdict, revoked, unaccepted, evidence }.
    * `state` is one of Offered, Accepted, Active, Delivered, Settled, Expired, Rejected, Cancelled (null before an
    * offer). Payment is a chain fact, not a state: it is checked separately (verifyAttachment).
+   *
+   * Revocation (draft TAP §7.5, §7.6): a revocation, from a `revocation` message or from the principal's site list found
+   * while checking the applied mandate, only sets the thread's revocation time R (the smallest `issued` of those that
+   * apply). It never changes the state when met: an agent message signed after R is refused (message-after-revocation),
+   * a verdict is allowed whatever its `issued`, and only the final checks turn Offered, Accepted or Active into
+   * Cancelled (before Expired). R depends on the applied mandate, which depends on the accept, so the thread is read
+   * twice: the first pass, without the message-after-revocation checks, finds R; the second applies them with that R,
+   * and its problems are the ones reported. Whether a revocation applies is judged against the mandate applied in the
+   * first pass. mandate-revoked is not reported in a thread.
+   * 撤销（草稿 §7.5、§7.6）：撤销只设定撤销时间 R，遇到时不改状态；签名晚于 R 的代理消息被拒；判决不受 R 限制；只在最后检查时把
+   * Offered/Accepted/Active 判为 Cancelled（先于 Expired）。两遍处理：第一遍不做 message-after-revocation 检查以求 R，第二遍用这个 R
+   * 做检查，报告第二遍的问题。撤销是否适用按第一遍应用的授权书判断。线程里不报 mandate-revoked。
    */
   async function verifyTaskThread(messages, o = {}) {
-    const problems = []
-    const out = { ok: false, state: null, problems, enforcement: 'none', selfHire: false, selfHireReasons: [], deliveries: [], verdict: null, revoked: null, unaccepted: false }
-    if (!Array.isArray(messages) || messages.length === 0) { problems.push(problem('thread-empty', 'a thread is a non-empty array of messages')); return out }
+    const out = { ok: false, state: null, problems: [], enforcement: 'none', selfHire: false, selfHireReasons: [], deliveries: [], verdict: null, revoked: null, unaccepted: false }
+    if (!Array.isArray(messages) || messages.length === 0) { out.problems.push(problem('thread-empty', 'a thread is a non-empty array of messages')); return out }
     const now = o.at ?? clock()
-    let offer = null, offerHash = null, accept = null, mandate = null, mandateHash = null, principalId = null, agentSvc = null, lastDeliver = null
-    const revokedAt = () => out.revoked?.at ?? Infinity
-    for (const [i, msg] of messages.entries()) {
-      const where = `messages[${i}]`
-      const kind = typeof msg?.kind === 'string' && msg.kind.startsWith(KIND_PREFIX) ? msg.kind.slice(KIND_PREFIX.length) : null
-      if (!msg || msg.v !== 0 || kind === null) { problems.push(problem('message-malformed', `${where}: not a v 0 ${KIND_PREFIX}* message`)); continue }
-      if (RESERVED_KINDS.includes(kind)) { problems.push(problem('kind-not-implemented', `${where}: ${kind} is a reserved message name this version does not implement`)); continue }
-      if (!THREAD_KINDS.includes(kind)) { problems.push(problem('kind-unknown', `${where}: unknown kind ${plainText(kind, 40)}`)); continue }
-      const order = (want) => { if (!want.includes(out.state)) { problems.push(problem('out-of-order', `${where}: ${kind} in state ${out.state ?? 'none'} (expected ${want.map((s) => s ?? 'none').join(' or ')})`)); return false } return true }
-      if (kind === 'offer') {
-        if (!order([null])) continue
-        let ofr
-        try { ofr = normalizeTaskOffer(msg.offer) } catch (e) { problems.push(problem('message-malformed', `${where}: ${e.message}`)); continue }
-        try { if (taskHashOf(msg.task) !== ofr.taskHash) { problems.push(problem('task-hash-mismatch', `${where}: the task text does not hash to offer.taskHash`)); continue } } catch (e) { problems.push(problem('message-malformed', `${where}: ${e.message}`)); continue }
-        const id = await identityOf(ofr.principal)
-        if (id.problem) { problems.push(id.problem); continue }
-        const digest = taskOfferDigest(chainId, hub, ofr)
-        if (!(await holderSigned(id.identity.holder, digest, msg.sig))) { problems.push(problem('not-signed-by-holder', `${where}: the offer is not signed by the current holder ${id.identity.holder} of ${ofr.principal}`)); continue }
-        offer = ofr; offerHash = toHex(digest); principalId = id.identity
-        Object.assign(out, { state: 'Offered', offerHash, taskHash: ofr.taskHash, principal: principalId })
-      } else if (kind === 'accept') {
-        if (!order(['Offered'])) continue
-        const c = await checkAgentReceipt(msg.receipt, offer.agent, 'accept')
-        if (c.problem) { problems.push(c.problem); continue }
-        const r = msg.receipt.result
-        if (r.offerHash !== offerHash) { problems.push(problem('offer-mismatch', `${where}: accept names offer ${plainText(String(r.offerHash), 70)}, not ${offerHash}`)); continue }
-        if (!isAddress(r.agentKey) || eqAddr(r.agentKey, ZERO_ADDRESS)) { problems.push(problem('message-malformed', `${where}: accept must announce a non-zero agentKey`)); continue }
-        if (msg.receipt.ts > offer.exp) { problems.push(problem('offer-expired', `${where}: accepted at ${msg.receipt.ts}, the offer expired at ${offer.exp}`)); continue }
-        if (msg.receipt.ts > revokedAt()) { problems.push(problem('message-after-revocation', `${where}: accept signed at ${msg.receipt.ts}, after the revocation at ${revokedAt()}`)); continue }
-        accept = { agentKey: checksumAddress(r.agentKey), exp: r.exp, ts: msg.receipt.ts }
-        agentSvc = c.svc
-        out.state = 'Accepted'
-      } else if (kind === 'mandate') {
-        if (!order(['Accepted'])) continue
-        // The fields compared with the offer first, without the chain: a mandate that names another principal, task, mode
-        // or nonce is refused before verifyMandate records its nonce, so a mistaken mandate does not use up the offer's
-        // nonce (the corrected one must carry the same nonce). No revocation is missed: none is read for it either.
-        // 先不读链地比对字段：写错的授权书在记录 nonce 之前就被拒，不会用掉报价的 nonce。
-        let pre = null
-        try { pre = normalizeMandate(msg?.mandate) } catch { /* reported by verifyMandate as mandate-malformed */ }
-        if (pre) {
-          const mismatch = []
-          if (!eqAddr(pre.principal, offer.principal)) mismatch.push('principal')
-          if (pre.taskHash !== offer.taskHash) mismatch.push('taskHash')
-          if (pre.mode !== offer.mode) mismatch.push('mode')
-          // an SDK rule, not a type field: the mandate's nonce is the offer's, so one mandate cannot serve two threads even
-          // when an agent reuses its key / SDK 规则：授权书的 nonce 等于报价的，一张授权书不能进两个线程
-          if (pre.nonce !== offer.nonce) mismatch.push('nonce')
-          if (mismatch.length) { problems.push(problem('mandate-mismatch', `${where}: the mandate's ${mismatch.join(', ')} differ from the offer`)); continue }
-        }
-        const v = await verifyMandate(msg, { agentKey: accept.agentKey, agent: offer.agent, at: o.at, readSite: o.readSite })
-        const mm = v.mandate
-        // the window is checked against what the agent did (deliveries) and by the final time checks, not against `at`
-        const late = ['mandate-expired', 'mandate-not-yet']
-        for (const p of v.problems) if (!late.includes(p.code)) problems.push({ ...p, message: `${where}: ${p.message}` })
-        if (v.revocation?.revoked) { out.revoked = { at: v.revocation.at, via: v.revocation.via } }
-        if (!mm || v.problems.some((p) => !late.includes(p.code) && p.code !== 'mandate-revoked')) continue
-        mandate = mm; mandateHash = v.mandateHash
-        Object.assign(out, { mandateHash, mandate, mandateCheck: v })
-        out.state = out.revoked ? 'Cancelled' : 'Active'
-      } else if (kind === 'deliver') {
-        if (!order(['Active', 'Rejected'])) continue
-        const c = await checkAgentReceipt(msg.receipt, mandate.agent, 'deliver')
-        if (c.problem) { problems.push(c.problem); continue }
-        const r = msg.receipt.result
-        if (r.mandateHash !== mandateHash) { problems.push(problem('mandate-mismatch', `${where}: deliver names mandate ${plainText(String(r.mandateHash), 70)}, not ${mandateHash}`)); continue }
-        if (typeof r.deliverableHash !== 'string' || !/^0x[0-9a-f]{64}$/.test(r.deliverableHash)) { problems.push(problem('message-malformed', `${where}: deliverableHash must be 0x and 64 lowercase hex digits`)); continue }
-        const ts = msg.receipt.ts
-        if (ts > revokedAt()) { problems.push(problem('message-after-revocation', `${where}: delivered at ${ts}, after the revocation at ${revokedAt()}`)); continue }
-        if (ts < mandate.notBefore || ts > mandate.expires) { problems.push(problem('deliver-outside-mandate', `${where}: delivered at ${ts}, outside the mandate's window ${mandate.notBefore}..${mandate.expires}`)); continue }
-        if (r.exp < ts) { problems.push(problem('message-malformed', `${where}: deliver expires (${r.exp}) before it was signed (${ts})`)); continue }
-        if (ts < accept.ts) { problems.push(problem('deliver-before-accept', `${where}: delivered at ${ts}, before the agent accepted at ${accept.ts}`)); continue }
-        // the offer's deadline is the principal's: a late delivery is recorded (it is a fact) and reported
-        if (ts > offer.deadline) problems.push(problem('deliver-after-deadline', `${where}: delivered at ${ts}, after the offer's deadline ${offer.deadline}`))
-        const ev = await verifyEvidence(r, { mandate })
-        for (const p of ev.problems) problems.push({ ...p, message: `${where}: ${p.message}` })
-        lastDeliver = { deliverableHash: r.deliverableHash, ts, exp: r.exp, receiptsHash: r.receiptsHash }
-        out.deliveries.push({ ...lastDeliver, evidence: ev })
-        out.evidence = ev
-        out.state = 'Delivered'
-      } else if (kind === 'acceptance') {
-        if (!order(['Delivered'])) continue
-        let v
-        try { v = normalizeTaskVerdict(msg.verdict) } catch (e) { problems.push(problem('message-malformed', `${where}: ${e.message}`)); continue }
-        if (!(await holderSigned(principalId.holder, taskVerdictDigest(chainId, hub, v), msg.sig))) { problems.push(problem('not-signed-by-holder', `${where}: the verdict is not signed by the current holder ${principalId.holder}`)); continue }
-        if (v.mandateHash !== mandateHash || v.deliverableHash !== lastDeliver.deliverableHash) { problems.push(problem('verdict-mismatch', `${where}: the verdict is for another mandate or deliverable`)); continue }
-        if (v.issued < lastDeliver.ts) { problems.push(problem('verdict-before-delivery', `${where}: issued ${v.issued}, before the delivery at ${lastDeliver.ts}`)); continue }
-        out.verdict = { verdict: v.verdict === VERDICT_ACCEPT ? 'accepted' : 'rejected', issued: v.issued, reasonHash: v.reasonHash, deliverableHash: v.deliverableHash, verdictHash: toHex(taskVerdictDigest(chainId, hub, v)) }
-        out.state = v.verdict === VERDICT_ACCEPT ? 'Settled' : 'Rejected'
-      } else if (kind === 'revocation') {
-        if (!principalId) { problems.push(problem('out-of-order', `${where}: a revocation before any offer`)); continue }
-        const c = await checkRevocationMessage(msg, principalId)
-        if (c.problem) { problems.push({ ...c.problem, message: `${where}: ${c.problem.message}` }); continue }
-        const r = c.revocation
-        const applies = mandate ? revokes(r, mandateHash, mandate) : r.revokedBefore > 0
-        if (!applies) { problems.push(problem('revocation-mismatch', `${where}: the revocation does not cover this thread's mandate`)); continue }
-        if (!out.revoked || r.issued < out.revoked.at) out.revoked = { at: r.issued, via: 'message' }
-        if (['Offered', 'Accepted', 'Active'].includes(out.state)) out.state = 'Cancelled'
-        // Delivered / Rejected stay: a delivery made before the revocation can still be accepted; Settled is final
-      }
-    }
-    // ---- final time checks / 最后的时间检查 ----
-    if (out.state === 'Offered' && now > offer.exp) out.state = 'Expired'
+    // first pass: no message-after-revocation checks / 第一遍：不做撤销后检查
+    const first = await threadPass(messages, Infinity, o)
+    const revs = await threadRevocations(messages, first)
+    const times = [...revs.applying]
+    if (first.siteRevocation) times.push(first.siteRevocation)
+    const R = times.reduce((min, t) => (!min || t.at < min.at ? t : min), null)
+    // second pass with R; its problems are the ones reported / 第二遍用 R，报告这一遍的问题
+    const pass = Number.isFinite(R?.at) ? await threadPass(messages, R.at, o) : first
+    const problems = [...pass.problems, ...revs.problems]
+    const { offer, accept, mandate, lastDeliver, principalId, agentSvc } = pass
+    Object.assign(out, { problems, state: pass.state, deliveries: pass.deliveries, verdict: pass.verdict, revoked: R ? { at: R.at, via: R.via } : null })
+    if (offer) Object.assign(out, { offerHash: pass.offerHash, taskHash: offer.taskHash, principal: principalId })
+    if (mandate) Object.assign(out, { mandateHash: pass.mandateHash, mandate, mandateCheck: pass.mandateCheck })
+    if (pass.evidence) out.evidence = pass.evidence
+    // ---- final checks, in this order (§7.6) / 最后检查，按此顺序 ----
+    if (['Offered', 'Accepted', 'Active'].includes(out.state) && R && R.at <= now) out.state = 'Cancelled'
+    else if (out.state === 'Offered' && now > offer.exp) out.state = 'Expired'
     else if (out.state === 'Accepted' && Number.isSafeInteger(accept.exp) && now > accept.exp) out.state = 'Expired'
     else if (out.state === 'Active' && now > mandate.expires) out.state = 'Expired'
     // the delivery's own exp is how long the agent waits for a verdict: past it, delivered and never accepted (no arbiter)
@@ -473,6 +431,129 @@ export function createAgentKit(api, opts = {}) {
     }
     out.ok = problems.length === 0
     return out
+  }
+
+  // The `revocation` messages of a thread, wherever they appear, judged against the mandate applied in the first pass
+  // (§7.5): valid (§6.1) and covering that mandate, or carrying a date when no mandate is applied. Each that applies
+  // contributes its `issued`; one that does not is revocation-mismatch; one in a thread without an offer is out-of-order.
+  // 线程里的 revocation 消息（不论位置），按第一遍应用的授权书判断是否适用。
+  async function threadRevocations(messages, first) {
+    const problems = [], applying = []
+    for (const [i, msg] of messages.entries()) {
+      if (msg?.v !== 0 || msg?.kind !== KIND_PREFIX + 'revocation') continue
+      const where = `messages[${i}]`
+      if (!first.principalId) { problems.push(problem('out-of-order', `${where}: a revocation in a thread without an offer`)); continue }
+      const c = await checkRevocationMessage(msg, first.principalId)
+      if (c.problem) { problems.push({ ...c.problem, message: `${where}: ${c.problem.message}` }); continue }
+      const r = c.revocation
+      const applies = first.mandate ? revokes(r, first.mandateHash, first.mandate) : r.revokedBefore > 0
+      if (!applies) { problems.push(problem('revocation-mismatch', `${where}: the revocation does not cover this thread's mandate`)); continue }
+      applying.push({ at: r.issued, via: 'message' })
+    }
+    return { problems, applying }
+  }
+
+  // One pass over the messages other than `revocation`, in the order presented (§7.4). `R`: the revocation time, Infinity
+  // in the first pass. Returns the state and what it applied; `siteRevocation` is the covering revocation found in the
+  // principal's site list while checking the APPLIED mandate (a refused mandate leaves no trace).
+  // 按顺序处理 revocation 以外的消息一遍。R 在第一遍为 Infinity。siteRevocation 只来自已应用的授权书。
+  async function threadPass(messages, R, o) {
+    const problems = []
+    const st = { state: null, deliveries: [], verdict: null, evidence: null, siteRevocation: null }
+    let offer = null, offerHash = null, accept = null, mandate = null, mandateHash = null, principalId = null, agentSvc = null, lastDeliver = null
+    for (const [i, msg] of messages.entries()) {
+      const where = `messages[${i}]`
+      const kind = typeof msg?.kind === 'string' && msg.kind.startsWith(KIND_PREFIX) ? msg.kind.slice(KIND_PREFIX.length) : null
+      if (!msg || msg.v !== 0 || kind === null) { problems.push(problem('message-malformed', `${where}: not a v 0 ${KIND_PREFIX}* message`)); continue }
+      if (RESERVED_KINDS.includes(kind)) { problems.push(problem('kind-not-implemented', `${where}: ${kind} is a reserved message name this version does not implement`)); continue }
+      if (!THREAD_KINDS.includes(kind)) { problems.push(problem('kind-unknown', `${where}: unknown kind ${plainText(kind, 40)}`)); continue }
+      if (kind === 'revocation') continue   // considered apart, wherever it appears (§7.5) / 单独处理，不论位置
+      const order = (want) => { if (!want.includes(st.state)) { problems.push(problem('out-of-order', `${where}: ${kind} in state ${st.state ?? 'none'} (expected ${want.map((x) => x ?? 'none').join(' or ')})`)); return false } return true }
+      if (kind === 'offer') {
+        if (!order([null])) continue
+        let ofr
+        try { ofr = normalizeTaskOffer(msg.offer) } catch (e) { problems.push(problem('message-malformed', `${where}: ${e.message}`)); continue }
+        try { if (taskHashOf(msg.task) !== ofr.taskHash) { problems.push(problem('task-hash-mismatch', `${where}: the task text does not hash to offer.taskHash`)); continue } } catch (e) { problems.push(problem('message-malformed', `${where}: ${e.message}`)); continue }
+        const id = await identityOf(ofr.principal)
+        if (id.problem) { problems.push(id.problem); continue }
+        const digest = taskOfferDigest(chainId, hub, ofr)
+        if (!(await holderSigned(id.identity.holder, digest, msg.sig))) { problems.push(problem('not-signed-by-holder', `${where}: the offer is not signed by the current holder ${id.identity.holder} of ${ofr.principal}`)); continue }
+        offer = ofr; offerHash = toHex(digest); principalId = id.identity
+        st.state = 'Offered'
+      } else if (kind === 'accept') {
+        if (!order(['Offered'])) continue
+        const c = await checkAgentReceipt(msg.receipt, offer.agent, 'accept')
+        if (c.problem) { problems.push(c.problem); continue }
+        const r = msg.receipt.result
+        if (r.offerHash !== offerHash) { problems.push(problem('offer-mismatch', `${where}: accept names offer ${plainText(String(r.offerHash), 70)}, not ${offerHash}`)); continue }
+        if (!isAddress(r.agentKey) || eqAddr(r.agentKey, ZERO_ADDRESS)) { problems.push(problem('message-malformed', `${where}: accept must announce a non-zero agentKey`)); continue }
+        if (msg.receipt.ts > offer.exp) { problems.push(problem('offer-expired', `${where}: accepted at ${msg.receipt.ts}, the offer expired at ${offer.exp}`)); continue }
+        if (msg.receipt.ts > R) { problems.push(problem('message-after-revocation', `${where}: accept signed at ${msg.receipt.ts}, after the revocation at ${R}`)); continue }
+        accept = { agentKey: checksumAddress(r.agentKey), exp: r.exp, ts: msg.receipt.ts }
+        agentSvc = c.svc
+        st.state = 'Accepted'
+      } else if (kind === 'mandate') {
+        if (!order(['Accepted'])) continue
+        // The fields compared with the offer first, without the chain: a mandate that names another principal, task, mode
+        // or nonce is refused before verifyMandate records its nonce, so a mistaken mandate does not use up the offer's
+        // nonce (the corrected one must carry the same nonce). No revocation is missed: none is read for it either.
+        // 先不读链地比对字段：写错的授权书在记录 nonce 之前就被拒，不会用掉报价的 nonce。
+        let pre = null
+        try { pre = normalizeMandate(msg?.mandate) } catch { /* reported by verifyMandate as mandate-malformed */ }
+        if (pre) {
+          const mismatch = []
+          if (!eqAddr(pre.principal, offer.principal)) mismatch.push('principal')
+          if (pre.taskHash !== offer.taskHash) mismatch.push('taskHash')
+          if (pre.mode !== offer.mode) mismatch.push('mode')
+          // an SDK rule, not a type field: the mandate's nonce is the offer's, so one mandate cannot serve two threads even
+          // when an agent reuses its key / SDK 规则：授权书的 nonce 等于报价的，一张授权书不能进两个线程
+          if (pre.nonce !== offer.nonce) mismatch.push('nonce')
+          if (mismatch.length) { problems.push(problem('mandate-mismatch', `${where}: the mandate's ${mismatch.join(', ')} differ from the offer`)); continue }
+        }
+        const v = await verifyMandate(msg, { agentKey: accept.agentKey, agent: offer.agent, at: o.at, readSite: o.readSite })
+        const mm = v.mandate
+        // the window is checked against what the agent did (deliveries) and by the final time checks, not against `at`;
+        // mandate-revoked is not reported in a thread: a covering revocation only sets R (§7.5)
+        const silent = ['mandate-expired', 'mandate-not-yet', 'mandate-revoked']
+        for (const p of v.problems) if (!silent.includes(p.code)) problems.push({ ...p, message: `${where}: ${p.message}` })
+        if (!mm || v.problems.some((p) => !silent.includes(p.code))) continue
+        mandate = mm; mandateHash = v.mandateHash
+        st.mandateCheck = v
+        // a site revocation counts only for the applied mandate (a refused one leaves no trace, §7.4)
+        if (v.revocation?.revoked && v.revocation.via === 'site') st.siteRevocation = { at: v.revocation.at, via: 'site' }
+        st.state = 'Active'
+      } else if (kind === 'deliver') {
+        if (!order(['Active', 'Rejected'])) continue
+        const c = await checkAgentReceipt(msg.receipt, mandate.agent, 'deliver')
+        if (c.problem) { problems.push(c.problem); continue }
+        const r = msg.receipt.result
+        if (r.mandateHash !== mandateHash) { problems.push(problem('mandate-mismatch', `${where}: deliver names mandate ${plainText(String(r.mandateHash), 70)}, not ${mandateHash}`)); continue }
+        if (typeof r.deliverableHash !== 'string' || !/^0x[0-9a-f]{64}$/.test(r.deliverableHash)) { problems.push(problem('message-malformed', `${where}: deliverableHash must be 0x and 64 lowercase hex digits`)); continue }
+        const ts = msg.receipt.ts
+        if (ts > R) { problems.push(problem('message-after-revocation', `${where}: delivered at ${ts}, after the revocation at ${R}`)); continue }
+        if (ts < mandate.notBefore || ts > mandate.expires) { problems.push(problem('deliver-outside-mandate', `${where}: delivered at ${ts}, outside the mandate's window ${mandate.notBefore}..${mandate.expires}`)); continue }
+        if (r.exp < ts) { problems.push(problem('message-malformed', `${where}: deliver expires (${r.exp}) before it was signed (${ts})`)); continue }
+        if (ts < accept.ts) { problems.push(problem('deliver-before-accept', `${where}: delivered at ${ts}, before the agent accepted at ${accept.ts}`)); continue }
+        // the offer's deadline is the principal's: a late delivery is recorded (it is a fact) and reported
+        if (ts > offer.deadline) problems.push(problem('deliver-after-deadline', `${where}: delivered at ${ts}, after the offer's deadline ${offer.deadline}`))
+        const ev = await verifyEvidence(r, { mandate })
+        for (const p of ev.problems) problems.push({ ...p, message: `${where}: ${p.message}` })
+        lastDeliver = { deliverableHash: r.deliverableHash, ts, exp: r.exp, receiptsHash: r.receiptsHash }
+        st.deliveries.push({ ...lastDeliver, evidence: ev })
+        st.evidence = ev
+        st.state = 'Delivered'
+      } else if (kind === 'acceptance') {
+        if (!order(['Delivered'])) continue
+        let v
+        try { v = normalizeTaskVerdict(msg.verdict) } catch (e) { problems.push(problem('message-malformed', `${where}: ${e.message}`)); continue }
+        if (!(await holderSigned(principalId.holder, taskVerdictDigest(chainId, hub, v), msg.sig))) { problems.push(problem('not-signed-by-holder', `${where}: the verdict is not signed by the current holder ${principalId.holder}`)); continue }
+        if (v.mandateHash !== mandateHash || v.deliverableHash !== lastDeliver.deliverableHash) { problems.push(problem('verdict-mismatch', `${where}: the verdict is for another mandate or deliverable`)); continue }
+        if (v.issued < lastDeliver.ts) { problems.push(problem('verdict-before-delivery', `${where}: issued ${v.issued}, before the delivery at ${lastDeliver.ts}`)); continue }
+        st.verdict = { verdict: v.verdict === VERDICT_ACCEPT ? 'accepted' : 'rejected', issued: v.issued, reasonHash: v.reasonHash, deliverableHash: v.deliverableHash, verdictHash: toHex(taskVerdictDigest(chainId, hub, v)) }
+        st.state = v.verdict === VERDICT_ACCEPT ? 'Settled' : 'Rejected'
+      }
+    }
+    return { ...st, problems, offer, offerHash, accept, mandate, mandateHash, principalId, agentSvc, lastDeliver }
   }
 
   return { verifyMandate, verifyTaskThread, verifyEvidence, readRevocations: async (container) => { const id = await identityOf(container); if (id.problem) return { status: 'invalid', reason: id.problem.message }; return readRevocations(container, id.identity) }, identityOf: async (container) => { const id = await identityOf(container); if (id.problem) throw new TapeAPIError('AGENT_INVALID', id.problem.message, { reason: id.problem.code }); return id.identity }, chainId, hub }

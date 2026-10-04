@@ -3,6 +3,7 @@
 // with a resolvable manifest, provider containers, and builders for the six thread messages.
 // Wraps createFakeChain; the shared helper is untouched. / 包装共享假链，不改动它。
 import { createFakeChain, ADDR, eachCall, MAINNET_FACTORY } from './fake-chain.mjs'
+import { CHAINS } from '../../src/chains.js'
 import { createTapeAPI } from '../../src/index.js'
 import * as sig from '../../src/sig.js'
 import { encodeParams, decodeParams, hexToBytes, toHex, bytesToHex, keccak256, concatBytes, selector, utf8ToBytes } from '../../src/abi.js'
@@ -14,6 +15,9 @@ import { MANDATES_KEY, MANDATES_FORMAT } from '../../src/agent-verify.js'
 import { SENT_TOPIC, TRANSFER_TOPIC, encodeContent } from '../../src/agent-pay.js'
 
 export const RPC = ['http://rpc1', 'http://rpc2']
+// The client reads the mainnet site store's address: the fake chain answers its ERC-1967 slot with an implementation
+// TAP-10 accepts (chains.js expectedImpl), as the kit's TAP-10 §6.1 check requires. / 用主网站点存储地址：假链对其实现槽给出接受的实现
+export const SITE_STORE = CHAINS[56].siteRegistry
 export const HEAD_TIME = 1_800_000_000
 export const KEYS = {
   principalHolder: '0x' + '11'.repeat(32), agentSigner: '0x' + '22'.repeat(32), agentHolder: '0x' + '44'.repeat(32),
@@ -40,7 +44,7 @@ export function createAgentChain({ circuits = ADDR.circuits } = {}) {
   let seq = 0
   const hash = () => '0x' + (++seq).toString(16).padStart(64, 'a')
   const timeOf = (n) => HEAD_TIME - (st.block - n)
-  const ACCOUNT_OF = selector('accountOf(address,uint256)'), IS_CPU = selector('isCPU(address)'), INBOX_COUNT = selector('inboxCount(bytes32)'), INBOX_PAGE = selector('inboxPage(bytes32,uint256,uint256)'), DECIMALS = selector('decimals()')
+  const PATH_COUNT = selector('pathCount(address)'), ACCOUNT_OF = selector('accountOf(address,uint256)'), IS_CPU = selector('isCPU(address)'), INBOX_COUNT = selector('inboxCount(bytes32)'), INBOX_PAGE = selector('inboxPage(bytes32,uint256,uint256)'), DECIMALS = selector('decimals()')
   const json = (obj) => new Response(JSON.stringify(obj), { status: 200, headers: { 'content-type': 'application/json' } })
   function honest(req) {
     const p = req.params
@@ -69,6 +73,11 @@ export function createAgentChain({ circuits = ADDR.circuits } = {}) {
         const words = [u256(32), u256(list.length), ...list.flatMap((e) => [pad(e.from), u256(e.blockNumber), u256(e.timestamp), e.digest])]
         return { result: '0x' + words.map((w) => w.slice(2)).join('') }
       }
+    }
+    // SiteRegistry.pathCount(container): how many files the container has (TAP-11 §2.2 step 3 picks a store by it)
+    if (req.method === 'eth_call' && String(p[0].data).startsWith(PATH_COUNT)) {
+      const [c] = decodeParams(['address'], hexToBytes('0x' + p[0].data.slice(10)))
+      return { result: u256([...st.files.keys()].filter((k) => k.startsWith(c.toLowerCase() + ':')).length) }
     }
     // factory.isCPU: true only for the circuits this chain was made with (and not marked counterfeit), as the real factory
     // answers false for any other address / 工厂只认本假链配置的电路
@@ -102,7 +111,7 @@ export function createAgentChain({ circuits = ADDR.circuits } = {}) {
     chain, st, fetch, txs, inbox, decimals, timeOf,
     /** a node that answers differently: fn(method, params, honest) => answer / 撒谎的节点 */
     lie(url, fn) { if (fn) lies.set(url, fn); else lies.delete(url) },
-    api(extra = {}) { return createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch, onWarning: () => {}, clock: () => NOW, ...extra }) },
+    api(extra = {}) { return createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: SITE_STORE, factory: ADDR.factory, fetch, onWarning: () => {}, clock: () => NOW, ...extra }) },
     container(c, tokenId, holderKey) { chain.setContainerToken(c, { tokenId, circuits }); x.setAccount(tokenId, c); chain.setOwner(tokenId, addrOf(holderKey)) },
     /** the hub's accountOf(circuits, tokenId); defaults to this chain's circuits / hub 的推导结果 */
     setAccount(tokenId, c, cs = circuits) { accounts.set(`${cs.toLowerCase()}:${tokenId}`, c); chain.setAccount(tokenId, c) },
