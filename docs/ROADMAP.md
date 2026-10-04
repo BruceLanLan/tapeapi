@@ -8,6 +8,19 @@ the [changelog](../CHANGELOG.md).
 
 ## 1. Now (live)
 
+The current release is **1.7.0** (2026-10-05): container agents, experimental, phase 0. What each release added is in
+the [changelog](../CHANGELOG.md); in short:
+
+- **Container agents** (1.7, experimental, phase 0): `@tapeapi/sdk/agent` (mandates, task threads, a read-only payment
+  check, `forWallet`), `tapeapi-verify task` and [`examples/agent-service/`](../examples/agent-service/). The holder
+  signs a mandate, the agent delivers, the principal accepts, and payment is a plain transfer anyone can verify; no new
+  contract. Phase 0 has no on-chain enforcement and a mandate limits no spending; the subpath is outside the 1.x
+  compatibility promise. See the [container agents guide](guides/container-agents.md).
+- **Streamed usage you can check** (1.6, opt-in `requestUsage`) and **streamed AI receipts that fail when a stream is cut
+  short or has content added** (1.5); see the [AI providers guide](guides/ai-providers.md#the-usage-of-a-streamed-chat-answer-three-ways).
+- **The TAP-10 conformance mode** (1.4 to 1.5, experimental, off by default); see
+  [Upgrading to 1.0](guides/upgrade-1.0.md#the-tap-10-conformance-mode-14-experimental).
+
 - **Public service** at `https://api.tapeapi.fun`, TapeOut name `11.1013.tape`: eight free, signed
   methods, pinned to a block except `blockNumber` (block number, balances, token and NFT reads, pair price, BNB/USD, name lookup). See the
   [Public API guide](guides/public-api.md).
@@ -36,6 +49,12 @@ the [changelog](../CHANGELOG.md).
 
 ## 2. Next
 
+- **Container agents, phase 1: enforcement on an escrow channel.** The limits in a mandate enforced by a contract. This
+  needs a new contract and an independent audit; nothing is deployed before the audit.
+- **TAP draft for container agents.** A draft for the mandate and task messages, which today follow the public
+  discussions TapeOutProtocol/TAPs#40 and #41, is planned; it has not been submitted.
+- **Escrow changes before it goes to audit.** The escrow gets another round of changes (custody assets among them, see
+  section 3) before the audit; it stays undeployed until then.
 - **Developer dashboard, full version.** A read-only *My services* page is live at https://tapeapi.fun/dashboard/ (add
   service names; see health, delegation expiry, links to try or renew). Next: list the circuits you hold automatically
   (needs an index), and renew and manage them from the same page.
@@ -54,10 +73,12 @@ the [changelog](../CHANGELOG.md).
 
 ## 3. Later
 
+- **Container agents, phase 2: a spending vault.** An agent spending a container's funds within limits. It too needs a
+  contract and an audit first.
 - **Escrow audit, then paid calls.** The paid-call escrow (TAPI-22, `contracts/src/TapeAPIEscrow.sol`) is written and
   tested but **not deployed**. It will be deployed only after an independent third-party audit; paid calls start
-  after that. Until then every live method is free. The version that goes to audit is the next one: it adds the
-  default 1% contribution (provider can set 0) and is planned to settle in USDT (Binance-Peg) first, with BEM and WBNB on demand. See [SECURITY.md](../SECURITY.md).
+  after that. Until then every live method is free. The version that goes to audit has the default 1% contribution
+  (a provider can set 0; the contract caps it at 20% since 1.7) and is planned to settle in USDT (Binance-Peg) first, with BEM and WBNB on demand. See [SECURITY.md](../SECURITY.md).
 - **Service directory.** A place to find services by what they do. It is for discovery only: resolution always goes
   to the chain, and a listing never changes what a client trusts.
 
@@ -77,6 +98,15 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
 ---
 
 ## 1. 现在（已上线）
+
+当前版本是 **1.7.0**（2026-10-05）：容器代理，实验性，阶段 0。每一版加了什么见[更新日志](../CHANGELOG.md)；简要如下：
+
+- **容器代理**（1.7，实验性，阶段 0）：`@tapeapi/sdk/agent`（授权书、任务线程、只读的付款核验、`forWallet`）、`tapeapi-verify task`
+  与 [`examples/agent-service/`](../examples/agent-service/)。持有人签授权书，代理交付，委托方验收，付款是一笔任何人都能核验的普通转账；
+  不需要新合约。阶段 0 没有链上强制执行，授权书不限制花钱；该子路径不受 1.x 兼容承诺约束。见[容器代理指南](guides/zh-CN/container-agents.md)。
+- **流式用量可核验**（1.6，可选的 `requestUsage`）与**被截断或被追加内容的流不再核验通过**（1.5）；见
+  [AI 服务方指南](guides/zh-CN/ai-providers.md#流式-chat-的用量三条路)。
+- **TAP-10 一致模式**（1.4 至 1.5，实验性，默认关闭）；见[升级到 1.0](guides/zh-CN/upgrade-1.0.md#tap-10-一致模式14实验性)。
 
 - **公共服务** `https://api.tapeapi.fun`，TapeOut 名称 `11.1013.tape`：八个免费、签名的方法（除 `blockNumber` 外都锚定区块）
   （区块号、余额、代币与 NFT 读取、交易对价格、BNB/USD、名称查询）。见[公共 API 指南](guides/zh-CN/public-api.md)。
@@ -100,11 +130,14 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
 
 ## 2. 接下来
 
+- **容器代理阶段 1：托管通道上的强制执行。** 让授权书里的限额由合约执行。需要新合约和独立审计；审计之前不部署任何东西。
+- **容器代理的 TAP 草稿。** 授权书与任务消息目前跟随公开讨论 TapeOutProtocol/TAPs#40 与 #41，计划为它们另写一份草稿；尚未提交。
+- **托管合约送审前的改造。** 托管合约在送审前还要再改一版（包括托管资产，见第 3 节）；在那之前一直不部署。
 - **开发者控制台（完整版）。** 只读版*我的服务*已在 https://tapeapi.fun/dashboard/ 上线（添加服务名，查看健康、
   委托到期、试用和续期链接）。接下来：自动列出你持有的电路（需要索引），并在同一页面完成续期与管理。
 - **凭回执的信誉。** 只有调用方才能评价一个服务，而且必须持有该服务为它自己的请求签发的回执；评价者本身也必须是一个容器。
   这样每条评价都要付出一次真实调用和一个真实电路的代价。
-- **npm 包** `@tapeapi/sdk` 与 `@tapeapi/server`。目前 SDK 从每个 GitHub Release 安装，服务端包在本仓库的克隆目录里使用。
+- **npm 包** `@tapeapi/sdk` 与 `@tapeapi/server`。目前两者都从每个 GitHub Release 安装（先装 SDK，再装服务端包），或在本仓库的克隆目录里使用。
 - **按官方流程提交 TAP 草稿。** 2026-09-30 至 10-01，我们向 TapeOut 的 TAP 流程
   （[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)，TAP-01）提交了 8 份草稿，一律按 TAP-10 写。
   服务身份与清单已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)，2026-10-01）；合并为 Draft 不等于被采纳。签名响应已合并为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（Draft，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)，2026-10-04），同样不等于被采纳。另有 6 份在评审中、
@@ -114,9 +147,10 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
 
 ## 3. 更远
 
+- **容器代理阶段 2：支出金库。** 让代理在限额内花容器的钱。同样要先有合约和审计。
 - **托管合约审计，然后才有付费调用。** 付费调用的托管合约（TAPI-22，`contracts/src/TapeAPIEscrow.sol`）已写好并有
   测试，但**未部署**。只有通过独立第三方审计后才会部署，付费调用在那之后才开始。在此之前所有线上方法都免费。
-  送审的是下一版：它加入默认 1% 的维护贡献（提供者可设为 0），并计划首先支持 USDT（Binance-Peg）结算，BEM 与 WBNB 按需。
+  送审的版本带默认 1% 的维护贡献（提供者可设为 0；自 1.7 起合约上限为 20%），并计划首先支持 USDT（Binance-Peg）结算，BEM 与 WBNB 按需。
   见 [SECURITY.md](../SECURITY.md)。
 - **服务目录。** 按功能查找服务的地方，只用于发现：解析永远以链上为准，登记与否不改变客户端信任什么。
 

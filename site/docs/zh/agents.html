@@ -19,7 +19,7 @@
   <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="en">English</button><button class="hd-btn" id="theme-btn" type="button">主题</button></div>
 </div></header>
 <div class="layout">
-<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="./">简介</a></li><li><a href="public-api">公共 API</a></li><li><a href="mcp">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume">调用服务</a></li><li><a href="provide">运行服务</a></li><li><a href="ai-providers">接入 AI 服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels">私密通道</a></li><li><a href="groups">群聊</a></li><li><a href="agents" aria-current="page">AI 智能体</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq">常见问题与排障</a></li><li><a href="upgrade-1.0">从 0.x 升级到 1.0</a></li><li><a href="changelog">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="./">简介</a></li><li><a href="public-api">公共 API</a></li><li><a href="mcp">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume">调用服务</a></li><li><a href="provide">运行服务</a></li><li><a href="ai-providers">接入 AI 服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels">私密通道</a></li><li><a href="groups">群聊</a></li><li><a href="agents" aria-current="page">AI 智能体</a></li><li><a href="container-agents">容器代理（实验性）</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq">常见问题与排障</a></li><li><a href="upgrade-1.0">从 0.x 升级到 1.0</a></li><li><a href="changelog">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
 <main class="doc">
 <article>
 <h1 id="ai-智能体">AI 智能体</h1>
@@ -46,7 +46,7 @@ const handle = await exposeTapeAPI(api, '0x&lt;container&gt;')     // 默认只�
 <div class="code"><pre data-lang="bash"><code>node examples/reader-service/index.mjs</code></pre></div>
 <p>然后为本仓库启动一个静态服务，在浏览器中打开 <a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/webmcp" rel="noopener"><code>examples/webmcp/</code></a>；其 README 对演示有说明。</p>
 </article>
-<nav class="pn"><a class="prev" href="groups"><span>上一篇</span>群聊</a><a class="next" href="faq"><span>下一篇</span>常见问题与排障</a></nav>
+<nav class="pn"><a class="prev" href="groups"><span>上一篇</span>群聊</a><a class="next" href="container-agents"><span>下一篇</span>容器代理（实验性）</a></nav>
 <p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/agents.md" rel="noopener">在 GitHub 上编辑此页</a></p>
 </main>
 <aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#费用">费用</a></li><li class="l2"><a href="#桌面智能体">桌面智能体</a></li><li class="l2"><a href="#试一试">试一试</a></li></ul></aside>

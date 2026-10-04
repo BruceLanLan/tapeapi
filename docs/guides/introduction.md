@@ -38,6 +38,7 @@ trust with a signature anyone can check:
 | Offer my code or an existing API as a service | [Run a service](provide.md) |
 | Send encrypted messages between containers | [Private channels](channels.md) |
 | Let an AI agent use services safely | [AI agents](agents.md) |
+| Have one container do a task for another, with a signed mandate (experimental) | [Container agents](container-agents.md) |
 | Fix an error | [FAQ](faq.md) |
 
 ## Status

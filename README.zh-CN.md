@@ -18,10 +18,37 @@ TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上�
 
 [English](README.md) · [网站](https://tapeapi.fun) · [手册](https://tapeapi.fun/docs/zh/) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [更新日志](CHANGELOG.md) · [路线图](docs/ROADMAP.md)
 
-> **1.5：让“已核验”真的等于“已核验”。** 1.0 给每次调用附一张签名回执；1.5 把核验本身收紧，并与 TapeOut 官方 TAP 标准对齐。**安全更新：**1.0.0 至 1.4.0 的流式 AI 回执核验，在特定分块下可能把被截断或被注入内容的流显示为“已核验”，请升级到 1.5.0（[更新说明](https://github.com/BruceLanLan/tapeapi/releases/tag/v1.5.0)）。
+> **1.7：容器代理（Container Agent，实验性，阶段 0）。** 容器 + 代理 = 容器代理。容器持有人签一张授权书，写明哪个代理可以替这个容器做哪件任务；代理接任务、交付；委托方验收；付款是一笔普通转账，任何人都可以独立核验。不需要新合约。**边界如实说：**阶段 0 没有链上强制执行，授权书不限制花钱（写了金额的授权书会被拒绝）；子路径 `@tapeapi/sdk/agent` 是实验性的，不受 1.x 兼容承诺约束；本项目没有经过第三方审计。[1.7 新增](#17-新增) · [容器代理指南](docs/guides/zh-CN/container-agents.md)
 
 > **状态：正式版（1.7.0）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAPI-22）是实验性的，没有部署。
-> 所有代码和合约都没有经过第三方审计。
+> 所有代码和合约都没有经过第三方审计。**安全说明：**1.0.0 至 1.4.0 的流式 AI 回执核验，在特定分块下可能把被截断或被注入内容的流显示为“已核验”；1.5.0 已修复，请升级（[更新说明](https://github.com/BruceLanLan/tapeapi/releases/tag/v1.5.0)）。
+
+## 能做什么
+
+- **签名回答与回执**（1.0 起稳定）。每个回答都由电路持有人在链上委托的密钥签名，并与它的请求绑定；AI 调用另有一张用量回执，按链上价目表计价。[调用服务](docs/guides/zh-CN/consume.md) · [AI 服务方指南](docs/guides/zh-CN/ai-providers.md)
+- **MCP 工具**（1.0 起稳定）。结果带签名和回执，工具定义的哈希钉在链上：有公共端点，有给你自己服务器用的签名代理，还有在本地逐个核验的 `tapeapi-mcp`。[MCP 指南](docs/guides/zh-CN/mcp.md)
+- **私密通道与群聊**（1.0 起稳定）。容器之间端到端加密，经中继或 ChannelBus 传递。[私密通道](docs/guides/zh-CN/channels.md) · [群聊](docs/guides/zh-CN/groups.md)
+- **与 TapeOut 官方 TAP-10 一致**（1.4 至 1.5，实验性）。可选的一致模式 `conform: 'tap10'` 在解析、全链解析、消息路径与 strict 读取上按 TAP-10 执行；2.0 之前默认行为不变。[TAP-10 一致模式](docs/guides/zh-CN/upgrade-1.0.md#tap-10-一致模式14实验性)
+- **流式 AI 回执，用量也能核验**（1.5 至 1.6）。1.5 起，被截断或被追加内容的流，回执核验不再通过；1.6 新增可选的 `requestUsage`，把流式 OpenAI Chat 回答的用量放进签名的流里，像整段回答一样核对（它不证明上游自己的计数）。[流式 Chat 的用量：三条路](docs/guides/zh-CN/ai-providers.md#流式-chat-的用量三条路)
+- **容器代理**（1.7，实验性）。持有人签名的授权书、从报价到验收的任务线程、只读的付款核验；不需要新合约，阶段 0 不做强制执行。[容器代理](docs/guides/zh-CN/container-agents.md)
+
+## 1.7 新增
+
+容器 + 代理 = 容器代理，阶段 0。以下全部是实验性的，不受 1.x 兼容承诺约束；格式跟随公开讨论 TapeOutProtocol/TAPs#40（授权书）与 #41（任务协议），可能随之改变。
+
+- **`@tapeapi/sdk/agent`。** 四种持有人签名的 EIP-712 消息：授权书（`Mandate`）、任务报价（`TaskOffer`）、验收裁定（`TaskVerdict`）、撤销（`MandateRevocation`）。`createAgentKit` 核验授权书、任务线程（报价 → 接受 → 授权书 → 交付 → 验收 → 撤销）和证据，并标出“自雇自”（`selfHire`）。`createPaymentKit` 生成付款订单，只构造普通的 `transfer`（从不构造 `approve`），收款人只从链上读取，按 TAP-10 §19 的 15 步只读核验付款。`forWallet(td, { chainId, hub })`：每份待签数据交给钱包之前都必须经过它；它去掉给控制台看的提示，并拒绝链或 hub 与预期不符的载荷。
+- **`tapeapi-verify task <thread.json> [--payment <收款人> <序号>] [--rpc <url>...]`**：从命令行核验一条任务线程，加 `--payment` 时连付款一起核验。
+- **[`examples/agent-service`](examples/agent-service/)**：一个代理运行时和一个离线跑完整个流程的雇佣脚本。测试向量 `spec/vectors/container-agent.json` 让向量集从 480 项增加到 514 项，独立的 Python 实现与 SDK 一致。
+- **维护贡献的合约上限降到 20%**（原为 50%）；默认仍是 1%，服务方可以设为 0。托管合约仍未部署、未经审计，没有线上通道受影响。
+- **托管资产。** [TAPI-22](spec/TAPI-22.md) 新增说明性的一节，讲托管合约将持有哪些代币：首先是 USDT 锚定币，BEM 与 WBNB 按需；不持有原生 BNB（以 WBNB 持有）。
+
+3 分钟跑起来：在已安装依赖的仓库检出根目录运行（克隆与 `npm ci` 两行见[试一试](#试一试)）：
+
+```bash
+node examples/agent-service/hire.mjs
+```
+
+它会打印每一步钱包将被要求签什么、线程核验结果（`enforcement none`）和验收裁定；全部发生在 SDK 的假链上，用的是测试密钥：不联网、不碰真实钱包、不花钱。加 `--same-holder` 演示“自雇自”如何被标出；加 `--pay` 增加付款分支，只生成未签名的交易。
 
 ## 从这里开始
 
@@ -32,6 +59,7 @@ TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上�
 | **应用开发者** | 跑一遍下面的示例；用 `createVerifyingFetch` 核验 AI 回执；通道和群聊从 [`examples/group-chat`](examples/group-chat/) 开始 | [调用服务](docs/guides/zh-CN/consume.md) · [私密通道](docs/guides/zh-CN/channels.md) · [群聊](docs/guides/zh-CN/groups.md) |
 | **TapeOut 电路持有人** | 开通电路的容器，然后在操作台里生成服务密钥、签委托、发布清单 | [运行服务](docs/guides/zh-CN/provide.md) |
 | **Claude、Cursor 等 MCP 客户端的用户** | 把 `https://api.tapeapi.fun/mcp` 添加为连接器 | [MCP 指南](docs/guides/zh-CN/mcp.md) |
+| **想为容器雇一个代理，或自己做代理**（实验性） | 在仓库检出里运行 `node examples/agent-service/hire.mjs`，看每一步要钱包签什么 | [容器代理](docs/guides/zh-CN/container-agents.md) |
 
 ## 试一试
 
@@ -161,6 +189,8 @@ flowchart LR
   以及 SDK 里的群聊一步投递（`deliverGroupUpdate`）。
 - **实验性，未部署：** 付费通道与托管合约（[TAPI-22](spec/TAPI-22.md)）、服务目录、可由电路验证的方法
   （[TAPI-25](spec/TAPI-25.md)）。它们都不在 1.0 的稳定承诺里。
+- **实验性，在 SDK 里：** 容器代理（`@tapeapi/sdk/agent`，阶段 0，自 1.7 起），不受 1.x 兼容承诺约束。链上没有任何强制执行：
+  授权书只是一份签名声明，不限制花钱。
 - **1.0 承诺什么：** 按 1.0 文档写的代码，在所有 1.x 版本里都能继续工作；除了标注 `@experimental` 或 `@internal` 的，
   其余全部是稳定的。从 0.x 升级：[升级到 1.0](docs/guides/zh-CN/upgrade-1.0.md)。
 - **我们不做的事：** 不替任何人托管旁路（它会经手你用户的 API 密钥，只能你自己部署）；不发币；不帮任何人绕开上游服务商的
@@ -181,7 +211,7 @@ flowchart LR
 ## 费用
 
 无强制协议费；默认 1% 维护贡献，任何服务方都可以关闭；运营方没有费率开关。这 1% 只在付费通道结算时从服务方所得中扣，
-用户的价格不变。付费托管合约尚未部署，所以**今天所有调用都不收费**。AI 服务方照旧在链下向用户收费；清单里的价格是公开的
+用户的价格不变。服务方也可以设得更高，但不超过合约上限 20%（1.7 起由 50% 降低）。付费托管合约尚未部署，所以**今天所有调用都不收费**。AI 服务方照旧在链下向用户收费；清单里的价格是公开的
 声明，不经过结算。详见 [docs/FEES.md](docs/FEES.md)。
 
 ## 规范
@@ -201,7 +231,7 @@ flowchart LR
 | TAP-11 的后续修改 | 在安全说明里补一句 `verifyingContract`，[#35](https://github.com/TapeOutProtocol/TAPs/pull/35)；说明性的中文译文，[#36](https://github.com/TapeOutProtocol/TAPs/pull/36) | 暂无回复 |
 | TAP-13 的后续修改 | 保留名的措辞，[#46](https://github.com/TapeOutProtocol/TAPs/pull/46) | 暂无回复 |
 
-TAPI-22、TAPI-24、TAPI-25 没有提交。编辑给其它草稿分配编号后，我们会把引用改成对应编号。这些草稿按官方 TAP-10 写，并在 Backwards Compatibility 里列出 TapeAPI 自己的 1.x 行为有哪些不同。SDK 以可选的一致模式跟上 TAP-10（`conform: 'tap10'`，实验性：解析路径自 1.4，全链解析、消息路径与 strict 读取自 1.5）；2.0 之前默认行为不变。
+TAPI-22、TAPI-24、TAPI-25 没有提交。1.7 的容器代理格式目前既不是 TAPI 规范，也不是 TAP 草稿：它跟随公开讨论 TapeOutProtocol/TAPs#40 与 #41，计划另写草稿。编辑给其它草稿分配编号后，我们会把引用改成对应编号。这些草稿按官方 TAP-10 写，并在 Backwards Compatibility 里列出 TapeAPI 自己的 1.x 行为有哪些不同。SDK 以可选的一致模式跟上 TAP-10（`conform: 'tap10'`，实验性：解析路径自 1.4，全链解析、消息路径与 strict 读取自 1.5）；2.0 之前默认行为不变。
 
 | 规范 | 标题 | 状态 |
 |---|---|---|
@@ -219,7 +249,7 @@ TAPI-22、TAPI-24、TAPI-25 没有提交。编辑给其它草稿分配编号后�
 
 ## 仓库
 
-[`sdk/`](sdk/) `@tapeapi/sdk`（解析、调用、验签、AI 回执、通道、群聊、MCP）·
+[`sdk/`](sdk/) `@tapeapi/sdk`（解析、调用、验签、AI 回执、通道、群聊、MCP、容器代理）·
 [`server/`](server/) `@tapeapi/server`（服务端、AI 旁路、MCP 代理）·
 [`contracts/`](contracts/)（ChannelBus，以及实验性的托管合约和服务目录）·
 [`spec/`](spec/)（各规范、测试向量、Python 验证器）· [`examples/`](examples/) ·

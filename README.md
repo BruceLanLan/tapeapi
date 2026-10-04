@@ -16,14 +16,71 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 
 [中文说明](README.zh-CN.md) · [Website](https://tapeapi.fun) · [Docs](https://tapeapi.fun/docs/) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md)
 
-> **1.5: make "verified" actually mean verified.** 1.0 put a signed receipt on every call; 1.5 tightens the verification
-> itself and aligns it with TapeOut's official TAP standards. **Security update:** in 1.0.0 to 1.4.0, streamed AI receipt
-> verification could, under particular chunking, report a truncated or content-injected stream as verified. Please upgrade to
-> 1.5.0 ([release notes](https://github.com/BruceLanLan/tapeapi/releases/tag/v1.5.0)).
+> **1.7: container agents (experimental, phase 0).** Container + agent = container agent. The holder of a container
+> signs a mandate saying which agent may do which task for it; the agent takes the task and delivers; the principal
+> accepts; payment is a plain transfer that anyone can verify on their own. No new contract. **The limits, plainly:**
+> phase 0 has no on-chain enforcement, and a mandate limits no spending (one that names an amount is refused); the
+> `@tapeapi/sdk/agent` subpath is experimental and outside the 1.x compatibility promise; this project has not had a
+> third-party audit. [New in 1.7](#new-in-17) · [Container agents guide](docs/guides/container-agents.md)
 
 > **Status: released, 1.7.0.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
 > breaking changes come only in 2.0. Paid channels (TAPI-22) are experimental and not deployed. Nothing here has had a
-> third-party audit.
+> third-party audit. **Security note:** on 1.0.0 to 1.4.0, streamed AI receipt verification could, under particular
+> chunking, report a truncated or content-injected stream as verified; it was fixed in 1.5.0, so please upgrade
+> ([release notes](https://github.com/BruceLanLan/tapeapi/releases/tag/v1.5.0)).
+
+## What it does
+
+- **Signed answers and receipts** (Stable since 1.0). Every answer is signed by a key the circuit's holder delegated on
+  chain and bound to its request; an AI call also gets a usage receipt, priced from the table on chain.
+  [Call a service](docs/guides/consume.md) · [For AI providers](docs/guides/ai-providers.md)
+- **MCP tools** (Stable since 1.0). Signed results with a receipt, and tool definitions pinned on chain by their hash:
+  a public endpoint, a signing proxy for your own server, and `tapeapi-mcp` to check every answer locally.
+  [MCP](docs/guides/mcp.md)
+- **Private channels and groups** (Stable since 1.0). End-to-end encrypted, between containers, over a relay or
+  ChannelBus. [Channels](docs/guides/channels.md) · [Groups](docs/guides/groups.md)
+- **Conformance with TapeOut's official TAP-10** (1.4 to 1.5, experimental). An optional mode, `conform: 'tap10'`,
+  follows TAP-10 for resolution, all-chain resolution, the messaging path and strict reads; the default does not change
+  before 2.0. [The TAP-10 conformance mode](docs/guides/upgrade-1.0.md#the-tap-10-conformance-mode-14-experimental)
+- **Streamed AI receipts, with usage you can check** (1.5 to 1.6). 1.5 makes a streamed receipt fail when the stream
+  was cut short or had content added; 1.6 adds the opt-in `requestUsage`, which puts the usage of a streamed OpenAI Chat
+  answer inside the signed stream so it is checked like a whole answer's (it does not prove the upstream's own count).
+  [Streamed usage: three ways](docs/guides/ai-providers.md#the-usage-of-a-streamed-chat-answer-three-ways)
+- **Container agents** (1.7, experimental). A holder-signed mandate, a task thread from offer to acceptance, and a
+  read-only payment check, with no new contract and no enforcement in phase 0.
+  [Container agents](docs/guides/container-agents.md)
+
+## New in 1.7
+
+Container + agent = container agent, phase 0. All of it is experimental and outside the 1.x compatibility promise; the
+formats follow the public discussions TapeOutProtocol/TAPs#40 (mandate) and #41 (task protocol) and may change with them.
+
+- **`@tapeapi/sdk/agent`.** Four holder-signed EIP-712 messages: `Mandate`, `TaskOffer`, `TaskVerdict` and
+  `MandateRevocation`. `createAgentKit` checks a mandate, a task thread (offer, accept, mandate, delivery, acceptance,
+  revocation) and its evidence, and flags a self-hire (`selfHire`). `createPaymentKit` makes payment orders, builds only
+  a plain `transfer` (never an `approve`), reads the recipient from the chain only, and checks a payment read-only in the
+  15 steps of TAP-10 §19. `forWallet(td, { chainId, hub })` is what every typed-data result must pass through before it
+  reaches a wallet: it strips the console's notes and refuses a payload whose chain or hub is not the expected one.
+- **`tapeapi-verify task <thread.json> [--payment <recipient> <index>] [--rpc <url>...]`** checks a task thread, and
+  with `--payment` its payment, from the command line.
+- **[`examples/agent-service`](examples/agent-service/)**: an agent runtime and a hiring script that runs the whole flow
+  offline. Test vectors in `spec/vectors/container-agent.json` take the set from 480 to 514 checks; the independent
+  Python implementation agrees with the SDK.
+- **Maintenance contribution capped at 20%** (was 50%) in the escrow contract; the default stays 1% and a provider can
+  set 0. The escrow is still not deployed and not audited, so no live channel is affected.
+- **Custody assets.** [TAPI-22](spec/TAPI-22.md) gains an informative section on the tokens the escrow would hold: a
+  USDT-pegged token first, BEM and WBNB on demand; native BNB is not held (it is wrapped as WBNB).
+
+Run it in three minutes, at the root of a checkout with its dependencies installed (the `git clone` and `npm ci` lines
+under [Try it](#try-it)):
+
+```bash
+node examples/agent-service/hire.mjs
+```
+
+It prints what a wallet would be asked to sign at each step, the thread check (`enforcement none`) and the verdict, all
+on the SDK's fake chain with test keys: no network, no real wallet, no cost. `--same-holder` shows a self-hire being
+flagged; `--pay` adds the payment as unsigned transactions.
 
 ## Start here
 
@@ -34,6 +91,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 | **An app developer** | Run the examples below; check AI receipts with `createVerifyingFetch`; start channels and groups from [`examples/group-chat`](examples/group-chat/) | [Call a service](docs/guides/consume.md) · [Channels](docs/guides/channels.md) · [Groups](docs/guides/groups.md) |
 | **A TapeOut circuit holder** | Open your circuit's container, then generate a service key, sign the delegation and publish the manifest in the console | [Run a service](docs/guides/provide.md) |
 | **A Claude, Cursor or other MCP user** | Add `https://api.tapeapi.fun/mcp` as a connector | [MCP](docs/guides/mcp.md) |
+| **Hiring an agent for a container, or building one** (experimental) | Run `node examples/agent-service/hire.mjs` from a checkout and read what each step asks a wallet to sign | [Container agents](docs/guides/container-agents.md) |
 
 ## Try it
 
@@ -168,6 +226,8 @@ the signature adds is accountability. A receipt cannot be disowned, so anyone ru
   `tapeapi-mcp`, the spot-check probe, and one-call group delivery (`deliverGroupUpdate`) in the SDK.
 - **Experimental, not deployed:** paid channels and the escrow ([TAPI-22](spec/TAPI-22.md)), the service directory, and
   circuit-verified methods ([TAPI-25](spec/TAPI-25.md)). None of them is part of the 1.0 stability promise.
+- **Experimental, in the SDK:** container agents (`@tapeapi/sdk/agent`, phase 0, since 1.7), outside the 1.x
+  compatibility promise. Nothing is enforced on chain: a mandate is a signed statement and limits no spending.
 - **What 1.0 promises:** code written against the 1.0 docs keeps working in every 1.x release; everything is Stable
   except what is marked `@experimental` or `@internal`. Coming from 0.x: [Upgrading to 1.0](docs/guides/upgrade-1.0.md).
 - **What we do not do:** host the sidecar for anyone (it sees your users' API keys, so you run it); issue a token;
@@ -193,7 +253,7 @@ the signature adds is accountability. A receipt cannot be disowned, so anyone ru
 
 No mandatory protocol fee; a default 1% maintenance contribution that any provider can turn off; the operator has no fee
 switch. The contribution applies only when a paid channel settles, out of the provider's share, and the user's price does
-not change. The paid-call escrow is not deployed, so **no call is charged today**. AI providers bill their users off
+not change. A provider can also set more, up to the contract's cap of 20% (lowered from 50% in 1.7). The paid-call escrow is not deployed, so **no call is charged today**. AI providers bill their users off
 chain as they do now; the prices in their manifest are published, not settled. See [docs/FEES.md](docs/FEES.md).
 
 ## Specifications
@@ -217,7 +277,7 @@ between 2026-09-30 and 2026-10-01 we submitted eight TAP drafts for parts of the
 | Follow-ups to TAP-11 | A Security Considerations note on `verifyingContract`, [#35](https://github.com/TapeOutProtocol/TAPs/pull/35); an informative Chinese translation, [#36](https://github.com/TapeOutProtocol/TAPs/pull/36) | No response yet |
 | Follow-up to TAP-13 | Wording on reserved names, [#46](https://github.com/TapeOutProtocol/TAPs/pull/46) | No response yet |
 
-TAPI-22, TAPI-24 and TAPI-25 have not been submitted. When the editors assign numbers to the other drafts, we rename our references to them. The drafts are written against the official TAP-10 and list, under Backwards Compatibility, where TapeAPI's own 1.x behaviour differs. The SDK follows TAP-10 in an optional conformance mode (`conform: 'tap10'`, experimental: the resolution path since 1.4; all-chain resolution, the messaging path and strict reads since 1.5). Its default behaviour does not change before 2.0.
+TAPI-22, TAPI-24 and TAPI-25 have not been submitted. The container-agent formats of 1.7 are neither a TAPI spec nor a TAP draft yet: they follow the public discussions TapeOutProtocol/TAPs#40 and #41, and a draft is planned. When the editors assign numbers to the other drafts, we rename our references to them. The drafts are written against the official TAP-10 and list, under Backwards Compatibility, where TapeAPI's own 1.x behaviour differs. The SDK follows TAP-10 in an optional conformance mode (`conform: 'tap10'`, experimental: the resolution path since 1.4; all-chain resolution, the messaging path and strict reads since 1.5). Its default behaviour does not change before 2.0.
 
 | Spec | Title | Status |
 |---|---|---|
@@ -238,7 +298,7 @@ not TAP numbers**: TAPs are numbered by the editors of
 
 ## Repository
 
-[`sdk/`](sdk/) `@tapeapi/sdk` (resolve, call, verify, AI receipts, channels, groups, MCP) ·
+[`sdk/`](sdk/) `@tapeapi/sdk` (resolve, call, verify, AI receipts, channels, groups, MCP, container agents) ·
 [`server/`](server/) `@tapeapi/server` (providers, the AI sidecar, the MCP proxy) ·
 [`contracts/`](contracts/) (ChannelBus, and the experimental escrow and directory) ·
 [`spec/`](spec/) (the specs, test vectors, the Python verifier) · [`examples/`](examples/) ·

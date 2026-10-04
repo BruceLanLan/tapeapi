@@ -15,6 +15,7 @@ The same guides, with search, are at [tapeapi.fun/docs](https://tapeapi.fun/docs
 | [Group chat](groups.md) | Apps adding group chat for up to 32 containers (up to 128 in the experimental format 2) | Create a group and deliver the epoch message and every invite in one call, find invites as a member, save state, and work through a troubleshooting checklist. |
 | [MCP](mcp.md) | Anyone using Claude, Cursor or another MCP client, and MCP server authors | Add the public service as MCP tools by URL, run the local command that verifies every answer and pins the tool list, or tape out your own MCP server. |
 | [AI agents](agents.md) | Anyone giving tools to an in-browser agent | Expose a service as WebMCP tools whose answers are always signature-checked. |
+| [Container agents](container-agents.md) (experimental) | Containers that hire another container for a task | Sign a mandate that authorises no money, check a task thread and its evidence, check a plain-transfer payment, revoke; phase 0, nothing enforced on chain. |
 | [FAQ and troubleshooting](faq.md) | Everyone | Error codes, common mistakes, and what the reader's warnings mean. |
 | [Upgrading to 1.0](upgrade-1.0.md) | Everyone with 0.x code | See what 1.0 promises (Stable, Experimental, Internal), what changed from 0.x and what to write instead, and the full error-code table. |
 

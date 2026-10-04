@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>容器代理（实验性） · TapeAPI 手册</title>
+<meta name="description" content="容器代理，就是让一个 TapeOut 容器替另一个容器办一件事：容器 + 代理 = 容器代理。委托方容器的持有人签一份授权书，点名由哪个容器来办；代理对自己交出的东西签名；任何人都能拿着整条往来记录到链上核对。（如果你要找的是让浏览器里的 AI 模型调用工具，那是另一项功能，见 AI 智能体 。）">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../docs.css?v=62ad162ee6">
+<link rel="alternate" hreflang="en" href="../en/container-agents">
+<script src="../docs.js?v=dee763d4ca"></script>
+</head>
+<body data-page="container-agents" data-other="../en/container-agents" data-l-copy="复制" data-l-copied="已复制" data-l-none="没有结果" data-l-light="浅色" data-l-dark="深色" data-l-theme="主题">
+<header class="hd-bar top"><div class="hd">
+  <button class="hd-btn menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">目录</button>
+  <a class="hd-brand" href="/" aria-label="TapeAPI"><svg class="hd-mark" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" width="99" height="11" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a><a class="hd-sec" href="./">手册</a>
+  <div class="search"><input id="q" type="search" placeholder="搜索手册" aria-label="搜索手册" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <nav class="hd-nav" aria-label="TapeAPI"><a href="./" aria-current="true">手册</a><a href="https://tapeapi.fun/playground/">调试台</a><a href="https://tapeapi.fun/dashboard/">我的服务</a><a href="https://tapeapi.fun/status/">状态</a><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></nav>
+  <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="en">English</button><button class="hd-btn" id="theme-btn" type="button">主题</button></div>
+</div></header>
+<div class="layout">
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="./">简介</a></li><li><a href="public-api">公共 API</a></li><li><a href="mcp">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume">调用服务</a></li><li><a href="provide">运行服务</a></li><li><a href="ai-providers">接入 AI 服务</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels">私密通道</a></li><li><a href="groups">群聊</a></li><li><a href="agents">AI 智能体</a></li><li><a href="container-agents" aria-current="page">容器代理（实验性）</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq">常见问题与排障</a></li><li><a href="upgrade-1.0">从 0.x 升级到 1.0</a></li><li><a href="changelog">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="容器代理实验性">容器代理（实验性）</h1>
+<p>容器代理，就是让一个 TapeOut 容器替另一个容器办一件事：容器 + 代理 = 容器代理。委托方容器的持有人签一份授权书，点名由哪个容器来办；代理对自己交出的东西签名；任何人都能拿着整条往来记录到链上核对。（如果你要找的是让浏览器里的 AI 模型调用工具，那是另一项功能，见 <a href="agents">AI 智能体</a>。）</p>
+<h2 id="它是什么不是什么"><a class="anchor" href="#它是什么不是什么" aria-hidden="true">#</a>它是什么，不是什么</h2>
+<p>1.7 版通过子路径 <code>@tapeapi/sdk/agent</code> 提供的是<strong>阶段 0</strong>：</p>
+<ul><li><strong>授权书是一份签名声明，不是门禁。</strong> 委托方容器的持有人用 EIP-712 签下：交给哪个代理容器、办什么任务（以哈希表示）、可以调用哪些服务、从什么时候到什么时候。链上没有任何东西执行这些约定，每个核验结果都写着 <code>enforcement: 'none'</code>。</li><li><strong>它不授权任何钱。</strong> 既然没有东西能守住额度，写了任何金额或资产的授权书一律拒绝：每个 <code>cap</code> 和 <code>feeCap</code> 必须是 <code>0</code>，每个 <code>token</code> 和 <code>feeToken</code> 必须是零地址，<code>subdelegate</code> 必须是 <code>false</code>（问题码 <code>phase0-no-funds</code> 或 <code>subdelegate-not-allowed</code>）。SDK 自己的钱包载荷和本地签名入口从一开始就不会生成这样的授权书。</li><li><strong>要付钱，就是一笔普通转账。</strong> SDK 帮你构造转给代理容器的未签名交易，事后再从链上只读地核验。它从不签名、不发送、不代付 gas，也不经手资金。</li><li><strong>有约束力的额度是以后的阶段。</strong> 让代理无法超支的上限，需要尚未部署的合约（见<a href="#接下来">接下来</a>）。</li><li><strong>实验性。</strong> 整个子路径按 <a href="upgrade-1.0">1.0 的承诺</a>属于&quot;实验性&quot;：可能在 1.x 的次版本里改动，不在 1.x 兼容承诺之内。格式跟随 TapeOutProtocol/TAPs 里的两个公开讨论：Idea <a href="https://github.com/TapeOutProtocol/TAPs/issues/40" rel="noopener">#40</a>（授权书）与 <a href="https://github.com/TapeOutProtocol/TAPs/issues/41" rel="noopener">#41</a>（任务协议与代理上架），讨论有变化，格式也会跟着变。两者都还没有 TAP 编号。</li></ul>
+<h2 id="谁签什么"><a class="anchor" href="#谁签什么" aria-hidden="true">#</a>谁签什么</h2>
+<div class="table"><table><thead><tr><th>角色</th><th>是什么</th><th>谁签名</th></tr></thead><tbody><tr><td>委托方</td><td>发起雇佣的容器</td><td>其电路的<strong>当前持有人</strong>（ECDSA 私钥，或者合约持有人经 EIP-1271）。清单里委托的签名者不能代签。</td></tr><tr><td>代理</td><td>办事的容器，带 TAP-11 清单</td><td>它的清单公布的签名者：代理发出的每条消息，都是它某个方法的签名回答。</td></tr><tr><td>agentKey</td><td>代理为这一单新生成的地址</td><td>阶段 0 里谁也不用它签：授权书只把它绑定进来，不使用它。</td></tr><tr><td>上游服务</td><td>代理为完成任务去调用的服务</td><td>各自清单的签名者，体现在代理收集的回执里。</td></tr></tbody></table></div>
+<p>持有人签的是 TAP-11 委托域里的四种 EIP-712 类型（name 为 <code>TapeAPI</code>，version 为 <code>1</code>，链的 chainId，DeWEB hub 作 <code>verifyingContract</code>）：<code>TaskOffer</code>、<code>Mandate</code>、<code>TaskVerdict</code>、<code>MandateRevocation</code>。类型名会进每个哈希，所以对一种类型的签名永远不会被当成另一种类型的签名，也不会被当成委托。持有人签下的摘要同时就是这条消息的身份：<code>offerHash</code>、 <code>mandateHash</code>、<code>verdictHash</code>。测试向量见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/vectors/container-agent.json" rel="noopener"><code>spec/vectors/container-agent.json</code></a>，完整的类型声明见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/sdk/types/agent.d.ts" rel="noopener"><code>sdk/types/agent.d.ts</code></a>。</p>
+<h2 id="任务线程"><a class="anchor" href="#任务线程" aria-hidden="true">#</a>任务线程</h2>
+<p>一件任务就是一串消息，每条形如 <code>{ &quot;v&quot;: 0, &quot;kind&quot;: &quot;tape.agent/&lt;类型&gt;&quot;, ... }</code>，按收到的顺序排列：</p>
+<div class="code"><pre data-lang="text"><code>委托方（持有人签名）                                  代理（清单签名者签名）
+
+1. offer        报价 TaskOffer + 任务原文   -------&gt;
+                                            &lt;-------  2. accept    offerHash，为这一单新生成的 agentKey
+3. mandate      授权书 Mandate，写明该 agentKey ----&gt;
+                                                         代理只调用授权范围内的服务
+                                            &lt;-------  4. deliver   deliverableHash，只含哈希的回执
+5. acceptance   验收 TaskVerdict：1 通过，2 拒收 ---&gt;
+6. revocation   撤销 MandateRevocation，随时可发（或放在委托方站点上的撤销清单里）</code></pre></div>
+<p>状态依次是 <code>Offered</code>、<code>Accepted</code>、<code>Active</code>、<code>Delivered</code>、<code>Settled</code>，另有三个出口：<code>Expired</code>、<code>Rejected</code>、<code>Cancelled</code>。动手之前值得先知道几条规则：</p>
+<ul><li>任务原文必须能算出 <code>offer.taskHash</code>（规范 JSON 再取 keccak256，即 <code>taskHashOf(task)</code>）。</li><li>授权书里的委托方、任务、mode、nonce 必须与报价一致（<code>mandate.nonce</code> 等于 <code>offer.nonce</code>，所以一张授权书不能用在两个线程里），<code>agentKey</code> 必须是代理在 accept 里公布的那一把。</li><li><code>notBefore</code> 与 <code>expires</code> 最多相隔 30 天。</li><li>报价里的 <code>fee</code> 只是一句报价，不授权任何付款；它不为零时，SDK 会给控制台一条提示，把这一点说清楚。</li><li>晚于报价 <code>deadline</code> 的交付照样记录，但会报 <code>deliver-after-deadline</code>。被拒收后，代理可以在授权书有效期内重新交付。没有仲裁：交付过了自身的 <code>exp</code> 还没等到验收，状态仍是 <code>Delivered</code>，并标上 <code>unaccepted: true</code>。</li><li>付款不是一个状态。它是链上的事实，单独核验。</li><li><code>quote</code>、<code>progress</code>、<code>reject</code>、<code>cancel</code>、<code>dispute</code> 是 Idea #41 里出现的名字，这一版没有实现：线程里出现其中任何一个，都会被拒（<code>kind-not-implemented</code>）。</li></ul>
+<p>消息怎么送达，由双方自己决定。下面的示例里，代理的每条消息都是它某个方法（<code>task_offer</code>、<code>task_mandate</code>、 <code>task_deliver</code>、<code>task_status</code>）的签名回答。</p>
+<h2 id="三分钟跑起来"><a class="anchor" href="#三分钟跑起来" aria-hidden="true">#</a>三分钟跑起来</h2>
+<p><a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/agent-service" rel="noopener"><code>examples/agent-service/</code></a> 里的示例能离线跑完一整单：委托方容器、代理容器和两个服务容器都在 SDK 的假链上，全在一个进程里。不联网、不花钱、不用钱包。在一份干净的仓库里（先 <code>npm install</code> 一次）：</p>
+<div class="code"><pre data-lang="bash"><code>node examples/agent-service/hire.mjs                 # 报价、接单、授权书、交付、核验线程、验收
+node examples/agent-service/hire.mjs --same-holder   # 同一单，但两个容器属于同一个持有人
+node examples/agent-service/hire.mjs --pay           # 另外把付款构造成未签名交易</code></pre></div>
+<p>第一条命令一次运行的节选（完整输出还会逐字段打印要交给钱包签名的三份载荷；本页节选里 32 字节的哈希都用 <code>…</code> 省略了中间部分）：</p>
+<div class="code"><pre data-lang="text"><code>2. accept: agentKey 0x777C98D739d42C482B9F96E1F1B251f8bD95473F (made for this order), valid until 1791003600
+3. mandate: what a wallet would be asked to sign (a statement, not a gate: enforcement none)
+   typed data Mandate (domain TapeAPI 1, chain 56, hub 0x1010101010101010101010101010101010101010)
+     ...
+     scope: [{&quot;provider&quot;:&quot;0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e&quot;,&quot;token&quot;:&quot;0x0000000000000000000000000000000000000000&quot;,&quot;cap&quot;:&quot;0&quot;}]
+     feeToken: 0x0000000000000000000000000000000000000000
+     feeCap: 0
+     ...
+   console notice (not sent to the wallet): phase 0: this mandate authorises no amount and no asset; it is only a verifiable record that you asked this agent to act for your container on this task
+   the agent verified the mandate and started: state working
+4. delivery: 1 upstream receipt(s), deliverable hash matches; deliverable (data): {&quot;kind&quot;:&quot;chain.block-height&quot;,&quot;chain&quot;:&quot;bsc&quot;,&quot;blockNumber&quot;:62000000,...}
+5. thread: state Delivered  ok true  enforcement none  selfHire false
+   ...
+   thread: state Settled  ok true  enforcement none  selfHire false
+     verdict accepted (verdictHash 0xafdd669c…7d7521)</code></pre></div>
+<p>线程最后到达 <code>Settled</code> 时，脚本以 0 退出。里面的一切都是假链的夹具：hub <code>0x1010…</code> 和这些容器在别处都不存在（真实的 hub 地址见<a href="./#链上地址">简介</a>），假链也有自己固定的时钟。<code>agentKey</code> 每一单都重新生成，所以它以及依赖它的哈希每次运行都不一样。</p>
+<p>加上 <code>--same-holder</code>，线程照样通过核验，但核验结果会说明背后是谁：</p>
+<div class="code"><pre data-lang="text"><code>5. thread: state Delivered  ok true  enforcement none  selfHire true (same-holder)</code></pre></div>
+<p>自己雇自己会被标出来，既不隐藏也不拒绝：协议没有办法阻止这件事。信誉类规则应当把这样的线程排除在外。</p>
+<p><code>hire.mjs</code> 签名用的是假链的测试夹具。不要把它们用到真链上，也不要把真实钱包的私钥放进这个示例：真实的委托方在钱包里签同样的载荷，做法见下一节。</p>
+<h2 id="在你自己的代码里"><a class="anchor" href="#在你自己的代码里" aria-hidden="true">#</a>在你自己的代码里</h2>
+<p>按<a href="consume">调用服务</a>里的方法安装 SDK；代理相关的函数都从子路径 <code>@tapeapi/sdk/agent</code> 引入。每项核验都要读链，所以客户端至少要配置两家独立运营方的节点（决定性的读取在严格共识下进行）；只有一个节点的客户端会被拒绝。</p>
+<h3 id="签一份授权书"><a class="anchor" href="#签一份授权书" aria-hidden="true">#</a>签一份授权书</h3>
+<p>持有人在钱包里签名。你的控制台负责构造载荷、显示钱包显示不了的内容，交给钱包的只有载荷本身：</p>
+<div class="code"><pre data-lang="js"><code>import { createTapeAPI } from '@tapeapi/sdk'
+import { createAgentKit, MODE_PAY, taskHashOf, mandateTypedData, forWallet } from '@tapeapi/sdk/agent'
+
+const api = createTapeAPI({
+  rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io', 'https://rpc-bsc.48.club'],
+  quorum: 2,
+})
+const kit = createAgentKit(api)
+const { chainId, hub } = kit                         // 本控制台自己配置的链与 hub
+
+const ZERO = '0x0000000000000000000000000000000000000000'
+const PRINCIPAL = '0x000000000000000000000000000000000000a001'   // 你的容器
+const AGENT = '0x000000000000000000000000000000000000a002'       // 代理的容器
+const AGENT_KEY = '0x000000000000000000000000000000000000a003'   // 代理 accept 里公布的 agentKey
+const PROVIDER = '0x000000000000000000000000000000000000a004'    // 允许代理调用的服务
+
+const now = Math.floor(Date.now() / 1000)
+const task = { kind: 'chain.block-height', chain: 'bsc', spec: 'Read the BNB Smart Chain block height' }
+const mandate = {
+  principal: PRINCIPAL, agent: AGENT, agentKey: AGENT_KEY, mode: MODE_PAY, taskHash: taskHashOf(task),
+  scope: [{ provider: PROVIDER, token: ZERO, cap: '0' }],   // 阶段 0：代币为零地址，上限为 0
+  feeToken: ZERO, feeCap: '0',
+  notBefore: now - 60, expires: now + 86_400,               // 最多相隔 30 天
+  nonce: '1',                                               // 与报价的 nonce 相同
+  subdelegate: false,
+}
+const td = mandateTypedData(chainId, hub, mandate, { task })
+const { payload, warnings, display } = forWallet(td, { chainId, hub })
+console.log(Object.keys(payload))   // [ 'domain', 'types', 'primaryType', 'message' ]
+console.log(warnings[0])            // phase 0: this mandate authorises no amount and no asset; ...
+// 在持有人的浏览器钱包里：
+// const sig = await ethereum.request({ method: 'eth_signTypedData_v4', params: [holderAddress, JSON.stringify(payload)] })</code></pre></div>
+<p>把这四个地址换成真实的。<code>display</code> 里是任务原文（已对照 <code>taskHash</code> 核过）和用文字写出的两个日期：请把它们显示在钱包弹窗旁边，因为钱包里的 <code>taskHash</code> 只是一串 32 字节。</p>
+<p><strong>为什么 <code>forWallet</code> 必须传 <code>{ chainId, hub }</code>。</strong> <code>forWallet</code> 会用 SDK 重新构造一遍载荷，凡是与 SDK 构造结果不同的（多了一个类型字段、domain 形状被改过）一律拒绝；它还会去掉 <code>warnings</code> 和 <code>display</code>，这两项只给控制台看，既不进哈希也不进签名。但它只能按传进来的 domain 去重建：单靠它自己，看不出载荷被换成了另一条链或另一个 hub，而签名一旦签下，就能拿到那里重放。所以控制台要传入自己配置的链和 hub，绝不能从载荷里读；缺了或对不上都会被拒绝：</p>
+<div class="code"><pre data-lang="text"><code>forWallet(td)                       -&gt; AGENT_INVALID: forWallet: the holder's console must pass the chainId and hub it expects: forWallet(td, { chainId, hub })
+forWallet(td, { chainId: 97, hub }) -&gt; AGENT_INVALID: forWallet: the payload is for chain 56, the console expects 97</code></pre></div>
+<p>写了金额的授权书走不到这一步：</p>
+<div class="code"><pre data-lang="text"><code>mandateTypedData(chainId, hub, { ...mandate, feeCap: '1000' })
+  -&gt; AGENT_INVALID (data.reason 'phase0-no-funds'): mandateTypedData: phase 0 has no enforcement: every scope cap and feeCap must be 0 ...</code></pre></div>
+<p>这道闸防的是失误，防不了恶意的控制台：摘要总是算得出来，不经过这个 SDK 也能签。持有人真正的防线是钱包里显示的字段： <code>feeToken</code> 与每个 <code>token</code> 都是零地址，每个 <code>cap</code> 与 <code>feeCap</code> 都是 <code>0</code>，<code>subdelegate</code> 是 <code>false</code>。</p>
+<p><code>taskOfferTypedData</code>、<code>taskVerdictTypedData</code>、<code>mandateRevocationTypedData</code> 用法相同，同样要经过 <code>forWallet</code>。</p>
+<h3 id="核验一条任务线程"><a class="anchor" href="#核验一条任务线程" aria-hidden="true">#</a>核验一条任务线程</h3>
+<p>双方中的任何一方，或者任何拿到这些消息的人，都可以核验一条线程：</p>
+<div class="code"><pre data-lang="js"><code>import { createAgentKit, plainText } from '@tapeapi/sdk/agent'
+
+const kit = createAgentKit(api, { nonces: new Map() })
+const check = await kit.verifyTaskThread(messages)   // 按收到的顺序排列的消息
+console.log(check.state, check.ok, check.enforcement, check.selfHire, check.selfHireReasons)
+for (const p of check.problems) console.log(p.code, plainText(p.message))</code></pre></div>
+<p>对 <code>hire.mjs</code> 产生的线程，它打印 <code>Settled true none false []</code>。把任务原文改掉一个词，它打印 <code>null false none false []</code>，后面跟着一串问题，第一条是 <code>task-hash-mismatch messages[0]: the task text does not hash to offer.taskHash</code>。（在示例的假链上，kit 还要拿到这个世界固定的时钟：<code>createAgentKit(api, { clock })</code>。）</p>
+<p>结果里还有双方的身份（<code>principal</code>、<code>agent</code>：容器地址、链上给它的名字或 <code>null</code>、持有人）、每次交付及其证据核验、验收和撤销情况。代理清单里写的名字只会出现在 <code>agent.displayName</code> 里，并标着 <code>untrusted: true</code>。对方写的任何文字，都请用 <code>plainText</code> 显示，它会去掉不可见字符和控制字符。</p>
+<p>kit 能不能察觉跨时间的问题，取决于两个存储。<code>nonces</code>（一个 <code>Map</code>，或者一个 <code>setIfAbsent(key, value)</code> 一步完成并返回先前值的存储）用来发现 nonce 重用：只有保存它的一方才看得到。<code>revocationFloor</code>（<code>{ get, set }</code>）记住每个委托方见过的最新撤销清单。两者默认都只在内存里；长期运行的服务应当把它们放进进程重启后仍在的存储。</p>
+<p>代理在开工前自己核验授权书，传入它公布的那把钥匙和它自己的容器：</p>
+<div class="code"><pre data-lang="js"><code>const v = await kit.verifyMandate(mandateMessage, { agentKey, agent: myContainer })
+if (!v.ok) throw new Error(v.problems.map((p) =&gt; p.code).join(', '))</code></pre></div>
+<h3 id="核验一笔付款"><a class="anchor" href="#核验一笔付款" aria-hidden="true">#</a>核验一笔付款</h3>
+<p>收款方永远从链上读，绝不从任何文字里取：</p>
+<div class="code"><pre data-lang="js"><code>import { createPaymentKit } from '@tapeapi/sdk/agent'
+
+const pay = createPaymentKit(api)
+const { circuits, tokenId } = await kit.identityOf(agentContainer)   // 从链上读出
+const tx = await pay.transferToContainer({ circuits, tokenId, token, amount: '1000000000000000000' })
+for (const line of tx.summary) console.log(line)   // 每个字段都写成文字：拿去和钱包逐项对照
+// 钱包签名并发送 { to: tx.to, data: tx.data, value: tx.value }</code></pre></div>
+<p>在示例的假链上，摘要是这样的：</p>
+<div class="code"><pre data-lang="text"><code>to: 0xB0B0b0B0B0B0B0b0B0B0B0b0b0b0b0B0b0b0B0B0
+value: 0 (smallest unit of the native coin)
+call: transfer(to = 0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6, amount = 1000000000000000000 (smallest unit, 18 decimals) = 1 tokens) on token 0xB0B0b0B0B0B0B0b0B0B0B0b0b0b0b0B0b0b0B0B0
+recipient container: 0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6, circuit 0x5050505050505050505050505050505050505050 #12, held by 0x7564105E977516C53bE337314c7E53838967bDaC</code></pre></div>
+<p>背后的规则：</p>
+<ul><li>收款方用 <code>{ circuits, tokenId }</code> 或链上名字（<code>{ name: '&lt;#ID&gt;.&lt;处理器&gt;.tape' }</code>）指定，再经工厂与 hub 推导出容器地址。直接传入的地址（<code>to</code>、<code>container</code>、<code>recipient</code>、<code>address</code>）一律拒绝，报 <code>recipient-not-from-chain</code>；没人持有的 #ID 也拒绝（<code>no-such-token</code>）：hub 对任何 #ID 都能推导出地址，转给未铸造的 #ID 的钱，谁也取不出来。</li><li>只构造 <code>transfer</code>，从不构造 <code>approve</code>。<code>decimals()</code> 从链上读。<code>nativeToContainer</code> 转原生币，而且只允许从持有人钱包直接转到容器。</li><li><code>viaContainer({ from, tx })</code> 把 ERC-20 转账包进付款方容器的 <code>execute</code>，只接受 <code>transferToContainer</code> 原样返回、没被改过的那个对象。</li><li>转账之后，给代理发一条 TapeSend 消息，把这笔转账作为资产附件带上（<code>encodeContent</code>），而且要第一个发：只有在这之间你没有别的消息到达这个收件人、并且消息在 3,600 秒内跟上，这笔付款才算数。<code>paymentOrder()</code> 在你的客户端里盯着这件事（记录转账、检查下一条消息带上了它；转账被回滚、取消或加速时用 <code>dropTransfer</code> 或 <code>replaceTransfer</code>）。</li></ul>
+<p>收款方从链上核验：</p>
+<div class="code"><pre data-lang="js"><code>const msg = await pay.readMessage({ recipient: agentContainer, inboxIndex })
+for (const r of await pay.verifyAttachments(msg)) console.log(r.attachment.type, r.attachment.amount, r.result)
+// erc20 1000000000000000000 ok</code></pre></div>
+<p>只有 <code>ok</code> 能证明：发件人的钱包为这条消息，把这个数额付给了这个容器。其余结果来自 TAP-10 §19 的十五步：<code>pending</code>（还没终局）、<code>mismatch</code>（没有这笔转账、转账回滚了，或者数额、收款方对不上）、<code>unavailable</code>（链暂时答不上来）、 <code>unverifiable</code>（原生币转账没有直接转到容器）、<code>late</code>（转账晚于消息）、<code>indirect</code>（消息是经合约写入的）、 <code>third-party</code>（是别人付的钱）、<code>stale</code>（转账与消息相隔超过 3,600 秒）、<code>crowded</code>（中间隔了 60 条以上消息）、 <code>not-first</code>（这期间发件人给这个收件人发过别的消息）、<code>other-chain</code>，以及 <code>repeat</code>（同一笔交易附了两次）。SDK 不内置已知代币名单：用 <code>createPaymentKit(api, { tokenAllowed })</code> 标出你自己认的代币，否则所有代币都按中性显示。</p>
+<h2 id="命令行"><a class="anchor" href="#命令行" aria-hidden="true">#</a>命令行</h2>
+<p>SDK 自带的命令行工具 <code>tapeapi-verify</code> 可以核验一条存成 JSON 数组的线程：</p>
+<div class="code"><pre data-lang="bash"><code>tapeapi-verify task thread.json
+tapeapi-verify task thread.json --payment &lt;代理容器&gt; &lt;收件箱序号&gt;
+tapeapi-verify task thread.json --rpc https://node-a.example,https://node-b.example</code></pre></div>
+<p>不想安装，可以用 <code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.0/tapeapi-sdk-1.7.0.tgz tapeapi-verify task thread.json</code>；在仓库里则是 <code>node sdk/bin/tapeapi-verify.js task thread.json</code>。</p>
+<ul><li><code>--payment &lt;收款容器&gt; &lt;序号&gt;</code> 另外核验该收件箱里那个序号的 TapeSend 消息。收款容器必须是线程里的代理，发件方必须是线程里的委托方。只支持公开（未加密）的消息。</li><li><code>--rpc</code> 接一个逗号分隔的节点列表，至少来自两家运营方。默认是三家不同运营方的公共节点。</li><li>退出码：<code>0</code> 线程通过（带 <code>--payment</code> 时付款也通过），<code>1</code> 未通过或读不了链，<code>2</code> 用法错误。</li><li>每次运行的 nonce 存储和撤销下限都是空的，所以单次核验看不出 nonce 重用，也看不出有人放回了一份旧的撤销清单。</li></ul>
+<p>下面是示例线程的报告，由同一段命令代码对着示例的离线假链运行得出：</p>
+<div class="code"><pre data-lang="text"><code>tapeapi-verify task: 5 message(s), chain 56   EXPERIMENTAL
+state:       Settled
+result:      ok
+enforcement: none (phase 0: a mandate is a signed statement; nothing enforces it)
+self-hire:   no
+principal:   0x86DDaEF00401E3F10418398D67D7189fc458eA95  name (none on the chain's processor table)  holder 0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A
+agent:       0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6  name (none on the chain's processor table)  signer 0x1563915e194D8CfBA1943570603F7606A3115508
+             manifest name (untrusted: the agent wrote it, it is not an identity): &quot;Report agent&quot;
+...
+verdict:     accepted at 1791000000 (verdictHash 0x69bb45f4…df05c3)
+revoked:     no
+problems:    none
+payment:     message 0 in the inbox of 0xa6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6: ok
+  erc20 0xb0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0 1000000000000000000 in 0xaaaaaaaa…aaaaa1: ok
+  the message body names the thread's verdictHash (information only)</code></pre></div>
+<h2 id="核验能证明什么不能证明什么"><a class="anchor" href="#核验能证明什么不能证明什么" aria-hidden="true">#</a>核验能证明什么，不能证明什么</h2>
+<p>一条通过核验的线程能证明：</p>
+<ul><li><strong>谁签了什么。</strong> 报价、授权书、验收以及撤销，都是委托方容器电路的当前持有人签的；accept 和交付，是代理容器当前清单公布的签名者签的。</li><li><strong>各部分是一回事。</strong> 任务原文对得上报价，授权书对得上报价和代理公布的钥匙，交付指向这张授权书，验收指向这次交付。</li><li><strong>代理的上游调用是谁回答的。</strong> 交付里的每张回执，都由所列容器此刻公布的签名者签名，该容器在授权范围内，回执自称的时间落在授权书的有效期内。回执只含哈希，委托方的请求内容不会公开。</li><li><strong>钱到了代理的容器</strong>（<code>verifyAttachments</code> 说 <code>ok</code> 时）：发件人的钱包把这个数额的这种代币付给了这个容器，携带它的消息是第一条，而且在一小时之内。</li></ul>
+<p>它不能证明：</p>
+<ul><li><strong>活儿干对了。</strong> 不能证明那些调用是必要的、回答是对的、交付物正确或完整。每个证据核验结果都在 <code>proves</code> 与 <code>doesNotProve</code> 里原样写着这几句。任务哈希绑定的是任务原文，不是结果。</li><li><strong>代理守了授权书。</strong> 没有任何东西能阻止代理调用别的服务，或者用它通过别的途径够得着的钱。阶段 0 里，它调用的服务根本看不到授权书。</li><li><strong>双方是不同的人。</strong> <code>selfHire</code> 会标出自雇（<code>same-container</code>、<code>same-holder</code>、<code>agent-signer-is-principal-holder</code>、 <code>agent-key-is-principal-holder</code>），但不会拦下。</li><li><strong>付款与这单任务的关系。</strong> 阶段 0 的付款与授权书无关：付款前，持有人看到的只是一笔普通转账。</li></ul>
+<h2 id="怎么撤销"><a class="anchor" href="#怎么撤销" aria-hidden="true">#</a>怎么撤销</h2>
+<p>有两条路，核验方两条都会看：</p>
+<ol><li><strong>发一条消息。</strong> 签一份 <code>MandateRevocation</code> 发给代理，或者放进线程里。不花钱，只约束收到它的人。</li><li><strong>在你容器的站点上放一份撤销清单</strong>，路径是 <code>.well-known/tapeapi-mandates.json</code>。任何人核验授权书时都会去读。写入它是持有人钱包发出的一笔站点交易，gas 由持有人付。</li></ol>
+<p>一份撤销最多列 24 个授权书哈希；配合 <code>revokedBefore</code>，还能把该委托方所有 <code>notBefore</code> 更早的授权书一并撤销（填 <code>0</code> 表示不按日期撤销）。一次要撤销超过 24 张，就按日期撤。文件请用 <code>revocationFileBytes</code> 生成：它以紧凑格式写出并做检查。文件必须放得进 4,096 字节，而一份写满的清单如果美化输出就放不下了。</p>
+<div class="code"><pre data-lang="js"><code>import { abi } from '@tapeapi/sdk'
+import { mandateRevocationTypedData, forWallet, revocationFileBytes, MANDATES_KEY } from '@tapeapi/sdk/agent'
+
+const revocation = { principal: PRINCIPAL, mandateHashes: [mandateHash], revokedBefore: 0, issued: Math.floor(Date.now() / 1000) }
+const { payload } = forWallet(mandateRevocationTypedData(chainId, hub, revocation), { chainId, hub })
+const sig = await ethereum.request({ method: 'eth_signTypedData_v4', params: [holderAddress, JSON.stringify(payload)] })
+const bytes = revocationFileBytes({ chainId, revocation, sig })
+const sha256 = '0x' + Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (b) =&gt; b.toString(16).padStart(2, '0')).join('')
+const putFile = {                                    // 交给持有人的钱包发送
+  to: api.addresses.siteRegistry, value: '0x0',
+  data: abi.encodeCall('putFile', [PRINCIPAL, MANDATES_KEY, 'application/json', sha256, abi.toHex(bytes)]),
+}</code></pre></div>
+<p>清单上了站点之后，<code>kit.readRevocations(PRINCIPAL)</code> 返回 <code>status: 'published'</code>，核验那张授权书会报 <code>mandate-revoked: revoked by the principal's holder at &lt;issued&gt; (site)</code>。</p>
+<p>清单是这样读的：</p>
+<ul><li>读法和清单文件一样：字节必须与链上声明的长度和 SHA-256 一致，当前持有人的签名必须成立。<code>issued</code> 最多只能比核验方的时钟超前 300 秒。</li><li>核验方会记住见过的最高 <code>issued</code>。如果拿到更旧的清单（有人把被替换掉的旧清单放了回去），或者见过清单之后它又不见了，该委托方名下所有授权书都会变成 <code>revocation-unavailable</code>：失败时关闭，而不是当作&quot;没撤销&quot;。从没发布过清单的委托方是 <code>none-published</code>，这不算错误。</li><li>想清空清单，就发布一份 <code>issued</code> 更高的空清单。不要删除文件。</li><li>在授权书之前到达的撤销（线程还在 <code>Offered</code> 或 <code>Accepted</code>）没有授权书哈希可列，所以只能按日期生效（<code>revokedBefore</code> 大于 0）。</li></ul>
+<h2 id="问题码与错误码"><a class="anchor" href="#问题码与错误码" aria-hidden="true">#</a>问题码与错误码</h2>
+<p>核验把问题写进 <code>problems[].code</code>；只有调用写错、或者读链失败时才会抛出异常。对方造成的失败是一条问题，绝不是异常；节点出故障是异常，绝不会变成结论。</p>
+<div class="table"><table><thead><tr><th>问题码</th><th>出现在</th><th>含义</th></tr></thead><tbody><tr><td><code>phase0-no-funds</code>、<code>subdelegate-not-allowed</code></td><td>授权书</td><td>有上限、报酬上限或代币不为零，或者开了转委托。</td></tr><tr><td><code>mandate-too-long</code></td><td>授权书</td><td><code>expires</code> 比 <code>notBefore</code> 晚了 30 天以上。</td></tr><tr><td><code>mandate-not-yet</code>、<code>mandate-expired</code></td><td>授权书</td><td>核验那一刻不在有效期内。在线程里改为按交付时间检查。</td></tr><tr><td><code>agent-key-mismatch</code>、<code>agent-mismatch</code></td><td>授权书</td><td>写的钥匙不是代理公布的那一把，或者写的是别的代理。</td></tr><tr><td><code>not-signed-by-holder</code></td><td>持有人消息</td><td>不是委托方电路的当前持有人签的。</td></tr><tr><td><code>nonce-reused</code></td><td>授权书</td><td>本 kit 的 nonce 存储里，同一条链、同一委托方、同一 nonce 已经对应了另一张授权书。</td></tr><tr><td><code>mandate-revoked</code>、<code>revocation-unavailable</code></td><td>授权书</td><td>已撤销；或者委托方的撤销清单靠不住。</td></tr><tr><td><code>not-a-container</code>、<code>wrong-chain</code>、<code>not-tapeout</code>、<code>no-such-token</code></td><td>身份</td><td>该地址不是本链上 #ID 存在的 TapeOut 容器。</td></tr><tr><td><code>mandate-mismatch</code></td><td>线程</td><td>授权书的委托方、任务、mode 或 nonce 与报价不同，或者交付指向了别的授权书。</td></tr><tr><td><code>task-hash-mismatch</code>、<code>offer-mismatch</code>、<code>offer-expired</code></td><td>线程</td><td>任务原文不对、accept 指向的报价不对，或者在报价的 <code>exp</code> 之后才接单。</td></tr><tr><td><code>out-of-order</code>、<code>message-malformed</code>、<code>kind-unknown</code>、<code>kind-not-implemented</code>、<code>thread-empty</code></td><td>线程</td><td>消息位置不对、形状不对，或者是这一版没有实现的类型。</td></tr><tr><td><code>not-signed-by-agent</code>、<code>agent-unresolvable</code></td><td>线程</td><td>代理消息不是它公布的签名者签的，或者代理解析不出来。</td></tr><tr><td><code>deliver-after-deadline</code>、<code>deliver-outside-mandate</code>、<code>deliver-before-accept</code>、<code>message-after-revocation</code></td><td>线程</td><td>交付或代理消息的时间不对。第一条只报告，交付照样记录。</td></tr><tr><td><code>verdict-mismatch</code>、<code>verdict-before-delivery</code>、<code>revocation-mismatch</code></td><td>线程</td><td>验收指向的是别的交付或早于交付，或者撤销没有覆盖这个线程。</td></tr><tr><td><code>receipt-not-hash-only</code>、<code>receipt-repeated</code>、<code>receipt-provider-out-of-scope</code>、<code>receipt-outside-mandate</code>、<code>receipt-invalid</code>、<code>receipts-hash-mismatch</code>、<code>provider-unresolvable</code>、<code>evidence-malformed</code></td><td>证据</td><td>回执不是只含哈希的形态、重复、来自授权范围外的服务、不在有效期内、签名不对，或者整包与其哈希对不上。</td></tr></tbody></table></div>
+<p>抛出的错误（<code>TapeAPIError</code>，细节在 <code>data</code> 里）：</p>
+<div class="table"><table><thead><tr><th>错误码</th><th>什么时候</th></tr></thead><tbody><tr><td><code>AGENT_INVALID</code></td><td><code>mandateTypedData</code> 或 <code>signMandate</code> 拒绝写了金额、资产或转委托的授权书（<code>data.reason</code> 为 <code>phase0-no-funds</code> 或 <code>subdelegate-not-allowed</code>）；<code>forWallet</code> 拒绝载荷；任务原文与哈希对不上；字段形状不对；交给 <code>identityOf</code> 的地址不是容器（<code>data.reason</code> 为对应的问题码）。</td></tr><tr><td><code>INVALID_ARGUMENT</code></td><td>核验需要至少两家运营方的节点而客户端不够，或者没有 <code>rpcUrls</code>；<code>nonces</code> 既不是 <code>Map</code> 也不是 <code>setIfAbsent</code> 存储；付款构造被拒（<code>data.reason</code> 为 <code>recipient-not-from-chain</code>、<code>no-such-token</code>、<code>not-tapeout</code>、<code>only-transfer</code>、<code>native-via-container-unverifiable</code>）；<code>revocationFileBytes</code> 收到超过 4,096 字节的清单或形状不对的签名。</td></tr><tr><td><code>NOT_FOUND</code></td><td><code>readMessage</code> 收到一个不存在的收件箱序号。</td></tr></tbody></table></div>
+<h2 id="限制"><a class="anchor" href="#限制" aria-hidden="true">#</a>限制</h2>
+<ul><li><strong>没有强制执行。</strong> 授权书拦不住代理或上游服务做任何事。它是一份可核验的委托记录，不是门禁。</li><li><strong>核验看的是当前持有人。</strong> 电路转手之后，前任持有人签过的消息都不再通过，旧线程也一样；TAP-11 的委托同理。上游服务换了签名者之后，它以前的回执也会核验失败。</li><li><strong>撤销只约束读到它的人。</strong> 消息只约束收件人；站点清单要花一笔交易。</li><li><strong>站点清单也会改变旧线程的读法。</strong> 清单是在核验授权书时套用的，所以一条已经交付并验收的线程，在持有人把它的授权书列进清单之后再核验，会显示 <code>Cancelled</code> 并报 <code>mandate-revoked</code>。放在线程里的撤销消息则不影响更早的交付和验收。 <code>verifyTaskThread(messages, { readSite: false })</code> 可以不读清单地核验一条过去的线程（当然也就看不到清单）。</li><li><strong>nonce 重用只有保存 nonce 存储的一方看得到</strong>，而且前提是委托方每份报价都用新的 nonce。</li><li><strong>没有仲裁。</strong> 委托方可以拒收，也可以一直不回应；代理只能保留证据（<code>unaccepted</code>）。</li><li><strong>自雇只能标出，不能阻止。</strong></li><li><strong>钱包里看不到任务原文。</strong> 钱包显示授权书的十二个字段和授权范围，<code>taskHash</code> 只是 32 字节。支持 <code>eth_signTypedData_v4</code> 的钱包会逐字段显示；具体钱包怎么呈现，没有实测过。签惯了金额永远为零的授权书，人容易养成直接点确认的习惯；控制台提示和零地址代币就是为此而设。</li><li><strong>验收和撤销不会过期。</strong> 它们只带 <code>issued</code>，用于排序。</li><li><strong>付款核验需要老区块的数据。</strong> 它要读转账所在区块的回执；如果公共节点将来不再提供老回执，事隔很久的核验就会是 <code>unavailable</code>。</li><li><strong>我们对 TAP-10 §19 第 14 步的解读。</strong> 如果在转账之后、本条消息之前，有一条给同一收件人的早先消息本身是经合约写入的（<code>indirect</code>），核验会跳过它：它的发件容器已经比对过，而它没有发件钱包可比。我们把这一步里&quot;无法判定钱包&quot;理解为 TAP-10 §18.5 第 1 步失败，§18.5 与 §19 都把这种情况和 <code>indirect</code> 分开。这是我们对 TAP-10 的解读，已提请编辑确认。留下的口子是：付款方如果先经合约给同一收件人发过别的消息，能抓到的是它的容器，而不是它的钱包。</li></ul>
+<h2 id="接下来"><a class="anchor" href="#接下来" aria-hidden="true">#</a>接下来</h2>
+<p>阶段 0 之后的东西都还没有做。Idea <a href="https://github.com/TapeOutProtocol/TAPs/issues/40" rel="noopener">#40</a> 设想了另外两个阶段：</p>
+<ul><li><strong>阶段 1：支付通道。</strong> 委托方为每个服务开一条通道并充值，把代理的钥匙授权为这条通道的会话钥匙，于是通道余额就是上限，会话到期时间就是时限。它建立在 Idea #38 的付款凭证设计（TapeAPI 实验性的 TAPI-22）之上，而那份托管合约尚未部署，也没有经过第三方审计。#40 也直说了：即便到那时，会话钥匙也撤销不了，只能等它过期。</li><li><strong>阶段 2：花费金库。</strong> 一份新的、不可升级的合约，存放押金，让代理的钥匙在单次与总额上限内调用白名单里的目标，并且可以立即撤销。部署之前需要新合约和独立审计。</li></ul>
+<p>授权书里已经留好了这些阶段要用的字段（<code>scope[].token</code>、<code>scope[].cap</code>、<code>feeToken</code>、<code>feeCap</code>、<code>subdelegate</code>），这样以后的阶段不必更改类型、让已签的授权书作废。阶段 0 里它们必须保持为零；SDK 对写了金额的授权书给出的控制台警告也说明了原因：以后的阶段可能把它当作花费授权。格式仍可能随 #40 与 #41 的讨论而变化。</p>
+</article>
+<nav class="pn"><a class="prev" href="agents"><span>上一篇</span>AI 智能体</a><a class="next" href="faq"><span>下一篇</span>常见问题与排障</a></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/container-agents.md" rel="noopener">在 GitHub 上编辑此页</a></p>
+</main>
+<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#它是什么不是什么">它是什么，不是什么</a></li><li class="l2"><a href="#谁签什么">谁签什么</a></li><li class="l2"><a href="#任务线程">任务线程</a></li><li class="l2"><a href="#三分钟跑起来">三分钟跑起来</a></li><li class="l2"><a href="#在你自己的代码里">在你自己的代码里</a></li><li class="l3"><a href="#签一份授权书">签一份授权书</a></li><li class="l3"><a href="#核验一条任务线程">核验一条任务线程</a></li><li class="l3"><a href="#核验一笔付款">核验一笔付款</a></li><li class="l2"><a href="#命令行">命令行</a></li><li class="l2"><a href="#核验能证明什么不能证明什么">核验能证明什么，不能证明什么</a></li><li class="l2"><a href="#怎么撤销">怎么撤销</a></li><li class="l2"><a href="#问题码与错误码">问题码与错误码</a></li><li class="l2"><a href="#限制">限制</a></li><li class="l2"><a href="#接下来">接下来</a></li></ul></aside>
+</div>
+</body>
+</html>

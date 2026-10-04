@@ -50,11 +50,12 @@ naming rules.
 | `@tapeapi/sdk/bus-privacy` | `busPrivacyReader`: ChannelBus reads that hide your rooms among cover rooms (`@experimental`) |
 | `@tapeapi/sdk/ai` | AI usage receipts: `createVerifyingFetch` (a `fetch` for the official OpenAI and Anthropic SDKs that checks every answer's receipt), `verifyUsageReceipt`, the format adapters |
 | `@tapeapi/sdk/mcp` | the MCP server core behind `tapeapi-mcp` and `@tapeapi/server/mcp`: tools with signed results and receipts |
+| `@tapeapi/sdk/agent` (`@experimental`, 1.7) | container agents, phase 0: holder-signed mandates and task messages (`createAgentKit`, `createPaymentKit`, `forWallet`, `revocationFileBytes`); outside the 1.x compatibility promise ([guide](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/container-agents.md)) |
 | `@tapeapi/sdk/chains` | `CHAINS` (BNB Smart Chain, X Layer, Base: factory, opener, DeWebHub, SiteRegistry, area code), `parseTapeName`, `formatTapeName` |
 | `@tapeapi/sdk/rpc`, `/abi`, `/sig`, `/canon`, `/manifest` | the building blocks |
 
 **Stability (1.0).** Every export is Stable (no breaking change within 1.x) unless its type declaration says
-`@experimental` (payments, the ServiceDirectory and the `bus-privacy` reader: `api.payer`, `api.acceptPrice`, the payment `api.tx` builders,
+`@experimental` (the whole `agent` subpath, payments, the ServiceDirectory and the `bus-privacy` reader: `api.payer`, `api.acceptPrice`, the payment `api.tx` builders,
 `api.chain.escrow`, ...) or `@internal`. Upgrading from 0.x: [docs/guides/upgrade-1.0.md](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/upgrade-1.0.md).
 
 ## Local MCP server: `tapeapi-mcp`
@@ -95,6 +96,8 @@ For AI clients that cannot read usage receipts themselves (Claude Code, Codex, a
 forwards every request to a TapeAPI AI service resolved on chain and checks the signed receipt of every answer.
 
 It keeps running in the foreground; start the client in a second terminal.
+
+Since 1.7 it also has a one-shot subcommand, `tapeapi-verify task <thread.json> [--payment <recipient> <index>] [--rpc <url,url,...>]`, that checks a container-agent task thread (and its payment) and exits; see the [container agents guide](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/container-agents.md).
 
 ```bash
 # Terminal 1. 42.1013.tape is an example name: put your AI provider's TapeOut name here

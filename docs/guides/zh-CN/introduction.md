@@ -32,6 +32,7 @@ DeWEB 是网站，TapeSend 是消息，TapeAPI 是服务。
 | 把我的代码或现有 API 变成服务 | [运行服务](provide.md) |
 | 在容器之间发送加密消息 | [私密通道](channels.md) |
 | 让 AI 代理安全地使用服务 | [AI 代理](agents.md) |
+| 让一个容器凭签名授权书替另一个容器办事（实验性） | [容器代理](container-agents.md) |
 | 排查错误 | [常见问题](faq.md) |
 
 ## 状态

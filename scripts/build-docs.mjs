@@ -38,7 +38,7 @@ export const LANGS = {
 }
 export const GROUPS = [
   { en: 'Getting started', zh: '开始', pages: ['index', 'public-api', 'mcp', 'consume', 'provide', 'ai-providers'] },
-  { en: 'Features', zh: '功能', pages: ['channels', 'groups', 'agents'] },
+  { en: 'Features', zh: '功能', pages: ['channels', 'groups', 'agents', 'container-agents'] },
   { en: 'Help', zh: '帮助', pages: ['faq', 'upgrade-1.0', 'changelog'] },
 ]
 const SOURCES = {
@@ -51,6 +51,7 @@ const SOURCES = {
   channels: { en: 'docs/guides/channels.md', zh: 'docs/guides/zh-CN/channels.md' },
   groups: { en: 'docs/guides/groups.md', zh: 'docs/guides/zh-CN/groups.md' },
   agents: { en: 'docs/guides/agents.md', zh: 'docs/guides/zh-CN/agents.md' },
+  'container-agents': { en: 'docs/guides/container-agents.md', zh: 'docs/guides/zh-CN/container-agents.md' },
   faq: { en: 'docs/guides/faq.md', zh: 'docs/guides/zh-CN/faq.md' },
   'upgrade-1.0': { en: 'docs/guides/upgrade-1.0.md', zh: 'docs/guides/zh-CN/upgrade-1.0.md' },
   changelog: { en: 'CHANGELOG.md', zh: 'CHANGELOG.md' },
