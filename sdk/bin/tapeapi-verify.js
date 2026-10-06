@@ -612,7 +612,7 @@ export async function runTask(argv, { api, clock, out = (t) => process.stdout.wr
     if (o.payment) payment = await checkPayment(agent, api, check, o.payment)
   } catch (e) { err(`tapeapi-verify task: cannot check the thread: ${e?.code ? e.code + ': ' : ''}${e?.message ?? e}\n`); return 1 }
   const lines = []
-  const who = (i) => (i ? `${i.container}  name ${i.name ?? '(none on the chain\'s processor table)'}` : 'unknown')
+  const who = (i) => (i ? `${i.container}  name ${i.name}` : 'unknown')
   lines.push(`tapeapi-verify task: ${messages.length} message(s), chain ${api.chainId}   EXPERIMENTAL`)
   lines.push(`state:       ${check.state ?? 'none'}`)
   lines.push(`result:      ${check.ok ? 'ok' : 'NOT ok'}`)

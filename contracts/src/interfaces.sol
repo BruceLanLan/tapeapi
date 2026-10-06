@@ -6,7 +6,7 @@ pragma solidity ^0.8.24;
 
 // ---------- External interfaces / 外部合约最小接口 ----------
 
-/// @dev Minimal ERC-20 (BEM) / 最小 ERC-20 接口
+/// @dev Minimal ERC-20 (the escrow's token; no `decimals()`: the escrow never reads it) / 最小 ERC-20 接口（托管从不读取小数位）
 interface IERC20 {
     function balanceOf(address account) external view returns (uint256);
     function transfer(address to, uint256 amount) external returns (bool);
@@ -73,6 +73,7 @@ error CooldownActive(uint64 availableAt); // withdraw before requestedAt + WITHD
 error WithdrawWindowClosed();     // withdraw after requestedAt + cooldown + window; re-request / 提现窗口已关闭，需重新请求
 error AmountTooLarge();           // requestWithdraw amount > type(uint192).max / 提现金额超出字段宽度
 error BadProvider();              // provider is the zero address or the escrow itself (fund / authorizeSession / settle) / 提供者地址非法
+error BadTreasury();              // treasury is the escrow itself or its token (constructor / setTreasury; zero is ZeroAddress) / 金库地址非法（托管自身或其代币）
 error SessionTooLong(uint64 max); // authorizeSession beyond now + MAX_SESSION / 会话超过最长期限
 error SessionShorteningNotSupported(); // authorizeSession below the current expiry: there is no revoke, keys simply expire / 不支持缩短会话，密钥只会自然过期
 error Reentrancy();
@@ -81,9 +82,13 @@ error ZeroAmount();
 // ---------- Minimal Ownable (two-step) / 极简两步 Ownable ----------
 
 /// @dev Two-step ownership (E-07): `transferOwnership` only nominates `pendingOwner`; the nominee must call
-///      `acceptOwnership`. Used only for label fee / treasury addresses; never for user funds or rates.
-///      两步转移：`transferOwnership` 仅提名 `pendingOwner`，被提名者需调用 `acceptOwnership`。
-///      仅用于标签费与国库地址，不涉及用户资金或任何费率。
+///      `acceptOwnership`. Guards only: ServiceDirectory's label fee and treasury address, and the escrow's treasury
+///      address. In the escrow the treasury role includes contributions accrued but not yet claimed, and a rotation
+///      first tries to pay them to the outgoing treasury (TapeAPIEscrow.setTreasury). Never any channel, user
+///      balance, rate or contribution.
+///      两步转移：`transferOwnership` 仅提名 `pendingOwner`，被提名者需调用 `acceptOwnership`。仅守护：目录的标签费与
+///      金库地址，以及托管的金库地址。托管中"金库"角色包括已记账未领取的贡献，换金库时先尝试把它们付给旧金库
+///      （TapeAPIEscrow.setTreasury）。从不涉及任何通道、用户余额、费率或贡献比例。
 abstract contract Ownable {
     address public owner;
     address public pendingOwner;

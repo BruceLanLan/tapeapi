@@ -211,7 +211,30 @@ export function redactSecret(value, key) {
  * @returns {Promise<{ target: string, mode: 'name'|'container'|'url', ok: boolean, exitCode: number, counts: object, checks: object[], manifest: object|null }>}
  * Every check has `detail` in English and, for what did not pass, `detailZh` in Chinese. / detail 为英文，未通过的另有中文 detailZh。
  */
+// `o.escrows` (@experimental): compare the provider's contribution across escrow instances, read-only. No new check:
+// a difference is a report `warning`, and the exit code is unchanged. / 只读比对，只加 warnings。
 export async function diagnose(input, o = {}) {
+  if (o.escrows != null && (!Array.isArray(o.escrows) || !o.escrows.length || !o.escrows.every((e) => ADDRESS_RE.test(e)))) throw new TapeAPIError('INVALID_ARGUMENT', 'escrows must be a non-empty array of escrow addresses')
+  const report = await diagnoseChecks(input, o)
+  if (o.escrows == null) return report
+  const container = report.manifest?.container
+  const api = o.api && typeof o.api.forChain === 'function' ? o.api.forChain(report.chainId) : o.api
+  const warnings = []
+  if (!container || !api?.chain?.escrow?.contributions) {
+    warnings.push(T('contribution across escrow instances not compared: no manifest or no chain client', '未比对多个托管实例上的贡献比例：没有清单或没有链客户端'))
+  } else {
+    try {
+      const r = await api.chain.escrow.contributions(container, o.escrows)
+      const shown = r.readings.map((x) => `${x.escrow} ${x.bps === null ? `unread (${x.error})` : `${x.bps} bps`}`).join(', ')
+      const shownZh = r.readings.map((x) => `${x.escrow} ${x.bps === null ? `未读到（${x.error}）` : `${x.bps} bps`}`).join('，')
+      if (!r.consistent) warnings.push(T(`${r.warning}`, `${container} 在各托管实例上的贡献比例不一致：${shownZh}。每个实例各自保存设置，从未设置的实例按默认 100 bps（1%）；如非本意，请在每个实例上用 tx.setContribution({ escrow }) 设置`))
+      else if (r.readings.some((x) => x.bps === null)) warnings.push(T(`contribution across escrow instances only partly read: ${shown}`, `多个托管实例上的贡献比例只读到一部分：${shownZh}`))
+    } catch (e) { warnings.push(T(`contribution across escrow instances not compared: ${e?.code ?? ''} ${e?.message ?? e}`, `未比对多个托管实例上的贡献比例：${e?.code ?? ''} ${e?.message ?? e}`)) }
+  }
+  return redactSecret({ ...report, warnings: warnings.map((w) => ({ detail: w.en, detailZh: w.zh })) }, o.key)
+}
+
+async function diagnoseChecks(input, o) {
   const fetchImpl = o.fetch ?? globalThis.fetch.bind(globalThis)
   const now = o.now ?? (() => Math.floor(Date.now() / 1000))
   const timeoutMs = o.timeoutMs ?? 15_000
@@ -752,6 +775,10 @@ export function formatReport(report, { lang = 'both', version = '' } = {}) {
     }
     if (c.next && c.status === 'fail') lines.push(`         ${L(T('next:', '下一条命令:'))} ${c.next}`)
   })
+  for (const w of report.warnings ?? []) {
+    if (lang !== 'zh') lines.push(`   note: ${w.detail}`)
+    if (lang !== 'en') lines.push(`   提示: ${w.detailZh ?? w.detail}`)
+  }
   const k = report.counts
   lines.push(L(T(`result: ${k.pass} passed, ${k.warn} warned, ${k.fail} failed, ${k.skip} skipped${k.error ? `, ${k.error} undecided` : ''}; exit ${report.exitCode}`,
     `结果：${k.pass} 项通过，${k.warn} 项警告，${k.fail} 项失败，${k.skip} 项跳过${k.error ? `，${k.error} 项无法判定` : ''}；退出码 ${report.exitCode}`)))

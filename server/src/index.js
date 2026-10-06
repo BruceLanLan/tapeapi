@@ -1,5 +1,5 @@
 // @tapeapi/server：Provider 运行时 / Provider runtime: manifest, health, paid+free method dispatch, signed envelopes.
-import { createRpc, TapeAPIError, validateManifest, safeParseJSON, canonicalJSON, parseUnits, METHOD_NAME_RE, abi, sig } from '@tapeapi/sdk'
+import { createRpc, TapeAPIError, validateManifest, safeParseJSON, canonicalJSON, parseUnits, BEM_DECIMALS, METHOD_NAME_RE, abi, sig } from '@tapeapi/sdk'
 
 const { encodeCall, decodeReturn, isAddress, eqAddr, checksumAddress } = abi
 const { voucherDigest, recoverAddress, signResponse, privateKeyToAddress } = sig
@@ -7,7 +7,7 @@ const { voucherDigest, recoverAddress, signResponse, privateKeyToAddress } = sig
 // would stop this runtime loading on Cloudflare Workers, Deno or a browser. A test asserts the two agree.
 // 写成字面量而不是读 package.json：`createRequire` 属于 node:module，在模块顶层导入会让这套运行时无法在
 // Cloudflare Workers、Deno 或浏览器里加载。有测试断言两者一致。
-export const VERSION = '1.7.1'
+export const VERSION = '1.8.0'
 const now = () => Math.floor(Date.now() / 1000)
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -483,7 +483,7 @@ export function createProvider(opts = {}) {
       if (body.params != null && !isPlainObject(body.params)) { const w = spendFree(); if (w) return { rateLimited: w }; throw new TapeAPIError('BAD_REQUEST', 'params must be a JSON object') }
       const def = methodDef(method)
       // validateManifest 已经用同一个解析器校验过每个 priceBEM，这里不会再抛 / already validated above
-      const price = def ? parseUnits(def.priceBEM || '0') : 0n
+      const price = def ? parseUnits(def.priceBEM || '0', BEM_DECIMALS) : 0n
       if (price === 0n) { const w = spendFree(); if (w) return { rateLimited: w } }
       if (!def) throw new TapeAPIError('METHOD_NOT_FOUND', `unknown method ${method.slice(0, 64)}`)
       const ctx = { consumer: null, block, manifest, method: def, price, clientIp: ip }

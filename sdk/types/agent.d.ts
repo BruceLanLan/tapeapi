@@ -92,8 +92,12 @@ export declare const OFFER_FEE_WARNING: string
 export declare function taskHashOf(task: Record<string, unknown>): Hex
 /** @experimental keccak256(UTF-8(canonicalJSON(value))) */
 export declare function jsonHashOf(value: unknown): Hex
+/** @experimental `wire` (1.8): only the JSON forms of draft TAP §3.7, as a message received from a counterparty must have
+ *  (a uint256 as a decimal string, never a number or a bigint); the default also takes a number or a bigint. A bytes32
+ *  is lower case in both. */
+export interface WireOption { wire?: boolean }
 /** @experimental */
-export declare function normalizeMandate(m: Mandate): NormalizedMandate
+export declare function normalizeMandate(m: Mandate, opts?: WireOption): NormalizedMandate
 /** @experimental */
 export declare function hashScope(s: MandateScope): Uint8Array
 /** @experimental */
@@ -107,7 +111,7 @@ export declare function mandateTypedData(chainId: number, hub: Address, m: Manda
 /** @experimental signs with a local key (tests, scripts); a wallet signs mandateTypedData instead */
 export declare function signMandate(chainId: number, hub: Address, m: Mandate, privateKey: Hex | Uint8Array, opts?: FundsGate): Hex
 /** @experimental */
-export declare function normalizeTaskOffer(o: TaskOffer): TaskOffer & { fee: string; nonce: string }
+export declare function normalizeTaskOffer(o: TaskOffer, opts?: WireOption): TaskOffer & { fee: string; nonce: string }
 /** @experimental */
 export declare function hashTaskOffer(o: TaskOffer): Uint8Array
 /** @experimental */
@@ -118,8 +122,8 @@ export declare function offerHashOf(chainId: number, hub: Address, o: TaskOffer)
 export declare function taskOfferTypedData(chainId: number, hub: Address, o: TaskOffer): AgentTypedData
 /** @experimental */
 export declare function signTaskOffer(chainId: number, hub: Address, o: TaskOffer, privateKey: Hex | Uint8Array): Hex
-/** @experimental */
-export declare function normalizeTaskVerdict(v: TaskVerdict): Required<TaskVerdict>
+/** @experimental A missing reasonHash reads as 32 zero bytes, except with `wire` (1.8), where it is refused. */
+export declare function normalizeTaskVerdict(v: TaskVerdict, opts?: WireOption): Required<TaskVerdict>
 /** @experimental */
 export declare function hashTaskVerdict(v: TaskVerdict): Uint8Array
 /** @experimental */
@@ -131,7 +135,7 @@ export declare function taskVerdictTypedData(chainId: number, hub: Address, v: T
 /** @experimental */
 export declare function signTaskVerdict(chainId: number, hub: Address, v: TaskVerdict, privateKey: Hex | Uint8Array): Hex
 /** @experimental */
-export declare function normalizeMandateRevocation(r: MandateRevocation): MandateRevocation
+export declare function normalizeMandateRevocation(r: MandateRevocation, opts?: WireOption): MandateRevocation
 /** @experimental */
 export declare function hashMandateRevocation(r: MandateRevocation): Uint8Array
 /** @experimental */
@@ -143,6 +147,11 @@ export declare function signMandateRevocation(chainId: number, hub: Address, r: 
 
 /** @experimental TAP-10 §16 rendering for text a counterparty wrote: invisible and control characters removed, cut. */
 export declare function plainText(s: unknown, max?: number): string
+/** @experimental (1.8) Draft TAP §7.2 steps 1-3 for an agent message's receipt, without the chain: the first problem
+ *  (message-malformed or agent-mismatch) or null. */
+export declare function agentMessageProblem(receipt: unknown, kind: 'accept' | 'deliver', agent: Address): AgentProblem | null
+/** @experimental (1.8) The form of a hash-only (v 2) evidence receipt (draft TAP §8): receipt-not-hash-only or null. */
+export declare function hashOnlyReceiptProblem(receipt: unknown): AgentProblem | null
 /** @experimental The compact bytes of the principal's revocation list (size checked against MANDATES_LIMIT). */
 export declare function revocationFileBytes(o: { chainId: number; revocation: MandateRevocation; sig: Hex }): Uint8Array
 /** @experimental site file of the principal's revocation list */
@@ -172,8 +181,9 @@ export declare const EVIDENCE_DOES_NOT_PROVE: readonly string[]
 
 /** @experimental */
 export interface AgentProblem { code: string; message: string }
-/** @experimental A container read from the chain: the on-chain name (or null), never a manifest's `name`. */
-export interface ContainerIdentity { container: Address; chainId: number; circuits: Address; tokenId: string; holder: Address; name: string | null }
+/** @experimental A container read from the chain as TAP-10 §4.3 says, at the verification's pinned block: its processor
+ *  number and on-chain name (since 1.8 always found on the chain; null only in 1.7), never a manifest's `name`. */
+export interface ContainerIdentity { container: Address; chainId: number; circuits: Address; tokenId: string; processor?: number; holder: Address; name: string | null }
 /** @experimental */
 export interface RevocationList { status: 'published' | 'none-published' | 'invalid'; issued?: number; revokedBefore?: number; mandateHashes?: Hex[]; reason?: string }
 /** @experimental */
@@ -254,7 +264,9 @@ export interface AgentKit {
   chainId: number
   hub: Address
 }
-/** @experimental Container-agent checks bound to one client (rpcUrls required; decisions read under strict agreement). */
+/** @experimental Container-agent checks bound to one client (rpcUrls required; decisions read under strict agreement).
+ *  Since 1.8 every read of one verification is made at one TAP-10 pinned block (stale-block and wrong-chain are thrown,
+ *  with data.status); identity problems are not-tapeout and no-such-token (TAP-10 §4.4). */
 export declare function createAgentKit(api: TapeAPI, opts?: AgentKitOptions): AgentKit
 
 /** @experimental A TAP-10 §16.1 asset attachment. */
@@ -322,8 +334,12 @@ export interface PaymentKit {
   inboxCount(recipient: Address): Promise<bigint>
   transferToContainer(o: PaymentTarget & { token: Address; amount: BigNumberish }): Promise<UnsignedPayment>
   nativeToContainer(o: PaymentTarget & { amount: BigNumberish }): Promise<UnsignedPayment>
-  /** only the unedited result of transferToContainer of this kit; anything else is recipient-not-from-chain */
-  viaContainer(o: { from: Address; tx: UnsignedPayment }): UnsignedPayment
+  /** only the unedited result of transferToContainer of this kit; anything else is recipient-not-from-chain.
+   *  `value` is the OUTER value (smallest unit of the native coin, 0 or more): the TapeOut fee the container's execute may
+   *  require (0.0002 BNB on BNB Smart Chain at the time of writing; no getter reads it: simulate and read a revert of
+   *  `0xafd49700(paid, required)`). Without it the value is 0 and the summary says a call without the fee may revert.
+   *  The inner value is always 0: a non-zero `tx.value` is still refused. */
+  viaContainer(o: { from: Address; tx: UnsignedPayment; value?: BigNumberish }): UnsignedPayment
   recipientOf(target: PaymentTarget): Promise<PaymentRecipient>
   chainId: number
 }

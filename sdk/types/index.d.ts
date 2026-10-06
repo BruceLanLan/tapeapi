@@ -19,6 +19,8 @@ export { CHAINS, CHAIN_IDS, HOME_CHAIN_ID, IMPL_SLOT, chainById, chainByArea, ch
 export type { TapeOutChain, ParsedTapeName } from './chains.js'
 /** @experimental (1.5) TAP-10 §13.8 messaging constants per chain, and the §12.1 endpoint chainId bound (2^53 − 1). */
 export { TAP10_SEALS, TAP10_MAX_CHAIN_ID } from './chains.js'
+/** @experimental (TAPI-22 §3.5) Escrow token labels and the (empty) audited escrow list; may change in a 1.x minor release. */
+export { PAYMENT_TOKENS, AUDITED_ESCROWS } from './chains.js'
 export type { Tap10Seals } from './chains.js'
 export { canonicalJSON, safeParseJSON } from './canon.js'
 export { validateManifest, parseUnits, formatUnits, METHOD_NAME_RE, BEM_DECIMALS } from './manifest.js'
@@ -152,6 +154,10 @@ export interface CreateTapeAPIOptions {
   directory?: Address
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   escrow?: Address
+  /** @experimental (TAPI-22 §3.5) Escrows, besides the audited deployments in AUDITED_ESCROWS (empty today), that
+   *  `tx.approve` and `tx.fund` may build for. Default none; `escrow` is not added. Add only escrows you trust: approve
+   *  lets an escrow pull tokens. `tx.fund` is built only if the escrow also holds BEM. */
+  allowEscrows?: Address[]
   /** @experimental (security 1.1) A function returning Unix seconds; every `now` of this client reads it (default Date.now). */
   clock?: () => number
   /** @experimental (security 1.1) Pin every read of one resolution to one block that nodes of `quorum` operators confirm
@@ -326,6 +332,19 @@ export interface QuorumResult<T = any> {
   groups: Array<{ result: T; containers: Address[] }>
 }
 
+/** @experimental (TAPI-22 §3.5) An escrow's token as the SDK reads it: `label` from PAYMENT_TOKENS (null when the
+ *  SDK does not know the token; never the token's own name()), `display` the label and the address. */
+export interface PaymentToken {
+  readonly escrow: Address
+  readonly token: Address
+  readonly decimals: number
+  readonly label: string | null
+  readonly display: string
+}
+/** @experimental (TAPI-22 §3.5) An escrow amount in whole tokens with the token's label and address; `token` from
+ *  `api.chain.escrow.paymentToken()` (decimals are never assumed). */
+export declare function formatPaymentAmount(amount: BigNumberish, token: PaymentToken): string
+
 /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export interface SignedVoucher { consumer: Address; provider: Address; cumulative: string; expires: number; sig: Hex; signer: Address }
 
@@ -359,10 +378,19 @@ type ProviderRef = Address | ResolvedService
 
 /** Transaction builders: each returns a TxRequest for your own wallet to send; nothing is signed or sent. */
 export interface TxBuilders {
-  /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
-  approve(opts: { amount: BigNumberish; token?: Address; spender?: ProviderRef }): TxRequest
-  /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
-  fund(provider: ProviderRef, amount: BigNumberish): TxRequest
+  /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release.
+   *  Async since escrow v3: built only for an escrow on AUDITED_ESCROWS (empty) or `allowEscrows` (else INVALID_ARGUMENT,
+   *  `data.reason` 'escrow-not-allowed'); the token approved is the escrow's own token(), read on chain. `token`, when
+   *  given, is the token you expect (UNSUPPORTED_PAYMENT_TOKEN 'token-mismatch' otherwise); without it, or for a
+   *  service's prices, the token must be BEM ('not-bem'). */
+  approve(opts: { amount: BigNumberish; token?: Address; spender?: ProviderRef }): Promise<TxRequest>
+  /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release.
+   *  Async since escrow v3, with the same allow-list and token read as `approve`, but stricter: an escrow that holds
+   *  anything but BEM is always refused (UNSUPPORTED_PAYMENT_TOKEN, `data.reason` 'not-bem'), whatever `token` you name
+   *  and even if it is in `allowEscrows`. The escrow contract itself takes any admitted token; the manifest's pricing
+   *  in more than one token is not yet specified, so the SDK does not build it. `token`, when given, must be the
+   *  escrow's token ('token-mismatch' otherwise). */
+  fund(provider: ProviderRef, amount: BigNumberish, opts?: { token?: Address }): Promise<TxRequest>
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   requestWithdraw(provider: ProviderRef, amount: BigNumberish): TxRequest
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
@@ -373,6 +401,11 @@ export interface TxBuilders {
   authorizeSession(provider: ProviderRef, key: Address, expires: BigNumberish): TxRequest
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   settle(voucher: { consumer: Address; provider: Address; cumulative: BigNumberish; expires: BigNumberish; sig: Hex }, svc?: ResolvedService): TxRequest
+  /** @experimental Wrap native BNB: `wbnb.deposit()` with `value` = amount. `wbnb` is required (the SDK ships no wrapper
+   *  address). No gas field: the wallet estimates it. */
+  wrapNative(opts: { wbnb: Address; amount: BigNumberish }): TxRequest
+  /** @experimental Escrow v3 (not deployed): pay the accrued contributions to the current treasury; anyone may send it. */
+  claimTreasury(escrow?: Address | ResolvedService): TxRequest
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   setContribution(opts: { circuits: Address; tokenId: BigNumberish; bps: number; escrow?: Address }): TxRequest
   publishManifest(opts: { container: Address; manifest: string | Record<string, unknown>; contentType?: string }): { txs: TxRequest[]; key: string; size: number; sha256Hash: Hex }
@@ -461,6 +494,17 @@ export interface ChainReads {
     pendingWithdraw(consumer: Address, provider: ProviderRef): Promise<any>
     contributionOf(provider: Address, escrow?: Address): Promise<any>
     treasury(escrow?: Address): Promise<Address>
+    /** Escrow v3: the instance's immutable token (an address or a resolved service; the configured escrow by default). */
+    token(escrow?: Address | ResolvedService): Promise<Address>
+    /** Escrow v3: what settlements have accrued to the treasury role and not yet been claimed (token base units). */
+    treasuryAccrued(escrow?: Address | ResolvedService): Promise<bigint>
+    /** The escrow's token and its decimals, both read on chain under strict agreement and cached per escrow; never
+     *  assumed. UNSUPPORTED_PAYMENT_TOKEN (`data.reason`) when the escrow answers no token(), the token no valid
+     *  decimals(), or decimals outside 8..18. */
+    paymentToken(escrow?: Address | ResolvedService): Promise<PaymentToken>
+    /** Read-only: one provider's contributionOf on each escrow instance (default: this client's allowed escrows), and a
+     *  `warning` when they differ. A failed read is a reading with `bps: null` and the error code. */
+    contributions(provider: Address, escrows?: Address[]): Promise<{ provider: Address; readings: Array<{ escrow: Address; bps: number | null; error?: string }>; consistent: boolean; warning: string | null }>
   }
 }
 

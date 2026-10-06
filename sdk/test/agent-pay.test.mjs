@@ -296,6 +296,68 @@ test('FIXED F-2: viaContainer wraps only the unedited transfer transferToContain
   assert.throws(() => pay.viaContainer({ from: P, tx: t3 }), (e) => e.data?.reason === 'recipient-not-from-chain')
 })
 
+test('FIXED R22: viaContainer without a value keeps the outer value 0x0 and the summary warns that the execute may need the TapeOut fee', async () => {
+  const x = standardWorld()
+  const pay = createPaymentKit(x.api())
+  const t = await pay.transferToContainer({ name: '12.7.tape', token: TOKEN, amount: '5' })
+  for (const none of [undefined, null]) {
+    const via = pay.viaContainer({ from: P, tx: t, value: none })
+    assert.equal(via.value, '0x0')
+    const warn = via.summary.find((l) => l.startsWith('WARNING: outer value is 0'))
+    assert.ok(warn, via.summary.join('\n'))
+    assert.match(warn, /TapeOut fee in the chain's native coin/)
+    assert.match(warn, /0\.0002 BNB on BNB Smart Chain at the time of writing/)
+    assert.match(warn, /cannot be read from the chain with a getter/)
+    assert.match(warn, /0xafd49700\(paid, required\)/)
+    assert.match(warn, /A call without it reverts/)
+    assert.equal(via.summary.some((l) => l.includes('goes to TapeOut')), false)
+  }
+  // an explicit 0 is no fee either: the warning stays
+  assert.ok(pay.viaContainer({ from: P, tx: t, value: 0 }).summary.some((l) => l.startsWith('WARNING: outer value is 0')))
+  // the calldata is the same with or without a value: the fee is the outer value only
+  assert.equal(pay.viaContainer({ from: P, tx: t, value: '7' }).data, pay.viaContainer({ from: P, tx: t }).data)
+})
+
+test('FIXED R22: viaContainer with a value puts it on the outer transaction; the summary says it is the TapeOut fee, not a payment to the recipient', async () => {
+  const x = standardWorld()
+  const pay = createPaymentKit(x.api())
+  const t = await pay.transferToContainer({ name: '12.7.tape', token: TOKEN, amount: '5' })
+  const fee = 200000000000000n   // what a caller read from a simulation; the SDK has no default
+  for (const [v, hex] of [['200000000000000', '0x' + fee.toString(16)], [fee, '0x' + fee.toString(16)], [1, '0x1'], [2n ** 256n - 1n, '0x' + 'f'.repeat(64)]]) {
+    const via = pay.viaContainer({ from: P, tx: t, value: v })
+    assert.equal(via.value, hex, String(v))
+    assert.ok(via.summary.includes(`value: ${BigInt(v)} (smallest unit of the native coin)`), via.summary.join('\n'))
+    assert.ok(via.summary.some((l) => l.startsWith(`outer value ${BigInt(v)} is the TapeOut fee`) && l.includes('never to the recipient')), via.summary.join('\n'))
+    assert.equal(via.summary.some((l) => l.startsWith('WARNING')), false)
+    // the INNER value is still 0 in the execute call, and the calldata carries it as 0
+    assert.ok(via.summary.some((l) => l.startsWith('call: execute(') && l.includes('value = 0,')), via.summary.join('\n'))
+    assert.equal(decodeParams(['address', 'uint256', 'bytes', 'uint8'], hexToBytes('0x' + via.data.slice(10)))[1], 0n)
+    assert.equal(via.to.toLowerCase(), P.toLowerCase())
+  }
+  // describeTx shows the outer value as it is
+  assert.ok(agent.describeTx({ to: P, data: pay.viaContainer({ from: P, tx: t, value: '9' }).data, value: '0x9' }).some((l) => l.startsWith('outer value 9 is the TapeOut fee')))
+  assert.ok(agent.describeTx({ to: P, data: pay.viaContainer({ from: P, tx: t }).data, value: '0x0' }).some((l) => l.startsWith('WARNING: outer value is 0')))
+})
+
+test('FIXED R22: the outer value of viaContainer is a whole number 0 or more that fits uint256; a native value inside tx is still refused, and so is a hand-made tx', async () => {
+  const x = standardWorld()
+  const pay = createPaymentKit(x.api())
+  const t = await pay.transferToContainer({ name: '12.7.tape', token: TOKEN, amount: '5' })
+  for (const v of [-1, -1n, '-1', 1.5, '1.5', '1e3', '0x10', '01', ' 1', '', 'abc', NaN, Infinity, 2 ** 53, {}, [], true, 2n ** 256n, '9'.repeat(78), '9'.repeat(79)]) {
+    assert.throws(() => pay.viaContainer({ from: P, tx: t, value: v }), (e) => e.code === 'INVALID_ARGUMENT' && /value must be/.test(e.message), String(v))
+  }
+  // the inner value is not the fee: a native value inside tx is refused with the same reason as before, with or without a fee
+  const nat = await pay.nativeToContainer({ name: '12.7.tape', amount: '7' })
+  for (const v of [undefined, '200000000000000']) assert.throws(() => pay.viaContainer({ from: P, tx: nat, value: v }), (e) => e.data?.reason === 'native-via-container-unverifiable')
+  assert.throws(() => pay.viaContainer({ from: P, tx: { ...t, value: '0x1' }, value: '1' }), (e) => e.data?.reason === 'native-via-container-unverifiable')
+  // the recipient still comes from the chain only, whatever the value
+  const handMade = { to: TOKEN, value: '0x0', data: t.data, recipient: t.recipient }
+  assert.throws(() => pay.viaContainer({ from: P, tx: handMade, value: '200000000000000' }), (e) => e.data?.reason === 'recipient-not-from-chain')
+  assert.throws(() => pay.viaContainer({ from: P, tx: { ...t }, value: '200000000000000' }), (e) => e.data?.reason === 'recipient-not-from-chain')
+  // the library hard-codes no default fee
+  assert.equal(pay.viaContainer({ from: P, tx: t }).value, '0x0')
+})
+
 test('FIXED F-8b: the payment order can drop a reverted or cancelled transfer and follow a sped-up one (TAP-10 §20 step 4)', () => {
   const o = paymentOrder({ clock: () => 1 })
   const tx = '0x' + '21'.repeat(32), by = '0x' + '22'.repeat(32)

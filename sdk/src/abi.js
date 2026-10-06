@@ -228,6 +228,15 @@ export const FUNCTIONS = {
   contributionOf: { inputs: ['address'], outputs: ['uint16'] },
   setContribution: { inputs: ['address', 'uint256', 'uint16'], outputs: [] },
   treasury: { inputs: [], outputs: ['address'] },
+  // Escrow v3 (audit candidate, not deployed): one immutable token per instance, and a pull treasury. The escrow's
+  // `token()` has the selector of the ERC-6551 `token()` above (0xfc0c546a) and returns one address, so it is listed
+  // under its own key with `fn: 'token'`. `treasuryAccrued` is what settlements have accrued to the treasury role and
+  // `claimTreasury()` pays it to the current treasury (anyone may send it).
+  // 托管 v3（送审候选，未部署）：每个实例一个不可变代币，金库改为拉取式。托管的 `token()` 与上面 ERC-6551 的 `token()`
+  // 选择器相同、只返回一个地址，所以单列一个键并以 `fn: 'token'` 标明函数名。`claimTreasury()` 任何人都可发送。
+  escrowToken: { fn: 'token', inputs: [], outputs: ['address'] },
+  treasuryAccrued: { inputs: [], outputs: ['uint256'] },
+  claimTreasury: { inputs: [], outputs: ['uint256'] },
   // BEM (ERC-20): the escrow moves tokens with transferFrom, so a consumer approves it first / 消费者先授权托管合约
   approve: { inputs: ['address', 'uint256'], outputs: ['bool'] },
   // ChannelBus (TAPI-26 §3.7): the chain as a relay. `event Wire(bytes32 indexed room, bytes wire)`
@@ -237,7 +246,19 @@ export const FUNCTIONS = {
 }
 export function signatureOf(name) {
   const f = FUNCTIONS[name]; if (!f) throw new TapeAPIError('ABI_INVALID', `unknown function ${name}`)
-  return `${name}(${f.inputs.map(typeSig).join(',')})`
+  return `${f.fn ?? name}(${f.inputs.map(typeSig).join(',')})`
+}
+// Escrow events the SDK names (topic0 = keccak256 of the signature). Settled's `contribution` is, since v3, the amount
+// accrued to the treasury by that settlement; TreasuryClaimed closes the loop:
+// Σ Settled.contribution == treasuryAccrued + Σ TreasuryClaimed.amount.
+// SDK 用到的托管事件（topic0 = 签名的 keccak256）。v3 起 Settled 的 contribution 是本次结算记入金库的数额。
+export const EVENTS = Object.freeze({
+  Settled: 'Settled(address,address,uint256,uint256,uint16)',
+  TreasuryClaimed: 'TreasuryClaimed(address,uint256)',
+})
+export function eventTopic(name) {
+  const s = EVENTS[name]; if (!s) throw new TapeAPIError('ABI_INVALID', `unknown event ${name}`)
+  return toHex(keccak_256(utf8ToBytes(s)))
 }
 export function selector(nameOrSig) {
   const sig = FUNCTIONS[nameOrSig] ? signatureOf(nameOrSig) : nameOrSig

@@ -6,7 +6,7 @@
 // 显示每一条：本页从不排序或排名。放在 <head> 里，主题与语言在首次绘制前生效。存储可能抛错（隐私窗口），每次访问都有保护。
 (function (global) {
   // The doctor from the SDK's release package, as in the guide for AI providers. / 与 AI 服务方指南相同的发布包里的诊断。
-  var DOCTOR = 'npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz tapeapi-doctor'
+  var DOCTOR = 'npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz tapeapi-doctor'
   var CHAINS = { bnb: ['BNB Smart Chain', 'BNB Smart Chain'], 2: ['X Layer', 'X Layer'], 3: ['Base', 'Base'] }
   var FLAG = {
     ok: { state: 'up', label: ['通过', 'Passing'] },

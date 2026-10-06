@@ -7,6 +7,129 @@ interfaces.
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-10-06
+
+### Changed
+
+- **`@tapeapi/sdk/agent` (experimental): checks follow more of the draft TAP (TAPs PR #47) and are stricter.** The
+  subpath is outside the 1.x compatibility promise; messages, threads and evidence that 1.7.1 accepted may now be
+  refused, and some problem names changed. No type hash, digest or existing vector changed.
+  - **Input forms are refused, not read leniently** (draft §3.7, §7.2, §8). A message received from a counterparty
+    must carry every `bytes32` in lower case, every `uint256` (`nonce`, `fee`, `feeCap`, a scope `cap`) as a decimal
+    string (a JSON number or a bigint is now `mandate-malformed` / `message-malformed`), and a verdict's `reasonHash`
+    (missing or `null` is now `message-malformed`; 1.7.1 read it as zero). An agent message whose `ts` or `result.exp`
+    is negative, or whose receipt lacks the TAP-13 method, `params` object or 65-byte `sig`, or whose `id` is not 1 to
+    128 code units (TAP-13 §3), is `message-malformed`. A hash-only evidence receipt whose `ok` is not a JSON boolean
+    (1.7.1 read it as `false`), or whose `requestHash`, `bodyHash` or `ts` is not in its form, or whose `id` is not 1 to
+    128 code units (the empty `id` of TAP-13 §8 binding rule 1 is allowed only when `ok` is `false`), is
+    `receipt-not-hash-only`. The builders
+    (`mandateTypedData`, `taskOfferTypedData`, the hash and `sign*` functions) still take a number or a bigint and still
+    default a missing `reasonHash`; `bytes32` input must now be lower case there too. New pure functions:
+    `agentMessageProblem`, `hashOnlyReceiptProblem`; `normalize*` take `{ wire: true }`.
+  - **One pinned block per verification** (draft §4, §6.2; TAP-10 §5.3). Every read of `verifyMandate`,
+    `verifyTaskThread` (both passes), `verifyEvidence`, `readRevocations` and `identityOf` is made at one TAP-10
+    pinned block, by block hash: the principal's identity and holder, EIP-1271 calls, both implementation slots and
+    the revocation file. 1.7.1 read each at `latest`. The kit checks `eth_chainId` under strict agreement once;
+    `stale-block` and `wrong-chain` are thrown with `data.status`, never reported as problems.
+  - **The principal is resolved as TAP-10 §4.3 says.** The container is derived by the chain's container opener
+    (1.7.1 asked the hub), and the processor number is found on the chain (snapshot hit confirmed by `cpuAt`, else a
+    bounded scan), so the on-chain name is always present (1.7.1 gave `null` outside the snapshot). Every identity
+    failure is now `not-tapeout` or `no-such-token`: the problem names `not-a-container` and `wrong-chain` are gone
+    (a `token()` naming another chain is `not-tapeout`).
+  - **Resolving the agent or a provider.** A site status (`not-opened`, `unpaid`, `store-changed`) from the resolver, or
+    a conformance-mode client's `unsupported` for an address that is no container of the chain, is now
+    `agent-unresolvable` / `provider-unresolvable` (1.7.1 threw it); `stale-block`, `unavailable` and
+    `wrong-chain` are thrown. The kit still resolves through the client's `resolve`; the guide shows how to pass a
+    `conform: 'tap10'` client (TAP-11 §2) as the kit's `resolve`.
+  - **The two passes share reads, the total goes up.** The two passes of `verifyTaskThread` share one read of the
+    revocation file, the implementation slots and each identity (within one thread the kit's own revocation-file and
+    slot reads (`pathCount`, `fileInfo`, `read` and the slots) are half of what 1.7.1 made); the slots are kept per
+    pinned block for at most 60 s. The total number of reads still rises: resolving the principal adds the pin
+    (`eth_blockNumber`, `eth_getBlockByNumber`), one `eth_chainId` per kit and, outside the snapshot, a `cpuAt` scan
+    (at most 256 reads per processor looked up, per verification, resumed on the next one).
+  - Vectors: `spec/vectors/container-agent.json` gains `inputForms`, 66 hand-written cases checked by the SDK and by
+    `spec/vectors/verify.py`.
+
+- **Payments (experimental, TAPI-22; no escrow is deployed or audited): escrow amounts use the escrow's own token, and
+  `approve` / `fund` are built only for allowed escrows.** Outside the 1.x compatibility promise.
+  - `api.tx.approve` and `api.tx.fund` now return a Promise. Both read the escrow's `token()` and the token's
+    `decimals()` under strict agreement first, and are built only for an escrow on the new `AUDITED_ESCROWS` list
+    (empty) or in the new `createTapeAPI({ allowEscrows })` option; any other escrow is refused (`INVALID_ARGUMENT`,
+    `data.reason` `escrow-not-allowed`), the configured `escrow` included. `approve` approves the escrow's own token
+    instead of defaulting to BEM; its `token`, and the new `fund(provider, amount, { token })`, name the token you
+    expect. `fund` is stricter than `approve`: it is refused for any escrow that holds a token other than BEM
+    (`UNSUPPORTED_PAYMENT_TOKEN`, `data.reason` `not-bem`), whatever token you name and even for an allowed escrow,
+    because the escrow contract itself takes any admitted token but the manifest's pricing in more than one token is
+    not yet specified, so this SDK does not build funding for a channel it cannot use yet.
+  - New client error code `UNSUPPORTED_PAYMENT_TOKEN` (`data.reason`: `token-unreadable`, `decimals-unreadable`,
+    `decimals-out-of-range`, `not-bem`, `token-mismatch`). Manifest prices are `priceBEM`, so `fund`, a priced
+    `api.call` and an `approve` without a named token (or for a service) refuse an escrow that holds another
+    token; the escrow contract itself takes any admitted token, and prices in other tokens are not yet specified. Free methods and dev services are not checked.
+  - Inside the SDK and the server, every `parseUnits` / `formatUnits` call names its decimals. The functions' own
+    default (8, BEM) is unchanged.
+
+- **Escrow contract v3 (experimental, TAPI-22; the candidate for audit): never deployed and not audited, so no live
+  channel, provider or fund is affected.** `contracts/src/TapeAPIEscrow.sol` is the first version that holds one ERC-20
+  token per instance by design. This is outside the 1.x compatibility promise, and nothing here says the audit will
+  keep this shape.
+  - The first constructor argument is the immutable `token` (it was `bem`), and `token()` is the view. The contract
+    never reads the token's decimals; the deploy script requires 8 to 18.
+  - The solvency statement reads `token.balanceOf(escrow) >= sum of channels + treasuryAccrued` (it was `==`): tokens
+    sent straight to the escrow stay in it and are never paid out. No code path changed for this; the statement and the
+    invariant test did.
+  - **The maintenance contribution is pulled, not pushed.** `settle` adds it to the new `treasuryAccrued` and makes one
+    token call, to the provider; the new `claimTreasury()` (anyone may call it) pays the accrual to the current
+    treasury and emits `TreasuryClaimed`. A treasury that cannot receive the token no longer blocks any settlement.
+    `Settled` keeps its signature; its `contribution` now means the amount accrued.
+  - **`setTreasury` pays the outgoing treasury first** (a failed payout is rolled back and ignored, so a frozen
+    treasury never blocks the change; the unclaimed accrual then belongs to the new treasury), and it refuses the
+    escrow itself and its token as treasury (new error `BadTreasury()`, also in the constructor).
+  - **One judge for token calls:** every token call that does not answer success (a revert, a malformed or short
+    return, a non-bool word) reverts `TransferFailed()`; the return data copied is bounded to 32 bytes.
+  - `contracts/script/Deploy.s.sol` checks before it sends anything: the canonical USDT-pegged token with its code
+    hash pinned, no proxy token (EIP-1967 and EIP-1822 slots zero), any other token only with `ALLOW_OTHER_TOKEN=true`,
+    a treasury that is not zero, the token, the TapeOut hub or the container factory; the post-deploy checks read `token()` and
+    `treasuryAccrued()`. New tests, among them a fork rehearsal of that script (needs `BSC_RPC_URL`, skipped without it).
+  - Voucher type, typehash, EIP-712 domain and every channel, session, withdrawal and rate rule are unchanged.
+
+- **TAPI-22 (Experimental) revised to specify the escrow that will go to audit.** No escrow has ever been deployed, so
+  no channel, provider or fund is affected. The 1.7.1 text of `settle` and the treasury functions is replaced; an
+  implementation of it would need to change them. Normative changes, in both the English text and its Chinese
+  translation: `settle` accrues the contribution to `treasuryAccrued` and MUST NOT transfer it to the treasury (§3.3;
+  the 1.7.1 text required the transfer); `claimTreasury()` (anyone may call) pays the accrual; `setTreasury` pays the outgoing
+  treasury first and refuses the escrow and its token (§3.4); voucher amounts are in base units of the instance's
+  token (§3.1); every token call that does not answer success reverts `TransferFailed()`. The constructor argument and
+  view are named `token`, the solvency line reads `>=` (§3.3), and §3.5 and §7 record which planned items the
+  repository contract now has. Counting every `MUST` (`MUST NOT` included), each half goes from 40 to 47; `MUST NOT`
+  alone from 7 to 8. `upto` settlement by measured usage is stated as not implemented and not specified, and is not part
+  of the audit scope.
+
+### Added
+
+- Experimental, for escrow v3 (not deployed): `api.chain.escrow.token`, `treasuryAccrued`, `paymentToken` (token and
+  decimals read on chain, cached; the label from the new `PAYMENT_TOKENS`, never the token's `name()`) and
+  `contributions` (one provider's contribution across escrow instances, with a warning when they differ);
+  `api.tx.claimTreasury` and `api.tx.wrapNative({ wbnb, amount })` (WBNB `deposit()`, the wrapper address from the
+  caller, no gas field); `formatPaymentAmount`; `abi.EVENTS` / `abi.eventTopic` (`Settled`, `TreasuryClaimed`) and
+  ABI entries for `token()`, `treasuryAccrued()`, `claimTreasury()`.
+- `tapeapi-doctor --escrows a,b` (and `diagnose({ escrows })`), experimental: notes when your contribution differs
+  between escrow instances. No new check; the exit code is unchanged.
+- `scripts/verify-bscscan.mjs` takes `--token` for the escrow's first constructor argument; `--bem` still works and
+  prints a deprecation notice.
+
+### Fixed
+
+- **`@tapeapi/sdk/agent` (experimental): `viaContainer` had no way to attach the TapeOut fee, so its transactions revert on
+  BNB Smart Chain mainnet.** A read-only test of mainnet at the time of writing found that a TapeOut container's
+  `execute(address,uint256,bytes,uint8)` needs the fee in the chain's native coin on every call (0.0002 BNB, sent to the
+  treasury, the excess refunded to the sender; a shorter payment reverts with `0xafd49700(paid, required)`), and
+  `viaContainer` in 1.7.0 and 1.7.1 always built the outer transaction with value 0. `viaContainer({ from, tx, value })`
+  now takes an optional outer `value` (a decimal string, a safe integer or a bigint, 0 or more; anything else is
+  `INVALID_ARGUMENT`), and without one the value stays `0x0` and the summary carries a warning that the call may revert
+  without the fee; with one, the summary says it is the TapeOut fee and goes to TapeOut, not to the recipient. The fee has
+  no getter: the SDK neither reads nor hard-codes it (simulate the transaction and read the revert data). The inner
+  value is still always 0 and a non-zero `tx.value` is still refused. Types and the container-agents guide are updated.
+
 ## [1.7.1] — 2026-10-05
 
 ### Changed
@@ -1387,7 +1510,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/BruceLanLan/tapeapi/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.5.0...v1.6.0

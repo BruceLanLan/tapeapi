@@ -23,7 +23,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 > `@tapeapi/sdk/agent` subpath is experimental and outside the 1.x compatibility promise; this project has not had a
 > third-party audit. [New in 1.7](#new-in-17) · [Container agents guide](docs/guides/container-agents.md)
 
-> **Status: released, 1.7.1.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
+> **Status: released, 1.8.0.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
 > breaking changes come only in 2.0. Paid channels (TAPI-22) are experimental and not deployed. Nothing here has had a
 > third-party audit. **Security note:** on 1.0.0 to 1.4.0, streamed AI receipt verification could, under particular
 > chunking, report a truncated or content-injected stream as verified; it was fixed in 1.5.0, so please upgrade
@@ -105,12 +105,12 @@ curl shows the signed envelope but checks nothing. The SDK checks it. It is not 
 release (Node.js 20 or later):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz
 ```
 
 The server package (`@tapeapi/server`: providers, the AI sidecar, the MCP proxy) depends on this SDK, which is not on
 npm either, so installed alone it fails with a 404: install both in one command,
-`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-server-1.7.1.tgz`.
+`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-server-1.8.0.tgz`.
 
 ```js
 // try.mjs: node try.mjs
@@ -148,7 +148,7 @@ No outside provider has published a price table on chain yet, so this was run ag
 
 ```bash
 # Terminal 1 (it keeps running). 42.1013.tape is an example name: put your AI provider's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash
@@ -261,10 +261,10 @@ chain as they do now; the prices in their manifest are published, not settled. S
 These are TapeAPI's own specifications, not TAPs. TapeOut publishes its standards as TAPs, numbered by its editors in
 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01. After that process appeared we renamed our documents
 TAPI-1 and TAPI-20 to TAPI-27 (so that TAP numbers stay with the editors: TAP-20, for example, now belongs to another proposal), and
-between 2026-09-30 and 2026-10-01 we submitted eight TAP drafts for parts of them. Editors review the format, not the merits
+between 2026-09-30 and 2026-10-01 we submitted eight TAP drafts for parts of them, and on 2026-10-04 and 2026-10-05 two more for the container-agent formats. Editors review the format, not the merits
 (TAP-01 §4), so a merge into Draft is not adoption. TAPI-20 to TAPI-27 remain the basis of the 1.x compatibility promise.
 
-| Our spec | Draft (pull request) | The editors' response, as of 2026-10-05 |
+| Our spec | Draft (pull request) | The editors' response, as of 2026-10-06 |
 |---|---|---|
 | TAPI-20 (core: §3.1 to §3.4, §3.6, §3.10) | Service identity and manifest, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8) | Merged on 2026-10-01 as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md), Draft |
 | TAPI-21 | Signed responses, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10) | Merged on 2026-10-04 as [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md), Draft. We made the two requested changes and applied their notes: `voucher` and the payment codes are reserved names, `METHOD_NOT_FOUND` is widened |
@@ -274,10 +274,12 @@ between 2026-09-30 and 2026-10-01 we submitted eight TAP drafts for parts of the
 | TAPI-27 (format 1 only) | Private groups, [#20](https://github.com/TapeOutProtocol/TAPs/pull/20) | No response yet |
 | TAPI-20 §3.9, TAPI-21 §3.5 | AI usage receipts, [#26](https://github.com/TapeOutProtocol/TAPs/pull/26) | References to TAP-13 updated; no response yet |
 | TAPI-20 §3.2 (proof mode, informative) | Proof-verified reads, [#28](https://github.com/TapeOutProtocol/TAPs/pull/28) | No response yet |
-| Follow-ups to TAP-11 | A Security Considerations note on `verifyingContract`, [#35](https://github.com/TapeOutProtocol/TAPs/pull/35); an informative Chinese translation, [#36](https://github.com/TapeOutProtocol/TAPs/pull/36) | No response yet |
-| Follow-up to TAP-13 | Wording on reserved names, [#46](https://github.com/TapeOutProtocol/TAPs/pull/46) | No response yet |
+| Follow-ups to TAP-11 | A Security Considerations note on `verifyingContract`, [#35](https://github.com/TapeOutProtocol/TAPs/pull/35); an informative Chinese translation, [#36](https://github.com/TapeOutProtocol/TAPs/pull/36) | Both merged on 2026-10-04 |
+| Follow-up to TAP-13 | Wording on reserved names, [#46](https://github.com/TapeOutProtocol/TAPs/pull/46) | Merged on 2026-10-05 |
+| Container agent mandates and task messages, phase 0 (no TAPI spec; the formats follow the public discussions [#40](https://github.com/TapeOutProtocol/TAPs/pull/40) and [#41](https://github.com/TapeOutProtocol/TAPs/pull/41)) | [#47](https://github.com/TapeOutProtocol/TAPs/pull/47), submitted on 2026-10-04 | Under review; no response yet |
+| The agent member of the service manifest (the listing part of #41) | [#49](https://github.com/TapeOutProtocol/TAPs/pull/49), submitted on 2026-10-05 | Under review; no response yet |
 
-TAPI-22, TAPI-24 and TAPI-25 have not been submitted. The container-agent formats of 1.7 are neither a TAPI spec nor a TAP draft yet: they follow the public discussions TapeOutProtocol/TAPs#40 and #41, and a draft is planned. When the editors assign numbers to the other drafts, we rename our references to them. The drafts are written against the official TAP-10 and list, under Backwards Compatibility, where TapeAPI's own 1.x behaviour differs. The SDK follows TAP-10 in an optional conformance mode (`conform: 'tap10'`, experimental: the resolution path since 1.4; all-chain resolution, the messaging path and strict reads since 1.5). Its default behaviour does not change before 2.0.
+TAPI-22, TAPI-24 and TAPI-25 have not been submitted. The container-agent formats of 1.7 are not a TAPI spec: phase 0 and the agent member of the manifest are submitted as the drafts #47 and #49 (both under review), and they follow those drafts and the public discussions TapeOutProtocol/TAPs#40 and #41. The draft for phase 1 (enforcement on an escrow channel) has not been submitted. When the editors assign numbers to the other drafts, we rename our references to them. The drafts are written against the official TAP-10 and list, under Backwards Compatibility, where TapeAPI's own 1.x behaviour differs. The SDK follows TAP-10 in an optional conformance mode (`conform: 'tap10'`, experimental: the resolution path since 1.4; all-chain resolution, the messaging path and strict reads since 1.5). Its default behaviour does not change before 2.0.
 
 | Spec | Title | Status |
 |---|---|---|

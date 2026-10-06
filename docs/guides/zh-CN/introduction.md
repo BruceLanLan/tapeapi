@@ -37,7 +37,7 @@ DeWEB 是网站，TapeSend 是消息，TapeAPI 是服务。
 
 ## 状态
 
-正式版，版本 1.7.1。1.0 起遵循语义化版本：按 1.0 文档写的代码在所有 1.x 版本里都能继续工作，破坏性修改只在 2.0
+正式版，版本 1.8.0。1.0 起遵循语义化版本：按 1.0 文档写的代码在所有 1.x 版本里都能继续工作，破坏性修改只在 2.0
 （[1.0 承诺什么](upgrade-1.0.md)）。免费层运行在 TapeOut 已部署的合约之上。我们自己的合约未经第三方审计；付费调用的
 托管合约尚未部署。TAPI-20 到 TAPI-27 是 TapeAPI 自己的规范，不是 TAP：TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑编号，其中服务清单（TAP-11）与签名回答（TAP-13）已合并为 Draft（合并不等于被采纳），另有 6 份针对这些规范部分内容的草稿在评审中、没有编号。
 
@@ -70,7 +70,7 @@ BNB Smart Chain，chainId 56。
 ## 规范
 
 协议以 TapeAPI 自己的规范（TAPI）写成，中英双语（以英文为准），采用 CC0。
-这些规范不是 TAP。我们就其中部分内容向 TapeOutProtocol/TAPs 提交了 8 份 TAP 草稿：服务身份与清单已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)；合并为 Draft 不等于被采纳）；签名响应已合并为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（Draft，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)；同样不等于被采纳），另 6 份在评审中、尚无编号：[#12](https://github.com/TapeOutProtocol/TAPs/pull/12)、[#16](https://github.com/TapeOutProtocol/TAPs/pull/16)、[#18](https://github.com/TapeOutProtocol/TAPs/pull/18)、[#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、[#26](https://github.com/TapeOutProtocol/TAPs/pull/26)、[#28](https://github.com/TapeOutProtocol/TAPs/pull/28)。TAPI-20 至 TAPI-27 仍是 1.x 兼容性承诺的依据。
+这些规范不是 TAP。我们就其中部分内容向 TapeOutProtocol/TAPs 提交了 10 份 TAP 草稿（8 份在 2026-09-30 至 10-01，另 2 份关于容器代理格式，在 2026-10-04 与 10-05）：服务身份与清单已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)；合并为 Draft 不等于被采纳）；签名响应已合并为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（Draft，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)；同样不等于被采纳），另 8 份在评审中、尚无编号：[#12](https://github.com/TapeOutProtocol/TAPs/pull/12)、[#16](https://github.com/TapeOutProtocol/TAPs/pull/16)、[#18](https://github.com/TapeOutProtocol/TAPs/pull/18)、[#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、[#26](https://github.com/TapeOutProtocol/TAPs/pull/26)、[#28](https://github.com/TapeOutProtocol/TAPs/pull/28)、[#47](https://github.com/TapeOutProtocol/TAPs/pull/47)、[#49](https://github.com/TapeOutProtocol/TAPs/pull/49)。TAPI-20 至 TAPI-27 仍是 1.x 兼容性承诺的依据。
 
 | 规范 | 标题 |
 |---|---|

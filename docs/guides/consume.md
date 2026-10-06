@@ -16,7 +16,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 Or install just the SDK into your own project from the GitHub release (not the npm registry):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz
 ```
 
 Save the scripts below as `.mjs` files where `@tapeapi/sdk` resolves, and run them with `node <file>.mjs`: in a clone,
@@ -162,11 +162,19 @@ const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })
 
 To avoid a wallet prompt per call, authorise a session key once (`api.tx.authorizeSession(svc, sessionAddress,
 expires)`) and pass `{ consumer, sessionKey, sessionExpiry }` instead. Funding the channel takes two transactions the
-SDK builds for your wallet: `api.tx.approve({ amount })` then `api.tx.fund(svc, amount)`.
+SDK builds for your wallet: `await api.tx.approve({ amount, spender: svc })` then `await api.tx.fund(svc, amount)`. Both
+read the escrow's token on chain first, and both are built only for an escrow on the SDK's list of audited deployments
+(empty: none is audited yet) or one you add yourself with `createTapeAPI({ allowEscrows: [...] })`, because an approval
+lets that contract pull your tokens. `amount` is in the token's own base units: read the token with
+`api.chain.escrow.paymentToken(svc)` (its decimals come from the token, never assumed) and show amounts with
+`formatPaymentAmount(amount, token)`. Manifest prices are `priceBEM`, so the SDK refuses to fund or pay a service whose
+escrow holds another token (`UNSUPPORTED_PAYMENT_TOKEN`, `reason` `not-bem`): the escrow contract itself takes any
+admitted token, but the manifest's pricing in more than one token is not yet specified, so `fund` is never built for an
+escrow that holds anything but BEM, whatever token you name, and even if you allowed that escrow.
 
 You pay the provider's listed price and nothing more: TapeAPI adds no fee on the consumer side. The maintenance
-contribution, if the provider keeps it, comes out of the provider's share ([`docs/FEES.md`](../FEES.md)). The spec
-settles in BEM; the next escrow version plans USDT (Binance-Peg) on BNB Smart Chain first, with BEM and WBNB (wrapped BNB) on demand, from the same bytecode ([`docs/FEES.md`](../FEES.md)).
+contribution, if the provider keeps it, comes out of the provider's share ([`docs/FEES.md`](../FEES.md)). A paid
+call settles in the token of the escrow instance it uses: the next escrow version plans USDT (Binance-Peg) on BNB Smart Chain first, with BEM and WBNB (wrapped BNB) on demand, from the same bytecode ([`docs/FEES.md`](../FEES.md)). Prices in a manifest are still written in BEM (`priceBEM`) until a form for other tokens is specified, so this SDK builds paid calls only for an escrow that holds BEM.
 
 > The escrow contract is not deployed yet, so paid services are not live on mainnet. Everything above works against
 > the examples (`FREE_ALL=1` to skip payment locally).

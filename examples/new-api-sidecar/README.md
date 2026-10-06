@@ -31,7 +31,7 @@ new-api:3000            渠道、令牌、额度、倍率、计费全部照旧
 
 还没准备好花钱？先在本机跑一遍本地试跑（不需要密钥、电路，也不花钱）：先在仓库根目录运行 `npm ci --no-audit --no-fund`，再运行
 `node examples/relay-trial/trial.mjs`。下面每一步做完都可以用 `tapeapi-doctor`（实验性）检查，它会说清缺什么、去哪做、下一条命令。
-它随 SDK 发布包提供，在任何目录都能运行：`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz tapeapi-doctor <你的名字或旁路地址>`；
+它随 SDK 发布包提供，在任何目录都能运行：`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz tapeapi-doctor <你的名字或旁路地址>`；
 在本目录（`examples/new-api-sidecar`）里也可以用检出自带的 `node ../../sdk/bin/tapeapi-doctor.js`。逐步清单见 [AI 服务方指南 · 从零到上线](../../docs/guides/zh-CN/ai-providers.md#从零到上线)。
 
 前提：一台装了 Docker 与 Docker Compose 2.17 或更高版本的服务器；一个域名和你已有的 HTTPS 反向代理（Nginx、Caddy、1Panel、宝塔都行）；
@@ -113,7 +113,7 @@ compose 文件，放在同一个网络里，`UPSTREAM_BASE_URL` 指向你的 new
 
 ```sh
 # 终端 1。42.1013.tape 是示例名：换成你的 TapeOut 名字（即 .env 里的 TAPE_NAME）
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -237,7 +237,7 @@ Not ready to pay for anything yet? Run the local trial on your machine first (no
 `npm ci --no-audit --no-fund` at the repository root, then `node examples/relay-trial/trial.mjs`. After each step below,
 `tapeapi-doctor` (experimental) checks it and says what is missing, where to fix it and the next command. It ships in
 the SDK's release package and runs from any directory:
-`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz tapeapi-doctor <your name or sidecar URL>`; in this directory (`examples/new-api-sidecar`)
+`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz tapeapi-doctor <your name or sidecar URL>`; in this directory (`examples/new-api-sidecar`)
 the checkout's own is `node ../../sdk/bin/tapeapi-doctor.js`. The step-by-step checklist is [AI providers · From zero to live](../../docs/guides/ai-providers.md#from-zero-to-live).
 
 You need a server with Docker and Docker Compose 2.17 or later; a domain and your existing HTTPS reverse proxy (Nginx,

@@ -149,15 +149,19 @@ Cloudflare, see [`examples/cloudflare-worker/`](../../examples/cloudflare-worker
 twice. A settler submits vouchers to the escrow in batches. (Experimental, not deployed: the escrow planned for audit holds one
 token per instance and starts with the USDT-pegged token. The default pricing unit will be USDT and escrowed amounts are read
 from the token's own `decimals()`, not BEM's 8; `priceBEM` is unchanged and is still the only per-call price field. Which
-tokens and why: [`docs/FEES.md`](../FEES.md).)
+tokens and why: [`docs/FEES.md`](../FEES.md).) Until a manifest can price in another token, the SDK refuses to fund or
+pay a service whose escrow holds anything but BEM (`UNSUPPORTED_PAYMENT_TOKEN`; the escrow contract itself takes any
+admitted token, the manifest's multi-token pricing is not yet specified), and it builds `approve` and `fund` only for an
+audited escrow or one the consumer adds explicitly.
 
 At settlement, a maintenance contribution comes out of your share, never out of the consumer's price. It defaults to
 1% (100 bps, a constant in the escrow). You can set it to 0 to turn it off, or to anything up to 20%, for your own
 service with `api.tx.setContribution({ circuits, tokenId, bps })`, sent from the circuit holder's wallet. A service at 0
-gets exactly the same treatment. See [`docs/FEES.md`](../FEES.md).
+gets exactly the same treatment. See [`docs/FEES.md`](../FEES.md). Each escrow instance keeps its own setting: with
+several instances, set it on each (`escrow` option), and `tapeapi-doctor --escrows <a,b>` notes when they differ.
 
 > The escrow is not deployed on mainnet yet. Paid methods run against the examples today, and nothing is charged. The
-> reference escrow in the repository still starts at 0; the default of 1% comes with the version that goes to audit.
+> reference escrow in the repository already applies the 1% default; it is not audited.
 
 ## 6. Operate
 

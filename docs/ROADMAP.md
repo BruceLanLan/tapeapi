@@ -8,7 +8,7 @@ the [changelog](../CHANGELOG.md).
 
 ## 1. Now (live)
 
-The current release is **1.7.1** (2026-10-05): container agents, experimental, phase 0. What each release added is in
+The current release is **1.8.0** (2026-10-06): container agents, experimental, phase 0. What each release added is in
 the [changelog](../CHANGELOG.md); in short:
 
 - **Container agents** (1.7, experimental, phase 0): `@tapeapi/sdk/agent` (mandates, task threads, a read-only payment
@@ -43,7 +43,7 @@ the [changelog](../CHANGELOG.md); in short:
   [`docs/guides/`](guides/).
 - **Holder console** at [tapeapi.fun/console](https://tapeapi.fun/console/): take a service live, publish its manifest
   and sign its delegation from a phone wallet.
-- **Specifications** TAPI-20 to TAPI-27 (TapeAPI's own specs; not TAPs, which the editors of TapeOutProtocol/TAPs number; eight TAP drafts are submitted there, of which the service manifest (TAP-11) and signed responses (TAP-13) are merged as Drafts, and six are under review), the SDK and the provider runtime, used from this repository.
+- **Specifications** TAPI-20 to TAPI-27 (TapeAPI's own specs; not TAPs, which the editors of TapeOutProtocol/TAPs number; ten TAP drafts are submitted there, of which the service manifest (TAP-11) and signed responses (TAP-13) are merged as Drafts, and eight are under review), the SDK and the provider runtime, used from this repository.
   Since 1.0.0, TAPI-20, TAPI-21, TAPI-23, TAPI-26 and TAPI-27 are Stable (v1) (TAPI-20 §3.5, the service directory, is
   Experimental); TAPI-22 and TAPI-25 are Experimental.
 
@@ -51,10 +51,13 @@ the [changelog](../CHANGELOG.md); in short:
 
 - **Container agents, phase 1: enforcement on an escrow channel.** The limits in a mandate enforced by a contract. This
   needs a new contract and an independent audit; nothing is deployed before the audit.
-- **TAP draft for container agents.** A draft for the mandate and task messages, which today follow the public
-  discussions TapeOutProtocol/TAPs#40 and #41, is planned; it has not been submitted.
-- **Escrow changes before it goes to audit.** The escrow gets another round of changes (custody assets among them, see
-  section 3) before the audit; it stays undeployed until then.
+- **TAP drafts for container agents.** Phase 0 (the mandate and task messages) is submitted as
+  [TapeOutProtocol/TAPs#47](https://github.com/TapeOutProtocol/TAPs/pull/47), and the agent member of the service
+  manifest as [#49](https://github.com/TapeOutProtocol/TAPs/pull/49); both are under review, with no response from the
+  editors yet. The draft for phase 1 (enforcement on an escrow channel) has not been submitted.
+- **Escrow: the audit candidate (v3) is in the repository.** It holds one token per instance (custody assets, see
+  section 3) and is waiting for a decision about the audit; it stays undeployed until an independent audit is done, so
+  no channel exists.
 - **Developer dashboard, full version.** A read-only *My services* page is live at https://tapeapi.fun/dashboard/ (add
   service names; see health, delegation expiry, links to try or renew). Next: list the circuits you hold automatically
   (needs an index), and renew and manage them from the same page.
@@ -62,12 +65,13 @@ the [changelog](../CHANGELOG.md); in short:
   for its own request; the reviewer must itself be a container. A review then costs a real call and a real circuit.
 - **npm packages** `@tapeapi/sdk` and `@tapeapi/server`. Today both install from each GitHub release (the SDK first,
   then the server), or are used from a clone of this repository.
-- **TAP drafts in the official process.** We submitted eight TAP drafts to TapeOut's TAP process
-  ([TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), TAP-01) on 2026-09-30 and 2026-10-01, all written
-  against TAP-10. The service identity and manifest was merged as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md) (Draft, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8), 2026-10-01); a merge
-  into Draft is not adoption. Signed responses were merged as [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md) (Draft, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10), 2026-10-04), likewise not adoption. Six more are under review and have no number yet: private
-  channels [#12](https://github.com/TapeOutProtocol/TAPs/pull/12), MCP tool binding [#16](https://github.com/TapeOutProtocol/TAPs/pull/16), attested reads [#18](https://github.com/TapeOutProtocol/TAPs/pull/18), private groups [#20](https://github.com/TapeOutProtocol/TAPs/pull/20), AI usage receipts [#26](https://github.com/TapeOutProtocol/TAPs/pull/26)
-  and proof-verified reads [#28](https://github.com/TapeOutProtocol/TAPs/pull/28); #16 and #18 have passed the format review, and the drafts they require (TAP-11, TAP-13) are now merged.
+- **TAP drafts in the official process.** We submitted ten TAP drafts to TapeOut's TAP process
+  ([TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), TAP-01): eight on 2026-09-30 and 2026-10-01, and two
+  on the container-agent formats on 2026-10-04 and 2026-10-05, all written against TAP-10. The service identity and manifest was merged as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md) (Draft, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8), 2026-10-01); a merge
+  into Draft is not adoption. Signed responses were merged as [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md) (Draft, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10), 2026-10-04), likewise not adoption. Eight more are under review and have no number yet: private
+  channels [#12](https://github.com/TapeOutProtocol/TAPs/pull/12), MCP tool binding [#16](https://github.com/TapeOutProtocol/TAPs/pull/16), attested reads [#18](https://github.com/TapeOutProtocol/TAPs/pull/18), private groups [#20](https://github.com/TapeOutProtocol/TAPs/pull/20), AI usage receipts [#26](https://github.com/TapeOutProtocol/TAPs/pull/26),
+  proof-verified reads [#28](https://github.com/TapeOutProtocol/TAPs/pull/28), container agent mandates and task messages, phase 0 [#47](https://github.com/TapeOutProtocol/TAPs/pull/47)
+  and the agent member of the service manifest [#49](https://github.com/TapeOutProtocol/TAPs/pull/49); #16 and #18 have passed the format review, and the drafts they require (TAP-11, TAP-13) are now merged.
   The drafts list, under Backwards Compatibility, where TapeAPI's own 1.x behaviour differs from TAP-10; the SDK follows TAP-10 in an optional mode (`conform: 'tap10'`, experimental: the resolution path since 1.4, all-chain resolution, the messaging path and strict reads since 1.5), and its default behaviour does not change before 2.0. TAPI-20 to
   TAPI-27 remain the basis of the 1.x compatibility promise.
 
@@ -99,7 +103,7 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
 
 ## 1. 现在（已上线）
 
-当前版本是 **1.7.1**（2026-10-05）：容器代理，实验性，阶段 0。每一版加了什么见[更新日志](../CHANGELOG.md)；简要如下：
+当前版本是 **1.8.0**（2026-10-06）：容器代理，实验性，阶段 0。每一版加了什么见[更新日志](../CHANGELOG.md)；简要如下：
 
 - **容器代理**（1.7，实验性，阶段 0）：`@tapeapi/sdk/agent`（授权书、任务线程、只读的付款核验、`forWallet`）、`tapeapi-verify task`
   与 [`examples/agent-service/`](../examples/agent-service/)。持有人签授权书，代理交付，委托方验收，付款是一笔任何人都能核验的普通转账；
@@ -125,24 +129,27 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
   自动开 GitHub issue。
 - **手册** [tapeapi.fun/docs](https://tapeapi.fun/docs/)，中英双语，由 [`docs/guides/`](guides/) 生成。
 - **持有人控制台** [tapeapi.fun/console](https://tapeapi.fun/console/)：用手机钱包让服务上线、发布清单、签署委托。
-- **规范** TAPI-20 至 TAPI-27（TapeAPI 自己的规范；不是 TAP，TAP 由 TapeOutProtocol/TAPs 的编辑编号；我们已向那里提交 8 份 TAP 草稿，其中服务清单（TAP-11）与签名回答（TAP-13）已合并为 Draft，另 6 份在评审中），以及 SDK 与提供者运行时，目前从本仓库使用。自 1.0.0 起，TAPI-20、TAPI-21、
+- **规范** TAPI-20 至 TAPI-27（TapeAPI 自己的规范；不是 TAP，TAP 由 TapeOutProtocol/TAPs 的编辑编号；我们已向那里提交 10 份 TAP 草稿，其中服务清单（TAP-11）与签名回答（TAP-13）已合并为 Draft，另 8 份在评审中），以及 SDK 与提供者运行时，目前从本仓库使用。自 1.0.0 起，TAPI-20、TAPI-21、
   TAPI-23、TAPI-26 与 TAPI-27 为 Stable (v1)（稳定；TAPI-20 §3.5 服务目录为实验性）；TAPI-22 与 TAPI-25 为实验性。
 
 ## 2. 接下来
 
 - **容器代理阶段 1：托管通道上的强制执行。** 让授权书里的限额由合约执行。需要新合约和独立审计；审计之前不部署任何东西。
-- **容器代理的 TAP 草稿。** 授权书与任务消息目前跟随公开讨论 TapeOutProtocol/TAPs#40 与 #41，计划为它们另写一份草稿；尚未提交。
-- **托管合约送审前的改造。** 托管合约在送审前还要再改一版（包括托管资产，见第 3 节）；在那之前一直不部署。
+- **容器代理的 TAP 草稿。** 阶段 0（授权书与任务消息）已提交为 [TapeOutProtocol/TAPs#47](https://github.com/TapeOutProtocol/TAPs/pull/47)，
+  清单里的代理成员已提交为 [#49](https://github.com/TapeOutProtocol/TAPs/pull/49)；两份都在评审中，编辑尚无回复。
+  阶段 1（托管通道上的强制执行）的草稿尚未提交。
+- **托管合约：送审候选版（v3）已在仓库。** 每个实例托管一种代币（托管资产，见第 3 节），等待关于审计的决定；
+  独立审计完成之前一直不部署，所以不存在任何通道。
 - **开发者控制台（完整版）。** 只读版*我的服务*已在 https://tapeapi.fun/dashboard/ 上线（添加服务名，查看健康、
   委托到期、试用和续期链接）。接下来：自动列出你持有的电路（需要索引），并在同一页面完成续期与管理。
 - **凭回执的信誉。** 只有调用方才能评价一个服务，而且必须持有该服务为它自己的请求签发的回执；评价者本身也必须是一个容器。
   这样每条评价都要付出一次真实调用和一个真实电路的代价。
 - **npm 包** `@tapeapi/sdk` 与 `@tapeapi/server`。目前两者都从每个 GitHub Release 安装（先装 SDK，再装服务端包），或在本仓库的克隆目录里使用。
 - **按官方流程提交 TAP 草稿。** 2026-09-30 至 10-01，我们向 TapeOut 的 TAP 流程
-  （[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)，TAP-01）提交了 8 份草稿，一律按 TAP-10 写。
-  服务身份与清单已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)，2026-10-01）；合并为 Draft 不等于被采纳。签名响应已合并为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（Draft，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)，2026-10-04），同样不等于被采纳。另有 6 份在评审中、
+  （[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)，TAP-01）提交了 10 份草稿（8 份在 2026-09-30 至 10-01，另 2 份关于容器代理格式，在 2026-10-04 与 10-05），一律按 TAP-10 写。
+  服务身份与清单已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)，2026-10-01）；合并为 Draft 不等于被采纳。签名响应已合并为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（Draft，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)，2026-10-04），同样不等于被采纳。另有 8 份在评审中、
   尚无编号：私密通道 [#12](https://github.com/TapeOutProtocol/TAPs/pull/12)、MCP 工具绑定 [#16](https://github.com/TapeOutProtocol/TAPs/pull/16)、多家交叉验证读取 [#18](https://github.com/TapeOutProtocol/TAPs/pull/18)、私密群聊 [#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、
-  AI 用量回执 [#26](https://github.com/TapeOutProtocol/TAPs/pull/26)、证明核验读取 [#28](https://github.com/TapeOutProtocol/TAPs/pull/28)；其中 #16、#18 已通过格式审查，它们要求的草稿（TAP-11、TAP-13）现已合并。
+  AI 用量回执 [#26](https://github.com/TapeOutProtocol/TAPs/pull/26)、证明核验读取 [#28](https://github.com/TapeOutProtocol/TAPs/pull/28)、容器代理授权书与任务消息（阶段 0）[#47](https://github.com/TapeOutProtocol/TAPs/pull/47)、清单里的代理成员 [#49](https://github.com/TapeOutProtocol/TAPs/pull/49)；其中 #16、#18 已通过格式审查，它们要求的草稿（TAP-11、TAP-13）现已合并。
   草稿在 Backwards Compatibility 里列出 TapeAPI 自己的 1.x 行为与 TAP-10 的不同；SDK 以可选模式（`conform: 'tap10'`，实验性：解析路径自 1.4，全链解析、消息路径与 strict 读取自 1.5）跟上 TAP-10，2.0 之前默认行为不变。TAPI-20 至 TAPI-27 仍是 1.x 兼容性承诺的依据。
 
 ## 3. 更远

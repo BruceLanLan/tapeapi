@@ -6,7 +6,7 @@ import {TapeAPIEscrow} from "../src/TapeAPIEscrow.sol";
 import {
     NotOwner, NotPendingOwner, ZeroAddress, ZeroAmount, NotHolder, ContributionTooHigh, Expired, BadSignature,
     NothingToSettle, InsufficientBalance, NoPendingWithdraw, CooldownActive, WithdrawWindowClosed, AmountTooLarge,
-    TransferFailed, BadProvider, SessionTooLong, SessionShorteningNotSupported
+    TransferFailed, BadTreasury, BadProvider, SessionTooLong, SessionShorteningNotSupported
 } from "../src/interfaces.sol";
 
 // ---------- Mocks / 测试替身 ----------
@@ -96,6 +96,7 @@ contract TapeAPIEscrowTest is Test {
     event Settled(address indexed consumer, address indexed provider, uint256 paid, uint256 contribution, uint16 bps);
     event ContributionSet(address indexed provider, uint16 bps);
     event TreasuryChanged(address indexed oldTreasury, address indexed newTreasury);
+    event TreasuryClaimed(address indexed treasury, uint256 amount);
 
     function setUp() public {
         consumer = vm.addr(CONSUMER_PK);
@@ -151,11 +152,27 @@ contract TapeAPIEscrowTest is Test {
         new TapeAPIEscrow(address(bem), address(hub), address(0));
     }
 
+    /// A treasury equal to the token or to the escrow's own address is refused at construction (same rule as
+    /// `setTreasury`); any other non-zero treasury is accepted, including the hub and the deployer. Second, independent
+    /// guard of the constructor's `BadTreasury` check (the first is in R19_Review.t.sol).
+    /// 金库等于代币或托管自身地址时构造即拒绝（与 `setTreasury` 同一规则）；其它非零金库（含 hub、部署者）都接受。
+    function testFuzz_constructor_treasuryTokenOrSelf_reverts(address other) public {
+        vm.assume(other != address(0) && other != address(bem));
+        vm.expectRevert(BadTreasury.selector);
+        new TapeAPIEscrow(address(bem), address(hub), address(bem));
+        address self_ = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        vm.expectRevert(BadTreasury.selector);
+        new TapeAPIEscrow(address(bem), address(hub), self_);
+        vm.assume(other != self_);
+        TapeAPIEscrow e = new TapeAPIEscrow(address(bem), address(hub), other);
+        assertEq(e.treasury(), other);
+    }
+
     function test_constructor_state() public {
         vm.expectEmit(true, true, false, true);
         emit TreasuryChanged(address(0), treasury);
         TapeAPIEscrow e = new TapeAPIEscrow(address(bem), address(hub), treasury);
-        assertEq(address(e.bem()), address(bem));
+        assertEq(address(e.token()), address(bem));   // v3: the constructor argument is `token` / v3 构造参数名为 token
         assertEq(address(e.hub()), address(hub));
         assertEq(e.treasury(), treasury);
         assertEq(e.owner(), address(this));
@@ -419,7 +436,7 @@ contract TapeAPIEscrowTest is Test {
         escrow.settle(consumer, provider, 1_000 ether, exp, sig);
 
         assertEq(bem.balanceOf(provider), 1_000 ether);
-        assertEq(bem.balanceOf(treasury), 0);
+        assertEq(escrow.treasuryAccrued(), 0);
         assertEq(bem.transfers() - transfersBefore, 1); // exactly one transfer: to provider / 只有一次转账
         assertEq(escrow.channelOf(consumer, provider), CHANNEL - 1_000 ether);
         assertEq(escrow.claimedOf(consumer, provider), 1_000 ether);
@@ -434,8 +451,11 @@ contract TapeAPIEscrowTest is Test {
         emit Settled(consumer, provider, 1_000 ether, 10 ether, 100);
         escrow.settle(consumer, provider, 1_000 ether, exp, _voucher(CONSUMER_PK, 1_000 ether, exp));
         assertEq(bem.balanceOf(provider), 990 ether);
-        assertEq(bem.balanceOf(treasury), 10 ether);
-        assertEq(bem.transfers() - transfersBefore, 2);
+        // v3 pull: the 1% is accrued, not transferred; settle makes exactly one transfer (to the provider)
+        // v3 拉取式：1% 记入应收额而不转账；settle 只有一次转账（给提供者）
+        assertEq(escrow.treasuryAccrued(), 10 ether);
+        assertEq(bem.balanceOf(treasury), 0, "settle pushes nothing to the treasury");
+        assertEq(bem.transfers() - transfersBefore, 1);
         assertEq(escrow.channelOf(consumer, provider), CHANNEL - 1_000 ether, "the consumer pays the price, no more");
     }
 
@@ -447,8 +467,8 @@ contract TapeAPIEscrowTest is Test {
         emit Settled(consumer, provider, 1_000 ether, 10 ether, 100);
         escrow.settle(consumer, provider, 1_000 ether, exp, _voucher(CONSUMER_PK, 1_000 ether, exp));
         assertEq(bem.balanceOf(provider), 990 ether);
-        assertEq(bem.balanceOf(treasury), 10 ether);
-        assertEq(bem.transfers() - transfersBefore, 2);
+        assertEq(escrow.treasuryAccrued(), 10 ether);
+        assertEq(bem.transfers() - transfersBefore, 1, "v3: one transfer, the contribution is accrued");
     }
 
     function test_settle_monotonicCumulative() public {
@@ -459,7 +479,7 @@ contract TapeAPIEscrowTest is Test {
         escrow.settle(consumer, provider, 1_500 ether, exp, _voucher(CONSUMER_PK, 1_500 ether, exp));
         assertEq(escrow.claimedOf(consumer, provider), 1_500 ether);
         assertEq(bem.balanceOf(provider), 1_500 ether * 99 / 100);
-        assertEq(bem.balanceOf(treasury), 15 ether);
+        assertEq(escrow.treasuryAccrued(), 15 ether);
         // replay / 重放
         bytes memory sig1 = _voucher(CONSUMER_PK, 1_500 ether, exp); // hoisted: expectRevert must target settle / 提前算签名
         vm.expectRevert(NothingToSettle.selector);
@@ -476,12 +496,12 @@ contract TapeAPIEscrowTest is Test {
         uint256 t0 = bem.transfers();
         escrow.settle(consumer, provider, 99, exp, _voucher(CONSUMER_PK, 99, exp)); // 99 * 1% = 0.99 -> 0
         assertEq(bem.balanceOf(provider), 99);
-        assertEq(bem.balanceOf(treasury), 0);
-        assertEq(bem.transfers() - t0, 1); // rounding to 0 skips the treasury transfer / 取整为 0 时不转账
+        assertEq(escrow.treasuryAccrued(), 0);
+        assertEq(bem.transfers() - t0, 1); // one transfer, to the provider / 只有给提供者的一次转账
         _setContribution(0);
         escrow.settle(consumer, provider, 1_099, exp, _voucher(CONSUMER_PK, 1_099, exp));
         assertEq(bem.balanceOf(provider), 1_099);
-        assertEq(bem.balanceOf(treasury), 0);
+        assertEq(escrow.treasuryAccrued(), 0);
     }
 
     function test_settle_maxContribution() public {
@@ -491,7 +511,7 @@ contract TapeAPIEscrowTest is Test {
         emit Settled(consumer, provider, 1_000 ether, 200 ether, 2000);
         escrow.settle(consumer, provider, 1_000 ether, exp, _voucher(CONSUMER_PK, 1_000 ether, exp));
         assertEq(bem.balanceOf(provider), 800 ether);
-        assertEq(bem.balanceOf(treasury), 200 ether);
+        assertEq(escrow.treasuryAccrued(), 200 ether);
         assertEq(escrow.channelOf(consumer, provider), CHANNEL - 1_000 ether, "the consumer pays the price, no more");
     }
 
@@ -501,7 +521,7 @@ contract TapeAPIEscrowTest is Test {
         _setContribution(1000); // 10% from now on / 之后 10%
         escrow.settle(consumer, provider, 1_200 ether, exp, _voucher(CONSUMER_PK, 1_200 ether, exp)); // delta 200
         assertEq(bem.balanceOf(provider), 990 ether + 180 ether);
-        assertEq(bem.balanceOf(treasury), 10 ether + 20 ether);
+        assertEq(escrow.treasuryAccrued(), 10 ether + 20 ether);
     }
 
     /// The rate is read at settlement: a voucher signed before a change settles at the rate in force when it settles,
@@ -522,13 +542,13 @@ contract TapeAPIEscrowTest is Test {
         vm.expectEmit(true, true, false, true);
         emit Settled(consumer, provider, 500 ether, 0, 0);
         escrow.settle(consumer, provider, 1_500 ether, exp, v2);
-        assertEq(bem.balanceOf(treasury), 10 ether, "the 10 settled at 1% is neither refunded nor recomputed");
+        assertEq(escrow.treasuryAccrued(), 10 ether, "the 10 settled at 1% is neither refunded nor recomputed");
         _setContribution(2000);
         vm.expectEmit(true, true, false, true);
         emit Settled(consumer, provider, 1_000 ether, 200 ether, 2000);
         escrow.settle(consumer, provider, 2_500 ether, exp, v3);
         assertEq(bem.balanceOf(provider), 990 ether + 500 ether + 800 ether);
-        assertEq(bem.balanceOf(treasury), 10 ether + 200 ether);
+        assertEq(escrow.treasuryAccrued(), 10 ether + 200 ether);
         assertEq(escrow.claimedOf(consumer, provider), 2_500 ether);
         assertEq(escrow.channelOf(consumer, provider), CHANNEL - 2_500 ether, "the consumer paid exactly the vouchers");
     }
@@ -548,17 +568,21 @@ contract TapeAPIEscrowTest is Test {
         escrow.settle(consumer, provider, amount, exp, sig);
         assertEq(escrow.channelOf(consumer, provider), CHANNEL - amount);
         assertEq(bem.balanceOf(provider), amount - c);
-        assertEq(bem.balanceOf(treasury), c);
+        assertEq(escrow.treasuryAccrued(), c);
     }
 
+    /// v3 pull: the accrual belongs to the treasury ROLE and is paid to whoever `treasury` is at claim time.
+    /// v3 拉取式：应收额属于"金库"这个角色，付给领取时的 `treasury`。
     function test_settle_contributionGoesToCurrentTreasury() public {
         _setContribution(100);
         address t2 = address(0x7EA6);
         escrow.setTreasury(t2);
         uint64 exp = _future();
         escrow.settle(consumer, provider, 1_000 ether, exp, _voucher(CONSUMER_PK, 1_000 ether, exp));
+        assertEq(bem.balanceOf(t2), 0, "nothing is pushed at settle");
+        escrow.claimTreasury();
         assertEq(bem.balanceOf(t2), 10 ether);
-        assertEq(bem.balanceOf(treasury), 0);
+        assertEq(bem.balanceOf(treasury), 0, "the old treasury gets nothing");
     }
 
     function test_settle_expiredVoucher_reverts() public {
@@ -591,7 +615,7 @@ contract TapeAPIEscrowTest is Test {
         assertEq(escrow.claimedOf(consumer, provider), CHANNEL, "claimed advances by what was paid, not by cumulative");
         assertEq(escrow.channelOf(consumer, provider), 0);
         assertEq(bem.balanceOf(provider), CHANNEL * 99 / 100);
-        assertEq(bem.balanceOf(treasury), CHANNEL / 100);
+        assertEq(escrow.treasuryAccrued(), CHANNEL / 100);
 
         // Empty channel: the remainder is not payable yet. / 通道已空：余额尚不可付。
         vm.expectRevert(InsufficientBalance.selector);
@@ -824,7 +848,7 @@ contract TapeAPIEscrowTest is Test {
         escrow.withdraw(provider);
         assertEq(bem.balanceOf(consumer) - before, 1_000 ether, "only what the settlement left");
         assertEq(escrow.channelOf(consumer, provider), 0);
-        assertEq(bem.balanceOf(provider) + bem.balanceOf(treasury), 4_000 ether, "the provider that settled in time was paid in full");
+        assertEq(bem.balanceOf(provider) + escrow.treasuryAccrued(), 4_000 ether, "the provider that settled in time was paid in full");
     }
 
     function test_withdraw_channelDrained_reverts_requestSurvives() public {
@@ -853,6 +877,96 @@ contract TapeAPIEscrowTest is Test {
         escrow.withdraw(provider);
         assertEq(escrow.channelOf(consumer, provider), CHANNEL - 100 ether);
         assertEq(escrow.channelOf(consumer, provider2), 300 ether, "the other channel is untouched");
+    }
+
+    // ----- v3 pull: claimTreasury / v3 拉取式：领取金库应收 -----
+
+    /// Anyone may call it; the whole accrual goes to the current treasury; the accrual is zeroed; the event names
+    /// recipient and amount; the return value is the amount. / 任何人可调；全额付给当前金库；清零；事件写明收款人与金额。
+    function test_claimTreasury_anyoneCanCall_paysWholeAccrualToTreasury() public {
+        uint64 exp = _future();
+        escrow.settle(consumer, provider, 1_000 ether, exp, _voucher(CONSUMER_PK, 1_000 ether, exp));   // default 1%
+        escrow.settle(consumer, provider, 3_000 ether, exp, _voucher(CONSUMER_PK, 3_000 ether, exp));
+        assertEq(escrow.treasuryAccrued(), 30 ether, "accrual sums settlements");
+        vm.expectEmit(true, false, false, true);
+        emit TreasuryClaimed(treasury, 30 ether);
+        vm.prank(stranger);
+        uint256 got = escrow.claimTreasury();
+        assertEq(got, 30 ether);
+        assertEq(bem.balanceOf(treasury), 30 ether);
+        assertEq(bem.balanceOf(stranger), 0, "the caller chooses only the moment, never the recipient");
+        assertEq(escrow.treasuryAccrued(), 0);
+        assertEq(bem.balanceOf(address(escrow)), escrow.channelOf(consumer, provider), "only channel money is left");
+    }
+
+    function test_claimTreasury_nothingAccrued_revertsZeroAmount() public {
+        vm.expectRevert(ZeroAmount.selector);
+        escrow.claimTreasury();
+        _setContribution(0);
+        uint64 exp = _future();
+        escrow.settle(consumer, provider, 1_000 ether, exp, _voucher(CONSUMER_PK, 1_000 ether, exp));
+        vm.expectRevert(ZeroAmount.selector);
+        escrow.claimTreasury();
+        _setContribution(100);
+        escrow.settle(consumer, provider, 2_000 ether, exp, _voucher(CONSUMER_PK, 2_000 ether, exp));
+        escrow.claimTreasury();
+        vm.expectRevert(ZeroAmount.selector);   // a second claim right after finds nothing / 紧接着再领为空
+        escrow.claimTreasury();
+    }
+
+    /// Rotation pays what is accrued but unclaimed to the OUTGOING treasury first (it earned it), in the same order
+    /// as claimTreasury; only what accrues after the rotation goes to the new one. (When the old treasury cannot
+    /// receive, the accrual stays with the role instead: MaliciousTokens.t.sol, R19_Review.t.sol.)
+    /// 更换金库时先把已记账未领取的应收额付给**旧**金库（那是它挣的），顺序与 claimTreasury 相同；更换之后的应收才归新金库。
+    function test_claimTreasury_followsRotation() public {
+        uint64 exp = _future();
+        escrow.settle(consumer, provider, 1_000 ether, exp, _voucher(CONSUMER_PK, 1_000 ether, exp));
+        escrow.claimTreasury();                                       // 10 to the old treasury
+        escrow.settle(consumer, provider, 2_000 ether, exp, _voucher(CONSUMER_PK, 2_000 ether, exp));
+        address t2 = address(0x7EA6);
+        vm.expectEmit(true, false, false, true);
+        emit TreasuryClaimed(treasury, 10 ether);
+        vm.expectEmit(true, true, false, true);
+        emit TreasuryChanged(treasury, t2);
+        escrow.setTreasury(t2);                                       // pays the second 10 to the old treasury
+        assertEq(escrow.treasuryAccrued(), 0, "rotation settled the outgoing treasury's accrual");
+        vm.expectRevert(ZeroAmount.selector);
+        escrow.claimTreasury();
+        escrow.settle(consumer, provider, 3_000 ether, exp, _voucher(CONSUMER_PK, 3_000 ether, exp));
+        escrow.claimTreasury();
+        assertEq(bem.balanceOf(treasury), 20 ether, "everything accrued before the rotation went to the old treasury");
+        assertEq(bem.balanceOf(t2), 10 ether, "only what accrued after the rotation goes to the new one");
+    }
+
+    /// The owner cannot claim to itself or move accrued funds anywhere but `treasury`; claiming touches no channel.
+    /// owner 不能把应收额领给自己或别处，领取不触及任何通道。
+    function test_claimTreasury_ownerHasNoExtraPower_channelsUntouched() public {
+        uint64 exp = _future();
+        escrow.settle(consumer, provider, 1_000 ether, exp, _voucher(CONSUMER_PK, 1_000 ether, exp));
+        uint256 ch = escrow.channelOf(consumer, provider);
+        uint256 cl = escrow.claimedOf(consumer, provider);
+        uint256 ownerBefore = bem.balanceOf(address(this));
+        escrow.claimTreasury();                                      // called by the owner
+        assertEq(bem.balanceOf(address(this)), ownerBefore, "owner received nothing");
+        assertEq(bem.balanceOf(treasury), 10 ether);
+        assertEq(escrow.channelOf(consumer, provider), ch);
+        assertEq(escrow.claimedOf(consumer, provider), cl);
+    }
+
+    /// Item I-02 with pull: the provider's transfer is pay - floor(pay * bps / 1e4), which is > 0 whenever pay > 0
+    /// because bps <= 2000; the accrual takes the rounded-down part and nothing else.
+    /// 拉取式下的 I-02：提供者到账 pay - floor(pay*bps/1e4)，bps <= 2000 时 pay > 0 即恒 > 0；应收额只取向下取整的部分。
+    function testFuzz_settle_providerAlwaysPaid_accrualIsFloor(uint256 amount, uint16 bpsSeed) public {
+        amount = bound(amount, 1, CHANNEL);
+        uint16 bps = uint16(bound(bpsSeed, 0, escrow.MAX_CONTRIBUTION_BPS()));
+        _setContribution(bps);
+        uint64 exp = _future();
+        bytes memory sig = _voucher(CONSUMER_PK, amount, exp);
+        escrow.settle(consumer, provider, amount, exp, sig);
+        assertGt(bem.balanceOf(provider), 0, "provider receives > 0 whenever pay > 0");
+        assertGe(bem.balanceOf(provider) * 5, amount * 4, "provider receives at least 80%");
+        assertEq(escrow.treasuryAccrued(), amount * bps / 10_000);
+        assertEq(bem.balanceOf(provider) + escrow.treasuryAccrued(), amount, "split is exact: nothing created or lost");
     }
 
     // ----- admin: treasury only / 管理：仅金库 -----
@@ -938,6 +1052,8 @@ contract TapeAPIEscrowTest is Test {
         bytes memory sig = _sign(CONSUMER_PK, e.voucherDigest(consumer, provider, 500, exp));
         e.settle(consumer, provider, 500, exp, sig);
         assertEq(t.balanceOf(provider), 495);
+        assertEq(e.treasuryAccrued(), 5);
+        e.claimTreasury();                                   // the pull leg works with a no-return token too
         assertEq(t.balanceOf(treasury), 5);
         vm.prank(consumer);
         e.requestWithdraw(provider, 500);

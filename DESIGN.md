@@ -3,7 +3,8 @@
 > v0.2 变更：零协议费 + 提供者自设贡献比例（docs/FEES.md）；目录别名可选激活门槛；SDK `callQuorum` 多提供者一致模式（docs/CROSSCHAIN.md §1）。
 > v0.2.1（SDK 审查修复）：信封摘要升级为 `TAPI-1/resp/v2`（覆盖请求与 ok）；全线拒绝高 s 签名；payer 签发/确认分离 + `lastCumulative` 重同步；`dev`/`allowSingleNode`/`allowHttp`/`maxSkewS` 显式开关；原型键拒绝；错误消息不含 URL/密钥。
 >
-> 2026-09-28：费用模型改为 v0.3（无强制协议费；默认 1% 维护贡献，提供者可设为 0；运营方没有费率开关），由下一版托管实现。下文的 TapeAPIEscrow 描述的是仓库里现有的 v2 合约（贡献默认 0），见 docs/FEES.md 与 TAPI-22 §3.4。
+> 2026-09-28：费用模型改为 v0.3（无强制协议费；默认 1% 维护贡献，提供者可设为 0；运营方没有费率开关），见 docs/FEES.md 与 TAPI-22 §3.4。
+> 2026-10-05（内部，未部署、未审计）：下文的 TapeAPIEscrow 描述送审候选 v3：构造参数 `token`（每种代币一个实例，任意小数位）、偿付写成 `≥`、金库改为拉取式（`treasuryAccrued` + `claimTreasury()`）。其中拉取式金库 TAPI-22 §3.3 尚未规定（规范仍写在 settle 内转给金库），见 TAPI-22 §3.5。
 
 链：BNB Smart Chain, chainId 56。测试：本地 mock RPC。
 
@@ -70,7 +71,7 @@ canonicalJSON = JSON.stringify，对象键按字典序递归排序，无空白�
 EIP-712 domain: { name: "TapeAPIEscrow", version: "1", chainId, verifyingContract: <Escrow 地址> }
 type Voucher { address consumer; address provider; uint256 cumulative; uint64 expires; }
 - provider = 服务容器地址（收款直接进容器）。
-- cumulative 单调递增（消费者对该 provider 的累计应付，单位 wei of BEM）。
+- cumulative 单调递增（消费者对该 provider 的累计应付，单位是该托管实例代币的最小单位；BEM 实例为 10⁻⁸ BEM，USDT 锚定币实例为 10⁻¹⁸ USDT）。
 - 签名者可以是 consumer 本人，或 consumer 授权的 session key，且 sessionExpiry[consumer][key] ≥ block.timestamp（会话只需在**结算时**有效，不必覆盖凭证整个生命周期；H-01）。
 - 凭证在 block.timestamp ≤ expires 期间有效（等于时仍有效）。
 请求中的 voucher 字段：`{ "consumer":"0x..","provider":"0x..","cumulative":"123","expires":1758400000,"sig":"0x..","signer":"0x.."}`
@@ -100,10 +101,10 @@ constructor(address hub, address factory, address domainBinding)   // hub、fact
 - DOMAIN_SEPARATOR() view  // 供 Delegation 校验用
 - verifyDelegation(address circuits, uint256 tokenId, address signer, uint64 expires, bytes sig) view returns (bool)
 
-### TapeAPIEscrow.sol（不可升级，零协议费；Ownable 仅能更换金库地址，两步转移）
-constructor(address bem, address hub, address treasury)   // 均非零；hub 用于 accountOf
+### TapeAPIEscrow.sol（不可升级，零协议费；Ownable 仅能更换金库地址（换金库时先付旧金库），两步转移）
+constructor(address token, address hub, address treasury)   // 均非零；token = 本实例托管的唯一 ERC-20（不可变，合约不读小数位）；hub 用于 accountOf
 常量：WITHDRAW_COOLDOWN = 48h，WITHDRAW_WINDOW = 7d，MAX_SESSION = 30d，DEFAULT_CONTRIBUTION_BPS = 100，MAX_CONTRIBUTION_BPS = 2000。
-（v2，按提供者分账；决策理由见 spec/TAPI-22.md §3.3。v1 归档于 contracts/archive/。）
+（v2 起按提供者分账，决策理由见 spec/TAPI-22.md §3.3；v3 = 单一不可变 token + 拉取式金库 + `≥` 偿付。v1 归档于 contracts/archive/。）
 
 - fund(address provider, uint256 amount)                         // transferFrom；channel[msg.sender][provider] += amount；provider 不得为零或托管自身
 - requestWithdraw(address provider, uint256 amount)              // amount ≤ channel；记录 {amount, now}，覆盖并重新计时旧请求；发出 WithdrawRequested
@@ -114,10 +115,14 @@ constructor(address bem, address hub, address treasury)   // 均非零；hub 用
   - block.timestamp ≤ expires；签名者为 consumer 或 session[consumer][provider][signer] ≥ now
   - provider 不得为零或托管自身（BadProvider）
   - delta = cumulative − claimed > 0（NothingToSettle）；pay = min(delta, channel) > 0（InsufficientBalance）
-  - contribution = pay × bps / 10000 → treasury（>0 时）；其余 → provider；claimed += pay；channel −= pay
+  - contribution = pay × bps / 10000（向下取整）记入 treasuryAccrued；pay − contribution 转给 provider（唯一一笔转账，pay > 0 时恒 > 0）；claimed += pay；channel −= pay
   - **部分结算是合法流程**：提供者自愿赊账，余额到账后续结
-- setContribution(circuits, tokenId, bps) / contributionOf / setTreasury / 两步所有权（同 v1）
-- views：channelOf(c,p)、claimedOf(c,p)、sessionExpiry(c,p,key)、pendingWithdraw(c,p)、DOMAIN_SEPARATOR、VOUCHER_TYPEHASH、voucherDigest
+- claimTreasury()                                               // 任何人可调；把全部 treasuryAccrued 付给当前 treasury，先清零；0 时回滚 ZeroAmount；金库收不了款时回滚 TransferFailed 且不影响任何结算
+- setContribution(circuits, tokenId, bps) / contributionOf / 两步所有权（同 v1）
+- setTreasury(addr)：拒绝零地址（ZeroAddress）、托管自身与代币（BadTreasury，构造函数同样拒绝）；同一地址什么都不做。改地址前先为旧金库执行 `try this.claimTreasury()`：成功则旧金库拿到全部应收（owner 改不走旧金库挣的钱）；失败（冻结、拒收、代币返回非成功）则整体回滚并忽略，更换照样成功，应收留给新金库
+- 代币调用：只复制 ≤ 32 字节返回值；成功 = 未回滚且（无返回值且代币有代码，或 ≥ 32 字节且首字为 1）；其它一律 TransferFailed
+- views：channelOf(c,p)、claimedOf(c,p)、sessionExpiry(c,p,key)、pendingWithdraw(c,p)、token、treasuryAccrued、DOMAIN_SEPARATOR、VOUCHER_TYPEHASH、voucherDigest
+- 偿付：token.balanceOf(escrow) ≥ Σ channelOf + treasuryAccrued（直接转入的捐赠留在原处，没有清扫；合约从不读自身余额）
 
 提供者 MUST 监听 WithdrawRequested 并在冷静期内结算——这是它的全部保护，与 v1 的双窗口在实质上同构。
 凭证的 EIP-712 结构与 v1 完全相同（consumer, provider, cumulative, expires），SDK 签名路径不变。

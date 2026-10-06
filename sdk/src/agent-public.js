@@ -16,7 +16,7 @@ export {
   normalizeMandateRevocation, hashMandateRevocation, mandateRevocationDigest, mandateRevocationTypedData, signMandateRevocation,
 } from './agent-sig.js'
 export {
-  createAgentKit, plainText, revocationFileBytes, MANDATES_KEY, MANDATES_LIMIT, MANDATES_FORMAT, MAX_MANDATE_S, REVOCATION_ISSUED_SKEW_S,
+  createAgentKit, plainText, revocationFileBytes, agentMessageProblem, hashOnlyReceiptProblem, MANDATES_KEY, MANDATES_LIMIT, MANDATES_FORMAT, MAX_MANDATE_S, REVOCATION_ISSUED_SKEW_S,
   THREAD_KINDS, RESERVED_KINDS, KIND_PREFIX, TASK_STATES, EVIDENCE_PROVES, EVIDENCE_DOES_NOT_PROVE,
 } from './agent-verify.js'
 export {

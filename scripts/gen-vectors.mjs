@@ -578,6 +578,100 @@ console.log('done')
     ],
     sameResult: [[0, 1], [5, 6]],
   }
+  // Input forms (draft TAP §3.7, §7.2 steps 1-3, §8), 1.8: what a verifier refuses rather than reads leniently. The values
+  // are messages as received; `expect` is the outcome the draft requires, written by hand from its text (not produced by
+  // the SDK): 'ok' (the form holds; signatures and the chain are not checked here) or the problem reported. A bigint has no
+  // JSON form, so it is tested in sdk/test/agent.test.mjs only.
+  // 输入形式（1.8）：核验方拒绝而不宽松读取的形式。期望值按草稿手写，不由 SDK 产生；bigint 没有 JSON 形式，只在 JS 测试里。
+  const UP = (h) => '0x' + h.slice(2).toUpperCase()
+  const without = (o, key) => { const c = { ...o }; delete c[key]; return c }
+  const M = 'mandate-malformed', X = 'message-malformed', H = 'receipt-not-hash-only'
+  const m0 = { ...base, scope: [{ provider: P1, token: ZERO, cap: '0' }, { provider: P2, token: ZERO, cap: '0' }] }
+  const v1 = verdict(1), v2 = verdict(2)
+  const r0 = revocation([k('mandate one'), k('mandate two')], 0)
+  const acceptReceipt = {
+    v: 1, service: { container: AGENT, circuits: '0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b', tokenId: '12', name: 'informative, not checked' },
+    method: 'task_offer', params: { message: 'informative' }, id: 'r-1', ts: 1789001000, ok: true,
+    result: { kind: 'tape.agent/accept', offerHash: k('offer'), agentKey: AGENT_KEY, exp: 1789003600 }, sig: '0x' + '1b'.repeat(65),
+  }
+  const am = (name, value, expect) => ({ name, type: 'agentMessage', kind: 'accept', agent: AGENT, value, expect })
+  const hashOnly = { v: 2, service: { container: P1 }, method: 'read', requestHash: k('request'), id: 'p-1', ts: 1789001000, ok: true, bodyHash: k('body'), sig: '0x' + '1c'.repeat(65) }
+  const ho = (name, value, expect) => ({ name, type: 'hashOnlyReceipt', value, expect })
+  const inputForms = {
+    rules: {
+      holder: 'Mandate, TaskOffer, TaskVerdict, MandateRevocation (§3.7): address 0x and 40 hex digits in any case; bytes32 0x and 64 lower-case hex digits; uint8 a JSON number the field allows; uint64 a JSON number, an integer from 0 to 2^53 - 1; uint256 a string, a decimal integer without leading zeros below 2^256; bool true or false; every member present; plus the rules of §3.2-§3.5 (non-zero members, at most 16 scope items and 24 hashes, expires > notBefore). A Mandate that breaks them is mandate-malformed, any other message message-malformed',
+      agentMessage: '§7.2 steps 1-3 for the receipt of an agent message, given its kind and the thread\'s agent: the form (v 1, a service object naming a container, the TAP-13 path segment, params an object when present, id a string of 1 to 128 code units, ok true, an object result, sig 65 bytes in hex), then service.container is the agent (agent-mismatch), then result.kind and ts and result.exp in the uint64 form',
+      hashOnlyReceipt: '§8: v 2, a service object naming a container, requestHash and bodyHash in the bytes32 form, id as in TAP-13 (1 to 128 code units; the empty id only when ok is false, TAP-13 §8 binding rule 1), ts in the uint64 form, ok a JSON boolean, sig 65 bytes in hex; anything else is receipt-not-hash-only',
+    },
+    cases: [
+      { name: 'a mandate in the JSON forms', type: 'Mandate', value: m0, expect: 'ok' },
+      { name: 'addresses in another case', type: 'Mandate', value: { ...m0, principal: PRINCIPAL.toLowerCase(), agent: '0x' + AGENT.slice(2).toUpperCase() }, expect: 'ok' },
+      { name: 'the largest uint256 nonce', type: 'Mandate', value: { ...m0, nonce: '115792089237316195423570985008687907853269984665640564039457584007913129639935' }, expect: 'ok' },
+      { name: 'expires at 2^53 - 1', type: 'Mandate', value: { ...m0, expires: 9007199254740991 }, expect: 'ok' },
+      { name: 'an upper-case bytes32 (taskHash)', type: 'Mandate', value: { ...m0, taskHash: UP(taskHash) }, expect: M },
+      { name: 'a uint256 as a JSON number (nonce)', type: 'Mandate', value: { ...m0, nonce: 1 }, expect: M },
+      { name: 'a uint256 as a JSON number (feeCap)', type: 'Mandate', value: { ...m0, feeCap: 0 }, expect: M },
+      { name: 'a uint256 as a JSON number (a scope cap)', type: 'Mandate', value: { ...m0, scope: [{ provider: P1, token: ZERO, cap: 0 }] }, expect: M },
+      { name: 'a uint256 with a leading zero', type: 'Mandate', value: { ...m0, nonce: '01' }, expect: M },
+      { name: 'a uint256 with a sign', type: 'Mandate', value: { ...m0, nonce: '+1' }, expect: M },
+      { name: 'a uint256 of 2^256', type: 'Mandate', value: { ...m0, nonce: '115792089237316195423570985008687907853269984665640564039457584007913129639936' }, expect: M },
+      { name: 'a negative uint64 (notBefore)', type: 'Mandate', value: { ...m0, notBefore: -1 }, expect: M },
+      { name: 'a uint64 of 2^53 (expires)', type: 'Mandate', value: { ...m0, expires: 9007199254740992 }, expect: M },
+      { name: 'a uint64 as a string', type: 'Mandate', value: { ...m0, notBefore: '1789000000' }, expect: M },
+      { name: 'a bool as a string', type: 'Mandate', value: { ...m0, subdelegate: 'false' }, expect: M },
+      { name: 'a member missing (subdelegate)', type: 'Mandate', value: without(m0, 'subdelegate'), expect: M },
+      { name: 'mode 2, reserved (§3.8)', type: 'Mandate', value: { ...m0, mode: 2 }, expect: M },
+      { name: 'a uint8 as a boolean', type: 'Mandate', value: { ...m0, mode: false }, expect: M },
+      { name: 'expires not after notBefore', type: 'Mandate', value: { ...m0, expires: m0.notBefore }, expect: M },
+      { name: 'a zero agentKey', type: 'Mandate', value: { ...m0, agentKey: ZERO }, expect: M },
+      { name: 'an offer in the JSON forms', type: 'TaskOffer', value: offer, expect: 'ok' },
+      { name: 'an offer whose fee is a JSON number', type: 'TaskOffer', value: { ...offer, fee: 0 }, expect: X },
+      { name: 'an offer whose nonce is a JSON number', type: 'TaskOffer', value: { ...offer, nonce: 1 }, expect: X },
+      { name: 'an offer with an upper-case taskHash', type: 'TaskOffer', value: { ...offer, taskHash: UP(taskHash) }, expect: X },
+      { name: 'a verdict in the JSON forms, no reason (32 zero bytes)', type: 'TaskVerdict', value: v1, expect: 'ok' },
+      { name: 'a verdict with the hash of a reason', type: 'TaskVerdict', value: v2, expect: 'ok' },
+      { name: 'a verdict without reasonHash', type: 'TaskVerdict', value: without(v1, 'reasonHash'), expect: X },
+      { name: 'a verdict whose reasonHash is null', type: 'TaskVerdict', value: { ...v1, reasonHash: null }, expect: X },
+      { name: 'a verdict with an upper-case reasonHash', type: 'TaskVerdict', value: { ...v2, reasonHash: UP(v2.reasonHash) }, expect: X },
+      { name: 'verdict 0, reserved', type: 'TaskVerdict', value: { ...v1, verdict: 0 }, expect: X },
+      { name: 'verdict 3, reserved', type: 'TaskVerdict', value: { ...v1, verdict: 3 }, expect: X },
+      { name: 'a zero deliverableHash', type: 'TaskVerdict', value: { ...v1, deliverableHash: '0x' + '00'.repeat(32) }, expect: X },
+      { name: 'a revocation in the JSON forms', type: 'MandateRevocation', value: r0, expect: 'ok' },
+      { name: 'a revocation listing an upper-case hash', type: 'MandateRevocation', value: { ...r0, mandateHashes: [UP(r0.mandateHashes[0])] }, expect: X },
+      { name: 'a revocation with a negative revokedBefore', type: 'MandateRevocation', value: { ...r0, revokedBefore: -1 }, expect: X },
+      { name: 'a revocation without issued', type: 'MandateRevocation', value: without(r0, 'issued'), expect: X },
+      am('an accept receipt in its form', acceptReceipt, 'ok'),
+      am('params absent (it is {} for the digest)', without(acceptReceipt, 'params'), 'ok'),
+      am('a negative ts', { ...acceptReceipt, ts: -1 }, X),
+      am('a negative result.exp', { ...acceptReceipt, result: { ...acceptReceipt.result, exp: -1 } }, X),
+      am('ts of 2^53', { ...acceptReceipt, ts: 9007199254740992 }, X),
+      am('ts as a string', { ...acceptReceipt, ts: '1789001000' }, X),
+      am('ok false: an agent message answers a successful call', { ...acceptReceipt, ok: false }, X),
+      am('v 2: a hash-only receipt is not an agent message', { ...acceptReceipt, v: 2 }, X),
+      am('result.kind of another message', { ...acceptReceipt, result: { ...acceptReceipt.result, kind: 'tape.agent/deliver' } }, X),
+      am('params that are not an object', { ...acceptReceipt, params: ['offer'] }, X),
+      am('a method that is not a path segment', { ...acceptReceipt, method: 'task.offer' }, X),
+      am('a sig that is not 65 bytes', { ...acceptReceipt, sig: '0x' + '1b'.repeat(64) }, X),
+      am('an id that is not a string', { ...acceptReceipt, id: 1 }, X),
+      am('an id of 129 characters', { ...acceptReceipt, id: 'r'.repeat(129) }, X),
+      am('the empty id: an agent message answers a successful call, so it has an id of 1 to 128 code units', { ...acceptReceipt, id: '' }, X),
+      am('signed for another container', { ...acceptReceipt, service: { ...acceptReceipt.service, container: P1 } }, 'agent-mismatch'),
+      ho('a hash-only receipt in its form', hashOnly, 'ok'),
+      ho('ok false: a signed refusal', { ...hashOnly, ok: false }, 'ok'),
+      ho('ok as the string "true"', { ...hashOnly, ok: 'true' }, H),
+      ho('ok as a number', { ...hashOnly, ok: 1 }, H),
+      ho('ok missing', without(hashOnly, 'ok'), H),
+      ho('an upper-case requestHash', { ...hashOnly, requestHash: UP(hashOnly.requestHash) }, H),
+      ho('bodyHash missing', without(hashOnly, 'bodyHash'), H),
+      ho('a negative ts', { ...hashOnly, ts: -1 }, H),
+      ho('v 1: a full receipt publishes the request', { ...hashOnly, v: 1 }, H),
+      ho('a service container that is not an address', { ...hashOnly, service: { container: 'provider' } }, H),
+      ho('a sig that is not 65 bytes', { ...hashOnly, sig: '0x' + '1c'.repeat(66) }, H),
+      ho('an id that is not a string', { ...hashOnly, id: null }, H),
+      ho('the empty id with ok false (TAP-13 §8 binding rule 1)', { ...hashOnly, ok: false, id: '' }, 'ok'),
+      ho('the empty id with ok true: only a refused call has one', { ...hashOnly, id: '' }, H),
+    ],
+  }
   write('container-agent.json', {
     tap: 'Container agents, phase 0 (experimental; Ideas TapeOutProtocol/TAPs#40 and #41): Mandate, TaskOffer, TaskVerdict, MandateRevocation', note,
     domain: { name: 'TapeAPI', version: '1', chainId: CHAIN_ID, verifyingContract: HUB, comment: 'The TAP-11 delegation domain, shared with Delegation, ChannelKeys and ManifestContent; the type name separates them.' },
@@ -603,5 +697,6 @@ console.log('done')
       hashedCase('every mandate with notBefore below a date, no list', revocation([], 1789050000), A.hashMandateRevocation, A.mandateRevocationDigest, A.signMandateRevocation),
     ],
     threadRevocation,
+    inputForms,
   })
 }

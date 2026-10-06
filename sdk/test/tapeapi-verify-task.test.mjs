@@ -109,10 +109,11 @@ test('a thread that verifies: state, ok, enforcement none, not a self-hire, both
   assert.match(r.stdout, /^problems: {4}none$/m)
   assert.match(r.stdout, /does NOT prove: that the calls were needed; that the answers were right/)
   assert.doesNotMatch(r.stdout, /badge|verified by|certified/i)
-  // without the processor on the chain's table the container is still shown, never the manifest name as a name
+  // a processor outside the snapshot: since 1.8 the kit finds its number on the chain (TAP-10 §4.3 step 3), so the on-chain
+  // name is printed, never the manifest name as a name / 快照外的处理器：1.8 起在链上找到处理器号，打印链上名，绝不把清单名当名字
   const y = standardWorld({ agentName: 'Official TapeAPI Agent' })
   const r2 = await run(y, [file('ok2.json', happyThread().messages)])
-  assert.match(r2.stdout, /name \(none on the chain's processor table\)/)
+  assert.match(r2.stdout, new RegExp(`^agent: {7}${AG} {2}name 12\\.7\\.tape {2}signer`, 'mi'))
   assert.doesNotMatch(r2.stdout, /name Official/)
 })
 

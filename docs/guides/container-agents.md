@@ -139,6 +139,24 @@ Install the SDK as in [Call a service](consume.md); the agent functions come fro
 Every check reads the chain, so the client needs nodes of at least two independent operators (decisive reads are made
 under strict agreement); a single-node client is refused.
 
+Since 1.8 every read of one check (`verifyMandate`, `verifyTaskThread`, `verifyEvidence`, `readRevocations`,
+`identityOf`) is made at one pinned block, chosen as TAP-10 §5.3 says (the second-highest operator head minus 2): the
+principal's identity and holder, a contract holder's EIP-1271 answer, the site store and payment contract
+implementations, and the revocation list. A node too far behind (`stale-block`) or nodes on another chain
+(`wrong-chain`) make the check throw; they are never reported as a problem of a message. The principal is resolved as
+TAP-10 §4.3 says: `token()`, the factory's `isCPU`, the processor number, the container opener's `accountOf`, then
+`ownerOf` for the holder.
+
+The agent and the providers are resolved by the client's `resolve` (or the kit's `resolve` option). The draft TAP asks
+for TAP-11 §2, which `createTapeAPI({ conform: 'tap10' })` implements (one pinned block per resolution, `ownerOf` and
+EIP-1271 under strict agreement); a default client resolves them as TapeAPI 1.x does. For a verifier that should follow
+the draft, give the kit a conformance-mode client for resolution:
+
+```js
+const strict = createTapeAPI({ rpcUrls, quorum: 2, conform: 'tap10' })
+const kit = createAgentKit(api, { resolve: (container) => strict.resolve(container) })
+```
+
 ### Sign a mandate
 
 The holder signs in a wallet. Your console builds the payload, shows what the wallet cannot, and sends the wallet only
@@ -226,8 +244,9 @@ prints `null false none false []` followed by the problems, starting with
 `task-hash-mismatch messages[0]: the task text does not hash to offer.taskHash`. (On the example's fake chain the kit
 is also given the world's fixed clock: `createAgentKit(api, { clock })`.)
 
-The result also carries the two parties (`principal`, `agent`: container address, the name the chain gives it, or
-`null`, and the holder), each delivery with its evidence check, the verdict and any revocation. A name taken from the
+The result also carries the two parties (`principal`, `agent`: container address, the on-chain name read from the
+chain's processor table (since 1.8 always found; 1.7 gave `null` for a processor outside the SDK's snapshot), and the
+holder), each delivery with its evidence check, the verdict and any revocation. A name taken from the
 agent's manifest appears only as `agent.displayName` with `untrusted: true`. Show any text a counterparty wrote with
 `plainText`, which removes invisible and control characters.
 
@@ -242,6 +261,28 @@ An agent checks the mandate itself before it starts work, naming the key it anno
 const v = await kit.verifyMandate(mandateMessage, { agentKey, agent: myContainer })
 if (!v.ok) throw new Error(v.problems.map((p) => p.code).join(', '))
 ```
+
+### What a verifier refuses as malformed
+
+Messages are read in the JSON forms of the draft TAP (§3.7), never leniently (since 1.8; no hash changed). A message
+that breaks them is `mandate-malformed` (a mandate) or `message-malformed` (any other message):
+
+- a `bytes32` (a task hash, a mandate hash, a reason hash) is `0x` and 64 **lower-case** hex digits;
+- a `uint256` (`nonce`, `fee`, `feeCap`, a scope `cap`) is a decimal **string** without leading zeros: a JSON number or
+  a bigint received in a message is refused;
+- a time is a whole number of Unix seconds from 0 to 2^53 − 1, so an agent message whose `ts` or `result.exp` is
+  negative is refused; an agent message's receipt also needs the TAP-13 method, `params` (an object when present), an
+  `id` of 1 to 128 code units and a 65-byte `sig`;
+- every member is present: a verdict without `reasonHash` is refused (write 32 zero bytes when there is no reason);
+- a hash-only receipt in a delivery's evidence needs a JSON boolean `ok` (a string `"true"` or a missing `ok` is
+  `receipt-not-hash-only`, never read as `false`), both hashes in the `bytes32` form, `ts` in the time form, and an `id` of 1 to 128 code units (the empty `id` of TAP-13
+  §8 binding rule 1 is allowed only when `ok` is `false`).
+
+The builders are unchanged: `mandateTypedData`, `taskOfferTypedData`, the hash and `sign*` functions still take a number
+or a bigint for a `uint256` and write the decimal string, and still read a missing `reasonHash` as zero; only a
+lower-case `bytes32` (or 32 bytes as a `Uint8Array`) is taken. `agentMessageProblem(receipt, kind, agent)` and
+`hashOnlyReceiptProblem(receipt)` check the two receipt forms without the chain. The cases are vectors:
+`spec/vectors/container-agent.json`, member `inputForms`.
 
 ### Check a payment
 
@@ -274,8 +315,18 @@ The rules behind it:
   for any #ID, and nobody could ever move a payment sent to an unminted one.
 - Only `transfer` is built, never `approve`. `decimals()` is read from the chain. `nativeToContainer` sends the native
   coin, from the holder's wallet straight to the container only.
-- `viaContainer({ from, tx })` wraps an ERC-20 transfer in the payer container's `execute`, and accepts only the
-  unedited object `transferToContainer` returned.
+- `viaContainer({ from, tx, value })` wraps an ERC-20 transfer in the payer container's `execute`, and accepts only the
+  unedited object `transferToContainer` returned. The inner value is always 0 (a native coin is never sent through a
+  container). The optional `value` is the **outer** value of the transaction: the TapeOut fee that the container's
+  `execute` may require, in the chain's native coin. On BNB Smart Chain mainnet, a read-only test at the time of writing
+  found that every call to a TapeOut container's `execute` has to carry 0.0002 BNB, which goes to TapeOut (the excess
+  is refunded to the sender) and never to the recipient, and a smaller payment reverts with
+  `0xafd49700(paid, required)`. The fee has no public getter, and the SDK neither reads it nor hard-codes it: simulate
+  the transaction (`eth_call` or your wallet's simulation) and read the amount from that revert data, then pass it as
+  `value`, a whole number in the smallest unit (`'200000000000000'` is 0.0002 BNB). It is a fact about the deployed
+  contracts at one time, not part of any specification, and it may change. Without `value` the transaction keeps the
+  value 0, and the summary says in its last line that a call without the fee may revert. 1.7.0 and 1.7.1 had no `value`
+  option, so their `viaContainer` transactions revert on BNB Smart Chain mainnet.
 - After the transfer, send the agent a TapeSend message that carries it as an asset attachment (`encodeContent`), and
   send it first: the payment counts only if no other message from you reaches that recipient in between and the
   message follows within 3,600 seconds. `paymentOrder()` tracks this in your client (record the transfer, check the
@@ -308,7 +359,7 @@ tapeapi-verify task thread.json --payment <agent container> <inbox index>
 tapeapi-verify task thread.json --rpc https://node-a.example,https://node-b.example
 ```
 
-Without installing anything, use `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz tapeapi-verify task thread.json`;
+Without installing anything, use `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz tapeapi-verify task thread.json`;
 in a checkout, `node sdk/bin/tapeapi-verify.js task thread.json`.
 
 - `--payment <recipient> <index>` also checks the TapeSend message at that index in the recipient's inbox. The recipient
@@ -328,8 +379,8 @@ state:       Settled
 result:      ok
 enforcement: none (phase 0: a mandate is a signed statement; nothing enforces it)
 self-hire:   no
-principal:   0x86DDaEF00401E3F10418398D67D7189fc458eA95  name (none on the chain's processor table)  holder 0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A
-agent:       0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6  name (none on the chain's processor table)  signer 0x1563915e194D8CfBA1943570603F7606A3115508
+principal:   0x86DDaEF00401E3F10418398D67D7189fc458eA95  name 11.7.tape  holder 0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A
+agent:       0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6  name 12.7.tape  signer 0x1563915e194D8CfBA1943570603F7606A3115508
              manifest name (untrusted: the agent wrote it, it is not an identity): "Report agent"
 ...
 verdict:     accepted at 1791000000 (verdictHash 0x69bb45f4…df05c3)
@@ -406,8 +457,8 @@ thread the list only sets the revocation time, as a revocation message does (see
 
 How the list is read:
 
-- It is read like a manifest: from the first site store of the chain that has any file for the container (one store
-  per chain in this version), only while
+- It is read like a manifest, at the check's pinned block (the block the holder is read at): from the first site store
+  of the chain that has any file for the container (one store per chain in this version), only while
   that store and the payment contract run code TAP-10 accepts; `chunkCount` 0 means no file; the bytes must match the
   size and SHA-256 the chain declares, must not begin with a byte order mark, and the current holder's signature must
   verify. `issued` may be at most 300 seconds ahead of the verifier's clock. A kit for a chain or a site store without
@@ -434,11 +485,11 @@ A failure caused by the counterparty is a problem, never an exception; a failing
 | `not-signed-by-holder` | holder messages | Not signed by the current holder of the principal's circuit. |
 | `nonce-reused` | mandate | This kit's nonce store has seen another mandate with the same chain, principal and nonce. |
 | `mandate-revoked`, `revocation-unavailable` | mandate | Revoked (reported by `verifyMandate`, never in a thread); or the principal's revocation list cannot be relied on. |
-| `not-a-container`, `wrong-chain`, `not-tapeout`, `no-such-token` | identity | The address is not a TapeOut container of this chain whose #ID exists. |
+| `not-tapeout`, `no-such-token` | identity | TAP-10 §4.3: the address is not a TapeOut circuit container of this chain (`token()` fails or names another chain, the processor is not the factory's, the opener derives another address), or its processor has no circuit with that #ID. (1.7 used `not-a-container` and `wrong-chain` for some of these.) |
 | `mandate-mismatch` | thread | The mandate's principal, task, mode or nonce differ from the offer, or a delivery names another mandate. |
 | `task-hash-mismatch`, `offer-mismatch`, `offer-expired` | thread | The task text, the offer an accept names, or an accept after the offer's `exp`. |
-| `out-of-order`, `message-malformed`, `kind-unknown`, `kind-not-implemented`, `thread-empty` | thread | A message in the wrong place, of the wrong shape, or of a kind this version does not implement. |
-| `not-signed-by-agent`, `agent-unresolvable` | thread | An agent message not signed by the agent's published signer, or an agent that does not resolve. |
+| `out-of-order`, `message-malformed`, `kind-unknown`, `kind-not-implemented`, `thread-empty` | thread | A message in the wrong place, of the wrong shape (see "What a verifier refuses as malformed"), or of a kind this version does not implement. |
+| `not-signed-by-agent`, `agent-unresolvable` | thread | An agent message not signed by the agent's published signer, or an agent that does not resolve (TAP-11 §2.3: a site status such as `not-opened` or `unpaid`, no manifest, an invalid manifest or delegation; a chain or node outcome throws instead). |
 | `deliver-after-deadline`, `deliver-outside-mandate`, `deliver-before-accept`, `message-after-revocation` | thread | Timing of a delivery or of an agent message. The first is reported but the delivery is kept. |
 | `verdict-mismatch`, `verdict-before-delivery`, `revocation-mismatch` | thread | A verdict for another delivery or issued before it, or a revocation that does not cover this thread. |
 | `receipt-not-hash-only`, `receipt-repeated`, `receipt-provider-out-of-scope`, `receipt-outside-mandate`, `receipt-invalid`, `receipts-hash-mismatch`, `provider-unresolvable`, `evidence-malformed` | evidence | A receipt that is not hash-only, repeated, from a service outside the scope, outside the window, badly signed, or a bundle that does not match its hash. |
@@ -450,6 +501,7 @@ Thrown errors (`TapeAPIError`, details in `data`):
 | `AGENT_INVALID` | `mandateTypedData` or `signMandate` refuses a mandate with an amount, an asset or sub-delegation (`data.reason` `phase0-no-funds` or `subdelegate-not-allowed`); `forWallet` refuses a payload; a task text does not match its hash; a field has the wrong shape; `identityOf` is given an address that is not a container (`data.reason` is the problem code). |
 | `INVALID_ARGUMENT` | A check needs nodes of at least two operators and the client has fewer, or no `rpcUrls`; `nonces` is neither a `Map` nor a `setIfAbsent` store; a payment builder refuses (`data.reason` `recipient-not-from-chain`, `no-such-token`, `not-tapeout`, `only-transfer`, `native-via-container-unverifiable`); `revocationFileBytes` gets a list over 4,096 bytes or a malformed signature. |
 | `NOT_FOUND` | `readMessage` is given an inbox index that does not exist. |
+| `RPC_STALE`, `RPC_UNAVAILABLE`, `RPC_DISAGREE`, and `INVALID_ARGUMENT` with `data.status` `wrong-chain` | The chain could not be read for a check: the pinned block is too far behind (`data.status` `stale-block`), nodes failed or disagreed, the processor number was not found within the scan budget (at most 256 `cpuAt` reads per processor looked up, per check; `unavailable`, and the next check goes on), or the nodes are on another chain. |
 
 ## Limits
 

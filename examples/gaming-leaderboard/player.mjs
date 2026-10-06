@@ -5,7 +5,7 @@
 //   node examples/gaming-leaderboard/player.mjs [http://127.0.0.1:8790] [score]
 //   env: PLAYER_KEY (32-byte hex; random if unset), SESSION_KEY (for the paid saveState), CONSUMER
 //   --print-only: 只打印可直接 curl 的 submitScore 请求体 / just print a curl-ready submitScore body
-import { createTapeAPI, parseUnits, sig } from '@tapeapi/sdk'
+import { createTapeAPI, parseUnits, BEM_DECIMALS, sig } from '@tapeapi/sdk'
 import { signScore, signState } from './score-sig.mjs'
 
 const args = process.argv.slice(2).filter(a => !a.startsWith('--'))
@@ -41,7 +41,7 @@ console.log(`top(5) -> ${JSON.stringify(r2.result)}`)
 const state = { level: 3, hp: 72, inventory: ['sword', 'potion'], checkpoint: 'cave-2' }
 const def = svc.manifest.methods.find(m => m.name === 'saveState')
 const opts = {}
-if (parseUnits(def.priceBEM) > 0n) {
+if (parseUnits(def.priceBEM, BEM_DECIMALS) > 0n) {
   const sessionKey = process.env.SESSION_KEY || sig.randomPrivateKey()
   opts.payer = api.payer({ consumer: process.env.CONSUMER || sig.privateKeyToAddress(sessionKey), sessionKey })
 }

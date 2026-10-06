@@ -84,20 +84,20 @@ contract SplitSettlementTest is Test {
 
         // split / 分拆
         (uint256[] memory cuts, uint256 len) = _cuts(C, n, cutSeed);
-        uint256 t0 = bem.balanceOf(treasury);
+        uint256 t0 = escrow.treasuryAccrued();
         uint256 settles;
         for (uint256 i = 0; i < len; i++) {
             if (escrow.channelOf(consumer, pSplit) == 0) break;   // credit flow: nothing left to pay from / 通道已空
             _settle(pSplit, cuts[i], exp);
             settles++;
         }
-        uint256 treasurySplit = bem.balanceOf(treasury) - t0;
+        uint256 treasurySplit = escrow.treasuryAccrued() - t0;
         uint256 providerSplit = bem.balanceOf(pSplit);
 
         // single / 一次
-        uint256 t1 = bem.balanceOf(treasury);
+        uint256 t1 = escrow.treasuryAccrued();
         _settle(pSingle, C, exp);
-        uint256 treasurySingle = bem.balanceOf(treasury) - t1;
+        uint256 treasurySingle = escrow.treasuryAccrued() - t1;
         uint256 providerSingle = bem.balanceOf(pSingle);
 
         uint256 paid = C < ch ? C : ch;
@@ -109,7 +109,8 @@ contract SplitSettlementTest is Test {
         assertGe(providerSplit, providerSingle, "provider_split >= provider_single");
         assertLe(providerSplit - providerSingle, settles - 1, "provider_split - provider_single <= N - 1");
         assertEq(treasurySingle, paid * bps / 10_000, "single contribution is floor(pay * bps / 1e4)");
-        assertEq(bem.balanceOf(address(escrow)), escrow.channelOf(consumer, pSplit) + escrow.channelOf(consumer, pSingle));
+        assertEq(bem.balanceOf(address(escrow)), escrow.channelOf(consumer, pSplit) + escrow.channelOf(consumer, pSingle)
+            + escrow.treasuryAccrued(), "v3 solvency: channels + treasury accrual (pull)");
     }
 
     /// The N−1 bound is tight: at 19.99% (under the 20% cap since 2026-10-05; was 33.33% under the old 50% cap) a
@@ -130,7 +131,7 @@ contract SplitSettlementTest is Test {
         for (uint256 i = 1; i <= MAX_N; i++) _settle(pSplit, 5 * i, exp);
         _settle(pSingle, total, exp);
         assertEq(bem.balanceOf(pSplit), total, "every 5-unit contribution floors to 0");
-        assertEq(bem.balanceOf(treasury), MAX_N - 1, "single settle contributes N - 1");
+        assertEq(escrow.treasuryAccrued(), MAX_N - 1, "single settle contributes N - 1");
         assertEq(bem.balanceOf(pSplit) - bem.balanceOf(pSingle), MAX_N - 1, "difference reaches exactly N - 1");
     }
 }

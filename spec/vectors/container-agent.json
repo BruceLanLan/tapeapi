@@ -945,5 +945,1548 @@
         6
       ]
     ]
+  },
+  "inputForms": {
+    "rules": {
+      "holder": "Mandate, TaskOffer, TaskVerdict, MandateRevocation (§3.7): address 0x and 40 hex digits in any case; bytes32 0x and 64 lower-case hex digits; uint8 a JSON number the field allows; uint64 a JSON number, an integer from 0 to 2^53 - 1; uint256 a string, a decimal integer without leading zeros below 2^256; bool true or false; every member present; plus the rules of §3.2-§3.5 (non-zero members, at most 16 scope items and 24 hashes, expires > notBefore). A Mandate that breaks them is mandate-malformed, any other message message-malformed",
+      "agentMessage": "§7.2 steps 1-3 for the receipt of an agent message, given its kind and the thread's agent: the form (v 1, a service object naming a container, the TAP-13 path segment, params an object when present, id a string of 1 to 128 code units, ok true, an object result, sig 65 bytes in hex), then service.container is the agent (agent-mismatch), then result.kind and ts and result.exp in the uint64 form",
+      "hashOnlyReceipt": "§8: v 2, a service object naming a container, requestHash and bodyHash in the bytes32 form, id as in TAP-13 (1 to 128 code units; the empty id only when ok is false, TAP-13 §8 binding rule 1), ts in the uint64 form, ok a JSON boolean, sig 65 bytes in hex; anything else is receipt-not-hash-only"
+    },
+    "cases": [
+      {
+        "name": "a mandate in the JSON forms",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "addresses in another case",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86ddaef00401e3f10418398d67d7189fc458ea95",
+          "agent": "0x19366C3C69FFEB3B286D9FA6CC5E616375BAAFD3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "the largest uint256 nonce",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "expires at 2^53 - 1",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 9007199254740991,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "an upper-case bytes32 (taskHash)",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7CD6A489238BF6B1B71D7136181DE5B847FEE4B200FC3A8D6532F4915DCF7FF0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "a uint256 as a JSON number (nonce)",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": 1,
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "a uint256 as a JSON number (feeCap)",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": 0,
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "a uint256 as a JSON number (a scope cap)",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": 0
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "a uint256 with a leading zero",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "01",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "a uint256 with a sign",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "+1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "a uint256 of 2^256",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "115792089237316195423570985008687907853269984665640564039457584007913129639936",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "a negative uint64 (notBefore)",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": -1,
+          "expires": 1789086400,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "a uint64 of 2^53 (expires)",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 9007199254740992,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "a uint64 as a string",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": "1789000000",
+          "expires": 1789086400,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "a bool as a string",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "1",
+          "subdelegate": "false",
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "a member missing (subdelegate)",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "1",
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "mode 2, reserved (§3.8)",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 2,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "a uint8 as a boolean",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": false,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "expires not after notBefore",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789000000,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "a zero agentKey",
+        "type": "Mandate",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0x0000000000000000000000000000000000000000",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "expect": "mandate-malformed"
+      },
+      {
+        "name": "an offer in the JSON forms",
+        "type": "TaskOffer",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "mode": 0,
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "fee": "0",
+          "deadline": 1789086400,
+          "exp": 1789003600,
+          "nonce": "1"
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "an offer whose fee is a JSON number",
+        "type": "TaskOffer",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "mode": 0,
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "fee": 0,
+          "deadline": 1789086400,
+          "exp": 1789003600,
+          "nonce": "1"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "an offer whose nonce is a JSON number",
+        "type": "TaskOffer",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "mode": 0,
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "fee": "0",
+          "deadline": 1789086400,
+          "exp": 1789003600,
+          "nonce": 1
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "an offer with an upper-case taskHash",
+        "type": "TaskOffer",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "taskHash": "0x7CD6A489238BF6B1B71D7136181DE5B847FEE4B200FC3A8D6532F4915DCF7FF0",
+          "mode": 0,
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "fee": "0",
+          "deadline": 1789086400,
+          "exp": 1789003600,
+          "nonce": "1"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "a verdict in the JSON forms, no reason (32 zero bytes)",
+        "type": "TaskVerdict",
+        "value": {
+          "mandateHash": "0x35eb4e7a6b9350682344107fac505300358ae1a1ab561c982f23f0c3844c223a",
+          "deliverableHash": "0xed085fb3552293440e34830fd3c72c8c3b2955b331f78222bfdba9cc3354fea6",
+          "verdict": 1,
+          "reasonHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "issued": 1789050000
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "a verdict with the hash of a reason",
+        "type": "TaskVerdict",
+        "value": {
+          "mandateHash": "0x35eb4e7a6b9350682344107fac505300358ae1a1ab561c982f23f0c3844c223a",
+          "deliverableHash": "0xed085fb3552293440e34830fd3c72c8c3b2955b331f78222bfdba9cc3354fea6",
+          "verdict": 2,
+          "reasonHash": "0xbea1917440cb8affa0f771ffab8d07019359b3664986427b8804c419036ce188",
+          "issued": 1789050000
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "a verdict without reasonHash",
+        "type": "TaskVerdict",
+        "value": {
+          "mandateHash": "0x35eb4e7a6b9350682344107fac505300358ae1a1ab561c982f23f0c3844c223a",
+          "deliverableHash": "0xed085fb3552293440e34830fd3c72c8c3b2955b331f78222bfdba9cc3354fea6",
+          "verdict": 1,
+          "issued": 1789050000
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "a verdict whose reasonHash is null",
+        "type": "TaskVerdict",
+        "value": {
+          "mandateHash": "0x35eb4e7a6b9350682344107fac505300358ae1a1ab561c982f23f0c3844c223a",
+          "deliverableHash": "0xed085fb3552293440e34830fd3c72c8c3b2955b331f78222bfdba9cc3354fea6",
+          "verdict": 1,
+          "reasonHash": null,
+          "issued": 1789050000
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "a verdict with an upper-case reasonHash",
+        "type": "TaskVerdict",
+        "value": {
+          "mandateHash": "0x35eb4e7a6b9350682344107fac505300358ae1a1ab561c982f23f0c3844c223a",
+          "deliverableHash": "0xed085fb3552293440e34830fd3c72c8c3b2955b331f78222bfdba9cc3354fea6",
+          "verdict": 2,
+          "reasonHash": "0xBEA1917440CB8AFFA0F771FFAB8D07019359B3664986427B8804C419036CE188",
+          "issued": 1789050000
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "verdict 0, reserved",
+        "type": "TaskVerdict",
+        "value": {
+          "mandateHash": "0x35eb4e7a6b9350682344107fac505300358ae1a1ab561c982f23f0c3844c223a",
+          "deliverableHash": "0xed085fb3552293440e34830fd3c72c8c3b2955b331f78222bfdba9cc3354fea6",
+          "verdict": 0,
+          "reasonHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "issued": 1789050000
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "verdict 3, reserved",
+        "type": "TaskVerdict",
+        "value": {
+          "mandateHash": "0x35eb4e7a6b9350682344107fac505300358ae1a1ab561c982f23f0c3844c223a",
+          "deliverableHash": "0xed085fb3552293440e34830fd3c72c8c3b2955b331f78222bfdba9cc3354fea6",
+          "verdict": 3,
+          "reasonHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "issued": 1789050000
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "a zero deliverableHash",
+        "type": "TaskVerdict",
+        "value": {
+          "mandateHash": "0x35eb4e7a6b9350682344107fac505300358ae1a1ab561c982f23f0c3844c223a",
+          "deliverableHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "verdict": 1,
+          "reasonHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "issued": 1789050000
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "a revocation in the JSON forms",
+        "type": "MandateRevocation",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "mandateHashes": [
+            "0xf05988e50a68c82de6ac156882d09e1a228ccc84752105e9cd2aa1d98525449a",
+            "0xbfc716bc16edc1ff824d199de5e053a1ed5a906e9740ef0b2327eb446c61c9eb"
+          ],
+          "revokedBefore": 0,
+          "issued": 1789060000
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "a revocation listing an upper-case hash",
+        "type": "MandateRevocation",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "mandateHashes": [
+            "0xF05988E50A68C82DE6AC156882D09E1A228CCC84752105E9CD2AA1D98525449A"
+          ],
+          "revokedBefore": 0,
+          "issued": 1789060000
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "a revocation with a negative revokedBefore",
+        "type": "MandateRevocation",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "mandateHashes": [
+            "0xf05988e50a68c82de6ac156882d09e1a228ccc84752105e9cd2aa1d98525449a",
+            "0xbfc716bc16edc1ff824d199de5e053a1ed5a906e9740ef0b2327eb446c61c9eb"
+          ],
+          "revokedBefore": -1,
+          "issued": 1789060000
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "a revocation without issued",
+        "type": "MandateRevocation",
+        "value": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "mandateHashes": [
+            "0xf05988e50a68c82de6ac156882d09e1a228ccc84752105e9cd2aa1d98525449a",
+            "0xbfc716bc16edc1ff824d199de5e053a1ed5a906e9740ef0b2327eb446c61c9eb"
+          ],
+          "revokedBefore": 0
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "an accept receipt in its form",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": "r-1",
+          "ts": 1789001000,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "params absent (it is {} for the digest)",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "id": "r-1",
+          "ts": 1789001000,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "a negative ts",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": "r-1",
+          "ts": -1,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "a negative result.exp",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": "r-1",
+          "ts": 1789001000,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": -1
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "ts of 2^53",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": "r-1",
+          "ts": 9007199254740992,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "ts as a string",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": "r-1",
+          "ts": "1789001000",
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "ok false: an agent message answers a successful call",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": "r-1",
+          "ts": 1789001000,
+          "ok": false,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "v 2: a hash-only receipt is not an agent message",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": "r-1",
+          "ts": 1789001000,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "result.kind of another message",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": "r-1",
+          "ts": 1789001000,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/deliver",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "params that are not an object",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": [
+            "offer"
+          ],
+          "id": "r-1",
+          "ts": 1789001000,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "a method that is not a path segment",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task.offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": "r-1",
+          "ts": 1789001000,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "a sig that is not 65 bytes",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": "r-1",
+          "ts": 1789001000,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "an id that is not a string",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": 1,
+          "ts": 1789001000,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "an id of 129 characters",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+          "ts": 1789001000,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "the empty id: an agent message answers a successful call, so it has an id of 1 to 128 code units",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": "",
+          "ts": 1789001000,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "message-malformed"
+      },
+      {
+        "name": "signed for another container",
+        "type": "agentMessage",
+        "kind": "accept",
+        "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1",
+            "circuits": "0x0565EA48CA41Ae559d8d491dbb0a9ec945DB551b",
+            "tokenId": "12",
+            "name": "informative, not checked"
+          },
+          "method": "task_offer",
+          "params": {
+            "message": "informative"
+          },
+          "id": "r-1",
+          "ts": 1789001000,
+          "ok": true,
+          "result": {
+            "kind": "tape.agent/accept",
+            "offerHash": "0x28bf0e7ef8ed6b6ff710a823b50581926b96df560eed44922320b90d4fca37b4",
+            "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+            "exp": 1789003600
+          },
+          "sig": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
+        "expect": "agent-mismatch"
+      },
+      {
+        "name": "a hash-only receipt in its form",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1"
+          },
+          "method": "read",
+          "requestHash": "0x72859a6ae50aa97f593f23df1c78bb1fd78cfc493fcef64159d6486223196833",
+          "id": "p-1",
+          "ts": 1789001000,
+          "ok": true,
+          "bodyHash": "0x512227571b4b801d3bbe8f01e3b651e6c4462eb9780ee5b9fb9ea4fb6899a5c4",
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "ok false: a signed refusal",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1"
+          },
+          "method": "read",
+          "requestHash": "0x72859a6ae50aa97f593f23df1c78bb1fd78cfc493fcef64159d6486223196833",
+          "id": "p-1",
+          "ts": 1789001000,
+          "ok": false,
+          "bodyHash": "0x512227571b4b801d3bbe8f01e3b651e6c4462eb9780ee5b9fb9ea4fb6899a5c4",
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "ok as the string \"true\"",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1"
+          },
+          "method": "read",
+          "requestHash": "0x72859a6ae50aa97f593f23df1c78bb1fd78cfc493fcef64159d6486223196833",
+          "id": "p-1",
+          "ts": 1789001000,
+          "ok": "true",
+          "bodyHash": "0x512227571b4b801d3bbe8f01e3b651e6c4462eb9780ee5b9fb9ea4fb6899a5c4",
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "receipt-not-hash-only"
+      },
+      {
+        "name": "ok as a number",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1"
+          },
+          "method": "read",
+          "requestHash": "0x72859a6ae50aa97f593f23df1c78bb1fd78cfc493fcef64159d6486223196833",
+          "id": "p-1",
+          "ts": 1789001000,
+          "ok": 1,
+          "bodyHash": "0x512227571b4b801d3bbe8f01e3b651e6c4462eb9780ee5b9fb9ea4fb6899a5c4",
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "receipt-not-hash-only"
+      },
+      {
+        "name": "ok missing",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1"
+          },
+          "method": "read",
+          "requestHash": "0x72859a6ae50aa97f593f23df1c78bb1fd78cfc493fcef64159d6486223196833",
+          "id": "p-1",
+          "ts": 1789001000,
+          "bodyHash": "0x512227571b4b801d3bbe8f01e3b651e6c4462eb9780ee5b9fb9ea4fb6899a5c4",
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "receipt-not-hash-only"
+      },
+      {
+        "name": "an upper-case requestHash",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1"
+          },
+          "method": "read",
+          "requestHash": "0x72859A6AE50AA97F593F23DF1C78BB1FD78CFC493FCEF64159D6486223196833",
+          "id": "p-1",
+          "ts": 1789001000,
+          "ok": true,
+          "bodyHash": "0x512227571b4b801d3bbe8f01e3b651e6c4462eb9780ee5b9fb9ea4fb6899a5c4",
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "receipt-not-hash-only"
+      },
+      {
+        "name": "bodyHash missing",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1"
+          },
+          "method": "read",
+          "requestHash": "0x72859a6ae50aa97f593f23df1c78bb1fd78cfc493fcef64159d6486223196833",
+          "id": "p-1",
+          "ts": 1789001000,
+          "ok": true,
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "receipt-not-hash-only"
+      },
+      {
+        "name": "a negative ts",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1"
+          },
+          "method": "read",
+          "requestHash": "0x72859a6ae50aa97f593f23df1c78bb1fd78cfc493fcef64159d6486223196833",
+          "id": "p-1",
+          "ts": -1,
+          "ok": true,
+          "bodyHash": "0x512227571b4b801d3bbe8f01e3b651e6c4462eb9780ee5b9fb9ea4fb6899a5c4",
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "receipt-not-hash-only"
+      },
+      {
+        "name": "v 1: a full receipt publishes the request",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 1,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1"
+          },
+          "method": "read",
+          "requestHash": "0x72859a6ae50aa97f593f23df1c78bb1fd78cfc493fcef64159d6486223196833",
+          "id": "p-1",
+          "ts": 1789001000,
+          "ok": true,
+          "bodyHash": "0x512227571b4b801d3bbe8f01e3b651e6c4462eb9780ee5b9fb9ea4fb6899a5c4",
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "receipt-not-hash-only"
+      },
+      {
+        "name": "a service container that is not an address",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "provider"
+          },
+          "method": "read",
+          "requestHash": "0x72859a6ae50aa97f593f23df1c78bb1fd78cfc493fcef64159d6486223196833",
+          "id": "p-1",
+          "ts": 1789001000,
+          "ok": true,
+          "bodyHash": "0x512227571b4b801d3bbe8f01e3b651e6c4462eb9780ee5b9fb9ea4fb6899a5c4",
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "receipt-not-hash-only"
+      },
+      {
+        "name": "a sig that is not 65 bytes",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1"
+          },
+          "method": "read",
+          "requestHash": "0x72859a6ae50aa97f593f23df1c78bb1fd78cfc493fcef64159d6486223196833",
+          "id": "p-1",
+          "ts": 1789001000,
+          "ok": true,
+          "bodyHash": "0x512227571b4b801d3bbe8f01e3b651e6c4462eb9780ee5b9fb9ea4fb6899a5c4",
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "receipt-not-hash-only"
+      },
+      {
+        "name": "an id that is not a string",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1"
+          },
+          "method": "read",
+          "requestHash": "0x72859a6ae50aa97f593f23df1c78bb1fd78cfc493fcef64159d6486223196833",
+          "id": null,
+          "ts": 1789001000,
+          "ok": true,
+          "bodyHash": "0x512227571b4b801d3bbe8f01e3b651e6c4462eb9780ee5b9fb9ea4fb6899a5c4",
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "receipt-not-hash-only"
+      },
+      {
+        "name": "the empty id with ok false (TAP-13 §8 binding rule 1)",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1"
+          },
+          "method": "read",
+          "requestHash": "0x72859a6ae50aa97f593f23df1c78bb1fd78cfc493fcef64159d6486223196833",
+          "id": "",
+          "ts": 1789001000,
+          "ok": false,
+          "bodyHash": "0x512227571b4b801d3bbe8f01e3b651e6c4462eb9780ee5b9fb9ea4fb6899a5c4",
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "the empty id with ok true: only a refused call has one",
+        "type": "hashOnlyReceipt",
+        "value": {
+          "v": 2,
+          "service": {
+            "container": "0x00000000000000000000000000000000000005e1"
+          },
+          "method": "read",
+          "requestHash": "0x72859a6ae50aa97f593f23df1c78bb1fd78cfc493fcef64159d6486223196833",
+          "id": "",
+          "ts": 1789001000,
+          "ok": true,
+          "bodyHash": "0x512227571b4b801d3bbe8f01e3b651e6c4462eb9780ee5b9fb9ea4fb6899a5c4",
+          "sig": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+        },
+        "expect": "receipt-not-hash-only"
+      }
+    ]
   }
 }

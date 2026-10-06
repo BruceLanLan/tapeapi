@@ -43,7 +43,7 @@ trust with a signature anyone can check:
 
 ## Status
 
-Released, version 1.7.1. From 1.0 on, TapeAPI follows semantic versioning: code written against the 1.0 docs keeps
+Released, version 1.8.0. From 1.0 on, TapeAPI follows semantic versioning: code written against the 1.0 docs keeps
 working in every 1.x release, and breaking changes come only in 2.0 ([what 1.0 promises](upgrade-1.0.md)). The free
 tier runs on TapeOut's deployed contracts. Our own contracts have no third-party audit; the paid-call escrow is not
 deployed yet. TAPI-20 to TAPI-27 are TapeAPI's own specs, not TAPs: TAPs are numbered by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), where the service manifest (TAP-11) and signed responses (TAP-13) were merged as Drafts (a merge is not adoption) and six more drafts for parts of these specs are under review, without a number.
@@ -77,7 +77,7 @@ Every result is signed and carries a receipt anyone can verify; see [MCP](mcp.md
 ## Specifications
 
 The protocol is written down as TapeAPI's own specs (TAPI), in English and Chinese (English authoritative), under CC0.
-They are not TAPs. We submitted eight TAP drafts for parts of them to TapeOutProtocol/TAPs: the service identity and manifest was merged as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md) (Draft, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8); a merge into Draft is not adoption), and signed responses were merged as [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md) (Draft, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10)); six are under review without a number: [#12](https://github.com/TapeOutProtocol/TAPs/pull/12), [#16](https://github.com/TapeOutProtocol/TAPs/pull/16), [#18](https://github.com/TapeOutProtocol/TAPs/pull/18), [#20](https://github.com/TapeOutProtocol/TAPs/pull/20), [#26](https://github.com/TapeOutProtocol/TAPs/pull/26) and [#28](https://github.com/TapeOutProtocol/TAPs/pull/28). TAPI-20 to TAPI-27 remain the basis of the 1.x compatibility promise.
+They are not TAPs. We submitted ten TAP drafts for parts of them to TapeOutProtocol/TAPs (eight on 2026-09-30 and 2026-10-01, two on the container-agent formats on 2026-10-04 and 2026-10-05): the service identity and manifest was merged as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md) (Draft, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8); a merge into Draft is not adoption), and signed responses were merged as [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md) (Draft, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10)); eight are under review without a number: [#12](https://github.com/TapeOutProtocol/TAPs/pull/12), [#16](https://github.com/TapeOutProtocol/TAPs/pull/16), [#18](https://github.com/TapeOutProtocol/TAPs/pull/18), [#20](https://github.com/TapeOutProtocol/TAPs/pull/20), [#26](https://github.com/TapeOutProtocol/TAPs/pull/26), [#28](https://github.com/TapeOutProtocol/TAPs/pull/28), [#47](https://github.com/TapeOutProtocol/TAPs/pull/47) and [#49](https://github.com/TapeOutProtocol/TAPs/pull/49). TAPI-20 to TAPI-27 remain the basis of the 1.x compatibility promise.
 
 | Spec | Title |
 |---|---|

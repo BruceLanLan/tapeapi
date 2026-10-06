@@ -20,7 +20,7 @@ TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上�
 
 > **1.7：容器代理（Container Agent，实验性，阶段 0）。** 容器 + 代理 = 容器代理。容器持有人签一张授权书，写明哪个代理可以替这个容器做哪件任务；代理接任务、交付；委托方验收；付款是一笔普通转账，任何人都可以独立核验。不需要新合约。**边界如实说：**阶段 0 没有链上强制执行，授权书不限制花钱（写了金额的授权书会被拒绝）；子路径 `@tapeapi/sdk/agent` 是实验性的，不受 1.x 兼容承诺约束；本项目没有经过第三方审计。[1.7 新增](#17-新增) · [容器代理指南](docs/guides/zh-CN/container-agents.md)
 
-> **状态：正式版（1.7.1）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAPI-22）是实验性的，没有部署。
+> **状态：正式版（1.8.0）。** 今天上线的一切都免费。1.0 起遵循语义化版本：破坏性修改只在 2.0。付费通道（TAPI-22）是实验性的，没有部署。
 > 所有代码和合约都没有经过第三方审计。**安全说明：**1.0.0 至 1.4.0 的流式 AI 回执核验，在特定分块下可能把被截断或被注入内容的流显示为“已核验”；1.5.0 已修复，请升级（[更新说明](https://github.com/BruceLanLan/tapeapi/releases/tag/v1.5.0)）。
 
 ## 能做什么
@@ -72,11 +72,11 @@ curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/
 curl 只显示签名信封，不做任何核对；核对交给 SDK。SDK 还没发到 npm，从 GitHub Release 安装（Node.js 20 或以上）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz
 ```
 
 服务端包（`@tapeapi/server`：服务提供方、AI 旁路、MCP 代理）依赖这个 SDK，而 SDK 也不在 npm 上，所以单独安装服务端包会报 404：
-请用一条命令同时安装两者，`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-server-1.7.1.tgz`。
+请用一条命令同时安装两者，`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-server-1.8.0.tgz`。
 
 ```js
 // try.mjs：node try.mjs
@@ -114,7 +114,7 @@ console.log(r.choices[0].message.content)
 
 ```bash
 # 终端 1（会一直运行）。42.1013.tape 是示例名：换成 AI 服务方的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash
@@ -216,9 +216,9 @@ flowchart LR
 
 ## 规范
 
-这些是 TapeAPI 自己的规范，不是 TAP。TapeOut 的标准以 TAP 的形式发布，由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 编号。这套流程出来之后，我们把自己的文档改名为 TAPI-1 与 TAPI-20 至 TAPI-27（让 TAP 编号留给编辑：例如 TAP-20 现在属于另一份提案），并在 2026-09-30 至 2026-10-01 就其中部分内容提交了 8 份 TAP 草稿。编辑审的是格式而不是方案本身（TAP-01 §4），所以合并为 Draft 不等于被采纳。TAPI-20 至 TAPI-27 仍是 1.x 兼容性承诺的依据。
+这些是 TapeAPI 自己的规范，不是 TAP。TapeOut 的标准以 TAP 的形式发布，由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 编号。这套流程出来之后，我们把自己的文档改名为 TAPI-1 与 TAPI-20 至 TAPI-27（让 TAP 编号留给编辑：例如 TAP-20 现在属于另一份提案），并在 2026-09-30 至 2026-10-01 就其中部分内容提交了 8 份 TAP 草稿，又在 2026-10-04 与 2026-10-05 就容器代理格式提交了 2 份。编辑审的是格式而不是方案本身（TAP-01 §4），所以合并为 Draft 不等于被采纳。TAPI-20 至 TAPI-27 仍是 1.x 兼容性承诺的依据。
 
-| 我们的规范 | 草稿（拉取请求） | 编辑的回应（截至 2026-10-05） |
+| 我们的规范 | 草稿（拉取请求） | 编辑的回应（截至 2026-10-06） |
 |---|---|---|
 | TAPI-20（核心：§3.1 至 §3.4、§3.6、§3.10） | 服务身份与清单，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8) | 2026-10-01 合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)，Draft |
 | TAPI-21 | 签名响应，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10) | 2026-10-04 合并为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)，Draft。要求的两处改动已做，评审意见也已采纳：`voucher` 与支付相关错误码标为保留名，放宽 `METHOD_NOT_FOUND` 的含义 |
@@ -228,10 +228,12 @@ flowchart LR
 | TAPI-27（仅格式 1） | 私密群聊，[#20](https://github.com/TapeOutProtocol/TAPs/pull/20) | 暂无回复 |
 | TAPI-20 §3.9、TAPI-21 §3.5 | AI 用量回执，[#26](https://github.com/TapeOutProtocol/TAPs/pull/26) | 对 TAP-13 的引用已更新；暂无回复 |
 | TAPI-20 §3.2（证明模式，说明性） | 证明核验读取，[#28](https://github.com/TapeOutProtocol/TAPs/pull/28) | 暂无回复 |
-| TAP-11 的后续修改 | 在安全说明里补一句 `verifyingContract`，[#35](https://github.com/TapeOutProtocol/TAPs/pull/35)；说明性的中文译文，[#36](https://github.com/TapeOutProtocol/TAPs/pull/36) | 暂无回复 |
-| TAP-13 的后续修改 | 保留名的措辞，[#46](https://github.com/TapeOutProtocol/TAPs/pull/46) | 暂无回复 |
+| TAP-11 的后续修改 | 在安全说明里补一句 `verifyingContract`，[#35](https://github.com/TapeOutProtocol/TAPs/pull/35)；说明性的中文译文，[#36](https://github.com/TapeOutProtocol/TAPs/pull/36) | 两份均已于 2026-10-04 合并 |
+| TAP-13 的后续修改 | 保留名的措辞，[#46](https://github.com/TapeOutProtocol/TAPs/pull/46) | 2026-10-05 合并 |
+| 容器代理授权书与任务消息，阶段 0（没有对应的 TAPI 规范；格式跟随公开讨论 [#40](https://github.com/TapeOutProtocol/TAPs/pull/40) 与 [#41](https://github.com/TapeOutProtocol/TAPs/pull/41)） | [#47](https://github.com/TapeOutProtocol/TAPs/pull/47)，2026-10-04 提交 | 评审中；暂无回复 |
+| 清单里的代理成员（#41 的上架部分） | [#49](https://github.com/TapeOutProtocol/TAPs/pull/49)，2026-10-05 提交 | 评审中；暂无回复 |
 
-TAPI-22、TAPI-24、TAPI-25 没有提交。1.7 的容器代理格式目前既不是 TAPI 规范，也不是 TAP 草稿：它跟随公开讨论 TapeOutProtocol/TAPs#40 与 #41，计划另写草稿。编辑给其它草稿分配编号后，我们会把引用改成对应编号。这些草稿按官方 TAP-10 写，并在 Backwards Compatibility 里列出 TapeAPI 自己的 1.x 行为有哪些不同。SDK 以可选的一致模式跟上 TAP-10（`conform: 'tap10'`，实验性：解析路径自 1.4，全链解析、消息路径与 strict 读取自 1.5）；2.0 之前默认行为不变。
+TAPI-22、TAPI-24、TAPI-25 没有提交。1.7 的容器代理格式不是 TAPI 规范：阶段 0 与清单里的代理成员已提交为草稿 #47 与 #49（都在评审中），它们跟随这两份草稿与公开讨论 TapeOutProtocol/TAPs#40、#41。阶段 1（托管通道上的强制执行）的草稿尚未提交。编辑给其它草稿分配编号后，我们会把引用改成对应编号。这些草稿按官方 TAP-10 写，并在 Backwards Compatibility 里列出 TapeAPI 自己的 1.x 行为有哪些不同。SDK 以可选的一致模式跟上 TAP-10（`conform: 'tap10'`，实验性：解析路径自 1.4，全链解析、消息路径与 strict 读取自 1.5）；2.0 之前默认行为不变。
 
 | 规范 | 标题 | 状态 |
 |---|---|---|

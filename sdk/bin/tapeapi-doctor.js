@@ -6,7 +6,7 @@
 // --key-env names the operator's own. Its own command, not a mode of tapeapi-verify, whose exit 0 means "stopped".
 // tapeapi-doctor（实验性）：服务方对自己 AI 服务的逐项检查，失败时用中英双语给出缺什么、去哪改、下一条命令；退出码供 CI 使用。只读。
 //
-//   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz tapeapi-doctor 42.1013.tape
+//   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz tapeapi-doctor 42.1013.tape
 //   node sdk/bin/tapeapi-doctor.js --offline http://127.0.0.1:8080      (from a checkout / 从检出运行)
 import { readFileSync, realpathSync, existsSync } from 'node:fs'
 import { dirname, join, relative, isAbsolute } from 'node:path'
@@ -59,6 +59,8 @@ files, but a TAP-11 client answers "unpaid" and does not resolve the service; --
   --timeout <s>        per HTTP request (default 15)
   --rpc <url,url,...>  BNB Chain nodes; each chain read needs 2 to agree (default: ${DEFAULT_RPC.length} public nodes of distinct operators)
   --rpc-xlayer <urls>  X Layer nodes      --rpc-base <urls>  Base nodes
+  --escrows <a,b,...>  experimental: escrow instances to compare your contribution across (read-only; a difference is
+                       a note, never a failure)
   --version, --help
 
 No service yet? Run the local trial first (no key, no circuit, no cost):
@@ -95,6 +97,7 @@ function parseArgs(argv) {
       case '--origin': o.origin = value(); if (!/^https?:\/\/[^/\s]+$/.test(o.origin)) throw usage('--origin must be an origin, like https://example.org', '--origin 必须是一个源，例如 https://example.org'); break
       case '--lang': o.lang = value(); if (!['en', 'zh', 'both'].includes(o.lang)) throw usage('--lang must be en, zh or both', '--lang 只能是 en、zh 或 both'); break
       case '--timeout': o.timeout = Number(value()); if (!Number.isFinite(o.timeout) || o.timeout <= 0) throw usage('--timeout must be a positive number of seconds', '--timeout 必须是正数（秒）'); break
+      case '--escrows': o.escrows = value().split(',').map((s) => s.trim()).filter(Boolean); if (!o.escrows.length || !o.escrows.every((e) => /^0x[0-9a-fA-F]{40}$/.test(e))) throw usage('--escrows takes escrow addresses separated by commas', '--escrows 接收以逗号分隔的托管地址'); break
       case '--rpc': o.rpc = value().split(',').map((s) => s.trim()).filter(Boolean); break
       case '--rpc-xlayer': case '--rpc-base': o.chainRpc[chainByKey(a.slice(6)).chainId] = value().split(',').map((s) => s.trim()).filter(Boolean); break
       default:
@@ -136,7 +139,7 @@ async function main() {
   const api = urlMode && opts.offline ? null : createTapeAPI({ rpcUrls, quorum: 2, chains, ...(urlMode ? { dev: true } : {}) })
   let report
   try {
-    report = await diagnose(opts.target, { api, offline: opts.offline, key, ...(opts.allowHttp ? { allowHttp: true } : {}), model: opts.model ?? undefined, origin: opts.origin ?? undefined, timeoutMs: opts.timeout * 1000, commands: CMDS })
+    report = await diagnose(opts.target, { api, offline: opts.offline, key, ...(opts.allowHttp ? { allowHttp: true } : {}), model: opts.model ?? undefined, origin: opts.origin ?? undefined, timeoutMs: opts.timeout * 1000, commands: CMDS, ...(opts.escrows ? { escrows: opts.escrows } : {}) })
   } catch (e) {
     process.stderr.write(`tapeapi-doctor: ${redactSecret(String(e?.message ?? e), key)}\n`)
     process.exit(e?.code === 'INVALID_ARGUMENT' ? 2 : 3)
@@ -145,7 +148,7 @@ async function main() {
   if (opts.strict && exit === 0 && report.counts.warn) exit = 1
   if (opts.json) {
     // No key in the report: every text is redacted (diagnose does it; again here). / 报告里没有密钥：每段文字都已脱敏（diagnose 做过，这里再做一次）。
-    process.stdout.write(JSON.stringify(redactSecret({ tool: 'tapeapi-doctor', version: VERSION, target: report.target, mode: report.mode, chainId: report.chainId, ok: exit === 0, exitCode: exit, strict: opts.strict, counts: report.counts, checks: report.checks }, key), null, 2) + '\n')
+    process.stdout.write(JSON.stringify(redactSecret({ tool: 'tapeapi-doctor', version: VERSION, target: report.target, mode: report.mode, chainId: report.chainId, ok: exit === 0, exitCode: exit, strict: opts.strict, counts: report.counts, checks: report.checks, ...(report.warnings ? { warnings: report.warnings } : {}) }, key), null, 2) + '\n')
   } else {
     process.stdout.write(redactSecret(formatReport(report, { lang: opts.lang, version: VERSION }), key) + '\n')
     if (opts.strict && report.exitCode === 0 && exit === 1) process.stdout.write(`${opts.lang === 'zh' ? '--strict：警告按失败计' : opts.lang === 'en' ? '--strict: warnings count as failures' : '--strict: warnings count as failures / 警告按失败计'}\n`)

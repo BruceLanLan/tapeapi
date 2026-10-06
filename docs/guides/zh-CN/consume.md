@@ -18,7 +18,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz
 ```
 
 把下面的脚本保存为 `.mjs` 文件，放在能解析到 `@tapeapi/sdk` 的地方，然后用 `node <文件>.mjs` 运行：用克隆时，**放在 `tapeapi`
@@ -160,10 +160,15 @@ const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })
 
 为避免每次调用都弹出钱包提示，可以一次性授权一把会话密钥（`api.tx.authorizeSession(svc, sessionAddress,
 expires)`），然后改为传入 `{ consumer, sessionKey, sessionExpiry }`。为通道充值需要两笔交易，由 SDK 为你的钱包构建：
-先 `api.tx.approve({ amount })`，再 `api.tx.fund(svc, amount)`。
+先 `await api.tx.approve({ amount, spender: svc })`，再 `await api.tx.fund(svc, amount)`。两者都先在链上读取托管的代币，
+并且只为 SDK 已审计部署名单里的托管（目前为空：还没有任何托管经过审计）或你自己用 `createTapeAPI({ allowEscrows: [...] })`
+添加的托管构造，因为授权让那个合约可以拉走你的代币。`amount` 以代币自己的最小单位计：用 `api.chain.escrow.paymentToken(svc)`
+读取代币（小数位从代币读取，绝不假设），用 `formatPaymentAmount(amount, token)` 显示金额。清单价格是 `priceBEM`，所以 SDK 拒绝为托管持有其它代币的服务充值或付费（`UNSUPPORTED_PAYMENT_TOKEN`，`reason` 为 `not-bem`）：
+托管合约本身支持任意准入代币，但清单的多币种定价规范尚未规定，所以 `fund` 对持有 BEM 以外代币的托管一律不构造，无论你声明什么代币，
+即使你已把该托管加入 `allowEscrows`。
 
 你只付提供者标明的价格：TapeAPI 不在消费者这一侧加任何费用。维护贡献（如果提供者保留它）从提供者的所得中划出
-（[`docs/FEES.md`](../../FEES.md)）。规范目前用 BEM 结算；下一版托管计划在 BNB Smart Chain 上首先支持 USDT（Binance-Peg），BEM 与 WBNB（包装的 BNB）按需、用同一份字节码（见 [`docs/FEES.md`](../../FEES.md)）。
+（[`docs/FEES.md`](../../FEES.md)）。一次付费调用以它所用的托管实例的代币结算：下一版托管计划在 BNB Smart Chain 上首先支持 USDT（Binance-Peg），BEM 与 WBNB（包装的 BNB）按需、用同一份字节码（见 [`docs/FEES.md`](../../FEES.md)）。清单里的价格在规范其它代币的写法之前仍以 BEM（`priceBEM`）书写，所以本 SDK 只为持有 BEM 的托管构造付费调用。
 
 > 托管合约尚未部署，因此付费服务还没有在主网上线。以上内容都可以针对示例运行（本地使用 `FREE_ALL=1` 跳过付费）。
 

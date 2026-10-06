@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
+import {VmSafe} from "forge-std/Vm.sol";
 
 import {ServiceDirectory} from "../src/ServiceDirectory.sol";
 import {TapeAPIEscrow} from "../src/TapeAPIEscrow.sol";
@@ -11,6 +12,13 @@ import {IDeWebHub, IFactory, IDomainBinding, IERC721} from "../src/interfaces.so
 /// @dev Extra factory view used only to find a known-good processor for the pre-flight probe.
 ///      Not part of src/interfaces.sol because the contracts themselves never need it.
 ///      仅用于探针：从工厂取一个已知良好的处理器地址。合约本身不需要这个接口，故不放进 src。
+/// @dev ERC-20 metadata, read only by the escrow pre-flight (TAPI-22 §3.5 item 4: 8 <= decimals <= 18). The escrow
+///      itself never reads decimals, so this is not in src/interfaces.sol.
+///      仅托管预检读取（TAPI-22 §3.5 第 4 项）；托管合约本身从不读取小数位，故不放进 src。
+interface IERC20Decimals {
+    function decimals() external view returns (uint8);
+}
+
 interface IFactoryEnumerable {
     function cpus(uint256 index) external view returns (address);
     function cpuCount() external view returns (uint256);
@@ -26,8 +34,16 @@ interface IFactoryEnumerable {
 ///   HUB              DeWebHub proxy, must have code                     必填，必须有代码
 ///   FACTORY          circuits factory, must have code                   必填，必须有代码
 ///   DOMAIN_BINDING   activation gate, 0 = disabled; non-zero must have code   0 表示关闭
-///   BEM              BEM ERC-20, must have code (escrow only)           仅托管合约需要
-///   TREASURY         escrow treasury, MAY be an EOA (escrow only)       可以是 EOA
+///   TOKEN            the one ERC-20 the escrow instance holds (TAPI-22 §3.5). Must be the canonical USDT-peg
+///                    0x55d398326f99059fF775485246999027B3197955 with its code hash pinned, unless ALLOW_OTHER_TOKEN;
+///                    must have code, no proxy slot set, and 8 <= decimals() <= 18 (escrow only)
+///                    托管实例的唯一代币：默认必须是规范 USDT 锚定币且代码哈希钉死；不得是代理；仅托管需要
+///   TREASURY         escrow treasury, MAY be an EOA; not zero, TOKEN, HUB, FACTORY, DOMAIN_BINDING or the
+///                    ServiceDirectory this same run deploys (escrow only)
+///                    可以是 EOA；不得为零地址、TOKEN、HUB、FACTORY、DOMAIN_BINDING 或本次一并部署的 ServiceDirectory
+///   ALLOW_OTHER_TOKEN  "true" to permit a TOKEN other than the canonical USDT-peg, and to waive the proxy-slot
+///                    check; prints a loud warning. Only for an instance evaluated on its own (TAPI-22 §3.5).
+///                    允许非规范代币并放过代理槽检查，会打印醒目警告；仅用于单独评估过的实例
 ///   DEPLOY_ESCROW    "true" to also deploy TapeAPIEscrow (default false)  默认不部署托管
 ///   DRY_RUN          "true" to simulate without broadcasting (default false)  默认非演练
 ///   PRIVATE_KEY      optional; otherwise pass --private-key / --account on the CLI
@@ -87,6 +103,28 @@ contract Deploy is Script {
 
     uint256 internal constant EIP170_LIMIT = 24576;
 
+    /// @dev The escrow's canonical first instance (TAPI-22 §3.5): the USDT-peg on BNB Smart Chain, and the keccak256
+    ///      of its runtime code, read on 2026-10-05 from two independent read-only RPC operators (publicnode, dRPC)
+    ///      with identical results. Same value as the independent review measured. A different code hash at this
+    ///      address means a wrong chain or a doctored fork; there is no override.
+    ///      规范首个实例 USDT 锚定币及其运行时代码哈希（2026-10-05 两家独立只读 RPC 读数一致）；该地址代码哈希不符即
+    ///      链或分叉状态不对，没有覆盖开关。
+    address public constant CANONICAL_TOKEN = 0x55d398326f99059fF775485246999027B3197955;
+    bytes32 public constant CANONICAL_TOKEN_CODEHASH =
+        0x97a48aa4c129657440dafdacd4c836389734d28cc4a0ca7403e68da660a74a59;
+
+    /// @dev Proxy slots that must all be empty for an admissible token (TAPI-22 §3.5 item 1):
+    ///      EIP-1967 implementation / admin / beacon, EIP-1822 (keccak256("PROXIABLE")), and the legacy zOS
+    ///      implementation slot (keccak256("org.zeppelinos.proxy.implementation")) of pre-EIP-1967 proxies.
+    bytes32 internal constant EIP1967_IMPLEMENTATION_SLOT =
+        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    bytes32 internal constant EIP1967_ADMIN_SLOT = 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
+    bytes32 internal constant EIP1967_BEACON_SLOT = 0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50;
+    bytes32 internal constant EIP1822_PROXIABLE_SLOT =
+        0xc5f16f0fcc639fa48a6947836d9850f504798523bf8c9a3a87d5876cf622bcf7;
+    bytes32 internal constant ZOS_IMPLEMENTATION_SLOT =
+        0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3;
+
     /// @dev The bytecode that actually goes on chain is read from these artifacts, NOT from
     ///      `new ServiceDirectory(...)`. This is deliberate: this script must run under
     ///      FOUNDRY_PROFILE=deploy (evm_version = shanghai) so the local simulation can execute the
@@ -105,7 +143,7 @@ contract Deploy is Script {
     address internal hub;
     address internal factory;
     address internal domainBinding;
-    address internal bem;
+    address internal token;
     address internal treasury;
     address internal deployer;
     bool internal deployEscrow;
@@ -134,7 +172,7 @@ contract Deploy is Script {
         dryRun = vm.envOr("DRY_RUN", false);
 
         if (deployEscrow) {
-            bem = vm.envAddress("BEM");
+            token = vm.envAddress("TOKEN");
             treasury = vm.envAddress("TREASURY");
         }
 
@@ -148,14 +186,14 @@ contract Deploy is Script {
         console2.log("  block number    :", block.number);
         console2.log("  deployer        :", deployer);
         console2.log("  deployer balance:", deployer.balance);
-        console2.log("  mode            :", dryRun ? "DRY RUN (no broadcast)" : "LIVE (will broadcast)");
+        console2.log("  mode            :", modeLabel(dryRun));
         console2.log("  deploy escrow   :", deployEscrow ? "yes" : "no  (ServiceDirectory only)");
         console2.log("---------------------------------------------------------");
         console2.log("  HUB             :", hub);
         console2.log("  FACTORY         :", factory);
         console2.log("  DOMAIN_BINDING  :", domainBinding);
         if (deployEscrow) {
-            console2.log("  BEM             :", bem);
+            console2.log("  TOKEN           :", token);
             console2.log("  TREASURY        :", treasury);
         }
         console2.log("---------------------------------------------------------");
@@ -239,17 +277,19 @@ contract Deploy is Script {
         } else {
             console2.log(unicode"  domain binding  : 0 -- activation gate PERMANENTLY DISABLED (immutable). Decision, not default? / 门槛永久关闭，确认这是决定而非默认");
         }
-        if (deployEscrow) {
-            require(bem.code.length > 0, "PREFLIGHT: BEM has no code on this chain");
-            // TREASURY may be an EOA or a multisig; only the zero address is rejected (the
-            // constructor would revert ZeroAddress anyway, but the message here is clearer).
-            // TREASURY 可以是 EOA 或多签；只拒绝零地址。
-            require(treasury != address(0), "PREFLIGHT: TREASURY is the zero address");
-            if (treasury.code.length == 0) {
-                console2.log(unicode"  note: TREASURY has no code (EOA). Intended? / TREASURY 是 EOA，确认是有意的");
-            }
-        }
         require(deployer != address(0), "PREFLIGHT: deployer is the zero address (pass --private-key / --account / --sender)");
+        if (deployEscrow) {
+            // The ServiceDirectory is the first contract this run creates: its address is the CREATE address of the
+            // deployer at its current nonce (checked on a fork: a DRY_RUN lands on the same address), so TREASURY is
+            // refused if it is that address. `_deploy` repeats the check on the real address before the escrow is
+            // created, in case the prediction and the real address ever differ.
+            // ServiceDirectory 是本次创建的第一个合约：其地址由 deployer 当前 nonce 决定（分叉上核对过，DRY_RUN 落在同一地址），
+            // TREASURY 等于该地址即拒绝。`_deploy` 在创建托管之前对真实地址再检查一次，以防预测与真实地址不一致。
+            address directoryPredicted = vm.computeCreateAddress(deployer, vm.getNonce(deployer));
+            checkEscrowConfig(
+                token, treasury, hub, factory, domainBinding, directoryPredicted, vm.envOr("ALLOW_OTHER_TOKEN", false)
+            );
+        }
 
         // --- live probe: the factory really is a factory ---
         // Every probe goes through _word(), which turns "the call reverted / returned nothing" into
@@ -300,6 +340,86 @@ contract Deploy is Script {
         console2.log("---------------------------------------------------------");
     }
 
+    /// @notice The escrow's token / treasury pre-flight, callable on its own (test/DeployEscrow.t.sol runs it on a
+    ///         BNB Smart Chain fork, where the full `run()` cannot execute under the paris test profile).
+    ///         Token: code present; no EIP-1967 / EIP-1822 proxy slot set (TAPI-22 §3.5 item 1); the canonical
+    ///         USDT-peg with its code hash pinned; 8 <= decimals() <= 18 (item 4). `allowOtherToken` admits another
+    ///         token and waives the proxy-slot check, loudly; the code-hash pin of the canonical address is never
+    ///         waived. The other admission items (no freeze / pause / blacklist, no fee / rebase / hook) need the
+    ///         per-instance evaluation and cannot be asserted here.
+    ///         Treasury: not zero, not TOKEN (a claim would send the accrual to the token contract; the escrow
+    ///         constructor also refuses it), not HUB, FACTORY, `binding_` (DOMAIN_BINDING, when non-zero) or
+    ///         `directory_` (the ServiceDirectory this run deploys): contracts that would never move what they receive.
+    ///         The proxy check covers the EIP-1967 implementation / admin / beacon slots, EIP-1822 and the legacy zOS
+    ///         implementation slot.
+    ///         托管的代币 / 金库预检，可单独调用（分叉测试用）。代币：有代码、无代理槽（EIP-1967 三槽、EIP-1822、旧 zOS 槽）、
+    ///         规范 USDT 锚定币且代码哈希钉死、8 ≤ decimals ≤ 18；`allowOtherToken` 允许其它代币并放过代理槽检查（打印警告），
+    ///         但规范地址的代码哈希从不放过。金库：非零、非 TOKEN、非 HUB、非 FACTORY、非非零的 DOMAIN_BINDING、非本次部署的目录。
+    function checkEscrowConfig(
+        address token_,
+        address treasury_,
+        address hub_,
+        address factory_,
+        address binding_,
+        address directory_,
+        bool allowOtherToken
+    ) public view {
+        require(token_.code.length > 0, "PREFLIGHT: TOKEN has no code on this chain");
+        bool proxy = vm.load(token_, EIP1967_IMPLEMENTATION_SLOT) != bytes32(0)
+            || vm.load(token_, EIP1967_ADMIN_SLOT) != bytes32(0)
+            || vm.load(token_, EIP1967_BEACON_SLOT) != bytes32(0)
+            || vm.load(token_, EIP1822_PROXIABLE_SLOT) != bytes32(0)
+            || vm.load(token_, ZOS_IMPLEMENTATION_SLOT) != bytes32(0);
+        if (proxy) {
+            require(
+                allowOtherToken,
+                "PREFLIGHT: TOKEN is a proxy (an EIP-1967 implementation / admin / beacon, EIP-1822 or legacy zOS slot is set): not admissible (TAPI-22 section 3.5 item 1). ALLOW_OTHER_TOKEN=true overrides this, rehearsals only."
+            );
+            console2.log("  !!!!!!!!!! WARNING: TOKEN IS A PROXY (upgradeable). ALLOW_OTHER_TOKEN waived the check. NOT ADMISSIBLE ON MAINNET. !!!!!!!!!!");
+        }
+        if (token_ == CANONICAL_TOKEN) {
+            require(
+                token_.codehash == CANONICAL_TOKEN_CODEHASH,
+                "PREFLIGHT: TOKEN is the canonical USDT-peg address but its code hash is not the pinned one -- wrong chain or fork state; do not deploy"
+            );
+            console2.log("  token           : canonical USDT-peg, code hash matches the pin");
+        } else {
+            require(
+                allowOtherToken,
+                "PREFLIGHT: TOKEN is not the canonical USDT-peg 0x55d398326f99059fF775485246999027B3197955. Set ALLOW_OTHER_TOKEN=true only for an instance that passed its own TAPI-22 section 3.5 evaluation."
+            );
+            console2.log("  !!!!!!!!!! WARNING: TOKEN is NOT the canonical USDT-peg (ALLOW_OTHER_TOKEN=true). !!!!!!!!!!");
+            console2.log(unicode"  !!!!!!!!!! 警告：TOKEN 不是规范 USDT 锚定币。只有按 TAPI-22 §3.5 单独评估、记录过的代币才可部署。 !!!!!!!!!!");
+            console2.logBytes32(token_.codehash);
+            console2.log("  (above: TOKEN code hash -- record it in the instance evaluation)");
+        }
+        uint256 dec = _word(token_, abi.encodeCall(IERC20Decimals.decimals, ()), "TOKEN.decimals()");
+        require(dec >= 8 && dec <= 18, "PREFLIGHT: TOKEN.decimals() outside [8, 18] (TAPI-22 section 3.5 item 4)");
+        console2.log("  token decimals  :", dec);
+
+        // TREASURY may be an EOA or a multisig. 可以是 EOA 或多签。
+        require(treasury_ != address(0), "PREFLIGHT: TREASURY is the zero address");
+        require(treasury_ != token_, "PREFLIGHT: TREASURY is TOKEN -- a claim would send the accrual to the token contract");
+        require(treasury_ != hub_, "PREFLIGHT: TREASURY is HUB");
+        require(treasury_ != factory_, "PREFLIGHT: TREASURY is FACTORY");
+        require(binding_ == address(0) || treasury_ != binding_, "PREFLIGHT: TREASURY is DOMAIN_BINDING");
+        require(treasury_ != directory_, "PREFLIGHT: TREASURY is the ServiceDirectory this run deploys");
+        if (treasury_.code.length == 0) {
+            console2.log(unicode"  note: TREASURY has no code (EOA). Intended? / TREASURY 是 EOA，确认是有意的");
+        }
+    }
+
+    /// @notice What this run will do. LIVE only when forge is actually broadcasting (`--broadcast`); DRY_RUN unset
+    ///         without `--broadcast` is a local simulation and must not say LIVE.
+    ///         只有真的在广播（`--broadcast`）时才写 LIVE；DRY_RUN 未设但没有 `--broadcast` 只是本地模拟。
+    function modeLabel(bool dryRun_) public view returns (string memory) {
+        if (dryRun_) return "DRY RUN (no broadcast)";
+        if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast) || vm.isContext(VmSafe.ForgeContext.ScriptResume)) {
+            return "LIVE (will broadcast)";
+        }
+        return "SIMULATION ONLY (DRY_RUN unset but no --broadcast: nothing will be sent)";
+    }
+
     // -------------------------------------------------------------- deploy ----
 
     function _deploy() internal returns (ServiceDirectory directory, TapeAPIEscrow escrow) {
@@ -330,8 +450,11 @@ contract Deploy is Script {
         uint256 gasEscrow;
         address escAddr;
         if (deployEscrow) {
+            // Still inside the simulation: a refusal here costs nothing, nothing has been broadcast yet.
+            // 仍在模拟之中：此处拒绝不花任何费用，尚未广播任何交易。
+            require(treasury != dirAddr, "DEPLOY: TREASURY is the ServiceDirectory this run just deployed");
             gasBefore = gasleft();
-            escAddr = _create(bytes.concat(escCode, abi.encode(bem, hub, treasury)), "TapeAPIEscrow");
+            escAddr = _create(bytes.concat(escCode, abi.encode(token, hub, treasury)), "TapeAPIEscrow");
             gasEscrow = gasBefore - gasleft();
             escrow = TapeAPIEscrow(escAddr);
         }
@@ -534,7 +657,7 @@ contract Deploy is Script {
         require(escrow.owner() == deployer, "POST: TapeAPIEscrow.owner() != deployer");
         require(escrow.pendingOwner() == address(0), "POST: TapeAPIEscrow.pendingOwner() != 0");
         require(escrow.treasury() == treasury, "POST: TapeAPIEscrow.treasury() != TREASURY");
-        require(address(escrow.bem()) == bem, "POST: TapeAPIEscrow.bem() != BEM");
+        require(address(escrow.token()) == token, "POST: TapeAPIEscrow.token() != TOKEN");
         require(address(escrow.hub()) == hub, "POST: TapeAPIEscrow.hub() != HUB");
 
         // v2 (per-provider channels, DECISION-escrow-v2.md): the provider's protection is the cooldown.
@@ -560,11 +683,13 @@ contract Deploy is Script {
         // Fresh-state sanity / 初始状态
         require(escrow.channelOf(deployer, treasury) == 0, "POST: escrow channel not empty");
         require(escrow.claimedOf(deployer, treasury) == 0, "POST: escrow claimed not empty");
+        // v3 pull treasury: nothing accrued at birth / v3 拉取式金库：部署时应收额为 0
+        require(escrow.treasuryAccrued() == 0, "POST: escrow treasuryAccrued not zero");
 
         console2.log("  TapeAPIEscrow post-deploy checks: ALL PASSED");
         console2.log("    owner            :", escrow.owner());
         console2.log("    treasury         :", escrow.treasury());
-        console2.log("    bem              :", address(escrow.bem()));
+        console2.log("    token            :", address(escrow.token()));
         console2.log("    hub              :", address(escrow.hub()));
         console2.log("    MAX_SESSION      :", escrow.MAX_SESSION());
         console2.log("    WITHDRAW_COOLDOWN:", escrow.WITHDRAW_COOLDOWN());
@@ -589,7 +714,7 @@ contract Deploy is Script {
         console2.log("factory=%s", factory);
         console2.log("domainBinding=%s", domainBinding);
         if (deployEscrow) {
-            console2.log("bem=%s", bem);
+            console2.log("token=%s", token);
             console2.log("treasury=%s", treasury);
         }
         console2.log("owner=%s", deployer);
@@ -598,8 +723,8 @@ contract Deploy is Script {
         console2.log("ServiceDirectory(hub, factory, domainBinding):");
         console2.logBytes(abi.encode(hub, factory, domainBinding));
         if (deployEscrow) {
-            console2.log("TapeAPIEscrow(bem, hub, treasury):");
-            console2.logBytes(abi.encode(bem, hub, treasury));
+            console2.log("TapeAPIEscrow(token, hub, treasury):");
+            console2.logBytes(abi.encode(token, hub, treasury));
         }
         console2.log("");
         console2.log(unicode"--- verification command / 验证命令 ---");
@@ -608,11 +733,14 @@ contract Deploy is Script {
         if (deployEscrow) console2.log("  --escrow %s \\", address(escrow));
         console2.log("  --hub %s --factory %s \\", hub, factory);
         console2.log("  --domain-binding %s", domainBinding);
-        if (deployEscrow) console2.log("  --bem %s --treasury %s", bem, treasury);
+        if (deployEscrow) console2.log("  --token %s --treasury %s", token, treasury);
         console2.log("=========================================================");
         if (dryRun) {
             console2.log("DRY RUN -- nothing was broadcast. Remove DRY_RUN to deploy.");
             console2.log(unicode"演练模式：未广播任何交易。");
+        } else if (!vm.isContext(VmSafe.ForgeContext.ScriptBroadcast) && !vm.isContext(VmSafe.ForgeContext.ScriptResume)) {
+            console2.log("SIMULATION ONLY -- no --broadcast flag, nothing was sent.");
+            console2.log(unicode"仅模拟：命令没有 --broadcast，未发送任何交易。");
         }
     }
 

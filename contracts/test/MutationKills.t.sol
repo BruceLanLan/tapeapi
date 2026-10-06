@@ -7,7 +7,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import {TapeAPIEscrow} from "../src/TapeAPIEscrow.sol";
-import {ZeroAddress, BadSignature} from "../src/interfaces.sol";
+import {ZeroAddress, BadSignature, NothingToSettle} from "../src/interfaces.sol";
 import {Mal_ERC20, Mal_ERC721, Mal_Hub, Mal_ZeroHub} from "./mocks/MaliciousTokens.sol";
 
 contract MutationKillsTest is Test {
@@ -49,5 +49,43 @@ contract MutationKillsTest is Test {
         bytes memory short = hex"1234";
         vm.expectRevert(BadSignature.selector);
         esc.settle(address(0), provider, 1, exp, short);
+    }
+    /// Second kill for R19's R9 (drop the high-s rejection in ECDSA.recover), which only
+    /// test_A2_claim_signatureMalleabilityRejected killed. Here on the SESSION-KEY path, fuzzed key and amount: the
+    /// high-s twin of a valid voucher signature must be BadSignature, and the canonical one settles exactly once.
+    /// 第二道测试杀 R9（去掉高 s 拒绝）：会话密钥路径、模糊密钥与金额；合法签名的高 s 孪生必须 BadSignature。
+    uint256 internal constant SECP_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
+
+    function testFuzz_mut_R9_highSTwin_sessionKeyVoucher_rejected(uint256 keySeed, uint256 amount) public {
+        uint256 keyPk = bound(keySeed, 1, SECP_N - 1);
+        amount = bound(amount, 1, 1_000 ether);
+        address consumer = vm.addr(0xC0FFEE);
+        vm.assume(vm.addr(keyPk) != consumer);
+        (TapeAPIEscrow esc, address provider) = _sessionChannel(consumer, vm.addr(keyPk), amount);
+        uint64 exp = uint64(block.timestamp + 1 hours);
+        (bytes memory good, bytes memory twin) = _sigAndTwin(keyPk, esc.voucherDigest(consumer, provider, amount, exp));
+        vm.expectRevert(BadSignature.selector);
+        esc.settle(consumer, provider, amount, exp, twin);
+        esc.settle(consumer, provider, amount, exp, good);
+        assertEq(esc.claimedOf(consumer, provider), amount);
+        vm.expectRevert(NothingToSettle.selector);
+        esc.settle(consumer, provider, amount, exp, good);
+    }
+
+    function _sessionChannel(address consumer, address key, uint256 amount) internal returns (TapeAPIEscrow esc, address provider) {
+        esc = new TapeAPIEscrow(address(bem), address(new Mal_Hub()), treasury);
+        provider = Mal_Hub(address(esc.hub())).accountOf(address(nft), 1);
+        bem.mint(consumer, amount);
+        vm.startPrank(consumer);
+        bem.approve(address(esc), amount);
+        esc.fund(provider, amount);
+        esc.authorizeSession(provider, key, uint64(block.timestamp + 1 days));
+        vm.stopPrank();
+    }
+
+    function _sigAndTwin(uint256 pk, bytes32 digest) internal pure returns (bytes memory good, bytes memory twin) {
+        (uint8 v, bytes32 r, bytes32 s_) = vm.sign(pk, digest);
+        good = abi.encodePacked(r, s_, v);
+        twin = abi.encodePacked(r, bytes32(SECP_N - uint256(s_)), v == 27 ? uint8(28) : uint8(27));
     }
 }

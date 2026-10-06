@@ -25,16 +25,23 @@ const ROOM_IN = 'aa'.repeat(32), ROOM_OUT = 'bb'.repeat(32)
 const BUS = '0x' + 'cb'.repeat(20)
 
 // ------------------------------------------------------------------------------------------------ H-1 ----
-test('FIXED H-1: tx.approve({ spender: svc }) requires an explicit, bounded amount: no unlimited allowance to a provider-named escrow', () => {
-  const api = createTapeAPI({ escrow: ADDR.escrow })
+test('FIXED H-1: tx.approve({ spender: svc }) requires an explicit, bounded amount: no unlimited allowance to a provider-named escrow', async () => {
+  // Since escrow v3 (experimental) approve is async, reads the escrow's token() and builds only for an escrow on the
+  // audited list or allowEscrows (TAPI-22 §3.5); the amount rule is unchanged and still checked first.
+  // 托管 v3 起 approve 为异步、读取托管的 token()，且只为已审计名单或 allowEscrows 里的托管构造；金额规则不变、仍先检查。
   const EVIL = '0x' + 'e5'.repeat(20)   // any contract a hostile provider writes into payment.escrow / 恶意服务方写进清单的任意合约
+  const chain = createFakeChain(); chain.setEscrowToken(EVIL, '0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a')
+  const base = { rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, escrow: ADDR.escrow, fetch: chain.fetch }
+  const api = createTapeAPI({ ...base, allowEscrows: [EVIL] })
   const svc = { manifest: { payment: { escrow: EVIL } }, container: ADDR.container }
   const abiErr = (re) => (e) => e instanceof TapeAPIError && e.code === 'INVALID_ARGUMENT' && re.test(e.message)
-  assert.throws(() => api.tx.approve({ spender: svc }), abiErr(/needs an amount/), 'amount omitted, as a hurried integrator would: refused')
-  assert.throws(() => api.tx.approve({ spender: svc, amount: 0n }), abiErr(/positive and bounded/))
-  assert.throws(() => api.tx.approve({ spender: svc, amount: 2n ** 256n - 1n }), abiErr(/positive and bounded/), 'the old "unlimited" value is refused')
-  assert.throws(() => api.tx.approve({ spender: svc, amount: 2n ** 255n }), abiErr(/positive and bounded/))
-  const t = api.tx.approve({ spender: svc, amount: 1_000n })
+  await assert.rejects(api.tx.approve({ spender: svc }), abiErr(/needs an amount/), 'amount omitted, as a hurried integrator would: refused')
+  await assert.rejects(api.tx.approve({ spender: svc, amount: 0n }), abiErr(/positive and bounded/))
+  await assert.rejects(api.tx.approve({ spender: svc, amount: 2n ** 256n - 1n }), abiErr(/positive and bounded/), 'the old "unlimited" value is refused')
+  await assert.rejects(api.tx.approve({ spender: svc, amount: 2n ** 255n }), abiErr(/positive and bounded/))
+  // and without the opt-in, a provider-named escrow gets no approval at all / 未显式开启时，服务方指定的托管拿不到任何授权
+  await assert.rejects(createTapeAPI(base).tx.approve({ spender: svc, amount: 1_000n }), (e) => e.code === 'INVALID_ARGUMENT' && e.data.reason === 'escrow-not-allowed')
+  const t = await api.tx.approve({ spender: svc, amount: 1_000n })
   assert.equal(t.to.toLowerCase(), '0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a', 'BEM token')
   const [spender, amount] = decodeParams(['address', 'uint256'], hexToBytes('0x' + t.data.slice(10)))
   assert.equal(spender.toLowerCase(), EVIL)

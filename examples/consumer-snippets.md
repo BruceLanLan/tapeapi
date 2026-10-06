@@ -94,9 +94,13 @@ console.log('agreed', q.result.bnbUsd, 'by', q.agreed, 'disagreed', q.disagreed,
 ```
 
 准备主网的三笔交易（SDK 只构造 calldata，由你的钱包/签名器发送）/ the three mainnet setup txs (SDK builds calldata; your wallet sends):
-`api.tx.approve({ amount: parseUnits('1'), spender: svc })` · `api.tx.fund(svc, parseUnits('1'))` · `api.tx.authorizeSession(svc, sessionAddress, expires)`.
-The approval comes first: the escrow moves BEM with `transferFrom`, so without it `fund` reverts inside the token.
-先做授权：托管合约用 `transferFrom` 划转 BEM，缺了它 `fund` 会在代币合约里回滚。
+`const token = await api.chain.escrow.paymentToken(svc)` · `const amount = parseUnits('1', token.decimals)` ·
+`await api.tx.approve({ amount, spender: svc })` · `await api.tx.fund(svc, amount)` · `api.tx.authorizeSession(svc, sessionAddress, expires)`.
+The approval comes first: the escrow moves its token with `transferFrom`, so without it `fund` reverts inside the token. approve / fund are
+built only for an audited escrow or one you add with `createTapeAPI({ allowEscrows })` (experimental; none is audited yet), and fund
+only for an escrow that holds BEM.
+先做授权：托管合约用 `transferFrom` 划转代币，缺了它 `fund` 会在代币合约里回滚。approve / fund 只为已审计的托管或你用
+`createTapeAPI({ allowEscrows })` 添加的托管构造（实验性；目前没有经过审计的托管），且 fund 只为持有 BEM 的托管构造。
 
 ## 3. 原始 curl + 手工验签 / Raw curl + manual signature verification
 

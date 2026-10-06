@@ -76,6 +76,12 @@ export interface Tap10Seals {
   readonly circuitCodehash: string
 }
 export declare const TAP10_SEALS: Readonly<Record<56 | 196 | 8453, Tap10Seals>> & Readonly<Record<number, Tap10Seals | undefined>>
+/** @experimental (TAPI-22 §3.5) How the SDK shows an escrow token, per chain and lowercase address: a fixed label
+ *  ('BEM', 'USDT (Binance-Peg)'), never the token's own name(). Decimals are always read from the token. */
+export declare const PAYMENT_TOKENS: Readonly<Record<number, Readonly<Record<string, { readonly label: string; readonly address: Address }>>>>
+/** @experimental (TAPI-22 §3.5) Audited escrow deployments per chain (lowercase) that `tx.approve` / `tx.fund` accept
+ *  without `allowEscrows`. Empty: no escrow is deployed or audited. */
+export declare const AUDITED_ESCROWS: Readonly<Record<number, readonly string[]>>
 /** @experimental (1.5) TAP-10 §12.1: an endpoint's chainId above this (2^53 − 1) is not a supported chain. */
 export declare const TAP10_MAX_CHAIN_ID: bigint
 export declare function formatTapeName(parts: { tokenId: bigint | number | string; processor: bigint | number | string; chainId?: number }, opts?: { suffix?: boolean }): string

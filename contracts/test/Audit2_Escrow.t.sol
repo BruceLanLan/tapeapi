@@ -181,11 +181,13 @@ contract Audit2_EscrowTest is Test {
         escrow.settle(consumer, consumer, 5_000 * BEM, exp, _v(CONSUMER_PK, consumer, consumer, 5_000 * BEM, exp));
         assertEq(escrow.channelOf(consumer, consumer), 0);
         assertEq(escrow.channelOf(consumer, provider), CHANNEL, "provider's channel untouched");
-        assertEq(bem.balanceOf(address(escrow)), CHANNEL, "solvency identity holds");
+        // the self-channel's default 1% stays here as the treasury's accrual (v3 pull) / 自我通道的默认 1% 留作金库应收额
+        assertEq(bem.balanceOf(address(escrow)), CHANNEL + escrow.treasuryAccrued(), "solvency identity holds");
+        assertEq(escrow.treasuryAccrued(), 500 * BEM / 100);
         // and the provider still settles its own full channel afterwards
         escrow.settle(consumer, provider, CHANNEL, exp, _v(CONSUMER_PK, consumer, provider, CHANNEL, exp));
         assertEq(bem.balanceOf(provider), CHANNEL);
-        assertEq(bem.balanceOf(address(escrow)), 0);
+        assertEq(bem.balanceOf(address(escrow)), escrow.treasuryAccrued());
     }
 
     /// E-01/E-03: for EVERY instant inside the cooldown, settle pays in full and withdraw is impossible.
@@ -438,12 +440,16 @@ contract Audit2_EscrowTest is Test {
         escrow.setTreasury(attacker);
         uint64 exp = uint64(block.timestamp + 1 hours);
         escrow.settle(consumer, provider, 100 * BEM, exp, _v(CONSUMER_PK, consumer, provider, 100 * BEM, exp));
+        escrow.claimTreasury();   // v3 pull: the redirect is realised at claim time / v3：重定向在领取时兑现
         assertEq(bem.balanceOf(attacker), 20 * BEM); assertEq(bem.balanceOf(provider), 80 * BEM);
         assertEq(escrow.channelOf(consumer, provider), 900 * BEM, "channels are untouchable by the owner");
         // the holder resets it; the owner cannot stop that
         vm.prank(address(0xA11CE)); escrow.setContribution(address(nft), 1, 0);
         escrow.settle(consumer, provider, 200 * BEM, exp, _v(CONSUMER_PK, consumer, provider, 200 * BEM, exp));
         assertEq(bem.balanceOf(attacker), 20 * BEM);
+        assertEq(escrow.treasuryAccrued(), 0, "nothing accrued at 0 bps");
+        // and the owner has no way to take the accrual itself: claimTreasury pays `treasury`, nothing else does
+        // owner 无法自己拿走应收额：只有 claimTreasury 付款，且只付给 `treasury`
     }
 
     /// setContribution has no isCPU gate: a home-made ERC-721 can only set bps for its OWN derived container.

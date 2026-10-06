@@ -10,8 +10,9 @@ import { toHex, keccak256, utf8ToBytes } from '../src/abi.js'
 import { PROCESSORS_SNAPSHOT } from '../src/processors-snapshot.js'
 import {
   standardWorld, createAgentChain, happyThread, mandateOf, mandateMsg, offerMsg, acceptMsg, deliverMsg, verdictMsg, revocationMsg,
-  revocationFile, providerReceipt, agentReceipt, KEYS, addrOf, P, AG, S, S2, ADDR, RPC, nowS, NOW, TASK, SITE_STORE,
+  revocationFile, providerReceipt, agentReceipt, KEYS, addrOf, P, AG, S, S2, ADDR, RPC, nowS, NOW, TASK, SITE_STORE, OPENER,
 } from './helpers/agent-chain.mjs'
+import { MAINNET_FACTORY } from './helpers/fake-chain.mjs'
 
 const { createAgentKit, mandateHashOf, signMandate, offerHashOf } = agent
 const HUB = ADDR.hub
@@ -243,7 +244,8 @@ test('FIXED CA-11: phishing names: identities are the container and the on-chain
   const evil = 'Official TapeAPI Agent' + String.fromCharCode(0x202e) + 'tnega' + String.fromCharCode(0x200b)
   const x = standardWorld({ circuits: real, agentName: evil })
   const t = happyThread()
-  const r = await kitOf(x).verifyTaskThread(t.messages)
+  // this chain's own factory: the snapshot hit, confirmed by one cpuAt at the pinned block / 本链工厂：快照命中，钉块上 cpuAt 核实
+  const r = await createAgentKit(x.api({ factory: MAINNET_FACTORY }), { clock: () => NOW }).verifyTaskThread(t.messages)
   assert.equal(r.ok, true)
   assert.equal(r.agent.container.toLowerCase(), AG.toLowerCase())
   assert.equal(r.agent.name, '12.7.tape')        // read from the chain (snapshot + cpuAt) / 链上名
@@ -251,17 +253,22 @@ test('FIXED CA-11: phishing names: identities are the container and the on-chain
   assert.equal(r.agent.displayName.untrusted, true)
   assert.equal(r.agent.displayName.text, 'Official TapeAPI Agenttnega')   // invisible and bidirectional controls removed
   assert.ok(!JSON.stringify(r).includes('"badge'), 'no badge field anywhere')
-  // without the processor in the snapshot the name is null and the container is still shown, never the manifest name
+  // 1.8: without the snapshot the processor number comes from a scan of cpuAt (TAP-10 §4.3 step 3), so the on-chain name
+  // is always there, never the manifest name / 1.8：没有快照时扫描 cpuAt 得到处理器号，链上名总在，绝不用清单名
   const y = standardWorld({ agentName: 'Official TapeAPI Agent' })
   const r2 = await kitOf(y).verifyTaskThread(happyThread().messages)
-  assert.equal(r2.agent.name, null)
-  assert.notEqual(r2.agent.name, 'Official TapeAPI Agent')
-  // a fake processor number in the snapshot does not name a container: cpuAt must agree
-  // (every node answers cpuAt(8) with another contract, as the chain would) / 每个节点都答 cpuAt(8) 是另一个合约
+  assert.equal(r2.agent.name, '12.7.tape')
+  assert.equal(r2.principal.name, '11.7.tape')
+  // a processor contract the factory's list does not hold names no container: a fake number in the snapshot needs cpuAt to
+  // agree, and the scan finds it nowhere (every node answers cpuAt with another contract): not-tapeout (draft §4)
+  // 工厂列表里没有的处理器合约不是容器：快照里的假编号须 cpuAt 同意，扫描也找不到：not-tapeout
   const z = standardWorld({ circuits: PROCESSORS_SNAPSHOT[56].list[8] })
   const CPU_AT = toHex(keccak256(utf8ToBytes('cpuAt(uint256)'))).slice(0, 10)
   for (const u of RPC) z.lie(u, (method, params, honest) => (method === 'eth_call' && params[0].data.startsWith(CPU_AT) ? '0x' + '00'.repeat(12) + '42'.repeat(20) : honest))
-  assert.equal((await kitOf(z).identityOf(AG)).name, null)
+  for (const factory of [MAINNET_FACTORY, ADDR.factory]) {
+    const kit = createAgentKit(z.api({ factory }), { clock: () => NOW })
+    await assert.rejects(kit.identityOf(AG), (e) => e.code === 'AGENT_INVALID' && e.reason === 'not-tapeout' && /processor list/.test(e.message), factory)
+  }
 })
 
 test('FIXED CA-12: self-hire is always reported: same container, same holder, the agent signer or the agent key being the principal\'s holder', async () => {
@@ -392,15 +399,39 @@ test('FIXED CA-18: the offer\'s deadline and the delivery\'s exp mean something:
   assert.ok(codes(await kitOf(x).verifyTaskThread([ok.offer, ok.accept, ok.mandate, deliverMsg({ mandateHash: ok.mandateHash, exp: nowS() - 100 })])).includes('message-malformed'))
 })
 
-test('FIXED CA-17: counterfeit circuits and non-containers are no principal', async () => {
+test('FIXED CA-17: counterfeit circuits and non-containers are no principal (1.8: TAP-10 §4.3 outcomes, not-tapeout and no-such-token)', async () => {
   const x = standardWorld()
   x.chain.setCounterfeit(ADDR.circuits)
   assert.deepEqual(codes(await kitOf(x).verifyMandate(signed(mandateOf()))), ['not-tapeout'])
   const y = standardWorld()
-  y.setAccount(11, '0x' + 'c3'.repeat(20))   // the hub derives another address / 中枢推导出别的地址
-  assert.deepEqual(codes(await kitOf(y).verifyMandate(signed(mandateOf()))), ['not-a-container'])
+  y.setAccount(11, '0x' + 'c3'.repeat(20))   // the opener derives another address (§4.3 step 4) / 开通器推导出别的地址
+  const ry = await kitOf(y).verifyMandate(signed(mandateOf()))
+  assert.deepEqual(codes(ry), ['not-tapeout']); assert.match(ry.problems[0].message, /opener\.accountOf/)
   const z = standardWorld()
-  assert.deepEqual(codes(await kitOf(z).verifyMandate(signed(mandateOf({ principal: '0x' + 'c4'.repeat(20) })))), ['not-a-container'])
+  assert.deepEqual(codes(await kitOf(z).verifyMandate(signed(mandateOf({ principal: '0x' + 'c4'.repeat(20) })))), ['not-tapeout'])
+  // token() naming another chain is not-tapeout (§4.3 step 1), not wrong-chain: that name is the node outcome of §5.4
+  const w = standardWorld()
+  w.chain.setContainerToken(P, { tokenId: 11, circuits: ADDR.circuits, chainId: 97 })
+  const rw = await kitOf(w).verifyMandate(signed(mandateOf()))
+  assert.deepEqual(codes(rw), ['not-tapeout']); assert.match(rw.problems[0].message, /chain 97/)
+  // a #ID outside TAP-10 §3.1 / 超出 §3.1 的 #ID
+  const v = standardWorld()
+  v.chain.setContainerToken(P, { tokenId: 0, circuits: ADDR.circuits }); v.setAccount(0, P)   // even if the opener agreed / 即使开通器同意
+  assert.deepEqual(codes(await kitOf(v).verifyMandate(signed(mandateOf()))), ['not-tapeout'])
+  // a container whose processor has no such circuit: ownerOf reverts (§4.2 step 4) / ownerOf 回滚
+  const u = standardWorld()
+  u.chain.state.owners.delete('11')
+  assert.deepEqual(codes(await kitOf(u).verifyMandate(signed(mandateOf()))), ['no-such-token'])
+  // the opener derives the container, not the hub (TAP-10 §2.2, §4.3 step 4): a hub that derives another address is not read
+  // 由开通器推导容器，不读 hub：hub 推导出别的地址不影响结果
+  const h = standardWorld()
+  const ACCOUNT_OF = toHex(keccak256(utf8ToBytes('accountOf(address,uint256)'))).slice(0, 10)
+  for (const url of RPC) h.lie(url, (method, params, honest) => (method === 'eth_call' && String(params[0].to).toLowerCase() === ADDR.hub.toLowerCase() && params[0].data.startsWith(ACCOUNT_OF) ? '0x' + '00'.repeat(12) + 'c5'.repeat(20) : honest))
+  assert.equal((await kitOf(h).verifyMandate(signed(mandateOf()))).ok, true)
+  // nodes on another chain: wrong-chain is thrown (the verification is unavailable), never a problem of the mandate
+  const t = standardWorld()
+  for (const url of RPC) t.lie(url, (method, params, honest) => (method === 'eth_chainId' ? '0x61' : honest))
+  await assert.rejects(kitOf(t).verifyMandate(signed(mandateOf())), (e) => e.code === 'INVALID_ARGUMENT' && e.data?.status === 'wrong-chain')
 })
 
 test('the manifest `agent` member is the same function in @tapeapi/sdk/agent and @tapeapi/sdk/manifest', () => {
@@ -855,4 +886,270 @@ test('FIXED RF-05: createAgentKit refuses, when it is created, a chain or a site
   assert.doesNotThrow(() => createAgentKit(x.api()))
   const { createTapeAPI } = await import('../src/index.js')
   for (const chainId of [56, 196, 8453]) assert.doesNotThrow(() => createAgentKit(createTapeAPI({ chainId })), String(chainId))
+})
+
+// ---- 1.8: input forms of draft TAP §3.7 and §8, refused rather than read leniently (no hash changes) ----
+// 1.8：草稿 §3.7 与 §8 的输入形式，宽松读取改为拒绝（不改任何哈希）
+
+const upper = (h) => '0x' + h.slice(2).toUpperCase()
+test('FIXED IN-01: a holder message with an upper-case bytes32 is malformed (mandate, offer, verdict, revocation message, revocation file)', async () => {
+  const x = standardWorld()
+  const t = happyThread()
+  const m = mandateOf()
+  const good = signed(m)
+  // the mandate alone: mandate-malformed, and nothing else is read / 单独核验：mandate-malformed，不读别的
+  const r1 = await kitOf(x).verifyMandate({ mandate: { ...m, taskHash: upper(m.taskHash) }, sig: good.sig })
+  assert.deepEqual(codes(r1), ['mandate-malformed'])
+  assert.match(r1.problems[0].message, /lower-case/)
+  // in a thread: the offer, the mandate (before any read), the verdict and a revocation message / 线程里
+  const offerUp = { ...t.offer, offer: { ...t.offer.offer, taskHash: upper(t.offer.offer.taskHash) } }
+  assert.deepEqual(codes(await kitOf(x).verifyTaskThread([offerUp])), ['message-malformed'])
+  const r2 = await kitOf(x).verifyTaskThread([t.offer, t.accept, { ...t.mandate, mandate: { ...t.mandate.mandate, taskHash: upper(m.taskHash) } }])
+  assert.deepEqual(codes(r2), ['mandate-malformed']); assert.equal(r2.state, 'Accepted')
+  const vUp = { ...t.acceptance, verdict: { ...t.acceptance.verdict, deliverableHash: upper(t.acceptance.verdict.deliverableHash) } }
+  const r3 = await kitOf(x).verifyTaskThread([t.offer, t.accept, t.mandate, t.deliver, vUp])
+  assert.deepEqual(codes(r3), ['message-malformed']); assert.equal(r3.state, 'Delivered')
+  const rev = revocationMsg({ mandateHashes: [t.mandateHash], issued: nowS() + 30 })
+  const revUp = { ...rev, revocation: { ...rev.revocation, mandateHashes: [upper(t.mandateHash)] } }
+  const r4 = await kitOf(x).verifyTaskThread([...t.messages, revUp])
+  assert.deepEqual(codes(r4), ['message-malformed']); assert.equal(r4.state, 'Settled')
+  // the same revocation in lower case applies / 小写的同一撤销适用
+  assert.equal((await kitOf(x).verifyTaskThread([...t.messages, rev])).revoked.at, nowS() + 30)
+  // a revocation file listing an upper-case hash is invalid: revocation-unavailable, never "not revoked"
+  const y = standardWorld()
+  revocationFile(y, { mandateHashes: [], mutate: (f) => ({ ...f, revocation: { ...f.revocation, mandateHashes: [upper(t.mandateHash)] } }) })
+  assert.deepEqual(codes(await kitOf(y).verifyMandate(good)), ['revocation-unavailable'])
+  // the builders refuse it as well (HASH_RE is lower case); 32 bytes as a Uint8Array are still taken / 构造函数同样拒绝
+  assert.throws(() => agent.mandateTypedData(56, HUB, { ...m, taskHash: upper(m.taskHash) }), (e) => e.code === 'AGENT_INVALID')
+  assert.equal(agent.mandateHashOf(56, HUB, { ...m, taskHash: Uint8Array.from(m.taskHash.slice(2).match(/../g), (h) => parseInt(h, 16)) }), mandateHashOf(56, HUB, m))
+})
+
+test('FIXED IN-02: a uint256 received as a JSON number or a bigint is malformed; the builders still take a number or a bigint and normalise it', async () => {
+  const x = standardWorld()
+  const t = happyThread()
+  const m = mandateOf()
+  const good = signed(m)
+  for (const [field, v] of [['nonce', 1], ['nonce', 1n], ['feeCap', 0], ['feeCap', 0n]]) {
+    const r = await kitOf(x).verifyMandate({ mandate: { ...m, [field]: v }, sig: good.sig })
+    assert.deepEqual(codes(r), ['mandate-malformed'], `${field} ${typeof v}`)
+  }
+  assert.deepEqual(codes(await kitOf(x).verifyMandate({ mandate: { ...m, scope: [{ ...m.scope[0], cap: 0 }] }, sig: good.sig })), ['mandate-malformed'])
+  for (const [field, v] of [['fee', 0], ['nonce', 1], ['nonce', 1n]]) {
+    assert.deepEqual(codes(await kitOf(x).verifyTaskThread([{ ...t.offer, offer: { ...t.offer.offer, [field]: v } }])), ['message-malformed'], `offer ${field} ${typeof v}`)
+  }
+  // in a thread the mandate's form is checked before the fields compared with the offer / 线程里先查形式
+  const r = await kitOf(x).verifyTaskThread([t.offer, t.accept, { ...t.mandate, mandate: { ...m, nonce: 1 } }])
+  assert.deepEqual(codes(r), ['mandate-malformed'])
+  // the decimal string passes; leading zeros do not / 十进制字符串通过；前导零不通过
+  assert.equal((await kitOf(x).verifyMandate(good)).ok, true)
+  assert.deepEqual(codes(await kitOf(x).verifyMandate({ mandate: { ...m, nonce: '01' }, sig: good.sig })), ['mandate-malformed'])
+  // builders: same hash, same payload / 构造函数：同一哈希、同一载荷
+  for (const v of [1, 1n, '1']) assert.equal(mandateHashOf(56, HUB, { ...m, nonce: v }), mandateHashOf(56, HUB, m))
+  assert.equal(agent.mandateTypedData(56, HUB, { ...m, nonce: 1n, feeCap: 0 }).message.nonce, '1')
+  assert.equal(agent.taskOfferTypedData(56, HUB, { ...t.offer.offer, fee: 0, nonce: 1 }).message.fee, '0')
+  assert.equal(agent.signMandate(56, HUB, { ...m, nonce: 1 }, KEYS.principalHolder), good.sig)
+})
+
+test('FIXED IN-03: a verdict without reasonHash is malformed (draft §3.4: 32 zero bytes is written, never assumed); the builders still default it', async () => {
+  const x = standardWorld()
+  const t = happyThread()
+  const { reasonHash, ...noReason } = t.acceptance.verdict
+  assert.equal(reasonHash, '0x' + '00'.repeat(32))
+  const sigOverZero = agent.signTaskVerdict(56, HUB, noReason, KEYS.principalHolder)   // the builder reads it as zero / 构造函数当 0
+  assert.equal(sigOverZero, t.acceptance.sig)
+  const r = await kitOf(x).verifyTaskThread([t.offer, t.accept, t.mandate, t.deliver, { ...t.acceptance, verdict: noReason, sig: sigOverZero }])
+  assert.deepEqual(codes(r), ['message-malformed']); assert.equal(r.state, 'Delivered')
+  assert.match(r.problems[0].message, /reasonHash is missing/)
+  assert.deepEqual((await kitOf(x).verifyTaskThread(t.messages)).problems, [])
+  assert.equal(agent.taskVerdictTypedData(56, HUB, noReason).message.reasonHash, reasonHash)
+})
+
+test('FIXED IN-04: an agent message whose ts or result.exp is negative (or not a whole number) is malformed', async () => {
+  const x = standardWorld()
+  const t = happyThread()
+  // the envelope cannot be signed with a negative ts, so the field is changed after signing: the form is checked before the
+  // signature, so the answer is message-malformed, not not-signed-by-agent / 负 ts 无法签名，签后改字段：形式先于签名检查
+  const withTs = (msg, ts) => ({ ...msg, receipt: { ...msg.receipt, ts } })
+  const withExp = (msg, exp) => ({ ...msg, receipt: { ...msg.receipt, result: { ...msg.receipt.result, exp } } })
+  for (const bad of [withTs(t.accept, -1), withTs(t.accept, -nowS()), withTs(t.accept, 1.5), withExp(t.accept, -1)]) {
+    const r = await kitOf(x).verifyTaskThread([t.offer, bad])
+    assert.deepEqual(codes(r), ['message-malformed']); assert.equal(r.state, 'Offered')
+  }
+  for (const bad of [withTs(t.deliver, -5), withExp(t.deliver, -1)]) {
+    const r = await kitOf(x).verifyTaskThread([t.offer, t.accept, t.mandate, bad])
+    assert.deepEqual(codes(r), ['message-malformed']); assert.equal(r.state, 'Active')
+  }
+  // the same change to a valid number is the signature's business / 改成别的合法数字则由签名检查拒绝
+  assert.deepEqual(codes(await kitOf(x).verifyTaskThread([t.offer, withTs(t.accept, t.accept.receipt.ts - 1)])), ['not-signed-by-agent'])
+  // ts 0 has the form / ts 为 0 形式正确
+  assert.deepEqual(codes(await kitOf(x).verifyTaskThread([t.offer, acceptMsg({ offerHash: t.offerHash, ts: 0 })])), [])
+})
+
+test('FIXED IN-05: a hash-only receipt whose ok is not a boolean, or whose hashes or ts are not in their form, is receipt-not-hash-only (never read as false)', async () => {
+  const x = standardWorld()
+  const kit = kitOf(x)
+  const m = mandateOf()
+  const good = providerReceipt()
+  const deliver = (receipts) => ({ receipts, receiptsHash: agent.jsonHashOf(receipts) })
+  assert.equal((await kit.verifyEvidence(deliver([good]), { mandate: m })).ok, true)
+  const { ok: _ok, ...noOk } = good
+  for (const bad of [{ ...good, ok: 'true' }, { ...good, ok: 1 }, { ...good, ok: null }, noOk, { ...good, requestHash: upper(good.requestHash) }, { ...good, bodyHash: good.bodyHash.slice(0, 64) }, { ...good, ts: -1 }, { ...good, ts: String(good.ts) }]) {
+    const r = await kit.verifyEvidence(deliver([bad]), { mandate: m })
+    assert.deepEqual(codes(r), ['receipt-not-hash-only'], JSON.stringify(bad).slice(0, 120))
+    assert.equal(r.receipts.length, 0)
+  }
+  // ok false is the form: a signed refusal, checked against the signer like any receipt / ok 为 false 形式正确：签名的拒绝
+  const refusal = { ...good, ok: false }
+  assert.deepEqual(codes(await kit.verifyEvidence(deliver([refusal]), { mandate: m })), ['receipt-invalid'])
+})
+
+// ---- 1.8: one TAP-10 pinned block per verification (draft TAP §4, §6.2; TAP-10 §5.3) ----
+// 1.8：每次核验一个 TAP-10 钉块
+
+// Every state read a kit sends (eth_call, eth_getCode, eth_getStorageAt), with its block parameter and target. The agent and
+// the provider are resolved through another client (`resolve`), so only the kit's own reads are recorded.
+// 记录 kit 自己发出的每个状态读取及其块参数；代理与上游服务经另一个客户端解析，不计入。
+function recordingKit(x, o = {}) {
+  const reads = [], calls = []
+  const fetch = (url, init) => {
+    for (const q of [].concat(JSON.parse(init.body))) {
+      calls.push(q.method)
+      const i = { eth_call: 1, eth_getCode: 1, eth_getStorageAt: 2 }[q.method]
+      if (i !== undefined) reads.push({ method: q.method, to: q.method === 'eth_call' ? String(q.params[0].to).toLowerCase() : String(q.params[0]).toLowerCase(), data: q.method === 'eth_call' ? q.params[0].data.slice(0, 10) : null, block: q.params[i] })
+    }
+    return x.fetch(url, init)
+  }
+  const other = x.api()
+  return { kit: createAgentKit(x.api({ fetch }), { clock: () => NOW, resolve: (c) => other.resolve(c), ...o }), reads, calls }
+}
+
+test('FIXED PIN-01: every read of one verification is made at one TAP-10 pinned block (identity, holder, EIP-1271, implementation slots, revocation file)', async () => {
+  const x = standardWorld()
+  const t = happyThread()
+  revocationFile(x, { mandateHashes: [], issued: nowS() - 5 })
+  const sel = (sig) => toHex(keccak256(utf8ToBytes(sig))).slice(0, 10)
+  {
+    const { kit, reads, calls } = recordingKit(x)
+    const rev = revocationMsg({ mandateHashes: [t.mandateHash], issued: nowS() + 30 })   // two passes / 两遍
+    const r = await kit.verifyTaskThread([...t.messages, rev])
+    assert.deepEqual(r.problems, []); assert.equal(r.state, 'Settled')
+    const pinned = x.chain.blockHash(x.chain.state.block - 2)   // the Q-th highest operator head minus 2 (§5.3)
+    assert.ok(reads.length > 10)
+    for (const rd of reads) assert.deepEqual(rd.block, { blockHash: pinned, requireCanonical: true }, `${rd.method} ${rd.data ?? ''} to ${rd.to}`)
+    // what was read at that block: token, isCPU, the processor table, opener.accountOf, ownerOf, both slots, the file
+    const has = (to, s) => reads.some((rd) => rd.to === to.toLowerCase() && (s === null ? rd.method === 'eth_getStorageAt' : rd.data === sel(s)))
+    assert.ok(has(P, 'token()') && has(ADDR.factory, 'isCPU(address)') && has(ADDR.factory, 'cpuCount()') && has(ADDR.factory, 'cpuAt(uint256)'))
+    assert.ok(has(SITE_STORE, 'pathCount(address)') && has(SITE_STORE, 'fileInfo(address,string)') && has(SITE_STORE, 'read(address,string)'))
+    assert.ok(has(OPENER, 'accountOf(address,uint256)') && !has(ADDR.hub, 'accountOf(address,uint256)'), 'the opener derives the container, not the hub')
+    assert.ok(has(ADDR.circuits, 'ownerOf(uint256)') && has(SITE_STORE, null))
+    assert.equal(calls.filter((c) => c === 'eth_chainId').length, RPC.length, 'one strict eth_chainId (§5.4)')
+    assert.equal(calls.filter((c) => c === 'eth_blockNumber').length, RPC.length, 'one pin for both passes')
+    // a later verification pins anew / 之后的核验重新钉块
+    x.chain.mine(5)
+    reads.length = 0
+    await kit.verifyMandate(signed(mandateOf()))
+    for (const rd of reads) assert.deepEqual(rd.block, { blockHash: x.chain.blockHash(x.chain.state.block - 2), requireCanonical: true })
+    assert.equal(calls.filter((c) => c === 'eth_chainId').length, RPC.length, 'eth_chainId once per kit')
+  }
+  {
+    // a contract holder: eth_getCode and isValidSignature at the same block / 合约持有人：同一块上读
+    const y = standardWorld()
+    const safe = '0x' + '5a'.repeat(20)
+    y.chain.setOwner(11, safe)
+    const m = mandateOf()
+    y.chain.setContractHolder(safe, agent.mandateDigest(56, HUB, m))
+    const { kit, reads } = recordingKit(y)
+    assert.equal((await kit.verifyMandate({ mandate: m, sig: '0x' + 'ab'.repeat(130) })).ok, true)
+    const pinned = y.chain.blockHash(y.chain.state.block - 2)
+    assert.ok(reads.some((rd) => rd.method === 'eth_getCode') && reads.some((rd) => rd.data === '0x1626ba7e'))
+    for (const rd of reads) assert.deepEqual(rd.block, { blockHash: pinned, requireCanonical: true })
+  }
+  {
+    // a node 500 blocks behind: the pin lag exceeds BNB Smart Chain's 400, stale-block, thrown (never a problem)
+    // 落后 500 块的节点：钉块滞后超过 400，stale-block，抛出
+    const z = standardWorld()
+    z.lie('http://rpc2', (method, params, honest) => (method === 'eth_blockNumber' ? '0x' + (z.chain.state.block - 500).toString(16) : honest))
+    await assert.rejects(kitOf(z).verifyMandate(signed(mandateOf())), (e) => e.code === 'RPC_STALE' && e.data?.status === 'stale-block')
+  }
+})
+
+test('FIXED RD-01: verifyTaskThread makes the revocation file, implementation slot and identity reads once for both passes, with the same result', async () => {
+  const x = standardWorld()
+  const t = happyThread()
+  revocationFile(x, { mandateHashes: [], issued: nowS() - 5 })
+  const rev = revocationMsg({ mandateHashes: [t.mandateHash], issued: nowS() + 30 })   // R is set: a second pass / 有 R：第二遍
+  const sel = (sig) => toHex(keccak256(utf8ToBytes(sig))).slice(0, 10)
+  const tally = (reads) => {
+    const n = (fn) => reads.filter((rd) => (fn === 'slot' ? rd.method === 'eth_getStorageAt' : rd.data === sel(fn))).length
+    return { pathCount: n('pathCount(address)'), fileInfo: n('fileInfo(address,string)'), read: n('read(address,string)'), slot: n('slot'), token: n('token()'), ownerOf: n('ownerOf(uint256)'), accountOf: n('accountOf(address,uint256)') }
+  }
+  const one = recordingKit(x)
+  const r1 = await one.kit.verifyTaskThread(t.messages)
+  const two = recordingKit(x)
+  const r2 = await two.kit.verifyTaskThread([...t.messages, rev])
+  assert.deepEqual([r1.state, r1.problems, r1.revoked], ['Settled', [], null])
+  assert.deepEqual([r2.state, r2.problems, r2.revoked], ['Settled', [], { at: nowS() + 30, via: 'message' }])
+  assert.deepEqual(r2.mandateCheck.revocation, r1.mandateCheck.revocation)
+  // the second pass reads nothing more of these (each strict read goes to both nodes) / 第二遍这些都不再读
+  assert.deepEqual(tally(two.reads), tally(one.reads))
+  // 1.7.1 read the file and both slots in each pass: pathCount, fileInfo and read 4 each and 8 slot reads for this thread
+  // (2, 2, 2 and 4 with one pass); 1.8 reads 2, 2, 2 and 4 with two / 1.7.1 每遍都读：两遍时 4、4、4 与 8；1.8 两遍时 2、2、2 与 4
+  assert.deepEqual(tally(two.reads), { pathCount: 2, fileInfo: 2, read: 2, slot: 4, token: 6, ownerOf: 6, accountOf: 6 })
+})
+
+test('FIXED RD-02: the implementation slots are kept per pinned block for at most 60 s: verifications at the same block share one read, another block or a later time reads again', async () => {
+  const x = standardWorld()
+  revocationFile(x, { mandateHashes: [], issued: nowS() - 5 })
+  let now = NOW
+  const { kit, reads } = recordingKit(x, { clock: () => now })
+  const slots = () => reads.filter((rd) => rd.method === 'eth_getStorageAt').length
+  const m = signed(mandateOf())
+  assert.equal((await kit.verifyMandate(m)).ok, true)
+  assert.equal(slots(), 4)                                   // two proxies, both nodes / 两个代理、两个节点
+  assert.equal((await kit.verifyMandate(m)).ok, true)
+  assert.equal((await kit.readRevocations(P)).status, 'published')
+  assert.equal(slots(), 4, 'the same pinned block: no new slot read')
+  x.chain.mine(1)
+  assert.equal((await kit.verifyMandate(m)).ok, true)
+  assert.equal(slots(), 8, 'another pinned block: read again')
+  now += 60
+  assert.equal((await kit.verifyMandate(m)).ok, true)
+  assert.equal(slots(), 12, '60 s later at the same block: read again')
+  // a slot read at one block never decides another: the implementation changes, the next block sees it
+  // 一个块上读到的实现槽绝不用于另一个块：实现变了，下一个块就看到
+  x.chain.setImplementation(SITE_STORE, '0x' + '99'.repeat(20))
+  x.chain.mine(1)
+  const r = await kit.verifyMandate(m)
+  assert.deepEqual(codes(r), ['revocation-unavailable']); assert.match(r.problems[0].message, /store-changed/)
+})
+
+test('FIXED RS-01: resolving the agent or a provider (TAP-11 §2.3): a site status or a manifest outcome is the party\'s problem; a chain or node outcome is thrown', async () => {
+  const { TapeAPIError } = await import('../src/errors.js')
+  const x = standardWorld()
+  const t = happyThread()
+  const other = x.api()
+  const failing = (err) => createAgentKit(x.api(), { clock: () => NOW, resolve: async (c) => { if (c.toLowerCase() === AG.toLowerCase() || c.toLowerCase() === S.toLowerCase()) throw err; return other.resolve(c) } })
+  // what a conformance-mode client throws for a counterparty that does not resolve / 一致模式客户端对不能解析的对方抛出的错误
+  for (const err of [
+    new TapeAPIError('SITE_STATUS', 'not-opened: the container has not been opened', { data: { status: 'not-opened' } }),
+    new TapeAPIError('SITE_STATUS', 'unpaid: not activated', { data: { status: 'unpaid' } }),
+    new TapeAPIError('CONTRACT_UNKNOWN', 'store-changed: the site store runs another implementation', { data: { status: 'store-changed' } }),
+    new TapeAPIError('MANIFEST_INVALID', 'no-manifest', { data: { status: 'no-manifest' } }),
+    new TapeAPIError('NOT_FOUND', 'not-tapeout', { data: { status: 'not-tapeout' } }),
+    // without allChains: not a container of this chain, perhaps of another; the mandate's domain fixes the chain here
+    new TapeAPIError('INVALID_ARGUMENT', 'unsupported: it may be one on another chain', { data: { status: 'unsupported' } }),
+  ]) {
+    const r = await failing(err).verifyTaskThread([t.offer, t.accept])
+    assert.deepEqual(codes(r), ['agent-unresolvable'], err.data.status)
+    const e = await failing(err).verifyEvidence({ receipts: [providerReceipt()], receiptsHash: agent.jsonHashOf([providerReceipt()]) }, { mandate: mandateOf() })
+    assert.ok(codes(e).includes('provider-unresolvable'), err.data.status)
+  }
+  // the chain could not be read: the verification is unavailable, never a verdict / 读不了链：核验不可用，绝不是结论
+  for (const err of [
+    new TapeAPIError('RPC_STALE', 'stale-block', { data: { status: 'stale-block' } }),
+    new TapeAPIError('RPC_UNAVAILABLE', 'unavailable', { data: { status: 'unavailable' } }),
+    new TapeAPIError('INVALID_ARGUMENT', 'wrong-chain', { data: { status: 'wrong-chain' } }),
+    new TapeAPIError('INVALID_ARGUMENT', 'input-error', { data: { status: 'input-error' } }),
+    new TapeAPIError('NOT_FOUND', 'unavailable while the scan goes on', { data: { status: 'unavailable' } }),
+  ]) await assert.rejects(failing(err).verifyTaskThread([t.offer, t.accept]), (e) => e === err, err.message)
 })

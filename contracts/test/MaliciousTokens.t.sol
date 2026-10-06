@@ -2,23 +2,67 @@
 pragma solidity ^0.8.24;
 
 // Escrow vs the hostile-token family in test/mocks/MaliciousTokens.sol (RESEARCH-process-security.md 6.1 P0-3).
-// Documented behaviour being pinned (TapeAPIEscrow.sol NatSpec, docs/AUDIT-escrow-v2.md A2-05):
-//   re-entrancy      fund / settle / withdraw are nonReentrant; re-entering any of them from a token callback
-//                    reverts with exactly `Reentrancy()`; the unguarded requestWithdraw / cancelWithdraw /
-//                    authorizeSession are reachable but move no funds.
+// Two classes, kept apart on purpose (docs/AUDIT-escrow-v3.md §5):
+//
+// BLOCKED BY THE CONTRACT (must hold for any token, admitted or not):
+//   re-entrancy      fund / settle / withdraw / claimTreasury are nonReentrant; re-entering any of them from a token
+//                    callback (the token itself, or a recipient hook) reverts with exactly `Reentrancy()`; the
+//                    unguarded requestWithdraw / cancelWithdraw / authorizeSession are reachable but move no funds.
 //   false return     `_callToken` treats `false` as failure: the whole call reverts `TransferFailed()`, atomically.
-//   no return value  accepted (USDT-style), provided the token address has code.
-//   fee-on-transfer  UNSUPPORTED (BEM is fixed and is not FoT): the solvency identity breaks by exactly the fee at
-//                    `fund`, and the last withdrawer is the one left short.
-// 托管对恶意代币家族的行为钉桩：重入精确回滚 Reentrancy；返回 false 原子地回滚 TransferFailed；
-// 无返回值可用；FoT 不受支持——偿付恒等式在 fund 时恰好少 fee，最后一个提现者承担缺口。
+//   no return value  accepted (USDT-style), provided the token address has code; a codeless "token" is refused.
+//   treasury cannot  (v3 pull) a frozen / blocklisted / rejecting treasury never blocks `settle`: only
+//   receive          `claimTreasury` fails, atomically; `setTreasury` still rotates (its payout to the outgoing
+//                    treasury fails without reverting) and the accrual is claimable to the new treasury.
+//
+// EXCLUDED BY ADMISSION (TAPI-22 §3.5; the contract does not defend, the tests pin HOW it breaks):
+//   fee-on-transfer  the solvency identity breaks by exactly the fee at `fund`; the last withdrawer is left short.
+//   negative rebase  same shape: the escrow holds less than it owes; the last exit reverts.
+//   positive rebase  harmless surplus, like a direct donation (stays, no sweep); still excluded (item 3).
+//   freeze of escrow every path stops until unfrozen (no loss of accounting) -- item 2.
+//   pause            requestWithdraw does not touch the token, so the cooldown runs out while settle reverts; at
+//                    unpause withdraw and settle race for the same funds -- item 2, the reason pausable is excluded.
+// 两类分开：合约必须挡住的（重入、返回 false、无返回值、无代码、金库收不了款）与准入标准直接排除、合约不防御的
+// （转账收费、负变基、正变基、冻结托管、暂停）。后者的测试只钉住它"怎样坏"。
 
 import "forge-std/Test.sol";
 import {TapeAPIEscrow} from "../src/TapeAPIEscrow.sol";
-import {Reentrancy, TransferFailed, NothingToSettle, CooldownActive} from "../src/interfaces.sol";
+import {Reentrancy, TransferFailed, NothingToSettle, CooldownActive, InsufficientBalance, ZeroAmount} from "../src/interfaces.sol";
 import {
-    Mal_ERC20, Mal_ERC721, Mal_Hub, Mal_ReentrantToken, Mal_FalseToken, Mal_NoReturnToken, Mal_FeeOnTransferToken
+    Mal_ERC20, Mal_ERC721, Mal_Hub, Mal_ReentrantToken, Mal_FalseToken, Mal_NoReturnToken, Mal_FeeOnTransferToken,
+    Mal_BlocklistToken, Mal_RebaseToken, Mal_RecipientHookToken, Mal_HostileTreasury
 } from "./mocks/MaliciousTokens.sol";
+
+/// @dev A hub that derives one chosen provider address for every circuit, so a test can pick the provider's bytes
+///      (here: low byte 0x01, the same byte a stale scratch word would need to read as `true`).
+///      对任何容器都推导出同一个指定提供者地址的 hub，让测试自选提供者地址的字节（此处低字节 0x01）。
+contract Scratch_FixedHub {
+    address public immutable provider;
+    constructor(address provider_) { provider = provider_; }
+    function accountOf(address, uint256) external view returns (address) { return provider; }
+}
+
+/// @dev Answers every call with exactly 31 zero bytes and moves nothing (etched over a funded token).
+///      对任何调用只返回 31 个零字节、不动任何余额（etch 到已充值的代币上）。
+contract Scratch_ShortZeroReturn {
+    fallback() external {
+        assembly { mstore(0x00, 0) return(0x00, 31) }
+    }
+}
+
+/// @dev Reverts every call, with `revertWord` as its revert data (`word 1` = the bytes of a canonical `true`) or
+///      with nothing at all. Deployed with the data, then its code is etched over a funded token.
+///      对任何调用回滚，回滚数据是一个字（1 即规范 `true` 的字节）或空。
+contract Scratch_RevertsWithOne {
+    fallback() external {
+        assembly { mstore(0x00, 1) revert(0x00, 32) }
+    }
+}
+
+contract Scratch_RevertsWithNothing {
+    fallback() external {
+        assembly { revert(0x00, 0x00) }
+    }
+}
 
 contract MaliciousTokensTest is Test {
     Mal_ERC721 nft;
@@ -60,14 +104,14 @@ contract MaliciousTokensTest is Test {
         tok.openOwnChannel(provider, CHANNEL);           // token is itself a funded consumer with an armed request
         tok.mint(consumer, 10 * CHANNEL);
         vm.prank(consumer); tok.approve(address(esc), type(uint256).max);
-        vm.prank(holder); esc.setContribution(address(nft), TOKEN, 250);   // two payout legs in settle / settle 两次转账
+        vm.prank(holder); esc.setContribution(address(nft), TOKEN, 250);   // non-zero accrual on every settle / 每次结算都有应收额
     }
 
     function _assertSolvent(Mal_ERC20 tok, TapeAPIEscrow esc) internal view {
         assertEq(
             tok.balanceOf(address(esc)),
-            esc.channelOf(consumer, provider) + esc.channelOf(address(tok), provider),
-            "escrow balance == sum of channels"
+            esc.channelOf(consumer, provider) + esc.channelOf(address(tok), provider) + esc.treasuryAccrued(),
+            "escrow balance == sum of channels + treasury accrual"
         );
     }
 
@@ -113,13 +157,14 @@ contract MaliciousTokensTest is Test {
             bytes memory sig = _sig(esc, CONSUMER_PK, consumer, cum, exp);
             tok.setVoucher(consumer, provider, cum, exp, sig);
             uint256 pBefore = tok.balanceOf(provider);
-            uint256 tBefore = tok.balanceOf(treasury);
+            uint256 aBefore = esc.treasuryAccrued();
             tok.arm(ts[i], true, false, false);
             esc.settle(consumer, provider, cum, exp, sig);
             _assertReentrancy(tok);
             uint256 contribution = 100 * UNIT * 250 / 10_000;
             assertEq(tok.balanceOf(provider) - pBefore, 100 * UNIT - contribution, "provider paid once");
-            assertEq(tok.balanceOf(treasury) - tBefore, contribution, "treasury paid once");
+            assertEq(esc.treasuryAccrued() - aBefore, contribution, "treasury accrued once");
+            assertEq(tok.balanceOf(treasury), 0, "settle pushes nothing to the treasury (v3 pull)");
             assertEq(esc.claimedOf(consumer, provider), cum);
             _assertSolvent(tok, esc);
         }
@@ -245,32 +290,39 @@ contract MaliciousTokensTest is Test {
         tok.setFalse(true, false, provider);
         vm.expectRevert(TransferFailed.selector);
         esc.settle(consumer, provider, 100 * UNIT, exp, sig);
-        // treasury leg: provider leg would succeed, the whole settle still rolls back / 金库一腿失败，整笔回滚
-        tok.setFalse(true, false, treasury);
-        vm.expectRevert(TransferFailed.selector);
-        esc.settle(consumer, provider, 100 * UNIT, exp, sig);
-        assertEq(tok.balanceOf(provider), 0, "provider leg rolled back with the treasury leg");
         assertEq(esc.claimedOf(consumer, provider), 0);
         assertEq(esc.channelOf(consumer, provider), CHANNEL);
+        assertEq(esc.treasuryAccrued(), 0, "the accrual rolled back with the provider leg");
+        // treasury leg (v3 pull): it no longer exists inside settle, so a treasury the token refuses cannot fail it.
+        // Until v2 this exact case rolled the whole settle back. / 金库一腿（v3 拉取式）：settle 内已无此腿，
+        // 代币拒绝向金库转账也无法让结算失败；v2 中这一情形会让整笔结算回滚。
+        tok.setFalse(true, false, treasury);
+        esc.settle(consumer, provider, 100 * UNIT, exp, sig);
+        assertEq(tok.balanceOf(provider), 90 * UNIT, "provider paid while the treasury is refused");
+        assertEq(esc.treasuryAccrued(), 10 * UNIT);
+        // only the claim fails, atomically / 只有领取失败，且原子回滚
+        vm.expectRevert(TransferFailed.selector);
+        esc.claimTreasury();
+        assertEq(esc.treasuryAccrued(), 10 * UNIT, "a failed claim keeps the accrual");
+        assertEq(tok.balanceOf(treasury), 0);
 
         // withdraw leg / 提现
-        vm.prank(consumer); esc.requestWithdraw(provider, CHANNEL);
+        vm.prank(consumer); esc.requestWithdraw(provider, CHANNEL - 100 * UNIT);
         vm.warp(block.timestamp + 48 hours);
         tok.setFalse(true, false, consumer);
         vm.prank(consumer);
         vm.expectRevert(TransferFailed.selector);
         esc.withdraw(provider);
         (uint256 amt,) = esc.pendingWithdraw(consumer, provider);
-        assertEq(amt, CHANNEL, "request survives");
-        assertEq(tok.balanceOf(address(esc)), esc.channelOf(consumer, provider));
+        assertEq(amt, CHANNEL - 100 * UNIT, "request survives");
+        assertEq(tok.balanceOf(address(esc)), esc.channelOf(consumer, provider) + esc.treasuryAccrued());
 
-        // and once the token behaves, the same voucher / request work / 代币恢复后同一凭证与请求可用
+        // and once the token behaves, the request and the claim work / 代币恢复后请求与领取可用
         tok.setFalse(false, false, address(0));
-        exp = uint64(block.timestamp + 1 hours);
-        esc.settle(consumer, provider, 100 * UNIT, exp, _sig(esc, CONSUMER_PK, consumer, 100 * UNIT, exp));
-        assertEq(tok.balanceOf(provider), 90 * UNIT);
+        esc.claimTreasury();
         assertEq(tok.balanceOf(treasury), 10 * UNIT);
         vm.prank(consumer); esc.withdraw(provider);
+        assertEq(tok.balanceOf(consumer), 10 * CHANNEL - 100 * UNIT, "the rest of the channel after the settle");
         assertEq(tok.balanceOf(address(esc)), 0);
     }
 
@@ -291,12 +343,14 @@ contract MaliciousTokensTest is Test {
         esc.settle(consumer, provider, 600 * UNIT, exp, _sig(esc, CONSUMER_PK, consumer, 600 * UNIT, exp));
         uint256 contribution = 600 * UNIT * 333 / 10_000;
         assertEq(tok.balanceOf(provider), 600 * UNIT - contribution);
-        assertEq(tok.balanceOf(treasury), contribution);
-        assertEq(tok.balanceOf(address(esc)), esc.channelOf(consumer, provider));
+        assertEq(esc.treasuryAccrued(), contribution);
+        assertEq(tok.balanceOf(address(esc)), esc.channelOf(consumer, provider) + esc.treasuryAccrued());
 
         vm.warp(block.timestamp + 48 hours);
         vm.prank(consumer); esc.withdraw(provider);
         assertEq(tok.balanceOf(consumer), 400 * UNIT, "min(requested, channel)");
+        esc.claimTreasury();
+        assertEq(tok.balanceOf(treasury), contribution);
         assertEq(tok.balanceOf(address(esc)), 0);
 
         // a no-return token that REVERTS (insufficient allowance) is still caught / 回滚型失败仍被捕获
@@ -357,5 +411,309 @@ contract MaliciousTokensTest is Test {
         vm.prank(consumer2);
         vm.expectRevert(TransferFailed.selector);
         esc.withdraw(provider);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // v3 pull: claimTreasury is guarded, and a treasury that cannot receive never blocks settle
+    // v3 拉取式：claimTreasury 受重入锁保护；收不了款的金库永远不阻塞结算
+    // ---------------------------------------------------------------------------------------------
+
+    /// claimTreasury from inside settle / withdraw / fund payouts is Reentrancy; and claimTreasury's own transfer
+    /// re-entering claimTreasury (double claim), settle, withdraw or fund is Reentrancy. The treasury is paid once.
+    /// 在 settle / withdraw / fund 的转账中重入 claimTreasury 回滚 Reentrancy；claimTreasury 自己的转账重入
+    /// claimTreasury（重复领取）、settle、withdraw、fund 也回滚 Reentrancy；金库只被付一次。
+    function test_reentrantToken_claimTreasury_guardedBothWays() public {
+        (Mal_ReentrantToken tok, TapeAPIEscrow esc) = _reentrantSetup();
+        vm.prank(consumer); esc.fund(provider, CHANNEL);
+        uint64 exp = uint64(block.timestamp + 1 hours);
+        // accrue something first / 先产生应收额
+        esc.settle(consumer, provider, 100 * UNIT, exp, _sig(esc, CONSUMER_PK, consumer, 100 * UNIT, exp));
+        uint256 accrued = esc.treasuryAccrued();
+        assertGt(accrued, 0);
+
+        // (1) from settle's payout into claimTreasury / 从 settle 的付款重入 claimTreasury
+        tok.arm(Mal_ReentrantToken.Target.ClaimTreasury, true, false, false);
+        esc.settle(consumer, provider, 200 * UNIT, exp, _sig(esc, CONSUMER_PK, consumer, 200 * UNIT, exp));
+        _assertReentrancy(tok);
+        assertEq(tok.balanceOf(treasury), 0, "nothing claimed from inside settle");
+        accrued = esc.treasuryAccrued();
+        // (2) from fund's pull into claimTreasury / 从 fund 的划转重入 claimTreasury
+        tok.arm(Mal_ReentrantToken.Target.ClaimTreasury, false, true, false);
+        vm.prank(consumer); esc.fund(provider, 1);
+        _assertReentrancy(tok);
+        assertEq(esc.treasuryAccrued(), accrued);
+        _assertSolvent(tok, esc);
+
+        // (3) claimTreasury's own transfer re-enters each guarded entry / claimTreasury 自己的转账重入各受保护入口
+        Mal_ReentrantToken.Target[4] memory ts = [
+            Mal_ReentrantToken.Target.ClaimTreasury, Mal_ReentrantToken.Target.Settle,
+            Mal_ReentrantToken.Target.Withdraw, Mal_ReentrantToken.Target.Fund
+        ];
+        vm.warp(block.timestamp + 48 hours);   // token's own request is executable: a missing guard would pay it
+        exp = uint64(block.timestamp + 1 hours);
+        for (uint256 i = 0; i < 4; i++) {
+            uint256 cum = (3 + i) * 100 * UNIT;
+            tok.setVoucher(consumer, provider, cum, exp, _sig(esc, CONSUMER_PK, consumer, cum, exp));
+            tok.arm(Mal_ReentrantToken.Target.None, false, false, false);
+            esc.settle(consumer, provider, cum - 50 * UNIT, exp, _sig(esc, CONSUMER_PK, consumer, cum - 50 * UNIT, exp));
+            uint256 a = esc.treasuryAccrued();
+            uint256 tBefore = tok.balanceOf(treasury);
+            uint256 claimedBefore = esc.claimedOf(consumer, provider);
+            uint256 chTok = esc.channelOf(address(tok), provider);
+            tok.arm(ts[i], true, false, false);
+            uint256 got = esc.claimTreasury();
+            _assertReentrancy(tok);
+            assertEq(got, a);
+            assertEq(tok.balanceOf(treasury) - tBefore, a, "treasury paid exactly once");
+            assertEq(esc.treasuryAccrued(), 0);
+            assertEq(esc.claimedOf(consumer, provider), claimedBefore, "no settle inside claimTreasury");
+            assertEq(esc.channelOf(address(tok), provider), chTok, "no withdraw / fund inside claimTreasury");
+            _assertSolvent(tok, esc);
+        }
+    }
+
+    /// A blocklisted (frozen) treasury: settle keeps working and keeps accruing; claimTreasury reverts
+    /// TransferFailed and changes nothing; after the owner rotates, the SAME accrual is paid to the new treasury.
+    /// This is the failure mode the pull pattern exists for (v2: every provider at the default 1% stopped settling).
+    /// 金库被拉黑（冻结）：结算照常并继续记账；claimTreasury 回滚 TransferFailed 且不改任何状态；owner 更换金库后
+    /// 同一笔应收付给新金库。这正是拉取式要解决的故障（v2 中所有保留默认 1% 的提供者都会无法结算）。
+    function test_blockedTreasury_settleStillSucceeds_claimAfterRotation() public {
+        Mal_BlocklistToken tok = new Mal_BlocklistToken();
+        TapeAPIEscrow esc = new TapeAPIEscrow(address(tok), address(hub), treasury);
+        tok.mint(consumer, CHANNEL);
+        vm.prank(consumer); tok.approve(address(esc), type(uint256).max);
+        vm.prank(consumer); esc.fund(provider, CHANNEL);
+        tok.setBlocked(treasury, true);                                  // provider stays at the default 1%
+
+        uint64 exp = uint64(block.timestamp + 1 hours);
+        esc.settle(consumer, provider, 100 * UNIT, exp, _sig(esc, CONSUMER_PK, consumer, 100 * UNIT, exp));
+        esc.settle(consumer, provider, 300 * UNIT, exp, _sig(esc, CONSUMER_PK, consumer, 300 * UNIT, exp));
+        assertEq(tok.balanceOf(provider), 297 * UNIT, "provider paid in full minus 1% while the treasury is frozen");
+        assertEq(esc.treasuryAccrued(), 3 * UNIT);
+
+        vm.expectRevert(TransferFailed.selector);
+        esc.claimTreasury();
+        assertEq(esc.treasuryAccrued(), 3 * UNIT, "failed claim keeps the accrual");
+
+        address t2 = address(0x7EA6);
+        vm.recordLogs();
+        esc.setTreasury(t2);                                             // tries the frozen treasury: fails, does not revert
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 1, "only TreasuryChanged: the failed payout emits no TreasuryClaimed");
+        assertEq(logs[0].topics[0], keccak256("TreasuryChanged(address,address)"));
+        assertEq(esc.treasuryAccrued(), 3 * UNIT, "the failed payout keeps the accrual for the role");
+        assertEq(esc.treasury(), t2);
+        esc.claimTreasury();
+        assertEq(tok.balanceOf(t2), 3 * UNIT, "rotation recovers the accrual");
+        assertEq(tok.balanceOf(treasury), 0);
+        assertEq(tok.balanceOf(address(esc)), esc.channelOf(consumer, provider));
+    }
+
+    /// A treasury CONTRACT that rejects the token (receiver hook reverts): settle unaffected, claim fails until it
+    /// accepts. A treasury that re-enters during the claim (claimTreasury again, or settle) gets Reentrancy.
+    /// 拒收代币的金库合约（收款钩子回滚）：结算不受影响，领取在它接受之前一直失败。领取时重入的金库得到 Reentrancy。
+    function test_rejectingOrReenteringTreasuryContract() public {
+        Mal_RecipientHookToken tok = new Mal_RecipientHookToken();
+        Mal_HostileTreasury ht = new Mal_HostileTreasury();
+        TapeAPIEscrow esc = new TapeAPIEscrow(address(tok), address(hub), address(ht));
+        ht.setEscrow(esc);
+        tok.setHooked(address(ht), true);
+        ht.setReject(true);
+        tok.mint(consumer, CHANNEL);
+        vm.prank(consumer); tok.approve(address(esc), type(uint256).max);
+        vm.prank(consumer); esc.fund(provider, CHANNEL);
+        uint64 exp = uint64(block.timestamp + 1 hours);
+
+        esc.settle(consumer, provider, 100 * UNIT, exp, _sig(esc, CONSUMER_PK, consumer, 100 * UNIT, exp));
+        assertEq(tok.balanceOf(provider), 99 * UNIT, "the rejecting treasury does not block settle");
+        vm.expectRevert(TransferFailed.selector);
+        esc.claimTreasury();
+
+        // accepts now, and tries to claim twice from inside the claim / 现在接受，并在领取中再领一次
+        ht.setReject(false);
+        ht.setReenter(abi.encodeCall(TapeAPIEscrow.claimTreasury, ()));
+        esc.claimTreasury();
+        assertFalse(ht.lastOk());
+        assertEq(bytes4(ht.lastErr()), Reentrancy.selector);
+        assertEq(ht.received(), 1 * UNIT, "claimed once");
+        assertEq(tok.balanceOf(address(ht)), 1 * UNIT);
+
+        // re-entering settle from the claim / 从领取中重入 settle
+        esc.settle(consumer, provider, 200 * UNIT, exp, _sig(esc, CONSUMER_PK, consumer, 200 * UNIT, exp));
+        bytes memory sig3 = _sig(esc, CONSUMER_PK, consumer, 300 * UNIT, exp);
+        ht.setReenter(abi.encodeCall(TapeAPIEscrow.settle, (consumer, provider, 300 * UNIT, exp, sig3)));
+        esc.claimTreasury();
+        assertFalse(ht.lastOk());
+        assertEq(bytes4(ht.lastErr()), Reentrancy.selector);
+        assertEq(esc.claimedOf(consumer, provider), 200 * UNIT, "no settle inside the claim");
+        assertEq(tok.balanceOf(address(esc)), esc.channelOf(consumer, provider) + esc.treasuryAccrued());
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Excluded by admission (TAPI-22 §3.5): pinned, not defended / 准入标准排除：只钉住，不防御
+    // ---------------------------------------------------------------------------------------------
+
+    /// Item 2: a freeze of the ESCROW address stops fund, settle, withdraw and claim on every channel at once; nothing
+    /// is lost in the ledger, and everything works again when the freeze is lifted. This is why freezable tokens are
+    /// not admitted: the contract has no rescue path by design.
+    /// 第 2 项：冻结托管地址会同时停止所有通道的 fund / settle / withdraw / claim；账本不丢，解冻后一切恢复。
+    /// 这就是可冻结代币不予准入的原因：合约按设计没有救援路径。
+    function test_frozenEscrow_everyPathStops_isWhyFreezableIsExcluded() public {
+        Mal_BlocklistToken tok = new Mal_BlocklistToken();
+        TapeAPIEscrow esc = new TapeAPIEscrow(address(tok), address(hub), treasury);
+        tok.mint(consumer, 2 * CHANNEL);
+        vm.prank(consumer); tok.approve(address(esc), type(uint256).max);
+        vm.prank(consumer); esc.fund(provider, CHANNEL);
+        uint64 exp = uint64(block.timestamp + 3 days);
+        esc.settle(consumer, provider, 100 * UNIT, exp, _sig(esc, CONSUMER_PK, consumer, 100 * UNIT, exp));
+        vm.prank(consumer); esc.requestWithdraw(provider, 100 * UNIT);
+        vm.warp(block.timestamp + 48 hours);
+
+        tok.setBlocked(address(esc), true);
+        bytes memory sig = _sig(esc, CONSUMER_PK, consumer, 200 * UNIT, exp);
+        vm.prank(consumer); vm.expectRevert(TransferFailed.selector); esc.fund(provider, 1);
+        vm.expectRevert(TransferFailed.selector); esc.settle(consumer, provider, 200 * UNIT, exp, sig);
+        vm.prank(consumer); vm.expectRevert(TransferFailed.selector); esc.withdraw(provider);
+        vm.expectRevert(TransferFailed.selector); esc.claimTreasury();
+
+        tok.setBlocked(address(esc), false);
+        esc.settle(consumer, provider, 200 * UNIT, exp, sig);
+        vm.prank(consumer); esc.withdraw(provider);
+        esc.claimTreasury();
+        assertEq(tok.balanceOf(address(esc)), esc.channelOf(consumer, provider), "ledger intact after the freeze");
+    }
+
+    /// Item 2, the pause race (TAPI-22 §3.5): requestWithdraw does not touch the token, so the cooldown runs out while
+    /// every settle reverts; at unpause the consumer's withdraw and the provider's settle race for the same funds, and
+    /// whoever is mined first wins. The contract cannot fix this without a rescue/override path it deliberately does
+    /// not have, so pausable tokens are excluded instead.
+    /// 第 2 项，暂停竞态：requestWithdraw 不碰代币，冷静期在所有 settle 回滚时走完；解除暂停时消费者的 withdraw 与
+    /// 提供者的 settle 抢同一笔钱，先上链者赢。合约若要修复就需要它刻意没有的干预路径，所以改为排除可暂停代币。
+    function test_pausedToken_withdrawRace_isWhyPausableIsExcluded() public {
+        Mal_BlocklistToken tok = new Mal_BlocklistToken();
+        TapeAPIEscrow esc = new TapeAPIEscrow(address(tok), address(hub), treasury);
+        vm.prank(holder); esc.setContribution(address(nft), TOKEN, 0);
+        tok.mint(consumer, CHANNEL);
+        vm.prank(consumer); tok.approve(address(esc), type(uint256).max);
+        vm.prank(consumer); esc.fund(provider, CHANNEL);
+        uint64 exp = uint64(block.timestamp + 5 days);
+        bytes memory owed = _sig(esc, CONSUMER_PK, consumer, CHANNEL, exp);   // provider served the whole channel
+
+        vm.prank(consumer); esc.requestWithdraw(provider, CHANNEL);         // no token call: works during a pause
+        tok.setPaused(true);
+        vm.warp(block.timestamp + 1 hours);
+        vm.expectRevert(TransferFailed.selector);
+        esc.settle(consumer, provider, CHANNEL, exp, owed);                  // the provider does its duty, and fails
+        vm.warp(block.timestamp + 48 hours);                                 // the cooldown runs out during the pause
+        tok.setPaused(false);
+        vm.prank(consumer); esc.withdraw(provider);                          // mined first at unpause
+        vm.expectRevert(InsufficientBalance.selector);
+        esc.settle(consumer, provider, CHANNEL, exp, owed);
+        assertEq(tok.balanceOf(provider), 0, "the provider that settled inside the cooldown is not paid");
+    }
+
+    /// Item 3, rebasing: a positive rebase on the escrow is surplus (like a donation: stays, no sweep, every exit still
+    /// works); a negative rebase leaves the escrow owing more than it holds and the last exit reverts.
+    /// 第 3 项，变基：正变基是盈余（同捐赠：留在原处，所有退出照常）；负变基让托管欠的多于持有的，最后一个退出回滚。
+    function test_rebasingToken_positiveIsSurplus_negativeShortsTheLastExit() public {
+        Mal_RebaseToken tok = new Mal_RebaseToken();
+        TapeAPIEscrow esc = new TapeAPIEscrow(address(tok), address(hub), treasury);
+        tok.mint(consumer, CHANNEL);
+        tok.mint(consumer2, CHANNEL);
+        vm.prank(consumer); tok.approve(address(esc), type(uint256).max);
+        vm.prank(consumer2); tok.approve(address(esc), type(uint256).max);
+        vm.prank(consumer); esc.fund(provider, CHANNEL);
+        vm.prank(consumer2); esc.fund(provider, CHANNEL);
+
+        tok.rebase(address(esc), int256(7 * UNIT));
+        assertGt(tok.balanceOf(address(esc)), 2 * CHANNEL, "positive rebase: holds more than it owes");
+        tok.rebase(address(esc), -int256(7 * UNIT + 1));                     // net: 1 unit short
+        vm.prank(consumer); esc.requestWithdraw(provider, CHANNEL);
+        vm.prank(consumer2); esc.requestWithdraw(provider, CHANNEL);
+        vm.warp(block.timestamp + 48 hours);
+        vm.prank(consumer); esc.withdraw(provider);
+        vm.prank(consumer2);
+        vm.expectRevert(TransferFailed.selector);
+        esc.withdraw(provider);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // `_tokenCall` judge: the paired defences and the revert path / 判定函数：成对的防线与回滚路径
+    // ---------------------------------------------------------------------------------------------
+
+    /// Guards the pair "zero the scratch word before the call" + "size >= 32" (docs/AUDIT-escrow-v3.md section 9.5,
+    /// F3a / F3b): each alone is equivalent, so only removing BOTH is observable, and only this setup shows it.
+    /// In `settle`, scratch word 0x00 still holds the last mapping key, the provider address, whose low byte here is
+    /// 0x01. A token that answers 31 zero bytes overwrites bytes 0..30 and leaves byte 31 untouched: without the
+    /// zeroing AND without the size rule the judge would read the word `1` and call it success. It must be
+    /// `TransferFailed()`, and nothing may move.
+    /// 守卫"调用前清零 scratch" + "size >= 32"这一对（F3a / F3b 各自等价，只有同时去掉才可观察）：settle 里 scratch
+    /// 仍存着最后一个映射键即提供者地址，其低字节为 0x01；返回 31 个零字节的代币只覆盖前 31 字节，第 32 字节保持 0x01。
+    /// 两道防线同时没有时判定函数会读到 1 并判成功。必须 `TransferFailed()` 且不动任何状态。
+    function test_scratchDirty_providerLowByte01_31zeroBytes_isTransferFailed() public {
+        address p01 = address(uint160(0xaBCdEf0000000000000000000000000000000001));
+        Scratch_FixedHub fixedHub = new Scratch_FixedHub(p01);
+        Mal_ERC20 good = new Mal_ERC20();
+        TapeAPIEscrow esc = new TapeAPIEscrow(address(good), address(fixedHub), treasury);
+        good.mint(consumer, CHANNEL);
+        vm.prank(consumer); good.approve(address(esc), type(uint256).max);
+        vm.prank(consumer); esc.fund(p01, CHANNEL);
+        vm.etch(address(good), address(new Scratch_ShortZeroReturn()).code);   // from now on: 31 zero bytes
+
+        uint64 exp = uint64(block.timestamp + 1 hours);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(CONSUMER_PK, esc.voucherDigest(consumer, p01, 5 * UNIT, exp));
+        vm.expectRevert(TransferFailed.selector);
+        esc.settle(consumer, p01, 5 * UNIT, exp, abi.encodePacked(r, s, v));
+        assertEq(esc.channelOf(consumer, p01), CHANNEL, "nothing moved");
+        assertEq(esc.claimedOf(consumer, p01), 0);
+        assertEq(esc.treasuryAccrued(), 0);
+    }
+
+    /// A call that REVERTED is a failure whatever it returned: revert data of exactly the canonical `true` word, and
+    /// empty revert data (which a no-return token's success would also look like), on the pull leg (fund) and the
+    /// push legs (settle, claimTreasury, withdraw). Second, independent guard of "ignore `!ok`" (the first is
+    /// `test_R19_revertingToken_isTransferFailed_whateverItsRevertData`).
+    /// 回滚的调用无论返回什么都是失败：回滚数据恰为规范 `true` 的字，或为空（无返回值代币的成功也长这样）；
+    /// 拉（fund）与推（settle、claimTreasury、withdraw）各条腿都是。"忽略 !ok"变异的第二道守卫。
+    function test_revertingToken_neverCountsAsSuccess_whateverItReverts() public {
+        Mal_ERC20 good = new Mal_ERC20();
+        TapeAPIEscrow esc = new TapeAPIEscrow(address(good), address(hub), treasury);
+        good.mint(consumer, 2 * CHANNEL);
+        vm.prank(consumer); good.approve(address(esc), type(uint256).max);
+        vm.prank(consumer); esc.fund(provider, CHANNEL);
+        vm.prank(holder); esc.setContribution(address(nft), TOKEN, 500);
+        uint64 exp = uint64(block.timestamp + 1 hours);
+        esc.settle(consumer, provider, 100 * UNIT, exp, _sig(esc, CONSUMER_PK, consumer, 100 * UNIT, exp));
+        uint256 accrued = esc.treasuryAccrued();
+        assertGt(accrued, 0);
+        vm.prank(consumer); esc.requestWithdraw(provider, 50 * UNIT);
+        vm.warp(block.timestamp + 48 hours);
+        uint256 ch = esc.channelOf(consumer, provider);
+        uint64 exp2 = uint64(block.timestamp + 1 days);                            // the 48 h warp outlived `exp`
+        bytes memory sig200 = _sig(esc, CONSUMER_PK, consumer, 200 * UNIT, exp2);   // signed before any expectRevert
+
+        bytes memory goodCode = address(good).code;
+        bytes[2] memory bad = [
+            address(new Scratch_RevertsWithOne()).code,
+            address(new Scratch_RevertsWithNothing()).code
+        ];
+        for (uint256 i; i < 2; i++) {
+            vm.etch(address(good), bad[i]);
+            vm.prank(consumer);
+            vm.expectRevert(TransferFailed.selector);
+            esc.fund(provider, 1);
+            vm.expectRevert(TransferFailed.selector);
+            esc.settle(consumer, provider, 200 * UNIT, exp2, sig200);
+            vm.expectRevert(TransferFailed.selector);
+            esc.claimTreasury();
+            vm.prank(consumer);
+            vm.expectRevert(TransferFailed.selector);
+            esc.withdraw(provider);
+            assertEq(esc.channelOf(consumer, provider), ch, "nothing moved");
+            assertEq(esc.treasuryAccrued(), accrued, "nothing moved");
+        }
+        vm.etch(address(good), goodCode);   // control: the same calls succeed once the token behaves again
+        esc.claimTreasury();
+        assertEq(good.balanceOf(treasury), accrued);
     }
 }

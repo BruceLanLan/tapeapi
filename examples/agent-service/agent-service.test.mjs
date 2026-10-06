@@ -546,7 +546,9 @@ test('the script: hire.mjs runs, flags a self-hire, builds the payment on reques
   assert.equal(c.code, 0)
   assert.match(c.text, /7\. payment \(UNSIGNED/)
   assert.match(c.text, /8\. recipient check \(TAP-10 §19\): ok/)
-  assert.match((await run(['--pay', '--via-container'])).text, /execute\(to = /)
+  const viaText = (await run(['--pay', '--via-container'])).text
+  assert.match(viaText, /execute\(to = /)
+  assert.match(viaText, /WARNING: outer value is 0, but the container's execute may require the TapeOut fee/, 'the container route carries no fee here: the summary says so')
   const quiet = console.error; console.error = () => {}
   try { assert.equal((await run(['--bogus'])).code, 2); assert.equal((await run(['--via-container'])).code, 2) } finally { console.error = quiet }
   assert.equal((await run(['--help'])).code, 0)

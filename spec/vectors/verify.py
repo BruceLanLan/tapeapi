@@ -1342,6 +1342,79 @@ for a, b in tr['sameResult']:
     check('thread-revocation/message and site list give the same result %d %d' % (a, b), (tr_out[a]['state'], tr_out[a]['problems'], tr_out[a]['R']), (tr_out[b]['state'], tr_out[b]['problems'], tr_out[b]['R']))
 
 
+# ---------- input forms (draft TAP §3.7, §7.2 steps 1-3, §8), 1.8: an independent form checker ----------
+# Written from the tables of the draft alone (the JSON forms of §3.7, the field rules of §3.2-§3.5, the receipt members of
+# §7.2 and §8 with TAP-13 §3-§4): not a port of the SDK. A Python bool is an int, so it is refused explicitly wherever a
+# number is expected. / 只按草稿的表格实现的形式检查，不是 SDK 的移植；Python 的 bool 是 int，所以凡要数字处都明确拒绝 bool。
+import re as _re
+_ADDR = _re.compile(r'^0x[0-9a-fA-F]{40}$')
+_B32 = _re.compile(r'^0x[0-9a-f]{64}$')
+_DEC = _re.compile(r'^(0|[1-9][0-9]*)$')
+_SIG65 = _re.compile(r'^0x[0-9a-fA-F]{130}$')
+_SEGMENT = _re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$')
+_Z20 = '0x' + '00' * 20
+_Z32 = '0x' + '00' * 32
+def _num(x): return isinstance(x, int) and not isinstance(x, bool)
+def f_addr(x, nonzero=False): return isinstance(x, str) and bool(_ADDR.match(x)) and not (nonzero and x.lower() == _Z20)
+def f_b32(x, nonzero=False): return isinstance(x, str) and bool(_B32.match(x)) and not (nonzero and x == _Z32)
+def f_u8(x, allowed): return _num(x) and x in allowed
+def f_u64(x): return _num(x) and 0 <= x <= 2 ** 53 - 1
+def f_u256(x): return isinstance(x, str) and bool(_DEC.match(x)) and int(x) < 2 ** 256
+def f_bool(x): return isinstance(x, bool)
+def f_obj(x): return isinstance(x, dict)
+def holder_form(t, v):
+    if not f_obj(v): return False
+    if t == 'Mandate':
+        sc = v.get('scope')
+        return (f_addr(v.get('principal'), True) and f_addr(v.get('agent'), True) and f_addr(v.get('agentKey'), True)
+                and f_u8(v.get('mode'), (0, 1)) and f_b32(v.get('taskHash'), True)
+                and isinstance(sc, list) and len(sc) <= 16
+                and all(f_obj(i) and f_addr(i.get('provider'), True) and f_addr(i.get('token')) and f_u256(i.get('cap')) for i in sc)
+                and f_addr(v.get('feeToken')) and f_u256(v.get('feeCap')) and f_u64(v.get('notBefore')) and f_u64(v.get('expires'))
+                and f_u256(v.get('nonce')) and f_bool(v.get('subdelegate')) and v['expires'] > v['notBefore'])
+    if t == 'TaskOffer':
+        return (f_addr(v.get('principal'), True) and f_addr(v.get('agent'), True) and f_b32(v.get('taskHash'), True)
+                and f_u8(v.get('mode'), (0, 1)) and f_addr(v.get('feeToken')) and f_u256(v.get('fee'))
+                and f_u64(v.get('deadline')) and f_u64(v.get('exp')) and f_u256(v.get('nonce')))
+    if t == 'TaskVerdict':
+        return (f_b32(v.get('mandateHash'), True) and f_b32(v.get('deliverableHash'), True) and f_u8(v.get('verdict'), (1, 2))
+                and f_b32(v.get('reasonHash')) and f_u64(v.get('issued')))
+    if t == 'MandateRevocation':
+        mh = v.get('mandateHashes')
+        return (f_addr(v.get('principal'), True) and isinstance(mh, list) and len(mh) <= 24 and all(f_b32(h, True) for h in mh)
+                and f_u64(v.get('revokedBefore')) and f_u64(v.get('issued')))
+    raise ValueError(t)
+def f_id(x, empty=False): return isinstance(x, str) and (empty or len(x) > 0) and len(x.encode('utf-16-le')) // 2 <= 128   # 1..128 code units; "" only under TAP-13 §8 binding rule 1 (ok false)
+def agent_message_outcome(r, kind, agent):
+    if not (f_obj(r) and r.get('v') == 1 and f_obj(r.get('service')) and f_addr(r['service'].get('container'))
+            and r.get('ok') is True and f_obj(r.get('result'))):
+        return 'message-malformed'
+    if not (isinstance(r.get('method'), str) and _SEGMENT.match(r['method']) and ('params' not in r or f_obj(r['params']))
+            and f_id(r.get('id')) and isinstance(r.get('sig'), str) and _SIG65.match(r['sig'])):
+        return 'message-malformed'
+    if r['service']['container'].lower() != agent.lower():
+        return 'agent-mismatch'
+    if r['result'].get('kind') != 'tape.agent/' + kind or not f_u64(r.get('ts')) or not f_u64(r['result'].get('exp')):
+        return 'message-malformed'
+    return 'ok'
+def hash_only_outcome(r):
+    good = (f_obj(r) and r.get('v') == 2 and f_obj(r.get('service')) and f_addr(r['service'].get('container'))
+            and f_b32(r.get('requestHash')) and f_b32(r.get('bodyHash')) and f_u64(r.get('ts')) and f_bool(r.get('ok'))
+            and f_id(r.get('id'), r.get('ok') is False) and isinstance(r.get('sig'), str) and bool(_SIG65.match(r['sig'])))
+    return 'ok' if good else 'receipt-not-hash-only'
+inf = ca['inputForms']
+for c in inf['cases']:
+    if c['type'] in ('Mandate', 'TaskOffer', 'TaskVerdict', 'MandateRevocation'):
+        got = 'ok' if holder_form(c['type'], c['value']) else ('mandate-malformed' if c['type'] == 'Mandate' else 'message-malformed')
+    elif c['type'] == 'agentMessage':
+        got = agent_message_outcome(c['value'], c['kind'], c['agent'])
+    elif c['type'] == 'hashOnlyReceipt':
+        got = hash_only_outcome(c['value'])
+    else:
+        raise ValueError(c['type'])
+    check('input-forms/%s/%s' % (c['type'], c['name']), got, c['expect'])
+
+
 if fail:
     print('FAIL: %d of %d checks disagreed with the reference implementation\n' % (len(fail), checked))
     for f in fail:

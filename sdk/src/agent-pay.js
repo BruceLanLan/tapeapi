@@ -397,6 +397,17 @@ export function createPaymentKit(api, opts = {}) {
     if (n <= 0n || n >= 1n << 256n) bad('amount must be positive and fit uint256')
     return n
   }
+  // the OUTER value of viaContainer (the TapeOut fee the container's execute may require): a whole number of the native coin's
+  // smallest unit, 0 or more; same forms as amountOf, but zero is allowed / 外层 value：最小单位的整数，≥ 0
+  const feeValueOf = (v) => {
+    let n
+    if (typeof v === 'bigint') n = v
+    else if (typeof v === 'number' && Number.isSafeInteger(v)) n = BigInt(v)
+    else if (typeof v === 'string' && TOKEN_ID_RE.test(v)) n = BigInt(v)
+    else bad('value must be a whole number in the smallest unit of the native coin (a decimal string without leading zeros, a safe integer or a bigint), 0 or more')
+    if (n < 0n || n >= 1n << 256n) bad('value must be 0 or more and fit uint256')
+    return n
+  }
   const built = new WeakMap()   // transferToContainer results -> what was built (not a field: a caller cannot forge one)
   // ERC-20 decimals is a uint8: null when it cannot be read (a revert, no answer), 'invalid' when the answer is above 255
   // ERC-20 的 decimals 是 uint8：读不到为 null，读到但超过 255 为 'invalid'
@@ -427,10 +438,12 @@ export function createPaymentKit(api, opts = {}) {
   }
   /** Wrap an ERC-20 transfer built above in the PAYER's container: execute(token, 0, transfer(...), 0), signed by the
    *  payer container's holder. Only a `transfer` is ever wrapped: never a native value (unverifiable), never `approve` or
-   *  any other call. A wallet cannot read execute calldata, so the summary spells out every field. */
+   *  any other call. A wallet cannot read execute calldata, so the summary spells out every field.
+   *  `value` (optional) is the OUTER value of the transaction: the TapeOut fee the container's execute may require in the
+   *  chain's native coin, which only the caller can supply (the SDK neither hard-codes nor reads it). The INNER value stays 0. */
   // Only the very object transferToContainer returned, unedited: its inner recipient is the container the chain named.
   // A hand-made or edited transfer is refused (recipient-not-from-chain). / 只接受 transferToContainer 原样返回的对象
-  function viaContainer({ from, tx } = {}) {
+  function viaContainer({ from, tx, value } = {}) {
     if (!isAddress(from)) bad('from must be the payer\'s container')
     if (!tx || !isAddress(tx.to) || typeof tx.data !== 'string') bad('tx must be a transaction from transferToContainer')
     if (BigInt(tx.value ?? 0) !== 0n || tx.data === '0x') bad('the native coin is never sent through a container: TAP-10 §19 cannot verify it (step 5); pay from the wallet with nativeToContainer', 'native-via-container-unverifiable')
@@ -439,13 +452,17 @@ export function createPaymentKit(api, opts = {}) {
     if (!rec || rec.to !== tx.to || rec.data !== tx.data || !tx.recipient || !eqAddr(tx.recipient.container, rec.recipient.container)) bad('tx must be the unedited result of transferToContainer of this kit: its recipient is read from the chain, never taken from a caller', 'recipient-not-from-chain')
     const [inner] = decodeParams(['address', 'uint256'], hexToBytes('0x' + tx.data.slice(10)))
     if (!eqAddr(inner, rec.recipient.container)) bad('the transfer\'s recipient is not the container the chain named', 'recipient-not-from-chain')
-    const out = { to: checksumAddress(from), data: EXECUTE_SELECTOR + bytesToHex(encodeParams(['address', 'uint256', 'bytes', 'uint8'], [tx.to, 0n, tx.data, 0])), value: '0x0' }
+    const fee = value == null ? 0n : feeValueOf(value)
+    const out = { to: checksumAddress(from), data: EXECUTE_SELECTOR + bytesToHex(encodeParams(['address', 'uint256', 'bytes', 'uint8'], [tx.to, 0n, tx.data, 0])), value: '0x' + fee.toString(16) }
     // the summary is written from what was built, never from fields of `tx` a caller could edit / 摘要只用构造时记下的内容
     return { ...out, recipient: { ...rec.recipient }, summary: describeTx(out, { inner: tx, recipient: rec.recipient, decimals: rec.decimals }) }
   }
 
   return { readMessage, verifyAttachment, verifyAttachments, sendingWallet: async ({ recipient, inboxIndex }) => { const to = toHex(endpointOf(recipient, chainId)); return sendingWallet(to, await entryAt(to, inboxIndex)) }, inboxCount: (recipient) => inboxCount(toHex(endpointOf(recipient, chainId))), transferToContainer, nativeToContainer, viaContainer, recipientOf, chainId }
 }
+
+// execute's outer value 0: said in the summary, never silently / execute 外层 value 为 0 时，摘要必须明说
+const FEE_NOTICE = "WARNING: outer value is 0, but the container's execute may require the TapeOut fee in the chain's native coin (0.0002 BNB on BNB Smart Chain at the time of writing; it cannot be read from the chain with a getter: simulate the transaction, a revert of `0xafd49700(paid, required)` states it). A call without it reverts. Pass `value` to viaContainer to attach it."
 
 /** Every field of an unsigned transaction, in words, for a holder to compare with what the wallet shows. */
 export function describeTx(tx, { decimals = null, recipient = null, native = false, inner = null } = {}) {
@@ -461,6 +478,11 @@ export function describeTx(tx, { decimals = null, recipient = null, native = fal
     const [to, value, d, op] = decodeParams(['address', 'uint256', 'bytes', 'uint8'], hexToBytes('0x' + data.slice(10)))
     lines.push(`call: execute(to = ${to}, value = ${value}, data = ${String(d).slice(0, 10)}…, operation = ${op} (call)) on your container ${tx.to}`)
     if (inner) lines.push(...describeTx(inner, { decimals }).slice(2).map((l) => `  inner ${l}`))
+    // The OUTER value is not the inner one: the container's execute may require the TapeOut fee in the chain's native coin
+    // (read on BNB Smart Chain mainnet: every call; the excess refunded to the sender, a short payment reverts with
+    // 0xafd49700(paid, required)). It has no public getter, so it is never guessed here. / 外层 value 是 TapeOut 费，不是内层转账
+    if (BigInt(tx.value ?? 0) > 0n) lines.push(`outer value ${BigInt(tx.value)} is the TapeOut fee the container's execute takes in the native coin: it goes to TapeOut, never to the recipient (the inner value is 0, the recipient gets only the token transfer)`)
+    else lines.push(FEE_NOTICE)
   } else lines.push(`data: ${data.slice(0, 10)}… (not built by this SDK)`)
   if (recipient) lines.push(`recipient container: ${recipient.container}${recipient.name ? ` (${recipient.name})` : ''}, circuit ${recipient.circuits} #${recipient.tokenId}${recipient.holder ? `, held by ${recipient.holder}` : ''}`)
   return lines

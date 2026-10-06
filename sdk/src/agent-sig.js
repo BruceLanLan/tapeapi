@@ -43,7 +43,9 @@ export const TASK_VERDICT_TYPEHASH = th(TASK_VERDICT_TYPE)
 export const MANDATE_REVOCATION_TYPEHASH = th(MANDATE_REVOCATION_TYPE)
 
 // ---------- field checks / 字段检查 ----------
-const HASH_RE = /^0x[0-9a-fA-F]{64}$/
+// bytes32 values are written in lower case (draft TAP §3.7): an upper-case digit is malformed, never folded (1.8)
+// bytes32 一律小写（草稿 §3.7）：大写即格式错误，不折叠（1.8）
+const HASH_RE = /^0x[0-9a-f]{64}$/
 const UINT_RE = /^(0|[1-9][0-9]*)$/
 const U64 = (1n << 64n) - 1n
 const U256 = (1n << 256n) - 1n
@@ -54,15 +56,18 @@ function addr(v, name, { zero = false } = {}) {
 }
 function hash32(v, name, { zero = false } = {}) {
   if (v instanceof Uint8Array) { if (v.length !== 32) fail(`${name} must be 32 bytes`); v = toHex(v) }
-  if (typeof v !== 'string' || !HASH_RE.test(v)) fail(`${name} must be 0x and 64 hex digits`)
+  if (typeof v !== 'string' || !HASH_RE.test(v)) fail(`${name} must be 0x and 64 lower-case hex digits`)
   if (!zero && /^0x0{64}$/.test(v)) fail(`${name} must not be zero`)
-  return v.toLowerCase()
+  return v
 }
-// uint256 amounts travel as decimal strings (exact at any size); a bigint or a safe integer is accepted on input
-function uintStr(v, name, max = U256) {
+// uint256 amounts travel as decimal strings (exact at any size, draft TAP §3.7). The builders of this module (typed data,
+// hashes, local signing) also take a bigint or a safe integer and normalise it; a message received from a counterparty
+// (`wire`, what the verifiers read) takes the decimal string only (1.8).
+// uint256 以十进制字符串传输。本模块的构造函数也接受 bigint 与安全整数并规范化；从对方收到的消息（wire）只接受十进制字符串（1.8）。
+function uintStr(v, name, max = U256, wire = false) {
   let n
-  if (typeof v === 'bigint') n = v
-  else if (typeof v === 'number' && Number.isSafeInteger(v)) n = BigInt(v)
+  if (typeof v === 'bigint' && !wire) n = v
+  else if (typeof v === 'number' && Number.isSafeInteger(v) && !wire) n = BigInt(v)
   else if (typeof v === 'string' && UINT_RE.test(v) && v.length <= 78) n = BigInt(v)
   else fail(`${name} must be a decimal string without leading zeros`)
   if (n < 0n || n > max) fail(`${name} is out of range`)
@@ -88,21 +93,23 @@ export function jsonHashOf(value) { return toHex(keccak_256(utf8ToBytes(canonica
 
 // ---------- Mandate ----------
 /** Checks the shape of a mandate and returns a normalised copy (checksummed addresses, decimal strings). It does NOT
- *  apply the phase-0 rules (cap = feeCap = 0, subdelegate = false): verifyMandate does. / 只查形状，不查阶段 0 规则 */
-export function normalizeMandate(m) {
+ *  apply the phase-0 rules (cap = feeCap = 0, subdelegate = false): verifyMandate does. `{ wire: true }` (1.8): the JSON
+ *  forms of draft TAP §3.7 only, as the verifiers read a counterparty's message (a uint256 is a decimal string, never a
+ *  number or a bigint). / 只查形状，不查阶段 0 规则。wire：只接受草稿 §3.7 的 JSON 形式（核验方读对方消息时用） */
+export function normalizeMandate(m, { wire = false } = {}) {
   if (!m || typeof m !== 'object' || Array.isArray(m)) fail('mandate must be an object')
   if (!Array.isArray(m.scope)) fail('scope must be an array (it may be empty)')
   if (m.scope.length > MAX_SCOPE_ITEMS) fail(`scope holds at most ${MAX_SCOPE_ITEMS} items`)
   const scope = m.scope.map((s, i) => {
     if (!s || typeof s !== 'object') fail(`scope[${i}] must be an object`)
-    return { provider: addr(s.provider, `scope[${i}].provider`), token: addr(s.token, `scope[${i}].token`, { zero: true }), cap: uintStr(s.cap, `scope[${i}].cap`) }
+    return { provider: addr(s.provider, `scope[${i}].provider`), token: addr(s.token, `scope[${i}].token`, { zero: true }), cap: uintStr(s.cap, `scope[${i}].cap`, U256, wire) }
   })
   const out = {
     principal: addr(m.principal, 'principal'), agent: addr(m.agent, 'agent'), agentKey: addr(m.agentKey, 'agentKey'),
     mode: u8(m.mode, 'mode', [MODE_PAY, MODE_SPEND]), taskHash: hash32(m.taskHash, 'taskHash'), scope,
-    feeToken: addr(m.feeToken, 'feeToken', { zero: true }), feeCap: uintStr(m.feeCap, 'feeCap'),
+    feeToken: addr(m.feeToken, 'feeToken', { zero: true }), feeCap: uintStr(m.feeCap, 'feeCap', U256, wire),
     notBefore: u64num(m.notBefore, 'notBefore'), expires: u64num(m.expires, 'expires'),
-    nonce: uintStr(m.nonce, 'nonce'), subdelegate: m.subdelegate,
+    nonce: uintStr(m.nonce, 'nonce', U256, wire), subdelegate: m.subdelegate,
   }
   if (typeof out.subdelegate !== 'boolean') fail('subdelegate must be a boolean')
   if (out.expires <= out.notBefore) fail('expires must be after notBefore')
@@ -183,12 +190,13 @@ export function mandateTypedData(chainId, hub, mandate, opts = {}) {
 }
 
 // ---------- TaskOffer ----------
-export function normalizeTaskOffer(o) {
+/** `{ wire: true }` (1.8): the JSON forms of draft TAP §3.7 only (fee and nonce decimal strings). / wire：只接受 §3.7 形式 */
+export function normalizeTaskOffer(o, { wire = false } = {}) {
   if (!o || typeof o !== 'object' || Array.isArray(o)) fail('offer must be an object')
   return {
     principal: addr(o.principal, 'principal'), agent: addr(o.agent, 'agent'), taskHash: hash32(o.taskHash, 'taskHash'),
-    mode: u8(o.mode, 'mode', [MODE_PAY, MODE_SPEND]), feeToken: addr(o.feeToken, 'feeToken', { zero: true }), fee: uintStr(o.fee, 'fee'),
-    deadline: u64num(o.deadline, 'deadline'), exp: u64num(o.exp, 'exp'), nonce: uintStr(o.nonce, 'nonce'),
+    mode: u8(o.mode, 'mode', [MODE_PAY, MODE_SPEND]), feeToken: addr(o.feeToken, 'feeToken', { zero: true }), fee: uintStr(o.fee, 'fee', U256, wire),
+    deadline: u64num(o.deadline, 'deadline'), exp: u64num(o.exp, 'exp'), nonce: uintStr(o.nonce, 'nonce', U256, wire),
   }
 }
 export function hashTaskOffer(offer) {
@@ -222,11 +230,18 @@ export function taskOfferTypedData(chainId, hub, offer) {
 }
 
 // ---------- TaskVerdict (acceptance or rejection of one delivery) ----------
-export function normalizeTaskVerdict(v) {
+/** A missing reasonHash reads as 32 zero bytes for the builders of this module; `{ wire: true }` (1.8, a verdict
+ *  received from a counterparty) requires it, as draft TAP §3.7 requires every member. / 构造函数把缺失的 reasonHash 当 0；
+ *  wire（对方发来的判决）要求它存在 */
+export function normalizeTaskVerdict(v, { wire = false } = {}) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) fail('verdict must be an object')
+  if (wire && v.reasonHash === undefined) fail('reasonHash is missing (32 zero bytes when there is no reason)')
+  // wire: whatever is there is checked as it is (null too); the builders default a missing or null one to zero
+  // wire：有什么就查什么（null 也一样）；构造函数把缺失或 null 当作 0
+  const reasonHash = wire ? v.reasonHash : (v.reasonHash ?? '0x' + '00'.repeat(32))
   return {
     mandateHash: hash32(v.mandateHash, 'mandateHash'), deliverableHash: hash32(v.deliverableHash, 'deliverableHash'),
-    verdict: u8(v.verdict, 'verdict', [VERDICT_ACCEPT, VERDICT_REJECT]), reasonHash: hash32(v.reasonHash ?? '0x' + '00'.repeat(32), 'reasonHash', { zero: true }),
+    verdict: u8(v.verdict, 'verdict', [VERDICT_ACCEPT, VERDICT_REJECT]), reasonHash: hash32(reasonHash, 'reasonHash', { zero: true }),
     issued: u64num(v.issued, 'issued'),
   }
 }
@@ -256,7 +271,9 @@ export function taskVerdictTypedData(chainId, hub, verdict) {
 // ---------- MandateRevocation (a direct message, or the list in the principal's site file) ----------
 // Revokes every mandate whose hash is listed, and every mandate of `principal` whose notBefore is below
 // `revokedBefore` (0: none by date). `issued` orders revocation lists (a client keeps the highest seen, TAPI-26 style).
-export function normalizeMandateRevocation(r) {
+// `{ wire: true }` is accepted for uniformity: a revocation has no uint256 and no default, so both forms are the same
+// wire 选项为统一而接受：撤销没有 uint256、没有默认值，两种形式相同
+export function normalizeMandateRevocation(r, _opts = {}) {
   if (!r || typeof r !== 'object' || Array.isArray(r)) fail('revocation must be an object')
   if (!Array.isArray(r.mandateHashes)) fail('mandateHashes must be an array')
   if (r.mandateHashes.length > MAX_REVOKED_HASHES) fail(`mandateHashes holds at most ${MAX_REVOKED_HASHES} hashes`)

@@ -309,10 +309,12 @@ test('CLI: usage mistakes exit 2; --help names the local trial', async () => {
   assert.equal((await cli(['--offline', '11.1013.tape'])).code, 2, '--offline is for a URL')
   assert.equal((await cli(['--key-env', 'sk-live-123', sidecarUrl])).code, 2, '--key-env takes a variable name, never a key')
   assert.equal((await cli(['--key-env', 'NOPE_EMPTY', '--offline', sidecarUrl], { NOPE_EMPTY: '' })).code, 2)
+  assert.equal((await cli(['--escrows', 'nope', '11.1013.tape'])).code, 2, '--escrows takes addresses')
   const h = await cli(['--help'])
   assert.equal(h.code, 0)
   assert.match(h.out, /node examples\/relay-trial\/trial\.mjs/)
   assert.match(h.out, /3 the\s+chain or the network could not be read/)
+  assert.match(h.out, /--escrows <a,b,\.\.\.>\s+experimental/)
 })
 
 test('CLI: --offline --json against the sidecar: exit 0, a JSON report for CI; --lang zh prints Chinese only', async () => {
@@ -797,4 +799,44 @@ test('ACT-9: the activation read is read-only eth_call to the chain\'s DomainBin
   const live = await actWorld()
   await run(live.api)
   assert.deepEqual(live.chain.activation.calls.filter((c) => c.url === 'http://rpc1').map((c) => c.fn), ['isLive', 'isContainerLive', 'containerPaidUntil'])
+})
+
+test('escrows (experimental): a contribution that differs across escrow instances is a note, never a check or a failure', async () => {
+  const E1 = '0x' + '40'.repeat(20), E2 = '0x' + '41'.repeat(20)
+  const { chain, api } = world()
+  // (the differing case itself is in escrow-token.test.mjs: the fake keeps one contribution per provider)
+  // （不一致的情形见 escrow-token.test.mjs：假链按提供者只存一个值）
+  chain.setContribution(ADDR.container, 0)
+  const same = await run(api, NAME, { escrows: [E1, E2] })
+  assert.deepEqual(same.checks.map((c) => c.id), DOCTOR_CHECKS, 'still the 14 checks')
+  assert.deepEqual(same.warnings, [], 'the same everywhere: nothing to say')
+  // E2 is an escrow whose contributionOf reverts: partly read, said so / E2 的 contributionOf 回滚：只读到一部分，如实说明
+  chain.markLegacyEscrow(E2)
+  const part = await run(api, NAME, { escrows: [E1, E2] })
+  assert.equal(part.exitCode, same.exitCode, 'a note never changes the exit code')
+  assert.equal(part.warnings.length, 1)
+  assert.match(part.warnings[0].detail, /only partly read/)
+  assert.match(formatReport(part, { lang: 'en' }), /note: contribution across escrow instances only partly read/)
+  assert.match(formatReport(part, { lang: 'zh' }), /提示: 多个托管实例上的贡献比例只读到一部分/)
+  await assert.rejects(run(api, NAME, { escrows: ['nope'] }), (e) => e.code === 'INVALID_ARGUMENT')
+  const none = await run(api, NAME)
+  assert.equal(none.warnings, undefined, 'without escrows the report is as before')
+  // differing: E1 answers 100 (the fake's value), E3 answers 0 through a wrapper / 不一致：E1 答 100，E3 经包装答 0
+  const E3 = '0x' + '44'.repeat(20)
+  chain.setContribution(ADDR.container, 100)
+  const { functionBySelector, encodeReturn } = await import('../src/abi.js')
+  const zero = (req) => (req.method === 'eth_call' && req.params[0].to.toLowerCase() === E3 && functionBySelector(req.params[0].data) === 'contributionOf') ? { jsonrpc: '2.0', id: req.id, result: encodeReturn('contributionOf', [0n]) } : null
+  const rpcFetch = async (u, init) => {
+    const body = JSON.parse(init.body)
+    const json = (x) => new Response(JSON.stringify(x), { headers: { 'content-type': 'application/json' } })
+    if (!Array.isArray(body)) return zero(body) ? json(zero(body)) : chain.fetch(u, init)
+    return json(await Promise.all(body.map(async (req) => zero(req) ?? (await chain.fetch(u, { ...init, body: JSON.stringify(req) })).json())))
+  }
+  const api3 = createTapeAPI({ rpcUrls: RPC, quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, allowHttp: true, fetch: (u, i) => (String(u).startsWith('http://rpc') ? rpcFetch(String(u), i) : fetch(u, i)) })
+  const diff = await run(api3, NAME, { escrows: [E1, E3] })
+  assert.equal(diff.exitCode, same.exitCode)
+  assert.equal(diff.warnings.length, 1)
+  assert.match(diff.warnings[0].detail, /differs across escrow instances: .*100 bps, .*0 bps/)
+  assert.match(diff.warnings[0].detailZh, /贡献比例不一致/)
+  assert.match(formatReport(diff, { lang: 'both' }), /note: the contribution of .* differs[\s\S]*提示: .*贡献比例不一致/)
 })

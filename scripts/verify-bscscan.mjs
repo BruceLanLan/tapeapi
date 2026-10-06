@@ -3,7 +3,8 @@
 // 通过 Etherscan V2 多链 API 在 BscScan 上验证两个合约的源码。
 //
 //   node scripts/verify-bscscan.mjs --directory 0x... --hub 0x... --factory 0x... --domain-binding 0x...
-//   node scripts/verify-bscscan.mjs --escrow 0x... --bem 0x... --hub 0x... --treasury 0x...
+//   node scripts/verify-bscscan.mjs --escrow 0x... --token 0x... --hub 0x... --treasury 0x...
+//   (--token was --bem before escrow v3: same constructor slot; --bem / BEM still work, with a deprecation notice)
 //   node scripts/verify-bscscan.mjs --check 0x...        # just ask whether an address is verified
 //   node scripts/verify-bscscan.mjs --dry-run ...        # build + self-check, submit nothing
 //
@@ -53,7 +54,7 @@ const CONTRACTS = {
     name: 'TapeAPIEscrow',
     artifact: 'contracts/out-forge/TapeAPIEscrow.sol/TapeAPIEscrow.json',
     sourceName: 'src/TapeAPIEscrow.sol',
-    ctor: ['bem', 'hub', 'treasury'],
+    ctor: ['token', 'hub', 'treasury'],
   },
 }
 
@@ -63,6 +64,22 @@ const argv = process.argv.slice(2)
 const has = (n) => argv.includes(`--${n}`)
 const flag = (n) => { const i = argv.indexOf(`--${n}`); return i >= 0 && i + 1 < argv.length ? argv[i + 1] : undefined }
 const DRY = has('dry-run')
+
+// Old names of constructor flags: --bem is the v2 name of the escrow's first argument, the token since v3 (same ABI
+// slot). It still works, with a notice on stderr; given together with the new name, the two must agree.
+// 构造参数旧名：--bem 是 v2 对托管第一个参数的叫法，v3 起为 token（ABI 位置相同）。仍可用，但在 stderr 提示弃用；与新名同时给出时须一致。
+export const CTOR_ALIASES = Object.freeze({ token: 'bem' })
+const envName = (n) => n.toUpperCase().replaceAll('-', '_')
+export function ctorValue(name, { flag: get = flag, env = process.env, warn = (m) => console.error(m) } = {}) {
+  const v = get(name) ?? env[envName(name)]
+  const old = CTOR_ALIASES[name]
+  if (!old) return v
+  const o = get(old) ?? env[envName(old)]
+  if (o === undefined) return v
+  warn(`--${old} / ${envName(old)} is deprecated: use --${name} / ${envName(name)} (the same constructor argument, the escrow's token since v3)`)
+  if (v !== undefined && lower(v) !== lower(o)) throw new Error(`--${name} ${v} and --${old} ${o} disagree`)
+  return v ?? o
+}
 
 const isAddress = (a) => typeof a === 'string' && /^0x[0-9a-fA-F]{40}$/.test(a)
 const lower = (s) => (s ?? '').toLowerCase()
@@ -380,8 +397,10 @@ async function verifyOne(which, address) {
   const reproOk = localReproduce(built, spec)
 
   const ctorArgs = spec.ctor.map((n) => {
-    const v = flag(n) ?? process.env[n.toUpperCase().replaceAll('-', '_')]
-    if (!isAddress(v)) die(`constructor arg --${n} is missing or not an address (got ${v})`)
+    let v
+    try { v = ctorValue(n) } catch (e) { die(e.message) }
+    // never echo the value: the env fallback (e.g. TOKEN) may hold an unrelated secret / 不回显该值：环境变量回退（如 TOKEN）里可能是无关的密钥
+    if (!isAddress(v)) die(`constructor arg --${n} is missing or not an address (${v === undefined ? 'not set' : 'set, but not a 0x-prefixed 20-byte address'})`)
     return lower(v).slice(2).padStart(64, '0')
   }).join('')
   info(`constructor args (${spec.ctor.join(', ')}): ${ctorArgs}`)
@@ -416,7 +435,7 @@ async function main() {
   const targets = ['directory', 'escrow'].filter((k) => flag(k))
   if (targets.length === 0) {
     die('nothing to do. Pass --directory <addr> and/or --escrow <addr>, or --check <addr>.\n'
-      + 'ServiceDirectory needs --hub --factory --domain-binding; TapeAPIEscrow needs --bem --hub --treasury.')
+      + 'ServiceDirectory needs --hub --factory --domain-binding; TapeAPIEscrow needs --token --hub --treasury.')
   }
 
   let allOk = true
@@ -428,4 +447,7 @@ async function main() {
   process.exit(allOk ? 0 : 1)
 }
 
-main().catch((e) => { console.error(`\n\x1b[31mverify crashed: ${e?.stack || e}\x1b[0m`); process.exit(1) })
+// Run only as a script, so a test can import ctorValue / 只在作为脚本运行时执行，测试可以导入 ctorValue
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((e) => { console.error(`\n\x1b[31mverify crashed: ${e?.stack || e}\x1b[0m`); process.exit(1) })
+}

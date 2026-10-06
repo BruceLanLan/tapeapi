@@ -18,8 +18,11 @@ test('FIXED G1-M1: a configuration or argument mistake is INVALID_ARGUMENT, befo
   await assert.rejects(api.chainOfContainer('nope'), invalid())
   assert.throws(() => api.forChain(97), invalid(/not a TapeOut chain/))
   assert.throws(() => api.payer({ consumer: 'nope', sessionKey: '0x' + '11'.repeat(32) }), invalid(/consumer/))
-  assert.throws(() => api.tx.approve({}), invalid())
-  assert.throws(() => api.tx.fund('0x' + '22'.repeat(20), 1n), invalid(/escrow address not configured/))
+  // approve / fund are async since escrow v3 (experimental): they read the escrow's token first, so they reject
+  // 托管 v3 起 approve / fund 为异步（实验性）：先读托管的代币，所以以 rejection 报错
+  await assert.rejects(api.tx.approve({}), invalid())
+  await assert.rejects(api.tx.fund('0x' + '22'.repeat(20), 1n), invalid(/escrow address not configured/))
+  await assert.rejects(createTapeAPI({ fetch, escrow: '0x' + '44'.repeat(20) }).tx.fund('0x' + '22'.repeat(20), 1n), invalid(/allowEscrows/), 'an escrow off the audited list is refused before any read')
   await assert.rejects(api.callQuorum([], 'x', {}), invalid(/non-empty/))
   // A chain read without nodes is a configuration mistake too: not RPC_UNAVAILABLE, which a caller would retry.
   // 没配节点就读链也是配置错误：不是调用方会重试的 RPC_UNAVAILABLE。

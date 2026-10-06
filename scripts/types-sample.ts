@@ -9,6 +9,7 @@ import {
   type ResolvedService, type CallResult, type TapeAPI, type Rpc,
 } from '@tapeapi/sdk'
 import { TAP10_SEALS, TAP10_MAX_CHAIN_ID, tapesend } from '@tapeapi/sdk'   // 1.5
+import { formatPaymentAmount, PAYMENT_TOKENS, AUDITED_ESCROWS, type PaymentToken } from '@tapeapi/sdk'   // escrow v3, experimental
 import { exposeTapeAPI, manifestToTools } from '@tapeapi/sdk/webmcp'
 import { createInvite, acceptInvite, completeInvite, generateIdentity, fanIn } from '@tapeapi/sdk/channel'
 import { busPrivacyReader, type BusPrivacyStats } from '@tapeapi/sdk/bus-privacy'
@@ -51,7 +52,18 @@ async function consumer(): Promise<void> {
   const payer = api.payer({ consumer: MAINNET.hub, sessionKey: api.randomPrivateKey(), ttl: 600 })
   const lease = await payer.reserve(svc, parseUnits('0.01'))
   await lease.commit()
-  const fund = api.tx.fund(svc, 10n ** 8n)
+  const fund = await api.tx.fund(svc, 10n ** 8n)
+  const approval = await api.tx.approve({ amount: 10n ** 8n, spender: svc })
+  const fundUsdt = await createTapeAPI({ escrow: MAINNET.hub, allowEscrows: [MAINNET.hub] }).tx.fund(MAINNET.hub, 1n, { token: MAINNET.hub })
+  void [approval.to, fundUsdt.data]
+  // escrow v3 (experimental) / 托管 v3（实验性）
+  const tok: PaymentToken = await api.chain.escrow.paymentToken(svc)
+  const shown: string = formatPaymentAmount(10n ** 18n, tok)
+  const accrued: bigint = await api.chain.escrow.treasuryAccrued(svc)
+  const claim = api.tx.claimTreasury(svc)
+  const labels: string | undefined = PAYMENT_TOKENS[56]?.[tok.token.toLowerCase()]?.label
+  const audited: readonly string[] = AUDITED_ESCROWS[56] ?? []
+  void [shown, accrued, claim.data, labels, audited, abi.eventTopic('TreasuryClaimed'), await api.chain.escrow.token()]
   const pub = api.tx.publishManifest({ container: svc.container, manifest: svc.manifest })
   const rpc: Rpc | null = api.rpc
   const head: number | undefined = await rpc?.blockNumber()
@@ -371,6 +383,8 @@ async function agent17() {
   const pay = createPaymentKit(api, { tokenAllowed: () => false })
   const tx = await pay.transferToContainer({ name: '12.1013.tape', token: '0x' + 'b0'.repeat(20), amount: '1' })
   const lines: string[] = tx.summary
+  const viaFee: string = pay.viaContainer({ from: '0x' + 'c1'.repeat(20), tx, value: '200000000000000' }).value
+  const viaNoFee: string = pay.viaContainer({ from: '0x' + 'c1'.repeat(20), tx }).value
   const msg = await pay.readMessage({ recipient: '0x' + 'a6'.repeat(20), inboxIndex: 0 })
   const r: AttachmentCheck = await pay.verifyAttachment(msg, msg.attachments[0])
   const order = paymentOrder({ clock: () => 1 })
@@ -378,6 +392,6 @@ async function agent17() {
   const bytes: Uint8Array = encodeContent({ body: 'paid', attachments: [{ type: 'erc20', chainId: 56, token: '0x' + 'b0'.repeat(20), amount: '1', tx: '0x' + '12'.repeat(32) }] })
   const decoded = decodeContent(bytes)
   const member: AgentMember = validateAgentMember({ tasks: [{ kind: 'x', pricing: { mode: 'free' } }], mandates: { accepts: true } })
-  void [typed, none, self, lines, r, decoded, member, agentKit.THREAD_KINDS]
+  void [typed, none, self, lines, viaFee, viaNoFee, r, decoded, member, agentKit.THREAD_KINDS]
 }
 void agent17

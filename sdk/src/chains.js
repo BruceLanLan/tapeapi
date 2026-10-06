@@ -278,6 +278,22 @@ export const TAP10_SEALS = deepFreeze({
   196: { hub: '0xdCC57797089eBD9f26e686379A4323f353a3F9C6', ...L2_SEALS },
   8453: { hub: '0x38A2d320b8984Bbac9b0a2691B6c0FD829A23867', ...L2_SEALS },
 })
+// ── Escrow tokens and audited escrow deployments (TAPI-22 §3.5, experimental) ──────────────────────────────────────
+// An escrow token's label, fixed per address: never the token's own name() (the Binance-Peg USDT's reads "Tether USD",
+// and anyone can deploy such a name). Unlisted tokens show as their address; decimals are always read from the token.
+// 托管代币的显示名按地址固定，绝不用 name()；不在表里只显示地址；小数位一律从代币读取。
+export const PAYMENT_TOKENS = deepFreeze({
+  56: {
+    '0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a': { label: 'BEM', address: '0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a' },
+    '0x55d398326f99059ff775485246999027b3197955': { label: 'USDT (Binance-Peg)', address: '0x55d398326f99059fF775485246999027B3197955' },
+  },
+  196: {},
+  8453: {},
+})
+// Escrows tx.approve / tx.fund build for without allowEscrows: audited deployments only (TAPI-22 §3.5). None yet.
+// 无需 allowEscrows 即可构造 approve / fund 的已审计托管；目前没有。
+export const AUDITED_ESCROWS = deepFreeze({ 56: [], 196: [], 8453: [] })
+
 // TAP-10 §12.1: an endpoint's chainId above 2^53 − 1 is not a supported chain (the conformance mode refuses it).
 // TAP-10 §12.1：端点 chainId 大于 2^53 − 1 的链不受支持（一致模式拒绝）。
 export const TAP10_MAX_CHAIN_ID = 2n ** 53n - 1n

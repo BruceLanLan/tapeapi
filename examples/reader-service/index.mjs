@@ -101,7 +101,7 @@ console.log(`[reader] rpc      ${RPC_URLS.join(', ')} (quorum ${QUORUM})`)
 // 定期打印待结算 / Periodically report pending settlements.
 setInterval(async () => {
   const pending = await provider.pendingSettlements()
-  if (pending.length) console.log(`[reader] pending settlements: ${pending.map(v => `${v.consumer}=${formatUnits(v.cumulative)} BEM`).join(', ')}`)
+  if (pending.length) console.log(`[reader] pending settlements: ${pending.map(v => `${v.consumer}=${formatUnits(v.cumulative, BEM_DECIMALS)} BEM`).join(', ')}`)
 }, 60_000).unref()
 
 for (const s of ['SIGINT', 'SIGTERM']) process.on(s, async () => { await provider.close(); process.exit(0) })

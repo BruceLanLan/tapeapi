@@ -5,7 +5,7 @@
 //   node examples/web2-adapter/consumer.mjs [http://127.0.0.1:8788]
 //   env: FREE_METHOD (default: first free method), PAID_METHOD (default: first paid method), PAID_PARAMS (JSON),
 //        CONSUMER (0x address), SESSION_KEY (32-byte hex; must be authorised on-chain via Escrow.authorizeSession for mainnet)
-import { createTapeAPI, parseUnits, formatUnits, sig, abi } from '@tapeapi/sdk'
+import { createTapeAPI, parseUnits, formatUnits, BEM_DECIMALS, sig, abi } from '@tapeapi/sdk'
 
 const base = (process.argv[2] || process.env.PROVIDER_URL || 'http://127.0.0.1:8788').replace(/\/+$/, '')
 const api = createTapeAPI({ dev: true }) // dev: true 才允许 resolve({ dev }) 与 http 端点；不需要链 RPC / dev: true is required for { dev } targets and http endpoints
@@ -17,7 +17,7 @@ console.log(`container ${svc.container}   signer ${svc.manifest.signer}   verifi
 for (const m of svc.manifest.methods) console.log(`  ${m.name.padEnd(12)} ${m.priceBEM} BEM  params=${JSON.stringify(m.params)}`)
 
 // 2. 免费方法 / free method: the SDK verifies the signed envelope before returning
-const freeDef = svc.manifest.methods.find(m => m.name === process.env.FREE_METHOD) || svc.manifest.methods.find(m => parseUnits(m.priceBEM) === 0n)
+const freeDef = svc.manifest.methods.find(m => m.name === process.env.FREE_METHOD) || svc.manifest.methods.find(m => parseUnits(m.priceBEM, BEM_DECIMALS) === 0n)
 if (freeDef) {
   console.log(`\n== free call: ${freeDef.name}`)
   try {
@@ -28,9 +28,9 @@ if (freeDef) {
 }
 
 // 3. 收费方法 / paid method
-const paidDef = svc.manifest.methods.find(m => m.name === process.env.PAID_METHOD) || svc.manifest.methods.find(m => parseUnits(m.priceBEM) > 0n)
+const paidDef = svc.manifest.methods.find(m => m.name === process.env.PAID_METHOD) || svc.manifest.methods.find(m => parseUnits(m.priceBEM, BEM_DECIMALS) > 0n)
 if (!paidDef) { console.log('\n(no paid method in manifest; FREE_ALL=1 on the provider?)'); process.exit(0) }
-const price = parseUnits(paidDef.priceBEM)
+const price = parseUnits(paidDef.priceBEM, BEM_DECIMALS)
 const params = process.env.PAID_PARAMS ? JSON.parse(process.env.PAID_PARAMS) : { amount: 100 }
 const sessionKey = process.env.SESSION_KEY || sig.randomPrivateKey()
 const consumer = process.env.CONSUMER || sig.privateKeyToAddress(sessionKey) // 无 CONSUMER 时 session key 就是消费者本人 / without CONSUMER the session key *is* the consumer
@@ -53,7 +53,7 @@ const signedByProvider = abi.eqAddr(recovered, svc.manifest.signer)
 console.log(`http ${res.status}  envelope signed by ${recovered}  matches manifest.signer: ${signedByProvider}`)
 if (env.ok) {
   console.log(`result   ${JSON.stringify(env.result)}`)
-  console.log(`paid     cumulative now ${formatUnits(payer.cumulativeOf(svc))} BEM for this provider (provider will settle on-chain later)`)
+  console.log(`paid     cumulative now ${formatUnits(payer.cumulativeOf(svc), BEM_DECIMALS)} BEM for this provider (provider will settle on-chain later)`)
   console.log(`         (api.call would also resync from a signed BAD_VOUCHER { data: { lastCumulative } } and retry once; voucherFor() commits immediately)`)
 } else {
   console.log(`error    ${env.error.code}: ${env.error.message}`)
@@ -63,7 +63,7 @@ if (env.ok) {
     and this manifest points at a placeholder escrow, so the paid path cannot succeed without a chain.
     What was demonstrated: the SDK built a TAPI-22 voucher (cumulative ${voucher.cumulative} wei = ${paidDef.priceBEM} BEM, signed by
     the session key), sent it, and the provider answered with a *signed* error envelope you can verify offline.
-  On mainnet the consumer does once: api.tx.fund(${svc.container}, amount),
-    api.tx.authorizeSession(${payer.signer}, expires) — then api.call(svc, '${paidDef.name}', params, { payer }) just works.`)
+  Once an audited escrow is deployed, the consumer does once: await api.tx.approve({ amount, spender: svc }), await api.tx.fund(svc, amount),
+    api.tx.authorizeSession(svc, ${payer.signer}, expires) — then api.call(svc, '${paidDef.name}', params, { payer }) just works.`)
   }
 }

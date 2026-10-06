@@ -18,6 +18,13 @@ export const RPC = ['http://rpc1', 'http://rpc2']
 // The client reads the mainnet site store's address: the fake chain answers its ERC-1967 slot with an implementation
 // TAP-10 accepts (chains.js expectedImpl), as the kit's TAP-10 §6.1 check requires. / 用主网站点存储地址：假链对其实现槽给出接受的实现
 export const SITE_STORE = CHAINS[56].siteRegistry
+// TAP-10 §4.3 step 4: the kit derives a container with the chain's container opener (chains.js), which this fake answers
+// like the hub: by (circuits, #ID). / 开通器推导容器，与 hub 一样按 (电路, #ID) 作答
+export const OPENER = CHAINS[56].opener
+// The factory's processor table: numbers 0 to 7, number 7 the circuits of this chain (TAP-10 §4.3 step 3)
+// 工厂的处理器表：0 到 7 号，7 号是本假链的电路
+export const PROCESSOR_COUNT = 8
+export const PROCESSOR = 7
 export const HEAD_TIME = 1_800_000_000
 export const KEYS = {
   principalHolder: '0x' + '11'.repeat(32), agentSigner: '0x' + '22'.repeat(32), agentHolder: '0x' + '44'.repeat(32),
@@ -44,6 +51,7 @@ export function createAgentChain({ circuits = ADDR.circuits } = {}) {
   let seq = 0
   const hash = () => '0x' + (++seq).toString(16).padStart(64, 'a')
   const timeOf = (n) => HEAD_TIME - (st.block - n)
+  const CPU_COUNT = selector('cpuCount()'), CPU_AT = selector('cpuAt(uint256)')
   const PATH_COUNT = selector('pathCount(address)'), ACCOUNT_OF = selector('accountOf(address,uint256)'), IS_CPU = selector('isCPU(address)'), INBOX_COUNT = selector('inboxCount(bytes32)'), INBOX_PAGE = selector('inboxPage(bytes32,uint256,uint256)'), DECIMALS = selector('decimals()')
   const json = (obj) => new Response(JSON.stringify(obj), { status: 200, headers: { 'content-type': 'application/json' } })
   function honest(req) {
@@ -56,7 +64,13 @@ export function createAgentChain({ circuits = ADDR.circuits } = {}) {
       const t = txs.get(String(p[0]).toLowerCase())
       return { result: t ? { hash: p[0], from: t.tx.from, to: t.tx.to, value: '0x' + BigInt(t.tx.value).toString(16), blockNumber: '0x' + t.receipt.blockNumber.toString(16) } : null }
     }
-    if (req.method === 'eth_call' && String(p[0].to).toLowerCase() === ADDR.hub.toLowerCase()) {
+    const toFactory = req.method === 'eth_call' && [ADDR.factory, MAINNET_FACTORY].some((f) => f.toLowerCase() === String(p[0].to).toLowerCase())
+    if (toFactory && p[0].data === CPU_COUNT) return { result: u256(PROCESSOR_COUNT) }
+    if (toFactory && String(p[0].data).startsWith(CPU_AT)) {
+      const [i] = decodeParams(['uint256'], hexToBytes('0x' + p[0].data.slice(10)))
+      if (i < BigInt(PROCESSOR_COUNT)) return { result: pad(i === BigInt(PROCESSOR) ? circuits : '0x' + 'c0'.repeat(19) + i.toString(16).padStart(2, '0')) }
+    }
+    if (req.method === 'eth_call' && [ADDR.hub, OPENER].some((a) => a.toLowerCase() === String(p[0].to).toLowerCase())) {
       const data = p[0].data
       // Like the real hub (TAP-10 §13.5, Appendix A), accountOf derives an address for ANY #ID, minted or not; the shared
       // fake answers zero for an unknown #ID, which would hide a recipient that nobody holds. / 与真 hub 一致：任何 #ID 都推导地址

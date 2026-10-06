@@ -15,6 +15,9 @@ export const ADDR = {
 // any other address has no code: eth_call returns '0x', as a real node does (review R2-6).
 // 主网工厂地址同样作答，未传 `factory` 的客户端与主网一致；其它地址没有代码，eth_call 返回 '0x'，与真实节点相同。
 export const MAINNET_FACTORY = '0x68224F668083c29e9800Be2a646d42d18cedF7e2'
+/** BEM on BNB Smart Chain (MAINNET.bem): the token the test escrow holds by default / 测试托管默认持有的代币 */
+export const BEM = '0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a'
+const DECIMALS_SELECTOR = '0x313ce567'
 
 // A JSON-RPC batch handed to a fetch that only understands one call: ask it call by call and answer the batch as a
 // node would (an array; a call refused at the HTTP level refuses the whole batch). For tests whose fetch wrappers
@@ -33,6 +36,10 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
     // 托管 v2 状态按 (消费者, 提供者) 通道；`balances` 是某地址的 ERC-20（BEM）余额
     balances: new Map(), channels: new Map(), claimed: new Map(), sessions: new Map(), pendingWithdraws: new Map(), calls: [],
     contributions: new Map(), legacyEscrows: new Set(), // provider -> bps; escrows that predate contributionOf / 旧版托管
+    // Escrow v3: escrow -> its token (the configured test escrow holds BEM), token -> decimals() (BEM 8); an escrow or token
+    // missing here reverts token() / decimals(). treasuryAccrued per escrow.
+    // 托管 v3：托管 -> 其代币（测试托管默认是 BEM），代币 -> decimals()（BEM 为 8）；不在表里的 token() / decimals() 回滚。
+    escrowTokens: new Map(addr.escrow ? [[addr.escrow.toLowerCase(), BEM]] : []), decimals: new Map([[BEM.toLowerCase(), 8n]]), accrued: new Map(),
     // 节点故障注入 / per-node fault injection: url -> 'disagree' | 'timeout' | 'http500' | 'rpcerror' | 'nologs'
     //   | 'history:N' (eth_getLogs only for the last N blocks, as publicnode: arch A4 / 只提供最近 N 个区块的日志)
     faults: new Map(),
@@ -112,6 +119,11 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
     },
     // 该地址上的 contributionOf/treasury 调用会 revert / contributionOf & treasury revert at this escrow address.
     markLegacyEscrow(a) { st.legacyEscrows.add(a.toLowerCase()) },
+    /** escrow v3 token(): setEscrowToken(escrow, token), or null for an escrow without token() / 托管的 token()，null 为没有 */
+    setEscrowToken(escrow, token) { if (token) st.escrowTokens.set(escrow.toLowerCase(), token); else st.escrowTokens.delete(escrow.toLowerCase()) },
+    /** ERC-20 decimals(): a number, a bigint (any uint256), or null for a token without decimals() / 代币的 decimals() */
+    setDecimals(token, d) { if (d === null || d === undefined) st.decimals.delete(token.toLowerCase()); else st.decimals.set(token.toLowerCase(), BigInt(d)) },
+    setTreasuryAccrued(escrow, v) { st.accrued.set(escrow.toLowerCase(), BigInt(v)) },
     // An address with code, as an opened (deployed) container has. / 有代码的地址，如已开通（已部署）的容器。
     setCode(address, yes = true) { if (yes) st.codes.add(address.toLowerCase()); else st.codes.delete(address.toLowerCase()) },
     setFault(url, kind) { if (kind) st.faults.set(url, kind); else st.faults.delete(url) },
@@ -140,6 +152,13 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
       if (!set) throw Object.assign(new Error('execution reverted'), { code: 3 })
       return set.has(digest.toLowerCase()) ? IS_VALID_SIG + '0'.repeat(56) : '0x' + '00'.repeat(32)
     }
+    // ERC-20 decimals() is not in the SDK's ABI table (agent-pay and the escrow token read use the raw selector)
+    if (data.slice(0, 10).toLowerCase() === DECIMALS_SELECTOR) {
+      st.calls.push({ to, name: 'decimals', args: [] })
+      const d = st.decimals.get(to.toLowerCase())
+      if (d === undefined) throw Object.assign(new Error('execution reverted'), { code: 3 })
+      return '0x' + d.toString(16).padStart(64, '0')
+    }
     const name = functionBySelector(data)
     if (!name) throw Object.assign(new Error('execution reverted'), { code: 3 })
     const args = decodeCall(name, data)
@@ -153,7 +172,12 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
         if (!eqAddr(to, addr.factory ?? ADDR.factory) && !eqAddr(to, MAINNET_FACTORY)) return '0x'
         return encodeReturn('isCPU', [!st.notCPU.has(String(args[0]).toLowerCase())])
       case 'token': {
+        // the escrow's token() shares the ERC-6551 selector: one address instead of (chainId, circuits, tokenId). An
+        // address a test made a container answers as a container. / 托管的 token() 与 ERC-6551 的选择器相同：返回一个地址；
+        // 测试设成容器的地址按容器作答。
         const t = st.tokens.get(to.toLowerCase())
+        const e = st.escrowTokens.get(to.toLowerCase())
+        if (!t && e) return encodeReturn('escrowToken', [e])
         if (!t) throw Object.assign(new Error('execution reverted'), { code: 3 })
         return encodeReturn('token', t)
       }
@@ -194,6 +218,9 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
       case 'treasury':
         if (st.legacyEscrows.has(to.toLowerCase())) throw Object.assign(new Error('execution reverted'), { code: 3 })
         return encodeReturn('treasury', [addr.treasury])
+      case 'treasuryAccrued':
+        if (!st.escrowTokens.has(to.toLowerCase())) throw Object.assign(new Error('execution reverted'), { code: 3 })
+        return encodeReturn('treasuryAccrued', [st.accrued.get(to.toLowerCase()) ?? 0n])
       default: throw Object.assign(new Error('execution reverted'), { code: 3 })
     }
   }

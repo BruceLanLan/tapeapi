@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 // ============================================================================================
-// Stateful invariant campaign for the v2 escrow (docs/DECISION-escrow-v2.md, "谨慎条款" 2;
+// Stateful invariant campaign for the escrow (v2 channels; v3 token rename, pull treasury, `>=` solvency) (docs/DECISION-escrow-v2.md, "谨慎条款" 2;
 // docs/research/RESEARCH-process-security.md 6.1 P0-2; docs/research/RESEARCH-process-channels.md 6.1 item 1).
 //
 // Runs with `fail_on_revert = true` (foundry.toml). Every handler is an ORACLE: before calling the escrow it
@@ -18,13 +18,20 @@ pragma solidity ^0.8.24;
 // cancelWithdraw / authorizeSession in that same block.
 //
 // Properties:
-//   in-handler (fatal)  every call's outcome == the spec oracle; settle pays min(delta, channel) split
-//                       pay*bps/1e4 to treasury; withdraw pays min(requested, channel) only inside
+//   in-handler (fatal)  every call's outcome == the spec oracle; settle pays min(delta, channel): pay - floor(pay*bps/1e4)
+//                       transferred to the provider, floor(pay*bps/1e4) added to treasuryAccrued and NOTHING
+//                       transferred to the treasury (v3 pull); claimTreasury pays the whole accrual to the current
+//                       treasury (or reverts ZeroAmount at 0); withdraw pays min(requested, channel) only inside
 //                       [requestedAt+48h, requestedAt+48h+7d]; a voucher that was inside the channel when signed and
 //                       is settled before any withdraw executes on that channel (not expired, key live) is paid in
 //                       FULL; Σ channel never grows except in `fund`.
-//   invariant_*         solvency (Σ channel + Σ paid == Σ funded − Σ withdrawn; escrow balance == Σ channel),
-//                       per-channel conservation (funded == channel + claimed + withdrawn), claimed monotone.
+//   invariant_*         solvency (Σ channel + Σ paid == Σ funded − Σ withdrawn; escrow balance == Σ channel +
+//                       treasuryAccrued + Σ donated exactly, hence >= Σ channel + treasuryAccrued -- the spec form,
+//                       robust to direct transfers), contribution conservation (Σ accrued at settle == treasuryAccrued
+//                       + Σ claimed), per-channel conservation (funded == channel + claimed + withdrawn), claimed
+//                       monotone. Direct transfers to the escrow (`donate`) and treasury rotation are handlers too;
+//                       a rotation pays the outgoing treasury its whole accrual (counted as claimed), and both treasury
+//                       handlers assert their events' exact arguments with vm.expectEmit.
 //
 // 有状态模糊测试（fail_on_revert = true）：每个处理器都是预言机——按源码的检查顺序预测结果，预期回滚用
 // vm.expectRevert 精确断言，预期成功则逐项 assertEq。预测错误即处理器回滚、测试失败。
@@ -64,7 +71,8 @@ contract EscrowHandler is Test {
     TapeAPIEscrow public escrow;
     Inv_MockERC20 public bem;
     Inv_MockERC721 public nft;
-    address public treasury;
+    address public treasury;          // the treasury at deploy; also providers[3] / 部署时的金库，也是 providers[3]
+    address public treasury2;         // rotation target / 轮换目标
     address public holder;
 
     // cached so no view call ever sits between vm.expectRevert and the call it targets
@@ -83,7 +91,11 @@ contract EscrowHandler is Test {
     // ---- ghost state / 影子状态 ----
     uint256 public totalFunded;
     uint256 public totalWithdrawn;
-    uint256 public totalPaid;                 // to providers + treasury, measured by token balance deltas / 按代币余额差计量
+    uint256 public totalPaid;                 // Σ pay (provider share + accrued contribution) / 结算总额
+    uint256 public totalContributed;          // Σ contribution accrued at settle / 结算时记入的贡献总额
+    uint256 public totalClaimed;              // Σ claimTreasury payouts / 已领取总额
+    uint256 public totalDonated;              // Σ direct transfers to the escrow / 直接转入总额
+    mapping(address => uint256) public claimedTo;   // Σ claimTreasury payouts per recipient / 按收款人的领取总额
     mapping(address => mapping(address => uint256)) public fundedOf;
     mapping(address => mapping(address => uint256)) public withdrawnOf;
     mapping(address => mapping(address => uint256)) public lastClaimed;
@@ -96,11 +108,14 @@ contract EscrowHandler is Test {
         bool inRange; uint256 epoch;
     }
     Outstanding[] internal outstanding;
+
+    event TreasuryChanged(address indexed oldTreasury, address indexed newTreasury);
+    event TreasuryClaimed(address indexed treasury, uint256 amount);
     uint256 internal constant MAX_OUTSTANDING = 48;
-    uint256 internal constant UNIT = 1e8;   // BEM has 8 decimals / BEM 为 8 位小数
+    uint256 internal constant UNIT = 1e8;   // 8-decimal mock; the escrow never reads decimals (TokenDecimals.t.sol) / 托管不读小数位
 
     constructor(TapeAPIEscrow escrow_, Inv_MockERC20 bem_, Inv_MockERC721 nft_, address treasury_, address holder_) {
-        escrow = escrow_; bem = bem_; nft = nft_; treasury = treasury_; holder = holder_;
+        escrow = escrow_; bem = bem_; nft = nft_; treasury = treasury_; holder = holder_; treasury2 = address(0x7EA6);
         COOLDOWN = escrow.WITHDRAW_COOLDOWN(); WINDOW = escrow.WITHDRAW_WINDOW(); MAX_SESSION = escrow.MAX_SESSION();
         consumerPk = [uint256(0xC0FFEE1), 0xC0FFEE2, 0xC0FFEE3];
         sessionPk = [uint256(0x5E551), 0x5E552];
@@ -273,13 +288,14 @@ contract EscrowHandler is Test {
         o.sig = _sign(o.pk, o.consumer, p, o.cumulative, expires);
     }
 
-    struct Snap { uint256 ch; uint256 cl; uint256 pBal; uint256 tBal; uint256 bps; uint64 keyExp; bool liveNow; bool mustPayInFull; }
+    struct Snap { uint256 ch; uint256 cl; uint256 pBal; uint256 tBal; uint256 acc; uint256 bps; uint64 keyExp; bool liveNow; bool mustPayInFull; }
 
     function _snap(Outstanding memory o) internal view returns (Snap memory sn) {
         sn.ch = escrow.channelOf(o.consumer, o.provider);
         sn.cl = escrow.claimedOf(o.consumer, o.provider);
         sn.pBal = bem.balanceOf(o.provider);
-        sn.tBal = bem.balanceOf(treasury);
+        sn.tBal = bem.balanceOf(escrow.treasury());
+        sn.acc = escrow.treasuryAccrued();
         sn.bps = escrow.contributionOf(o.provider);
         sn.keyExp = escrow.sessionExpiry(o.consumer, o.provider, o.signer);
         sn.liveNow = o.signer == o.consumer || sn.keyExp >= block.timestamp;
@@ -298,7 +314,7 @@ contract EscrowHandler is Test {
     }
 
     /// @dev Replays settle's check order: Expired > BadSignature (session not live now) > NothingToSettle >
-    ///      InsufficientBalance > pay min(delta, channel), contribution floor(pay*bps/1e4) to treasury.
+    ///      InsufficientBalance > pay min(delta, channel), contribution floor(pay*bps/1e4) accrued (v3 pull).
     function _settle(Outstanding memory o) internal returns (bool ok) {
         Snap memory sn = _snap(o);
         if (o.signer != o.consumer && block.timestamp == sn.keyExp) calls["edge_settle_at_session_expiry"]++;
@@ -317,12 +333,15 @@ contract EscrowHandler is Test {
             uint256 pay = _min(o.cumulative - sn.cl, sn.ch);
             uint256 contribution = pay * sn.bps / 10_000;
             escrow.settle(o.consumer, o.provider, o.cumulative, o.expires, o.sig);
-            if (o.provider == treasury) {
-                assertEq(bem.balanceOf(o.provider) - sn.pBal, pay, "settle: provider==treasury receives pay");
-            } else {
-                assertEq(bem.balanceOf(o.provider) - sn.pBal, pay - contribution, "settle: provider share");
-                assertEq(bem.balanceOf(treasury) - sn.tBal, contribution, "settle: treasury share");
+            // v3 pull: identical for every provider, provider == treasury included (no second leg any more)
+            // v3 拉取式：对所有提供者一致，包括提供者即金库（不再有第二条转账腿）
+            assertEq(bem.balanceOf(o.provider) - sn.pBal, pay - contribution, "settle: provider share");
+            assertGt(pay - contribution, 0, "settle: provider receives > 0 whenever pay > 0");
+            assertEq(escrow.treasuryAccrued() - sn.acc, contribution, "settle: accrual += contribution");
+            if (o.provider != escrow.treasury()) {
+                assertEq(bem.balanceOf(escrow.treasury()), sn.tBal, "settle: nothing transferred to the treasury");
             }
+            totalContributed += contribution;
             assertEq(escrow.claimedOf(o.consumer, o.provider), sn.cl + pay, "settle: claimed += pay");
             assertEq(escrow.channelOf(o.consumer, o.provider), sn.ch - pay, "settle: channel -= pay");
             totalPaid += pay;
@@ -467,6 +486,80 @@ contract EscrowHandler is Test {
         assertEq(escrow.contributionOf(providers[tokenId - 1]), bps);
     }
 
+    /// @dev v3 pull: ZeroAmount at 0; otherwise the whole accrual to the CURRENT treasury, accrual zeroed.
+    function claimTreasury(uint256 callerSeed) external noChannelGrowth {
+        calls["claimTreasury"]++;
+        uint256 a = escrow.treasuryAccrued();
+        address caller = address(uint160(bound(callerSeed, 1, type(uint160).max)));   // anyone / 任何人
+        if (a == 0) {
+            vm.expectRevert(ZeroAmount.selector);
+            vm.prank(caller); escrow.claimTreasury();
+            calls["claim_revert"]++;
+            return;
+        }
+        address t = escrow.treasury();
+        uint256 tb = bem.balanceOf(t);
+        // the event names the treasury paid (never the caller) and the amount / 事件写明收款金库（绝非调用者）与金额
+        vm.expectEmit(true, false, false, true, address(escrow));
+        emit TreasuryClaimed(t, a);
+        vm.prank(caller);
+        uint256 got = escrow.claimTreasury();
+        assertEq(got, a, "claim: returns the accrual");
+        assertEq(bem.balanceOf(t) - tb, a, "claim: current treasury receives the whole accrual");
+        assertEq(escrow.treasuryAccrued(), 0, "claim: accrual zeroed");
+        totalClaimed += a;
+        claimedTo[t] += a;
+        calls["claim_ok"]++;
+    }
+
+    /// @dev Owner rotates between the two treasuries (both always receive). Rotating away pays the whole accrual to
+    ///      the OUTGOING treasury first -- TreasuryClaimed(old, a) then TreasuryChanged(old, new), exact arguments --
+    ///      and leaves nothing accrued; rotating to the current treasury is a no-op without events.
+    ///      owner 在两个金库间轮换（两者都能收款）。换走时先把全部应收付给旧金库——先 TreasuryClaimed(旧, a) 再
+    ///      TreasuryChanged(旧, 新)，参数精确——之后应收为 0；换成当前金库则什么都不做、不发事件。
+    function rotateTreasury(bool second) external noChannelGrowth {
+        calls["rotateTreasury"]++;
+        address t = second ? treasury2 : treasury;
+        address old = escrow.treasury();
+        uint256 a = escrow.treasuryAccrued();
+        address owner_ = escrow.owner();
+        uint256 oldBal = bem.balanceOf(old);
+        if (t == old) {
+            vm.recordLogs();
+            vm.prank(owner_);
+            escrow.setTreasury(t);
+            assertEq(vm.getRecordedLogs().length, 0, "rotate to the same treasury: no event");
+            assertEq(escrow.treasuryAccrued(), a, "rotate to the same treasury: no payout");
+            calls["rotate_same"]++;
+            return;
+        }
+        if (a > 0) {
+            vm.expectEmit(true, false, false, true, address(escrow));
+            emit TreasuryClaimed(old, a);
+        }
+        vm.expectEmit(true, true, false, true, address(escrow));
+        emit TreasuryChanged(old, t);
+        vm.prank(owner_);
+        escrow.setTreasury(t);
+        assertEq(escrow.treasury(), t);
+        assertEq(escrow.treasuryAccrued(), 0, "rotation pays the outgoing treasury in full");
+        assertEq(bem.balanceOf(old) - oldBal, a, "the outgoing treasury receives the whole accrual");
+        totalClaimed += a;
+        claimedTo[old] += a;
+        calls[a > 0 ? "rotate_paid" : "rotate_empty"]++;
+    }
+
+    /// @dev Anyone transfers tokens straight to the escrow (no fund call). It must not make any later call revert or
+    ///      mis-account; under fail_on_revert every following handler proves that.
+    ///      任何人直接向托管转账（不经 fund）。之后的任何调用都不得因此回滚或记错账。
+    function donate(uint256 amount) external noChannelGrowth {
+        calls["donate"]++;
+        amount = bound(amount, 1, 100 * UNIT);
+        bem.mint(address(this), amount);
+        bem.transfer(address(escrow), amount);
+        totalDonated += amount;
+    }
+
     function warp(uint256 secs) external {
         calls["warp"]++;
         vm.warp(block.timestamp + bound(secs, 1 hours, 72 hours));
@@ -591,7 +684,7 @@ contract EscrowInvariantTest is Test {
         handler = new EscrowHandler(escrow, bem, nft, treasury, holder);
 
         targetContract(address(handler));
-        bytes4[] memory sels = new bytes4[](15);
+        bytes4[] memory sels = new bytes4[](18);
         sels[0] = handler.fund.selector;
         sels[1] = handler.requestWithdraw.selector;
         sels[2] = handler.requestWithdrawReverts.selector;
@@ -607,14 +700,32 @@ contract EscrowInvariantTest is Test {
         sels[12] = handler.warp.selector;
         sels[13] = handler.warpToBoundary.selector;
         sels[14] = handler.warpToBoundary.selector;   // weighted x2: the clock edges are the point / 边界动作加权
+        sels[15] = handler.claimTreasury.selector;
+        sels[16] = handler.rotateTreasury.selector;
+        sels[17] = handler.donate.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: sels}));
     }
 
-    /// @dev Σ channel + Σ paid == Σ funded − Σ withdrawn, and the token the escrow holds is exactly Σ channel.
+    /// @dev Σ channel + Σ paid == Σ funded − Σ withdrawn. The escrow holds EXACTLY Σ channel + treasuryAccrued + Σ
+    ///      donated (ghost-exact), and therefore at least Σ channel + treasuryAccrued -- the form TAPI-22 states, which
+    ///      holds whatever anyone transfers in directly.
+    ///      托管余额恰为 Σ通道 + 金库应收 + Σ捐赠（影子精确），因此至少为 Σ通道 + 金库应收（规范的表述，对直接转入稳健）。
     function invariant_solvency() public view {
         uint256 channels = handler.sumChannels();
+        uint256 owed = channels + escrow.treasuryAccrued();
+        uint256 bal = bem.balanceOf(address(escrow));
         assertEq(channels + handler.totalPaid(), handler.totalFunded() - handler.totalWithdrawn(), "solvency identity");
-        assertEq(bem.balanceOf(address(escrow)), channels, "escrow holds exactly the sum of channels");
+        assertEq(bal, owed + handler.totalDonated(), "escrow holds exactly channels + accrual + donations");
+        assertGe(bal, owed, "escrow holds at least what it owes (spec form)");
+    }
+
+    /// @dev Every contribution accrued at settle is either still accrued or was claimed, never lost or duplicated.
+    ///      结算时记入的每一笔贡献要么仍在应收额中，要么已被领取，不丢也不重复。
+    function invariant_contributionConservation() public view {
+        assertEq(handler.totalContributed(), escrow.treasuryAccrued() + handler.totalClaimed(), "contribution conservation");
+        // treasury2 is never a provider or consumer: its balance is exactly what was claimed while it was the treasury
+        // treasury2 从不是提供者或消费者：其余额恰为它在任期内被领取的金额
+        assertEq(bem.balanceOf(handler.treasury2()), handler.claimedTo(handler.treasury2()), "claims go to the current treasury");
     }
 
     /// @dev claimedOf never decreases on any channel (the handler snapshots after every op; re-check here too).
@@ -662,6 +773,10 @@ contract EscrowInvariantTest is Test {
         console2.log("edge wd@last / last+1    ", handler.calls("edge_withdraw_last_second"), handler.calls("edge_withdraw_window_plus1"));
         console2.log("edge settle@exp / exp+1  ", handler.calls("edge_settle_at_voucher_expiry"), handler.calls("edge_settle_voucher_expiry_plus1"));
         console2.log("edge settle@key / key+1  ", handler.calls("edge_settle_at_session_expiry"), handler.calls("edge_settle_session_expiry_plus1"));
+        console2.log("claim ok/revert          ", handler.calls("claim_ok"), handler.calls("claim_revert"));
+        console2.log("rotate / donate          ", handler.calls("rotateTreasury"), handler.calls("donate"));
+        console2.log("rotate paid/empty/same   ", handler.calls("rotate_paid"), handler.calls("rotate_empty"));
+        console2.log("rotate same              ", handler.calls("rotate_same"));
         console2.log("warp                     ", handler.calls("warp"));
         console2.log("outstanding queue        ", handler.outstandingCount());
     }

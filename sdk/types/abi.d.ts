@@ -26,8 +26,12 @@ export declare const SERVICE_TUPLE: Record<string, unknown>
  * experimental escrow and ServiceDirectory, and may change in any release; only the names of the stable contracts
  * (hub, SiteRegistry, processor factory, ChannelBus, ERC-20/721, ERC-6551) are part of the 1.0 API.
  */
-export declare const FUNCTIONS: Record<string, { inputs: unknown[]; outputs: unknown[]; [key: string]: unknown }>
+export declare const FUNCTIONS: Record<string, { inputs: unknown[]; outputs: unknown[]; fn?: string; [key: string]: unknown }>
 export declare function signatureOf(name: string): string
+/** @experimental Escrow v3 event signatures (TapeAPIEscrow is not deployed); may change in a 1.x minor release. */
+export declare const EVENTS: Readonly<{ Settled: string; TreasuryClaimed: string }>
+/** @experimental topic0 of an escrow event in `EVENTS`; may change in a 1.x minor release. */
+export declare function eventTopic(name: 'Settled' | 'TreasuryClaimed'): Hex
 export declare function selector(nameOrSig: string): Hex
 export declare function encodeCall(name: string, args?: unknown[]): Hex
 export declare function decodeCall(name: string, data: string): any

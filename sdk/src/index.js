@@ -14,7 +14,7 @@ import { validateManifest, findMethod, methodPrice, parseUnits, formatUnits, MET
 import { canonicalJSON, safeParseJSON } from './canon.js'
 import { validateAIField, MANIFEST_FIELD as AI_FIELD } from './ai.js'
 import { CHAIN_IDS, chainById, parseTapeName, parseTapeInput, formatTapeName, IMPL_SLOT, MAX_TOKEN_ID } from './chains.js'
-import { TAP10_SEALS } from './chains.js'
+import { TAP10_SEALS, PAYMENT_TOKENS, AUDITED_ESCROWS } from './chains.js'
 import { rpcUrlsFor } from './rpc-defaults.js'
 // TAP-10 §4.3 processor tables (about 75 KB), read only by the conformance mode and siteStatus. A static import: the SDK
 // runs in the browser as plain modules, without dynamic imports (scripts/build-playground.mjs).
@@ -29,6 +29,8 @@ export { RPC_DEFAULTS, rpcUrlsFor, operatorOf } from './rpc-defaults.js'
 export { CHAINS, CHAIN_IDS, HOME_CHAIN_ID, IMPL_SLOT, chainById, chainByArea, chainByKey, parseTapeName, formatTapeName, isNameShaped, parseTapeInput, MAX_TOKEN_ID, MAX_PROCESSOR } from './chains.js'
 // @experimental (1.5) TAP-10 §13.8 messaging constants and the §12.1 endpoint chainId bound / TAP-10 消息层常量
 export { TAP10_SEALS, TAP10_MAX_CHAIN_ID } from './chains.js'
+// @experimental (TAPI-22 §3.5) escrow token labels and the audited escrow deployments (empty) / 托管代币标签与已审计托管名单（空）
+export { PAYMENT_TOKENS, AUDITED_ESCROWS } from './chains.js'
 export { TapeAPIError, createRpc, canonicalJSON, safeParseJSON, validateManifest, parseUnits, formatUnits, labelToBytes32, METHOD_NAME_RE, BEM_DECIMALS }
 export * as abi from './abi.js'
 export * as sig from './sig.js'
@@ -52,7 +54,13 @@ export * as proof from './proof.js'
 // TAPI-22 §3.4 贡献比例常量 / contribution constants (basis points).
 export const MAX_CONTRIBUTION_BPS = 2000          // contract hard cap, 20% (5000 before 2026-10-05) / 合约硬上限 20%（2026-10-05 前为 5000）
 export const DEFAULT_CONTRIBUTION_BPS = 100       // contract constant: applies until the holder sets a value / 合约常量：持有人设定前适用
-export const RECOMMENDED_CONTRIBUTION_BPS = 100   // older name for the same 100; since 2026-09-28 it is the contract default / 旧名，同一个 100，现为合约默认值
+// @experimental (TAPI-22 §3.5) An escrow amount in whole tokens plus the token's label and address; `token` from
+// api.chain.escrow.paymentToken() (decimals are never assumed). / 托管金额按整币显示，小数位绝不假设。
+export function formatPaymentAmount(amount, token) {
+  if (!token || typeof token !== 'object' || !Number.isInteger(token.decimals) || typeof token.display !== 'string') throw new TapeAPIError('INVALID_ARGUMENT', 'formatPaymentAmount needs the token api.chain.escrow.paymentToken() returns: decimals are read from the token, never assumed')
+  return `${formatUnits(amount, token.decimals)} ${token.display}`
+}
+export const RECOMMENDED_CONTRIBUTION_BPS = 100  // older name for the same 100; since 2026-09-28 it is the contract default / 旧名，同一个 100，现为合约默认值
 
 // 主网默认地址 / Mainnet defaults (DESIGN.md).
 export const MAINNET = {
@@ -337,6 +345,10 @@ export function createTapeAPI(opts = {}) {
   // Only true turns allChains on; any other value is ignored, never refused: 1.4 ignored the option, so a value it ignored
   // must not start failing (the same rule as conform above). / 只有 true 开启；其它值忽略而不报错：1.4 忽略这个选项。
   const allChains = opts.allChains === true
+  //   allowEscrows        @experimental (TAPI-22 §3.5) escrows, besides AUDITED_ESCROWS (empty), that tx.approve / tx.fund
+  //                       may build for. Default none; `escrow` is not added. / 允许 approve / fund 的托管，默认没有。
+  if (opts.allowEscrows != null && (!Array.isArray(opts.allowEscrows) || !opts.allowEscrows.every(isAddress))) throw new TapeAPIError('INVALID_ARGUMENT', 'allowEscrows must be an array of escrow addresses')
+  const allowedEscrows = new Set([...(AUDITED_ESCROWS[Number(chainId)] ?? []), ...(opts.allowEscrows ?? [])].map((a) => a.toLowerCase()))
   if (conformMode && opts.pin !== undefined && opts.pin !== 'tap10') throw new TapeAPIError('INVALID_ARGUMENT', "conform: 'tap10' pins every resolution as TAP-10 §5.3 does (pin: 'tap10'); it cannot be combined with another pin option (false, 'latest', true or { tag })")
   const pinConf = pinOptionsOf(conformMode ? 'tap10' : opts.pin, chainById(chainId))
   const proofMode = proofOptionOf(opts.proofs, pinConf)
@@ -541,6 +553,13 @@ export function createTapeAPI(opts = {}) {
       // 服务可自选 escrow，故允许覆盖地址 / a service picks its own escrow, so the address may be overridden
       contributionOf: (p, esc = escrow) => view(esc, 'contributionOf', [p]),
       treasury: (esc = escrow) => view(esc, 'treasury', []),
+      // Escrow v3: the immutable token; contributions accrued, unclaimed / 托管 v3：不可变代币；金库应收未领
+      token: (esc = escrow) => view(escrowAddressOf(esc), 'escrowToken', []),
+      treasuryAccrued: (esc = escrow) => view(escrowAddressOf(esc), 'treasuryAccrued', []),
+      // token() then decimals(), strict, cached (readPaymentToken) / 严格共识读取代币与小数位
+      paymentToken: (esc = escrow) => paymentTokenOf(escrowAddressOf(esc)),
+      // Read-only: one provider's bps on several instances, warning when they differ / 只读：多实例贡献比例比对
+      contributions: (p, escrows) => contributionsAcross(p, escrows),
     },
   }
 
@@ -2287,7 +2306,17 @@ export function createTapeAPI(opts = {}) {
     const was = acc?.[method]
     if (was === undefined || price <= was) { if (acc) acc[method] = price; return price }
     if (maxPrice != null && price <= BigInt(maxPrice)) { acc[method] = price; return price }
-    throw new TapeAPIError('PRICE_CHANGED', `${method} now costs ${formatUnits(price)} BEM, up from the ${formatUnits(was)} BEM you accepted; pass { maxPrice } or call api.acceptPrice()`, { data: { method, accepted: was.toString(), price: price.toString() } })
+    throw new TapeAPIError('PRICE_CHANGED', `${method} now costs ${formatUnits(price, BEM_DECIMALS)} BEM, up from the ${formatUnits(was, BEM_DECIMALS)} BEM you accepted; pass { maxPrice } or call api.acceptPrice()`, { data: { method, accepted: was.toString(), price: price.toString() } })
+  }
+
+  // A price is priceBEM: on an escrow of another token the same number is another amount, so a priced call needs the
+  // escrow's token() to be BEM (dev services are not checked). / 收费调用要求托管代币是 BEM。
+  async function requireBemEscrow(svc) {
+    if (svc.verified?.dev === true) return
+    const info = await paymentTokenOf(escrowAddressOf(svc))
+    if (!eqAddr(info.token, MAINNET.bem)) {
+      throw new TapeAPIError('UNSUPPORTED_PAYMENT_TOKEN', `${svc.container} prices its methods in BEM (priceBEM), but its escrow ${info.escrow} holds ${info.display}: a voucher for the price would be an amount of another token. The escrow contract takes any admitted token; manifest prices in other tokens are not yet specified (TAPI-22 §3.5)`, { data: { reason: 'not-bem', escrow: info.escrow, token: info.token } })
+    }
   }
 
   // ---- call ----
@@ -2345,6 +2374,7 @@ export function createTapeAPI(opts = {}) {
     // 支付只在 BNB Smart Chain：L2 上没有托管合约，也没有 BEM。
     if (price > 0n && known && known.payments === false) throw new TapeAPIError('PAYMENT_REQUIRED', `${method} costs ${def.priceBEM} BEM, but ${svc.container} is on ${known.name}: TapeAPI payments run on BNB Smart Chain only`, { data: { method, chainId } })
     if (price > 0n && !payer) throw new TapeAPIError('PAYMENT_REQUIRED', `${method} costs ${def.priceBEM} BEM; pass { payer }`)
+    if (price > 0n) await requireBemEscrow(svc)
     // 提供者只接受 1..128 字符的 id；本地先挡住，否则拿回来的是一个 id='' 的错误信封，永远验不过签。
     // Providers only accept ids of 1..128 chars: reject locally, or the answer is an id='' error envelope that can
     // never match the request and surfaces as BAD_SIGNATURE instead of the caller's own mistake.
@@ -2376,6 +2406,7 @@ export function createTapeAPI(opts = {}) {
       price = gatePrice(svc, method, methodPrice(def), maxPrice)
       if (price > 0n && !payer) throw new TapeAPIError('PAYMENT_REQUIRED', `${method} now costs ${def.priceBEM} BEM; pass { payer }`)
     }
+    if (price > 0n) await requireBemEscrow(svc)
     const second = await attempt(svc, def, method, params, price, { payer, reqId, signal, timeoutMs, retried: true })
     return second.value
   }
@@ -2920,7 +2951,64 @@ export function createTapeAPI(opts = {}) {
     return self
   }
 
+  // ---- escrow tokens (TAPI-22 §3.5, experimental) / 托管代币 ----
+  // An escrow from an address or a resolved service (its own payment.escrow); undefined: the configured one.
+  function escrowAddressOf(esc) {
+    if (esc && typeof esc === 'object' && esc.manifest) {
+      const to = esc.manifest.payment?.escrow
+      if (!isAddress(to) || /^0x0{40}$/i.test(to)) throw new TapeAPIError('INVALID_ARGUMENT', `${esc.container} names no escrow: it takes no payment`)
+      return to
+    }
+    if (esc === undefined || esc === null) return needEscrow()
+    if (!isAddress(esc)) throw new TapeAPIError('INVALID_ARGUMENT', 'escrow must be an address or a resolved service')
+    return esc
+  }
+  // token() then decimals(), strict agreement, answers (never errors) cached per escrow: the token is immutable and an
+  // admitted token's decimals fixed. No token(), no valid decimals(), or decimals outside 8..18: UNSUPPORTED_PAYMENT_TOKEN,
+  // never a guess of 8; node failures stay as they are. / 绝不猜 8 位；只缓存回答。
+  const paymentTokens = new Map()
+  function paymentTokenOf(esc) {
+    const k = esc.toLowerCase()
+    let p = paymentTokens.get(k)
+    if (!p) {
+      p = readPaymentToken(esc)
+      paymentTokens.set(k, p)
+      p.catch(() => { if (paymentTokens.get(k) === p) paymentTokens.delete(k) })
+    }
+    return p
+  }
+  async function readPaymentToken(esc) {
+    const at = checksumAddress(esc)
+    const unsupported = (reason, message, extra) => new TapeAPIError('UNSUPPORTED_PAYMENT_TOKEN', message, { data: { reason, escrow: at, ...extra } })
+    const word = addressOfWordStrict(await wordStrict(esc, 'token()', 'latest'))
+    if (!word || /^0x0{40}$/.test(word)) throw unsupported('token-unreadable', `escrow ${at} answers no token(): it is not an escrow this SDK knows (one immutable token per instance, TAPI-22 §3.3), so the unit of its amounts is unknown`)
+    const token = checksumAddress(word)
+    const w = await wordStrict(token, 'decimals()', 'latest')
+    const d = w === null ? null : BigInt(w)
+    if (d === null || d > 255n) throw unsupported('decimals-unreadable', `the token ${token} of escrow ${at} answers no valid decimals(): its amounts cannot be read, and this SDK never assumes 8`, { token })
+    if (d < 8n || d > 18n) throw unsupported('decimals-out-of-range', `the token ${token} of escrow ${at} has ${d} decimals; an escrow token has 8 to 18 (TAPI-22 §3.5 item 4)`, { token, decimals: Number(d) })
+    const label = PAYMENT_TOKENS[Number(chainId)]?.[token.toLowerCase()]?.label ?? null
+    return Object.freeze({ escrow: at, token, decimals: Number(d), label, display: label ? `${label} ${token}` : token })
+  }
+
+  async function contributionsAcross(provider, escrows = [...allowedEscrows]) {
+    if (!isAddress(provider)) throw new TapeAPIError('INVALID_ARGUMENT', 'contributions: provider must be an address')
+    if (!Array.isArray(escrows) || !escrows.every(isAddress)) throw new TapeAPIError('INVALID_ARGUMENT', 'contributions: escrows must be an array of escrow addresses')
+    const list = [...new Map(escrows.map((e) => [e.toLowerCase(), checksumAddress(e)])).values()]
+    // one failed read does not hide the others; it is reported with its code / 一个读取失败不掩盖其它，带错误码报告
+    const readings = await Promise.all(list.map(async (esc) => {
+      try { return { escrow: esc, bps: Number(await view(esc, 'contributionOf', [provider])) } }
+      catch (e) { if (e instanceof TapeAPIError && e.code === 'INVALID_ARGUMENT') throw e; return { escrow: esc, bps: null, error: e?.code ?? 'ERROR' } }
+    }))
+    const seen = [...new Set(readings.filter((r) => r.bps !== null).map((r) => r.bps))]
+    const consistent = seen.length <= 1
+    const warning = consistent ? null
+      : `the contribution of ${checksumAddress(provider)} differs across escrow instances: ${readings.filter((r) => r.bps !== null).map((r) => `${r.escrow} ${r.bps} bps`).join(', ')}. Each instance keeps its own setting, and one never set applies the default ${DEFAULT_CONTRIBUTION_BPS} bps; set it on each with tx.setContribution({ escrow }) if that is not what you meant`
+    return { provider: checksumAddress(provider), readings, consistent, warning }
+  }
+
   // ---- tx 构造 / calldata builders ----
+  const WRAP_DEPOSIT_SELECTOR = selector('deposit()')   // WETH9 / WBNB deposit(), 0xd0e30db0
   const hex = (n) => '0x' + BigInt(n).toString(16)
   const needEscrow = () => { if (!isAddress(escrow)) throw new TapeAPIError('INVALID_ARGUMENT', 'escrow address not configured'); return escrow }
   // TAPI-22 §3.4: a service names its escrow in its manifest, and clients MUST use that address. Every channel
@@ -2937,24 +3025,56 @@ export function createTapeAPI(opts = {}) {
     if (!isAddress(target)) throw new TapeAPIError('INVALID_ARGUMENT', 'provider must be an address or a resolved service')
     return { to: needEscrow(), provider: target }
   }
+  // TAPI-22 §3.5, before approve / fund: the escrow must be on AUDITED_ESCROWS or allowEscrows (approve lets it pull
+  // tokens; a hostile manifest can name a contract that reports a real token and keeps the funds), then its token() must
+  // be the token named, and BEM when none is named or the funds are for a manifest's priceBEM (other-token prices are
+  // not yet specified). `bemOnly` (fund): a channel funded in another token is one this SDK cannot use yet, so an escrow
+  // holding anything but BEM is refused whatever token the caller names. / 先查名单，再核对代币；fund 只接受持有 BEM 的托管。
+  async function checkedEscrow(c, target, token, { bemOnly = false } = {}) {
+    if (!allowedEscrows.has(String(c.to).toLowerCase())) {
+      throw new TapeAPIError('INVALID_ARGUMENT', `escrow ${c.to} is not an audited escrow deployment this SDK knows (none is audited yet); to build approve or fund for it anyway, add it with createTapeAPI({ allowEscrows: [...] }), only if you trust it: approve lets an escrow pull your tokens, and a hostile manifest can name a contract that reports a real token but keeps what it is given (TAPI-22 §3.5)`, { data: { reason: 'escrow-not-allowed', escrow: c.to } })
+    }
+    const info = await paymentTokenOf(c.to)
+    const data = { escrow: info.escrow, token: info.token }
+    if (bemOnly && !eqAddr(info.token, MAINNET.bem)) {
+      throw new TapeAPIError('UNSUPPORTED_PAYMENT_TOKEN', `escrow ${info.escrow} holds ${info.display}, and this SDK builds fund only for an escrow that holds BEM, whatever token is named. The escrow contract itself takes any admitted token; the manifest's pricing in more than one token is not yet specified (TAPI-22 §3.5), so this SDK does not build it yet`, { data: { reason: 'not-bem', ...data } })
+    }
+    if (token !== undefined && !eqAddr(info.token, token)) {
+      throw new TapeAPIError('UNSUPPORTED_PAYMENT_TOKEN', `escrow ${info.escrow} holds ${info.display}, not ${checksumAddress(token)} as you named`, { data: { reason: 'token-mismatch', ...data, expected: checksumAddress(token) } })
+    }
+    const forManifest = !!(target && typeof target === 'object' && target.manifest)
+    if ((forManifest || token === undefined) && !eqAddr(info.token, MAINNET.bem)) {
+      throw new TapeAPIError('UNSUPPORTED_PAYMENT_TOKEN', `escrow ${info.escrow} holds ${info.display}, but ${forManifest ? `${target.container}'s manifest prices its methods in BEM (priceBEM)` : 'no token was named, and the default is BEM'}. The escrow contract takes any admitted token; manifest prices in other tokens are not yet specified (TAPI-22 §3.5), so this SDK does not fund it${forManifest ? '' : ' unless you name its token'}`, { data: { reason: 'not-bem', ...data } })
+    }
+    return { ...c, token: info }
+  }
   const onChannel = (target, fn, args) => { const c = channelOf(target); return { to: c.to, data: encodeCall(fn, [c.provider, ...args]), value: '0x0' } }
   const tx = {
     // v2 escrow (TAPI-22 §3.3): fund a channel toward ONE provider; the channel balance is that provider's cap.
     // v2 托管：向**一个**提供者的通道充值；通道余额即该提供者的上限。
-    // The escrow moves BEM with transferFrom, so the FIRST transaction of any paid setup is this approval;
+    // The escrow moves its token with transferFrom, so the FIRST transaction of any paid setup is this approval;
     // without it `fund` reverts inside the token with no useful message (traceability of the funding path).
-    // 托管合约用 transferFrom 划转 BEM，因此任何付费流程的第一笔交易都是这个授权；缺了它 `fund` 会在代币里回滚且没有有用信息。
+    // 托管合约用 transferFrom 划转代币，因此任何付费流程的第一笔交易都是这个授权；缺了它 `fund` 会在代币里回滚且没有有用信息。
     // `amount` is REQUIRED: the spender may be an escrow the provider chose in its manifest (TAPI-22 §3.4), so an
     // unlimited approval would hand a hostile provider the consumer's whole balance (review H-1). Approve what you fund.
     // `amount` 必填：被授权方可能是服务方在清单里选定的托管合约，无限授权等于把消费者全部余额交给恶意服务方。授权多少就充值多少。
-    approve: ({ amount, token = MAINNET.bem, spender } = {}) => {
-      if (!isAddress(token)) throw new TapeAPIError('INVALID_ARGUMENT', 'token must be an address')
+    // Experimental, async: checkedEscrow first; the token approved is the escrow's own token() / 实验性、异步
+    // `fund` (below) is stricter: it is refused for an escrow that holds anything but BEM / `fund` 更严：托管持有 BEM 以外的代币一律拒绝
+    approve: async ({ amount, token, spender } = {}) => {
+      if (token !== undefined && !isAddress(token)) throw new TapeAPIError('INVALID_ARGUMENT', 'token must be an address')
       if (amount === undefined || amount === null) throw new TapeAPIError('INVALID_ARGUMENT', 'approve needs an amount: approve exactly what you will fund, never an unlimited allowance')
       const a = BigInt(amount)
       if (a <= 0n || a >= 2n ** 255n) throw new TapeAPIError('INVALID_ARGUMENT', 'approve amount must be positive and bounded')
-      return { to: token, data: encodeCall('approve', [spender ? channelOf(spender).to : needEscrow(), a]), value: '0x0' }
+      const c = await checkedEscrow(spender ? channelOf(spender) : { to: needEscrow(), provider: null }, spender, token)
+      return { to: c.token.token, data: encodeCall('approve', [c.to, a]), value: '0x0' }
     },
-    fund: (provider, amount) => onChannel(provider, 'fund', [BigInt(amount)]),
+    fund: async (provider, amount, { token } = {}) => {
+      if (token !== undefined && !isAddress(token)) throw new TapeAPIError('INVALID_ARGUMENT', 'token must be an address')
+      const c = channelOf(provider)
+      const n = BigInt(amount)
+      await checkedEscrow(c, provider, token, { bemOnly: true })
+      return { to: c.to, data: encodeCall('fund', [c.provider, n]), value: '0x0' }
+    },
     // requestWithdraw -> 48h cooldown -> withdraw inside a 7d window. `WithdrawRequested` is public: the provider
     // settles inside the cooldown, and while a request is alive the reference provider serves at most
     // channelOf − pendingWithdraw.amount (TAPI-22 §3.2(4)).
@@ -2965,6 +3085,17 @@ export function createTapeAPI(opts = {}) {
     // per channel, extend-only, expires <= now + 30d; there is no revoke / 按通道授权，只可延长，最长 30 天，无撤销
     authorizeSession: (provider, key, expires) => onChannel(provider, 'authorizeSession', [key, BigInt(expires)]),
     settle: (v, svc) => ({ to: svc ? channelOf(svc).to : needEscrow(), data: encodeCall('settle', [v.consumer, v.provider, BigInt(v.cumulative), BigInt(v.expires), v.sig]), value: '0x0' }),
+    // WBNB.deposit() with `value`. `wbnb` is required (the SDK ships no wrapper address); no gas field: the wallet
+    // estimates it (21,000 is too little for a contract call). / 包装原生币；必须传 WBNB 地址；不写死 gas。
+    wrapNative: ({ wbnb, amount } = {}) => {
+      if (!isAddress(wbnb) || eqAddr(wbnb, ZERO_ADDRESS)) throw new TapeAPIError('INVALID_ARGUMENT', 'wrapNative needs `wbnb`, the wrapper contract you have checked: the SDK ships no wrapper address')
+      if (amount === undefined || amount === null) throw new TapeAPIError('INVALID_ARGUMENT', 'wrapNative needs an amount (smallest unit of the native coin)')
+      const n = BigInt(amount)
+      if (n <= 0n || n >= 2n ** 256n) throw new TapeAPIError('INVALID_ARGUMENT', 'wrapNative amount must be positive and fit uint256')
+      return { to: checksumAddress(wbnb), data: WRAP_DEPOSIT_SELECTOR, value: hex(n) }
+    },
+    // Escrow v3: pay the accrued contributions to the current treasury; anyone may send it / 任何人可发送
+    claimTreasury: (esc) => ({ to: checksumAddress(escrowAddressOf(esc)), data: encodeCall('claimTreasury', []), value: '0x0' }),
     // 持有人为自己的服务设置贡献比例（万分比，0..MAX_CONTRIBUTION_BPS）/ holder sets a service's contribution (bps, 0..MAX_CONTRIBUTION_BPS)
     setContribution: ({ circuits, tokenId, bps, escrow: esc }) => {
       const n = Number(bps)

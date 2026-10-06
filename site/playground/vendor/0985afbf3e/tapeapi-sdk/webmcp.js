@@ -24,7 +24,7 @@
 // the demo loads this file unbundled in a browser.
 // 只导入叶子模块（不导入 index.js），index.js 重新导出本文件不会形成循环。没有 node: 导入：演示页不打包直接加载本文件。
 import { TapeAPIError } from './errors.js'
-import { METHOD_NAME_RE, parseUnits, formatUnits, findMethod, methodPrice } from './manifest.js'
+import { METHOD_NAME_RE, parseUnits, formatUnits, findMethod, methodPrice, BEM_DECIMALS } from './manifest.js'
 import { FORBIDDEN_KEYS, safeParseJSON } from './canon.js'
 
 export const DEFAULT_PREFIX = 'tapeapi_'
@@ -176,7 +176,7 @@ const describeReturns = (r) => {
 }
 function describe(m, x, price, { container, dev, trust: trustOverride }) {
   const svcName = typeof m.name === 'string' && m.name ? ` ("${m.name.slice(0, 64)}")` : ''
-  const cost = price === 0n ? 'Free.' : `Costs ${formatUnits(price)} BEM per call, paid from the budget the user set on this page; a price rise is refused, not paid.`
+  const cost = price === 0n ? 'Free.' : `Costs ${formatUnits(price, BEM_DECIMALS)} BEM per call, paid from the budget the user set on this page; a price rise is refused, not paid.`
   const trust = typeof trustOverride === 'string' ? trustOverride : dev
     ? 'DEV MODE: the service identity was NOT checked on chain; the response signature is checked against the manifest signer only.'
     : "The response is signed by the service's on-chain delegated key and verified (TAPI-21) before it is returned."
@@ -192,7 +192,7 @@ function paidPolicy(paid) {
   if (typeof paid !== 'object') throw new TapeAPIError('INVALID_ARGUMENT', 'paid must be an object { maxPriceBEM, budgetBEM, payer, methods? }')
   if (paid.maxPriceBEM == null) throw new TapeAPIError('INVALID_ARGUMENT', 'paid.maxPriceBEM is required: the per-call cap the human agreed to')
   let maxPrice
-  try { maxPrice = parseUnits(String(paid.maxPriceBEM)) } catch { throw new TapeAPIError('INVALID_ARGUMENT', `paid.maxPriceBEM ${paid.maxPriceBEM} is not a BEM decimal`) }
+  try { maxPrice = parseUnits(String(paid.maxPriceBEM), BEM_DECIMALS) } catch { throw new TapeAPIError('INVALID_ARGUMENT', `paid.maxPriceBEM ${paid.maxPriceBEM} is not a BEM decimal`) }
   if (paid.methods != null && !Array.isArray(paid.methods)) throw new TapeAPIError('INVALID_ARGUMENT', 'paid.methods must be an array of method names')
   return { maxPrice, methods: paid.methods ? new Set(paid.methods) : null }
 }
@@ -231,13 +231,13 @@ export function manifestToTools(manifest, opts = {}) {
     try { price = methodPrice(x) } catch { skip(method, 'MANIFEST_INVALID', `priceBEM ${x.priceBEM} is not a BEM decimal`); continue }
     const was = accepted?.[method]
     if (was !== undefined && price > BigInt(was)) {
-      skip(method, 'PRICE_CHANGED', `price rose to ${formatUnits(price)} BEM from the accepted ${formatUnits(BigInt(was))} BEM; call api.acceptPrice(svc, "${method}") and refresh`)
+      skip(method, 'PRICE_CHANGED', `price rose to ${formatUnits(price, BEM_DECIMALS)} BEM from the accepted ${formatUnits(BigInt(was), BEM_DECIMALS)} BEM; call api.acceptPrice(svc, "${method}") and refresh`)
       continue
     }
     if (price > 0n) {
-      if (!policy) { skip(method, 'PAYMENT_REQUIRED', `priced at ${formatUnits(price)} BEM; priced methods are exposed only with opts.paid`); continue }
+      if (!policy) { skip(method, 'PAYMENT_REQUIRED', `priced at ${formatUnits(price, BEM_DECIMALS)} BEM; priced methods are exposed only with opts.paid`); continue }
       if (policy.methods && !policy.methods.has(method)) { skip(method, 'PAYMENT_REQUIRED', 'priced and not listed in paid.methods'); continue }
-      if (price > policy.maxPrice) { skip(method, 'PRICE_CHANGED', `priced at ${formatUnits(price)} BEM, above paid.maxPriceBEM ${formatUnits(policy.maxPrice)}`); continue }
+      if (price > policy.maxPrice) { skip(method, 'PRICE_CHANGED', `priced at ${formatUnits(price, BEM_DECIMALS)} BEM, above paid.maxPriceBEM ${formatUnits(policy.maxPrice, BEM_DECIMALS)}`); continue }
     }
     let inputSchema
     try { inputSchema = paramsToSchema(x.params).schema } catch (e) { skip(method, 'MANIFEST_INVALID', e.message); continue }
@@ -252,7 +252,7 @@ export function manifestToTools(manifest, opts = {}) {
       // untrustedContentHint: verified origin is not trusted content. consequentialHint: it spends money.
       // 来源已验证不等于内容可信；收费调用会花钱。
       annotations: { untrustedContentHint: true, consequentialHint: price > 0n },
-      priceBEM: formatUnits(price), price: price.toString(), paid: price > 0n,
+      priceBEM: formatUnits(price, BEM_DECIMALS), price: price.toString(), paid: price > 0n,
     })
   }
   return { tools, skipped }
@@ -317,7 +317,7 @@ export async function exposeTapeAPI(api, target, opts = {}) {
     const p = opts.paid
     if (!p.payer || typeof p.payer.reserve !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'paid.payer is required (api.payer({...}))')
     if (p.budgetBEM == null) throw new TapeAPIError('INVALID_ARGUMENT', 'paid.budgetBEM is required: the total this page lets the agent spend')
-    try { budget = parseUnits(String(p.budgetBEM)) } catch { throw new TapeAPIError('INVALID_ARGUMENT', `paid.budgetBEM ${p.budgetBEM} is not a BEM decimal`) }
+    try { budget = parseUnits(String(p.budgetBEM), BEM_DECIMALS) } catch { throw new TapeAPIError('INVALID_ARGUMENT', `paid.budgetBEM ${p.budgetBEM} is not a BEM decimal`) }
     if (p.confirm != null && typeof p.confirm !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'paid.confirm must be a function')
   }
   const format = opts.format === 'object' ? 'object' : 'mcp'
@@ -329,7 +329,7 @@ export async function exposeTapeAPI(api, target, opts = {}) {
   let spent = 0n, inflight = 0n   // base units: settled-or-possibly-billed, and reserved by calls in flight / 已花（含可能计费）与在途预留
   const handle = Object.assign(() => handle.dispose(), {
     supported: false, reason: null, service: null, tools: [], skipped: [],
-    spentBEM: () => formatUnits(spent + inflight),
+    spentBEM: () => formatUnits(spent + inflight, BEM_DECIMALS),
     refresh: async () => { throw new TapeAPIError('INVALID_ARGUMENT', 'nothing exposed: see handle.reason') },
     dispose: () => { disposed = true },
   })
@@ -369,7 +369,7 @@ export async function exposeTapeAPI(api, target, opts = {}) {
     const price = methodPrice(cur)
     const consented = BigInt(def.price)
     // Never pay more than the tool said it costs, whatever the SDK's own record. / 绝不付得比工具声明的更多。
-    if (price > consented) throw new TapeAPIError('PRICE_CHANGED', `${def.method} now costs ${formatUnits(price)} BEM, up from the ${formatUnits(consented)} BEM this tool was exposed at`, { data: { method: def.method, accepted: consented.toString(), price: price.toString() } })
+    if (price > consented) throw new TapeAPIError('PRICE_CHANGED', `${def.method} now costs ${formatUnits(price, BEM_DECIMALS)} BEM, up from the ${formatUnits(consented, BEM_DECIMALS)} BEM this tool was exposed at`, { data: { method: def.method, accepted: consented.toString(), price: price.toString() } })
     // A method that appeared in a refresh has no SDK consent record, and the SDK accepts ANY first price for such a
     // method. Record the price this tool was exposed at, so a rise in between is PRICE_CHANGED there too.
     // 刷新后新增的方法在 SDK 里没有同意记录，SDK 会接受它的任意首次价格。先记下本工具暴露时的价格，期间涨价同样被拒。
@@ -380,12 +380,12 @@ export async function exposeTapeAPI(api, target, opts = {}) {
       if (!policy) throw new TapeAPIError('PAYMENT_REQUIRED', 'priced calls are not enabled on this page')
       if (consented > policy.maxPrice) throw new TapeAPIError('PRICE_CHANGED', `${def.method} costs more than paid.maxPriceBEM`, { data: { method: def.method, accepted: policy.maxPrice.toString(), price: consented.toString() } })
       if (spent + inflight + consented > budget) {
-        throw new TapeAPIError('BUDGET_EXCEEDED', `budget ${formatUnits(budget)} BEM: ${formatUnits(spent + inflight)} spent or in flight, ${def.method} needs ${formatUnits(consented)}`, { data: { budget: budget.toString(), spent: (spent + inflight).toString(), price: consented.toString() } })
+        throw new TapeAPIError('BUDGET_EXCEEDED', `budget ${formatUnits(budget, BEM_DECIMALS)} BEM: ${formatUnits(spent + inflight, BEM_DECIMALS)} spent or in flight, ${def.method} needs ${formatUnits(consented, BEM_DECIMALS)}`, { data: { budget: budget.toString(), spent: (spent + inflight).toString(), price: consented.toString() } })
       }
       reserved = consented; inflight += reserved       // reserve before any await / 在任何 await 之前预留
       try {
-        if (opts.paid.confirm && !(await opts.paid.confirm({ tool: def.name, method: def.method, priceBEM: formatUnits(consented), params }))) {
-          throw new TapeAPIError('USER_DECLINED', `the user declined to pay ${formatUnits(consented)} BEM for ${def.method}`)
+        if (opts.paid.confirm && !(await opts.paid.confirm({ tool: def.name, method: def.method, priceBEM: formatUnits(consented, BEM_DECIMALS), params }))) {
+          throw new TapeAPIError('USER_DECLINED', `the user declined to pay ${formatUnits(consented, BEM_DECIMALS)} BEM for ${def.method}`)
         }
       } catch (e) { inflight -= reserved; throw e }
       callOpts.payer = opts.paid.payer
@@ -399,7 +399,7 @@ export async function exposeTapeAPI(api, target, opts = {}) {
         result: r.result, verified: r.verified === true, method: def.method,
         container: svc.container, signer: svc.manifest.signer, holder: svc.verified?.holder ?? null,
         identity: svc.verified?.dev ? 'dev: NOT checked on chain' : 'on-chain: container derived, holder delegation verified (TAPI-20)',
-        priceBEM: formatUnits(reserved), ts: r.ts, block: r.block ?? null, id: r.id, sig: r.sig,
+        priceBEM: formatUnits(reserved, BEM_DECIMALS), ts: r.ts, block: r.block ?? null, id: r.id, sig: r.sig,
       }
     } catch (e) {
       if (reserved) { inflight -= reserved; if (!(e?.signed === true || NOT_BILLED.has(e?.code))) spent += reserved }

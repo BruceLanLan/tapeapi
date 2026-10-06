@@ -7,7 +7,7 @@ import { toHex, utf8ToBytes, eqAddr } from '../src/abi.js'
 import { privateKeyToAddress, signDigest, delegationDigest, signResponse, voucherDigest } from '../src/sig.js'
 import * as sig from '../src/sig.js'
 import { createProvider } from '../../server/src/index.js'
-import { createFakeChain, ADDR, ZERO_HASH } from './helpers/fake-chain.mjs'
+import { createFakeChain, ADDR, ZERO_HASH, BEM as MAINNET_BEM } from './helpers/fake-chain.mjs'
 
 const HOLDER_KEY = '0x' + '11'.repeat(32), SIGNER_KEY = '0x' + '22'.repeat(32), CONSUMER_KEY = '0x' + '33'.repeat(32), SESSION_KEY = '0x' + '44'.repeat(32)
 const holder = privateKeyToAddress(HOLDER_KEY), signer = privateKeyToAddress(SIGNER_KEY), consumer = privateKeyToAddress(CONSUMER_KEY), sessionAddr = privateKeyToAddress(SESSION_KEY)
@@ -84,6 +84,29 @@ test('resolve: contribution is 0 for an escrow without contributionOf (v0.1 / al
   assert.equal(svc.contribution, 0)
   // and the escrow-specific read goes to the manifest's escrow, not the SDK default / 读取的是清单里的托管地址
   assert.ok(c2.state.calls.some(c => c.name === 'contributionOf' && c.to.toLowerCase() === legacy))
+})
+test('escrow v3: a priced call refuses an escrow that does not hold BEM: priceBEM would be signed as another token', async () => {
+  // The same number on an 18-decimal USDT escrow is 10^10 times less, on a 6-decimal token 100 times more.
+  // 同一个数在 18 位的 USDT 托管上少 10^10 倍，在 6 位代币上多 100 倍。
+  const USDT = '0x55d398326f99059fF775485246999027B3197955', esc = '0x' + 'e8'.repeat(20)
+  const c2 = createFakeChain(); c2.setOwner(4246, holder); c2.setAccount(4246, ADDR.container); c2.register({ label: 'reader', container: ADDR.container, tokenId: 4246 })
+  c2.setEscrowToken(esc, USDT); c2.setDecimals(USDT, 18)
+  const m = buildManifest(); m.payment.escrow = esc; m.endpoints.live = manifest.endpoints.live
+  c2.writeFile(ADDR.container, '/.well-known/tapeapi.json', JSON.stringify(m))
+  let sent = 0
+  const api2 = createTapeAPI({ ...BASE, fetch: c2.fetchWith(async (url, init) => { sent++; return fetch(url, init) }) })
+  const svc = await api2.resolve('reader')
+  let signed = 0
+  const payer = api2.payer({ consumer, signTypedData: async (td) => { signed++; return signDigest(voucherDigest(56, td.domain.verifyingContract, td.message), CONSUMER_KEY) } })
+  await assert.rejects(api2.call(svc, 'circuitHolder', P, { payer }), (e) => e.code === 'UNSUPPORTED_PAYMENT_TOKEN' && e.data.reason === 'not-bem' && e.data.token === USDT && /USDT \(Binance-Peg\)/.test(e.message))
+  assert.equal(signed, 0, 'no voucher signed'); assert.equal(sent, 0, 'nothing sent to the provider')
+  // a free method of the same service still works: the check is for money only / 同一服务的免费方法照常：只有涉及钱才检查
+  assert.equal((await api2.call(svc, 'blockNumber', {})).ok ?? true, true)
+  // an escrow without token() (not v3): refused the same way, never a guess / 没有 token() 的托管：同样拒绝，不猜
+  c2.setEscrowToken(esc, null)
+  const api3 = createTapeAPI({ ...BASE, fetch: c2.fetchWith() })
+  await assert.rejects(api3.call(await api3.resolve('reader'), 'circuitHolder', P, { payer }), (e) => e.code === 'UNSUPPORTED_PAYMENT_TOKEN' && e.data.reason === 'token-unreadable')
+  assert.equal(signed, 0)
 })
 test('resolve rejects a delegation signed by a non-holder', async () => {
   const bad = buildManifest()
@@ -393,8 +416,12 @@ test('an over-long or empty id is the caller`s mistake, refused before the reque
 })
 test('tx builders produce calldata for escrow and directory', async () => {
   const { abi } = await import('../src/index.js')
-  assert.equal(api.tx.fund(ADDR.container, 5n).data, abi.encodeCall('fund', [ADDR.container, 5n]))
-  assert.equal(api.tx.fund(ADDR.container, 5n).to, ADDR.escrow)
+  // approve / fund (async since escrow v3) are built only for an escrow on the audited list or allowEscrows
+  // approve / fund（托管 v3 起为异步）只为已审计名单或 allowEscrows 里的托管构造
+  const payApi = client({ allowEscrows: [ADDR.escrow] })
+  assert.equal((await payApi.tx.fund(ADDR.container, 5n)).data, abi.encodeCall('fund', [ADDR.container, 5n]))
+  assert.equal((await payApi.tx.fund(ADDR.container, 5n)).to, ADDR.escrow)
+  await assert.rejects(api.tx.fund(ADDR.container, 5n), (e) => e.code === 'INVALID_ARGUMENT' && e.data.reason === 'escrow-not-allowed')
   assert.equal(api.tx.requestWithdraw(ADDR.container, 7n).data, abi.encodeCall('requestWithdraw', [ADDR.container, 7n]))
   assert.equal(api.tx.withdraw(ADDR.container).data, abi.encodeCall('withdraw', [ADDR.container]))
   const auth = api.tx.authorizeSession(ADDR.container, sessionAddr, 1900000000)
@@ -648,18 +675,20 @@ test('TAPI-20 §3.6 step 3 (g): manifest.container must equal hub.accountOf(mani
   await assert.rejects(createTapeAPI({ ...NO_DIR, fetch: c3.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /does not match resolved container/.test(e.message))
 })
 
-test('TAPI-22 §3.4 (D15): tx builders given a resolved service use ITS escrow, not the configured one', () => {
+test('TAPI-22 §3.4 (D15): tx builders given a resolved service use ITS escrow, not the configured one', async () => {
   const other = '0x' + 'e5'.repeat(20)
+  chain.setEscrowToken(other, MAINNET_BEM)   // a v3 escrow holding BEM / 持有 BEM 的 v3 托管
+  const payApi = client({ allowEscrows: [ADDR.escrow, other] })
   const svc = { container: ADDR.container, manifest: { container: ADDR.container, payment: { escrow: other, unit: 'BEM', decimals: 8 } } }
-  for (const t of [api.tx.fund(svc, 5n), api.tx.requestWithdraw(svc, 5n), api.tx.cancelWithdraw(svc), api.tx.withdraw(svc), api.tx.authorizeSession(svc, ADDR.container, 1900000000)]) {
+  for (const t of [await payApi.tx.fund(svc, 5n), api.tx.requestWithdraw(svc, 5n), api.tx.cancelWithdraw(svc), api.tx.withdraw(svc), api.tx.authorizeSession(svc, ADDR.container, 1900000000)]) {
     assert.equal(t.to, other)
     assert.ok(t.data.toLowerCase().includes(ADDR.container.slice(2).toLowerCase()), 'the provider argument is the service container')
   }
   // a bare address still means the configured escrow / 直接给地址仍用配置的托管
-  assert.equal(api.tx.fund(ADDR.container, 5n).to.toLowerCase(), ADDR.escrow.toLowerCase())
+  assert.equal((await payApi.tx.fund(ADDR.container, 5n)).to.toLowerCase(), ADDR.escrow.toLowerCase())
   // a free service has no escrow to fund / 免费服务没有可充值的托管
   const free = { container: ADDR.container, manifest: { container: ADDR.container, payment: { escrow: null } } }
-  assert.throws(() => api.tx.fund(free, 1n), (e) => e.code === 'INVALID_ARGUMENT' && /takes no payment/.test(e.message))
+  await assert.rejects(payApi.tx.fund(free, 1n), (e) => e.code === 'INVALID_ARGUMENT' && /takes no payment/.test(e.message))
   assert.throws(() => api.chain.escrow.channelOf(ADDR.container, free), (e) => e.code === 'INVALID_ARGUMENT' && /takes no payment/.test(e.message), 'reads say the same')
 })
 
@@ -702,15 +731,16 @@ test('an async-only service says so instead of crashing inside the request loop'
   await assert.rejects(api2.call(svc, 'blockNumber', {}), (e) => e.code === 'PROVIDER_UNAVAILABLE' && /no live endpoint/.test(e.message))
 })
 
-test('the funding path starts with the approval the escrow needs', () => {
-  const tx = api.tx.approve({ amount: parseUnits('10') })
-  assert.equal(tx.to.toLowerCase(), '0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a', 'BEM by default')
+test('the funding path starts with the approval the escrow needs', async () => {
+  const payApi = client({ allowEscrows: [ADDR.escrow] })
+  const tx = await payApi.tx.approve({ amount: parseUnits('10', 8) })
+  assert.equal(tx.to.toLowerCase(), '0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a', 'the escrow\'s own token() (BEM here), read from the chain')
   assert.ok(tx.data.startsWith('0x095ea7b3'), 'approve(address,uint256)')
   assert.ok(tx.data.toLowerCase().includes(ADDR.escrow.slice(2).toLowerCase()), 'the configured escrow is the spender')
   // never an unlimited allowance: the spender may be an escrow the provider chose (review H-1)
   // 绝不无限授权：被授权方可能是服务方选定的托管合约
-  assert.throws(() => api.tx.approve(), /needs an amount/)
-  assert.throws(() => api.tx.approve({ amount: 2n ** 256n - 1n }), /bounded/)
+  await assert.rejects(payApi.tx.approve(), /needs an amount/)
+  await assert.rejects(payApi.tx.approve({ amount: 2n ** 256n - 1n }), /bounded/)
 })
 
 test('resolve by TapeOut name: <#ID>.<processor>.tape goes through factory.cpuAt, and a missing processor is NOT_FOUND', async () => {

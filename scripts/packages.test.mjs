@@ -73,7 +73,11 @@ for (const [dir, pkg] of Object.entries(PKGS)) {
     // is about 300 KB, and a browser loads only the modules it imports. Raised from 1 MiB in 1.2.1 (security, doctor and
     // group format 2 took the SDK to about 1.06 MB). / 防止误打包的护栏（文件清单已在上面逐项检查），不是性能预算：tgz 约
     // 300 KB，浏览器只加载它引用的模块。1.2.1 由 1 MiB 提到 1.5 MiB（安全加固、诊断与群聊格式 2 使 SDK 约 1.06 MB）。
-    assert.ok(info.unpackedSize < 1.5 * 1024 * 1024, `unpacked size ${info.unpackedSize} under 1.5 MiB`)
+    // Raised again from 1.5 MiB to 1.75 MiB (1,835,008 bytes): 1.7 / 1.8 added the agent subpath and the escrow token
+    // reads, and the unpacked size was at 1,570,928 of 1,572,864, about 1.9 KB short of the old limit. Comments and
+    // features stay; the limit moves. / 再由 1.5 MiB 提到 1.75 MiB（1,835,008 字节）：1.7 / 1.8 增加了 agent 子路径与托管代币读取，
+    // 解包后 1,570,928 字节，离原上限 1,572,864 只剩约 1.9 KB。注释与功能保留，调整的是上限。
+    assert.ok(info.unpackedSize < 1.75 * 1024 * 1024, `unpacked size ${info.unpackedSize} under 1.75 MiB`)
   })
 
   // 1.6 release integrity: the packed list IS the package.json `files` whitelist (plus package.json), no more and no

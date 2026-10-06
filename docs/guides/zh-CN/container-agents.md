@@ -126,6 +126,20 @@ hub 地址见[简介](introduction.md#链上地址)），假链也有自己固�
 按[调用服务](consume.md)里的方法安装 SDK；代理相关的函数都从子路径 `@tapeapi/sdk/agent` 引入。每项核验都要读链，所以
 客户端至少要配置两家独立运营方的节点（决定性的读取在严格共识下进行）；只有一个节点的客户端会被拒绝。
 
+1.8 起，一次核验（`verifyMandate`、`verifyTaskThread`、`verifyEvidence`、`readRevocations`、`identityOf`）的全部读取都在同
+一个钉块上进行，钉块按 TAP-10 §5.3 选取（第二高的运营方头块减 2）：委托方的身份与持有人、合约持有人的 EIP-1271 回答、站点存储与
+付费合约的实现，以及撤销清单。节点落后太多（`stale-block`）或节点在别的链上（`wrong-chain`）时核验直接抛错，绝不报成某条消息的
+问题。委托方按 TAP-10 §4.3 解析：`token()`、工厂的 `isCPU`、处理器号、容器开通器的 `accountOf`，最后用 `ownerOf` 读持有人。
+
+代理与上游服务由客户端的 `resolve`（或 kit 的 `resolve` 选项）解析。草稿 TAP 要求按 TAP-11 §2 解析，这正是
+`createTapeAPI({ conform: 'tap10' })` 的做法（每次解析一个钉块，`ownerOf` 与 EIP-1271 用严格共识）；默认客户端按 TapeAPI 1.x
+的方式解析。要让核验方遵循草稿，就给 kit 一个一致模式的客户端来做解析：
+
+```js
+const strict = createTapeAPI({ rpcUrls, quorum: 2, conform: 'tap10' })
+const kit = createAgentKit(api, { resolve: (container) => strict.resolve(container) })
+```
+
 ### 签一份授权书
 
 持有人在钱包里签名。你的控制台负责构造载荷、显示钱包显示不了的内容，交给钱包的只有载荷本身：
@@ -207,7 +221,8 @@ for (const p of check.problems) console.log(p.code, plainText(p.message))
 后面跟着一串问题，第一条是 `task-hash-mismatch messages[0]: the task text does not hash to offer.taskHash`。（在示例的
 假链上，kit 还要拿到这个世界固定的时钟：`createAgentKit(api, { clock })`。）
 
-结果里还有双方的身份（`principal`、`agent`：容器地址、链上给它的名字或 `null`、持有人）、每次交付及其证据核验、验收和
+结果里还有双方的身份（`principal`、`agent`：容器地址、从链上处理器表读出的链上名（1.8 起总能找到；1.7 对 SDK 快照之外的
+处理器给 `null`）、持有人）、每次交付及其证据核验、验收和
 撤销情况。代理清单里写的名字只会出现在 `agent.displayName` 里，并标着 `untrusted: true`。对方写的任何文字，都请用
 `plainText` 显示，它会去掉不可见字符和控制字符。
 
@@ -221,6 +236,25 @@ kit 能不能察觉跨时间的问题，取决于两个存储。`nonces`（一�
 const v = await kit.verifyMandate(mandateMessage, { agentKey, agent: myContainer })
 if (!v.ok) throw new Error(v.problems.map((p) => p.code).join(', '))
 ```
+
+### 核验方当作格式错误拒绝的内容
+
+消息按草稿 TAP 的 JSON 形式（§3.7）读取，绝不宽松读取（1.8 起；没有任何哈希改变）。不符合的消息，授权书报
+`mandate-malformed`，其它消息报 `message-malformed`：
+
+- `bytes32`（任务哈希、授权书哈希、理由哈希）是 `0x` 加 64 位**小写**十六进制；
+- `uint256`（`nonce`、`fee`、`feeCap`、scope 的 `cap`）是不带前导零的十进制**字符串**：消息里收到 JSON 数字或 bigint 一律拒绝；
+- 时间是 0 到 2^53 − 1 的整数 Unix 秒，所以 `ts` 或 `result.exp` 为负的代理消息被拒绝；代理消息的回执还要有 TAP-13 的方法名、
+  `params`（出现时须是对象）、1 到 128 个码元的 `id` 和 65 字节的 `sig`；
+- 每个成员都必须出现：没有 `reasonHash` 的判决被拒绝（没有理由时写 32 个零字节）；
+- 交付证据里只含哈希的回执，`ok` 必须是 JSON 布尔值（字符串 `"true"` 或缺少 `ok` 报 `receipt-not-hash-only`，绝不当作
+  `false`），两个哈希为 `bytes32` 形式，`ts` 为时间形式，`id` 为 1 到 128 个码元（TAP-13 §8 规则 1 的空 `id` 只在 `ok` 为
+  `false` 时允许）。
+
+构造函数不变：`mandateTypedData`、`taskOfferTypedData`、哈希函数与 `sign*` 函数仍接受数字或 bigint 作 `uint256` 并写成十进制
+字符串，仍把缺失的 `reasonHash` 当作 0；`bytes32` 只接受小写（或 32 字节的 `Uint8Array`）。`agentMessageProblem(receipt, kind, agent)`
+与 `hashOnlyReceiptProblem(receipt)` 不读链地检查两种回执的形式。这些用例都写成了向量：`spec/vectors/container-agent.json` 的
+`inputForms` 成员。
 
 ### 核验一笔付款
 
@@ -252,8 +286,14 @@ recipient container: 0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6, circuit 0x50505
   拒绝（`no-such-token`）：hub 对任何 #ID 都能推导出地址，转给未铸造的 #ID 的钱，谁也取不出来。
 - 只构造 `transfer`，从不构造 `approve`。`decimals()` 从链上读。`nativeToContainer` 转原生币，而且只允许从持有人钱包
   直接转到容器。
-- `viaContainer({ from, tx })` 把 ERC-20 转账包进付款方容器的 `execute`，只接受 `transferToContainer` 原样返回、没被改过
-  的那个对象。
+- `viaContainer({ from, tx, value })` 把 ERC-20 转账包进付款方容器的 `execute`，只接受 `transferToContainer` 原样返回、
+  没被改过的那个对象。内层 value 永远是 0（原生币从不经容器发送）。可选的 `value` 是这笔交易的**外层** value：容器的
+  `execute` 可能要求的 TapeOut 费，以本链原生币支付。撰写时在 BNB Smart Chain 主网的只读实测里，对 TapeOut 容器
+  `execute` 的每次调用都必须附带 0.0002 BNB，这笔钱归 TapeOut（多付的部分退回给发送者），不会转给收款人；少付会以
+  `0xafd49700(paid, required)` 回滚。这笔费用没有公开的 getter，SDK 既不读取、也不写死：请模拟这笔交易（`eth_call` 或
+  钱包的模拟功能），从 revert 数据里读出金额，再作为 `value` 传入，用最小单位的整数（`'200000000000000'` 即 0.0002
+  BNB）。这只是某一时刻已部署合约的事实，不是任何规范的内容，以后可能改变。不传 `value` 时交易的 value 仍是 0，摘要的
+  最后一行会明说：不带费用的调用可能回滚。1.7.0 与 1.7.1 没有 `value` 选项，它们的 `viaContainer` 交易在 BSC 主网上会回滚。
 - 转账之后，给代理发一条 TapeSend 消息，把这笔转账作为资产附件带上（`encodeContent`），而且要第一个发：只有在这之间你
   没有别的消息到达这个收件人、并且消息在 3,600 秒内跟上，这笔付款才算数。`paymentOrder()` 在你的客户端里盯着这件事
   （记录转账、检查下一条消息带上了它；转账被回滚、取消或加速时用 `dropTransfer` 或 `replaceTransfer`）。
@@ -283,7 +323,7 @@ tapeapi-verify task thread.json --payment <代理容器> <收件箱序号>
 tapeapi-verify task thread.json --rpc https://node-a.example,https://node-b.example
 ```
 
-不想安装，可以用 `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.7.1/tapeapi-sdk-1.7.1.tgz tapeapi-verify task thread.json`；
+不想安装，可以用 `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz tapeapi-verify task thread.json`；
 在仓库里则是 `node sdk/bin/tapeapi-verify.js task thread.json`。
 
 - `--payment <收款容器> <序号>` 另外核验该收件箱里那个序号的 TapeSend 消息。收款容器必须是线程里的代理，发件方必须是
@@ -300,8 +340,8 @@ state:       Settled
 result:      ok
 enforcement: none (phase 0: a mandate is a signed statement; nothing enforces it)
 self-hire:   no
-principal:   0x86DDaEF00401E3F10418398D67D7189fc458eA95  name (none on the chain's processor table)  holder 0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A
-agent:       0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6  name (none on the chain's processor table)  signer 0x1563915e194D8CfBA1943570603F7606A3115508
+principal:   0x86DDaEF00401E3F10418398D67D7189fc458eA95  name 11.7.tape  holder 0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A
+agent:       0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6  name 12.7.tape  signer 0x1563915e194D8CfBA1943570603F7606A3115508
              manifest name (untrusted: the agent wrote it, it is not an identity): "Report agent"
 ...
 verdict:     accepted at 1791000000 (verdictHash 0x69bb45f4…df05c3)
@@ -370,7 +410,7 @@ const putFile = {                                    // 交给持有人的钱包
 
 清单是这样读的：
 
-- 读法和清单文件一样：从该链上第一个有该容器文件的站点存储读取（本版每条链只有一个站点存储），而且只在站点存储与付费合约运行的是 TAP-10 接受的代码时
+- 读法和清单文件一样，在本次核验的钉块上（也就是读持有人的那一块）：从该链上第一个有该容器文件的站点存储读取（本版每条链只有一个站点存储），而且只在站点存储与付费合约运行的是 TAP-10 接受的代码时
   才读；`chunkCount` 为 0 即没有文件；字节必须与链上声明的长度和 SHA-256 一致，不能以字节顺序标记（BOM）开头，当前持有人
   的签名必须成立。`issued` 最多只能比核验方的时钟超前 300 秒。链或站点存储没有这样一份接受实现列表时，`createAgentKit`
   在创建时就拒绝（`INVALID_ARGUMENT`）。
@@ -395,11 +435,11 @@ const putFile = {                                    // 交给持有人的钱包
 | `not-signed-by-holder` | 持有人消息 | 不是委托方电路的当前持有人签的。 |
 | `nonce-reused` | 授权书 | 本 kit 的 nonce 存储里，同一条链、同一委托方、同一 nonce 已经对应了另一张授权书。 |
 | `mandate-revoked`、`revocation-unavailable` | 授权书 | 已撤销（由 `verifyMandate` 报告，线程里不报）；或者委托方的撤销清单靠不住。 |
-| `not-a-container`、`wrong-chain`、`not-tapeout`、`no-such-token` | 身份 | 该地址不是本链上 #ID 存在的 TapeOut 容器。 |
+| `not-tapeout`、`no-such-token` | 身份 | TAP-10 §4.3：该地址不是本链的 TapeOut 电路容器（`token()` 失败或指向别的链、处理器不是工厂的、开通器推导出别的地址），或者它的处理器没有这个 #ID 的电路。（1.7 对其中一些情形报 `not-a-container` 与 `wrong-chain`。） |
 | `mandate-mismatch` | 线程 | 授权书的委托方、任务、mode 或 nonce 与报价不同，或者交付指向了别的授权书。 |
 | `task-hash-mismatch`、`offer-mismatch`、`offer-expired` | 线程 | 任务原文不对、accept 指向的报价不对，或者在报价的 `exp` 之后才接单。 |
-| `out-of-order`、`message-malformed`、`kind-unknown`、`kind-not-implemented`、`thread-empty` | 线程 | 消息位置不对、形状不对，或者是这一版没有实现的类型。 |
-| `not-signed-by-agent`、`agent-unresolvable` | 线程 | 代理消息不是它公布的签名者签的，或者代理解析不出来。 |
+| `out-of-order`、`message-malformed`、`kind-unknown`、`kind-not-implemented`、`thread-empty` | 线程 | 消息位置不对、形状不对（见"核验方当作格式错误拒绝的内容"），或者是这一版没有实现的类型。 |
+| `not-signed-by-agent`、`agent-unresolvable` | 线程 | 代理消息不是它公布的签名者签的，或者代理解析不出来（TAP-11 §2.3：`not-opened`、`unpaid` 等站点状态、没有清单、清单或委托无效；链或节点的结果则直接抛错）。 |
 | `deliver-after-deadline`、`deliver-outside-mandate`、`deliver-before-accept`、`message-after-revocation` | 线程 | 交付或代理消息的时间不对。第一条只报告，交付照样记录。 |
 | `verdict-mismatch`、`verdict-before-delivery`、`revocation-mismatch` | 线程 | 验收指向的是别的交付或早于交付，或者撤销没有覆盖这个线程。 |
 | `receipt-not-hash-only`、`receipt-repeated`、`receipt-provider-out-of-scope`、`receipt-outside-mandate`、`receipt-invalid`、`receipts-hash-mismatch`、`provider-unresolvable`、`evidence-malformed` | 证据 | 回执不是只含哈希的形态、重复、来自授权范围外的服务、不在有效期内、签名不对，或者整包与其哈希对不上。 |
@@ -411,6 +451,7 @@ const putFile = {                                    // 交给持有人的钱包
 | `AGENT_INVALID` | `mandateTypedData` 或 `signMandate` 拒绝写了金额、资产或转委托的授权书（`data.reason` 为 `phase0-no-funds` 或 `subdelegate-not-allowed`）；`forWallet` 拒绝载荷；任务原文与哈希对不上；字段形状不对；交给 `identityOf` 的地址不是容器（`data.reason` 为对应的问题码）。 |
 | `INVALID_ARGUMENT` | 核验需要至少两家运营方的节点而客户端不够，或者没有 `rpcUrls`；`nonces` 既不是 `Map` 也不是 `setIfAbsent` 存储；付款构造被拒（`data.reason` 为 `recipient-not-from-chain`、`no-such-token`、`not-tapeout`、`only-transfer`、`native-via-container-unverifiable`）；`revocationFileBytes` 收到超过 4,096 字节的清单或形状不对的签名。 |
 | `NOT_FOUND` | `readMessage` 收到一个不存在的收件箱序号。 |
+| `RPC_STALE`、`RPC_UNAVAILABLE`、`RPC_DISAGREE`，以及 `data.status` 为 `wrong-chain` 的 `INVALID_ARGUMENT` | 核验读不了链：钉块落后太多（`data.status` 为 `stale-block`）、节点失败或不一致、在扫描额度内没找到处理器号（每个待查处理器、每次核验至多 256 次 `cpuAt` 读取；`unavailable`，下一次核验接着扫），或者节点在别的链上。 |
 
 ## 限制
 

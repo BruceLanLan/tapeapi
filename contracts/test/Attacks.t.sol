@@ -599,17 +599,19 @@ contract EscrowAttacksTest is Test {
         escrow.fund(consumer, CHANNEL);
         escrow.settle(consumer, consumer, CHANNEL, expires, selfVoucher);
         // The consumer's own address is no circuit's container, so nobody can set its contribution: the TAPI-22 §3.4
-        // default (1%) goes to the treasury and the rest comes back. / 消费者自己的地址不是任何电路的容器，没人能为它
-        // 设贡献比例：默认 1% 进金库，其余原路返回。
+        // default (1%) is accrued to the treasury (v3 pull) and the rest comes back. / 消费者自己的地址不是任何电路的
+        // 容器，没人能为它设贡献比例：默认 1% 记入金库应收额（v3 拉取式），其余原路返回。
         uint256 dflt = CHANNEL * escrow.DEFAULT_CONTRIBUTION_BPS() / 10_000;
         assertEq(bem.balanceOf(consumer), wallet - dflt, "self-settlement is a round trip of the consumer's own money, less the default contribution");
-        assertEq(bem.balanceOf(treasury), dflt, "the default contribution is the only thing that leaves");
+        assertEq(escrow.treasuryAccrued(), dflt, "the default contribution is the only thing that leaves the channel");
         assertEq(escrow.channelOf(consumer, provider), CHANNEL, "still untouched");
 
         // The honest provider is paid in full. / 诚实 provider 足额收款。
         escrow.settle(consumer, provider, CHANNEL, expires, honest);
         assertEq(bem.balanceOf(provider), CHANNEL, "honest provider must be paid in full");
-        assertEq(bem.balanceOf(address(escrow)), 0, "solvency identity holds: every channel is now empty");
+        assertEq(bem.balanceOf(address(escrow)), escrow.treasuryAccrued(), "solvency: every channel is empty, only the accrual is left");
+        escrow.claimTreasury();
+        assertEq(bem.balanceOf(address(escrow)), 0);
     }
 
     // ------------------------------------------------------------------------------------
@@ -815,7 +817,7 @@ contract EscrowAttacksTest is Test {
         vm.warp(expires);                                              // E-09: the last valid second / 最后一秒仍有效
         escrow.settle(consumer, provider, 1, expires, one);
         assertEq(bem.balanceOf(provider), 1, "provider always receives > 0 when pay > 0");
-        assertEq(bem.balanceOf(treasury), 0, "dust rounds the treasury share to 0");
+        assertEq(escrow.treasuryAccrued(), 0, "dust rounds the treasury share to 0");
         bytes memory late = _voucher(CONSUMER_PK, provider, 2, expires);
         vm.warp(expires + 1);
         vm.expectRevert(Expired.selector);
