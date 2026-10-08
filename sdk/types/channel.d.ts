@@ -40,8 +40,14 @@ export interface Invite {
 }
 export interface AcceptMessage { t: 'accept'; cid: string; e: string; confirm: string }
 export interface ReadyMessage { t: 'ready'; cid: string; confirm: string }
+/**
+ * The label version of a channel or group (since 1.8.1). 'v1': TAPI-26 / TAPI-27 version 1 (labels TAP-26/, TAP-27/),
+ * the default in 1.x. 'v2': version 2 (spec/TAPI-26-v2.md, TAPI-27-v2.md, Draft: labels tape-channel/, tape-group/), the
+ * default from 2.0. An invite does not say which: both sides must be told the same; the versions do not interoperate.
+ */
+export type Labels = 'v1' | 'v2'
 /** Opaque initiator handle from createInvite; only the original object works in completeInvite. */
-export interface PendingInvite { readonly role: 'initiator'; readonly cid: string; readonly exp: number }
+export interface PendingInvite { readonly role: 'initiator'; readonly cid: string; readonly exp: number; /** Since 1.8.1. */ readonly labels: Labels }
 
 /** An encrypted channel session (TAPI-26 §3.4). */
 export interface ChannelSession {
@@ -50,6 +56,8 @@ export interface ChannelSession {
   readonly transcript: string
   readonly peer: { container: Address; chainId: number }
   readonly rooms: { inbound: string; outbound: string }
+  /** Since 1.8.1: the label version of this channel. */
+  readonly labels: Labels
   readonly confirmed: boolean
   confirm(ready: ReadyMessage, opts?: { now?: number }): void
   seal(data: Uint8Array | string): Uint8Array
@@ -77,6 +85,8 @@ export declare function createInvite(opts: {
   webrtc?: unknown
   now?: number
   random?: RandomBytes
+  /** 'v1' (default: TAPI-26/27 v1, labels TAP-26/, TAP-27/) or 'v2' (TAPI-26/27 v2, labels tape-channel/, tape-group/; since 1.8.1, the default from 2.0). Both sides must use the same. */
+  labels?: Labels
 }): { invite: Invite; pending: PendingInvite }
 
 export declare function acceptInvite(opts: {
@@ -86,6 +96,8 @@ export declare function acceptInvite(opts: {
   now?: number
   random?: RandomBytes
   seen?: Set<string>
+  /** 'v1' (default: TAPI-26/27 v1, labels TAP-26/, TAP-27/) or 'v2' (TAPI-26/27 v2, labels tape-channel/, tape-group/; since 1.8.1, the default from 2.0). Both sides must use the same. */
+  labels?: Labels
 }): { accept: AcceptMessage; session: ChannelSession }
 
 export declare function completeInvite(pending: PendingInvite, accept: AcceptMessage, opts?: { now?: number }): { ready: ReadyMessage; session: ChannelSession }
@@ -143,16 +155,17 @@ export declare function fanIn(transports: Transport[], opts?: { all?: boolean; w
 export declare function generateKeyPair(random?: RandomBytes): KeyPair
 export declare function generateIdentity(random?: RandomBytes): Identity
 export declare function publicKeyOf(secretKey: Uint8Array): Uint8Array
-export declare function roomsFor(cid: Uint8Array | string): { toInitiator: string; toResponder: string }
-export declare function inboxRoom(container: Address, chainId?: number): string
+export declare function roomsFor(cid: Uint8Array | string, opts?: { labels?: Labels }): { toInitiator: string; toResponder: string }
+/** One inbox room per label version: { labels: 'v2' } gives the v2 room (since 1.8.1). */
+export declare function inboxRoom(container: Address, chainId?: number, opts?: { labels?: Labels }): string
 export declare function endpointBytes(container: Address, chainId?: number): Uint8Array
 export declare function inviteHash(invite: Invite): Uint8Array
 export declare function encodeInviteContent(invite: Invite): Uint8Array
 export declare function decodeInviteContent(bytes: Uint8Array): Invite
-export declare function sealInvite(invite: Invite, opts: { to: Uint8Array | string; random?: RandomBytes }): Uint8Array
-export declare function sealToInbox(content: unknown, opts: { to: Uint8Array | string; random?: RandomBytes }): Uint8Array
-export declare function openInvite(wire: Uint8Array, opts: { self: unknown }): Invite
-export declare function openFromInbox(wire: Uint8Array, opts: { self: unknown }): any
+export declare function sealInvite(invite: Invite, opts: { to: Uint8Array | string; random?: RandomBytes; labels?: Labels }): Uint8Array
+export declare function sealToInbox(content: unknown, opts: { to: Uint8Array | string; random?: RandomBytes; labels?: Labels }): Uint8Array
+export declare function openInvite(wire: Uint8Array, opts: { self: unknown; labels?: Labels }): Invite
+export declare function openFromInbox(wire: Uint8Array, opts: { self: unknown; labels?: Labels }): any
 export declare function encodeWire(x: Uint8Array | AcceptMessage | ReadyMessage): Uint8Array
 /** One of: a channel frame (0x01), a sealed invite, a handshake message, a group epoch message (0x04) or a group message (0x05, TAPI-27). */
 export declare function decodeWire(b: Uint8Array): { frame?: Uint8Array; sealedInvite?: Uint8Array; handshake?: AcceptMessage | ReadyMessage; groupEpoch?: Uint8Array; groupMessage?: Uint8Array }

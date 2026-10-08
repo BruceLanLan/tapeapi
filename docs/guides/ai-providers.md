@@ -23,7 +23,7 @@ The checks of steps 1 to 7 are `tapeapi-doctor` (experimental), which ships in t
 Every `tapeapi-doctor` in the table stands for this, run from any directory, with nothing to clone:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz tapeapi-doctor <your name>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-doctor <your name>
 ```
 
 In a checkout, `node sdk/bin/tapeapi-doctor.js <your name>` at its root does the same. Either way the report writes
@@ -234,7 +234,7 @@ and point the client at it. `tapeapi-verify` keeps running in the foreground, so
 
 ```sh
 # Terminal 1. 42.1013.tape is an example name: put your service's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh

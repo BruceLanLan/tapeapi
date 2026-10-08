@@ -163,7 +163,7 @@ for (const r of await pay.verifyAttachments(msg)) console.log(r.attachment.type,
 <div class="code"><pre data-lang="bash"><code>tapeapi-verify task thread.json
 tapeapi-verify task thread.json --payment &lt;代理容器&gt; &lt;收件箱序号&gt;
 tapeapi-verify task thread.json --rpc https://node-a.example,https://node-b.example</code></pre></div>
-<p>不想安装，可以用 <code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz tapeapi-verify task thread.json</code>；在仓库里则是 <code>node sdk/bin/tapeapi-verify.js task thread.json</code>。</p>
+<p>不想安装，可以用 <code>npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-verify task thread.json</code>；在仓库里则是 <code>node sdk/bin/tapeapi-verify.js task thread.json</code>。</p>
 <ul><li><code>--payment &lt;收款容器&gt; &lt;序号&gt;</code> 另外核验该收件箱里那个序号的 TapeSend 消息。收款容器必须是线程里的代理，发件方必须是线程里的委托方。只支持公开（未加密）的消息。</li><li><code>--rpc</code> 接一个逗号分隔的节点列表，至少来自两家运营方。默认是三家不同运营方的公共节点。</li><li>退出码：<code>0</code> 线程通过（带 <code>--payment</code> 时付款也通过），<code>1</code> 未通过或读不了链，<code>2</code> 用法错误。</li><li>每次运行的 nonce 存储和撤销下限都是空的，所以单次核验看不出 nonce 重用，也看不出有人放回了一份旧的撤销清单。</li></ul>
 <p>下面是示例线程的报告，由同一段命令代码对着示例的离线假链运行得出：</p>
 <div class="code"><pre data-lang="text"><code>tapeapi-verify task: 5 message(s), chain 56   EXPERIMENTAL

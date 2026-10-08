@@ -1,6 +1,6 @@
 // TAPI-27 private group channels. Loose shapes: see docs/guides/channels.md and spec/TAPI-27.
 import type { Address } from './common.js'
-import type { Identity, RelayRef, RandomBytes } from './channel.js'
+import type { Identity, RelayRef, RandomBytes, Labels } from './channel.js'
 
 export declare const GROUP_INVITE_KIND: string
 export declare const ROSTER_KIND: string
@@ -32,13 +32,18 @@ export interface RosterMember { container: Address; chainId: number; x25519: str
 export interface Roster { v?: number; gid: string; epoch: number; issued: number; owner: { container: Address; chainId: number }; members: RosterMember[]; relays?: RelayRef[]; bus?: unknown; [key: string]: unknown }
 /** What to keep across a restart (no secrets). `roster` is present for an owner, `lastSeq` once a message was sealed. */
 /** A format-1 snapshot (no `format`). */
-export type GroupSnapshotV1 = Omit<GroupSnapshot, 'v' | 'format' | 'rosterBin'> & { v: 1; format?: undefined }
+export type GroupSnapshotV1 = Omit<GroupSnapshot, 'v' | 'format' | 'rosterBin' | 'labels'> & { v: 1; format?: undefined; /** Accepted by resumeGroup since 1.8.1 (snapshot() never writes it). */ labels?: 'v1' }
+/** Since 1.8.1: the snapshot of a group of TAPI-27 v2 labels, either format. SDKs up to 1.8.0 refuse it. */
+export type GroupSnapshotLabelsV2 = Omit<GroupSnapshot, 'v' | 'format' | 'labels'> & { v: 3; labels: 'v2'; format: 1 | 2 }
 /** @experimental A format-2 snapshot. */
 export type GroupSnapshotV2 = GroupSnapshot & { format: 2 }
 export interface GroupSnapshot {
   /** 1 for format 1. @experimental 2 for format 2 (since GRP2-2, so that TapeAPI 1.0.0 to 1.2.0 refuse it instead of
    *  resuming it as format 1); a format-2 snapshot written by 1.2.0 says 1 and is still read. */
-  v: 1 | 2; gid: string; owner: { container: Address; chainId: number }; epoch: number | null; role: 'owner' | 'member'; lastSeq?: string; roster?: string; /** @experimental format 2 only */ format?: 2; /** @experimental format 2 owner only: the roster bytes as sent (hex) */ rosterBin?: string }
+  v: 1 | 2 | 3; gid: string; owner: { container: Address; chainId: number }; epoch: number | null; role: 'owner' | 'member'; lastSeq?: string; roster?: string; /** @experimental format 2, and v: 3 (1 or 2) */ format?: 1 | 2; /** @experimental format 2 owner only: the roster bytes as sent (hex) */ rosterBin?: string;
+  /** Since 1.8.1: a group of TAPI-27 v2 labels has v: 3, labels: 'v2' and its format, so that 1.8.0 and earlier refuse it
+   *  (GroupSnapshotLabelsV2). snapshot() of a v1 group writes no labels; resumeGroup also accepts 'v1' on a v: 1 or v: 2 snapshot. */
+  labels?: 'v1' | 'v2' }
 /** A message opened with group.open(): or { own: true, epoch, seq } for our own message coming back. */
 export type OpenedGroupMessage =
   | { from: Address; index: number; epoch: number; seq: bigint; gap: number | null; data: Uint8Array | string; own?: undefined; /** @experimental Signed with this handle's own identity, but not sealed by this handle: the same identity on another device (TAPI-27 §8: one identity is one device). */ otherDevice?: true }
@@ -53,6 +58,8 @@ export interface GroupHandle {
   readonly isOwner: boolean
   /** 1 (TAPI-27 v1, the default) or 2 (TAPI-27 §3.8, @experimental). */
   readonly format: 1 | 2
+  /** Since 1.8.1: the label version ('v1' default, 'v2' TAPI-27 v2). */
+  readonly labels: Labels
   /** The current epoch, or null before the first one was accepted. */
   readonly epoch: number | null
   readonly roster: Roster | null
@@ -105,7 +112,7 @@ export interface GroupUpdate {
   added: Array<{ container: Address; chainId: number; x25519: string; ed25519: string }>
 }
 
-export declare function groupRoom(gid: Uint8Array | string): string
+export declare function groupRoom(gid: Uint8Array | string, opts?: { labels?: Labels }): string
 /** @experimental Owner: create a format-2 group (TAPI-27 §3.8, up to 128 members). Members still need x25519 (the owner wraps their slots). */
 export declare function createGroup(opts: {
   format: 2
@@ -122,6 +129,8 @@ export declare function createGroup(opts: {
    *  default 86400. An entry with a verdict still within it is not read again; a new or changed entry, or one whose
    *  verdict aged out, is read past the cache. 0 reads every member on every epoch. */
   verifyReuseS?: number
+  /** Since 1.8.1: 'v2' for a TAPI-27 v2 group (labels tape-group/, invites in the v2 inbox rooms); default 'v1'. A group keeps it for life. */
+  labels?: Labels
 }): Promise<{ group: OwnerGroupV2; epochWire: Uint8Array; epoch: number; added: GroupUpdate['added'] }>
 /**
  * Owner: create a group. TWO ROOMS: post `epochWire` to group.room AND group.inviteFor(m) to each member's inbox room
@@ -142,6 +151,8 @@ export declare function createGroup(opts: {
   /** How many member checks (§3.3 step 6, one channel-record read each) run at once: an integer in 1..64, default
    *  VERIFY_CONCURRENCY (8). The outcome is the serial loop's: the error is the first failing member's in roster order. */
   verifyConcurrency?: number
+  /** Since 1.8.1: 'v2' for a TAPI-27 v2 group (labels tape-group/, invites in the v2 inbox rooms); default 'v1'. A group keeps it for life. */
+  labels?: Labels
 }): Promise<{ group: OwnerGroup; epochWire: Uint8Array; epoch: number; added: GroupUpdate['added'] }>
 /** Owner after a restart: starts the next epoch at once; `added` is empty (members already joined). */
 export declare function resumeGroup(opts: {
@@ -154,6 +165,8 @@ export declare function resumeGroup(opts: {
   random?: RandomBytes
   clock?: () => number
   verifyConcurrency?: number
+  /** Since 1.8.1: a v: 1 snapshot is of a v1 group; only 'v1' agrees. */
+  labels?: Labels
 }): Promise<GroupUpdate & { group: OwnerGroup }>
 /** @experimental Owner of a format-2 group after a restart (a snapshot with `format: 2`). */
 export declare function resumeGroup(opts: {
@@ -168,6 +181,8 @@ export declare function resumeGroup(opts: {
   verifyConcurrency?: number
   /** As in createGroup({ format: 2 }). A resumed owner holds no verdicts, so its first epoch reads every member. */
   verifyReuseS?: number
+  /** Since 1.8.1: taken from the snapshot (v: 3 is 'v2'); if given, it must agree. */
+  labels?: Labels
 }): Promise<GroupUpdate & { group: OwnerGroupV2 }>
 export declare function resumeGroup(opts: {
   self: { container: Address; chainId?: number }
@@ -181,8 +196,11 @@ export declare function resumeGroup(opts: {
   clock?: () => number
   /** As in createGroup. */
   verifyConcurrency?: number
+  /** Since 1.8.1: taken from the snapshot (v: 3 is 'v2'); if given, it must agree, or GROUP_INVALID. */
+  labels?: Labels
 }): Promise<GroupUpdate & { group: OwnerGroup }>
-export declare function openGroupInvite(wire: Uint8Array, opts: { self: unknown }): Record<string, unknown>
+/** `labels`: the version of the inbox room the wire was read from (since 1.8.1); pass the same to joinGroup. */
+export declare function openGroupInvite(wire: Uint8Array, opts: { self: unknown; labels?: Labels }): Record<string, unknown>
 /**
  * @experimental Member of a format-2 group (the invite says `format: 2`; say it here too for this type). `verifyMember`
  * is the default for the lazy checks (group.channelKeysVerifier(api), NOT api.groupVerifier(), which compares an x25519 key
@@ -201,6 +219,8 @@ export declare function joinGroup(opts: {
   verifyConcurrency?: number
   verifyMember?: MemberVerifierV2 | 'trust-roster'
   verifyReuseS?: number
+  /** Since 1.8.1: 'v2' for a TAPI-27 v2 group (labels tape-group/, invites in the v2 inbox rooms); default 'v1'. A group keeps it for life. */
+  labels?: Labels
 }): GroupHandleV2
 export declare function joinGroup(opts: {
   self: { container: Address; chainId?: number }
@@ -216,6 +236,8 @@ export declare function joinGroup(opts: {
   /** Format-2 options: a format-1 group ignores them, as 1.1.0 did (pass them to any invite). */
   verifyMember?: MemberVerifierV2 | 'trust-roster'
   verifyReuseS?: number
+  /** Since 1.8.1: 'v2' for a TAPI-27 v2 group (labels tape-group/, invites in the v2 inbox rooms); default 'v1'. A group keeps it for life. */
+  labels?: Labels
 }): GroupHandle
 
 // ---------------------------------------------------------------- @experimental: TAPI-27 §3.8, format 2 ----

@@ -74,7 +74,7 @@ services:
         sdk: ../../sdk
         server: ../../server
         newapi: ../new-api-sidecar
-    image: tapeapi-litellm-sidecar:1.8.0
+    image: tapeapi-litellm-sidecar:1.8.1
     restart: unless-stopped
     depends_on:
       litellm:

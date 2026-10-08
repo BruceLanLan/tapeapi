@@ -3,6 +3,7 @@
 | Title | Tape Channel: Real-Time Private Channels Between Containers |
 | Author | Bruce (@BruceLanLan) |
 | Status | Stable (v1) since 2026-09-29 (TapeAPI 1.0.0) |
+| Revision | 2026-10-08: a note pointing to version 2 ([TAPI-26 v2](TAPI-26-v2.md), Draft; an option from TapeAPI 1.8.1, the default from 2.0), whose labels begin with `tape-channel/` at the request of the TAPs editors. Non-normative: this version, its labels and its vectors do not change (TAPI-1 §4.1). |
 | Implementation | Live (2026-09-27): ChannelBus is deployed on BNB Chain at `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707` (code byte-for-byte the reference build); a free public relay runs at `relay.tapeapi.fun` (`12.1013.tape`, source `examples/cloudflare-worker/relay-worker.js`); the SDK implements channels over relays and ChannelBus and exports a measured bus node set, `BUS_RPC_URLS` (§3.7). No third-party audit. |
 | Type | Standards |
 | Created | 2026-09-22 |
@@ -13,7 +14,7 @@
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
 
-> **Not a TAP.** "TAPI-26" is TapeAPI's own name for this document; until 2026-09-30 it was called "TAP-26". It is not a TAP: TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01 §6.1. Part of it has been submitted as a TAP draft under that process, under review and without a number yet: private channels ([PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12)). A submission is not adoption, and the draft takes whatever number the editors give it. Frozen constants that contain an old name (for example the `TAP-26/…` labels) are historical constants and never change.
+> **Not a TAP.** "TAPI-26" is TapeAPI's own name for this document; until 2026-09-30 it was called "TAP-26". It is not a TAP: TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01 §6.1. Part of it has been submitted as a TAP draft under that process, under review and without a number yet: private channels ([PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12)). A submission is not adoption, and the draft takes whatever number the editors give it. Frozen constants that contain an old name (for example the `TAP-26/…` labels) are historical constants and never change. At the request of the TAPs editors, the labels are renamed to begin with `tape-channel/` in a new version, [TAPI-26 v2](TAPI-26-v2.md) (Draft; implemented as an option from TapeAPI 1.8.1, the default from 2.0); this version 1 keeps its `TAP-26/…` labels and stays Stable (v1), and the two versions do not interoperate (TAPI-1 §4.1).
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
@@ -213,11 +214,13 @@ Copyright and related rights waived via [CC0](https://creativecommons.org/public
 
 > 以英文为准。章节编号与上半部分一一对应。
 
-> **不是 TAP。** “TAPI-26”是 TapeAPI 给本文档起的名字，2026-09-30 之前叫“TAP-26”。它不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配。其中部分内容已按该流程作为 TAP 草稿提交，在评审中、尚无编号：私密通道（[PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12)）。提交不等于被采纳，草稿的编号以编辑分配为准。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。
+> **不是 TAP。** “TAPI-26”是 TapeAPI 给本文档起的名字，2026-09-30 之前叫“TAP-26”。它不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配。其中部分内容已按该流程作为 TAP 草稿提交，在评审中、尚无编号：私密通道（[PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12)）。提交不等于被采纳，草稿的编号以编辑分配为准。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。应 TAPs 编辑要求，标签改以 `tape-channel/` 开头，放在新版本 [TAPI-26 v2](TAPI-26-v2.md)（Draft；自 TapeAPI 1.8.1 起作为选项实现，2.0 起为默认）中；本第 1 版保留 `TAP-26/…` 标签，仍是 Stable (v1)，两个版本不互通（TAPI-1 §4.1）。
 
 > **实现状态（2026-09-27）：** 运行中：ChannelBus 已部署于 BNB Chain `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`（代码与参考构建逐字节一致）；免费公共中继运行于 `relay.tapeapi.fun`（`12.1013.tape`，源码 `examples/cloudflare-worker/relay-worker.js`）；SDK 实现了经中继与 ChannelBus 的通道，并导出一组实测的总线节点 `BUS_RPC_URLS`（§3.7）。未经第三方审计。
 
 > **状态：** Stable (v1)（稳定，第 1 版，见 [TAPI-1](TAPI-1.md) §4.1），自 2026-09-29（TapeAPI 1.0.0）起生效。
+
+> **修订：** 2026-10-08：加注指向第 2 版（[TAPI-26 v2](TAPI-26-v2.md)，Draft；TapeAPI 1.8.1 起作为选项提供，2.0 起为默认），其标签应 TAPs 编辑要求以 `tape-channel/` 开头。非规范性修订：本版本、其标签与向量均不改变（TAPI-1 §4.1）。
 
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 

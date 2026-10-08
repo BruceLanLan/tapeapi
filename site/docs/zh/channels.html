@@ -91,11 +91,19 @@ console.log(reader.stats().privacy)   // { mode, k, effectiveK, short, pool, fal
 <ul><li><code>'contract'</code> 不写明任何房间；<code>'cover'</code> 让逐次查看你请求的节点分不清你的房间和掩护。</li><li><strong>垃圾帧会迫使降级。</strong> 把总线灌到超过预算的人，能让默认读者在一段时间里把房间混在掩护中写明；加倍的等待限制的是这能重复多频繁，而不是能不能发生。</li><li><strong>邀请之后新增房间。</strong> 在 <code>'cover'</code> 模式下，邀请落到你的某个房间、读取器随后加入一个通道房间时，节点能把两者关联起来。随机延迟后再加入房间，或预先登记备用房间，能增加难度，但不能杜绝。</li><li><strong>掩护池的来源。</strong> 池子的规则是公开的，所以你读的房间如果不在近期活跃池里就会显眼；池扫描时撒谎的节点可以塞进它知道是假的房间；任何人都能以每个约 50,000 gas 的代价往自己的房间发帧，用它认得出的掩护灌满池子。</li><li><strong>不保存状态的会话。</strong> 没有 <code>cover.store</code> 的新读者会抽取新的掩护，同时看到两次会话的节点能在交集里找到你的房间。</li><li>时间、IP 地址与数量对你查询的节点都不隐藏。通过自己运行的节点读取，这些请求就不会被第三方看到。</li></ul>
 <h2 id="6-限制"><a class="anchor" href="#6-限制" aria-hidden="true">#</a>6. 限制</h2>
 <ul><li>一帧最多承载 16 KiB 明文；一份邀请最多存活一小时。</li><li>中继能看到房间名、大小和时间，永远看不到内容或身份。ChannelBus 会把这些元数据永久公开。</li><li>在单个方向达到 2^32 帧之前很早就应重新握手（SDK 拒绝超出这一上限）。</li></ul>
+<h2 id="7-标签版本labels181-起"><a class="anchor" href="#7-标签版本labels181-起" aria-hidden="true">#</a>7. 标签版本（<code>labels</code>，1.8.1 起）</h2>
+<p>应 TAPs 编辑要求，私密通道有了第 2 版 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-26-v2.md" rel="noopener">TAPI-26 v2</a>（Draft）：同样的通道，标签以 <code>tape-channel/</code> 开头而不是 <code>TAP-26/</code>。SDK 自 1.8.1 起作为选项实现它；默认仍是第 1 版，逐字节不变。2.0 起第 2 版成为默认。</p>
+<div class="code"><pre data-lang="js"><code>const { invite, pending } = channel.createInvite({ self, peer, relays, labels: 'v2' })
+const { accept, session } = channel.acceptInvite({ self, peer, invite, labels: 'v2' })  // 响应方要被告知同样的版本
+channel.roomsFor(pending.cid, { labels: pending.labels })   // 发起方等待 accept 的房间
+channel.inboxRoom(container, chainId, { labels: 'v2' })     // 容器的第 2 版收件房间
+channel.sealInvite(invite, { to, labels: 'v2' })            // 以及 openInvite(wire, { self, labels: 'v2' })</code></pre></div>
+<ul><li><strong>双方传同样的 <code>labels</code>。</strong> 邀请不说明自己属于哪个版本（仍是 <code>v: 1</code>）。经 TapeSend 发送的邀请，双方要事先约定版本；密封邀请的版本就是读到它的收件房间的版本。</li><li><strong>不一致时失败关闭。</strong> 房间不同，所以通常什么都收不到，握手超时。另一版本的 accept、ready 或密封邀请即使到了，也会被拒绝，错误为 <code>CHANNEL_INVALID</code>，带 <code>e.data.labels</code> 与 <code>e.data.peerLabels</code>。SDK 从不自行切换版本。对密封邀请，这只说明它是怎样密封的：任何人都能往收件房间投递，所以这既不证明发送者可信，也不说明你该换版本。</li><li><strong>核对实际得到的版本：</strong> <code>pending.labels</code> 与 <code>session.labels</code>。早于 1.8.1 的 SDK 会忽略这个选项，也没有这两个字段。</li><li><code>api.chain.channelKeys(...).inbox.room</code> 是第 1 版的收件房间；第 2 版请用 <code>channel.inboxRoom(container, chainId, { labels: 'v2' })</code>。通道记录在两个版本中相同。</li></ul>
 </article>
 <nav class="pn"><a class="prev" href="ai-providers"><span>上一篇</span>接入 AI 服务</a><a class="next" href="groups"><span>下一篇</span>群聊</a></nav>
 <p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/channels.md" rel="noopener">在 GitHub 上编辑此页</a></p>
 </main>
-<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#工作原理">工作原理</a></li><li class="l2"><a href="#1-发布容器的通道密钥">1. 发布容器的通道密钥</a></li><li class="l2"><a href="#2-代码中的握手">2. 代码中的握手</a></li><li class="l2"><a href="#3-选择传输">3. 选择传输</a></li><li class="l2"><a href="#4-可靠地读取链">4. 可靠地读取链</a></li><li class="l2"><a href="#5-读取隐私">5. 读取隐私</a></li><li class="l2"><a href="#6-限制">6. 限制</a></li></ul></aside>
+<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#工作原理">工作原理</a></li><li class="l2"><a href="#1-发布容器的通道密钥">1. 发布容器的通道密钥</a></li><li class="l2"><a href="#2-代码中的握手">2. 代码中的握手</a></li><li class="l2"><a href="#3-选择传输">3. 选择传输</a></li><li class="l2"><a href="#4-可靠地读取链">4. 可靠地读取链</a></li><li class="l2"><a href="#5-读取隐私">5. 读取隐私</a></li><li class="l2"><a href="#6-限制">6. 限制</a></li><li class="l2"><a href="#7-标签版本labels181-起">7. 标签版本（<code>labels</code>，1.8.1 起）</a></li></ul></aside>
 </div>
 </body>
 </html>

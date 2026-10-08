@@ -4,7 +4,7 @@ Provider runtime for [TapeAPI](https://tapeapi.fun): serve your methods as a Tap
 signs every answer (TAPI-21), rate-limits, and for paid methods checks and meters EIP-712 vouchers (TAPI-22). You write
 plain functions. Runs on Node (`listen`) and on any fetch runtime such as Cloudflare Workers (`handleRequest`).
 
-> **1.8.0.** Semantic versioning from 1.0 on: breaking changes come only in 2.0. See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md).
+> **1.8.1.** Semantic versioning from 1.0 on: breaking changes come only in 2.0. See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md).
 
 **Stability (1.0).** `createProvider`, the AI sidecar (`@tapeapi/server/ai-proxy`) and the MCP endpoint and proxy
 (`@tapeapi/server/mcp`, `@tapeapi/server/mcp-proxy`) are Stable. The payment side (escrow, voucher store, settlement
@@ -16,8 +16,8 @@ Not on npm yet: install both packages from the GitHub release, the SDK first (th
 which npm would otherwise look for in the registry):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-server-1.8.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-server-1.8.1.tgz
 ```
 
 Built from https://github.com/BruceLanLan/tapeapi (folder `server/`). ES modules; Node 20+. TypeScript declarations

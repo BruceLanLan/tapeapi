@@ -21,7 +21,7 @@ import { sha256 } from '@noble/hashes/sha256'
 import { randomBytes } from '@noble/hashes/utils'
 import { TapeAPIError } from './errors.js'
 import { canonicalJSON, safeParseJSON } from './canon.js'
-import { toHex, fromHex, assertUsablePublicKey, assertEd25519Public, checkRelays, checkBus, sealToInbox, openFromInbox } from './channel.js'
+import { toHex, fromHex, assertUsablePublicKey, assertEd25519Public, checkRelays, checkBus, sealToInbox, openFromInbox, checkLabels, otherLabels, labelsMismatch } from './channel.js'
 
 export const GROUP_INVITE_KIND = 'tape.group/invite'
 export const ROSTER_KIND = 'tape.group/roster'
@@ -77,10 +77,35 @@ const edVerify = (sig, msg, pub) => { try { return ed25519.verify(sig, msg, pub,
 const verifyErr = (e) => e ?? new TapeAPIError('ERROR', 'verifyMember failed without giving a reason')
 const errText = (e) => String(verifyErr(e)?.message ?? e)
 
-/** The one room a group uses: SHA-256("TAP-27/room/v1" ‖ gid) / 群所用的唯一房间 */
-export function groupRoom(gid) {
+// ---------------------------------------------------------------- labels: TAPI-27 v1 and v2 ----
+// As in channel.js: v1 (`TAP-27/…`, Stable (v1), frozen) is the default; v2 (`tape-group/…`, spec/TAPI-27-v2.md, Draft)
+// is opt-in from 1.8.1 with `labels: 'v2'` and the default from 2.0. Only the prefix differs, in format 1 and in format 2
+// alike; "labels v2" is not "format 2". A v2 group runs over TAPI-26 v2: its invites are sealed for the v2 inbox room.
+// A group is of one version for its whole life: the handle reports it as `labels`, a v2 snapshot says so (v: 3), and
+// nothing of the other version is accepted.
+// 与 channel.js 相同：v1（`TAP-27/…`，Stable (v1)，冻结）是默认值；v2（`tape-group/…`，spec/TAPI-27-v2.md，Draft）1.8.1 起以
+// `labels: 'v2'` 选用，2.0 起成为默认。两者只有前缀不同，格式 1 与格式 2 都一样；"标签 v2"不是"格式 2"。v2 群运行在 TAPI-26 v2
+// 之上：入群邀请按第 2 版收件房间密封。一个群终生只属于一个版本：句柄以 `labels` 报告，v2 快照写明（v: 3），另一版本的东西一概不收。
+const GROUP_LABELS = {
+  v1: {
+    room: 'TAP-27/room/v1',
+    1: { epoch: 'TAP-27/epoch/v1', msg: 'TAP-27/msg/v1', sender: 'TAP-27/sender/v1', wrap: 'TAP-27/wrap/v1', commit: 'TAP-27/commit/v1' },
+    2: { epoch: 'TAP-27/epoch/v2', msg: 'TAP-27/msg/v2', sender: 'TAP-27/sender/v2', wrap: 'TAP-27/wrap/v2', commit: 'TAP-27/commit/v2' },
+  },
+  v2: {
+    room: 'tape-group/room/v1',
+    1: { epoch: 'tape-group/epoch/v1', msg: 'tape-group/msg/v1', sender: 'tape-group/sender/v1', wrap: 'tape-group/wrap/v1', commit: 'tape-group/commit/v1' },
+    2: { epoch: 'tape-group/epoch/v2', msg: 'tape-group/msg/v2', sender: 'tape-group/sender/v2', wrap: 'tape-group/wrap/v2', commit: 'tape-group/commit/v2' },
+  },
+}
+const enc = (o) => (typeof o === 'string' ? te.encode(o) : Object.fromEntries(Object.entries(o).map(([k, v]) => [k, enc(v)])))
+const GL = enc(GROUP_LABELS)
+const labelsOf = (opts) => checkLabels(opts?.labels)
+
+/** The one room a group uses: SHA-256("TAP-27/room/v1" ‖ gid), or "tape-group/room/v1" with { labels: 'v2' } / 群所用的唯一房间 */
+export function groupRoom(gid, { labels } = {}) {
   const g = typeof gid === 'string' ? fromHex(gid, 16, 'gid') : gid
-  return toHex(sha256(concat(te.encode('TAP-27/room/v1'), g)))
+  return toHex(sha256(concat(GL[checkLabels(labels)].room, g)))
 }
 
 function dh(secret, pub) {
@@ -89,10 +114,10 @@ function dh(secret, pub) {
   if (ss.every((x) => x === 0)) fail('X25519 gave the all-zero secret (low-order key)')
   return ss
 }
-const kekFor = (ss, E, R, gid, epoch) => hkdf(sha256, ss, te.encode('TAP-27/wrap/v1'), concat(E, R, gid, u64(epoch)), 32)
-const commitOf = (K) => sha256(concat(te.encode('TAP-27/commit/v1'), K))
+const kekFor = (ss, E, R, gid, epoch, lv = 'v1') => hkdf(sha256, ss, GL[lv][1].wrap, concat(E, R, gid, u64(epoch)), 32)
+const commitOf = (K, lv = 'v1') => sha256(concat(GL[lv][1].commit, K))
 /** §3.4: the key a sender encrypts under in an epoch / 发送者在某纪元的加密密钥 */
-export const senderKey = (K, gid, epoch, index) => hkdf(sha256, K, concat(gid, u64(epoch)), concat(te.encode('TAP-27/sender/v1'), u32(index)), 32)
+export const senderKey = (K, gid, epoch, index, { labels } = {}) => hkdf(sha256, K, concat(gid, u64(epoch)), concat(GL[checkLabels(labels)][1].sender, u32(index)), 32)
 
 // ---------------------------------------------------------------- format 2 (TAPI-27 §3.8, Experimental) ----
 // Format 2 keeps wire types 0x04 / 0x05 and marks itself in the high 32 bits of the uint64 epoch field, which format 1
@@ -130,10 +155,6 @@ const HEADER_EPOCH_V2 = 1 + 16 + 8 + 32 + 24 + 32 + 2     // 115: count is uint1
 const ENTRY_V2 = 20 + 4 + 32
 const ROSTER_MAGIC_V2 = te.encode('TGR2')
 const ROSTER_FIXED_V2 = 4 + 8 + 32 + 2 + 2                // magic, issued, prev, count, tail length / 固定部分
-const LABELS = {
-  1: { epoch: te.encode('TAP-27/epoch/v1'), msg: te.encode('TAP-27/msg/v1'), sender: te.encode('TAP-27/sender/v1') },
-  2: { epoch: te.encode('TAP-27/epoch/v2'), msg: te.encode('TAP-27/msg/v2'), sender: te.encode('TAP-27/sender/v2'), wrap: te.encode('TAP-27/wrap/v2'), commit: te.encode('TAP-27/commit/v2') },
-}
 const ef2 = (n) => concat(u32(FORMAT_V2_MARK), u32(n))
 const epochField = (format, n) => (format === 2 ? ef2(n) : u64(n))
 // The format an epoch field says: 1 (high half zero), 2 (the mark) or null (anything else) / 纪元字段表明的格式
@@ -147,11 +168,11 @@ const formatName = (f) => (f === 2 ? 'format 2 (TAPI-27 §3.8, v2)' : 'format 1 
 // 另一格式的帧（一个群只用一种格式）。错误码 GROUP_INVALID——现有格式 1 客户端遇到格式 2 帧给出的就是它——并附 data.format，
 // 让应用能提示"请升级"而不是"遭到攻击"。
 const wrongFormat = (what, got, mine) => fail(`${what} is ${got ? formatName(got) : 'of an unknown format (epoch field high half neither 0 nor the format-2 mark)'}; this group is ${formatName(mine)}${got === 2 ? ': the group needs a client that supports format 2' : ''}`, { data: { format: got, groupFormat: mine } })
-const kekV2 = (ss, E, R, gid, epoch) => hkdf(sha256, ss, LABELS[2].wrap, concat(E, R, gid, ef2(epoch)), 32)
-const commitV2 = (K) => sha256(concat(LABELS[2].commit, K))
+const kekV2 = (ss, E, R, gid, epoch, lv = 'v1') => hkdf(sha256, ss, GL[lv][2].wrap, concat(E, R, gid, ef2(epoch)), 32)
+const commitV2 = (K, lv = 'v1') => sha256(concat(GL[lv][2].commit, K))
 /** §3.8: the key a sender encrypts under in a format-2 epoch / 格式 2 纪元里发送者的加密密钥 */
-export const senderKeyV2 = (K, gid, epoch, index) => hkdf(sha256, K, concat(gid, ef2(epoch)), concat(LABELS[2].sender, u32(index)), 32)
-const senderKeyOf = (format) => (format === 2 ? senderKeyV2 : senderKey)
+export const senderKeyV2 = (K, gid, epoch, index, { labels } = {}) => hkdf(sha256, K, concat(gid, ef2(epoch)), concat(GL[checkLabels(labels)][2].sender, u32(index)), 32)
+const senderKeyOf = (format, labels) => (format === 2 ? (K, g, e, i) => senderKeyV2(K, g, e, i, { labels }) : (K, g, e, i) => senderKey(K, g, e, i, { labels }))
 
 // §3.8: a format-2 roster entry { container, chainId, ed25519 } (the owner's own list keeps x25519 too)
 // 格式 2 名单条目（群主自己的列表另外保留 x25519）
@@ -216,7 +237,8 @@ function decodeRosterV2(b, count) {
  * 构造格式 2 纪元消息。`members` 为完整条目（群主的列表：用 x25519 包裹各格；进入名单的只有 container、chainId、ed25519）。
  * 随机数按 K、e、N 的顺序抽取（与格式 1 相同）。
  */
-export function buildEpochV2({ gid, epoch, issued, prev, owner, members, relays = [], bus, ownerEdSecret, random = randomBytes }) {
+export function buildEpochV2({ gid, epoch, issued, prev, owner, members, relays = [], bus, ownerEdSecret, random = randomBytes, labels }) {
+  const lv = checkLabels(labels)
   if (!Array.isArray(members) || members.length < 1 || members.length > MAX_MEMBERS_V2) fail(`a format-2 group has 1..${MAX_MEMBERS_V2} members`)
   if (!Number.isInteger(epoch) || epoch < 0 || epoch > MAX_EPOCH) fail(`epoch must be an integer in 0..${MAX_EPOCH}`)
   const list = members.map(normMember)             // checks both keys already / 已核对两把公钥
@@ -231,18 +253,18 @@ export function buildEpochV2({ gid, epoch, issued, prev, owner, members, relays 
   const e = random(32)
   const E = x25519.getPublicKey(e)
   const N = random(24)
-  const header = concat(Uint8Array.of(WIRE_EPOCH), gid, ef2(epoch), E, N, commitV2(K), Uint8Array.of(list.length >> 8, list.length & 0xff))
+  const header = concat(Uint8Array.of(WIRE_EPOCH), gid, ef2(epoch), E, N, commitV2(K, lv), Uint8Array.of(list.length >> 8, list.length & 0xff))
   const slots = concat(...list.map((m) => {
     const R = fromHex(m.x25519, 32, 'x25519')
     const ss = dh(e, R)
-    const kek = kekV2(ss, E, R, gid, epoch)
+    const kek = kekV2(ss, E, R, gid, epoch, lv)
     ss.fill(0)
     return xchacha20poly1305(kek, N, header).encrypt(K)
   }))
   e.fill(0)
   const ct = xchacha20poly1305(K, N, concat(header, slots)).encrypt(rosterBytes)
   const body = concat(header, slots, u32(ct.length), ct)
-  const wire = concat(body, ed25519.sign(concat(LABELS[2].epoch, body), ownerEdSecret))
+  const wire = concat(body, ed25519.sign(concat(GL[lv][2].epoch, body), ownerEdSecret))
   if (wire.length > MAX_WIRE) fail(`epoch message of ${wire.length} bytes is too large for one wire message`)
   const roster = {
     format: 2, gid: toHex(gid), epoch, issued, prev: toHex(prevBytes),
@@ -376,7 +398,8 @@ async function verifyAll(members, verifyMember, { drop = false, fresh = false, c
  * §3.3: build an epoch message. Random draws, in order: K, e, N (the vectors depend on this order).
  * 构造纪元消息。随机数按 K、e、N 的顺序抽取（向量依赖此顺序）。
  */
-export function buildEpoch({ gid, epoch, issued, prev, owner, members, relays = [], bus, ownerEdSecret, random = randomBytes }) {
+export function buildEpoch({ gid, epoch, issued, prev, owner, members, relays = [], bus, ownerEdSecret, random = randomBytes, labels }) {
+  const lv = checkLabels(labels)
   if (!Array.isArray(members) || members.length < 1 || members.length > MAX_MEMBERS) fail(`a group has 1..${MAX_MEMBERS} members`)
   if (!Number.isInteger(epoch) || epoch < 0 || epoch > MAX_EPOCH) fail(`epoch must be an integer in 0..${MAX_EPOCH}`)
   const list = members.map(normMember)
@@ -394,18 +417,18 @@ export function buildEpoch({ gid, epoch, issued, prev, owner, members, relays = 
   const e = random(32)
   const E = x25519.getPublicKey(e)
   const N = random(24)
-  const header = concat(Uint8Array.of(WIRE_EPOCH), gid, u64(epoch), E, N, commitOf(K), Uint8Array.of(list.length))
+  const header = concat(Uint8Array.of(WIRE_EPOCH), gid, u64(epoch), E, N, commitOf(K, lv), Uint8Array.of(list.length))
   const slots = concat(...list.map((m) => {
     const R = fromHex(m.x25519, 32, 'x25519')
     const ss = dh(e, R)
-    const kek = kekFor(ss, E, R, gid, epoch)
+    const kek = kekFor(ss, E, R, gid, epoch, lv)
     ss.fill(0)
     return xchacha20poly1305(kek, N, header).encrypt(K)
   }))
   e.fill(0)
   const ct = xchacha20poly1305(K, N, concat(header, slots)).encrypt(rosterBytes)
   const body = concat(header, slots, u32(ct.length), ct)
-  const wire = concat(body, ed25519.sign(concat(te.encode('TAP-27/epoch/v1'), body), ownerEdSecret))
+  const wire = concat(body, ed25519.sign(concat(GL[lv][1].epoch, body), ownerEdSecret))
   if (wire.length > MAX_WIRE) fail(`epoch message of ${wire.length} bytes is too large for one wire message`)
   return { wire, K, roster, rosterBytes }
 }
@@ -429,7 +452,8 @@ function parseEpoch(wire) {
   }
 }
 
-function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null, lastSeq = null, random = randomBytes, now = () => Date.now(), concurrency = VERIFY_CONCURRENCY, format = 1, reuseS = VERIFY_REUSE_S, verifier = null }) {
+function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null, lastSeq = null, random = randomBytes, now = () => Date.now(), concurrency = VERIFY_CONCURRENCY, format = 1, reuseS = VERIFY_REUSE_S, verifier = null, labels = 'v1' }) {
+  const LF = GL[labels][format]       // this group's labels, of its version and format / 本群（按其版本与格式）的标签
   const epochs = new Map()          // epoch -> { roster, rosterBytes, K, index, members, high, keys, expiresAt, removed, movedOn }
   const accepted = new Map()        // epoch -> sha256 of the accepted epoch message body (equivocation evidence) / 已接受纪元消息的摘要
   let current = null
@@ -446,8 +470,15 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
   // 把自己序号不超过它的消息视为重启前自己发的。
   const restoredSeq = lastSeq
   let otherDevice = null             // { count, epoch, seq } once seen / 一旦发现即记录
-  const room = groupRoom(gid)
+  const room = groupRoom(gid, { labels })
   const clock = { now }
+  // An epoch message that verifies under the OTHER label version: refused all the same, but named (data.peerLabels).
+  // 能按**另一**标签版本验证的纪元消息：同样拒绝，但点明原因。
+  const otherVersionSigned = (sig, body) => edVerify(sig, concat(GL[otherLabels(labels)][format].epoch, body), ownerEd)
+  const notOwnerSigned = (p) => {
+    if (otherVersionSigned(p.sig, p.body)) fail(labelsMismatch('this epoch message', labels, otherLabels(labels)), { data: { labels, peerLabels: otherLabels(labels) } })
+    fail('epoch message is not signed by the owner')
+  }
 
   // `keyless`: an epoch stood up from snapshot() by resumeGroup, only so the next one chains to it; it has no key, and
   // open() says so instead of failing authentication (GRP2-4). / 由 resumeGroup 从快照立起、只为接续的纪元：没有密钥，open() 如实说明
@@ -479,7 +510,7 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
     return st
   }
   const keyOf = (st, epoch, index) => {
-    if (!st.keys.has(index)) st.keys.set(index, senderKeyOf(format)(st.K, gid, epoch, index))
+    if (!st.keys.has(index)) st.keys.set(index, senderKeyOf(format, labels)(st.K, gid, epoch, index))
     return st.keys.get(index)
   }
 
@@ -551,7 +582,7 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
   async function acceptOneV2(wire, verifyMember) {
     const p = parseEpochV2(wire)
     if (!equal(p.gid, gid)) fail('epoch message for another group')
-    if (!edVerify(p.sig, concat(LABELS[2].epoch, p.body), ownerEd)) fail('epoch message is not signed by the owner')
+    if (!edVerify(p.sig, concat(LF.epoch, p.body), ownerEd)) notOwnerSigned(p)
     const bodyHash = toHex(sha256(p.body))
     if (accepted.has(p.epoch)) {
       if (accepted.get(p.epoch) === bodyHash) return { epoch: p.epoch, roster: epochs.get(p.epoch)?.roster ?? null, duplicate: true }
@@ -563,7 +594,7 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
     // a verifier given here (the format-1 habit) also serves the lazy checks later / 此处给的核验器（格式 1 的习惯）也用于之后的惰性核验
     if (typeof vm === 'function' && verifier === null) verifier = vm
     const ss = dh(id.xSecret, p.E)
-    const kek = kekV2(ss, p.E, id.xPub, gid, p.epoch)
+    const kek = kekV2(ss, p.E, id.xPub, gid, p.epoch, labels)
     ss.fill(0)
     let K = null, myIndex = -1
     for (let i = 0; i < p.count; i++) {
@@ -573,7 +604,7 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
       K = k; myIndex = i
     }
     if (!K) fail('no slot in this epoch opens with our key: we are not a member of it')
-    if (!equal(commitV2(K), p.commit)) fail('the group key does not match the commitment the owner signed')
+    if (!equal(commitV2(K, labels), p.commit)) fail('the group key does not match the commitment the owner signed')
     let rosterBytes
     try { rosterBytes = xchacha20poly1305(K, p.N, concat(p.header, p.slots)).decrypt(p.ct) } catch { fail('roster does not decrypt') }
     const r = decodeRosterV2(rosterBytes, p.count)
@@ -613,7 +644,7 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
     if (format === 2) return acceptOneV2(wire, verifyMember)
     const p = parseEpoch(wire)
     if (!equal(p.gid, gid)) fail('epoch message for another group')
-    if (!edVerify(p.sig, concat(te.encode('TAP-27/epoch/v1'), p.body), ownerEd)) fail('epoch message is not signed by the owner')
+    if (!edVerify(p.sig, concat(LF.epoch, p.body), ownerEd)) notOwnerSigned(p)
     const bodyHash = toHex(sha256(p.body))
     // an owner that signs two different messages for one epoch has equivocated; keep the evidence (audit G-11)
     // 群主为同一纪元签了两条不同消息即为两面行为，保留证据
@@ -626,7 +657,7 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
     // try every slot: no fingerprints, so nobody outside learns which slot is whose (audit G-04)
     // 逐格尝试：没有指纹，外人无从得知哪格属于谁
     const ss = dh(id.xSecret, p.E)
-    const kek = kekFor(ss, p.E, id.xPub, gid, p.epoch)
+    const kek = kekFor(ss, p.E, id.xPub, gid, p.epoch, labels)
     ss.fill(0)
     let K = null, myIndex = -1
     for (let i = 0; i < p.count; i++) {
@@ -636,7 +667,7 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
       K = k; myIndex = i
     }
     if (!K) fail('no slot in this epoch opens with our key: we are not a member of it')
-    if (!equal(commitOf(K), p.commit)) fail('the group key does not match the commitment the owner signed')
+    if (!equal(commitOf(K, labels), p.commit)) fail('the group key does not match the commitment the owner signed')
     let roster, rosterBytes
     try {
       rosterBytes = xchacha20poly1305(K, p.N, concat(p.header, p.slots)).decrypt(p.ct)
@@ -708,10 +739,36 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
     const v = verdictOf(m)
     return { ...m, verified: v?.ok === true, ...(v && !v.ok ? { mismatch: true } : {}) }
   }
+  // snapshot() of 1.8.0, unchanged for a v1 group / 1.8.0 的 snapshot()，v1 群原样不变
+  function snapshotOf(st) {
+    if (format === 2) {
+      // the owner keeps its full list (x25519 included: it wraps the next epoch's slots) and the roster bytes as sent,
+      // which the next epoch's prev hashes / 群主保存完整列表（含 x25519，下一纪元包裹格子要用）与原样的名单字节（下一纪元 prev 的哈希对象）
+      // v: 2 (GRP2-2): TapeAPI 1.0.0 to 1.2.0 accept only v: 1 in resumeGroup, and 1.0.0 / 1.1.0 would read a format-2
+      // snapshot as format 1 and split the group; with v: 2 every one of them refuses it. v: 1 with format: 2 (from
+      // 1.2.0) is still read. / 1.0.0 至 1.2.0 的 resumeGroup 只接受 v: 1，而 1.0.0 / 1.1.0 会把格式 2 快照当作格式 1、使群分裂；
+      // 改为 v: 2 后它们都会拒收。1.2.0 发出的 v: 1 + format: 2 仍可读取。
+      return {
+        v: 2, format: 2, gid: toHex(gid), owner: { container: String(ownerRef.container).toLowerCase(), chainId: ownerRef.chainId ?? 56 },
+        epoch: current ?? floor, role: isOwner ? 'owner' : 'member',
+        ...(sealed ? { lastSeq: (mySeq - 1n).toString() } : {}),
+        ...(isOwner && st ? { roster: canonicalJSON({ gid: toHex(gid), epoch: current, members: st.members.map((m) => ({ ...m })), relays: st.roster.relays, ...(st.roster.bus ? { bus: st.roster.bus } : {}) }), rosterBin: toHex(st.rosterBytes) } : {}),
+      }
+    }
+    return {
+      v: 1, gid: toHex(gid), owner: { container: String(ownerRef.container).toLowerCase(), chainId: ownerRef.chainId ?? 56 },
+      epoch: current ?? floor, role: isOwner ? 'owner' : 'member',
+      ...(sealed ? { lastSeq: (mySeq - 1n).toString() } : {}),
+      ...(isOwner && st ? { roster: new TextDecoder().decode(st.rosterBytes) } : {}),
+    }
+  }
+
   const group = {
     gid: toHex(gid), room, isOwner,
     /** 1 or 2 (§3.8, Experimental). / 群格式：1 或 2（实验性）。 */
     format,
+    /** 'v1' or 'v2': the TAPI-27 label version of this group (v2: tape-group/ labels, opt-in from 1.8.1) / 本群的 TAPI-27 标签版本 */
+    labels,
     get epoch() { return current },
     get roster() { return current === null ? null : epochs.get(current).roster },
     get members() { return current === null ? [] : epochs.get(current).members.map(withState) },
@@ -734,26 +791,13 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
      */
     snapshot() {
       const st = current === null ? null : epochs.get(current)
-      if (format === 2) {
-        // the owner keeps its full list (x25519 included: it wraps the next epoch's slots) and the roster bytes as sent,
-        // which the next epoch's prev hashes / 群主保存完整列表（含 x25519，下一纪元包裹格子要用）与原样的名单字节（下一纪元 prev 的哈希对象）
-        // v: 2 (GRP2-2): TapeAPI 1.0.0 to 1.2.0 accept only v: 1 in resumeGroup, and 1.0.0 / 1.1.0 would read a format-2
-        // snapshot as format 1 and split the group; with v: 2 every one of them refuses it. v: 1 with format: 2 (from
-        // 1.2.0) is still read. / 1.0.0 至 1.2.0 的 resumeGroup 只接受 v: 1，而 1.0.0 / 1.1.0 会把格式 2 快照当作格式 1、使群分裂；
-        // 改为 v: 2 后它们都会拒收。1.2.0 发出的 v: 1 + format: 2 仍可读取。
-        return {
-          v: 2, format: 2, gid: toHex(gid), owner: { container: String(ownerRef.container).toLowerCase(), chainId: ownerRef.chainId ?? 56 },
-          epoch: current ?? floor, role: isOwner ? 'owner' : 'member',
-          ...(sealed ? { lastSeq: (mySeq - 1n).toString() } : {}),
-          ...(isOwner && st ? { roster: canonicalJSON({ gid: toHex(gid), epoch: current, members: st.members.map((m) => ({ ...m })), relays: st.roster.relays, ...(st.roster.bus ? { bus: st.roster.bus } : {}) }), rosterBin: toHex(st.rosterBytes) } : {}),
-        }
-      }
-      return {
-        v: 1, gid: toHex(gid), owner: { container: String(ownerRef.container).toLowerCase(), chainId: ownerRef.chainId ?? 56 },
-        epoch: current ?? floor, role: isOwner ? 'owner' : 'member',
-        ...(sealed ? { lastSeq: (mySeq - 1n).toString() } : {}),
-        ...(isOwner && st ? { roster: new TextDecoder().decode(st.rosterBytes) } : {}),
-      }
+      // TAPI-27 v2 labels (1.8.1): v: 3 with labels: 'v2' and the format, so that resumeGroup of 1.8.0 and earlier, which
+      // accepts only v: 1 and v: 2, refuses the snapshot instead of continuing the group under the v1 labels (the same
+      // reasoning as GRP2-2). A v1 group's snapshot is unchanged. / TAPI-27 v2 标签（1.8.1）：v: 3，带 labels: 'v2' 与格式，
+      // 使只接受 v: 1、v: 2 的 1.8.0 及更早版本的 resumeGroup 拒收这份快照，而不是用 v1 标签把群接着办下去（与 GRP2-2 同理）。
+      // v1 群的快照不变。
+      if (labels === 'v2') return { ...snapshotOf(st), v: 3, labels: 'v2', format }
+      return snapshotOf(st)
     },
 
     /**
@@ -780,7 +824,7 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
       rememberSealed(st, seq, nonce)
       const header = concat(Uint8Array.of(WIRE_MESSAGE), gid, epochField(format, current), u32(st.index), u64(seq), nonce)
       const ct = xchacha20poly1305(keyOf(st, current, st.index), nonce, header).encrypt(pt)
-      return concat(header, ct, ed25519.sign(concat(LABELS[format].msg, header, ct), id.edSecret))
+      return concat(header, ct, ed25519.sign(concat(LF.msg, header, ct), id.edSecret))
     },
 
     /**
@@ -818,7 +862,7 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
       const header = wire.slice(0, HEADER_MSG), ct = wire.slice(HEADER_MSG, wire.length - SIG), sig = wire.slice(wire.length - SIG)
       // verify first, even our own: a relay must not make us swallow a message by relabelling it (audit G-17)
       // 先验签，哪怕是自己的：中继不能靠改署名让我们吞掉一条消息
-      if (!edVerify(sig, concat(LABELS[format].msg, header, ct), fromHex(st.members[index].ed25519, 32))) fail(`message is not signed by member ${index}`)
+      if (!edVerify(sig, concat(LF.msg, header, ct), fromHex(st.members[index].ed25519, 32))) fail(`message is not signed by member ${index}`)
       const nonce = wire.slice(37, 61)
       const fromOtherDevice = index === st.index && !isOwnEcho(st, seq, nonce)
       if (index === st.index && !fromOtherDevice) return { own: true, epoch, seq }
@@ -950,11 +994,11 @@ function ownerApi({ group, install, gid, owner, id, verifyMember, random, transp
     let built
     if (group.format === 2) {
       const prev = group.epoch === null ? '00'.repeat(32) : toHex(sha256(group._held().rosterBytes))
-      built = buildEpochV2({ gid, epoch, issued, prev, owner, members: keep, relays: transports.relays, bus: transports.bus, ownerEdSecret: id.edSecret, random })
+      built = buildEpochV2({ gid, epoch, issued, prev, owner, members: keep, relays: transports.relays, bus: transports.bus, ownerEdSecret: id.edSecret, random, labels: group.labels })
     } else {
       const snap = group.snapshot()
       const prev = group.epoch === null ? '00'.repeat(32) : toHex(sha256(te.encode(snap.roster)))
-      built = buildEpoch({ gid, epoch, issued, prev, owner, members: keep, relays: transports.relays, bus: transports.bus, ownerEdSecret: id.edSecret, random })
+      built = buildEpoch({ gid, epoch, issued, prev, owner, members: keep, relays: transports.relays, bus: transports.bus, ownerEdSecret: id.edSecret, random, labels: group.labels })
     }
     install(epoch, { ...built.roster }, built.rosterBytes, built.K)
     // format 2: a verdict for what was checked now, dated from the start of the check; a reused verdict keeps its date, so
@@ -1012,6 +1056,7 @@ function ownerApi({ group, install, gid, owner, id, verifyMember, random, transp
      * The sealed invite (wire type 0x03) for a member's INBOX room (§3.5): post it to
      * channel.inboxRoom(member.container, member.chainId) -- the CONTAINER address, never the holder's wallet, and the
      * member's own chainId -- not to the group room, where the epoch message goes. deliverGroupUpdate() posts both.
+     * A v2 group (labels: 'v2') seals it for the v2 inbox room: channel.inboxRoom(container, chainId, { labels: 'v2' }).
      * 发往成员**收件房间**的密封入群邀请（线路类型 0x03）：投到 channel.inboxRoom(成员容器地址, chainId)——必须是容器
      * 地址而不是持有人钱包，chainId 用成员自己的——而不是纪元消息所去的群房间。deliverGroupUpdate() 两者都投。
      */
@@ -1021,7 +1066,7 @@ function ownerApi({ group, install, gid, owner, id, verifyMember, random, transp
       // message with GROUP_INVALID, instead of skipping an invite of an unknown kind in silence
       // 格式 2 在同一种邀请里加 `format: 2`：格式 1 客户端会入群、随后以 GROUP_INVALID 拒收纪元消息，而不是悄悄跳过一种不认识的邀请
       return sealToInbox({ v: 1, kind: GROUP_INVITE_KIND, gid: toHex(gid), owner, relays: transports.relays.map((x) => ({ url: x.url, container: x.container })), ...(transports.bus ? { bus: transports.bus } : {}), ...(group.format === 2 ? { format: 2 } : {}) },
-        { to: { container: m.container, chainId: m.chainId, staticPublic: m.x25519 }, random: r })
+        { to: { container: m.container, chainId: m.chainId, staticPublic: m.x25519 }, random: r, labels: group.labels })
     },
   })
   return next
@@ -1044,6 +1089,7 @@ export async function createGroup(opts = {}) {
   const now = clockMs(opts)
   const concurrency = checkConcurrency(opts.verifyConcurrency) ?? VERIFY_CONCURRENCY
   const format = checkFormat(opts.format) ?? 1
+  const labels = labelsOf(opts)
   const id = checkIdentity(identity)
   const owner = { container: self.container.toLowerCase(), chainId: self.chainId ?? 56 }
   const ownerEntry = normMember({ ...owner, x25519: id.xPub, ed25519: id.edPub })
@@ -1058,7 +1104,7 @@ export async function createGroup(opts = {}) {
   const gid = random(16)
   // format 2: the owner's verifier also serves its own lazy checks once the verdicts of the last epoch age out (GRPR-4)
   // 格式 2：群主的核验器也用于它自己的惰性核验（上一纪元的结论过期之后）
-  const { group, install } = makeGroup({ gid, self: owner, id, ownerRef: owner, ownerEd: id.edPub, isOwner: true, random, concurrency, format, reuseS, verifier: ownerVerifier(verifyMember), ...(now ? { now } : {}) })
+  const { group, install } = makeGroup({ gid, self: owner, id, ownerRef: owner, ownerEd: id.edPub, isOwner: true, random, concurrency, format, reuseS, verifier: ownerVerifier(verifyMember), labels, ...(now ? { now } : {}) })
   const next = ownerApi({ group, install, gid, owner, id, verifyMember, random, transports: { relays, bus }, startList: [ownerEntry, ...others] })
   const first = await next([ownerEntry, ...others], { verify: 'trust-roster', added: others, trustedAt: checkedAt })   // just verified above / 刚刚核验过
   return { group, epochWire: first.epochWire, epoch: first.epoch, added: first.added }
@@ -1075,8 +1121,17 @@ export async function resumeGroup(opts = {}) {
   const concurrency = checkConcurrency(opts.verifyConcurrency) ?? VERIFY_CONCURRENCY
   const id = checkIdentity(identity)
   // v: 1 (format 1, and format 2 as 1.2.0 wrote it) or v: 2 (format 2 since GRP2-2) / v: 1（格式 1，及 1.2.0 写出的格式 2）或 v: 2（格式 2）
+  // v: 3 (1.8.1): a group of TAPI-27 v2 labels, either format, with labels: 'v2' / v: 3（1.8.1）：TAPI-27 v2 标签的群（任一格式），带 labels: 'v2'
   if (snapshot?.v === 2 && snapshot.format !== 2) fail('a v: 2 snapshot is a format-2 snapshot, and this one does not say format: 2')
-  if (!snapshot || (snapshot.v !== 1 && snapshot.v !== 2) || snapshot.role !== 'owner' || typeof snapshot.roster !== 'string') fail('resumeGroup needs an owner snapshot()')
+  if (snapshot?.v === 3 && (snapshot.labels !== 'v2' || (snapshot.format !== 1 && snapshot.format !== 2))) fail("a v: 3 snapshot is a snapshot of a TAPI-27 v2 group, and this one does not say labels: 'v2' and its format")
+  // v: 1 / v: 2 are snapshots of v1 groups: labels: 'v1' (or none) is accepted there, as 1.8.0 ignored it; 'v2' is refused
+  // v: 1 / v: 2 是 v1 群的快照：其中的 labels: 'v1'（或不写）照收，与 1.8.0 忽略它一致；'v2' 拒收
+  if (snapshot && snapshot.v !== 3 && snapshot.labels !== undefined && snapshot.labels !== 'v1') fail("a v: 1 or v: 2 snapshot is of a v1 group; only a v: 3 snapshot is of a v2 group (labels: 'v2')")
+  if (!snapshot || (snapshot.v !== 1 && snapshot.v !== 2 && snapshot.v !== 3) || snapshot.role !== 'owner' || typeof snapshot.roster !== 'string') fail('resumeGroup needs an owner snapshot()')
+  // A group keeps its label version for life: it comes from the snapshot; `labels`, if given, must agree (never a switch).
+  // 群终生保持其标签版本：版本取自快照；若给出 `labels`，必须一致（绝不切换）。
+  const labels = snapshot.v === 3 ? 'v2' : 'v1'
+  if (opts.labels !== undefined && checkLabels(opts.labels) !== labels) fail(`this snapshot is of a TAPI-27 ${labels} group (labels '${labels}'), not '${opts.labels}': a group keeps its labels for life; create a new group to change them`, { data: { labels: opts.labels, peerLabels: labels } })
   const owner = { container: self.container.toLowerCase(), chainId: self.chainId ?? 56 }
   if (!sameContainer(snapshot.owner, owner)) fail('this snapshot belongs to another owner')
   let roster
@@ -1085,7 +1140,7 @@ export async function resumeGroup(opts = {}) {
   const format = checkFormat(snapshot.format) ?? 1
   const reuseS = format === 2 ? checkReuse(opts.verifyReuseS) : VERIFY_REUSE_S
   const gid = fromHex(snapshot.gid, 16, 'gid')
-  const { group, install } = makeGroup({ gid, self: owner, id, ownerRef: owner, ownerEd: id.edPub, isOwner: true, lastSeq: parseLastSeq(snapshot.lastSeq), random, concurrency, format, reuseS, verifier: ownerVerifier(verifyMember), ...(now ? { now } : {}) })
+  const { group, install } = makeGroup({ gid, self: owner, id, ownerRef: owner, ownerEd: id.edPub, isOwner: true, lastSeq: parseLastSeq(snapshot.lastSeq), random, concurrency, format, reuseS, verifier: ownerVerifier(verifyMember), labels, ...(now ? { now } : {}) })
   // stand the old roster up without a key, only so the next epoch chains to it / 立起旧名单（无密钥），只为让下一纪元接上
   if (format === 2) {
     // the roster bytes as sent (prev hashes them), and the full list the owner kept / 原样的名单字节（prev 的哈希对象）与群主保存的完整列表
@@ -1130,9 +1185,13 @@ export function channelKeysVerifier(api) {
   }
 }
 
-/** Open a group invite from this container's inbox (§3.5) / 从收件房间打开入群邀请 */
-export function openGroupInvite(wire, { self }) {
-  const inv = openFromInbox(wire, { self })
+/**
+ * Open a group invite from this container's inbox (§3.5). `labels`: the version of the inbox room it was read from
+ * ('v2': inboxRoom(container, chainId, { labels: 'v2' })); pass the same to joinGroup.
+ * 从收件房间打开入群邀请。`labels`：读到它的收件房间的版本；给 joinGroup 传同样的值。
+ */
+export function openGroupInvite(wire, { self, labels }) {
+  const inv = openFromInbox(wire, { self, labels })
   if (inv.kind !== GROUP_INVITE_KIND) fail('not a group invite')
   if (typeof inv.gid !== 'string' || !/^[0-9a-f]{32}$/.test(inv.gid)) fail('invite.gid must be 16 bytes of lowercase hex')
   if (!inv.owner || typeof inv.owner.container !== 'string') fail('invite.owner is required')
@@ -1166,12 +1225,16 @@ export function joinGroup(opts = {}) {
   // verifyMember 与 verifyReuseS 是格式 2 的选项。格式 1 群忽略它们，与 1.1.0 忽略一切未知选项一致（1.x 只增不破），
   // 同时支持两种格式的代码可以对任何邀请都传入它们。
   const reuseS = format === 2 ? checkReuse(opts.verifyReuseS) : VERIFY_REUSE_S
+  // The invite does not say its label version (TAPI-27 v2 §3.3): it is the version of the inbox room it came from, and
+  // the caller states it. A wrong one shows as an epoch message refused with data.peerLabels; nothing falls back.
+  // 邀请不说明自己的标签版本：它就是所来自的收件房间的版本，由调用方给出。给错时，纪元消息会被拒收并附 data.peerLabels；不会退回。
+  const labels = labelsOf(opts)
   const id = checkIdentity(identity)
   if (!ownerKeys || !sameContainer(ownerKeys, invite.owner)) fail('ownerKeys must be the channel keys of invite.owner')
   let ownerEd
   try { ownerEd = assertEd25519Public(ownerKeys.ed25519, 'owner ed25519') } catch (e) { fail(e.message) }
   if (minEpoch !== undefined && (!Number.isInteger(minEpoch) || minEpoch < 0 || minEpoch > MAX_EPOCH)) fail('minEpoch must be an epoch number')
   const gid = fromHex(invite.gid, 16, 'gid')
-  const { group } = makeGroup({ gid, self: { container: self.container.toLowerCase(), chainId: self.chainId ?? 56 }, id, ownerRef: invite.owner, ownerEd, isOwner: false, minEpoch: minEpoch ?? null, lastSeq: parseLastSeq(lastSeq), concurrency, format, reuseS, verifier: format === 2 ? (opts.verifyMember ?? null) : null, ...(now ? { now } : {}) })
+  const { group } = makeGroup({ gid, self: { container: self.container.toLowerCase(), chainId: self.chainId ?? 56 }, id, ownerRef: invite.owner, ownerEd, isOwner: false, minEpoch: minEpoch ?? null, lastSeq: parseLastSeq(lastSeq), concurrency, format, reuseS, verifier: format === 2 ? (opts.verifyMember ?? null) : null, labels, ...(now ? { now } : {}) })
   return group
 }

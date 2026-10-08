@@ -19,7 +19,7 @@
 // checkGroupInvites() 读取成员的收件房间，按房间保存带中继房间纪元的游标，并打开读到的邀请。
 import { TapeAPIError } from './errors.js'
 import { encodeCall } from './abi.js'
-import { inboxRoom, openFromInbox, toBase64, fromBase64, toHex, CHANNELBUS_MAX_WIRE, INVITE_KIND } from './channel.js'
+import { inboxRoom, openFromInbox, toBase64, fromBase64, toHex, CHANNELBUS_MAX_WIRE, INVITE_KIND, checkLabels } from './channel.js'
 import { openGroupInvite, GROUP_INVITE_KIND } from './group.js'
 import { x25519 } from '@noble/curves/ed25519'
 
@@ -155,8 +155,11 @@ export async function deliverGroupUpdate(opts = {}) {
     }
   }
 
+  // A v2 group (labels: 'v2', TAPI-27 v2) invites into the members' v2 inbox rooms; group.inviteFor seals for them.
+  // v2 群（labels: 'v2'）的邀请投到成员的第 2 版收件房间；group.inviteFor 按它们密封。
+  const labels = checkLabels(group.labels, 'group.labels')
   for (const m of targets) {
-    const room = inboxRoom(m.container, m.chainId)
+    const room = inboxRoom(m.container, m.chainId, { labels })
     let wire
     try { wire = group.inviteFor(m, random ? { random } : {}) } catch (e) {
       deliveries.push({ what: 'invite', room, container: m.container, chainId: m.chainId, via: null, ok: false, error: describe(e) })
@@ -190,7 +193,7 @@ function normCursor(c) {
 /**
  * Member: read this container's inbox room on each relay and open the group invites found there.
  *
- *   checkGroupInvites({ self, identity, relayClients, cursors, waitMs, holder, checkSelf })
+ *   checkGroupInvites({ self, identity, relayClients, cursors, waitMs, holder, checkSelf, labels })
  *     self      { container, chainId }: the member's CONTAINER address (the ERC-6551 account its channel record names),
  *               NOT the holder's wallet, and the chain it lives on (default 56). Anything else is another room.
  *     identity  the channel identity whose keys the record publishes (channel.generateIdentity()); or self.staticSecret
@@ -215,6 +218,10 @@ function normCursor(c) {
  */
 export async function checkGroupInvites(opts = {}) {
   const { self, identity, cursors = new Map(), waitMs = 0, holder, checkSelf } = opts ?? {}
+  // labels: 'v2' reads the v2 inbox room, where TAPI-27 v2 owners post; pass the same to joinGroup. One version per call:
+  // a v1 room and a v2 room are two rooms, and an invite is never read under the other version's labels.
+  // labels: 'v2' 读第 2 版收件房间（TAPI-27 v2 群主投递之处）；给 joinGroup 传同样的值。每次调用只读一个版本。
+  const labels = checkLabels(opts?.labels)
   if (!self || !isAddr(self.container)) invalid('self.container must be the member\'s CONTAINER address (the ERC-6551 account), not the holder\'s wallet')
   const chainId = self.chainId ?? 56
   if (!Number.isInteger(chainId) || chainId < 1) invalid('self.chainId must be a positive integer (the chain the container lives on)')
@@ -226,7 +233,7 @@ export async function checkGroupInvites(opts = {}) {
   if (typeof cursors?.get !== 'function' || typeof cursors?.set !== 'function') invalid('cursors must have get(key) and set(key, value) (a Map works)')
   const relays = listOf(opts, 'relayClients', ['relays', 'relay']).map(checkRelay)
   if (!relays.length) invalid('relayClients [{ api, service }] is required')
-  const room = inboxRoom(self.container, chainId)
+  const room = inboxRoom(self.container, chainId, { labels })
 
   if (checkSelf) {
     const api = checkSelf === true ? relays[0].api : checkSelf
@@ -265,11 +272,11 @@ export async function checkGroupInvites(opts = {}) {
           const id = toHex(wire)
           if (seen.has(id)) continue
           let obj
-          try { obj = openFromInbox(wire, { self: me }) } catch { skippedBy.unreadable++; continue }
+          try { obj = openFromInbox(wire, { self: me, labels }) } catch { skippedBy.unreadable++; continue }
           if (obj.kind === INVITE_KIND) { skippedBy.channelInvite++; continue }
           if (obj.kind !== GROUP_INVITE_KIND) { skippedBy.otherKind++; continue }
           let inv
-          try { inv = openGroupInvite(wire, { self: me }) } catch { skippedBy.unreadable++; continue }
+          try { inv = openGroupInvite(wire, { self: me, labels }) } catch { skippedBy.unreadable++; continue }
           seen.add(id)
           invites.push({ invite: inv, i: f.i, relay: relayName(r) })
         }

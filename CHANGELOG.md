@@ -7,6 +7,35 @@ interfaces.
 
 ## [Unreleased]
 
+## [1.8.1] — 2026-10-08
+
+### Added
+
+- **Private channels and groups: optional version-2 labels (`labels: 'v2'`).** At the request of the TAPs editors
+  (TapeOutProtocol/TAPs PRs #12 and #20), the domain-separation labels of private channels and private groups have a
+  version 2 that begins with `tape-channel/` and `tape-group/` instead of `TAP-26/` and `TAP-27/`, with the same
+  suffixes. The SDK implements it as an option: pass `labels: 'v2'` to `channel.createInvite`, `acceptInvite`,
+  `roomsFor`, `inboxRoom`, `sealInvite` / `sealToInbox` and `openInvite` / `openFromInbox`, and to `group.createGroup`,
+  `joinGroup`, `openGroupInvite`, `groupRoom` and `checkGroupInvites`. **The default is unchanged:** without the
+  option the SDK uses version 1 exactly as 1.8.0 did, and the version-1 vector files are unchanged. Version 2 is
+  planned to become the default in 2.0.
+  - Both sides must use the same version. Invites carry no version (they keep `v: 1`), and the two versions do not
+    interoperate. A mismatch fails closed: the rooms differ, and an accept, ready, sealed invite or epoch message of
+    the other version is refused with `CHANNEL_INVALID` / `GROUP_INVALID`, `data.labels` and `data.peerLabels`. The
+    SDK never switches versions on its own; any other `labels` value is `INVALID_ARGUMENT`. For a sealed invite the
+    error says only how the wire was sealed: anyone can post to an inbox room, so it is no evidence about the sender.
+  - Pending handles, sessions and group handles report `labels`. SDKs before 1.8.1 ignore the `labels` option
+    silently and use version 1; an application that passes `labels: 'v2'` should check `pending.labels` and
+    `session.labels` (or `group.labels`), which those SDKs do not have.
+  - The `snapshot()` of a version-2 group is `v: 3` with `labels: 'v2'` (SDKs up to 1.8.0 refuse it), and
+    `resumeGroup` takes the version from the snapshot. A `v: 1` or `v: 2` snapshot that says `labels: 'v1'` is
+    accepted, as 1.8.0 accepted it; one that says `labels: 'v2'` is refused.
+  - Specifications: [`spec/TAPI-26-v2.md`](spec/TAPI-26-v2.md) and [`spec/TAPI-27-v2.md`](spec/TAPI-27-v2.md) (Draft).
+    `spec/TAPI-26.md` and `spec/TAPI-27.md` stay Stable (v1), with a non-normative note. New vectors
+    `spec/vectors/tapi-26-v2-channel.json`, `tapi-26-v2-identity.json`, `tapi-27-v2-group.json` and
+    `tapi-27-v2-group-format2.json`, written by the SDK and checked by `spec/vectors/verify.py` with the version-1
+    files.
+
 ## [1.8.0] — 2026-10-06
 
 ### Changed
@@ -1510,7 +1539,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/BruceLanLan/tapeapi/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/BruceLanLan/tapeapi/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.6.0...v1.7.0

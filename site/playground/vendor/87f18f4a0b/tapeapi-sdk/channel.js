@@ -47,7 +47,46 @@ export const MAX_SEQ = 2n ** 32n                    // re-handshake long before 
 const te = new TextEncoder()
 const td = new TextDecoder('utf-8', { fatal: true })
 const P_FIELD = 2n ** 255n - 19n
-const fail = (msg) => { throw new TapeAPIError('CHANNEL_INVALID', msg) }
+const fail = (msg, extra) => { throw new TapeAPIError('CHANNEL_INVALID', msg, extra) }
+
+// ---------------------------------------------------------------- labels: TAPI-26 v1 and v2 ----
+// Every domain-separation label exists in two versions. v1 (`TAP-26/…`) is TAPI-26 version 1, Stable (v1) and frozen
+// (TAPI-1 §4.1): it is the default and its bytes never change. v2 (`tape-channel/…`) is spec/TAPI-26-v2.md (Draft), the
+// labels the TAPs editors asked for; from 1.8.1 a caller opts in with `labels: 'v2'`, and from 2.0 it is the default.
+// Only the prefix differs. The labels ARE the version marker: the invite, accept and ready objects are the same in both
+// versions (the invite keeps `v: 1`), so both sides must be told the same version. A channel is of one version from its
+// invite to its last frame; the SDK never retries, opens or confirms anything under the other version's labels, and
+// where it can tell that a message was made under them it says so (data.labels / data.peerLabels) instead of failing
+// with a generic error.
+// 每个域分隔标签都有两个版本。v1（`TAP-26/…`）即 TAPI-26 第 1 版，Stable (v1) 且冻结：它是默认值，字节永不改变。v2
+// （`tape-channel/…`）即 spec/TAPI-26-v2.md（Draft），是 TAPs 编辑要求的标签；1.8.1 起调用方以 `labels: 'v2'` 选用，2.0 起成为
+// 默认。两者只有前缀不同。**标签本身就是版本标记**：邀请、accept、ready 对象在两个版本里完全相同（邀请仍是 `v: 1`），所以必须让双方
+// 知道同一个版本。一条通道从邀请到最后一帧只属于一个版本；SDK 从不改用另一版本的标签重试、打开或确认任何东西；能看出消息是用另一
+// 版本的标签做出的时候，错误会明说（data.labels / data.peerLabels），而不是给一个笼统的失败。
+const CHANNEL_LABELS = {
+  v1: {
+    inbox: 'TAP-26/inbox/v1', transcript: 'TAP-26/transcript/v1', keys: 'TAP-26/keys/v1',
+    initiator: 'TAP-26/confirm/initiator', responder: 'TAP-26/confirm/responder', frame: 'TAP-26/frame/v1', room: 'TAP-26/room/v1',
+  },
+  v2: {
+    inbox: 'tape-channel/inbox/v1', transcript: 'tape-channel/transcript/v1', keys: 'tape-channel/keys/v1',
+    initiator: 'tape-channel/confirm/initiator', responder: 'tape-channel/confirm/responder', frame: 'tape-channel/frame/v1', room: 'tape-channel/room/v1',
+  },
+}
+const LB = Object.fromEntries(Object.entries(CHANNEL_LABELS).map(([v, t]) => [v, Object.fromEntries(Object.entries(t).map(([k, s]) => [k, te.encode(s)]))]))
+/** The other label version / 另一个标签版本 */
+export const otherLabels = (v) => (v === 'v2' ? 'v1' : 'v2')
+/**
+ * `labels`: undefined (= 'v1', the default), 'v1' or 'v2'. Anything else is a configuration mistake, never read as v1.
+ * `labels`：undefined（即默认的 'v1'）、'v1' 或 'v2'。其他值都是配置错误，绝不当作 v1。
+ */
+export function checkLabels(labels, name = 'labels') {
+  if (labels === undefined) return 'v1'
+  if (labels !== 'v1' && labels !== 'v2') throw new TapeAPIError('INVALID_ARGUMENT', `${name} must be 'v1' (TAPI-26/27 version 1, labels TAP-26/ and TAP-27/, the default) or 'v2' (TAPI-26/27 version 2, labels tape-channel/ and tape-group/)`)
+  return labels
+}
+// The message a version mismatch gets, wherever one is detected / 版本不一致时的统一说明
+export const labelsMismatch = (what, mine, theirs) => `${what} was made under ${theirs === 'v2' ? 'TAPI-26/27 v2 labels (tape-channel/, tape-group/)' : 'TAPI-26/27 v1 labels (TAP-26/, TAP-27/)'}, and this side uses ${mine === 'v2' ? 'v2' : 'v1'}: both sides must pass the same \`labels\` ('${theirs}' here would match). The SDK never switches versions on its own.`
 
 // ---------------------------------------------------------------- bytes ----
 const concat = (...parts) => {
@@ -117,9 +156,12 @@ export const publicKeyOf = (secretKey) => x25519.getPublicKey(secretKey)
 // are different: anyone can derive one from a container.)
 // 通道房间，每个方向一个，由通道号派生。通道号只出现在密封邀请里，所以通道房间名是猜不到的凭据，也不透露谁在和谁通信。
 // （收件房间不同：任何人都能由容器推导出来。）
-export function roomsFor(cid) {
+// `labels` (TAPI-26 v2, opt-in from 1.8.1): the rooms of a v2 channel are other rooms; pass the channel's version.
+// `labels`（TAPI-26 v2，1.8.1 起可选）：v2 通道的房间是另外的房间；传入通道的版本。
+export function roomsFor(cid, { labels } = {}) {
+  const L = LB[checkLabels(labels)]
   const c = typeof cid === 'string' ? fromHex(cid, 16, 'cid') : cid
-  const room = (dir) => toHex(sha256(concat(te.encode('TAP-26/room/v1'), c, Uint8Array.of(dir))))
+  const room = (dir) => toHex(sha256(concat(L.room, c, Uint8Array.of(dir))))
   return { toInitiator: room(0), toResponder: room(1) }
 }
 
@@ -135,27 +177,36 @@ export function roomsFor(cid) {
 // 整份邀请的哈希也放进去，于是其中的中继列表与 SDP 由密钥调度本身认证，而不只是靠它碰巧走过的送达路径：
 // 被篡改的邀请无论经由哪条路送达，都只会得到一次失败的握手。
 export const inviteHash = (invite) => sha256(te.encode(canonicalJSON(invite)))
-function transcript({ cid, epA, epB, SA, SB, EA, EB, exp, ih }) {
-  return sha256(concat(te.encode('TAP-26/transcript/v1'), cid, epA, epB, SA, SB, EA, EB, u64be(exp), ih))
+function transcript({ cid, epA, epB, SA, SB, EA, EB, exp, ih }, L) {
+  return sha256(concat(L.transcript, cid, epA, epB, SA, SB, EA, EB, u64be(exp), ih))
 }
-function deriveKeys(ikm, th) {
-  const okm = hkdf(sha256, ikm, th, te.encode('TAP-26/keys/v1'), 128)
+function deriveKeys(ikm, th, L) {
+  const okm = hkdf(sha256, ikm, th, L.keys, 128)
   const k = { kAB: okm.slice(0, 32), kBA: okm.slice(32, 64), cA: okm.slice(64, 96), cB: okm.slice(96, 128) }
   okm.fill(0)
   return k
 }
-const confirmTag = (key, role, th) => hmac(sha256, key, concat(te.encode(`TAP-26/confirm/${role}`), th))
+const confirmTag = (key, role, th, L) => hmac(sha256, key, concat(L[role], th))
 
 // Exposed only so the spec vectors can pin every intermediate value; applications never need it.
 // 仅为规范向量能钉住每个中间值而导出，应用不需要它。
-export function _keySchedule({ cid, epA, epB, SA, SB, EA, EB, exp, ih, dh1, dh2, dh3 }) {
-  const th = transcript({ cid, epA, epB, SA, SB, EA, EB, exp, ih })
+export function _keySchedule({ cid, epA, epB, SA, SB, EA, EB, exp, ih, dh1, dh2, dh3, labels }) {
+  const L = LB[checkLabels(labels)]
+  const th = transcript({ cid, epA, epB, SA, SB, EA, EB, exp, ih }, L)
   const ikm = concat(dh1, dh2, dh3)
-  const k = deriveKeys(ikm, th)
+  const k = deriveKeys(ikm, th, L)
   ikm.fill(0)
-  const out = { th, kAB: k.kAB, kBA: k.kBA, confirmA: confirmTag(k.cA, 'initiator', th), confirmB: confirmTag(k.cB, 'responder', th) }
+  const out = { th, kAB: k.kAB, kBA: k.kBA, confirmA: confirmTag(k.cA, 'initiator', th, L), confirmB: confirmTag(k.cB, 'responder', th, L) }
   k.cA.fill(0); k.cB.fill(0)
   return out
+}
+// The confirmation tags the same handshake would carry under the OTHER label version, used only to name a version
+// mismatch in an error (never to accept anything). Keys derived on the way are wiped.
+// 同一次握手在**另一**标签版本下会带的确认标签，只用于在错误里点明版本不一致（绝不用来接受任何东西）；途中派生的密钥随即清零。
+function otherConfirms(args, labels) {
+  const ks = _keySchedule({ ...args, labels: otherLabels(labels) })
+  ks.kAB.fill(0); ks.kBA.fill(0)
+  return { confirmA: ks.confirmA, confirmB: ks.confirmB }
 }
 
 // ---------------------------------------------------------------- handshake ----
@@ -225,7 +276,14 @@ const PENDING = new WeakMap()
  */
 // `random` exists only so spec vectors can be reproduced; production MUST use the default secure source.
 // `random` 仅为复现规范向量而存在；生产环境 MUST 使用默认的安全随机源。
-export function createInvite({ self, peer, relays = [], bus, keys = KEYS_CHANNEL, ttlS = DEFAULT_INVITE_TTL_S, webrtc, now = nowS(), random = randomBytes }) {
+// `labels`: 'v1' (default, TAPI-26 v1) or 'v2' (TAPI-26 v2, tape-channel/ labels, opt-in from 1.8.1). The invite object
+// is the same in both versions and does not say which one it is: the responder must be told (pass the same `labels` to
+// acceptInvite). The handle and the session report it as `labels`; the rooms to listen on are roomsFor(cid, { labels }).
+// `labels`：'v1'（默认，TAPI-26 第 1 版）或 'v2'（TAPI-26 第 2 版，tape-channel/ 标签，1.8.1 起可选）。邀请对象在两个版本里
+// 完全相同，也不说明自己属于哪个版本：必须告诉响应方（给 acceptInvite 传同样的 `labels`）。句柄与会话以 `labels` 报告版本；
+// 要监听的房间是 roomsFor(cid, { labels })。
+export function createInvite({ self, peer, relays = [], bus, keys = KEYS_CHANNEL, ttlS = DEFAULT_INVITE_TTL_S, webrtc, now = nowS(), random = randomBytes, labels }) {
+  const lv = checkLabels(labels)
   const a = party(self, 'self', true), b = party(peer, 'peer', false)
   if (!Number.isInteger(ttlS) || ttlS < 30 || ttlS > MAX_INVITE_TTL_S) fail(`ttlS must be an integer in [30, ${MAX_INVITE_TTL_S}]`)
   checkRelays(relays)
@@ -247,8 +305,8 @@ export function createInvite({ self, peer, relays = [], bus, keys = KEYS_CHANNEL
     ...(webrtc ? { webrtc } : {}),
   }
   const ih = inviteHash(invite)                          // also refuses a webrtc value with no canonical form / 同时拒绝没有规范形式的 webrtc
-  const pending = Object.freeze({ role: 'initiator', cid: invite.cid, exp })
-  PENDING.set(pending, { a, b, cid, e, exp, ih, done: false })
+  const pending = Object.freeze({ role: 'initiator', cid: invite.cid, exp, labels: lv })
+  PENDING.set(pending, { a, b, cid, e, exp, ih, lv, done: false })
   return { invite, pending }
 }
 
@@ -259,7 +317,13 @@ export function createInvite({ self, peer, relays = [], bus, keys = KEYS_CHANNEL
  * 响应方。`peer` 是发起方：容器取自 TapeSend 的 `from`，长期公钥取自 DeWebHub —— 绝不取自邀请本身。
  * 传入一个 Set 作为 `seen` 即可拒绝已接受过的通道号；保留到这些号过期为止。
  */
-export function acceptInvite({ self, peer, invite, now = nowS(), random = randomBytes, seen }) {
+// `labels` must be the version the initiator used (see createInvite): an invite does not carry it, and the SDK never
+// guesses it. A TapeSend-delivered invite in particular says nothing about it; with the wrong version the handshake
+// fails (the initiator reads other rooms and refuses the accept), it never falls back.
+// `labels` 必须与发起方所用版本一致（见 createInvite）：邀请里没有它，SDK 也从不猜测。尤其是经 TapeSend 送达的邀请对此只字不提；
+// 版本不对时握手失败（发起方读的是别的房间，也会拒绝这个 accept），绝不退回另一个版本。
+export function acceptInvite({ self, peer, invite, now = nowS(), random = randomBytes, seen, labels }) {
+  const lv = checkLabels(labels)
   const b = party(self, 'self', true), a = party(peer, 'peer', false)
   if (!invite || invite.v !== 1 || invite.kind !== INVITE_KIND) fail('not a TAPI-26 invite')
   const cid = fromHex(invite.cid, 16, 'invite.cid')
@@ -286,11 +350,13 @@ export function acceptInvite({ self, peer, invite, now = nowS(), random = random
     dh2 = dh(e.secretKey, a.pub, 'the initiator static key')    // DH(eB, sA) = DH(sA, eB)
     dh3 = dh(e.secretKey, EA, 'the initiator ephemeral')        // DH(eB, eA)
   } finally { e.secretKey.fill(0) }                              // forward secrecy, on every path / 前向保密，任何路径上都销毁
-  const ks = _keySchedule({ cid, epA: a.ep, epB: b.ep, SA: a.pub, SB: b.pub, EA, EB: e.publicKey, exp: invite.exp, ih, dh1, dh2, dh3 })
+  const ksArgs = { cid, epA: a.ep, epB: b.ep, SA: a.pub, SB: b.pub, EA, EB: e.publicKey, exp: invite.exp, ih, dh1, dh2, dh3 }
+  const ks = _keySchedule({ ...ksArgs, labels: lv })
+  const other = otherConfirms(ksArgs, lv)                     // only to name a mismatch in confirm() / 只用于在 confirm() 中点明版本不一致
   dh1.fill(0); dh2.fill(0); dh3.fill(0)
   seen?.add(cidHex)
   const accept = { t: 'accept', cid: cidHex, e: toHex(e.publicKey), confirm: toHex(ks.confirmB) }
-  const session = makeSession({ role: 'responder', cid, sendKey: ks.kBA, recvKey: ks.kAB, th: ks.th, peerConfirm: ks.confirmA, peer: a, exp: invite.exp })
+  const session = makeSession({ role: 'responder', cid, sendKey: ks.kBA, recvKey: ks.kAB, th: ks.th, peerConfirm: ks.confirmA, otherConfirm: other.confirmA, peer: a, exp: invite.exp, labels: lv })
   return { accept, session }
 }
 
@@ -309,39 +375,50 @@ export function completeInvite(pending, accept, { now = nowS() } = {}) {
   if (!sameBytes(fromHex(accept.cid, 16, 'accept.cid'), st.cid)) fail('accept is for a different channel')
   if (st.exp <= now) fail('the invite expired before it was accepted')
   const EB = assertPublicKey(fromHex(accept.e, 32, 'accept.e'), 'accept.e')
-  const { a, b, cid, e, exp, ih } = st
+  const { a, b, cid, e, exp, ih, lv } = st
   const dh1 = dh(e.secretKey, b.pub, 'the responder static key')  // DH(eA, sB)
   const dh2 = dh(a.secret, EB, 'the responder ephemeral')         // DH(sA, eB)
   const dh3 = dh(e.secretKey, EB, 'the responder ephemeral')      // DH(eA, eB)
-  const ks = _keySchedule({ cid, epA: a.ep, epB: b.ep, SA: a.pub, SB: b.pub, EA: e.publicKey, EB, exp, ih, dh1, dh2, dh3 })
-  dh1.fill(0); dh2.fill(0); dh3.fill(0)
+  const ksArgs = { cid, epA: a.ep, epB: b.ep, SA: a.pub, SB: b.pub, EA: e.publicKey, EB, exp, ih, dh1, dh2, dh3 }
+  const ks = _keySchedule({ ...ksArgs, labels: lv })
   // Only someone holding B's static secret can produce this tag. Checking it before sending anything is what
   // stops a man in the middle who swapped in his own ephemeral key.
   // 只有持有 B 长期私钥的人才算得出这个标签。在发送任何东西之前核对它，才能挡住换上自己临时密钥的中间人。
-  if (!equalCT(fromHex(accept.confirm, 32, 'accept.confirm'), ks.confirmB)) {
-    ks.kAB.fill(0); ks.kBA.fill(0)
-    fail('accept.confirm does not verify: the peer does not hold the static key published for its container')
-  }
+  let refused = null
+  try {
+    const got = fromHex(accept.confirm, 32, 'accept.confirm')
+    if (!equalCT(got, ks.confirmB)) {
+      ks.kAB.fill(0); ks.kBA.fill(0)
+      // Refused either way, and the handle is kept. If the tag is the one the other label version gives, say so.
+      // 无论如何都拒绝，句柄保留。若该标签正是另一标签版本给出的值，就明说。
+      refused = equalCT(got, otherConfirms(ksArgs, lv).confirmB) ? 'labels' : 'key'
+    }
+  } finally { dh1.fill(0); dh2.fill(0); dh3.fill(0) }
+  if (refused === 'labels') fail(labelsMismatch('this accept', lv, otherLabels(lv)), { data: { labels: lv, peerLabels: otherLabels(lv) } })
+  if (refused) fail('accept.confirm does not verify: the peer does not hold the static key published for its container')
   st.done = true
   e.secretKey.fill(0)
   PENDING.delete(pending)
-  const session = makeSession({ role: 'initiator', cid, sendKey: ks.kAB, recvKey: ks.kBA, th: ks.th, confirmed: true, peer: b, exp })
+  const session = makeSession({ role: 'initiator', cid, sendKey: ks.kAB, recvKey: ks.kBA, th: ks.th, confirmed: true, peer: b, exp, labels: lv })
   return { ready: { t: 'ready', cid: toHex(cid), confirm: toHex(ks.confirmA) }, session }
 }
 
 // ---------------------------------------------------------------- session ----
-function makeSession({ role, cid, sendKey, recvKey, th, peerConfirm, confirmed = false, peer, exp }) {
+function makeSession({ role, cid, sendKey, recvKey, th, peerConfirm, otherConfirm = null, confirmed = false, peer, exp, labels }) {
+  const L = LB[labels]
   let sendSeq = 0n
   let recvHigh = -1n
   let isConfirmed = confirmed
   let closed = false
   const dirOut = role === 'initiator' ? 0 : 1
   const dirIn = 1 - dirOut
-  const aad = (dir, seq) => concat(te.encode('TAP-26/frame/v1'), cid, Uint8Array.of(dir), u64be(seq))
+  const aad = (dir, seq) => concat(L.frame, cid, Uint8Array.of(dir), u64be(seq))
   const nonce = (seq) => concat(new Uint8Array(4), u64be(seq))
-  const rooms = roomsFor(cid)
+  const rooms = roomsFor(cid, { labels })
   return {
     role, cid: toHex(cid), transcript: toHex(th), peer: { container: peer.container, chainId: peer.chainId },
+    /** 'v1' or 'v2': the TAPI-26 label version of this channel / 本通道的 TAPI-26 标签版本 */
+    labels,
     // The room this side reads from, and the room it writes to. / 本方读取的房间，与写入的房间。
     rooms: role === 'initiator'
       ? { inbound: rooms.toInitiator, outbound: rooms.toResponder }
@@ -360,9 +437,14 @@ function makeSession({ role, cid, sendKey, recvKey, th, peerConfirm, confirmed =
       if (exp <= now) fail(`ready arrived after the invite expired at ${exp}`)   // same bound as accept / 与 accept 相同的边界
       // Proves the initiator holds its static secret; until then B has only an invite anyone could have replayed.
       // 证明发起方持有其长期私钥；在此之前 B 手里只有一份任何人都可能重放的邀请。
-      if (!equalCT(fromHex(ready.confirm, 32, 'ready.confirm'), peerConfirm)) fail('ready.confirm does not verify: the initiator does not hold the static key published for its container')
+      const got = fromHex(ready.confirm, 32, 'ready.confirm')
+      if (!equalCT(got, peerConfirm)) {
+        if (otherConfirm && equalCT(got, otherConfirm)) fail(labelsMismatch('this ready', labels, otherLabels(labels)), { data: { labels, peerLabels: otherLabels(labels) } })
+        fail('ready.confirm does not verify: the initiator does not hold the static key published for its container')
+      }
       isConfirmed = true
       peerConfirm.fill(0)
+      otherConfirm?.fill(0)
     },
     /** Encrypt one message. Returns frame bytes: uint64 seq || ciphertext || tag. / 加密一条消息。 */
     seal(data) {
@@ -1654,9 +1736,13 @@ export function generateIdentity(random = randomBytes) {
   return { x25519: x, ed25519: { secretKey: edSecret, publicKey: ed25519.getPublicKey(edSecret) } }
 }
 
-/** A container's inbox room on any relay or ChannelBus: where invites to it are posted / 容器的收件房间 */
-export function inboxRoom(container, chainId = 56) {
-  return toHex(sha256(concat(te.encode('TAP-26/inbox/v1'), endpointBytes(container, chainId))))
+/**
+ * A container's inbox room on any relay or ChannelBus: where invites to it are posted. A container has one inbox room
+ * per label version: { labels: 'v2' } gives the TAPI-26 v2 room, where v2 invites (and TAPI-27 v2 group invites) go.
+ * 容器的收件房间。每个标签版本各有一个：{ labels: 'v2' } 给出 TAPI-26 第 2 版的收件房间，v2 邀请（及 TAPI-27 v2 入群邀请）投到那里。
+ */
+export function inboxRoom(container, chainId = 56, { labels } = {}) {
+  return toHex(sha256(concat(LB[checkLabels(labels)].inbox, endpointBytes(container, chainId))))
 }
 
 /**
@@ -1667,18 +1753,23 @@ export function inboxRoom(container, chainId = 56) {
  * 发送方，也不需要——握手会认证（§3.3，inviteHash）。外界只看得到房间（由收件方推导）与大小。
  */
 export function sealInvite(invite, opts) { return sealToInbox(invite, opts) }
-/** Seal any strict-JSON object (a TAPI-26 invite, a TAPI-27 group invite) for a container's inbox / 密封任意严格 JSON 对象投进收件房间 */
-export function sealToInbox(content, { to, random = randomBytes }) {
+/**
+ * Seal any strict-JSON object (a TAPI-26 invite, a TAPI-27 group invite) for a container's inbox. With { labels: 'v2' }
+ * it is sealed for the v2 inbox room (post it to inboxRoom(container, chainId, { labels: 'v2' })).
+ * 密封任意严格 JSON 对象投进收件房间。{ labels: 'v2' } 时按第 2 版收件房间密封（投到 inboxRoom(容器, chainId, { labels: 'v2' })）。
+ */
+export function sealToInbox(content, { to, random = randomBytes, labels }) {
+  const L = LB[checkLabels(labels)]
   const R = assertPublicKey(typeof to?.staticPublic === 'string' ? fromHex(to.staticPublic, 32, 'to.staticPublic') : to?.staticPublic, 'to.staticPublic')
-  const room = fromHex(inboxRoom(to.container, to.chainId ?? 56), 32, 'room')
+  const room = fromHex(inboxRoom(to.container, to.chainId ?? 56, { labels }), 32, 'room')
   const e = random(32)
   const E = x25519.getPublicKey(e)
   const N = random(24)
   const ss = dh(e, R, 'the recipient key')
   e.fill(0)
-  const K = hkdf(sha256, ss, te.encode('TAP-26/inbox/v1'), concat(E, R, room), 32)
+  const K = hkdf(sha256, ss, L.inbox, concat(E, R, room), 32)
   ss.fill(0)
-  const C = xchacha20poly1305(K, N, concat(te.encode('TAP-26/inbox/v1'), E, room)).encrypt(te.encode(canonicalJSON(content)))
+  const C = xchacha20poly1305(K, N, concat(L.inbox, E, room)).encrypt(te.encode(canonicalJSON(content)))
   K.fill(0)
   const wire = concat(Uint8Array.of(WIRE_INVITE), E, N, C)
   if (wire.length > MAX_FRAME_BYTES + 64) fail('sealed invite too large')
@@ -1687,21 +1778,40 @@ export function sealToInbox(content, { to, random = randomBytes }) {
 
 /** Open a sealed invite from this container's inbox; returns the invite object / 打开收件房间里的密封邀请 */
 export function openInvite(wire, opts) { return decodeInviteContent(te.encode(canonicalJSON(openFromInbox(wire, opts)))) }
-/** Open anything sealed to this container's inbox; returns the strict-parsed object / 打开密封给本容器收件房间的任意内容 */
-export function openFromInbox(wire, { self }) {
+/**
+ * Open anything sealed to this container's inbox; returns the strict-parsed object. `labels` is the version of the
+ * inbox room the wire was read from. A wire sealed under the other version is refused, with data.peerLabels.
+ * 打开密封给本容器收件房间的任意内容。`labels` 为读到这条线路消息的收件房间的版本。按另一版本密封的消息被拒绝，并附 data.peerLabels。
+ */
+export function openFromInbox(wire, { self, labels }) {
+  const lv = checkLabels(labels)
   if (!(wire instanceof Uint8Array) || wire.length < 1 + 32 + 24 + 16 || wire[0] !== WIRE_INVITE) fail('not a sealed invite')
   if (!(self?.staticSecret instanceof Uint8Array) || self.staticSecret.length !== 32) fail('self.staticSecret must be 32 bytes')
   const E = assertPublicKey(wire.slice(1, 33), 'sealed invite key')
   const N = wire.slice(33, 57)
-  const room = fromHex(inboxRoom(self.container, self.chainId ?? 56), 32, 'room')
+  const roomOf = (v) => fromHex(inboxRoom(self.container, self.chainId ?? 56, { labels: v }), 32, 'room')
+  const rooms = { [lv]: roomOf(lv) }
   const R = x25519.getPublicKey(self.staticSecret)
   const ss = dh(self.staticSecret, E, 'the sealed invite key')
-  const K = hkdf(sha256, ss, te.encode('TAP-26/inbox/v1'), concat(E, R, room), 32)
-  ss.fill(0)
-  let content
-  try { content = xchacha20poly1305(K, N, concat(te.encode('TAP-26/inbox/v1'), E, room)).decrypt(wire.slice(57)) }
-  catch { fail('sealed invite does not open with this key (not for this container, or tampered)') }
-  finally { K.fill(0) }
+  const tryOpen = (v) => {
+    const room = rooms[v] ?? roomOf(v)
+    const K = hkdf(sha256, ss, LB[v].inbox, concat(E, R, room), 32)
+    try { return xchacha20poly1305(K, N, concat(LB[v].inbox, E, room)).decrypt(wire.slice(57)) } catch { return null } finally { K.fill(0) }
+  }
+  let content, other = null
+  try {
+    content = tryOpen(lv)
+    // Only to name the failure: a wire that opens under the other version is refused all the same, and its content is
+    // dropped unread. / 只为说明失败原因：能按另一版本打开的消息同样被拒绝，其内容不读即弃。
+    if (content === null) { other = tryOpen(otherLabels(lv)); other?.fill(0) }
+  } finally { ss.fill(0) }
+  // Anyone can seal to an inbox, so this only says how the wire was sealed, not that its sender is genuine: no wording
+  // here suggests the other version would be the right one. / 任何人都能往收件房间密封投递，所以这里只说明消息是怎样密封的，
+  // 不说明发送者可信：措辞不暗示另一版本才是对的。
+  if (content === null && other !== null) {
+    fail(`this sealed invite does not open under the ${lv} labels this side reads with; it opens under the other label version (${otherLabels(lv)}). Anyone can post to an inbox room, so this is no evidence that the sender is genuine. The SDK never switches versions on its own.`, { data: { labels: lv, peerLabels: otherLabels(lv) } })
+  }
+  if (content === null) fail('sealed invite does not open with this key (not for this container, or tampered)')
   let text, obj
   try { text = new TextDecoder('utf-8', { fatal: true }).decode(content) } catch { fail('inbox content is not UTF-8') }
   try { obj = safeParseJSON(text, { code: 'CHANNEL_INVALID' }) } catch { fail('inbox content is not strict JSON (no duplicate or prototype keys)') }

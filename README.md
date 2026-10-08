@@ -23,7 +23,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 > `@tapeapi/sdk/agent` subpath is experimental and outside the 1.x compatibility promise; this project has not had a
 > third-party audit. [New in 1.7](#new-in-17) · [Container agents guide](docs/guides/container-agents.md)
 
-> **Status: released, 1.8.0.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
+> **Status: released, 1.8.1.** Everything live today is free. From 1.0 on, TapeAPI follows semantic versioning:
 > breaking changes come only in 2.0. Paid channels (TAPI-22) are experimental and not deployed. Nothing here has had a
 > third-party audit. **Security note:** on 1.0.0 to 1.4.0, streamed AI receipt verification could, under particular
 > chunking, report a truncated or content-injected stream as verified; it was fixed in 1.5.0, so please upgrade
@@ -105,12 +105,12 @@ curl shows the signed envelope but checks nothing. The SDK checks it. It is not 
 release (Node.js 20 or later):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz
 ```
 
 The server package (`@tapeapi/server`: providers, the AI sidecar, the MCP proxy) depends on this SDK, which is not on
 npm either, so installed alone it fails with a 404: install both in one command,
-`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-server-1.8.0.tgz`.
+`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-server-1.8.1.tgz`.
 
 ```js
 // try.mjs: node try.mjs
@@ -148,7 +148,7 @@ No outside provider has published a price table on chain yet, so this was run ag
 
 ```bash
 # Terminal 1 (it keeps running). 42.1013.tape is an example name: put your AI provider's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash
@@ -292,11 +292,15 @@ TAPI-22, TAPI-24 and TAPI-25 have not been submitted. The container-agent format
 | [TAPI-25](spec/TAPI-25.md) | Circuit-verified methods | Experimental |
 | [TAPI-26](spec/TAPI-26.md) | Private channels between containers | Stable (v1) |
 | [TAPI-27](spec/TAPI-27.md) | Private groups of up to 32 containers (up to 128 in the experimental format 2) | Stable (v1) |
+| [TAPI-26 v2](spec/TAPI-26-v2.md), [TAPI-27 v2](spec/TAPI-27-v2.md) | Version 2 of TAPI-26 and TAPI-27: the same, with labels that begin with `tape-channel/` and `tape-group/` | Draft (an option from 1.8.1, the default from 2.0) |
 
 The specs are bilingual; English is authoritative. **TAPI-1 and TAPI-20 to TAPI-27 are TapeAPI's own document names,
 not TAP numbers**: TAPs are numbered by the editors of
 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01. Frozen constants that contain an old name, such as the
-`TAP-26/…` and `TAP-27/…` labels, never change.
+`TAP-26/…` and `TAP-27/…` labels, never change. At the request of the TAPs editors, private channels and private groups
+have a version 2 of their specs whose labels begin with `tape-channel/` and `tape-group/`. From 1.8.1 the SDK implements
+it as an option (`labels: 'v2'` on channels and groups; both sides must use the same); version 1 stays the default in
+1.x and Stable (v1), and v2 becomes the default in 2.0. The two versions do not interoperate.
 
 ## Repository
 

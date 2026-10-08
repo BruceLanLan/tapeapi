@@ -195,3 +195,31 @@ What it helps against, and what it does not:
 - Relays see room names, sizes and timing, never content or identities. ChannelBus makes that metadata public for
   ever.
 - Re-handshake long before 2^32 frames in one direction (the SDK refuses to go further).
+
+## 7. Label versions (`labels`, since 1.8.1)
+
+At the request of the TAPs editors, private channels have a version 2,
+[TAPI-26 v2](../../spec/TAPI-26-v2.md) (Draft): the same channel, with
+labels that begin with `tape-channel/` instead of `TAP-26/`. Since 1.8.1 the SDK implements it as an option; the
+default stays version 1, byte for byte. In 2.0, v2 becomes the default.
+
+```js
+const { invite, pending } = channel.createInvite({ self, peer, relays, labels: 'v2' })
+const { accept, session } = channel.acceptInvite({ self, peer, invite, labels: 'v2' })  // the responder is told the same
+channel.roomsFor(pending.cid, { labels: pending.labels })   // where the initiator waits for the accept
+channel.inboxRoom(container, chainId, { labels: 'v2' })     // a container's v2 inbox room
+channel.sealInvite(invite, { to, labels: 'v2' })            // and openInvite(wire, { self, labels: 'v2' })
+```
+
+- **Both sides pass the same `labels`.** The invite does not say which version it is (it keeps `v: 1`). For an invite
+  sent by TapeSend, agree on the version beforehand; a sealed invite is of the version of the inbox room it was read
+  from.
+- **A mismatch fails closed.** The rooms differ, so usually nothing arrives and the handshake times out. An accept, a
+  ready or a sealed invite of the other version that does arrive is refused with `CHANNEL_INVALID`, `e.data.labels`
+  and `e.data.peerLabels`. The SDK never switches versions on its own. For a sealed invite this says only how the wire
+  was sealed: anyone can post to an inbox room, so it is no evidence that the sender is genuine or that you should
+  switch.
+- **Check the version you got:** `pending.labels` and `session.labels`. An SDK older than 1.8.1 ignores the option and
+  has neither field.
+- `api.chain.channelKeys(...).inbox.room` is the v1 inbox room; for v2 use `channel.inboxRoom(container, chainId,
+  { labels: 'v2' })`. Channel records are the same in both versions.

@@ -226,8 +226,21 @@ write('tapi-22-voucher.json', {
 }
 console.log('done')
 
-// ---------- TAPI-26 channel ----------
-{
+// ---------- TAPI-26 / TAPI-27, once per label version ----------
+// v1 (labels TAP-26/…, TAP-27/…): TAPI-26 and TAPI-27 version 1, Stable (v1). Their files -- tapi-26-channel.json,
+// tapi-26-identity.json, tapi-27-group.json, tapi-27-group-v2.json -- must come out byte for byte as TapeAPI 1.8.0 wrote
+// them (TAPI-1 §4.1; sdk/test/channel-labels.test.mjs pins their SHA-256). v2 (labels tape-channel/…, tape-group/…):
+// spec/TAPI-26-v2.md and spec/TAPI-27-v2.md, which the SDK implements with { labels: 'v2' } since 1.8.1. Same secrets,
+// same random draws; only the labels differ. spec/vectors/verify.py checks both versions.
+// v1（标签 TAP-26/…、TAP-27/…）：TAPI-26、TAPI-27 第 1 版，Stable (v1)，其向量文件必须与 TapeAPI 1.8.0 写出的逐字节相同。
+// v2（标签 tape-channel/…、tape-group/…）：spec/TAPI-26-v2.md 与 spec/TAPI-27-v2.md，SDK 自 1.8.1 起以 { labels: 'v2' } 实现。
+// 同样的秘密值、同样的随机抽取，只有标签不同。spec/vectors/verify.py 两个版本都核对。
+for (const labels of ['v1', 'v2']) {
+  const P26 = labels === 'v2' ? 'tape-channel/' : 'TAP-26/'
+  const P27 = labels === 'v2' ? 'tape-group/' : 'TAP-27/'
+  const FILES = labels === 'v2'
+    ? { channel: ['tapi-26-v2-channel.json', 'TAPI-26 v2'], identity: ['tapi-26-v2-identity.json', 'TAPI-26 v2 (v1 §3.1, §3.2)'], group: ['tapi-27-v2-group.json', 'TAPI-27 v2'], format2: ['tapi-27-v2-group-format2.json', 'TAPI-27 v2, v1 §3.8 (format 2, Experimental)'] }
+    : { channel: ['tapi-26-channel.json', 'TAPI-26'], identity: ['tapi-26-identity.json', 'TAPI-26 §3.1, §3.2'], group: ['tapi-27-group.json', 'TAPI-27'], format2: ['tapi-27-group-v2.json', 'TAPI-27 §3.8 (format 2, Experimental)'] }
   const channel = await import('../sdk/src/channel.js')   // the implementation module: _keySchedule, toHex / 实现模块
   const { x25519, ed25519 } = await import('@noble/curves/ed25519')
   const seq = (label) => { let n = 0; return (len) => { const out = new Uint8Array(len); for (let i = 0; i < len; i++) out[i] = (label.charCodeAt(i % label.length) + 17 * i + 31 * n) & 0xff; n++; return out } }
@@ -235,10 +248,10 @@ console.log('done')
   const A = { container: '0x0000000000000000000000000000000000000A11', chainId: 56 }
   const B = { container: '0x0000000000000000000000000000000000000B0B', chainId: 56 }
   const NOW = 1789000000
-  const { invite, pending } = channel.createInvite({ self: { ...A, staticSecret: sA }, peer: { ...B, staticPublic: x25519.getPublicKey(sB) }, relays: [{ url: 'https://relay.example/tapeapi/v1', container: '0x3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a' }], ttlS: 600, now: NOW, random: seq('initiator') })
+  const { invite, pending } = channel.createInvite({ self: { ...A, staticSecret: sA }, peer: { ...B, staticPublic: x25519.getPublicKey(sB) }, relays: [{ url: 'https://relay.example/tapeapi/v1', container: '0x3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a' }], ttlS: 600, now: NOW, random: seq('initiator'), labels })
   const eA = seq('initiator'); eA(16); const eAsecret = eA(32)             // same draws createInvite made / 与 createInvite 抽取的相同
   const eBsecret = seq('responder')(32)
-  const { accept, session: bob } = channel.acceptInvite({ self: { ...B, staticSecret: sB }, peer: { ...A, staticPublic: x25519.getPublicKey(sA) }, invite, now: NOW, random: seq('responder') })
+  const { accept, session: bob } = channel.acceptInvite({ self: { ...B, staticSecret: sB }, peer: { ...A, staticPublic: x25519.getPublicKey(sA) }, invite, now: NOW, random: seq('responder'), labels })
   const { ready, session: alice } = channel.completeInvite(pending, accept, { now: NOW })
   bob.confirm(ready, { now: NOW })
   const hex = channel.toHex
@@ -250,22 +263,22 @@ console.log('done')
   const ks = channel._keySchedule({
     cid: channel.fromHex(invite.cid, 16), epA: channel.endpointBytes(A.container), epB: channel.endpointBytes(B.container),
     SA, SB, EA, EB, exp: invite.exp, ih: channel.inviteHash(invite),
-    dh1: x25519.getSharedSecret(eAsecret, SB), dh2: x25519.getSharedSecret(sA, EB), dh3: x25519.getSharedSecret(eAsecret, EB),
+    dh1: x25519.getSharedSecret(eAsecret, SB), dh2: x25519.getSharedSecret(sA, EB), dh3: x25519.getSharedSecret(eAsecret, EB), labels,
   })
   const { hkdf } = await import('@noble/hashes/hkdf'); const { sha256 } = await import('@noble/hashes/sha256')
   const ikmV = new Uint8Array([...x25519.getSharedSecret(eAsecret, SB), ...x25519.getSharedSecret(sA, EB), ...x25519.getSharedSecret(eAsecret, EB)])
-  const okmV = hkdf(sha256, ikmV, ks.th, new TextEncoder().encode('TAP-26/keys/v1'), 128)
+  const okmV = hkdf(sha256, ikmV, ks.th, new TextEncoder().encode(`${P26}keys/v1`), 128)
   const okmSlice = (o) => okmV.slice(o, o + 32)
-  write('tapi-26-channel.json', {
-    tap: 'TAPI-26', note,
+  write(FILES.channel[0], {
+    tap: FILES.channel[1], note,
     layout: {
       endpoint: 'uint32(0) || uint64(chainId) || container   (32 bytes, exactly TAP-10)',
-      transcript: 'sha256( "TAP-26/transcript/v1" || cid(16) || endpointA || endpointB || SA || SB || EA || EB || uint64be(exp) || inviteHash ), inviteHash = sha256(utf8(canonicalJSON(invite)))',
+      transcript: `sha256( "${P26}transcript/v1" || cid(16) || endpointA || endpointB || SA || SB || EA || EB || uint64be(exp) || inviteHash ), inviteHash = sha256(utf8(canonicalJSON(invite)))`,
       ikm: 'DH(eA,SB) || DH(sA,EB) || DH(eA,EB)',
-      keys: 'HKDF-SHA256(ikm, salt = transcript, info = "TAP-26/keys/v1", 128) = kAB || kBA || cA || cB',
-      confirm: 'HMAC-SHA256(cA, "TAP-26/confirm/initiator" || transcript), HMAC-SHA256(cB, "TAP-26/confirm/responder" || transcript)',
-      frame: 'uint64be(seq) || ChaCha20-Poly1305(key, nonce = 0x00000000 || uint64be(seq), aad = "TAP-26/frame/v1" || cid || dir || uint64be(seq)); dir 0 = initiator->responder, 1 = responder->initiator',
-      rooms: 'sha256( "TAP-26/room/v1" || cid || dir ) with dir 0 = to initiator, 1 = to responder',
+      keys: `HKDF-SHA256(ikm, salt = transcript, info = "${P26}keys/v1", 128) = kAB || kBA || cA || cB`,
+      confirm: `HMAC-SHA256(cA, "${P26}confirm/initiator" || transcript), HMAC-SHA256(cB, "${P26}confirm/responder" || transcript)`,
+      frame: `uint64be(seq) || ChaCha20-Poly1305(key, nonce = 0x00000000 || uint64be(seq), aad = "${P26}frame/v1" || cid || dir || uint64be(seq)); dir 0 = initiator->responder, 1 = responder->initiator`,
+      rooms: `sha256( "${P26}room/v1" || cid || dir ) with dir 0 = to initiator, 1 = to responder`,
     },
     initiator: { ...A, staticSecret: hex(sA), staticPublic: hex(SA), ephemeralSecret: hex(eAsecret), ephemeralPublic: hex(EA) },
     responder: { ...B, staticSecret: hex(sB), staticPublic: hex(SB), ephemeralSecret: hex(eBsecret), ephemeralPublic: hex(EB) },
@@ -275,7 +288,7 @@ console.log('done')
       dh1: hex(x25519.getSharedSecret(eAsecret, SB)), dh2: hex(x25519.getSharedSecret(sA, EB)), dh3: hex(x25519.getSharedSecret(eAsecret, EB)),
       inviteHash: hex(channel.inviteHash(invite)), transcript: hex(ks.th), kAB: hex(ks.kAB), kBA: hex(ks.kBA), cA: hex(okmSlice(64)), cB: hex(okmSlice(96)),
       confirmInitiator: hex(ks.confirmA), confirmResponder: hex(ks.confirmB),
-      rooms: channel.roomsFor(invite.cid),
+      rooms: channel.roomsFor(invite.cid, { labels }),
     },
     frames,
   })
@@ -287,10 +300,10 @@ console.log('done')
   const keysDigest = sig.channelKeysDigest(CHAIN_ID, HUB, keysA)
   const keysSig = sig.signDigest(keysDigest, HOLDER_KEY)
   const sealRandom = seq('inbox')
-  const sealed = channel.sealInvite(invite, { to: { ...B, staticPublic: x25519.getPublicKey(sB) }, random: sealRandom })
+  const sealed = channel.sealInvite(invite, { to: { ...B, staticPublic: x25519.getPublicKey(sB) }, random: sealRandom, labels })
   const sr = seq('inbox'); const sealE = sr(32); const sealN = sr(24)
-  write('tapi-26-identity.json', {
-    tap: 'TAPI-26 §3.1, §3.2', note,
+  write(FILES.identity[0], {
+    tap: FILES.identity[1], note,
     channelKeys: {
       domain: { name: 'TapeAPI', version: '1', chainId: CHAIN_ID, verifyingContract: HUB },
       typeHash: sig.CHANNEL_KEYS_TYPE,
@@ -298,10 +311,10 @@ console.log('done')
       ed25519Secret: toHex(edA),
       keys: { ...keysA, inboxHash: toHex(sig.channelInboxHash(inboxA)) }, digest: toHex(keysDigest), sig: keysSig, recoversTo: sig.recoverAddress(keysDigest, keysSig),
     },
-    inbox: { layout: 'sha256( "TAP-26/inbox/v1" || endpoint(container, chainId) )', container: B.container, chainId: 56, room: channel.inboxRoom(B.container, 56) },
+    inbox: { layout: `sha256( "${P26}inbox/v1" || endpoint(container, chainId) )`, container: B.container, chainId: 56, room: channel.inboxRoom(B.container, 56, { labels }) },
     inboxHashLayout: 'keccak256( utf8( canonicalJSON({ relays: [{ url, container }], bus? }) ) ), signed as ChannelKeys.inbox',
     sealedInvite: {
-      layout: '0x03 || E(32) || N(24) || XChaCha20-Poly1305(K, N, aad = "TAP-26/inbox/v1" || E || room).encrypt(utf8(canonicalJSON(invite))), K = HKDF-SHA256(X25519(e, R), salt = "TAP-26/inbox/v1", info = E || R || room, 32)',
+      layout: `0x03 || E(32) || N(24) || XChaCha20-Poly1305(K, N, aad = "${P26}inbox/v1" || E || room).encrypt(utf8(canonicalJSON(invite))), K = HKDF-SHA256(X25519(e, R), salt = "${P26}inbox/v1", info = E || R || room, 32)`,
       recipientSecret: toHex(sB), recipientContainer: B.container, recipientChainId: 56, ephemeralSecret: toHex(sealE), nonce: toHex(sealN),
       invite, wire: toHex(sealed),
     },
@@ -315,30 +328,30 @@ console.log('done')
   const ent = (p) => ({ container: p.container, chainId: 56, x25519: toHex(p.identity.x25519.publicKey), ed25519: toHex(p.identity.ed25519.publicKey) })
   const groupRandom = seq('group')
   const T0 = 1789000000          // fixed clock (Unix seconds): issued and seq derive from it / 固定时钟（Unix 秒）：issued 与 seq 由它导出
-  const { group: gOwner, epochWire } = await G.createGroup({ self: people[0], identity: people[0].identity, members: [ent(people[1]), ent(people[2])], relays: [{ url: 'https://relay.example/tapeapi/v1', container: '0x3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a' }], verifyMember: 'trust-roster', random: groupRandom, clock: () => T0 })
+  const { group: gOwner, epochWire } = await G.createGroup({ self: people[0], identity: people[0].identity, members: [ent(people[1]), ent(people[2])], relays: [{ url: 'https://relay.example/tapeapi/v1', container: '0x3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a' }], verifyMember: 'trust-roster', random: groupRandom, clock: () => T0, labels })
   const gr = seq('group'); const gidB = gr(16), Kb = gr(32), eb = gr(32), Nb = gr(24)          // the same draws, in order / 同样的抽取顺序
-  const g1 = G.joinGroup({ self: people[1], identity: people[1].identity, invite: { gid: gOwner.gid, owner: { container: people[0].container, chainId: 56 } }, ownerKeys: ent(people[0]), clock: () => T0 })
+  const g1 = G.joinGroup({ self: people[1], identity: people[1].identity, invite: { gid: gOwner.gid, owner: { container: people[0].container, chainId: 56 } }, ownerKeys: ent(people[0]), clock: () => T0, labels })
   await g1.acceptEpoch(epochWire, { verifyMember: 'trust-roster' })
   const nonceOf = (tag) => { const r = seq(tag); return () => r(24) }
   const msgs = [
     { sender: 0, plaintext: 'hello, group', nonce: seq('msg-0')(24), wire: gOwner.seal('hello, group', { random: nonceOf('msg-0') }) },
     { sender: 1, plaintext: '你好 from member 1', nonce: seq('msg-1')(24), wire: g1.seal('你好 from member 1', { random: nonceOf('msg-1') }) },
   ]
-  write('tapi-27-group.json', {
-    tap: 'TAPI-27', note,
+  write(FILES.group[0], {
+    tap: FILES.group[1], note,
     layout: {
-      epochHeader: '0x04 || gid(16) || uint64be(epoch) || E(32) || N(24) || commit(32) || count(1); commit = sha256("TAP-27/commit/v1" || K)',
+      epochHeader: `0x04 || gid(16) || uint64be(epoch) || E(32) || N(24) || commit(32) || count(1); commit = sha256("${P27}commit/v1" || K)`,
       rosterMembers: 'exactly { container (lowercase), chainId, x25519, ed25519 (lowercase 0x hex) }; roster.issued = unix seconds; prev = sha256(roster plaintext bytes of epoch - 1)',
-      slot: 'XChaCha20-Poly1305(HKDF-SHA256(X25519(e, R), salt = "TAP-27/wrap/v1", info = E || R || gid || uint64be(epoch), 32), N, aad = header).encrypt(K)   (48 bytes, no fingerprint)',
-      epochWire: 'header || slots || uint32be(len) || XChaCha20-Poly1305(K, N, aad = header || slots).encrypt(canonicalJSON(roster)) || Ed25519(owner, "TAP-27/epoch/v1" || everything before)',
-      message: 'header = 0x05 || gid || uint64be(epoch) || uint32be(sender) || uint64be(seq) || nonce(24, random); ct = XChaCha20-Poly1305(senderKey, nonce, aad = header).encrypt(pt); wire = header || ct || Ed25519(sender, "TAP-27/msg/v1" || header || ct)',
-      senderKey: 'HKDF-SHA256(K, salt = gid || uint64be(epoch), info = "TAP-27/sender/v1" || uint32be(sender), 32)',
+      slot: `XChaCha20-Poly1305(HKDF-SHA256(X25519(e, R), salt = "${P27}wrap/v1", info = E || R || gid || uint64be(epoch), 32), N, aad = header).encrypt(K)   (48 bytes, no fingerprint)`,
+      epochWire: `header || slots || uint32be(len) || XChaCha20-Poly1305(K, N, aad = header || slots).encrypt(canonicalJSON(roster)) || Ed25519(owner, "${P27}epoch/v1" || everything before)`,
+      message: `header = 0x05 || gid || uint64be(epoch) || uint32be(sender) || uint64be(seq) || nonce(24, random); ct = XChaCha20-Poly1305(senderKey, nonce, aad = header).encrypt(pt); wire = header || ct || Ed25519(sender, "${P27}msg/v1" || header || ct)`,
+      senderKey: `HKDF-SHA256(K, salt = gid || uint64be(epoch), info = "${P27}sender/v1" || uint32be(sender), 32)`,
     },
     members: people.map((p) => ({ tag: p.tag, container: p.container, chainId: 56, x25519Secret: toHex(p.identity.x25519.secretKey), ed25519Secret: toHex(p.identity.ed25519.secretKey), x25519: toHex(p.identity.x25519.publicKey), ed25519: toHex(p.identity.ed25519.publicKey) })),
     gid: toHex(gidB), epoch: 0, K: toHex(Kb), ephemeralSecret: toHex(eb), nonce: toHex(Nb),
     roster: gOwner.roster,
     epochWire: toHex(epochWire),
-    senderKeys: [0, 1, 2].map((i) => toHex(G.senderKey(Kb, gidB, 0, i))),
+    senderKeys: [0, 1, 2].map((i) => toHex(G.senderKey(Kb, gidB, 0, i, { labels }))),
     messages: msgs.map((m) => ({ sender: m.sender, seq: (BigInt(T0 * 1000) << 16n).toString(), nonce: toHex(m.nonce), plaintext: m.plaintext, wire: toHex(m.wire) })),
   })
 
@@ -349,12 +362,12 @@ console.log('done')
   const random2 = rec(seq('group-v2'))
   const relays2 = [{ url: 'https://relay.example/tapeapi/v1', container: '0x3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a' }]
   const bus2 = '0xcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcb'
-  const { group: o2, epochWire: ew0 } = await G.createGroup({ format: 2, self: people[0], identity: people[0].identity, members: [ent(people[1]), ent(people[2])], relays: relays2, bus: bus2, verifyMember: 'trust-roster', random: random2, clock: () => T0 })
+  const { group: o2, epochWire: ew0 } = await G.createGroup({ format: 2, self: people[0], identity: people[0].identity, members: [ent(people[1]), ent(people[2])], relays: relays2, bus: bus2, verifyMember: 'trust-roster', random: random2, clock: () => T0, labels })
   const roster0 = o2._held().rosterBytes
   const up1 = await o2.rotate({ verifyMember: 'trust-roster' })
   const roster1 = o2._held().rosterBytes
   const [gid2, K0, e0, N0, K1, e1, N1] = draws
-  const m1 = G.joinGroup({ self: people[1], identity: people[1].identity, invite: { gid: o2.gid, owner: { container: people[0].container, chainId: 56 }, format: 2 }, ownerKeys: ent(people[0]), verifyMember: 'trust-roster', clock: () => T0 })
+  const m1 = G.joinGroup({ self: people[1], identity: people[1].identity, invite: { gid: o2.gid, owner: { container: people[0].container, chainId: 56 }, format: 2 }, ownerKeys: ent(people[0]), verifyMember: 'trust-roster', clock: () => T0, labels })
   await m1.acceptEpoch(ew0)
   await m1.acceptEpoch(up1.epochWire)
   const msgs2 = [
@@ -362,16 +375,16 @@ console.log('done')
     { sender: 1, plaintext: '第二版 from member 1', nonce: seq('msg2-1')(24), wire: m1.seal('第二版 from member 1', { random: nonceOf('msg2-1') }) },
   ]
   const ef = (n) => '54470200' + n.toString(16).padStart(8, '0')
-  write('tapi-27-group-v2.json', {
-    tap: 'TAPI-27 §3.8 (format 2, Experimental)', note,
+  write(FILES.format2[0], {
+    tap: FILES.format2[1], note,
     layout: {
       epochField: 'uint32be(0x54470200) || uint32be(n): the high half is the format-2 mark, which format 1 requires to be zero',
-      epochHeader: '0x04 || gid(16) || epochField(8) || E(32) || N(24) || commit(32) || uint16be(count); commit = sha256("TAP-27/commit/v2" || K)',
-      slot: 'XChaCha20-Poly1305(HKDF-SHA256(X25519(e, R), salt = "TAP-27/wrap/v2", info = E || R || gid || epochField, 32), N, aad = header).encrypt(K)   (48 bytes, no fingerprint)',
+      epochHeader: `0x04 || gid(16) || epochField(8) || E(32) || N(24) || commit(32) || uint16be(count); commit = sha256("${P27}commit/v2" || K)`,
+      slot: `XChaCha20-Poly1305(HKDF-SHA256(X25519(e, R), salt = "${P27}wrap/v2", info = E || R || gid || epochField, 32), N, aad = header).encrypt(K)   (48 bytes, no fingerprint)`,
       roster: '"TGR2" || uint64be(issued) || prev(32) || uint16be(count) || count x ( container(20) || uint32be(chainId) || ed25519(32) ) || uint16be(L) || utf8(canonicalJSON({ relays, bus? }))(L); prev = sha256(roster bytes of epoch n - 1) or 32 zero bytes',
-      epochWire: 'header || slots || uint32be(len) || XChaCha20-Poly1305(K, N, aad = header || slots).encrypt(roster) || Ed25519(owner, "TAP-27/epoch/v2" || everything before)',
-      message: 'header = 0x05 || gid || epochField(8) || uint32be(sender) || uint64be(seq) || nonce(24, random); ct = XChaCha20-Poly1305(senderKey, nonce, aad = header).encrypt(pt); wire = header || ct || Ed25519(sender, "TAP-27/msg/v2" || header || ct)',
-      senderKey: 'HKDF-SHA256(K, salt = gid || epochField, info = "TAP-27/sender/v2" || uint32be(sender), 32)',
+      epochWire: `header || slots || uint32be(len) || XChaCha20-Poly1305(K, N, aad = header || slots).encrypt(roster) || Ed25519(owner, "${P27}epoch/v2" || everything before)`,
+      message: `header = 0x05 || gid || epochField(8) || uint32be(sender) || uint64be(seq) || nonce(24, random); ct = XChaCha20-Poly1305(senderKey, nonce, aad = header).encrypt(pt); wire = header || ct || Ed25519(sender, "${P27}msg/v2" || header || ct)`,
+      senderKey: `HKDF-SHA256(K, salt = gid || epochField, info = "${P27}sender/v2" || uint32be(sender), 32)`,
       invite: 'the format-1 invite object plus "format": 2',
     },
     members: people.map((p) => ({ tag: p.tag, container: p.container, chainId: 56, x25519Secret: toHex(p.identity.x25519.secretKey), ed25519Secret: toHex(p.identity.ed25519.secretKey), x25519: toHex(p.identity.x25519.publicKey), ed25519: toHex(p.identity.ed25519.publicKey) })),
@@ -380,7 +393,7 @@ console.log('done')
       { epoch: 0, epochField: ef(0), K: toHex(K0), ephemeralSecret: toHex(e0), nonce: toHex(N0), prev: '00'.repeat(32), roster: toHex(roster0), epochWire: toHex(ew0) },
       { epoch: 1, epochField: ef(1), K: toHex(K1), ephemeralSecret: toHex(e1), nonce: toHex(N1), prev: toHex(G_sha256(roster0)).slice(2), roster: toHex(roster1), epochWire: toHex(up1.epochWire) },
     ],
-    senderKeys: [0, 1, 2].map((i) => toHex(G.senderKeyV2(K1, gid2, 1, i))),
+    senderKeys: [0, 1, 2].map((i) => toHex(G.senderKeyV2(K1, gid2, 1, i, { labels }))),
     // seq as sent: a member that installed two epochs at one clock reading counts on from the first (§3.4) / 按实际发送的 seq
     messages: msgs2.map((m) => ({ epoch: 1, sender: m.sender, seq: new DataView(m.wire.buffer, m.wire.byteOffset + 29, 8).getBigUint64(0).toString(), nonce: toHex(m.nonce), plaintext: m.plaintext, wire: toHex(m.wire) })),
     format1Refuses: 'A format-1 receiver refuses every wire above: the epoch field exceeds 2^32 - 1 (TAPI-27 §3.3), and the reference format-1 parser also reads count = 0 at offset 113. Reference code: GROUP_INVALID.',

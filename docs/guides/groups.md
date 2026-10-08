@@ -237,6 +237,22 @@ added member twice. A resumed owner has no verdicts, so its first epoch reads ev
 reading every member on every epoch, for an owner that must drop a sold circuit at its next epoch rather than within a
 day (TAPI-27 §8).
 
+## Label versions (`labels`, since 1.8.1)
+
+Groups have a version 2 too,
+[TAPI-27 v2](../../spec/TAPI-27-v2.md) (Draft): labels that begin with
+`tape-group/`, and invites in the v2 inbox rooms of [TAPI-26 v2](channels.md#7-label-versions-labels-since-181). It is an option since 1.8.1 and the
+default in 2.0; it is not format 2, and either format can use it.
+
+- The owner passes `labels: 'v2'` to `createGroup`; members pass it to `checkGroupInvites` (which then reads the v2
+  inbox room) and to `joinGroup`. `deliverGroupUpdate` and `inviteFor` follow the group's version (`group.labels`).
+- A group keeps its version for life. A v2 owner's `snapshot()` says `v: 3, labels: 'v2'`, so SDKs up to 1.8.0 refuse
+  it instead of resuming the group under the v1 labels, and `resumeGroup` takes the version from it (a `labels` that
+  disagrees is `GROUP_INVALID`).
+- A member on the other version reads another inbox room and another group room, so it usually sees nothing; an epoch
+  message of the other version that reaches it is refused with `GROUP_INVALID`, `e.data.labels` and
+  `e.data.peerLabels`. The SDK never switches versions on its own.
+
 ## Limits
 
 - At most 32 members per group. An experimental format 2 (TAPI-27 §3.8, `createGroup({ format: 2 })`) carries up to

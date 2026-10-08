@@ -4,10 +4,10 @@
 // Everything in a receipt is untrusted text: it reaches the page through textContent only, never as HTML.
 // 回执核验页：从链接的 #r= 片段或用户粘贴的内容读出回执，恢复签名者，用真实 SDK 在链上解析服务，并用平实的话说明结论。
 // 手写；SDK 用调试台 vendor/ 里的同一份，纯逻辑在 lib.js（离线测试）。回执里的一切都是不可信文本，只经 textContent 进入页面。
-import { createTapeAPI, sig, abi, rpcUrlsFor, operatorOf, CHAINS, parseTapeName } from '../playground/vendor/0985afbf3e/tapeapi-sdk/index.js'
-import { readAny, verifyReceipt, verifyUsage, signedBlock, utc, ReceiptError, chainOfReceipt } from './lib.js?v=29469e9554'
-import { modelEntryOf, validateAIField, formatOfMethod, MANIFEST_FIELD } from '../playground/vendor/0985afbf3e/tapeapi-sdk/ai.js'
-import { T } from './strings.js?v=f7ccda23a5'
+import { createTapeAPI, sig, abi, rpcUrlsFor, operatorOf, CHAINS, parseTapeName } from '../playground/vendor/87f18f4a0b/tapeapi-sdk/index.js'
+import { readAny, verifyReceipt, verifyUsage, signedBlock, utc, ReceiptError, chainOfReceipt } from './lib.js?v=9bad030335'
+import { modelEntryOf, validateAIField, formatOfMethod, MANIFEST_FIELD } from '../playground/vendor/87f18f4a0b/tapeapi-sdk/ai.js'
+import { T } from './strings.js?v=781a25bd43'
 
 // The SDK's default nodes: three distinct operators (NodeReal, Alchemy, 48 Club); the SDK counts agreement by operator.
 // A receipt of a service on X Layer or Base (its name carries area code 2 or 3; an AI receipt's container answers token()

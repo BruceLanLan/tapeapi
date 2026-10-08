@@ -179,3 +179,26 @@ which rooms this reader reads`。设 `cover.onShort: 'error'` 时改为抛出 `B
 - 一帧最多承载 16 KiB 明文；一份邀请最多存活一小时。
 - 中继能看到房间名、大小和时间，永远看不到内容或身份。ChannelBus 会把这些元数据永久公开。
 - 在单个方向达到 2^32 帧之前很早就应重新握手（SDK 拒绝超出这一上限）。
+
+## 7. 标签版本（`labels`，1.8.1 起）
+
+应 TAPs 编辑要求，私密通道有了第 2 版
+[TAPI-26 v2](../../../spec/TAPI-26-v2.md)（Draft）：同样的通道，标签以
+`tape-channel/` 开头而不是 `TAP-26/`。SDK 自 1.8.1 起作为选项实现它；默认仍是第 1 版，逐字节不变。2.0 起第 2 版成为默认。
+
+```js
+const { invite, pending } = channel.createInvite({ self, peer, relays, labels: 'v2' })
+const { accept, session } = channel.acceptInvite({ self, peer, invite, labels: 'v2' })  // 响应方要被告知同样的版本
+channel.roomsFor(pending.cid, { labels: pending.labels })   // 发起方等待 accept 的房间
+channel.inboxRoom(container, chainId, { labels: 'v2' })     // 容器的第 2 版收件房间
+channel.sealInvite(invite, { to, labels: 'v2' })            // 以及 openInvite(wire, { self, labels: 'v2' })
+```
+
+- **双方传同样的 `labels`。** 邀请不说明自己属于哪个版本（仍是 `v: 1`）。经 TapeSend 发送的邀请，双方要事先约定版本；
+  密封邀请的版本就是读到它的收件房间的版本。
+- **不一致时失败关闭。** 房间不同，所以通常什么都收不到，握手超时。另一版本的 accept、ready 或密封邀请即使到了，也会被拒绝，
+  错误为 `CHANNEL_INVALID`，带 `e.data.labels` 与 `e.data.peerLabels`。SDK 从不自行切换版本。对密封邀请，这只说明它是
+  怎样密封的：任何人都能往收件房间投递，所以这既不证明发送者可信，也不说明你该换版本。
+- **核对实际得到的版本：** `pending.labels` 与 `session.labels`。早于 1.8.1 的 SDK 会忽略这个选项，也没有这两个字段。
+- `api.chain.channelKeys(...).inbox.room` 是第 1 版的收件房间；第 2 版请用 `channel.inboxRoom(container, chainId,
+  { labels: 'v2' })`。通道记录在两个版本中相同。

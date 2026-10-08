@@ -2,7 +2,7 @@
 """A second, independent implementation of the TapeAPI digests, in pure Python with no dependencies.
 
 Its only job is to disagree with the reference SDK if the specification is ambiguous. Everything here was
-written from the specifications (TAPI-20, TAPI-21, TAPI-22, TAPI-23, TAPI-26, TAPI-27 with its §3.8) and checked against spec/vectors/*.json;
+written from the specifications (TAPI-20, TAPI-21, TAPI-22, TAPI-23, TAPI-26 and TAPI-27 with its §3.8, both in v1 and v2) and checked against spec/vectors/*.json;
 nothing is imported from the JavaScript. X25519, HKDF, (X)ChaCha20-Poly1305 and Ed25519 follow their RFCs. If this file and the SDK ever disagree, the specification is the thing that is wrong.
 
 用纯 Python、零依赖写的第二个独立实现。它唯一的职责，是在规范存在歧义时与参考 SDK 产生分歧。
@@ -208,11 +208,13 @@ HERE = pathlib.Path(__file__).parent
 fail = []
 checked = 0
 
+PREFIX = ''   # 'v2:' while the TAPI-26/27 v2 checks run / 跑 TAPI-26/27 v2 核对时为 'v2:'
+
 def check(label, got, want):
     global checked
     checked += 1
     if got != want:
-        fail.append('%s\n    got  %s\n    want %s' % (label, got, want))
+        fail.append('%s%s\n    got  %s\n    want %s' % (PREFIX, label, got, want))
 
 canon = load_vec('tapi-21-canon.json')
 for c in canon['positive']:
@@ -374,248 +376,265 @@ def chacha20poly1305_seal(key, nonce, aad, pt):
     mac = aad + _pad16(aad) + ct + _pad16(ct) + len(aad).to_bytes(8, 'little') + len(ct).to_bytes(8, 'little')
     return ct + _poly1305(otk, mac)
 
-ch = load_vec('tapi-26-channel.json')
-I, R, X = ch['initiator'], ch['responder'], ch['intermediate']
-bx = bytes.fromhex
-sA, sB, eA, eB = bx(I['staticSecret']), bx(R['staticSecret']), bx(I['ephemeralSecret']), bx(R['ephemeralSecret'])
-SA, SB, EA, EB = x25519_pub(sA), x25519_pub(sB), x25519_pub(eA), x25519_pub(eB)
-check('tapi26/static-A', SA.hex(), I['staticPublic']); check('tapi26/static-B', SB.hex(), R['staticPublic'])
-check('tapi26/ephemeral-A', EA.hex(), I['ephemeralPublic']); check('tapi26/ephemeral-B', EB.hex(), R['ephemeralPublic'])
-check('tapi26/invite.e', EA.hex(), ch['invite']['e']); check('tapi26/accept.e', EB.hex(), ch['accept']['e'])
-# each DH computed from BOTH sides must agree, and match the vector / 每次 DH 从双方各算一遍必须一致
-check('tapi26/dh1 initiator side', x25519(eA, SB).hex(), X['dh1']); check('tapi26/dh1 responder side', x25519(sB, EA).hex(), X['dh1'])
-check('tapi26/dh2 initiator side', x25519(sA, EB).hex(), X['dh2']); check('tapi26/dh2 responder side', x25519(eB, SA).hex(), X['dh2'])
-check('tapi26/dh3 initiator side', x25519(eA, EB).hex(), X['dh3']); check('tapi26/dh3 responder side', x25519(eB, EA).hex(), X['dh3'])
-def endpoint(container, chain_id):
-    return bytes(4) + int(chain_id).to_bytes(8, 'big') + bytes.fromhex(container[2:])
-epA, epB = endpoint(I['container'], I['chainId']), endpoint(R['container'], R['chainId'])
-check('tapi26/endpointA', epA.hex(), X['endpointA']); check('tapi26/endpointB', epB.hex(), X['endpointB'])
-cid = bx(ch['invite']['cid'])
-ih = hashlib.sha256(canonical(ch['invite']).encode('utf-8')).digest()
-check('tapi26/inviteHash', ih.hex(), X['inviteHash'])
-th = hashlib.sha256(b'TAP-26/transcript/v1' + cid + epA + epB + SA + SB + EA + EB + int(ch['invite']['exp']).to_bytes(8, 'big') + ih).digest()
-check('tapi26/transcript', th.hex(), X['transcript'])
-okm = hkdf_sha256(bx(X['dh1']) + bx(X['dh2']) + bx(X['dh3']), th, b'TAP-26/keys/v1', 128)
-kAB, kBA, cA, cB = okm[:32], okm[32:64], okm[64:96], okm[96:]
-for name, got in [('kAB', kAB), ('kBA', kBA), ('cA', cA), ('cB', cB)]:
-    check('tapi26/' + name, got.hex(), X[name])
-cfA = _hmac.new(cA, b'TAP-26/confirm/initiator' + th, hashlib.sha256).digest()
-cfB = _hmac.new(cB, b'TAP-26/confirm/responder' + th, hashlib.sha256).digest()
-check('tapi26/confirm initiator', cfA.hex(), ch['ready']['confirm']); check('tapi26/confirm responder', cfB.hex(), ch['accept']['confirm'])
-for d, key in [(0, 'toInitiator'), (1, 'toResponder')]:
-    check('tapi26/room ' + key, hashlib.sha256(b'TAP-26/room/v1' + cid + bytes([d])).hexdigest(), X['rooms'][key])
-seqs = {'initiator': 0, 'responder': 0}
-for f in ch['frames']:
-    who = f['from']; sq = seqs[who]; seqs[who] += 1
-    key, d = (kAB, 0) if who == 'initiator' else (kBA, 1)
-    nonce = bytes(4) + sq.to_bytes(8, 'big')
-    aad = b'TAP-26/frame/v1' + cid + bytes([d]) + sq.to_bytes(8, 'big')
-    got = sq.to_bytes(8, 'big') + chacha20poly1305_seal(key, nonce, aad, f['plaintext'].encode('utf-8'))
-    check('tapi26/frame %s #%d %r' % (who, sq, f['plaintext']), got.hex(), f['frame'])
+# ======================================================= TAPI-26 and TAPI-27, versions 1 and 2 ====
+# TAPI-26 and TAPI-27 exist in two versions (TAPI-1 §4.1): v1 (labels TAP-26/…, TAP-27/…), Stable (v1) and implemented
+# by TapeAPI 1.x by default, whose vector files stay byte for byte as 1.8.0 wrote them; and v2 (spec/TAPI-26-v2.md,
+# TAPI-27-v2.md), the same specification with every label beginning tape-channel/ or tape-group/, implemented by the SDK
+# with { labels: 'v2' } from TapeAPI 1.8.1 and by default from 2.0. The checks below run once per version, from the text
+# of each, against that version's files; the self-tests of the primitives inside run on the first pass only.
+# TAPI-26 与 TAPI-27 各有两个版本（TAPI-1 §4.1）：v1（标签 TAP-26/…、TAP-27/…），Stable (v1)，TapeAPI 1.x 默认实现，其向量文件
+# 保持 1.8.0 写出的原样；v2（spec/TAPI-26-v2.md、TAPI-27-v2.md），除标签改以 tape-channel/、tape-group/ 开头外与 v1 相同，
+# SDK 自 TapeAPI 1.8.1 起以 { labels: 'v2' } 实现，2.0 起为默认。下面的核对按版本各跑一遍，各对各的向量文件。
+for PREFIX, CH, GR, F_CH, F_ID, F_G1, F_G2 in (
+    ('', b'TAP-26/', b'TAP-27/', 'tapi-26-channel.json', 'tapi-26-identity.json', 'tapi-27-group.json', 'tapi-27-group-v2.json'),
+    ('v2:', b'tape-channel/', b'tape-group/', 'tapi-26-v2-channel.json', 'tapi-26-v2-identity.json', 'tapi-27-v2-group.json', 'tapi-27-v2-group-format2.json'),
+):
+    ch = load_vec(F_CH)
+    I, R, X = ch['initiator'], ch['responder'], ch['intermediate']
+    bx = bytes.fromhex
+    sA, sB, eA, eB = bx(I['staticSecret']), bx(R['staticSecret']), bx(I['ephemeralSecret']), bx(R['ephemeralSecret'])
+    SA, SB, EA, EB = x25519_pub(sA), x25519_pub(sB), x25519_pub(eA), x25519_pub(eB)
+    check('tapi26/static-A', SA.hex(), I['staticPublic']); check('tapi26/static-B', SB.hex(), R['staticPublic'])
+    check('tapi26/ephemeral-A', EA.hex(), I['ephemeralPublic']); check('tapi26/ephemeral-B', EB.hex(), R['ephemeralPublic'])
+    check('tapi26/invite.e', EA.hex(), ch['invite']['e']); check('tapi26/accept.e', EB.hex(), ch['accept']['e'])
+    # each DH computed from BOTH sides must agree, and match the vector / 每次 DH 从双方各算一遍必须一致
+    check('tapi26/dh1 initiator side', x25519(eA, SB).hex(), X['dh1']); check('tapi26/dh1 responder side', x25519(sB, EA).hex(), X['dh1'])
+    check('tapi26/dh2 initiator side', x25519(sA, EB).hex(), X['dh2']); check('tapi26/dh2 responder side', x25519(eB, SA).hex(), X['dh2'])
+    check('tapi26/dh3 initiator side', x25519(eA, EB).hex(), X['dh3']); check('tapi26/dh3 responder side', x25519(eB, EA).hex(), X['dh3'])
+    def endpoint(container, chain_id):
+        return bytes(4) + int(chain_id).to_bytes(8, 'big') + bytes.fromhex(container[2:])
+    epA, epB = endpoint(I['container'], I['chainId']), endpoint(R['container'], R['chainId'])
+    check('tapi26/endpointA', epA.hex(), X['endpointA']); check('tapi26/endpointB', epB.hex(), X['endpointB'])
+    cid = bx(ch['invite']['cid'])
+    ih = hashlib.sha256(canonical(ch['invite']).encode('utf-8')).digest()
+    check('tapi26/inviteHash', ih.hex(), X['inviteHash'])
+    th = hashlib.sha256(CH + b'transcript/v1' + cid + epA + epB + SA + SB + EA + EB + int(ch['invite']['exp']).to_bytes(8, 'big') + ih).digest()
+    check('tapi26/transcript', th.hex(), X['transcript'])
+    okm = hkdf_sha256(bx(X['dh1']) + bx(X['dh2']) + bx(X['dh3']), th, CH + b'keys/v1', 128)
+    kAB, kBA, cA, cB = okm[:32], okm[32:64], okm[64:96], okm[96:]
+    for name, got in [('kAB', kAB), ('kBA', kBA), ('cA', cA), ('cB', cB)]:
+        check('tapi26/' + name, got.hex(), X[name])
+    cfA = _hmac.new(cA, CH + b'confirm/initiator' + th, hashlib.sha256).digest()
+    cfB = _hmac.new(cB, CH + b'confirm/responder' + th, hashlib.sha256).digest()
+    check('tapi26/confirm initiator', cfA.hex(), ch['ready']['confirm']); check('tapi26/confirm responder', cfB.hex(), ch['accept']['confirm'])
+    for d, key in [(0, 'toInitiator'), (1, 'toResponder')]:
+        check('tapi26/room ' + key, hashlib.sha256(CH + b'room/v1' + cid + bytes([d])).hexdigest(), X['rooms'][key])
+    seqs = {'initiator': 0, 'responder': 0}
+    for f in ch['frames']:
+        who = f['from']; sq = seqs[who]; seqs[who] += 1
+        key, d = (kAB, 0) if who == 'initiator' else (kBA, 1)
+        nonce = bytes(4) + sq.to_bytes(8, 'big')
+        aad = CH + b'frame/v1' + cid + bytes([d]) + sq.to_bytes(8, 'big')
+        got = sq.to_bytes(8, 'big') + chacha20poly1305_seal(key, nonce, aad, f['plaintext'].encode('utf-8'))
+        check('tapi26/frame %s #%d %r' % (who, sq, f['plaintext']), got.hex(), f['frame'])
 
-# ---------- TAPI-26 §3.1 / §3.2: identity authorisation, inbox room, sealed invite ----------
-# XChaCha20 = HChaCha20(key, nonce[:16]) as the subkey, then ChaCha20 with nonce 0^4 || nonce[16:24]
-# (draft-irtf-cfrg-xchacha). / XChaCha20：先用 HChaCha20 派生子密钥，再以 0^4 || nonce[16:24] 作 ChaCha20 随机数。
-def _hchacha20(key, nonce16):
-    c = [0x61707865, 0x3320646e, 0x79622d32, 0x6b206574]
-    k = [int.from_bytes(key[i:i + 4], 'little') for i in range(0, 32, 4)]
-    n = [int.from_bytes(nonce16[i:i + 4], 'little') for i in range(0, 16, 4)]
-    w = c + k + n
-    def qr(a, b, c_, d):
-        w[a] = (w[a] + w[b]) & 0xffffffff; w[d] = _rotl32(w[d] ^ w[a], 16)
-        w[c_] = (w[c_] + w[d]) & 0xffffffff; w[b] = _rotl32(w[b] ^ w[c_], 12)
-        w[a] = (w[a] + w[b]) & 0xffffffff; w[d] = _rotl32(w[d] ^ w[a], 8)
-        w[c_] = (w[c_] + w[d]) & 0xffffffff; w[b] = _rotl32(w[b] ^ w[c_], 7)
-    for _ in range(10):
-        qr(0, 4, 8, 12); qr(1, 5, 9, 13); qr(2, 6, 10, 14); qr(3, 7, 11, 15)
-        qr(0, 5, 10, 15); qr(1, 6, 11, 12); qr(2, 7, 8, 13); qr(3, 4, 9, 14)
-    return b''.join(x.to_bytes(4, 'little') for x in w[0:4] + w[12:16])
+    # ---------- TAPI-26 §3.1 / §3.2: identity authorisation, inbox room, sealed invite ----------
+    # XChaCha20 = HChaCha20(key, nonce[:16]) as the subkey, then ChaCha20 with nonce 0^4 || nonce[16:24]
+    # (draft-irtf-cfrg-xchacha). / XChaCha20：先用 HChaCha20 派生子密钥，再以 0^4 || nonce[16:24] 作 ChaCha20 随机数。
+    def _hchacha20(key, nonce16):
+        c = [0x61707865, 0x3320646e, 0x79622d32, 0x6b206574]
+        k = [int.from_bytes(key[i:i + 4], 'little') for i in range(0, 32, 4)]
+        n = [int.from_bytes(nonce16[i:i + 4], 'little') for i in range(0, 16, 4)]
+        w = c + k + n
+        def qr(a, b, c_, d):
+            w[a] = (w[a] + w[b]) & 0xffffffff; w[d] = _rotl32(w[d] ^ w[a], 16)
+            w[c_] = (w[c_] + w[d]) & 0xffffffff; w[b] = _rotl32(w[b] ^ w[c_], 12)
+            w[a] = (w[a] + w[b]) & 0xffffffff; w[d] = _rotl32(w[d] ^ w[a], 8)
+            w[c_] = (w[c_] + w[d]) & 0xffffffff; w[b] = _rotl32(w[b] ^ w[c_], 7)
+        for _ in range(10):
+            qr(0, 4, 8, 12); qr(1, 5, 9, 13); qr(2, 6, 10, 14); qr(3, 7, 11, 15)
+            qr(0, 5, 10, 15); qr(1, 6, 11, 12); qr(2, 7, 8, 13); qr(3, 4, 9, 14)
+        return b''.join(x.to_bytes(4, 'little') for x in w[0:4] + w[12:16])
 
-def xchacha20poly1305_seal(key, nonce24, aad, pt):
-    return chacha20poly1305_seal(_hchacha20(key, nonce24[:16]), b'\x00' * 4 + nonce24[16:24], aad, pt)
+    def xchacha20poly1305_seal(key, nonce24, aad, pt):
+        return chacha20poly1305_seal(_hchacha20(key, nonce24[:16]), b'\x00' * 4 + nonce24[16:24], aad, pt)
 
-# RFC-draft test vector for HChaCha20 (draft-irtf-cfrg-xchacha-03 §2.2.1) / HChaCha20 的草案测试向量
-check('xchacha/hchacha20 draft vector',
-      _hchacha20(bytes(range(32)), bytes.fromhex('000000090000004a0000000031415927')).hex(),
-      '82413b4227b27bfed30e42508a877d73a0f9e4d58a74a853c12ec41326d3ecdc')
+    # RFC-draft test vector for HChaCha20 (draft-irtf-cfrg-xchacha-03 §2.2.1). A self-test of the primitive, independent of
+    # the labels: run on the first pass only, so it is counted once. / HChaCha20 的草案测试向量；与标签无关的原语自检，只在第一遍运行、只计一次。
+    if not PREFIX:
+        check('xchacha/hchacha20 draft vector',
+              _hchacha20(bytes(range(32)), bytes.fromhex('000000090000004a0000000031415927')).hex(),
+              '82413b4227b27bfed30e42508a877d73a0f9e4d58a74a853c12ec41326d3ecdc')
 
-idv = load_vec('tapi-26-identity.json')
-ck = idv['channelKeys']
-d = ck['domain']
-dom = eip712_domain(d['name'], d['version'], d['chainId'], d['verifyingContract'])
-th = keccak256(ck['typeHash'].encode())
-k = ck['keys']
-inbox_norm = {'relays': [{'url': r['url'], 'container': r['container']} for r in k['inbox'].get('relays', [])]}
-if k['inbox'].get('bus'): inbox_norm['bus'] = k['inbox']['bus']
-ihash = keccak256(canonical(inbox_norm).encode('utf-8'))
-check('tapi26/channelKeys inbox hash', '0x' + ihash.hex(), k['inboxHash'])
-sh = keccak256(th + addr32(k['container']) + bytes.fromhex(k['x25519'][2:]) + bytes.fromhex(k['ed25519'][2:]) + ihash + u64(k['issued']).rjust(32, b'\x00') + u64(k['expires']).rjust(32, b'\x00'))
-check('tapi26/channelKeys digest', h(typed_digest(dom, sh)), ck['digest'])
-check('tapi26/channelKeys typehash differs from Delegation', str(th != keccak256(b'Delegation(address container,address signer,uint64 expires)')), 'True')
-ib = idv['inbox']
-room = hashlib.sha256(b'TAP-26/inbox/v1' + endpoint(ib['container'], ib['chainId'])).digest()
-check('tapi26/inbox room', room.hex(), ib['room'])
-si = idv['sealedInvite']
-R = x25519_pub(bytes.fromhex(si['recipientSecret'][2:]))
-e = bytes.fromhex(si['ephemeralSecret'][2:]); E = x25519_pub(e); N = bytes.fromhex(si['nonce'][2:])
-sroom = hashlib.sha256(b'TAP-26/inbox/v1' + endpoint(si['recipientContainer'], si['recipientChainId'])).digest()
-K = hkdf_sha256(x25519(e, R), b'TAP-26/inbox/v1', E + R + sroom, 32)
-wire = b'\x03' + E + N + xchacha20poly1305_seal(K, N, b'TAP-26/inbox/v1' + E + sroom, canonical(si['invite']).encode('utf-8'))
-check('tapi26/sealed invite', '0x' + wire.hex(), si['wire'])
+    idv = load_vec(F_ID)
+    ck = idv['channelKeys']
+    d = ck['domain']
+    dom = eip712_domain(d['name'], d['version'], d['chainId'], d['verifyingContract'])
+    th = keccak256(ck['typeHash'].encode())
+    k = ck['keys']
+    inbox_norm = {'relays': [{'url': r['url'], 'container': r['container']} for r in k['inbox'].get('relays', [])]}
+    if k['inbox'].get('bus'): inbox_norm['bus'] = k['inbox']['bus']
+    ihash = keccak256(canonical(inbox_norm).encode('utf-8'))
+    check('tapi26/channelKeys inbox hash', '0x' + ihash.hex(), k['inboxHash'])
+    sh = keccak256(th + addr32(k['container']) + bytes.fromhex(k['x25519'][2:]) + bytes.fromhex(k['ed25519'][2:]) + ihash + u64(k['issued']).rjust(32, b'\x00') + u64(k['expires']).rjust(32, b'\x00'))
+    check('tapi26/channelKeys digest', h(typed_digest(dom, sh)), ck['digest'])
+    if not PREFIX:   # a property of the type strings, the same in both versions / 类型串的性质，两个版本相同
+        check('tapi26/channelKeys typehash differs from Delegation', str(th != keccak256(b'Delegation(address container,address signer,uint64 expires)')), 'True')
+    ib = idv['inbox']
+    room = hashlib.sha256(CH + b'inbox/v1' + endpoint(ib['container'], ib['chainId'])).digest()
+    check('tapi26/inbox room', room.hex(), ib['room'])
+    si = idv['sealedInvite']
+    R = x25519_pub(bytes.fromhex(si['recipientSecret'][2:]))
+    e = bytes.fromhex(si['ephemeralSecret'][2:]); E = x25519_pub(e); N = bytes.fromhex(si['nonce'][2:])
+    sroom = hashlib.sha256(CH + b'inbox/v1' + endpoint(si['recipientContainer'], si['recipientChainId'])).digest()
+    K = hkdf_sha256(x25519(e, R), CH + b'inbox/v1', E + R + sroom, 32)
+    wire = b'\x03' + E + N + xchacha20poly1305_seal(K, N, CH + b'inbox/v1' + E + sroom, canonical(si['invite']).encode('utf-8'))
+    check('tapi26/sealed invite', '0x' + wire.hex(), si['wire'])
 
-# ---------- Ed25519, RFC 8032 §5.1 (pure Python, following the RFC's own reference code in §6) ----------
-_P = 2 ** 255 - 19
-_L = 2 ** 252 + 27742317777372353535851937790883648493
-_D = -121665 * pow(121666, _P - 2, _P) % _P
-_I = pow(2, (_P - 1) // 4, _P)
-def _ed_add(A, B):
-    x1, y1, z1, t1 = A; x2, y2, z2, t2 = B
-    a = (y1 - x1) * (y2 - x2) % _P; b = (y1 + x1) * (y2 + x2) % _P
-    c = 2 * t1 * t2 * _D % _P; d = 2 * z1 * z2 % _P
-    e, f, g, hh = b - a, d - c, d + c, b + a
-    return (e * f % _P, g * hh % _P, f * g % _P, e * hh % _P)
-def _ed_mul(s, A):
-    Q = (0, 1, 1, 0)
-    while s > 0:
-        if s & 1: Q = _ed_add(Q, A)
-        A = _ed_add(A, A); s >>= 1
-    return Q
-def _ed_recover_x(y, sign):
-    x2 = (y * y - 1) * pow(_D * y * y + 1, _P - 2, _P) % _P
-    if x2 == 0:
-        return None if sign else 0
-    x = pow(x2, (_P + 3) // 8, _P)
-    if (x * x - x2) % _P != 0: x = x * _I % _P
-    if (x * x - x2) % _P != 0: return None
-    if (x & 1) != sign: x = _P - x
-    return x
-_gy = 4 * pow(5, _P - 2, _P) % _P
-_gx = _ed_recover_x(_gy, 0)
-_G = (_gx, _gy, 1, _gx * _gy % _P)
-def _ed_compress(Pt):
-    zinv = pow(Pt[2], _P - 2, _P); x = Pt[0] * zinv % _P; y = Pt[1] * zinv % _P
-    return int.to_bytes(y | ((x & 1) << 255), 32, 'little')
-def _ed_decompress(b):
-    y = int.from_bytes(b, 'little'); sign = y >> 255; y &= (1 << 255) - 1
-    x = _ed_recover_x(y, sign)
-    return None if x is None else (x, y, 1, x * y % _P)
-def _ed_expand(secret):
-    hsh = hashlib.sha512(secret).digest()
-    a = int.from_bytes(hsh[:32], 'little'); a &= (1 << 254) - 8; a |= (1 << 254)
-    return a, hsh[32:]
-def ed25519_pub(secret):
-    return _ed_compress(_ed_mul(_ed_expand(secret)[0], _G))
-def ed25519_sign(secret, msg):
-    a, prefix = _ed_expand(secret); A = _ed_compress(_ed_mul(a, _G))
-    r = int.from_bytes(hashlib.sha512(prefix + msg).digest(), 'little') % _L
-    Rs = _ed_compress(_ed_mul(r, _G))
-    k = int.from_bytes(hashlib.sha512(Rs + A + msg).digest(), 'little') % _L
-    return Rs + int.to_bytes((r + k * a) % _L, 32, 'little')
-def ed25519_verify(pub, msg, signature):
-    A = _ed_decompress(pub); R = _ed_decompress(signature[:32]); S = int.from_bytes(signature[32:], 'little')
-    if A is None or R is None or S >= _L: return False
-    k = int.from_bytes(hashlib.sha512(signature[:32] + pub + msg).digest(), 'little') % _L
-    sB = _ed_mul(S, _G); hA = _ed_add(R, _ed_mul(k, A))
-    return _ed_compress(sB) == _ed_compress(hA)
+    # ---------- Ed25519, RFC 8032 §5.1 (pure Python, following the RFC's own reference code in §6) ----------
+    _P = 2 ** 255 - 19
+    _L = 2 ** 252 + 27742317777372353535851937790883648493
+    _D = -121665 * pow(121666, _P - 2, _P) % _P
+    _I = pow(2, (_P - 1) // 4, _P)
+    def _ed_add(A, B):
+        x1, y1, z1, t1 = A; x2, y2, z2, t2 = B
+        a = (y1 - x1) * (y2 - x2) % _P; b = (y1 + x1) * (y2 + x2) % _P
+        c = 2 * t1 * t2 * _D % _P; d = 2 * z1 * z2 % _P
+        e, f, g, hh = b - a, d - c, d + c, b + a
+        return (e * f % _P, g * hh % _P, f * g % _P, e * hh % _P)
+    def _ed_mul(s, A):
+        Q = (0, 1, 1, 0)
+        while s > 0:
+            if s & 1: Q = _ed_add(Q, A)
+            A = _ed_add(A, A); s >>= 1
+        return Q
+    def _ed_recover_x(y, sign):
+        x2 = (y * y - 1) * pow(_D * y * y + 1, _P - 2, _P) % _P
+        if x2 == 0:
+            return None if sign else 0
+        x = pow(x2, (_P + 3) // 8, _P)
+        if (x * x - x2) % _P != 0: x = x * _I % _P
+        if (x * x - x2) % _P != 0: return None
+        if (x & 1) != sign: x = _P - x
+        return x
+    _gy = 4 * pow(5, _P - 2, _P) % _P
+    _gx = _ed_recover_x(_gy, 0)
+    _G = (_gx, _gy, 1, _gx * _gy % _P)
+    def _ed_compress(Pt):
+        zinv = pow(Pt[2], _P - 2, _P); x = Pt[0] * zinv % _P; y = Pt[1] * zinv % _P
+        return int.to_bytes(y | ((x & 1) << 255), 32, 'little')
+    def _ed_decompress(b):
+        y = int.from_bytes(b, 'little'); sign = y >> 255; y &= (1 << 255) - 1
+        x = _ed_recover_x(y, sign)
+        return None if x is None else (x, y, 1, x * y % _P)
+    def _ed_expand(secret):
+        hsh = hashlib.sha512(secret).digest()
+        a = int.from_bytes(hsh[:32], 'little'); a &= (1 << 254) - 8; a |= (1 << 254)
+        return a, hsh[32:]
+    def ed25519_pub(secret):
+        return _ed_compress(_ed_mul(_ed_expand(secret)[0], _G))
+    def ed25519_sign(secret, msg):
+        a, prefix = _ed_expand(secret); A = _ed_compress(_ed_mul(a, _G))
+        r = int.from_bytes(hashlib.sha512(prefix + msg).digest(), 'little') % _L
+        Rs = _ed_compress(_ed_mul(r, _G))
+        k = int.from_bytes(hashlib.sha512(Rs + A + msg).digest(), 'little') % _L
+        return Rs + int.to_bytes((r + k * a) % _L, 32, 'little')
+    def ed25519_verify(pub, msg, signature):
+        A = _ed_decompress(pub); R = _ed_decompress(signature[:32]); S = int.from_bytes(signature[32:], 'little')
+        if A is None or R is None or S >= _L: return False
+        k = int.from_bytes(hashlib.sha512(signature[:32] + pub + msg).digest(), 'little') % _L
+        sB = _ed_mul(S, _G); hA = _ed_add(R, _ed_mul(k, A))
+        return _ed_compress(sB) == _ed_compress(hA)
 
-# RFC 8032 §7.1 TEST 1 and TEST 2 / RFC 8032 的测试 1 与测试 2
-for name, sk, pk, msg, sgn in [
-    ('rfc8032 test 1', '9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60', 'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a', '',
-     'e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b'),
-    ('rfc8032 test 2', '4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb', '3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c', '72',
-     '92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00')]:
-    check('ed25519/' + name + ' public', ed25519_pub(bytes.fromhex(sk)).hex(), pk)
-    check('ed25519/' + name + ' signature', ed25519_sign(bytes.fromhex(sk), bytes.fromhex(msg)).hex(), sgn)
-    check('ed25519/' + name + ' verifies', str(ed25519_verify(bytes.fromhex(pk), bytes.fromhex(msg), bytes.fromhex(sgn))), 'True')
+    # RFC 8032 §7.1 TEST 1 and TEST 2: a self-test of the primitive, first pass only / RFC 8032 的测试 1 与测试 2：原语自检，只在第一遍
+    for name, sk, pk, msg, sgn in [] if PREFIX else [
+        ('rfc8032 test 1', '9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60', 'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a', '',
+         'e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b'),
+        ('rfc8032 test 2', '4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb', '3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c', '72',
+         '92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00')]:
+        check('ed25519/' + name + ' public', ed25519_pub(bytes.fromhex(sk)).hex(), pk)
+        check('ed25519/' + name + ' signature', ed25519_sign(bytes.fromhex(sk), bytes.fromhex(msg)).hex(), sgn)
+        check('ed25519/' + name + ' verifies', str(ed25519_verify(bytes.fromhex(pk), bytes.fromhex(msg), bytes.fromhex(sgn))), 'True')
 
-# ---------- TAPI-27: rebuild the epoch message and the messages from the secrets alone ----------
-gv = load_vec('tapi-27-group.json')
-bh = lambda x: bytes.fromhex(x[2:] if x.startswith('0x') else x)
-people = gv['members']
-for p_ in people:
-    check('tapi27/x25519 ' + p_['tag'], '0x' + x25519_pub(bh(p_['x25519Secret'])).hex(), p_['x25519'])
-    check('tapi27/ed25519 ' + p_['tag'], '0x' + ed25519_pub(bh(p_['ed25519Secret'])).hex(), p_['ed25519'])
-gid = bh(gv['gid']); epoch = gv['epoch']; K = bh(gv['K']); e = bh(gv['ephemeralSecret']); N = bh(gv['nonce'])
-E = x25519_pub(e)
-commit = hashlib.sha256(b'TAP-27/commit/v1' + K).digest()
-header = b'\x04' + gid + epoch.to_bytes(8, 'big') + E + N + commit + bytes([len(gv['roster']['members'])])
-slots = b''
-for m in gv['roster']['members']:
-    R = bh(m['x25519'])
-    kek = hkdf_sha256(x25519(e, R), b'TAP-27/wrap/v1', E + R + gid + epoch.to_bytes(8, 'big'), 32)
-    slots += xchacha20poly1305_seal(kek, N, header, K)          # 48 bytes, no fingerprint / 48 字节，无指纹
-roster_ct = xchacha20poly1305_seal(K, N, header + slots, canonical(gv['roster']).encode('utf-8'))
-body = header + slots + len(roster_ct).to_bytes(4, 'big') + roster_ct
-owner_sig = ed25519_sign(bh(people[0]['ed25519Secret']), b'TAP-27/epoch/v1' + body)
-check('tapi27/epoch message', '0x' + (body + owner_sig).hex(), gv['epochWire'])
-check('tapi27/epoch signature verifies', str(ed25519_verify(bh(people[0]['ed25519']), b'TAP-27/epoch/v1' + body, owner_sig)), 'True')
-for i, want in enumerate(gv['senderKeys']):
-    sk_ = hkdf_sha256(K, gid + epoch.to_bytes(8, 'big'), b'TAP-27/sender/v1' + i.to_bytes(4, 'big'), 32)
-    check('tapi27/sender key %d' % i, '0x' + sk_.hex(), want)
-for m in gv['messages']:
-    i, sq = m['sender'], int(m['seq'])
-    nonce = bh(m['nonce'])
-    hdr = b'\x05' + gid + epoch.to_bytes(8, 'big') + i.to_bytes(4, 'big') + sq.to_bytes(8, 'big') + nonce
-    key = bh(gv['senderKeys'][i])
-    ct = xchacha20poly1305_seal(key, nonce, hdr, m['plaintext'].encode('utf-8'))
-    sg = ed25519_sign(bh(people[i]['ed25519Secret']), b'TAP-27/msg/v1' + hdr + ct)
-    check('tapi27/message from %d %r' % (i, m['plaintext']), '0x' + (hdr + ct + sg).hex(), m['wire'])
-
-# ---------- TAPI-27 §3.8 format 2 (Experimental): rebuild both epochs and the messages from the secrets alone ----------
-# Written from §3.8 only: the epoch field carries the format-2 mark in its high half, the roster is binary, every label
-# is "…/v2". A format-1 reader (§3.3: n at most 2^32 - 1) must refuse every format-2 wire, and a format-2 reader the
-# format-1 epoch message above. / 只按 §3.8 的文字实现；格式 1 读者必须拒收每条格式 2 线路消息，格式 2 读者必须拒收上面的格式 1 纪元消息。
-g2 = load_vec('tapi-27-group-v2.json')
-MARK2 = 0x54470200
-gid = bh(g2['gid'])
-ef2 = lambda n: MARK2.to_bytes(4, 'big') + n.to_bytes(4, 'big')
-tail2 = canonical({'relays': g2['relays'], 'bus': g2['bus']}).encode('utf-8')
-people2 = g2['members']
-check('tapi27v2/same people as format 1', [p_['ed25519'] for p_ in people2], [p_['ed25519'] for p_ in people])
-roster_prev = None
-for ep in g2['epochs']:
-    n = ep['epoch']
-    check('tapi27v2/epoch %d field' % n, ef2(n).hex(), ep['epochField'])
-    K = bh(ep['K']); e = bh(ep['ephemeralSecret']); N = bh(ep['nonce']); E = x25519_pub(e)
-    prev = bytes(32) if roster_prev is None else hashlib.sha256(roster_prev).digest()
-    check('tapi27v2/epoch %d prev' % n, prev.hex(), ep['prev'])
-    entries = b''.join(bh(p_['container']) + p_['chainId'].to_bytes(4, 'big') + bh(p_['ed25519']) for p_ in people2)
-    roster = b'TGR2' + g2['issued'].to_bytes(8, 'big') + prev + len(people2).to_bytes(2, 'big') + entries + len(tail2).to_bytes(2, 'big') + tail2
-    check('tapi27v2/epoch %d roster bytes' % n, '0x' + roster.hex(), ep['roster'])
-    check('tapi27v2/epoch %d roster is 104 bytes a member with the slot' % n, len(entries) // len(people2) + 48, 104)
-    commit = hashlib.sha256(b'TAP-27/commit/v2' + K).digest()
-    header = b'\x04' + gid + ef2(n) + E + N + commit + len(people2).to_bytes(2, 'big')
+    # ---------- TAPI-27: rebuild the epoch message and the messages from the secrets alone ----------
+    gv = load_vec(F_G1)
+    bh = lambda x: bytes.fromhex(x[2:] if x.startswith('0x') else x)
+    people = gv['members']
+    for p_ in people:
+        check('tapi27/x25519 ' + p_['tag'], '0x' + x25519_pub(bh(p_['x25519Secret'])).hex(), p_['x25519'])
+        check('tapi27/ed25519 ' + p_['tag'], '0x' + ed25519_pub(bh(p_['ed25519Secret'])).hex(), p_['ed25519'])
+    gid = bh(gv['gid']); epoch = gv['epoch']; K = bh(gv['K']); e = bh(gv['ephemeralSecret']); N = bh(gv['nonce'])
+    E = x25519_pub(e)
+    commit = hashlib.sha256(GR + b'commit/v1' + K).digest()
+    header = b'\x04' + gid + epoch.to_bytes(8, 'big') + E + N + commit + bytes([len(gv['roster']['members'])])
     slots = b''
-    for p_ in people2:
-        R = bh(p_['x25519'])
-        kek = hkdf_sha256(x25519(e, R), b'TAP-27/wrap/v2', E + R + gid + ef2(n), 32)
-        slots += xchacha20poly1305_seal(kek, N, header, K)
-    ct = xchacha20poly1305_seal(K, N, header + slots, roster)
-    body = header + slots + len(ct).to_bytes(4, 'big') + ct
-    sg = ed25519_sign(bh(people2[0]['ed25519Secret']), b'TAP-27/epoch/v2' + body)
-    check('tapi27v2/epoch %d message' % n, '0x' + (body + sg).hex(), ep['epochWire'])
-    wire = bh(ep['epochWire'])
-    # format 1 (§3.3): n = uint64be at offset 17 must be at most 2^32 - 1; the format-1 count byte (offset 113) is 0
-    # 格式 1：偏移 17 的 uint64be 必须 ≤ 2^32 − 1；格式 1 的 count 字节（偏移 113）为 0
-    check('tapi27v2/epoch %d refused by format 1 (epoch field)' % n, int.from_bytes(wire[17:25], 'big') > 2 ** 32 - 1, True)
-    check('tapi27v2/epoch %d refused by format 1 (count byte)' % n, wire[113], 0)
-    roster_prev = roster
-K1 = bh(g2['epochs'][1]['K'])
-for i, want in enumerate(g2['senderKeys']):
-    check('tapi27v2/sender key %d' % i, '0x' + hkdf_sha256(K1, gid + ef2(1), b'TAP-27/sender/v2' + i.to_bytes(4, 'big'), 32).hex(), want)
-for m in g2['messages']:
-    i, sq, n = m['sender'], int(m['seq']), m['epoch']
-    nonce = bh(m['nonce'])
-    hdr = b'\x05' + gid + ef2(n) + i.to_bytes(4, 'big') + sq.to_bytes(8, 'big') + nonce
-    ct = xchacha20poly1305_seal(bh(g2['senderKeys'][i]), nonce, hdr, m['plaintext'].encode('utf-8'))
-    sg = ed25519_sign(bh(people2[i]['ed25519Secret']), b'TAP-27/msg/v2' + hdr + ct)
-    check('tapi27v2/message from %d %r' % (i, m['plaintext']), '0x' + (hdr + ct + sg).hex(), m['wire'])
-    check('tapi27v2/message from %d refused by format 1' % i, int.from_bytes(bh(m['wire'])[17:25], 'big') > 2 ** 32 - 1, True)
-# and back: the format-1 epoch message and messages carry a zero high half, which a format-2 reader refuses
-# 反过来：格式 1 的纪元消息与消息高半部分为零，格式 2 读者拒收
-check('tapi27v2/format-1 epoch message refused by format 2', int.from_bytes(bh(gv['epochWire'])[17:21], 'big') == MARK2, False)
-for m in gv['messages']:
-    check('tapi27v2/format-1 message refused by format 2', int.from_bytes(bh(m['wire'])[17:21], 'big') == MARK2, False)
+    for m in gv['roster']['members']:
+        R = bh(m['x25519'])
+        kek = hkdf_sha256(x25519(e, R), GR + b'wrap/v1', E + R + gid + epoch.to_bytes(8, 'big'), 32)
+        slots += xchacha20poly1305_seal(kek, N, header, K)          # 48 bytes, no fingerprint / 48 字节，无指纹
+    roster_ct = xchacha20poly1305_seal(K, N, header + slots, canonical(gv['roster']).encode('utf-8'))
+    body = header + slots + len(roster_ct).to_bytes(4, 'big') + roster_ct
+    owner_sig = ed25519_sign(bh(people[0]['ed25519Secret']), GR + b'epoch/v1' + body)
+    check('tapi27/epoch message', '0x' + (body + owner_sig).hex(), gv['epochWire'])
+    check('tapi27/epoch signature verifies', str(ed25519_verify(bh(people[0]['ed25519']), GR + b'epoch/v1' + body, owner_sig)), 'True')
+    for i, want in enumerate(gv['senderKeys']):
+        sk_ = hkdf_sha256(K, gid + epoch.to_bytes(8, 'big'), GR + b'sender/v1' + i.to_bytes(4, 'big'), 32)
+        check('tapi27/sender key %d' % i, '0x' + sk_.hex(), want)
+    for m in gv['messages']:
+        i, sq = m['sender'], int(m['seq'])
+        nonce = bh(m['nonce'])
+        hdr = b'\x05' + gid + epoch.to_bytes(8, 'big') + i.to_bytes(4, 'big') + sq.to_bytes(8, 'big') + nonce
+        key = bh(gv['senderKeys'][i])
+        ct = xchacha20poly1305_seal(key, nonce, hdr, m['plaintext'].encode('utf-8'))
+        sg = ed25519_sign(bh(people[i]['ed25519Secret']), GR + b'msg/v1' + hdr + ct)
+        check('tapi27/message from %d %r' % (i, m['plaintext']), '0x' + (hdr + ct + sg).hex(), m['wire'])
+
+    # ---------- TAPI-27 §3.8 format 2 (Experimental): rebuild both epochs and the messages from the secrets alone ----------
+    # Written from §3.8 only: the epoch field carries the format-2 mark in its high half, the roster is binary, every label
+    # is "…/v2". A format-1 reader (§3.3: n at most 2^32 - 1) must refuse every format-2 wire, and a format-2 reader the
+    # format-1 epoch message above. / 只按 §3.8 的文字实现；格式 1 读者必须拒收每条格式 2 线路消息，格式 2 读者必须拒收上面的格式 1 纪元消息。
+    g2 = load_vec(F_G2)
+    MARK2 = 0x54470200
+    gid = bh(g2['gid'])
+    ef2 = lambda n: MARK2.to_bytes(4, 'big') + n.to_bytes(4, 'big')
+    tail2 = canonical({'relays': g2['relays'], 'bus': g2['bus']}).encode('utf-8')
+    people2 = g2['members']
+    check('tapi27v2/same people as format 1', [p_['ed25519'] for p_ in people2], [p_['ed25519'] for p_ in people])
+    roster_prev = None
+    for ep in g2['epochs']:
+        n = ep['epoch']
+        check('tapi27v2/epoch %d field' % n, ef2(n).hex(), ep['epochField'])
+        K = bh(ep['K']); e = bh(ep['ephemeralSecret']); N = bh(ep['nonce']); E = x25519_pub(e)
+        prev = bytes(32) if roster_prev is None else hashlib.sha256(roster_prev).digest()
+        check('tapi27v2/epoch %d prev' % n, prev.hex(), ep['prev'])
+        entries = b''.join(bh(p_['container']) + p_['chainId'].to_bytes(4, 'big') + bh(p_['ed25519']) for p_ in people2)
+        roster = b'TGR2' + g2['issued'].to_bytes(8, 'big') + prev + len(people2).to_bytes(2, 'big') + entries + len(tail2).to_bytes(2, 'big') + tail2
+        check('tapi27v2/epoch %d roster bytes' % n, '0x' + roster.hex(), ep['roster'])
+        check('tapi27v2/epoch %d roster is 104 bytes a member with the slot' % n, len(entries) // len(people2) + 48, 104)
+        commit = hashlib.sha256(GR + b'commit/v2' + K).digest()
+        header = b'\x04' + gid + ef2(n) + E + N + commit + len(people2).to_bytes(2, 'big')
+        slots = b''
+        for p_ in people2:
+            R = bh(p_['x25519'])
+            kek = hkdf_sha256(x25519(e, R), GR + b'wrap/v2', E + R + gid + ef2(n), 32)
+            slots += xchacha20poly1305_seal(kek, N, header, K)
+        ct = xchacha20poly1305_seal(K, N, header + slots, roster)
+        body = header + slots + len(ct).to_bytes(4, 'big') + ct
+        sg = ed25519_sign(bh(people2[0]['ed25519Secret']), GR + b'epoch/v2' + body)
+        check('tapi27v2/epoch %d message' % n, '0x' + (body + sg).hex(), ep['epochWire'])
+        wire = bh(ep['epochWire'])
+        # format 1 (§3.3): n = uint64be at offset 17 must be at most 2^32 - 1; the format-1 count byte (offset 113) is 0
+        # 格式 1：偏移 17 的 uint64be 必须 ≤ 2^32 − 1；格式 1 的 count 字节（偏移 113）为 0
+        check('tapi27v2/epoch %d refused by format 1 (epoch field)' % n, int.from_bytes(wire[17:25], 'big') > 2 ** 32 - 1, True)
+        check('tapi27v2/epoch %d refused by format 1 (count byte)' % n, wire[113], 0)
+        roster_prev = roster
+    K1 = bh(g2['epochs'][1]['K'])
+    for i, want in enumerate(g2['senderKeys']):
+        check('tapi27v2/sender key %d' % i, '0x' + hkdf_sha256(K1, gid + ef2(1), GR + b'sender/v2' + i.to_bytes(4, 'big'), 32).hex(), want)
+    for m in g2['messages']:
+        i, sq, n = m['sender'], int(m['seq']), m['epoch']
+        nonce = bh(m['nonce'])
+        hdr = b'\x05' + gid + ef2(n) + i.to_bytes(4, 'big') + sq.to_bytes(8, 'big') + nonce
+        ct = xchacha20poly1305_seal(bh(g2['senderKeys'][i]), nonce, hdr, m['plaintext'].encode('utf-8'))
+        sg = ed25519_sign(bh(people2[i]['ed25519Secret']), GR + b'msg/v2' + hdr + ct)
+        check('tapi27v2/message from %d %r' % (i, m['plaintext']), '0x' + (hdr + ct + sg).hex(), m['wire'])
+        check('tapi27v2/message from %d refused by format 1' % i, int.from_bytes(bh(m['wire'])[17:25], 'big') > 2 ** 32 - 1, True)
+    # and back: the format-1 epoch message and messages carry a zero high half, which a format-2 reader refuses
+    # 反过来：格式 1 的纪元消息与消息高半部分为零，格式 2 读者拒收
+    check('tapi27v2/format-1 epoch message refused by format 2', int.from_bytes(bh(gv['epochWire'])[17:21], 'big') == MARK2, False)
+    for m in gv['messages']:
+        check('tapi27v2/format-1 message refused by format 2', int.from_bytes(bh(m['wire'])[17:21], 'big') == MARK2, False)
+PREFIX = ''
 
 # ======================================================= TAPI-21 §3.5 / TAPI-20 §3.9 AI usage receipts ====
 # The receipt vectors of the reference sidecar (sdk/test/fixtures/ai-receipt-vectors.json), checked from the text of

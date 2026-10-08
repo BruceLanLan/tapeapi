@@ -29,7 +29,7 @@
 <p>这些包尚未发布到 npm，所以要在仓库的克隆里操作（Node.js 20 或更高版本）：</p>
 <div class="code"><pre data-lang="bash"><code>git clone https://github.com/BruceLanLan/tapeapi.git &amp;&amp; cd tapeapi &amp;&amp; npm install</code></pre></div>
 <p>或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：</p>
-<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.0/tapeapi-sdk-1.8.0.tgz</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz</code></pre></div>
 <p>把下面的脚本保存为 <code>.mjs</code> 文件，放在能解析到 <code>@tapeapi/sdk</code> 的地方，然后用 <code>node &lt;文件&gt;.mjs</code> 运行：用克隆时，<strong>放在 <code>tapeapi</code> 目录之内</strong>（包通过仓库的 workspace 解析）；装了发布包时，放在那个项目里。放在其它位置的脚本会以 <code>ERR_MODULE_NOT_FOUND</code> 失败。</p>
 <h3 id="调用线上的公共服务"><a class="anchor" href="#调用线上的公共服务" aria-hidden="true">#</a>调用线上的公共服务</h3>
 <p>一个免费的公共服务运行在 <code>https://api.tapeapi.fun</code>，TapeOut 名称为 <code>11.1013.tape</code>。用 curl：</p>

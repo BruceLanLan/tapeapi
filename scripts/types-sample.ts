@@ -395,3 +395,28 @@ async function agent17() {
   void [typed, none, self, lines, viaFee, viaNoFee, r, decoded, member, agentKit.THREAD_KINDS]
 }
 void agent17
+
+// 1.8.1: TAPI-26 / TAPI-27 version 2 labels (tape-channel/, tape-group/), opt-in; both sides pass the same.
+// 1.8.1：TAPI-26 / TAPI-27 第 2 版标签（tape-channel/、tape-group/），可选；双方传同样的值。
+async function labelsV2(): Promise<void> {
+  const labels: channel.Labels = 'v2'
+  const a = generateIdentity(), b = generateIdentity()
+  const { invite, pending } = createInvite({ self: { container: MAINNET.hub, staticSecret: a.x25519.secretKey }, peer: { container: MAINNET.factory, staticPublic: b.x25519.publicKey }, labels })
+  const acc = acceptInvite({ self: { container: MAINNET.factory, staticSecret: b.x25519.secretKey }, peer: { container: MAINNET.hub, staticPublic: a.x25519.publicKey }, invite, labels })
+  const listen = channel.roomsFor(pending.cid, { labels: pending.labels })
+  const inbox: string = channel.inboxRoom(MAINNET.factory, 56, { labels })
+  const wire: Uint8Array = channel.sealInvite(invite, { to: b.x25519.publicKey, labels })
+  const v: 'v1' | 'v2' = acc.session.labels
+  const me = generateIdentity()
+  const created = await group.createGroup({ self: { container: MAINNET.hub }, identity: me, members: [], labels })
+  const snap: group.GroupSnapshot = created.group.snapshot()
+  const v3: group.GroupSnapshotLabelsV2 = { ...snap, v: 3, labels: 'v2', format: 1 }
+  const v1snap: group.GroupSnapshotV1 = { v: 1, gid: snap.gid, owner: snap.owner, epoch: snap.epoch, role: 'owner', labels: 'v1' }
+  const resumed = await group.resumeGroup({ self: { container: MAINNET.hub }, identity: me, snapshot: snap, labels })
+  const room: string = group.groupRoom(created.group.gid, { labels: created.group.labels })
+  const member: group.GroupHandle = group.joinGroup({ self: { container: MAINNET.factory }, identity: me, invite: group.openGroupInvite(wire, { self: {}, labels }), ownerKeys: {}, labels })
+  const api = createTapeAPI({})
+  const found: GroupInviteCheck = await checkGroupInvites({ self: { container: MAINNET.factory }, identity: me, relayClients: [{ api, service: await api.resolve('12.1013.tape') }], labels })
+  void [listen.toInitiator, inbox, v, snap.labels, resumed.group.labels, room, member.labels, found.room, v3, v1snap]
+}
+void labelsV2
