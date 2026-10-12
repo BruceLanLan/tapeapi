@@ -76,6 +76,11 @@ export interface Tap10Seals {
   readonly circuitCodehash: string
 }
 export declare const TAP10_SEALS: Readonly<Record<56 | 196 | 8453, Tap10Seals>> & Readonly<Record<number, Tap10Seals | undefined>>
+/** @experimental TAP-10 §13.8: the hub's boot implementation, the same on every chain. */
+export declare const TAP10_HUB_BOOT: Address
+/** @experimental TAP-10 §13.8 Upgraded-log scan, per chain: `createdAt`, the hub proxy's creation block (a scan starts
+ *  there); `listed`, every hub implementation TAP-10 lists for the chain, current or replaced. Read back 2026-10-08. */
+export declare const TAP10_HUB_HISTORY: Readonly<Record<56 | 196 | 8453, { readonly createdAt: number; readonly listed: readonly Address[] }>> & Readonly<Record<number, { readonly createdAt: number; readonly listed: readonly Address[] } | undefined>>
 /** @experimental (TAPI-22 §3.5) How the SDK shows an escrow token, per chain and lowercase address: a fixed label
  *  ('BEM', 'USDT (Binance-Peg)'), never the token's own name(). Decimals are always read from the token. */
 export declare const PAYMENT_TOKENS: Readonly<Record<number, Readonly<Record<string, { readonly label: string; readonly address: Address }>>>>

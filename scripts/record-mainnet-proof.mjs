@@ -16,6 +16,14 @@
 // '11.1013.tape'，不发任何交易。外层 fetch 记下这次解析得到的每个 JSON-RPC 回答：钉住的区块（含 stateRoot）、每个 eth_call 与
 // eth_getStorageAt（都在该区块上，SDK 只在全体作答节点一致且两家运营方作答时才接受），以及每个 eth_getProof（来自提供它的节点：证明不需要
 // 法定数）。fixture 只含公开链上数据。同时打印这次运行的代价：每个主机的请求数、忙碌段数（证明与各轮重叠，不是串行轮数）与耗时。
+//
+// 2.0: the client is created with conform: false, the 1.x resolution (deprecated, one warning at creation, kept in `warnings`):
+// this fixture is the security 1.2 proof recording, so it keeps being recorded the way 1.2 resolved. The 2.0 default (TAP-10
+// conformance mode) reads other things (a pinned block hash, the opener, the payment contract) and would record another
+// fixture. The `source` text below names the pin/proofs options only, as in the recorded file, so a re-record changes no text.
+// 2.0：客户端用 conform: false 建立，即 1.x 的解析（已弃用，创建时一次警告，记在 `warnings` 里）：这份 fixture 是安全加固 1.2 的证明
+// 录制，所以继续按 1.2 的解析方式录制。2.0 的默认（TAP-10 一致模式）读的东西不同（钉块哈希、开通器、付费合约），会录出另一份
+// fixture。下面的 `source` 文字与已录制的文件一样只写 pin/proofs，所以重新录制不会改变文字。
 import { writeFileSync } from 'node:fs'
 import { createTapeAPI, rpcUrlsFor, operatorOf, canonicalJSON } from '../sdk/src/index.js'
 
@@ -58,7 +66,7 @@ const recordingFetch = async (url, init) => {
 
 const t0 = performance.now()
 const warnings = []
-const api = createTapeAPI({ chainId: CHAIN, rpcUrls: urls, quorum: 2, pin: true, proofs: PROOFS, fetch: recordingFetch, onWarning: (w) => warnings.push(w), rpcTimeoutMs: 15000 })
+const api = createTapeAPI({ chainId: CHAIN, rpcUrls: urls, quorum: 2, pin: true, proofs: PROOFS, conform: false, fetch: recordingFetch, onWarning: (w) => warnings.push(w), rpcTimeoutMs: 15000 })
 let svc, failure = null
 try { svc = await api.resolve(NAME) } catch (e) { failure = e }
 const ms = Math.round(performance.now() - t0)

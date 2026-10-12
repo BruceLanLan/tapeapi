@@ -192,6 +192,16 @@ test('/mcp lifecycle: initialize, notifications, tools/list (pinned fields), too
   assert.equal((await p.handleRequest(req(MCP_PATH, { body: 'x'.repeat(70 * 1024) }))).status, 413)
 })
 
+// Same addition as the endpoint's preflight (server/test/mcp.test.mjs). / 与 server/test/mcp.test.mjs 中端点的预检相同的追加。
+test('CORS preflight: allows Mcp-Method and Mcp-Name, and still every header it allowed before', async () => {
+  const p = make(inProcess().upstream)
+  const o = await p.handleRequest(req(MCP_PATH, { method: 'OPTIONS' }))
+  const allowed = o.headers.get('access-control-allow-headers').split(/\s*,\s*/)
+  for (const h of ['content-type', 'accept', 'authorization', 'mcp-protocol-version', 'mcp-session-id', 'last-event-id', 'mcp-method', 'mcp-name']) assert.ok(allowed.includes(h), `${h} is allowed`)
+  assert.equal(o.headers.get('access-control-expose-headers'), 'mcp-session-id')
+  assert.equal(o.headers.get('access-control-allow-methods'), 'POST, OPTIONS')
+})
+
 test('drift: a changed description gets a signed TOOLS_CHANGED on /tapeapi/v1 and /mcp, and tools/list is an error', async () => {
   const up = inProcess()
   const p = make(up.upstream, { refreshMs: 1 })

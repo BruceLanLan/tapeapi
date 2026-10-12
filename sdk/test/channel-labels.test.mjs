@@ -1,11 +1,12 @@
-// 1.8.1: the `labels` option. TAPI-26 and TAPI-27 version 1 (labels TAP-26/…, TAP-27/…) are Stable (v1) and stay the
-// default, byte for byte. Version 2 (spec/TAPI-26-v2.md, spec/TAPI-27-v2.md, Draft: labels tape-channel/…, tape-group/…,
-// at the request of the TAPs editors) is opt-in with { labels: 'v2' } and becomes the default in 2.0.
+// The `labels` option (1.8.1) and its 2.0 default. Version 2 (spec/TAPI-26-v2.md, spec/TAPI-27-v2.md: labels
+// tape-channel/…, tape-group/…, at the request of the TAPs editors) was opt-in with { labels: 'v2' } in 1.8.1 and is the
+// default from 2.0. TAPI-26 and TAPI-27 version 1 (labels TAP-26/…, TAP-27/…) are Stable (v1) and frozen, byte for byte;
+// in 2.x { labels: 'v1' } still selects them (deprecated).
 // The labels are the version marker: invites carry none, so both sides are told the version, a mismatch fails closed,
 // and where the SDK can tell that a message was made under the other version it says so (data.labels/peerLabels).
-// 1.8.1：`labels` 选项。TAPI-26、TAPI-27 第 1 版（标签 TAP-26/…、TAP-27/…）为 Stable (v1)，仍是默认，逐字节不变。第 2 版
-// （spec/TAPI-26-v2.md、spec/TAPI-27-v2.md，Draft：标签 tape-channel/…、tape-group/…，应 TAPs 编辑要求）以 { labels: 'v2' } 选用，
-// 2.0 起成为默认。标签本身就是版本标记：邀请里没有版本，所以要告诉双方同一个版本；不一致时失败关闭，SDK 能看出消息出自另一版本时会明说。
+// `labels` 选项（1.8.1）及其 2.0 默认值。第 2 版（spec/TAPI-26-v2.md、spec/TAPI-27-v2.md：标签 tape-channel/…、tape-group/…，
+// 应 TAPs 编辑要求）在 1.8.1 以 { labels: 'v2' } 选用，2.0 起成为默认。TAPI-26、TAPI-27 第 1 版（标签 TAP-26/…、TAP-27/…）为
+// Stable (v1) 且冻结，逐字节不变；2.x 里 { labels: 'v1' } 仍可选它们（已弃用）。标签本身就是版本标记：邀请里没有版本，所以要告诉双方同一个版本；不一致时失败关闭，SDK 能看出消息出自另一版本时会明说。
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
@@ -41,8 +42,8 @@ const SETS = {
   v1: { channel: 'tapi-26-channel.json', identity: 'tapi-26-identity.json', group: 'tapi-27-group.json', format2: 'tapi-27-group-v2.json' },
   v2: { channel: 'tapi-26-v2-channel.json', identity: 'tapi-26-v2-identity.json', group: 'tapi-27-v2-group.json', format2: 'tapi-27-v2-group-format2.json' },
 }
-// undefined = the default, which must be v1 / undefined 即默认，必须等于 v1
-const MODES = [['default', undefined, 'v1'], ['v1', 'v1', 'v1'], ['v2', 'v2', 'v2']]
+// undefined = the default, which is v2 from 2.0 (it was v1 in 1.x) / undefined 即默认：2.0 起为 v2（1.x 为 v1）
+const MODES = [['default', undefined, 'v2'], ['v1', 'v1', 'v1'], ['v2', 'v2', 'v2']]
 const opt = (labels) => (labels === undefined ? {} : { labels })
 
 // The handshake of a channel vector file, replayed through the SDK / 经 SDK 重放通道向量文件中的握手
@@ -157,23 +158,24 @@ for (const [name, labels, set] of MODES) {
   })
 }
 
-test('v1 and v2 are different rooms everywhere, and explicit v1 equals the default', () => {
+test('2.0: v1 and v2 are different rooms everywhere, and explicit v2 equals the default', () => {
   const v = vec(SETS.v1.channel), id1 = vec(SETS.v1.identity), id2 = vec(SETS.v2.identity)
-  assert.notDeepEqual(channel.roomsFor(v.invite.cid, { labels: 'v2' }), channel.roomsFor(v.invite.cid))
-  assert.deepEqual(channel.roomsFor(v.invite.cid, { labels: 'v1' }), channel.roomsFor(v.invite.cid))
+  assert.notDeepEqual(channel.roomsFor(v.invite.cid, { labels: 'v1' }), channel.roomsFor(v.invite.cid))
+  assert.deepEqual(channel.roomsFor(v.invite.cid, { labels: 'v2' }), channel.roomsFor(v.invite.cid))
   assert.equal(id1.inbox.container, id2.inbox.container)
   assert.notEqual(id1.inbox.room, id2.inbox.room)
-  assert.equal(channel.inboxRoom(id2.inbox.container, 56), id1.inbox.room, 'the default inbox room is v1')
+  assert.equal(channel.inboxRoom(id1.inbox.container, 56), id2.inbox.room, 'the default inbox room is v2')
+  assert.equal(channel.DEFAULT_LABELS, 'v2')
   const gid = vec(SETS.v1.group).gid.slice(2)
   const want = (p) => createHash('sha256').update(Buffer.concat([Buffer.from(p), Buffer.from(gid, 'hex')])).digest('hex')
-  assert.equal(G.groupRoom(gid), want('TAP-27/room/v1'))
+  assert.equal(G.groupRoom(gid), want('tape-group/room/v1'))
   assert.equal(G.groupRoom(gid, { labels: 'v1' }), want('TAP-27/room/v1'))
   assert.equal(G.groupRoom(gid, { labels: 'v2' }), want('tape-group/room/v1'))
   assert.equal(pubGroup.groupRoom(gid, { labels: 'v2' }), want('tape-group/room/v1'))
 })
 
 test('a labels value other than v1 / v2 is INVALID_ARGUMENT, never read as v1', async () => {
-  const bad = isCode('INVALID_ARGUMENT', /labels must be 'v1'.*or 'v2'/)
+  const bad = isCode('INVALID_ARGUMENT', /labels must be 'v2'.*or 'v1'/)
   const a = channel.generateIdentity(), b = channel.generateIdentity()
   const A = { container: '0x' + 'a1'.repeat(20), chainId: 56 }, B = { container: '0x' + 'b2'.repeat(20), chainId: 56 }
   for (const labels of ['V2', 2, 'tape-channel', null, '']) {
@@ -189,8 +191,8 @@ test('a labels value other than v1 / v2 is INVALID_ARGUMENT, never read as v1', 
 test('cross handshake v1 <-> v2: the initiator refuses the accept, names the version, and keeps its handle for a genuine accept', () => {
   const a = channel.generateIdentity(), b = channel.generateIdentity()
   const A = { container: '0x' + 'a1'.repeat(20), chainId: 56 }, B = { container: '0x' + 'b2'.repeat(20), chainId: 56 }
-  for (const [mine, theirs] of [['v1', 'v2'], ['v2', 'v1'], [undefined, 'v2']]) {
-    const me = mine ?? 'v1'
+  for (const [mine, theirs] of [['v1', 'v2'], ['v2', 'v1'], [undefined, 'v1']]) {
+    const me = mine ?? 'v2'
     const { invite, pending } = channel.createInvite({ self: { ...A, staticSecret: a.x25519.secretKey }, peer: { ...B, staticPublic: b.x25519.publicKey }, ...opt(mine) })
     const wrong = channel.acceptInvite({ self: { ...B, staticSecret: b.x25519.secretKey }, peer: { ...A, staticPublic: a.x25519.publicKey }, invite, labels: theirs })
     // the responder of the other version posts to other rooms: the initiator would not even see it there
@@ -232,7 +234,7 @@ const sealedMismatch = (mine, theirs) => (e) => isCode('CHANNEL_INVALID')(e) && 
 test('sealed invites: a wire sealed under one version does not open under the other, and the error names the version', () => {
   const v1 = vec(SETS.v1.identity).sealedInvite, v2 = vec(SETS.v2.identity).sealedInvite
   const self = { container: v1.recipientContainer, chainId: v1.recipientChainId, staticSecret: hx(v1.recipientSecret) }
-  assert.throws(() => channel.openFromInbox(hx(v2.wire), { self }), sealedMismatch('v1', 'v2'))
+  assert.throws(() => channel.openFromInbox(hx(v1.wire), { self }), sealedMismatch('v2', 'v1'), 'the default reads with v2')
   assert.throws(() => channel.openInvite(hx(v2.wire), { self, labels: 'v1' }), sealedMismatch('v1', 'v2'))
   assert.throws(() => channel.openFromInbox(hx(v1.wire), { self, labels: 'v2' }), sealedMismatch('v2', 'v1'))
   assert.throws(() => G.openGroupInvite(hx(v1.wire), { self, labels: 'v2' }), sealedMismatch('v2', 'v1'))
@@ -255,14 +257,14 @@ const relays = [{ url: 'https://relay.example/tapeapi/v1', container: '0x' + '9c
 
 test('groups v1 <-> v2: a member of the other version refuses the epoch message and names the version; formats 1 and 2', async () => {
   for (const format of [1, 2]) {
-    for (const [ownerLabels, memberLabels] of [['v2', 'v1'], ['v1', 'v2'], ['v2', undefined]]) {
+    for (const [ownerLabels, memberLabels] of [['v2', 'v1'], ['v1', 'v2'], ['v1', undefined]]) {
       const o = person(1), m = person(2)
       const { group, epochWire } = await G.createGroup({ self: o.self, identity: o.identity, members: [m.entry], relays, format, ...opt(ownerLabels), ...TRUST })
       assert.equal(group.labels, ownerLabels)
       const inv = { gid: group.gid, owner: o.self, ...(format === 2 ? { format: 2 } : {}) }
       const g = G.joinGroup({ self: m.self, identity: m.identity, invite: inv, ownerKeys: o.entry, ...opt(memberLabels), ...TRUST })
       assert.notEqual(g.room, group.room, 'the other version reads another group room')
-      await assert.rejects(g.acceptEpoch(epochWire, TRUST), mismatch('GROUP_INVALID', memberLabels ?? 'v1', ownerLabels), `format ${format}, ${ownerLabels} -> ${memberLabels}`)
+      await assert.rejects(g.acceptEpoch(epochWire, TRUST), mismatch('GROUP_INVALID', memberLabels ?? 'v2', ownerLabels), `format ${format}, ${ownerLabels} -> ${memberLabels}`)
       assert.equal(g.epoch, null)
       // the same member under the owner's version joins / 同一成员按群主的版本即可入群
       const ok = G.joinGroup({ self: m.self, identity: m.identity, invite: inv, ownerKeys: o.entry, labels: ownerLabels, ...TRUST })
@@ -279,12 +281,15 @@ test('groups v1 <-> v2: a member of the other version refuses the epoch message 
 test('groups: a v2 snapshot is v: 3 with labels v2 (older resumeGroup refuses it); resumeGroup keeps the version and refuses a switch', async () => {
   for (const format of [1, 2]) {
     const o = person(1), m = person(2)
-    const v1 = await G.createGroup({ self: o.self, identity: o.identity, members: [m.entry], relays, format, ...TRUST })
+    const v1 = await G.createGroup({ self: o.self, identity: o.identity, members: [m.entry], relays, format, labels: 'v1', ...TRUST })
     const s1 = JSON.parse(JSON.stringify(v1.group.snapshot()))
     assert.equal(s1.v, format === 2 ? 2 : 1, 'a v1 snapshot is unchanged'); assert.equal('labels' in s1, false)
     const v2 = await G.createGroup({ self: o.self, identity: o.identity, members: [m.entry], relays, format, labels: 'v2', ...TRUST })
     const s2 = JSON.parse(JSON.stringify(v2.group.snapshot()))
     assert.deepEqual([s2.v, s2.labels, s2.format], [3, 'v2', format])
+    // 2.0: a group created with no labels is a v2 group and its snapshot is v: 3 / 2.0：不传 labels 建的群是 v2 群，快照为 v: 3
+    const d = await G.createGroup({ self: o.self, identity: o.identity, members: [m.entry], relays, format, ...TRUST })
+    assert.deepEqual([d.group.labels, d.group.snapshot().v, d.group.snapshot().labels], ['v2', 3, 'v2'])
     // 1.0.0 to 1.8.0 accept only v: 1 and v: 2 in resumeGroup, so they refuse s2 (as with GRP2-2) / 旧版只收 v: 1、v: 2
     assert.ok(s2.v !== 1 && s2.v !== 2)
     const r = await G.resumeGroup({ self: o.self, identity: o.identity, snapshot: s2, ...TRUST })
@@ -302,7 +307,7 @@ test('groups: a v2 snapshot is v: 3 with labels v2 (older resumeGroup refuses it
   }
 })
 
-test('groups: deliverGroupUpdate posts a v2 group\'s invites to the v2 inbox rooms, and checkGroupInvites({ labels: \'v2\' }) finds them', async () => {
+test('groups: deliverGroupUpdate posts a v2 group\'s invites to the v2 inbox rooms, and checkGroupInvites finds them by default (2.0)', async () => {
   const core = createRelayCore()
   const m = relayMethods(core)
   const api = { call: async (_s, method, params) => ({ result: await m[method](params, { clientIp: '10.0.0.1' }) }) }
@@ -312,38 +317,48 @@ test('groups: deliverGroupUpdate posts a v2 group\'s invites to the v2 inbox roo
   const r = await deliverGroupUpdate({ group: created.group, update: created, relayClients: [relay] })
   assert.equal(r.ok, true)
   assert.equal(r.deliveries[0].room, channel.inboxRoom(mem.container, 56, { labels: 'v2' }))
-  assert.notEqual(r.deliveries[0].room, channel.inboxRoom(mem.container, 56))
+  assert.equal(r.deliveries[0].room, channel.inboxRoom(mem.container, 56), 'the default inbox room is v2 (2.0)')
+  assert.notEqual(r.deliveries[0].room, channel.inboxRoom(mem.container, 56, { labels: 'v1' }))
   assert.equal(r.deliveries[1].room, G.groupRoom(created.group.gid, { labels: 'v2' }))
   // a v1 reader looks in the v1 room and finds nothing; it never reads the v2 room / v1 读取方看 v1 房间，什么也没有
-  const none = await checkGroupInvites({ self: mem.self, identity: mem.identity, relayClients: [relay] })
-  assert.equal(none.invites.length, 0); assert.equal(none.room, channel.inboxRoom(mem.container, 56))
-  const found = await checkGroupInvites({ self: mem.self, identity: mem.identity, relayClients: [relay], labels: 'v2' })
+  const none = await checkGroupInvites({ self: mem.self, identity: mem.identity, relayClients: [relay], labels: 'v1' })
+  assert.equal(none.invites.length, 0); assert.equal(none.room, channel.inboxRoom(mem.container, 56, { labels: 'v1' }))
+  const found = await checkGroupInvites({ self: mem.self, identity: mem.identity, relayClients: [relay] })
   assert.equal(found.invites.length, 1); assert.equal(found.room, r.deliveries[0].room)
-  const g = G.joinGroup({ self: mem.self, identity: mem.identity, invite: found.invites[0].invite, ownerKeys: o.entry, labels: 'v2' })
+  assert.equal((await checkGroupInvites({ self: mem.self, identity: mem.identity, relayClients: [relay], labels: 'v2' })).invites.length, 1)
+  const g = G.joinGroup({ self: mem.self, identity: mem.identity, invite: found.invites[0].invite, ownerKeys: o.entry })
   await g.acceptEpoch(created.epochWire, TRUST)
   assert.equal(g.open(created.group.seal('v2 group'), { text: true }).data, 'v2 group')
 })
 
-test('defaults: pending, session and group handles report labels v1; verify.py checks both versions', async () => {
-  const v = vec(SETS.v1.channel)
+test('defaults (2.0): pending, session and group handles report labels v2; verify.py checks both versions', async () => {
+  const v = vec(SETS.v2.channel)
   const { pending, alice, bob } = replayChannel(v, undefined)
-  assert.deepEqual([pending.labels, alice.labels, bob.labels], ['v1', 'v1', 'v1'])
+  assert.deepEqual([pending.labels, alice.labels, bob.labels], ['v2', 'v2', 'v2'])
   const o = person(1)
   const { group } = await G.createGroup({ self: o.self, identity: o.identity, members: [], relays, ...TRUST })
-  assert.equal(group.labels, 'v1')
+  assert.equal(group.labels, 'v2')
   const py = read('spec/vectors/verify.py')
   for (const f of [...Object.values(SETS.v1), ...Object.values(SETS.v2)]) assert.ok(py.includes(`'${f}'`), f)
   assert.ok(py.includes("b'TAP-26/', b'TAP-27/'") && py.includes("b'tape-channel/', b'tape-group/'"))
 })
 
-test('specs: v1 stays Stable (v1) with a non-normative note; v2 is a Draft, an option from 1.8.1 and the default from 2.0', () => {
+test('specs: v1 stays Stable (v1), no longer the default from 2.0; v2 is Stable (v2) from 2.0.0, the default from 2.0; TAPI-1 defines Stable (vN)', () => {
   for (const n of [26, 27]) {
     const v1 = read(`spec/TAPI-${n}.md`), v2 = read(`spec/TAPI-${n}-v2.md`)
     assert.match(v1, /^\| Status \| Stable \(v1\)/m, `TAPI-${n} v1 stays Stable (v1)`)
     assert.match(v1, new RegExp(`TAPI-${n} v2\\]\\(TAPI-${n}-v2\\.md\\)`), `TAPI-${n} v1 points to v2`)
-    assert.match(v2, /^\| Status \| Draft \|$/m, `TAPI-${n} v2 is a Draft`)
+    assert.match(v1, /^\| Implementation \|.*From TapeAPI 2\.0\.0 the SDK's default is \[TAPI-\d+ v2\].*`labels: 'v1'`, deprecated in 2\.x/m, `TAPI-${n} v1: no longer the default in 2.0`)
+    assert.match(v1, /security fixes for this version for 6 months/, `TAPI-${n} v1: the 1.x maintenance (B9)`)
+    assert.match(v2, /^\| Status \| Stable \(v2\) \|$/m, `TAPI-${n} v2 is Stable (v2) from 2.0.0`)
+    assert.match(v2, /^> \*\*状态：\*\* Stable \(v2\)（稳定），自 TapeAPI 2\.0\.0（2026-10-12）起/m, `TAPI-${n} v2: the Chinese half agrees`)
     assert.match(v2, /^\| Implementation \| Implemented as an option \(2026-10-08, TapeAPI 1\.8\.1\)/m)
-    assert.match(v2, /^\| Target \| Stable \(v2\) at TapeAPI 2\.0\.0, where it becomes the SDK's default/m)
+    assert.match(v2, /^\| Implementation \|.*From TapeAPI 2\.0\.0 this version is the default: a caller passes no `labels`, and `labels: 'v1'` selects version 1/m)
+    assert.match(v2, /^\| Target \| Reached: Stable \(v2\) from TapeAPI 2\.0\.0 \(2026-10-12\), where it became the SDK's default/m)
     assert.doesNotMatch(v2, /implements this version only|not released|内部分支/i, `TAPI-${n} v2 no longer describes the hard switch`)
   }
+  // B10: TAPI-1 defines Stable (vN) and the -vN.md file names, in both halves / TAPI-1 定义 Stable (vN) 与 -vN.md 文件名，中英两半
+  const t1 = read('spec/TAPI-1.md')
+  assert.equal(t1.split('**Stable (vN) and the `-vN.md` files.**').length, 2)
+  assert.equal(t1.split('**Stable (vN) 与 `-vN.md` 文件。**').length, 2)
 })

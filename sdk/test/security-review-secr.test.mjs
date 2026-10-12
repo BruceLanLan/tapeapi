@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import { createTapeAPI, MANIFEST_KEY, MAINNET, CHAINS, TapeAPIError, security, createRpc } from '../src/index.js'
 import * as sig from '../src/sig.js'
 import { createFakeChain, ADDR } from './helpers/fake-chain.mjs'
+import { createConformChain } from './helpers/conform-chain.mjs'
 
 const HOLDER_KEY = '0x' + '11'.repeat(32), SIGNER_KEY = '0x' + '22'.repeat(32), OTHER_KEY = '0x' + '33'.repeat(32), SIGNER2_KEY = '0x' + '44'.repeat(32)
 const holder = sig.privateKeyToAddress(HOLDER_KEY), signer = sig.privateKeyToAddress(SIGNER_KEY), signer2 = sig.privateKeyToAddress(SIGNER2_KEY)
@@ -29,7 +30,10 @@ function fakeService(manifest = manifestFor()) {
   return chain
 }
 const put = (chain, m) => chain.writeFile(ADDR.container, MANIFEST_KEY, JSON.stringify(m))
-const testClient = (fetch, o = {}) => createTapeAPI({ rpcUrls: RPC, quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch, onWarning: () => {}, ...o })
+// 2.0: conform: false warns once (DEPRECATED, option 'conform') on onWarning; the collectors below record the warnings under test only.
+// 2.0：conform: false 会在 onWarning 上警告一次（DEPRECATED）；下面的收集器只记录被测的警告。
+const sink = (arr, f = (w) => w) => (w) => { if (!(w.code === 'DEPRECATED' && w.option === 'conform')) arr.push(f(w)) }
+const testClient = (fetch, o = {}) => createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch, onWarning: () => {}, ...o })
 const contentDigest = (m) => sig.manifestContentDigest(56, ADDR.hub, { container: ADDR.container, contentHash: sig.manifestContentHash(m) })
 // every eth_getCode on every node fails (eth_getCode is never batched) / 所有节点的 eth_getCode 都失败（它从不入批）
 const failingGetCode = (inner) => async (url, init) => {
@@ -43,7 +47,7 @@ test('FIXED SECR-1: without requireContentSig, an error while checking contentSi
   const m = manifestFor(); m.contentSig = sig.signDigest(contentDigest(m), OTHER_KEY)   // not the holder: falls through to EIP-1271
   const chain = fakeService(m)
   const warnings = []
-  const svc = await testClient(failingGetCode(chain.fetch), { onWarning: (w) => warnings.push(w) }).resolve(NAME)
+  const svc = await testClient(failingGetCode(chain.fetch), { onWarning: sink(warnings) }).resolve(NAME)
   assert.deepEqual(svc.contentSig, { valid: false, checked: false })
   assert.deepEqual(warnings.map((w) => w.code), ['CONTENT_SIG_UNCHECKED'])
   assert.equal(svc.warnings[0].cause, 'RPC_ERROR')
@@ -66,7 +70,7 @@ test('FIXED SECR-1: on the default options (the chain\'s own contracts, sentinel
   chain.setOwner(4246, holder); chain.setAccount(4246, container); chain.writeFile(container, MANIFEST_KEY, JSON.stringify(m))
   for (const u of RPC) chain.setFault(u, 'nostorage')
   const warnings = []
-  const svc = await createTapeAPI({ rpcUrls: RPC, quorum: 2, fetch: failingGetCode(chain.fetch), onWarning: (w) => warnings.push(w.code) }).resolve(NAME)
+  const svc = await createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, fetch: failingGetCode(chain.fetch), onWarning: sink(warnings, (w) => w.code) }).resolve(NAME)
   assert.deepEqual(warnings.sort(), ['CONTENT_SIG_UNCHECKED', 'IMPL_UNREAD'])
   assert.equal(svc.sentinel.container, 'match')
   assert.deepEqual(svc.contentSig, { valid: false, checked: false })
@@ -288,4 +292,37 @@ test('FIXED SECR-7: a cached pin found stale is dropped: once the nodes move on,
   chain.state.block += 400; chain.state.headTime = t
   const again = await api.resolve(NAME)
   assert.equal(again.pinned.number, chain.state.block - 2)
+})
+
+// ---- the 2.0 default (conform: 'tap10') counterparts / 2.0 默认（一致模式）下对应的行为 ----
+// A valid TAP-10 service on the conform chain: no `conform` option below, so these clients are the 2.0 default.
+// 一致模式假链上的有效 TAP-10 服务；下面不传 `conform`，即 2.0 默认客户端。
+const CT = 1_790_000_000
+function conformWorld() {
+  const chain = createConformChain({ chainId: 56 })
+  chain.state.headTime = CT
+  const c = chain.circuit(4246, { holder })
+  const expires = CT + 30 * 86400
+  const m = {
+    tapeapi: '0.1', name: 'Conform', circuits: c.circuits, tokenId: c.tokenId, container: c.container, signer,
+    delegation: { expires, sig: sig.signDigest(sig.delegationDigest(56, MAINNET.hub, { container: c.container, signer, expires }), HOLDER_KEY) },
+    endpoints: { live: ['https://api.example.com/tapeapi/v1'], async: false },
+    methods: [{ name: 'ping', priceBEM: '0', params: {}, returns: {} }],
+  }
+  chain.writeFile(c.container, MANIFEST_KEY, JSON.stringify(m))
+  return chain
+}
+const defaultClient = (chain, o = {}) => createTapeAPI({ rpcUrls: RPC, fetch: chain.fetch, clock: () => CT, quiet: true, onWarning: () => {}, ...o })
+
+test('2.0 default, SECR-1: where 1.x accepted with warnings, the default refuses: slots that cannot be read are RPC_UNAVAILABLE, not IMPL_UNREAD; a contentSig that cannot be checked stays the CONTENT_SIG_UNCHECKED warning (conform-strict-holder.test.mjs)', async () => {
+  const chain = conformWorld()
+  for (const u of RPC) chain.setFault(u, 'nostorage')
+  const seen = []
+  await assert.rejects(defaultClient(chain, { onWarning: (w) => seen.push(w.code) }).resolve(NAME), (e) => e instanceof TapeAPIError && e.code === 'RPC_UNAVAILABLE' && e.data.status === 'unavailable')
+  assert.ok(!seen.includes('IMPL_UNREAD'), 'no resolution to warn about')
+  // eth_getCode failing on every node: an EOA holder's contentSig needs no eth_getCode, so the resolution is unchanged
+  // 所有节点的 eth_getCode 都失败：EOA 持有人的内容签名不需要 eth_getCode，解析不受影响
+  for (const u of RPC) chain.setFault(u, null)
+  const svc = await defaultClient({ fetch: failingGetCode(chain.fetch) }).resolve(NAME)
+  assert.deepEqual(svc.verified, { delegation: true, holder })
 })

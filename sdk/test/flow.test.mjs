@@ -34,9 +34,10 @@ function buildManifest(expires = EXPIRES) {
 }
 // 测试端点是 http，故 provider 与 client 都需 allowHttp / test endpoints are http, so both sides opt in with allowHttp
 const BASE = { rpcUrls: RPC, quorum: 2, chainId: 56, directory: ADDR.directory, escrow: ADDR.escrow, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, allowHttp: true }
-const client = (extra = {}) => createTapeAPI({ ...BASE, fetch: chain.fetchWith(), ...extra })
+// 1.x behaviour; 2.0 default is conform: 'tap10'
+const client = (extra = {}) => createTapeAPI({ conform: false, ...BASE, fetch: chain.fetchWith(), ...extra })
 // 在 provider HTTP 前插一层中间人 / a MITM layer in front of the provider's HTTP (RPC still goes to the fake chain)
-const mitm = (edit, extra = {}) => createTapeAPI({ ...BASE, ...extra, fetch: chain.fetchWith(async (url, init) => edit(url, init, () => fetch(url, init))) })
+const mitm = (edit, extra = {}) => createTapeAPI({ conform: false, ...BASE, ...extra, fetch: chain.fetchWith(async (url, init) => edit(url, init, () => fetch(url, init))) })
 const okJson = (obj) => new Response(typeof obj === 'string' ? obj : JSON.stringify(obj), { status: 200, headers: { 'content-type': 'application/json' } })
 
 before(async () => {
@@ -79,7 +80,7 @@ test('resolve: contribution is 0 for an escrow without contributionOf (v0.1 / al
   c2.markLegacyEscrow(legacy); c2.setContribution(ADDR.container, 100) // set on the fake, but this escrow reverts / 旧托管 revert
   const m = buildManifest(); m.payment.escrow = legacy; m.endpoints.live = manifest.endpoints.live
   c2.writeFile(ADDR.container, '/.well-known/tapeapi.json', JSON.stringify(m))
-  const api2 = createTapeAPI({ ...BASE, fetch: c2.fetch })
+  const api2 = createTapeAPI({ conform: false, ...BASE, fetch: c2.fetch })
   const svc = await api2.resolve('reader')
   assert.equal(svc.contribution, 0)
   // and the escrow-specific read goes to the manifest's escrow, not the SDK default / 读取的是清单里的托管地址
@@ -94,7 +95,7 @@ test('escrow v3: a priced call refuses an escrow that does not hold BEM: priceBE
   const m = buildManifest(); m.payment.escrow = esc; m.endpoints.live = manifest.endpoints.live
   c2.writeFile(ADDR.container, '/.well-known/tapeapi.json', JSON.stringify(m))
   let sent = 0
-  const api2 = createTapeAPI({ ...BASE, fetch: c2.fetchWith(async (url, init) => { sent++; return fetch(url, init) }) })
+  const api2 = createTapeAPI({ conform: false, ...BASE, fetch: c2.fetchWith(async (url, init) => { sent++; return fetch(url, init) }) })
   const svc = await api2.resolve('reader')
   let signed = 0
   const payer = api2.payer({ consumer, signTypedData: async (td) => { signed++; return signDigest(voucherDigest(56, td.domain.verifyingContract, td.message), CONSUMER_KEY) } })
@@ -104,7 +105,7 @@ test('escrow v3: a priced call refuses an escrow that does not hold BEM: priceBE
   assert.equal((await api2.call(svc, 'blockNumber', {})).ok ?? true, true)
   // an escrow without token() (not v3): refused the same way, never a guess / 没有 token() 的托管：同样拒绝，不猜
   c2.setEscrowToken(esc, null)
-  const api3 = createTapeAPI({ ...BASE, fetch: c2.fetchWith() })
+  const api3 = createTapeAPI({ conform: false, ...BASE, fetch: c2.fetchWith() })
   await assert.rejects(api3.call(await api3.resolve('reader'), 'circuitHolder', P, { payer }), (e) => e.code === 'UNSUPPORTED_PAYMENT_TOKEN' && e.data.reason === 'token-unreadable')
   assert.equal(signed, 0)
 })
@@ -113,7 +114,7 @@ test('resolve rejects a delegation signed by a non-holder', async () => {
   bad.delegation.sig = signDigest(delegationDigest(56, ADDR.hub, { container: ADDR.container, signer, expires: bad.delegation.expires }), CONSUMER_KEY)
   // 走链路径：把坏清单写进站点 / on-chain path with a bad manifest file
   const c2 = createFakeChain(); c2.setOwner(4246, holder); c2.setAccount(4246, ADDR.container); c2.register({ label: 'reader', container: ADDR.container, tokenId: 4246 }); c2.writeFile(ADDR.container, '/.well-known/tapeapi.json', JSON.stringify(bad))
-  const api2 = createTapeAPI({ ...BASE, fetch: c2.fetch })
+  const api2 = createTapeAPI({ conform: false, ...BASE, fetch: c2.fetch })
   await assert.rejects(api2.resolve('reader'), (e) => e instanceof TapeAPIError && e.code === 'DELEGATION_INVALID')
   const expired = buildManifest(1); c2.writeFile(ADDR.container, '/.well-known/tapeapi.json', JSON.stringify(expired))
   await assert.rejects(api2.resolve('reader'), (e) => e.code === 'DELEGATION_INVALID' && /expired/.test(e.message))
@@ -124,7 +125,7 @@ test('resolve rejects a delegation signed by a non-holder', async () => {
 test('TAPI-20 §3.6 step 4: ownerOf reverting (no such circuit) is MANIFEST_INVALID, not DELEGATION_INVALID', async () => {
   const c3 = createFakeChain(); c3.setAccount(4246, ADDR.container)   // container exists, token 4246 has no owner / 无持有人
   c3.writeFile(ADDR.container, '/.well-known/tapeapi.json', JSON.stringify(buildManifest()))
-  const api3 = createTapeAPI({ ...BASE, fetch: c3.fetch })
+  const api3 = createTapeAPI({ conform: false, ...BASE, fetch: c3.fetch })
   await assert.rejects(api3.resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /reverted/.test(e.message))
 })
 test('M-06: { dev } targets need createTapeAPI({ dev: true }); dev with RPC still checks the holder; dev never relaxes on-chain manifests', async () => {
@@ -140,7 +141,7 @@ test('M-06: { dev } targets need createTapeAPI({ dev: true }); dev with RPC stil
   // dev: true does not weaken an on-chain source / dev 不影响链上来源
   assert.deepEqual((await devRpc.resolve('reader')).verified, { delegation: true, holder })
   // (c) dev client WITHOUT rpc: signature recovered, holder unchecked and flagged / 无 RPC 时只恢复签名并标记未检查
-  const devNoRpc = createTapeAPI({ dev: true, chainId: 56, escrow: ADDR.escrow, directory: ADDR.directory, hub: ADDR.hub })
+  const devNoRpc = createTapeAPI({ conform: false, dev: true, chainId: 56, escrow: ADDR.escrow, directory: ADDR.directory, hub: ADDR.hub })
   const svc = await devNoRpc.resolve({ dev: manifest })
   assert.deepEqual(svc.verified, { delegation: true, holder, dev: true, checked: false })
   const byUrl = await devNoRpc.resolve({ dev: manifest.endpoints.live[0].replace('/tapeapi/v1', '') })
@@ -150,10 +151,10 @@ test('M-06: { dev } targets need createTapeAPI({ dev: true }); dev with RPC stil
   assert.equal(svc.contribution, 0); assert.equal(svc2.contribution, 0) // dev-sourced manifests never touch the escrow / dev 清单不读托管
 })
 test('M-10 / M-11: https-only endpoints outside dev, strict quorum, manifest limits', async () => {
-  const strict = createTapeAPI({ ...BASE, allowHttp: false, fetch: chain.fetchWith() })
+  const strict = createTapeAPI({ conform: false, ...BASE, allowHttp: false, fetch: chain.fetchWith() })
   await assert.rejects(strict.resolve('reader'), (e) => e.code === 'MANIFEST_INVALID' && /https/.test(e.message))
-  assert.throws(() => createTapeAPI({ ...BASE, rpcUrls: ['http://rpc1'], quorum: 2, fetch: chain.fetch }), (e) => e.code === 'INVALID_ARGUMENT' && /allowSingleNode/.test(e.message))
-  const single = createTapeAPI({ ...BASE, rpcUrls: ['http://rpc1'], quorum: 2, allowSingleNode: true, fetch: chain.fetch })
+  assert.throws(() => createTapeAPI({ conform: false, ...BASE, rpcUrls: ['http://rpc1'], quorum: 2, fetch: chain.fetch }), (e) => e.code === 'INVALID_ARGUMENT' && /allowSingleNode/.test(e.message))
+  const single = createTapeAPI({ conform: false, ...BASE, rpcUrls: ['http://rpc1'], quorum: 2, allowSingleNode: true, fetch: chain.fetch })
   assert.equal(single.rpc.quorum, 1); assert.equal(single.rpc.degraded, true)
   const good = buildManifest(); good.endpoints.live = ['https://api.example.com/tapeapi/v1/']
   assert.equal(validateManifest(good).endpoints.live[0], 'https://api.example.com/tapeapi/v1')
@@ -569,7 +570,7 @@ const readsAt = (c, path) => c.state.calls.filter((x) => (x.name === 'read' || x
 
 test('TAPI-20 §3.2 (a): a container resolves with NO directory configured; manifest is read from the SiteRegistry only', async () => {
   const c2 = freshChain()
-  const api2 = createTapeAPI({ ...NO_DIR, fetch: c2.fetch })
+  const api2 = createTapeAPI({ conform: false, ...NO_DIR, fetch: c2.fetch })
   assert.equal(api2.addresses.directory, undefined)
   const svc = await api2.resolve(ADDR.container)
   assert.deepEqual(svc.verified, { delegation: true, holder })
@@ -587,7 +588,7 @@ test('TAPI-20 §3.2 (a): a container resolves with NO directory configured; mani
   const bytes = c2.state.files.get(`${ADDR.container}:${MANIFEST_KEY}`).bytes
   assert.deepEqual(svc.file, { size: bytes.length, sha256Hash: toHex(sha256(bytes)), updatedAt: 1n })
   // a directory that IS configured but has no record for the container is not an obstacle either / 配了目录但未注册也不阻塞
-  const api3 = createTapeAPI({ ...BASE, fetch: c2.fetch })
+  const api3 = createTapeAPI({ conform: false, ...BASE, fetch: c2.fetch })
   assert.equal((await api3.resolve(ADDR.container)).manifest.name, 'TapeOut Reader')
   // directory-only reads still say so explicitly / 目录读取本身仍明确报错
   await assert.rejects(async () => api2.chain.serviceOf(ADDR.container), (e) => e.code === 'INVALID_ARGUMENT' && /directory/.test(e.message))
@@ -595,7 +596,7 @@ test('TAPI-20 §3.2 (a): a container resolves with NO directory configured; mani
 })
 test('TAPI-20 §3.2 (b): { circuits, tokenId } resolves with NO directory', async () => {
   const c2 = freshChain()
-  const api2 = createTapeAPI({ ...NO_DIR, fetch: c2.fetch })
+  const api2 = createTapeAPI({ conform: false, ...NO_DIR, fetch: c2.fetch })
   const svc = await api2.resolve({ circuits: ADDR.circuits, tokenId: '4246' })
   assert.deepEqual(svc.verified, { delegation: true, holder }); assert.equal(svc.container.toLowerCase(), ADDR.container)
   assert.equal(calls(c2, 'serviceOf').length, 0); assert.equal(calls(c2, 'resolve').length, 0)
@@ -607,7 +608,7 @@ test('TAPI-20 §3.2 (c): a label goes through the directory, but the manifest by
   const c2 = freshChain((_m, c) => c.register({ label: 'reader', container: ADDR.container, tokenId: 4246, manifestPath: '/decoy.json' }))
   const decoy = buildManifest(); decoy.endpoints.live = manifest.endpoints.live; decoy.name = 'Decoy'
   c2.writeFile(ADDR.container, '/decoy.json', JSON.stringify(decoy))
-  const api2 = createTapeAPI({ ...BASE, fetch: c2.fetch })
+  const api2 = createTapeAPI({ conform: false, ...BASE, fetch: c2.fetch })
   const svc = await api2.resolve('reader')
   assert.equal(svc.manifest.name, 'TapeOut Reader')
   assert.equal(calls(c2, 'resolve').length, PER); assert.ok(calls(c2, 'resolve').every((x) => eqAddr(x.to, ADDR.directory)))
@@ -618,47 +619,47 @@ test('TAPI-20 §3.2 (c): a label goes through the directory, but the manifest by
 test('TAPI-20 §3.2 (d): manifest bytes whose sha256 differs from fileInfo.sha256Hash are rejected MANIFEST_INVALID', async () => {
   // (d1) index says one hash, bytes are another / 索引哈希与字节不符
   const c2 = freshChain(); c2.setFileInfo(ADDR.container, MANIFEST_PATH, { sha256Hash: '0x' + 'ab'.repeat(32) })
-  await assert.rejects(createTapeAPI({ ...NO_DIR, fetch: c2.fetch }).resolve(ADDR.container), (e) => e instanceof TapeAPIError && e.code === 'MANIFEST_INVALID' && /sha256/.test(e.message))
+  await assert.rejects(createTapeAPI({ conform: false, ...NO_DIR, fetch: c2.fetch }).resolve(ADDR.container), (e) => e instanceof TapeAPIError && e.code === 'MANIFEST_INVALID' && /sha256/.test(e.message))
   // (d2) index is intact, the assembled bytes are not (same length, one byte flipped: the SiteRegistry mis-assembly case)
   // 索引完好、拼出来的字节坏了（等长、翻一个字节）：这正是 quorum 挡不住而 fileInfo 能挡住的那种故障
   const c3 = freshChain()
   const good = c3.state.files.get(`${ADDR.container}:${MANIFEST_KEY}`).bytes
   const bad = Uint8Array.from(good); bad[bad.length - 2] ^= 0x01
   c3.setFileBytes(ADDR.container, MANIFEST_PATH, bad)
-  await assert.rejects(createTapeAPI({ ...NO_DIR, fetch: c3.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /sha256/.test(e.message))
+  await assert.rejects(createTapeAPI({ conform: false, ...NO_DIR, fetch: c3.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /sha256/.test(e.message))
   // and the same file resolves once the index matches the bytes again / 索引恢复一致后即可解析
   c3.setFileInfo(ADDR.container, MANIFEST_PATH, { sha256Hash: toHex(sha256(bad)) })
-  await assert.rejects(createTapeAPI({ ...NO_DIR, fetch: c3.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && !/sha256|fileInfo\.size/.test(e.message)) // flipped byte breaks JSON, not the hash
+  await assert.rejects(createTapeAPI({ conform: false, ...NO_DIR, fetch: c3.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && !/sha256|fileInfo\.size/.test(e.message)) // flipped byte breaks JSON, not the hash
 })
 test('TAPI-20 §3.2 (e): manifest bytes whose length differs from fileInfo.size are rejected MANIFEST_INVALID', async () => {
   const c2 = freshChain()
   const n = c2.state.files.get(`${ADDR.container}:${MANIFEST_KEY}`).bytes.length
   for (const size of [n + 1, n - 1]) {
     c2.setFileInfo(ADDR.container, MANIFEST_PATH, { size })
-    await assert.rejects(createTapeAPI({ ...NO_DIR, fetch: c2.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /fileInfo\.size/.test(e.message), String(size))
+    await assert.rejects(createTapeAPI({ conform: false, ...NO_DIR, fetch: c2.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /fileInfo\.size/.test(e.message), String(size))
   }
   // a truncated read with a truthful index is caught the same way / 索引真实、读取被截断，同样被挡
   const c3 = freshChain()
   const good = c3.state.files.get(`${ADDR.container}:${MANIFEST_KEY}`).bytes
   c3.setFileBytes(ADDR.container, MANIFEST_PATH, good.subarray(0, good.length - 1))
-  await assert.rejects(createTapeAPI({ ...NO_DIR, fetch: c3.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /fileInfo\.size/.test(e.message))
+  await assert.rejects(createTapeAPI({ conform: false, ...NO_DIR, fetch: c3.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /fileInfo\.size/.test(e.message))
   // a declared size over the 64 KiB cap is refused before read() / 声明长度超上限时不去 read
   const c4 = freshChain(); c4.setFileInfo(ADDR.container, MANIFEST_PATH, { size: 64 * 1024 + 1 })
-  await assert.rejects(createTapeAPI({ ...NO_DIR, fetch: c4.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /limit/.test(e.message))
+  await assert.rejects(createTapeAPI({ conform: false, ...NO_DIR, fetch: c4.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /limit/.test(e.message))
   assert.equal(calls(c4, 'read').length, 0)
   // no manifest at all (size 0): MANIFEST_INVALID, not a crash, and read() is never attempted (on mainnet it would revert)
   // 没有清单：干净地 MANIFEST_INVALID，且不会去 read（主网上会回滚）
   const c5 = createFakeChain(); c5.setOwner(4246, holder); c5.setAccount(4246, ADDR.container)
-  await assert.rejects(createTapeAPI({ ...NO_DIR, fetch: c5.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /no file/.test(e.message))
+  await assert.rejects(createTapeAPI({ conform: false, ...NO_DIR, fetch: c5.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /no file/.test(e.message))
   assert.equal(calls(c5, 'read').length, 0)
   // index present but read() reverts (file vanished between the two calls): still MANIFEST_INVALID, not RPC_ERROR
   // 索引在、read() 回滚（两次调用之间文件没了）：仍是 MANIFEST_INVALID 而非 RPC_ERROR
   const c6 = freshChain(); c6.setFileBytes(ADDR.container, MANIFEST_PATH, null)
-  await assert.rejects(createTapeAPI({ ...NO_DIR, fetch: c6.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /reverted/.test(e.message))
+  await assert.rejects(createTapeAPI({ conform: false, ...NO_DIR, fetch: c6.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /reverted/.test(e.message))
 })
 test('TAPI-20 §3.2 (f): an all-zero fileInfo.sha256Hash (TapeKit no-hash state) is rejected as unverified', async () => {
   const c2 = freshChain(); c2.setFileInfo(ADDR.container, MANIFEST_PATH, { sha256Hash: ZERO_HASH })
-  await assert.rejects(createTapeAPI({ ...NO_DIR, fetch: c2.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /unverified/.test(e.message))
+  await assert.rejects(createTapeAPI({ conform: false, ...NO_DIR, fetch: c2.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /unverified/.test(e.message))
   assert.equal(calls(c2, 'read').length, 0) // never even read / 根本不读
 })
 test('TAPI-20 §3.6 step 3 (g): manifest.container must equal hub.accountOf(manifest.circuits, manifest.tokenId) for label, container AND pair inputs', async () => {
@@ -666,13 +667,13 @@ test('TAPI-20 §3.6 step 3 (g): manifest.container must equal hub.accountOf(mani
   // the hub says (circuits, 4246) lives at `other`; the file at ADDR.container claims ADDR.container, and the directory agrees with the file
   // hub 说 (circuits, 4246) 的容器是 other；ADDR.container 上的清单自称 ADDR.container，目录记录也附和清单
   const c2 = freshChain((_m, c) => { c.setAccount(4246, other); c.register({ label: 'reader', container: ADDR.container, tokenId: 4246 }) })
-  const api2 = createTapeAPI({ ...BASE, fetch: c2.fetch })
+  const api2 = createTapeAPI({ conform: false, ...BASE, fetch: c2.fetch })
   await assert.rejects(api2.resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /accountOf/.test(e.message))
   await assert.rejects(api2.resolve('reader'), (e) => e.code === 'MANIFEST_INVALID' && /accountOf/.test(e.message))
   await assert.rejects(api2.resolve({ circuits: ADDR.circuits, tokenId: '4246' }), (e) => e.code === 'MANIFEST_INVALID')
   // a manifest that names a different container than the one it lives in / 清单自称另一个容器
   const c3 = freshChain((m) => { m.container = other })
-  await assert.rejects(createTapeAPI({ ...NO_DIR, fetch: c3.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /does not match resolved container/.test(e.message))
+  await assert.rejects(createTapeAPI({ conform: false, ...NO_DIR, fetch: c3.fetch }).resolve(ADDR.container), (e) => e.code === 'MANIFEST_INVALID' && /does not match resolved container/.test(e.message))
 })
 
 test('TAPI-22 §3.4 (D15): tx builders given a resolved service use ITS escrow, not the configured one', async () => {
@@ -712,7 +713,7 @@ test('a holder can delegate from a wallet: typed data for signTypedData, and an 
   const m = buildManifest()
   m.delegation.sig = signDigest(delegationDigest(56, ADDR.hub, { container: ADDR.container, signer, expires: m.delegation.expires }), CONSUMER_KEY)
   c3.writeFile(ADDR.container, MANIFEST_KEY, JSON.stringify(m))
-  const api3 = createTapeAPI({ ...BASE, fetch: c3.fetch })
+  const api3 = createTapeAPI({ conform: false, ...BASE, fetch: c3.fetch })
   await assert.rejects(api3.resolve(ADDR.container), (e) => e.code === 'DELEGATION_INVALID', 'no code at the holder: still ECDSA only')
   c3.setContractHolder(safe, delegationDigest(56, ADDR.hub, { container: ADDR.container, signer, expires: m.delegation.expires }))
   const svc = await api3.resolve(ADDR.container)
@@ -726,7 +727,7 @@ test('an async-only service says so instead of crashing inside the request loop'
   const m = buildManifest()
   m.endpoints = { live: [], async: true }
   chain2.writeFile(ADDR.container, MANIFEST_KEY, JSON.stringify(m))
-  const api2 = createTapeAPI({ ...BASE, fetch: chain2.fetch })
+  const api2 = createTapeAPI({ conform: false, ...BASE, fetch: chain2.fetch })
   const svc = await api2.resolve(ADDR.container)
   await assert.rejects(api2.call(svc, 'blockNumber', {}), (e) => e.code === 'PROVIDER_UNAVAILABLE' && /no live endpoint/.test(e.message))
 })

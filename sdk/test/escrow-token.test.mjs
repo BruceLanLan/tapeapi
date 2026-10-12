@@ -12,7 +12,7 @@ const RPC = ['http://rpc1', 'http://rpc2', 'http://rpc3']
 const USDT = '0x55d398326f99059fF775485246999027B3197955'
 const OTHER = '0x' + 'e7'.repeat(20)
 const ESC2 = '0x' + '42'.repeat(20)
-const mk = (chain, extra = {}) => createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, escrow: ADDR.escrow, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: chain.fetch, ...extra })
+const mk = (chain, extra = {}) => createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, escrow: ADDR.escrow, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: chain.fetch, ...extra })
 const unsupported = (reason) => (e) => e instanceof TapeAPIError && e.code === 'UNSUPPORTED_PAYMENT_TOKEN' && e.data?.reason === reason
 
 test('escrow v3 ABI: token() shares the ERC-6551 selector but decodes one address; treasuryAccrued, claimTreasury, TreasuryClaimed', () => {
@@ -53,7 +53,7 @@ test('chain.escrow.token / treasuryAccrued read the escrow; tx.claimTreasury is 
   const t = api.tx.claimTreasury()
   assert.deepEqual(t, { to: '0x4040404040404040404040404040404040404040', data: selector('claimTreasury'), value: '0x0' })
   assert.equal(api.tx.claimTreasury(svc).to, '0x4242424242424242424242424242424242424242')
-  assert.throws(() => createTapeAPI({}).tx.claimTreasury(), (e) => e.code === 'INVALID_ARGUMENT' && /escrow address not configured/.test(e.message))
+  assert.throws(() => createTapeAPI({ conform: false, conform: false }).tx.claimTreasury(), (e) => e.code === 'INVALID_ARGUMENT' && /escrow address not configured/.test(e.message))
   assert.throws(() => api.tx.claimTreasury({ container: ADDR.container, manifest: { payment: { escrow: null } } }), /takes no payment/)
 })
 
@@ -127,7 +127,7 @@ test('paymentToken never falls back to 8 decimals: no token(), no decimals(), or
     await assert.rejects(api.chain.escrow.paymentToken(E2), (e) => unsupported('decimals-out-of-range')(e) && e.data.decimals === d, `${d} decimals`)
   }
   // no rpc: a library error, not a guess / 没有 rpc：库内错误，不猜
-  await assert.rejects(createTapeAPI({ escrow: ADDR.escrow }).chain.escrow.paymentToken(), (e) => e.code === 'INVALID_ARGUMENT' && /rpcUrls/.test(e.message))
+  await assert.rejects(createTapeAPI({ conform: false, escrow: ADDR.escrow }).chain.escrow.paymentToken(), (e) => e.code === 'INVALID_ARGUMENT' && /rpcUrls/.test(e.message))
 })
 
 test('AUDITED_ESCROWS is empty on every chain: no escrow is deployed or audited', () => {
@@ -213,7 +213,7 @@ test('an allowed escrow whose token cannot be read gets no transaction: never a 
 test('a dev service (never for money) is not checked: a priced dev call signs and goes out without reading the escrow', async () => {
   let rpcReads = 0, posted = 0
   const fetch = async (url) => { if (String(url).startsWith('http://rpc')) { rpcReads++; throw new Error('no chain here') } posted++; throw new Error('offline') }
-  const api = createTapeAPI({ dev: true, fetch })
+  const api = createTapeAPI({ conform: false, dev: true, fetch })
   const svc = await api.resolve({ dev: { tapeapi: '0.1', circuits: '0x' + '00'.repeat(20), tokenId: '0', container: PROVIDER, signer: '0x' + '11'.repeat(20), delegation: null, dev: true, endpoints: { live: ['http://127.0.0.1:1/tapeapi/v1'], async: false }, methods: [{ name: 'm', priceBEM: '0.01', params: {}, returns: {} }], payment: { escrow: ESC2 } } })
   const payer = api.payer({ consumer: PROVIDER, sessionKey: '0x' + '44'.repeat(32) })
   await assert.rejects(api.call(svc, 'm', {}, { payer }), (e) => e.code === 'PROVIDER_UNAVAILABLE')
@@ -250,7 +250,7 @@ test('no amount in the SDK or the server is parsed or shown with the 8-decimal d
 })
 
 test('tx.wrapNative: WBNB.deposit() with value, the wrapper address from the caller only, and no gas field', () => {
-  const api = createTapeAPI({})
+  const api = createTapeAPI({ conform: false, conform: false })
   const W = '0x' + 'bb'.repeat(20)
   const t = api.tx.wrapNative({ wbnb: W, amount: 10n ** 17n })
   assert.deepEqual(t, { to: checksumAddress(W), data: '0xd0e30db0', value: '0x16345785d8a0000' })
@@ -304,4 +304,57 @@ test('chain.escrow.contributions: one provider across escrow instances, with a w
   assert.deepEqual(await mk(chain).chain.escrow.contributions(PROVIDER), { provider: checksumAddress(PROVIDER), readings: [], consistent: true, warning: null }, 'no allowed escrow: nothing to compare')
   await assert.rejects(api.chain.escrow.contributions('nope'), (e) => e.code === 'INVALID_ARGUMENT')
   await assert.rejects(api.chain.escrow.contributions(PROVIDER, 'x'), (e) => e.code === 'INVALID_ARGUMENT')
+})
+
+// Review B5 of setContributionAll: escrows: null is not the default (only leaving it out is), and the `escrow` option is
+// not part of the default list (it is the escrow setContribution uses alone); both are said in the error and pinned here.
+// 审查 B5：escrows: null 不是默认；escrow 选项不计入默认名单；两者都在错误里写明，并在这里钉住现行为。
+test('FIXED T-b-B5: setContributionAll: escrows null is refused, saying it is not the default; the escrow option is not in the default list, and the error names it', () => {
+  const chain = createFakeChain()
+  const api = mk(chain, { allowEscrows: [ADDR.escrow] })
+  assert.throws(() => api.tx.setContributionAll({ circuits: ADDR.circuits, tokenId: 1, bps: 0, escrows: null }), (e) => e.code === 'INVALID_ARGUMENT' && /escrows must be an array of escrow addresses \(null is not the default: leave escrows out/.test(e.message))
+  assert.equal(api.tx.setContributionAll({ circuits: ADDR.circuits, tokenId: 1, bps: 0 }).escrows.length, 1, 'left out: the default list')
+  // the escrow option alone: setContribution uses it, setContributionAll does not / 只有 escrow 选项：setContribution 用它，setContributionAll 不用
+  const own = mk(chain, { escrow: ESC2 })
+  assert.equal(own.tx.setContribution({ circuits: ADDR.circuits, tokenId: 1, bps: 0 }).to, ESC2)
+  assert.throws(() => own.tx.setContributionAll({ circuits: ADDR.circuits, tokenId: 1, bps: 0 }), (e) => e.code === 'INVALID_ARGUMENT' &&
+    e.message.includes(`the escrow option ${checksumAddress(ESC2)} is not part of that list (it is the escrow setContribution uses alone): pass escrows: ['${checksumAddress(ESC2)}'] to set it`))
+  assert.deepEqual(own.tx.setContributionAll({ circuits: ADDR.circuits, tokenId: 1, bps: 0, escrows: [ESC2] }).escrows, [checksumAddress(ESC2)])
+  // with allowEscrows too, the escrow option is still not added to the default list / 同时给了 allowEscrows，escrow 选项仍不加入默认名单
+  assert.deepEqual(mk(chain, { escrow: ESC2, allowEscrows: [ADDR.escrow] }).tx.setContributionAll({ circuits: ADDR.circuits, tokenId: 1, bps: 0 }).escrows, [checksumAddress(ADDR.escrow)])
+})
+
+// PLAN-1.0 "1.8" / PLAN-1.8-2.0 §1.2: setContributionAll, the doctor's --escrows warning made actionable
+test('tx.setContributionAll: one setContribution per escrow instance, the allowed ones by default, never an empty list', async () => {
+  const chain = createFakeChain()
+  const api = mk(chain, { allowEscrows: [ADDR.escrow, ESC2] })
+  const sent = chain.state.reads.length
+  const all = api.tx.setContributionAll({ circuits: ADDR.circuits, tokenId: '4246', bps: 0 })
+  assert.deepEqual(all.escrows, [checksumAddress(ADDR.escrow), checksumAddress(ESC2)], 'defaults to the allowed escrows, in order')
+  assert.equal(all.txs.length, 2)
+  all.txs.forEach((t, i) => {
+    assert.deepEqual(t, api.tx.setContribution({ circuits: ADDR.circuits, tokenId: '4246', bps: 0, escrow: all.escrows[i] }), 'each is what setContribution builds for that escrow')
+    assert.equal(functionBySelector(t.data), 'setContribution')
+  })
+  assert.equal(chain.state.reads.length, sent, 'builds without reading the chain')
+  // given escrows: duplicates (any case) count once; the same bps rules as setContribution
+  // 显式给出：重复（不论大小写）只算一次；bps 规则与 setContribution 相同
+  const two = api.tx.setContributionAll({ circuits: ADDR.circuits, tokenId: 1, bps: 2000, escrows: [ESC2, ESC2.toUpperCase().replace('0X', '0x'), ADDR.escrow] })
+  assert.deepEqual(two.escrows, [checksumAddress(ESC2), checksumAddress(ADDR.escrow)])
+  for (const bad of [2001, -1, 1.5]) assert.throws(() => api.tx.setContributionAll({ circuits: ADDR.circuits, tokenId: 1, bps: bad }), (e) => e.code === 'INVALID_ARGUMENT' && /bps/.test(e.message))
+  for (const bad of ['x', [42], ['nope'], {}]) assert.throws(() => api.tx.setContributionAll({ circuits: ADDR.circuits, tokenId: 1, bps: 0, escrows: bad }), (e) => e.code === 'INVALID_ARGUMENT' && /escrows must be/.test(e.message), JSON.stringify(bad))
+  // no instance at all: an error, never { txs: [] } (AUDITED_ESCROWS is empty today) / 一个实例都没有：报错，绝不返回空列表
+  assert.deepEqual(AUDITED_ESCROWS[56], [])
+  assert.throws(() => mk(chain).tx.setContributionAll({ circuits: ADDR.circuits, tokenId: 1, bps: 0 }), (e) => e.code === 'INVALID_ARGUMENT' && /no escrow instance.*AUDITED_ESCROWS for chain 56 is empty/.test(e.message))
+  assert.throws(() => api.tx.setContributionAll({ circuits: ADDR.circuits, tokenId: 1, bps: 0, escrows: [] }), (e) => e.code === 'INVALID_ARGUMENT' && /no escrow instance to set: pass escrows$/.test(e.message))
+  // the contributions warning names it / 不一致的告警提到它
+  const zero = (req) => (req.method === 'eth_call' && req.params[0].to.toLowerCase() === ESC2 ? { jsonrpc: '2.0', id: req.id, result: '0x' + '0'.repeat(64) } : null)
+  const fetch = async (url, init) => {
+    const body = JSON.parse(init.body)
+    if (!Array.isArray(body)) return zero(body) ? new Response(JSON.stringify(zero(body))) : chain.fetch(url, init)
+    return new Response(JSON.stringify(await Promise.all(body.map(async (req) => zero(req) ?? (await chain.fetch(url, { ...init, body: JSON.stringify(req) })).json()))))
+  }
+  chain.setContribution(PROVIDER, 100)
+  const r = await mk(chain, { fetch, allowEscrows: [ADDR.escrow, ESC2] }).chain.escrow.contributions(PROVIDER)
+  assert.match(r.warning, /tx\.setContribution\(\{ escrow \}\), or on all of them with tx\.setContributionAll/)
 })

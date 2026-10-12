@@ -65,6 +65,8 @@ const manifest = {
 }
 const echoReq = (body, headers = {}) => new Request('https://echo.example/tapeapi/v1/echo', { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body })
 
+// Client and provider together, with the edges: CONFIRMED T-c in sdk/test/review-hardening-1-5.test.mjs.
+// 客户端与提供者一起、含边界：见 sdk/test/review-hardening-1-5.test.mjs 的 CONFIRMED T-c。
 test('FIXED ID-LS: an id with a lone UTF-16 surrogate binds as no id: a signed BAD_REQUEST that verifies, never a 500', async () => {
   const p = createProvider({ manifest, signerKey: KEY, rateLimit: false, log: () => {}, methods: { echo: async ({ text }) => ({ text }) } })
   for (const id of ['\ud800', 'a\udc00b', 'x\ud83d']) {

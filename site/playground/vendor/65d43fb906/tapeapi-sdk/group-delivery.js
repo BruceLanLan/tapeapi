@@ -155,8 +155,8 @@ export async function deliverGroupUpdate(opts = {}) {
     }
   }
 
-  // A v2 group (labels: 'v2', TAPI-27 v2) invites into the members' v2 inbox rooms; group.inviteFor seals for them.
-  // v2 群（labels: 'v2'）的邀请投到成员的第 2 版收件房间；group.inviteFor 按它们密封。
+  // A group invites into the members' inbox rooms of its own label version (v2, the default since 2.0, or v1);
+  // group.inviteFor seals for them. / 群的邀请投到成员与本群同一标签版本的收件房间（2.0 起默认 v2，或 v1）；group.inviteFor 按它们密封。
   const labels = checkLabels(group.labels, 'group.labels')
   for (const m of targets) {
     const room = inboxRoom(m.container, m.chainId, { labels })
@@ -218,9 +218,11 @@ function normCursor(c) {
  */
 export async function checkGroupInvites(opts = {}) {
   const { self, identity, cursors = new Map(), waitMs = 0, holder, checkSelf } = opts ?? {}
-  // labels: 'v2' reads the v2 inbox room, where TAPI-27 v2 owners post; pass the same to joinGroup. One version per call:
+  // The default ('v2' since 2.0) reads the v2 inbox room, where TAPI-27 v2 owners post; labels: 'v1' reads the v1 room of
+  // 1.x owners. Pass the same to joinGroup. One version per call:
   // a v1 room and a v2 room are two rooms, and an invite is never read under the other version's labels.
-  // labels: 'v2' 读第 2 版收件房间（TAPI-27 v2 群主投递之处）；给 joinGroup 传同样的值。每次调用只读一个版本。
+  // 默认（2.0 起为 'v2'）读第 2 版收件房间（TAPI-27 v2 群主投递之处）；labels: 'v1' 读 1.x 群主所用的第 1 版房间。给 joinGroup 传
+  // 同样的值。每次调用只读一个版本。
   const labels = checkLabels(opts?.labels)
   if (!self || !isAddr(self.container)) invalid('self.container must be the member\'s CONTAINER address (the ERC-6551 account), not the holder\'s wallet')
   const chainId = self.chainId ?? 56

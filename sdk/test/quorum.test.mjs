@@ -16,7 +16,7 @@ const services = []
 let api
 
 before(async () => {
-  api = createTapeAPI({ chainId: 56, dev: true, escrow: ADDR.escrow })
+  api = createTapeAPI({ conform: false, chainId: 56, dev: true, escrow: ADDR.escrow })
   for (let i = 0; i < N; i++) {
     const manifest = {
       tapeapi: '0.1', name: `AR${i}`, circuits: ADDR.circuits, tokenId: String(100 + i), container: containers[i], signer: privateKeyToAddress(keys[i]),
@@ -47,7 +47,7 @@ test('strict by default (TAPI-23 §3.4): 2 of 3 agree but one dissents -> reject
   await assert.rejects(api.callQuorum(three(), 'read', { chainId: 1 }), (e) => {
     assert.equal(e.code, 'QUORUM_FAILED')
     assert.match(e.message, /rejects on any disagreement/)
-    assert.deepEqual(e.agreed, []); assert.equal(e.groups.length, 2)
+    assert.deepEqual(e.data.agreed, []); assert.equal(e.data.groups.length, 2)
     return true
   })
 })
@@ -72,7 +72,7 @@ test('fail: all three differ -> QUORUM_FAILED with every result reported, none c
   await assert.rejects(api.callQuorum(three(), 'read', {}), (e) => {
     assert.ok(e instanceof TapeAPIError); assert.equal(e.code, 'QUORUM_FAILED')
     assert.match(e.message, /rejects on any disagreement/)
-    assert.deepEqual(e.agreed, []); assert.equal(e.disagreed.length, 3); assert.equal(e.groups.length, 3); assert.deepEqual(e.failed, [])
+    assert.deepEqual(e.data.agreed, []); assert.equal(e.data.disagreed.length, 3); assert.equal(e.data.groups.length, 3); assert.deepEqual(e.data.failed, [])
     return true
   })
 })
@@ -80,7 +80,7 @@ test('no majority vote: 2-2 and 3-2 splits are ambiguous; 3-1 passes because onl
   const four = services.slice(0, 4)
   const Q = { onDissent: 'quorum' }   // 这些语义只在降级模式下才有意义 / these semantics only exist in the weaker mode
   set({ value: 'x' }, { value: 'x' }, { value: 'y' }, { value: 'y' })
-  await assert.rejects(api.callQuorum(four, 'read', {}, Q), (e) => e.code === 'QUORUM_FAILED' && /ambiguous/.test(e.message) && e.groups.length === 2)
+  await assert.rejects(api.callQuorum(four, 'read', {}, Q), (e) => e.code === 'QUORUM_FAILED' && /ambiguous/.test(e.message) && e.data.groups.length === 2)
   // 3 vs 2 with quorum 2: both groups reach quorum, so size does NOT decide / 3 对 2 且 quorum=2：两组都达标，规模不决定结果
   set({ value: 'x' }, { value: 'x' }, { value: 'x' }, { value: 'y' }, { value: 'y' })
   await assert.rejects(api.callQuorum(services, 'read', {}, Q), (e) => e.code === 'QUORUM_FAILED' && /ambiguous/.test(e.message))
@@ -106,7 +106,7 @@ test('a tampered envelope is a failed (BAD_SIGNATURE) answer, never a vote', asy
   set({ value: 'true' }, { value: 'true' }, { value: 'true' })
   const evilPort = new URL(services[2].manifest.endpoints.live[0]).port
   const evil = createTapeAPI({
-    chainId: 56, dev: true, escrow: ADDR.escrow,
+    conform: false, chainId: 56, dev: true, escrow: ADDR.escrow,
     fetch: async (url, init) => {
       const res = await fetch(url, init)
       if (new URL(url).port !== evilPort) return res
@@ -123,7 +123,7 @@ test('argument validation: empty, too few providers, duplicates, bad quorum', as
   await assert.rejects(api.callQuorum([services[0]], 'read', {}), (e) => e.code === 'QUORUM_FAILED' && /at least 2/.test(e.message))
   await assert.rejects(api.callQuorum([services[0], services[0]], 'read', {}), (e) => e.code === 'QUORUM_FAILED' && /duplicate/.test(e.message))
   await assert.rejects(api.callQuorum(three(), 'read', {}, { quorum: 0 }), (e) => /positive integer/.test(e.message))
-  await assert.rejects(api.callQuorum(three(), 'nope', {}), (e) => e.code === 'QUORUM_FAILED' && e.failed.every(f => f.code === 'METHOD_NOT_FOUND'))
+  await assert.rejects(api.callQuorum(three(), 'nope', {}), (e) => e.code === 'QUORUM_FAILED' && e.data.failed.every(f => f.code === 'METHOD_NOT_FOUND'))
   // TAPI-23 §3.4(1): quorum 1 is refused unless spelled out / quorum 1 须显式开启
   await assert.rejects(api.callQuorum([services[0]], 'read', {}, { quorum: 1 }), (e) => e.code === 'QUORUM_FAILED' && /allowSingleProvider/.test(e.message))
   set({ value: 'solo' })
@@ -201,7 +201,7 @@ test('a malformed compare configuration is the caller error, and is caught befor
   set({ price: '1' }, { price: '1' }, { price: '1' })
   let sent = 0
   const counting = createTapeAPI({
-    chainId: 56, dev: true, escrow: ADDR.escrow,
+    conform: false, chainId: 56, dev: true, escrow: ADDR.escrow,
     fetch: async (u, i) => { sent++; return fetch(u, i) },
   })
   for (const compare of [{ relTolBps: -1, paths: ['price'] }, { relTolBps: 100, paths: [] }, { relTolBps: 100, paths: [''] }, { relTolBps: 100, paths: ['a..b'] }, { relTolBps: 100, paths: [3] }]) {
@@ -226,7 +226,7 @@ test('H-03: a provider whose result lacks the compared path is `failed`, the res
   assert.equal(r.failed[0].container.toLowerCase(), containers[2])
   // 所有人都缺该路径 -> QUORUM_FAILED，理由在 failed 里，而不是 BAD_REQUEST / all missing -> QUORUM_FAILED with reasons
   await assert.rejects(api.callQuorum(three(), 'read', {}, { quorum: 2, compare: { relTolBps: 100, paths: ['nope'] } }),
-    (e) => e.code === 'QUORUM_FAILED' && e.failed.length === 3 && e.failed.every((f) => f.code === 'COMPARE_PATH_INVALID'))
+    (e) => e.code === 'QUORUM_FAILED' && e.data.failed.length === 3 && e.data.failed.every((f) => f.code === 'COMPARE_PATH_INVALID'))
 })
 
 // H-01：桶必须是容差关系下的团 / a bucket must be a clique under the tolerance relation.

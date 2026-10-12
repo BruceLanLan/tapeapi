@@ -11,7 +11,8 @@ test('FIXED G1-M1: a configuration or argument mistake is INVALID_ARGUMENT, befo
   const fetch = async () => { requests++; throw new Error('no network in this test') }
   assert.throws(() => createRpc({ urls: ['https://a.example', 'https://b.example'], quorum: 0, fetch }), invalid(/quorum/))
   assert.throws(() => createRpc({ urls: [], fetch }), invalid(/no rpc urls/))
-  const api = createTapeAPI({ fetch })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const api = createTapeAPI({ conform: false, fetch })
   await assert.rejects(api.resolve(42), invalid(/unsupported resolve target/))
   await assert.rejects(api.resolve('some-label'), invalid(/directory address not configured/))
   await assert.rejects(api.chain.channelKeys('nope'), invalid(/container address/))
@@ -22,7 +23,7 @@ test('FIXED G1-M1: a configuration or argument mistake is INVALID_ARGUMENT, befo
   // 托管 v3 起 approve / fund 为异步（实验性）：先读托管的代币，所以以 rejection 报错
   await assert.rejects(api.tx.approve({}), invalid())
   await assert.rejects(api.tx.fund('0x' + '22'.repeat(20), 1n), invalid(/escrow address not configured/))
-  await assert.rejects(createTapeAPI({ fetch, escrow: '0x' + '44'.repeat(20) }).tx.fund('0x' + '22'.repeat(20), 1n), invalid(/allowEscrows/), 'an escrow off the audited list is refused before any read')
+  await assert.rejects(createTapeAPI({ conform: false, fetch, escrow: '0x' + '44'.repeat(20) }).tx.fund('0x' + '22'.repeat(20), 1n), invalid(/allowEscrows/), 'an escrow off the audited list is refused before any read')
   await assert.rejects(api.callQuorum([], 'x', {}), invalid(/non-empty/))
   // A chain read without nodes is a configuration mistake too: not RPC_UNAVAILABLE, which a caller would retry.
   // 没配节点就读链也是配置错误：不是调用方会重试的 RPC_UNAVAILABLE。
@@ -30,19 +31,18 @@ test('FIXED G1-M1: a configuration or argument mistake is INVALID_ARGUMENT, befo
   assert.equal(requests, 0, 'nothing was sent')
 })
 
-test('FIXED G1-M2: TapeAPIError keeps a fixed set of top-level fields; any other detail is in data, with a read-only 0.x alias', () => {
+test('FIXED G1-M2: TapeAPIError keeps a fixed set of top-level fields; any other detail is in data (no top-level alias since 2.0)', () => {
   const e = new TapeAPIError('RPC_ERROR', 'boom', { rpcCode: 3, rpcRevert: true, tooLarge: true, httpStatus: 502, signed: false })
   assert.equal(e.code, 'RPC_ERROR'); assert.equal(e.message, 'boom'); assert.equal(e.name, 'TapeAPIError')
   assert.deepEqual(e.data, { rpcCode: 3, rpcRevert: true, tooLarge: true })
   assert.equal(e.httpStatus, 502); assert.equal(e.signed, false)
-  // deprecated aliases, one per key, read-only and not enumerable / 弃用别名：只读、不可枚举
-  assert.equal(e.rpcCode, 3); assert.equal(e.rpcRevert, true); assert.equal(e.tooLarge, true)
+  // 2.0 (P2): the deprecated 1.x aliases are gone / 2.0：1.x 的弃用别名已删除
+  for (const k of ['rpcCode', 'rpcRevert', 'tooLarge']) { assert.equal(k in e, false, k); assert.equal(e[k], undefined, k) }
   assert.deepEqual(Object.keys(e).sort(), ['code', 'data', 'httpStatus', 'name', 'signed'])
-  assert.throws(() => { 'use strict'; e.tooLarge = false }, TypeError)
   // an explicit data object is merged, not replaced / 显式的 data 被合并，不被替换
   const q = new TapeAPIError('QUORUM_FAILED', 'x', { data: { method: 'read' }, agreed: [], failed: [{ code: 'INTERNAL' }] })
   assert.deepEqual(q.data, { method: 'read', agreed: [], failed: [{ code: 'INTERNAL' }] })
-  assert.deepEqual(q.failed, [{ code: 'INTERNAL' }])
+  assert.equal('failed' in q, false)
   // extra never overrides the code, the name or the message; cause is the standard Error cause
   const c = new TapeAPIError('NOT_FOUND', 'm', { code: 'OTHER', name: 'X', message: 'y', cause: 'why' })
   assert.equal(c.code, 'NOT_FOUND'); assert.equal(c.name, 'TapeAPIError'); assert.equal(c.message, 'm'); assert.equal(c.cause, 'why')
@@ -122,7 +122,7 @@ test('FIXED RC-6: group delivery takes relayClients: [{ api, service }] and busC
 
 test('G1-S5/S7: a call the caller aborted or that timed out says so in data; addresses include the factory', async () => {
   const { createTapeAPI: mk, MAINNET } = await import('../src/index.js')
-  const api = mk({ dev: true, fetch: (u, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new Error('aborted')))) })
+  const api = mk({ conform: false, dev: true, fetch: (u, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new Error('aborted')))) })
   assert.equal(api.addresses.factory, MAINNET.factory)
   const svc = await api.resolve({ dev: { tapeapi: '0.1', circuits: '0x' + '00'.repeat(20), tokenId: '0', container: '0x' + '00'.repeat(20), signer: '0x' + '11'.repeat(20), delegation: null, dev: true, endpoints: { live: ['http://127.0.0.1:1/tapeapi/v1'], async: false }, methods: [{ name: 'm', priceBEM: '0', params: {}, returns: {} }] } })
   await assert.rejects(api.call(svc, 'm', {}, { timeoutMs: 20 }), (e) => e.code === 'PROVIDER_UNAVAILABLE' && e.data?.timedOut === true)
@@ -133,10 +133,10 @@ test('G1-S5/S7: a call the caller aborted or that timed out says so in data; add
 test('FIXED G1-S4: the RPC timeout is rpcTimeoutMs in createTapeAPI, its chains and createProvider; timeoutMs is refused there', async () => {
   const { createTapeAPI: mk } = await import('../src/index.js')
   const { createProvider } = await import('../../server/src/index.js')
-  assert.throws(() => mk({ timeoutMs: 1000 }), invalid(/renamed `rpcTimeoutMs`.*upgrade-1\.0/))
-  assert.throws(() => mk({ chains: { 196: { timeoutMs: 1000 } } }), invalid(/chains\[196\].*rpcTimeoutMs/))
+  assert.throws(() => mk({ conform: false, timeoutMs: 1000 }), invalid(/renamed `rpcTimeoutMs`.*upgrade-1\.0/))
+  assert.throws(() => mk({ conform: false, chains: { 196: { timeoutMs: 1000 } } }), invalid(/chains\[196\].*rpcTimeoutMs/))
   assert.throws(() => createProvider({ manifest: {}, signerKey: '0x' + '11'.repeat(32), methods: {}, timeoutMs: 1000 }), invalid(/rpcTimeoutMs/))
-  const api = mk({ rpcUrls: ['https://a.example', 'https://b.example'], quorum: 2, rpcTimeoutMs: 1234, chains: { 196: { rpcUrls: ['https://c.example', 'https://d.example'], rpcTimeoutMs: 999 } }, fetch: async () => { throw new Error('offline') } })
+  const api = mk({ conform: false, rpcUrls: ['https://a.example', 'https://b.example'], quorum: 2, rpcTimeoutMs: 1234, chains: { 196: { rpcUrls: ['https://c.example', 'https://d.example'], rpcTimeoutMs: 999 } }, fetch: async () => { throw new Error('offline') } })
   assert.ok(api.rpc)
   assert.equal(api.forChain(196).chainId, 196)
 })
@@ -147,7 +147,7 @@ test('FIXED G1-S6: every tokenId and processor the SDK returns is a decimal stri
   const chain = createFakeChain()
   const container = '0x' + '5a'.repeat(20)
   chain.setContainerToken(container, { tokenId: 4246 })
-  const api = mk({ rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch: chain.fetch })
+  const api = mk({ conform: false, rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch: chain.fetch })
   const t = await api.chain.tokenOf(container)
   assert.equal(t.tokenId, '4246')
   assert.equal(typeof t.circuits, 'string')

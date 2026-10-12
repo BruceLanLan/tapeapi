@@ -1,0 +1,35 @@
+{
+  "what": "TAP-10 §13.8: the DeWEB hub proxy's creation block per chain and the Upgraded logs read there, for chains.js TAP10_HUB_HISTORY. Read-only, 2026-10-08.",
+  "hub": "0xe61a9c7213a6aa616c246a2b569e555b417b25ee",
+  "upgradedTopic": "0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b",
+  "boot": "0xc0d28ca8689248b0bed26cc0aa328cf16aa4401e",
+  "chains": {
+    "56": {
+      "createdAt": 122571550,
+      "codeAt": { "bisectedOn": "bsc-mainnet.public.blastapi.io (Alchemy)", "checkedOn": "bsc.meowrpc.com", "before": "0x", "at": "code" },
+      "logs": [
+        { "block": 122571550, "logIndex": 257, "implementation": "0xc0d28ca8689248b0bed26cc0aa328cf16aa4401e", "tx": "0x866f3208bfc0772c86e3ea73613f3d52dee888f1275a9ef59ecb598223f54ac2", "readFrom": "eth_getTransactionReceipt, bsc-dataseed.bnbchain.org (NodeReal)" },
+        { "block": 122571622, "logIndex": 348, "implementation": "0xf5f18e3fe811b9b382c90539d14440654e789d92", "tx": "0x21f5002d696732325cf130e1c97218206e39f857d4f234157a9294e1ae81b1df", "readFrom": "eth_getLogs over 122571550..122623031, NodeReal public endpoint; eth_getTransactionReceipt, bsc-dataseed.bnbchain.org (NodeReal)" },
+        { "block": 122573605, "logIndex": 303, "implementation": "0x7df03218910e0f37fc3a8da8792831ab7580340f", "tx": "0x9344a712e207a6bbeef84f5070d9e0fb0ef6d4bb02bfcdbf2b6d72ceee7eede5", "readFrom": "eth_getLogs over 122571550..122623031, NodeReal public endpoint; eth_getTransactionReceipt, bsc-dataseed.bnbchain.org (NodeReal)" },
+        { "block": 122623031, "logIndex": 1402, "implementation": "0x80afe7b77f2dfd08e9feab7675780bac34a7ee85", "tx": "0x7efd8e9ddc9360525e2e688b700dbc388c2ff64eaf4e835277457414600c1c34", "readFrom": "eth_getTransactionReceipt, bsc-dataseed.bnbchain.org (NodeReal)" }
+      ],
+      "note": "boot, v1, v2 and v3 (current): one eth_getLogs over 122571550..122623031 on the NodeReal public endpoint returned exactly these four; v1 and v2 also read back from their receipts on bsc-dataseed. No Upgraded log of the hub from 122623032 to 126373325 (NodeReal public endpoint, 50,000-block windows). Re-read 2026-10-08"
+    },
+    "8453": {
+      "createdAt": 51499079,
+      "codeAt": { "bisectedOn": "mainnet.base.org", "checkedOn": "base.drpc.org", "before": "0x", "at": "code" },
+      "logs": [
+        { "block": 51499079, "logIndex": 1075, "implementation": "0xc0d28ca8689248b0bed26cc0aa328cf16aa4401e", "tx": "0x25229a4e274ef56709896121af94cebe413bd238ca23aa02dc8b4b31b1582e6d", "readFrom": "eth_getLogs, mainnet.base.org" },
+        { "block": 51499091, "logIndex": 385, "implementation": "0x38a2d320b8984bbac9b0a2691b6c0fd829a23867", "tx": "0x971c12aeea6c804b967f413629517dc94993e030c5f6dff339c91e11fab49454", "readFrom": "eth_getLogs, mainnet.base.org and base.drpc.org" }
+      ]
+    },
+    "196": {
+      "createdAt": 71019448,
+      "codeAt": { "bisectedOn": "rpc.xlayer.tech", "checkedOn": "xlayer.drpc.org", "before": "0x", "at": "code" },
+      "logs": [
+        { "block": 71019448, "logIndex": 74, "implementation": "0xc0d28ca8689248b0bed26cc0aa328cf16aa4401e", "tx": "0xbd565c0aea3df585ec0da6ae54cd8586a899ae302d9a1c54220cdaa9605e02e0", "readFrom": "eth_getLogs, rpc.xlayer.tech and xlayer.drpc.org" },
+        { "block": 71019488, "logIndex": 11, "implementation": "0xdcc57797089ebd9f26e686379a4323f353a3f9c6", "tx": "0x412d95d2a2cd796f4346cd57d8ce037e45322b20f0e89a5d851aafa5f6ae8dad", "readFrom": "eth_getLogs, rpc.xlayer.tech, xlayer.drpc.org and xlayerrpc.okx.com" }
+      ]
+    }
+  }
+}

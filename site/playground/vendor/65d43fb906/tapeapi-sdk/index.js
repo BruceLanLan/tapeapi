@@ -14,21 +14,23 @@ import { validateManifest, findMethod, methodPrice, parseUnits, formatUnits, MET
 import { canonicalJSON, safeParseJSON } from './canon.js'
 import { validateAIField, MANIFEST_FIELD as AI_FIELD } from './ai.js'
 import { CHAIN_IDS, chainById, parseTapeName, parseTapeInput, formatTapeName, IMPL_SLOT, MAX_TOKEN_ID } from './chains.js'
-import { TAP10_SEALS, PAYMENT_TOKENS, AUDITED_ESCROWS } from './chains.js'
+import { TAP10_SEALS, TAP10_HUB_BOOT, TAP10_HUB_HISTORY, PAYMENT_TOKENS, AUDITED_ESCROWS } from './chains.js'
 import { rpcUrlsFor } from './rpc-defaults.js'
 // TAP-10 §4.3 processor tables (about 75 KB), read only by the conformance mode and siteStatus. A static import: the SDK
 // runs in the browser as plain modules, without dynamic imports (scripts/build-playground.mjs).
 // TAP-10 §4.3 处理器表（约 75 KB），只有一致模式与 siteStatus 读取。静态导入：SDK 在浏览器里以普通模块运行，不用动态导入。
 import { PROCESSORS_SNAPSHOT } from './processors-snapshot.js'
 import { erc6551Account } from './security.js'
+import { CONFORM_SIBLINGS, CONFORM_MODE } from './conform-sibling.js'
 import { verifyAccountProof, STORAGE, LAYOUT_IMPLEMENTATIONS, addressOfWord } from './proof.js'
+import * as UP from './usd-pricing.js'
 
 // Default nodes per chain and who operates them (quorums count operators, not URLs) / 各链默认节点及其运营方
 export { RPC_DEFAULTS, rpcUrlsFor, operatorOf } from './rpc-defaults.js'
 // The TapeOut chains (BNB Smart Chain, X Layer, Base) and names with area codes / TapeOut 各链与带区号的名字
 export { CHAINS, CHAIN_IDS, HOME_CHAIN_ID, IMPL_SLOT, chainById, chainByArea, chainByKey, parseTapeName, formatTapeName, isNameShaped, parseTapeInput, MAX_TOKEN_ID, MAX_PROCESSOR } from './chains.js'
 // @experimental (1.5) TAP-10 §13.8 messaging constants and the §12.1 endpoint chainId bound / TAP-10 消息层常量
-export { TAP10_SEALS, TAP10_MAX_CHAIN_ID } from './chains.js'
+export { TAP10_SEALS, TAP10_MAX_CHAIN_ID, TAP10_HUB_BOOT, TAP10_HUB_HISTORY } from './chains.js'
 // @experimental (TAPI-22 §3.5) escrow token labels and the audited escrow deployments (empty) / 托管代币标签与已审计托管名单（空）
 export { PAYMENT_TOKENS, AUDITED_ESCROWS } from './chains.js'
 export { TapeAPIError, createRpc, canonicalJSON, safeParseJSON, validateManifest, parseUnits, formatUnits, labelToBytes32, METHOD_NAME_RE, BEM_DECIMALS }
@@ -50,6 +52,8 @@ export * as security from './security.js'
 // @experimental security 1.2: RLP and Merkle-Patricia proof checks (EIP-1186), the storage slots resolve can prove
 // @experimental 安全加固 1.2：RLP 与默克尔-帕特里夏证明核验（EIP-1186），以及 resolve 能证明的存储槽
 export * as proof from './proof.js'
+// @experimental prices in US dollars paid in BEM (TAP draft "Payment Vouchers", TAPs#52); internal, unreleased / 美元报价、BEM 结算（实验性）
+export * as usdPricing from './usd-pricing.js'
 
 // TAPI-22 §3.4 贡献比例常量 / contribution constants (basis points).
 export const MAX_CONTRIBUTION_BPS = 2000          // contract hard cap, 20% (5000 before 2026-10-05) / 合约硬上限 20%（2026-10-05 前为 5000）
@@ -127,6 +131,17 @@ export const MANIFEST_TTL_MS = 3600_000
 // TAP-11 §7.1 / TAP-10 §11 (conformance mode): the holder and site status are not relied on for more than 60 seconds
 // without a reread. / 一致模式：持有人与站点状态不超过 60 秒不重读。
 export const CONFORM_TTL_MS = 60_000
+// 2.0: which texts the conformance mode resolves by, carried as svc.conform.profile. `tap10@1.1` is TAP-10 at its
+// `version: 1.1` (the `version` of every TAP-10 result, TAP10_VERSION below); TAP-11 has no version yet and is a Draft,
+// so `tap11@draft`. The `@` form is the one the `conform` switch keeps free for later texts ('tap10@1.2'). A value never
+// changes meaning: an SDK that follows a changed text says so with another value. The follow rule (docs/guides/upgrade-2.0.md,
+// "How the default follows changes in the official TAPs"): a loosening or a new status name reaches the default in a
+// minor release; a tightening is first an optional new profile and reaches the default in 3.0; status names only grow.
+// 2.0：一致模式按哪一版文本解析，随 svc.conform.profile 带出。tap10@1.1 即 TAP-10 的 version: 1.1（与每个 TAP-10 结果的
+// version、下面的 TAP10_VERSION 相同）；TAP-11 尚无版本号、处于 Draft，故为 tap11@draft。一个值的含义永不改变：跟随了
+// 改动后文本的 SDK 用另一个值表明。跟随规则：放宽与新增状态名在次版本里直接成为默认；收紧先作为可选的新 profile，默认到 3.0 才切；
+// 状态名只增不改。
+export const CONFORM_PROFILE = 'tap10@1.1+tap11@draft'
 // The conformance mode's statuses that mean "could not read", not a verdict / 表示"读不到"而非结论的状态
 const TRANSIENT_STATUS = new Set(['unavailable', 'stale-block'])
 export const DEFAULT_MAX_SKEW_S = 300          // TAPI-21 §3.2: reject |now − ts| > 300 s
@@ -237,6 +252,15 @@ const early = (read) => {
 const TAP10_LOCAL = new WeakMap()
 const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : toHex(crypto.getRandomValues(new Uint8Array(16))).slice(2))
 
+// Internal options of the clients the SDK makes inside itself (a forChain sub-client's router, a conformance sibling's shared RPC
+// client). They are keyed by symbols that never leave this module, so no caller can pass them in: a `_router` or `_rpc` in the
+// options of createTapeAPI() is an unknown key like any other and does nothing (it used to switch the deprecation warning off
+// and to take over forChain). / SDK 在内部建客户端时用的内部选项（forChain 子客户端的路由、一致模式同胞共用的 RPC 客户端）。
+// 它们用不出本模块的 Symbol 作键，调用方传不进来：createTapeAPI() 选项里的 `_router`、`_rpc` 只是个未知键，什么也不做
+// （以前它能关掉弃用警告、劫持 forChain）。
+const ROUTER = Symbol('tapeapi.router')
+const SHARED_RPC = Symbol('tapeapi.sharedRpc')
+
 // 选项 / options:
 //   rpcUrls, quorum (默认 2)：urls 或其不同运营方（operatorOf）少于 quorum 直接抛 RPC_UNAVAILABLE；只有 allowSingleNode: true
 //                        才允许下调（开发用，M-11）。quorum counts operators: URLs of one operator count once.
@@ -313,35 +337,58 @@ export function createTapeAPI(opts = {}) {
   //                       strict agreement.
   //                       按 TAP-10 v1.1 与 TAP-11 §2.2 解析（解析路径）。隐含 pin: 'tap10'。1.5 起也包括消息路径。1.5.0 起
   //                       resolve 用严格共识检查 eth_chainId、读取 ownerOf 与合约持有人的 EIP-1271 调用。
+  //                       2.0: THE DEFAULT. Left out = 'tap10' (dev: true excepted, which means false). false or null = the
+  //                       1.x resolution, deprecated (kept in 2.x; one onWarning, code DEPRECATED, when the client is made).
+  //                       Under the default, a configuration that is not TAP-10's (hub, factory, siteRegistry, opener or
+  //                       binding of your own, a chain without TAP-10 lists, a pin other than 'tap10') is INVALID_ARGUMENT
+  //                       when the client is made, saying to pass conform: false (design points D-1, D-2; docs/guides/upgrade-2.0.md).
+  //                       2.0：默认。不传即 'tap10'（dev: true 除外，视同 false）。false 或 null 为 1.x 的解析，弃用（2.x 内保留；
+  //                       建客户端时 onWarning 一次，code 为 DEPRECATED）。默认下非 TAP-10 的配置（自定义地址、没有 TAP-10 列表的链、
+  //                       'tap10' 以外的 pin）在建客户端时 INVALID_ARGUMENT，信息写明传 conform: false。
+  //                       The default follows changes in the TAP texts (docs/guides/upgrade-2.0.md): loosenings and new status
+  //                       names in a minor release, a tightening first as an optional profile, the default in 3.0.
+  //                       默认跟随 TAP 文本的变化：放宽与新增状态名在次版本里直接成为默认，收紧先作为可选 profile，默认到 3.0 才切。
   //   allChains           @experimental (1.5) true: input without chain information (a container address or a processor
   //                       contract#ID string, TAP-10 §4.1) is resolved on EVERY TapeOut chain, each at its own pinned block:
   //                       `ambiguous` when more than one resolves it, and the status of a chain that could not be read instead
   //                       of `not-tapeout`. This sends reads to the nodes of Base and X Layer as well (chains[id].rpcUrls, or
   //                       the SDK's defaults for that chain), which is why it is a separate switch: a client given only its
   //                       own BNB Smart Chain node never talks to other chains' public nodes unless asked. It applies to the
-  //                       TAP-10 path only: resolve under conform: 'tap10', and siteStatus in any mode; the default resolve
-  //                       never reads it. Only `true` turns it on; any other value is ignored, as 1.4 ignored the option.
+  //                       TAP-10 path only: resolve under conform: 'tap10', and siteStatus in any mode; the 1.x resolve
+  //                       (conform: false) never reads it. Only `true` turns it on; any other value is ignored, as 1.4 ignored the option.
   //                       Off: a container address is resolved on this client's chain when it is a container of this chain
   //                       (an ERC-6551 address commits to one chain, TAP-10 §4.1), and is `unsupported` otherwise; under
   //                       conform: 'tap10' a processor contract#ID string is `unsupported` before any request, because
-  //                       TAP-10 resolves it only when exactly one chain does (siteStatus on a default client resolves it on
-  //                       this client's chain, as in 1.4). { circuits, tokenId, chainId? } names its chain (this client's
+  //                       TAP-10 resolves it only when exactly one chain does (siteStatus on a conform: false client resolves it
+  //                       on this client's chain, as in 1.4). { circuits, tokenId, chainId? } names its chain (this client's
   //                       when chainId is left out) and { chainId, container } names its own: neither is searched;
   //                       { container } without chainId is an input error (as in 1.4).
   //                       true：无链信息的输入（容器地址或"处理器合约#ID"字符串，TAP-10 §4.1）在**每条** TapeOut 链上各自钉块解析：
   //                       多条链命中即 ambiguous，某条链读不到时报该链的状态而不报 not-tapeout。这会向 Base 与 X Layer 的节点发请求
   //                       （chains[id].rpcUrls 或 SDK 对该链的默认节点），所以是单独的开关：只配了自己 BSC 节点的客户端，不明确要求
-  //                       就绝不访问别的链的公共节点。只作用于 TAP-10 路径：一致模式下的 resolve，以及任何模式下的 siteStatus；默认的
-  //                       resolve 从不读它。只有 true 才开启，其它值一律忽略（1.4 就忽略这个选项）。关闭时：容器地址是本链容器即在本链
+  //                       就绝不访问别的链的公共节点。只作用于 TAP-10 路径：一致模式下的 resolve，以及任何模式下的 siteStatus；1.x 的
+  //                       resolve（conform: false）从不读它。只有 true 才开启，其它值一律忽略（1.4 就忽略这个选项）。关闭时：容器地址是本链容器即在本链
   //                       解析（ERC-6551 地址只属于一条链），否则 unsupported；一致模式下"处理器合约#ID"字符串在发出任何请求之前即为
-  //                       unsupported，因为 TAP-10 只在恰好一条链命中时才解析它（默认客户端的 siteStatus 与 1.4 一样在本链解析）。
+  //                       unsupported，因为 TAP-10 只在恰好一条链命中时才解析它（conform: false 客户端的 siteStatus 与 1.4 一样在本链解析）。
   //                       { circuits, tokenId, chainId? } 指明链（不给 chainId 即本客户端的链），{ chainId, container } 自带链：都不搜索；
   //                       不带 chainId 的 { container } 是输入错误（与 1.4 相同）。
   const now = clockOf(opts.clock)
-  // undefined, null and false all mean off: 1.3 ignored the option, so a value it ignored must not start failing in 1.4
-  // undefined、null、false 都表示关闭：1.3 会忽略这个选项，它忽略过的值在 1.4 不能开始报错
-  if (opts.conform !== undefined && opts.conform !== null && opts.conform !== false && opts.conform !== 'tap10') throw new TapeAPIError('INVALID_ARGUMENT', "conform: pass 'tap10' (TAP-10 v1.1), or leave it out (undefined, null or false)")
-  const conformMode = opts.conform === 'tap10'
+  // 2.0: the conformance mode is the default (design points D-1..D-6; docs/guides/upgrade-2.0.md). Left out (undefined) it is on, unless
+  // dev: true (the dev mode skips the on-chain identity, so it means the 1.x resolution, D-1). false and null are the 1.x
+  // resolution: deprecated and kept in 2.x, one warning when the client is made (D-6); never an error, never other behaviour.
+  // 2.0：一致模式成为默认。不传（undefined）即开启，除非 dev: true（开发模式本来就跳过链上身份，视同 1.x 的解析）。false 与 null
+  // 是 1.x 的解析：2.x 内弃用但保留，建客户端时警告一次；不报错，不改变行为。
+  if (opts.conform !== undefined && opts.conform !== null && opts.conform !== false && opts.conform !== 'tap10') throw new TapeAPIError('INVALID_ARGUMENT', "conform: pass 'tap10' (TAP-10 v1.1, the default since 2.0), false (the 1.x resolution, deprecated), or leave it out")
+  const conformDefaulted = opts.conform === undefined && !devMode
+  const conformMode = opts.conform === 'tap10' || conformDefaulted
+  // A construction error of the conformance mode says how to get the 1.x resolution when the mode was not asked for (D-1, D-2).
+  // 没有显式要求一致模式时，一致模式的构造错误写明如何回到 1.x 的解析。
+  const conformError = (msg) => new TapeAPIError('INVALID_ARGUMENT', conformDefaulted
+    ? `${msg}. Since 2.0 createTapeAPI() resolves as TAP-10 / TAP-11 §2 say by default (conform: 'tap10'); this configuration is not a TAP-10 one (your own addresses, a local chain or fork, a chain without TAP-10 lists, or another pin): pass conform: false for the 1.x resolution (deprecated, kept in 2.x)`
+    : msg)
+  // D-1: a chain without TAP-10 lists (a local chain, a fork under another chainId, any chain chains.js does not know)
+  // D-1：没有 TAP-10 列表的链（本地链、换了 chainId 的分叉、chains.js 不认识的链）
+  if (conformMode && !known) throw conformError(`conform: 'tap10' resolves on a TAP-10 chain only (${CHAIN_IDS.join(', ')}); chain ${chainId} has no TAP-10 lists`)
   // Only true turns allChains on; any other value is ignored, never refused: 1.4 ignored the option, so a value it ignored
   // must not start failing (the same rule as conform above). / 只有 true 开启；其它值忽略而不报错：1.4 忽略这个选项。
   const allChains = opts.allChains === true
@@ -349,7 +396,7 @@ export function createTapeAPI(opts = {}) {
   //                       may build for. Default none; `escrow` is not added. / 允许 approve / fund 的托管，默认没有。
   if (opts.allowEscrows != null && (!Array.isArray(opts.allowEscrows) || !opts.allowEscrows.every(isAddress))) throw new TapeAPIError('INVALID_ARGUMENT', 'allowEscrows must be an array of escrow addresses')
   const allowedEscrows = new Set([...(AUDITED_ESCROWS[Number(chainId)] ?? []), ...(opts.allowEscrows ?? [])].map((a) => a.toLowerCase()))
-  if (conformMode && opts.pin !== undefined && opts.pin !== 'tap10') throw new TapeAPIError('INVALID_ARGUMENT', "conform: 'tap10' pins every resolution as TAP-10 §5.3 does (pin: 'tap10'); it cannot be combined with another pin option (false, 'latest', true or { tag })")
+  if (conformMode && opts.pin !== undefined && opts.pin !== 'tap10') throw conformError("conform: 'tap10' pins every resolution as TAP-10 §5.3 does (pin: 'tap10'); it cannot be combined with another pin option (false, 'latest', true or { tag })")
   const pinConf = pinOptionsOf(conformMode ? 'tap10' : opts.pin, chainById(chainId))
   const proofMode = proofOptionOf(opts.proofs, pinConf)
   const sentinelMode = opts.sentinel ?? 'warn'
@@ -358,17 +405,21 @@ export function createTapeAPI(opts = {}) {
   // no accepted list could only ever be store-changed, so it is a configuration mistake, said now.
   // 一致模式对站点存储与付费合约的实现 fail-closed：没有接受列表的代理只会永远是 store-changed，所以是配置错误，现在就说。
   if (conformMode) {
-    for (const [role, a] of [['opener', opener], ['binding', binding], ['siteRegistry', siteRegistry], ['factory', factory]]) if (!isAddress(a)) throw new TapeAPIError('INVALID_ARGUMENT', `conform: 'tap10' needs the ${role} address of chain ${chainId}`)
+    for (const [role, a] of [['opener', opener], ['binding', binding], ['siteRegistry', siteRegistry], ['factory', factory]]) if (!isAddress(a)) throw conformError(`conform: 'tap10' needs the ${role} address of chain ${chainId}`)
     for (const [role, a] of [['siteRegistry', siteRegistry], ['binding', binding]]) {
-      if (!known?.expectedImpl?.[String(a).toLowerCase()]) throw new TapeAPIError('INVALID_ARGUMENT', `conform: 'tap10' accepts only the ${role} proxies TAP-10 lists with their accepted implementations (chains.js expectedImpl); ${a} on chain ${chainId} has none`)
+      if (!known?.expectedImpl?.[String(a).toLowerCase()]) throw conformError(`conform: 'tap10' accepts only the ${role} proxies TAP-10 lists with their accepted implementations (chains.js expectedImpl); ${a} on chain ${chainId} has none`)
     }
     // 1.5, the messaging path: only the hub TAP-10 lists, whose current implementation is known (chains.js TAP10_SEALS);
     // another would be hub-changed for ever / 1.5 消息路径：只接受 TAP-10 列出的中枢，否则永远是 hub-changed
-    if (!eqAddr(hub, known?.hub) || !TAP10_SEALS[Number(chainId)]) throw new TapeAPIError('INVALID_ARGUMENT', `conform: 'tap10' accepts only the DeWEB hub TAP-10 lists for chain ${chainId} (${known?.hub}), whose current implementation is in chains.js TAP10_SEALS; got ${hub}`)
+    if (!eqAddr(hub, known?.hub) || !TAP10_SEALS[Number(chainId)]) throw conformError(`conform: 'tap10' accepts only the DeWEB hub TAP-10 lists for chain ${chainId} (${known?.hub}), whose current implementation is in chains.js TAP10_SEALS; got ${hub}`)
+    // review B2: the §13.8 scan needs the hub's history (creation block, listed implementations, the current one first)
+    // 审查 B2：§13.8 扫描需要中枢的历史（创建块、列出的实现，当前的在前）
+    const hh = TAP10_HUB_HISTORY[Number(chainId)]
+    if (!hh || !Number.isSafeInteger(hh.createdAt) || !Array.isArray(hh.listed) || !hh.listed.length || !eqAddr(hh.listed[0], TAP10_SEALS[Number(chainId)].hub)) throw conformError(`conform: 'tap10' needs the hub's history for chain ${chainId} (chains.js TAP10_HUB_HISTORY: its creation block and the implementations TAP-10 lists, the current one first)`)
     // TAP-10 §2.2: only the addresses listed for that chain, never learned elsewhere: the factory and the opener too
     // TAP-10 §2.2：只用该链列出的地址；工厂与开通器同样如此
     for (const [role, a] of [['factory', factory], ['opener', opener]]) {
-      if (!eqAddr(a, known?.[role])) throw new TapeAPIError('INVALID_ARGUMENT', `conform: 'tap10' uses only the ${role} TAP-10 lists for chain ${chainId} (${known?.[role]}; TAP-10 §2.2); got ${a}`)
+      if (!eqAddr(a, known?.[role])) throw conformError(`conform: 'tap10' uses only the ${role} TAP-10 lists for chain ${chainId} (${known?.[role]}; TAP-10 §2.2); got ${a}`)
     }
   }
   if (opts.requireContentSig !== undefined && typeof opts.requireContentSig !== 'boolean') throw new TapeAPIError('INVALID_ARGUMENT', 'requireContentSig must be a boolean')
@@ -377,7 +428,16 @@ export function createTapeAPI(opts = {}) {
   const delegationFloor = opts.delegationFloor === true ? new Map() : (isFloorStore(opts.delegationFloor) ? opts.delegationFloor : null)
   if (opts.onWarning !== undefined && typeof opts.onWarning !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'onWarning must be a function')
   const onWarning = opts.onWarning ?? consoleWarning
-  const rpc = (opts.rpcUrls && opts.rpcUrls.length)
+  // D-6: conform: false (or null) is the 1.x resolution, deprecated in 2.x: one warning per client, when it is made. Not for
+  // dev: true (not deprecated) and not for the clients made inside the SDK (forChain, the conformance sibling: ROUTER),
+  // so one client warns once whatever chains it reads. / conform: false（或 null）是 2.x 内弃用的 1.x 解析：每个客户端建立时
+  // 警告一次。dev: true 不警告（未弃用）；SDK 内部建的客户端（forChain、一致模式同胞，带 ROUTER）也不警告。
+  if ((opts.conform === false || opts.conform === null) && typeof opts[ROUTER] !== 'function') {
+    try { onWarning({ code: 'DEPRECATED', option: 'conform', message: "conform: false is the 1.x resolution, deprecated in 2.x (kept in 2.x, not removed): since 2.0 createTapeAPI() resolves as TAP-10 / TAP-11 §2 say by default; see https://tapeapi.fun/docs/en/upgrade-2.0" }) } catch { /* a reporter never breaks the client / 报告函数绝不影响客户端 */ }
+  }
+  // SHARED_RPC (internal): the conformance sibling of a client shares that client's RPC client (conform-sibling.js)
+  // SHARED_RPC（内部）：客户端的一致模式同胞共用该客户端的 RPC 客户端
+  const rpc = opts[SHARED_RPC] ? opts[SHARED_RPC] : (opts.rpcUrls && opts.rpcUrls.length)
     ? createRpc({ urls: opts.rpcUrls, quorum: opts.quorum ?? 2, timeoutMs: opts.rpcTimeoutMs, fetch: fetchImpl, allowSingleNode: opts.allowSingleNode === true, quiet: opts.quiet === true })
     : null
   // Highest `issued` seen per container's channel record (arch B4). Pass a persistent Map-like { get, set } to keep it
@@ -620,6 +680,10 @@ export function createTapeAPI(opts = {}) {
     if (r.issued < floor) throw new TapeAPIError('CHANNEL_INVALID', `${CHANNEL_KEYS_KEY} of ${container}: issued ${r.issued} is older than a record already seen (${floor}): a replaced record was put back`)
     if (r.issued > floor) await recordFloor.set(floorKey(container), r.issued)
   }
+  // inbox.room is the container's inbox room of the default label version: TAPI-26 v2 since 2.0 (v1 in 1.x). A 1.x peer
+  // posts to the v1 room: channel.inboxRoom(container, chainId, { labels: 'v1' }). The record itself names no room.
+  // inbox.room 是默认标签版本的收件房间：2.0 起为 TAPI-26 v2（1.x 为 v1）。1.x 对端投递到 v1 房间：
+  // channel.inboxRoom(container, chainId, { labels: 'v1' })。通道记录本身不含房间。
   const channelRecordResult = (container, circuits, tokenId, holder, r, inbox) => ({
     container: checksumAddress(container), chainId, circuits: checksumAddress(circuits), tokenId: tokenId.toString(),
     staticPublic: r.x25519.toLowerCase(), x25519: r.x25519.toLowerCase(), ed25519: r.ed25519.toLowerCase(), issued: r.issued, expires: r.expires,
@@ -639,13 +703,13 @@ export function createTapeAPI(opts = {}) {
   // implementations accepted (store-changed, TAP-10 §6.1) but still not activation or opening. tapeSendKey also reads the
   // hub's seal status at the same block (§13.8): a hub implementation other than the current one TAP-10 lists is
   // hub-changed, a circuit beacon not on circuitImplementation is circuits-changed, kept for good by this client.
-  // Every error carries data.status; the codes are the default mode's for the same situation.
+  // Every error carries data.status; the codes are the 1.x resolution's (conform: false) for the same situation.
   // 一致模式下，api.chain.tapeSendKey 按 TAP-10 §12.2 解析端点、按 §14.4 第 1–3 步读密钥；api.chain.channelKeys 按私密通道草稿 §3.3
   // 读通道记录。两者：新鲜的 TAP-10 钉块、每个读取都用严格共识、先做严格共识的 eth_chainId 检查（§5.4 对消息是 MUST；resolve 的默认共识
   // 检查不算）、容器取自开通器、只有结果与回滚算回答。**绝不**判激活或开通：§12.2 规定未付费、站点存储实现变更或阻止名单都不得阻止消息，
   // 所以 tapeSendKey 既不读站点存储也不读付费合约。通道记录是站点文件，所以读它要求两个站点合约的实现都被接受（store-changed），但仍不判
   // 激活或开通。tapeSendKey 还在同一块上读中枢的封存状态（§13.8）：中枢实现不是 TAP-10 列为当前的那个即 hub-changed，电路信标不在
-  // circuitImplementation 即 circuits-changed，本客户端永久保留。每个错误都带 data.status；错误码与默认模式同一情形相同。
+  // circuitImplementation 即 circuits-changed，本客户端永久保留。每个错误都带 data.status；错误码与 1.x 解析（conform: false）同一情形相同。
   const TAP10_STRICT = { answers: 'tap10', strict: true }
   const sealsOf = TAP10_SEALS[Number(chainId)] ?? null
   async function viewStrict(to, name, args, at) { return decodeReturn(name, await needRpc().ethCall(to, encodeCall(name, args), at, TAP10_STRICT)) }
@@ -727,19 +791,85 @@ export function createTapeAPI(opts = {}) {
   // 就一直当作已失去。按客户端保存，即按链与中枢。
   const sealKey = `${chainId}:${String(hub).toLowerCase()}`
   const minBlock = (a, b) => (a === null ? b : b === null ? a : Math.min(a, b))
+
+  // §13.8, the conditional SHOULD: "When log-capable nodes are available, a client SHOULD read every Upgraded log of the hub
+  // and accept the hub only if every implementation it names is the boot implementation or listed under Deployments
+  // (current or replaced)." One eth_getLogs from the hub's creation block to the pinned block, under strict agreement
+  // like every §13.8 read (§5.2). A node's answer counts only if it holds the history's two anchors, Upgraded(boot) at
+  // the creation block and an Upgraded to the current implementation: a node with pruned history that answers [] did not
+  // answer, it does not vouch for an empty history. Public nodes rarely serve this (BNB Chain dataseed refuses every
+  // eth_getLogs, 48 Club caps a range at 5,000 blocks, OKX at 100): then the scan is `unavailable`, the hub is judged by
+  // its implementation slot alone as before, and the result says so (`hub.basis: 'slot'`). Disagreement is unavailable
+  // too, never hub-changed: one node must not be able to stop messaging with an invented log. An unavailable scan is not
+  // retried for FACT_TTL_MS (300 s), so a refusing node is not asked on every lookup.
+  // §13.8 的条件 SHOULD：有能提供日志的节点时，读中枢的全部 Upgraded 日志，只有每条所指实现都是 boot 或 Deployments 列出的（当前或已替换）
+  // 才接受中枢。从中枢创建块到钉块一次 eth_getLogs，严格共识。节点回答必须含两个锚点（创建块的 Upgraded(boot)、升级到当前实现的
+  // Upgraded），否则不算作答：历史被裁剪的节点答 [] 不能替空历史作保。公共节点很少提供（dataseed 一律拒绝、48 Club 每次 5,000 块、
+  // OKX 100 块）：此时扫描为 `unavailable`，中枢照旧只按实现槽判断，并在结果里注明（`hub.basis: 'slot'`）。分歧也算 unavailable，
+  // 绝不判 hub-changed：单个节点不能靠编造的日志让消息停摆。unavailable 的结果 300 秒内不重试。
+  const UPGRADED_TOPIC = '0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b'
+  const hubHistory = TAP10_HUB_HISTORY[Number(chainId)] ?? null
+  const hubListedEver = new Set([TAP10_HUB_BOOT, ...(hubHistory?.listed ?? [])].map((a) => a.toLowerCase()))
+  let upgradedDown = null   // { until, reason } / 最近一次 unavailable
+  async function upgradedScan(pinned) {
+    const from = hubHistory.createdAt, to = pinned.number
+    const unavailable = (reason) => ({ status: 'unavailable', from, to, reason })
+    if (to < from) return unavailable(`the pinned block ${to} is before the hub's creation block ${from}`)
+    if (upgradedDown && Date.now() < upgradedDown.until) return unavailable(upgradedDown.reason)
+    const boot = TAP10_HUB_BOOT.toLowerCase(), current = sealsOf.hub.toLowerCase()
+    const project = (logs) => {
+      if (!Array.isArray(logs)) throw new Error('eth_getLogs did not return an array')
+      const out = logs.map((l) => {
+        const t1 = String(l?.topics?.[1] ?? '').toLowerCase()
+        if (!eqAddr(l?.address, hub) || String(l?.topics?.[0]).toLowerCase() !== UPGRADED_TOPIC || l.removed === true) throw new Error('a log outside the filter')
+        if (!/^0x0{24}[0-9a-f]{40}$/.test(t1)) throw new Error('an Upgraded log whose topic 1 is not an address word')
+        const block = Number(BigInt(l.blockNumber))
+        if (block < from || block > to) throw new Error(`a log at block ${block}, outside ${from}..${to}`)
+        return { block, logIndex: Number(BigInt(l.logIndex)), tx: String(l.transactionHash).toLowerCase(), implementation: '0x' + t1.slice(26) }
+      }).sort((a, b) => a.block - b.block || a.logIndex - b.logIndex)
+      if (!out.some((x) => x.block === from && x.implementation === boot)) throw new Error(`no Upgraded(boot) at the hub's creation block ${from}: history missing`)
+      if (!out.some((x) => x.implementation === current)) throw new Error('no Upgraded to the current implementation: history incomplete')
+      return out
+    }
+    let logs
+    try {
+      logs = await needRpc().call('eth_getLogs', [{ address: hub, topics: [UPGRADED_TOPIC], fromBlock: '0x' + from.toString(16), toBlock: '0x' + to.toString(16) }], { ...TAP10_STRICT, project })
+    } catch (e) {
+      if (!(e instanceof TapeAPIError) || !['RPC_UNAVAILABLE', 'RPC_DISAGREE', 'RPC_ERROR'].includes(e.code)) throw e
+      const reason = `${e.code}: ${String(e.message).slice(0, 300)}`
+      upgradedDown = { until: Date.now() + FACT_TTL_MS, reason }
+      return unavailable(reason)
+    }
+    upgradedDown = null
+    const bad = logs.find((x) => !hubListedEver.has(x.implementation))
+    const implementations = [...new Set(logs.map((x) => checksumAddress(x.implementation)))]
+    if (bad) return { status: 'hub-changed', from, to, implementations, log: { block: bad.block, logIndex: bad.logIndex, tx: bad.tx, implementation: checksumAddress(bad.implementation) } }
+    return { status: 'ok', from, to, implementations }
+  }
   async function hubTrustAt(at, pinned) {
     // The sticky part, from sealStatusStore (this client's Map unless one was given) / 粘性部分，取自 sealStatusStore
     const saved = (await sealStatusStore.get(sealKey)) ?? {}
     const num = (v) => (Number.isSafeInteger(v) ? v : null)
     let circuitsChangedAt = num(saved.circuitsChangedAt), factorySealSeenAt = num(saved.factorySealSeenAt), factorySealLost = saved.factorySealLost === true
-    const before = JSON.stringify([circuitsChangedAt, factorySealSeenAt, factorySealLost])
-    const [hubImpl, beaconImpl, beaconOwner, factorySealed, factoryImpl, hubSealed, hubOwner] = await Promise.all([
+    // A log naming an unlisted implementation is history: kept, and judged again against this SDK's list on every read
+    // (an SDK that lists it later accepts it) / 指向未列出实现的日志是历史：保留，每次按本 SDK 的名单重新判断
+    // Review A3: only a record of the shape this client writes counts (implementation an address, block and logIndex
+    // non-negative safe integers, tx a string); anything else in the store is no record
+    // 审查 A3：只有本客户端写入的形状才算记录（实现为地址、block 与 logIndex 为非负安全整数、tx 为字符串），其余视为没有记录
+    const sl = saved.upgradedLog
+    const nat = (v) => num(v) !== null && v >= 0
+    const savedLog = sl && typeof sl === 'object' && isAddress(sl.implementation) && nat(sl.block) && nat(sl.logIndex) && typeof sl.tx === 'string' &&
+      !hubListedEver.has(sl.implementation.toLowerCase()) ? sl : null
+    const before = JSON.stringify([circuitsChangedAt, factorySealSeenAt, factorySealLost, savedLog])
+    const [scan, hubImpl, beaconImpl, beaconOwner, factorySealed, factoryImpl, hubSealed, hubOwner] = await Promise.all([
+      upgradedScan(pinned),
       implSlotStrict(hub, at),
       wordStrict(sealsOf.circuitBeacon, 'implementation()', at), wordStrict(sealsOf.circuitBeacon, 'owner()', at),
       wordStrict(factory, 'isSealed()', at), implSlotStrict(factory, at),
       wordStrict(hub, 'isSealed()', at), wordStrict(hub, 'owner()', at),
     ])
-    const accepted = eqAddr(hubImpl, sealsOf.hub)
+    const upgradedLog = scan.status === 'hub-changed' && (!savedLog || scan.log.block < savedLog.block) ? scan.log : savedLog
+    const accepted = eqAddr(hubImpl, sealsOf.hub) && !upgradedLog
     const circuitsOk = eqAddr(addressOfWordStrict(beaconImpl), sealsOf.circuitImplementation)
     if (!circuitsOk) circuitsChangedAt = minBlock(circuitsChangedAt, pinned.number)
     const one = '0x' + '0'.repeat(63) + '1'
@@ -747,10 +877,12 @@ export function createTapeAPI(opts = {}) {
     if (factorySeal) factorySealSeenAt = minBlock(factorySealSeenAt, pinned.number)
     if (!factorySeal && factorySealSeenAt !== null && pinned.number >= factorySealSeenAt) factorySealLost = true
     const hubSeal = accepted && hubSealed === one && addressOfWordStrict(hubOwner) === ZERO_ADDRESS
-    if (JSON.stringify([circuitsChangedAt, factorySealSeenAt, factorySealLost]) !== before) await sealStatusStore.set(sealKey, { circuitsChangedAt, factorySealSeenAt, factorySealLost })
+    if (JSON.stringify([circuitsChangedAt, factorySealSeenAt, factorySealLost, upgradedLog]) !== before) await sealStatusStore.set(sealKey, { circuitsChangedAt, factorySealSeenAt, factorySealLost, ...(upgradedLog ? { upgradedLog } : {}) })
     return {
-      circuitsChangedAt,
-      hub: { implementation: hubImpl, accepted }, circuits: circuitsChangedAt === null ? 'ok' : 'circuits-changed',
+      circuitsChangedAt, upgradedLog,
+      // `basis`: what `accepted` rests on: the slot and every Upgraded log, or the slot alone (the scan was unavailable)
+      // `basis`：`accepted` 的依据：实现槽加全部 Upgraded 日志，或只有实现槽（扫描不可用）
+      hub: { implementation: hubImpl, accepted, basis: scan.status === 'unavailable' ? 'slot' : 'slot+logs', upgraded: scan }, circuits: circuitsChangedAt === null ? 'ok' : 'circuits-changed',
       seal: { factory: factorySeal && !factorySealLost, hub: hubSeal, ...(factorySealLost ? { factoryLost: true } : {}) },
     }
   }
@@ -778,6 +910,7 @@ export function createTapeAPI(opts = {}) {
     const id = await endpointAt(input, at)
     const trust = await trustP
     const where = { chainId: Number(chainId), container: id.container, circuits: id.circuits, tokenId: id.tokenId.toString(), pinned: pinnedView(pinned) }
+    if (!trust.hub.accepted && trust.upgradedLog && eqAddr(trust.hub.implementation, sealsOf.hub)) throw tapErr('CONTRACT_UNKNOWN', 'hub-changed', `hub-changed: an Upgraded log of the hub ${checksumAddress(hub)} at block ${trust.upgradedLog.block} (transaction ${trust.upgradedLog.tx}) names implementation ${trust.upgradedLog.implementation}, neither the boot implementation nor one TAP-10 lists for chain ${chainId}; its implementation slot shows the current one again, but storage may have been rewritten in between: do not seal to keys it serves (TAP-10 §13.8)`, { ...where, implementation: trust.hub.implementation, upgradedLog: trust.upgradedLog })
     if (!trust.hub.accepted) throw tapErr('CONTRACT_UNKNOWN', 'hub-changed', `hub-changed: the hub ${checksumAddress(hub)} runs implementation ${trust.hub.implementation ?? '(not an address)'}, not the one TAP-10 lists as current on chain ${chainId} (${sealsOf.hub}); do not seal to keys it serves (TAP-10 §13.8)`, { ...where, implementation: trust.hub.implementation })
     if (trust.circuits !== 'ok') throw tapErr('CONTRACT_UNKNOWN', 'circuits-changed', `circuits-changed: the circuit beacon ${sealsOf.circuitBeacon} no longer runs ${sealsOf.circuitImplementation} (seen at block ${trust.circuitsChangedAt}); messaging through this hub has stopped (TAP-10 §13.8)`, where)
     const [container, endpoint, , , suite, keyIndex, key, usable, version, chains] = await (keyP ?? viewStrict(hub, 'keyFor', [id.circuits, id.tokenId], at))
@@ -1034,8 +1167,8 @@ export function createTapeAPI(opts = {}) {
   // dev 只在没有配置 RPC 时才跳过 holder 比对；配置了 rpcUrls 的 dev 客户端照样读 ownerOf（M-06b）。
   // Dev mode skips the holder comparison only when no RPC is configured; a dev client with rpcUrls still reads ownerOf.
   // `holder`: an ownerOf(m.circuits, m.tokenId) read already under way (resolve starts it early) / 已经发出的 ownerOf 读取
-  // `read`: the conformance mode's strict read for the EIP-1271 calls (TAP-11 §2.2); none in the default mode.
-  // `read`：一致模式下 EIP-1271 调用用的严格读取（TAP-11 §2.2）；默认模式不传。
+  // `read`: the conformance mode's strict read for the EIP-1271 calls (TAP-11 §2.2); none in the 1.x resolution (conform: false).
+  // `read`：一致模式下 EIP-1271 调用用的严格读取（TAP-11 §2.2）；1.x 解析（conform: false）不传。
   async function verifyDelegation(m, { dev, holder: holderP = null, at = 'latest', read }) {
     if (!m.delegation) {
       if (dev) return { delegation: false, holder: null, dev: true }
@@ -1089,8 +1222,8 @@ export function createTapeAPI(opts = {}) {
   // 只有 isValidSignature 回滚或返回乱码才算"不认可"。RPC 故障（此处或 eth_getCode 的）原样抛出：若变成 CHANNEL_INVALID，
   // 会被缓存，且会让 Safe 持有的成员在故障期间被移出群。
   const EIP1271_MAGIC = '0x1626ba7e'
-  // `opts`: the conformance mode's strict read ({ answers: 'tap10', strict: true }); none in the default mode.
-  // `opts`：一致模式的严格读取；默认模式不传。
+  // `opts`: the conformance mode's strict read ({ answers: 'tap10', strict: true }); none in the 1.x resolution (conform: false).
+  // `opts`：一致模式的严格读取；1.x 解析（conform: false）不传。
   async function holderApproves(holder, digest, sig, at = 'latest', opts) {
     if (!rpc) return false
     if ((await (opts ? rpc.call('eth_getCode', [holder, at], opts) : rpc.call('eth_getCode', [holder, at]))) === '0x') return false
@@ -1105,7 +1238,7 @@ export function createTapeAPI(opts = {}) {
 
   // ---- other chains / 其它链 ----
   // One client per TapeOut chain, made on first use. A sub-client routes every other chain back through the client that
-  // made it (`_router`), so one createTapeAPI() instance has at most one client per chain. Each keeps its own caches
+  // made it (`ROUTER`), so one createTapeAPI() instance has at most one client per chain. Each keeps its own caches
   // (processor list, identities, accepted prices): the same processor address exists on X Layer and on Base
   // (0x839bdD6f… is processor 0 on both), so nothing keyed by an address may be shared across chains.
   // 每条 TapeOut 链一个客户端，首次用到时创建；子客户端把其它链交回创建它的客户端，所以一个实例每条链至多一个客户端。
@@ -1114,7 +1247,7 @@ export function createTapeAPI(opts = {}) {
   function forChain(id) {
     const n = Number(id)
     if (n === Number(chainId)) return api
-    if (typeof opts._router === 'function') return opts._router(n)
+    if (typeof opts[ROUTER] === 'function') return opts[ROUTER](n)
     if (!chainById(n)) throw new TapeAPIError('INVALID_ARGUMENT', `chain ${id} is not a TapeOut chain this SDK supports (${CHAIN_IDS.join(', ')})`)
     let sub = subClients.get(n)
     if (!sub) {
@@ -1123,7 +1256,7 @@ export function createTapeAPI(opts = {}) {
         chainId: n, rpcUrls: conf.rpcUrls ?? rpcUrlsFor(n), quorum: conf.quorum ?? 2, rpcTimeoutMs: conf.rpcTimeoutMs ?? opts.rpcTimeoutMs,
         allowSingleNode: conf.allowSingleNode === true, quiet: (conf.quiet ?? opts.quiet) === true, hub: conf.hub, factory: conf.factory, siteRegistry: conf.siteRegistry,
         fetch: opts.fetch, dev: opts.dev, allowHttp: opts.allowHttp, maxSkewS: opts.maxSkewS,
-        identityCacheS: opts.identityCacheS, identityCacheSize: opts.identityCacheSize, channelRecordFloor: recordFloor, sealStatusStore, _router: forChain,
+        identityCacheS: opts.identityCacheS, identityCacheSize: opts.identityCacheSize, channelRecordFloor: recordFloor, sealStatusStore, [ROUTER]: forChain,
         // security 1.1: the same choices on every chain, but each chain's own finality tag and age limit unless
         // chains[n].pin says otherwise / 各链沿用同样的选择，但标签与时限取各链自己的，除非 chains[n].pin 另有规定
         clock: opts.clock, sentinel: opts.sentinel, requireContentSig: opts.requireContentSig, onWarning: opts.onWarning,
@@ -1132,7 +1265,11 @@ export function createTapeAPI(opts = {}) {
         proofs: opts.proofs,
         // 1.4: the conformance mode on every chain, with each chain's own opener and payment contract (TAP-10 §2.2)
         // 1.4：每条链都跑一致模式，开通器与付费合约取各链自己的
-        conform: conformMode ? 'tap10' : undefined, opener: conf.opener, binding: conf.binding,
+        // 2.0 (D-4): the same choice as this client's. Left out here when this client took the default, so a chains[n]
+        // option that is not TAP-10's names conform: false in its error; false, not undefined, for a client not in the mode
+        // (undefined is the conformance mode since 2.0). / 2.0：与本客户端同样的选择。本客户端用默认时这里也不传，使 chains[n]
+        // 里非 TAP-10 的选项报错时写明 conform: false；不在一致模式的客户端传 false 而非 undefined（2.0 起 undefined 即一致模式）。
+        conform: conformDefaulted ? undefined : (conformMode ? 'tap10' : false), opener: conf.opener, binding: conf.binding,
         // 1.5: the same consent to read every chain, so api.forChain(id) searches as this client does (TAP-10 §4.1)
         // 1.5：同样的"读取所有链"许可，使 api.forChain(id) 与本客户端一样搜索
         allChains: allChains || undefined,
@@ -1194,6 +1331,106 @@ export function createTapeAPI(opts = {}) {
   const SIGNER_REREAD = new WeakMap()    // separate throttle: a wrong-signer endpoint must not block price re-reads / 独立限频
   const REFRESH_BACKOFF_S = 60
   const HINT_MIN_INTERVAL_S = 30
+
+  // ---- @experimental TAP draft "Payment Vouchers" (TAPs#52): the client side, only for a manifest with `usdPricing` ----
+  // A service whose manifest has no `usdPricing` never reaches any of this: its calls are byte for byte those of 1.8.1
+  // (server/test/payment-golden.test.mjs). Options (createTapeAPI({ usdPricing: { ... } })):
+  //   usdTokens     the dollar tokens this client recognises for a `v3-twap` source (default usdPricing.DEFAULT_USD_TOKENS)
+  //   toleranceBps  a smaller tolerance than the manifest's, never a larger one
+  //   reference     async ({ svc, sources, quote }) => number | null: the client's own reference rate instead of the
+  //                 median of the manifest's pools (for example a rate the user confirmed)
+  //   approve       async ({ svc, method, charge, cap, quote, priceUSD }) => boolean: a budget or the user approves a charge
+  //   settlementFacts { token(escrow), amountPaid(escrow, consumer, provider) }: F1 and F2 from configuration (any manifest,
+  //                 only when given), until a settlement TAP names the functions
+  // 没有 `usdPricing` 的清单永远走不到这里，其调用与 1.8.1 逐字节相同。
+  const tapOpts = opts.usdPricing ?? {}
+  if (tapOpts.toleranceBps !== undefined && (!Number.isInteger(tapOpts.toleranceBps) || tapOpts.toleranceBps < 0 || tapOpts.toleranceBps > 2000)) throw new TapeAPIError('INVALID_ARGUMENT', 'usdPricing.toleranceBps must be an integer from 0 to 2000')
+  for (const k of ['reference', 'approve']) if (tapOpts[k] !== undefined && typeof tapOpts[k] !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', `usdPricing.${k} must be a function`)
+  if (tapOpts.usdTokens !== undefined && (!Array.isArray(tapOpts.usdTokens) || !tapOpts.usdTokens.every(isAddress))) throw new TapeAPIError('INVALID_ARGUMENT', 'usdPricing.usdTokens must be an array of addresses')
+  const settlementFacts = opts.settlementFacts ?? null
+  if (settlementFacts != null) for (const k of ['token', 'amountPaid']) if (settlementFacts[k] !== undefined && typeof settlementFacts[k] !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', `settlementFacts.${k} must be a function`)
+  // Keyed by `${chainId}:${escrow}:${container}` (review M1), the same channel key the payer counts on, never by the svc
+  // object: two resolve() of one container share the quote, the halt and the queue. A halt is per api instance; the
+  // payer's own wait (reserve) covers a payer shared by several. / 按通道键而不是 svc 对象：同一容器的两次 resolve 共享报价、
+  // 停止与队列。停止按 api 实例；多个实例共用的 payer 由它自己的等待（reserve）覆盖。
+  const QUOTES = new Map()        // channel key -> the last quote accepted from a verified envelope (§4.4) / 从已验信封收下的最近报价
+  const HALTED = new Map()        // channel key -> { kind, why }: §8.3, no voucher before a reread and a read of F2 / 重读与读 F2 之前不签
+  // §4.1 / review S2: consent to a USD price, like gatePrice for priceBEM: recorded at resolve, a rise needs the call's
+  // `maxPriceUSD` (a USD decimal string) or api.acceptPrice(); otherwise PRICE_CHANGED. / 美元价的同意，与 priceBEM 的闸门相同
+  const ACCEPTED_USD = new WeakMap()   // svc -> { method: U (10^-8 USD) }
+  const usdPricesOf = (manifest) => {
+    const ms = manifest?.usdPricing?.methods, out = {}
+    if (ms && typeof ms === 'object' && !Array.isArray(ms)) for (const [k, v] of Object.entries(ms)) { try { out[k] = UP.parseUsdPrice(v) } catch { /* an invalid price is refused where it is used / 无效价格在使用处拒绝 */ } }
+    return out
+  }
+  const recordUsdPrices = (svc, manifest) => { if (manifest && Object.prototype.hasOwnProperty.call(manifest, 'usdPricing')) ACCEPTED_USD.set(svc, usdPricesOf(manifest)) }
+  function gateUsdPrice(svc, method, priceUSD, maxPriceUSD) {
+    const U = UP.parseUsdPrice(priceUSD)
+    let acc = ACCEPTED_USD.get(svc)
+    if (!acc) { acc = {}; ACCEPTED_USD.set(svc, acc) }
+    const was = acc[method]
+    if (was === undefined || U <= was) { acc[method] = U; return U }
+    if (maxPriceUSD != null && U <= UP.parseUsdPrice(String(maxPriceUSD))) { acc[method] = U; return U }
+    throw new TapeAPIError('PRICE_CHANGED', `${method} now costs ${priceUSD} USD, up from the ${UP.formatAmount8(was)} USD you accepted; pass { maxPriceUSD } or call api.acceptPrice()`, { data: { method, acceptedUSD: UP.formatAmount8(was), priceUSD } })
+  }
+  // §8.3 halt: on this api instance (HALTED) and on the payer's own account (review S-d), so every api instance that shares
+  // the payer stops too / 停止记在本 api 实例上，也记在 payer 自己的账户上，共用该 payer 的每个 api 实例一起停
+  const haltedFor = (svc, payer) => HALTED.has(tapKey(svc)) || !!payer?.haltOf?.(svc)
+  const tapKey = (svc) => `${chainId}:${String(svc?.manifest?.payment?.escrow ?? 'no-escrow').toLowerCase()}:${String(svc?.container).toLowerCase()}`
+  const REFERENCES = new Map()    // rate sources -> { at, value } / 参考汇率缓存
+  const QUOTE_MARGIN_S = 3        // a quote this close to validUntil is not signed against / 离 validUntil 这么近的报价不用
+  // null for a manifest without the member; else { usdPricing } or { error } (an invalid member) / 无该成员为 null
+  const tapOf = (svc) => (svc?.manifest && Object.prototype.hasOwnProperty.call(svc.manifest, 'usdPricing') ? UP.usdPricingOf(svc.manifest, { usdTokens: tapOpts.usdTokens ?? UP.DEFAULT_USD_TOKENS }) : null)
+  function acceptQuote(svc, q, ts, maxQuoteS) {
+    let v
+    try { v = UP.validateQuote(q, { maxQuoteS, ts }) } catch { return null }
+    if (v.validUntil < now()) return null
+    const k = tapKey(svc), cur = QUOTES.get(k)
+    if (QUOTES.size > 1024) for (const [x, q] of QUOTES) if (q.validUntil < now()) QUOTES.delete(x)
+    if (!cur || cur.validUntil <= v.validUntil) QUOTES.set(k, v)
+    return v
+  }
+  async function referenceFor(svc, cfg, quote) {
+    if (tapOpts.reference) return tapOpts.reference({ svc, sources: cfg.rateSources, quote })
+    const key = cfg.rateSources.map((x) => `${x.pool}:${x.usd}:${x.window}`).join('|').toLowerCase()
+    const hit = REFERENCES.get(key)
+    if (hit && now() - hit.at < Math.max(1, Math.min(30, Math.floor(cfg.maxQuoteS / 2)))) return hit.value
+    const read = await UP.readReferenceRates(needRpc(), cfg.rateSources, { maxAgeS: cfg.maxQuoteS, now: now(), bem: MAINNET.bem })
+    if (REFERENCES.size > 256) REFERENCES.clear()
+    REFERENCES.set(key, { at: now(), value: read.reference, sources: read.sources })
+    return read.reference
+  }
+  // §4.5, the client's check before it signs at a quote's rate / 签名前的核对
+  async function checkQuote(svc, cfg, quote) {
+    const tol = Math.min(cfg.toleranceBps, tapOpts.toleranceBps ?? cfg.toleranceBps)
+    const reference = await referenceFor(svc, cfg, quote)
+    if (!(Number.isFinite(reference) && reference > 0)) throw new TapeAPIError('RATE_UNAVAILABLE', `no reference rate for ${svc.container}: none of its rate sources answered at an agreed block`, { data: { rate: quote.rate } })
+    if (!UP.quotePasses(quote.rate, reference, tol)) throw new TapeAPIError('RATE_REFUSED', `${svc.container} quotes ${quote.rate} USD per BEM, more than ${tol} bps below the reference ${reference}`, { data: { rate: quote.rate, reference, toleranceBps: tol } })
+    return reference
+  }
+  // F2 for a channel: from configuration, else the escrow's claimedOf / 通道的已付金额
+  async function amountPaidOf(svc, consumer) {
+    const esc = svc.manifest?.payment?.escrow
+    if (settlementFacts?.amountPaid) return BigInt(await settlementFacts.amountPaid(esc, consumer, svc.container))
+    return BigInt(await view(esc, 'claimedOf', [consumer, svc.container]))
+  }
+  // §8.3: after a charge record the client could not accept, reread the service and read F2 before the next voucher
+  // §8.3：计费记录不被接受之后，下一张凭证之前先重读服务并读 F2
+  // A provider that keeps failing the check would turn every call into a reread and a chain read: after a successful
+  // unhalt, a new halt within HINT_MIN_INTERVAL_S is refused (PAYMENT_HALTED) without either (review). / 成功解除停止后
+  // HINT_MIN_INTERVAL_S 秒内再次停止，直接拒绝（PAYMENT_HALTED），不重读也不读链，防恶意 provider 放大成本。
+  const UNHALTED_AT = new Map()   // channel key -> time of the last successful unhalt / 上次成功解除停止的时间
+  async function unhalt(svc, payer) {
+    const k = tapKey(svc), at = UNHALTED_AT.get(k)
+    if (at !== undefined && now() - at < HINT_MIN_INTERVAL_S) throw new TapeAPIError('PAYMENT_HALTED', `${svc.container}: its charge records failed the check again within ${HINT_MIN_INTERVAL_S} s of the last reread; no voucher, retry in ${HINT_MIN_INTERVAL_S - (now() - at)} s`, { data: { retryAfterS: HINT_MIN_INTERVAL_S - (now() - at) } })
+    await refresh(svc)
+    const paid = await amountPaidOf(svc, payer.consumer)
+    if (paid > payer.cumulativeOf(svc)) await payer.resync(svc, paid.toString(), {}, { strictV: true })
+    HALTED.delete(tapKey(svc))
+    payer.clearHalt?.(svc)
+    if (UNHALTED_AT.size > 1024) UNHALTED_AT.clear()
+    UNHALTED_AT.set(k, now())
+  }
 
   // ---- security 1.1: delegation floor key / 委托下限的键 ----
   // `${chainId}:${container}:${holder}:${signer}`, lowercase. / 全部小写。
@@ -1614,6 +1851,7 @@ export function createTapeAPI(opts = {}) {
     }
     if (warnings.length) svc.warnings = warnings
     ACCEPTED.set(svc, pricesOf(manifest))
+    recordUsdPrices(svc, manifest)
     return svc
   }
 
@@ -1633,7 +1871,10 @@ export function createTapeAPI(opts = {}) {
     return recovered ? `contentSig is signed by ${recovered}, the holder is ${holder}` : `holder ${holder} does not accept contentSig under EIP-1271`
   }
 
-  // ════ TAP-10 conformance mode (@experimental, 1.4: the resolution path) / TAP-10 一致模式（1.4：解析路径） ════════════
+  // ════ TAP-10 conformance mode (@experimental, 1.4: the resolution path; the default since 2.0) / TAP-10 一致模式（1.4：解析路径；2.0 起为默认） ════════════
+  // The status names only grow (TAP-11 §2.3) and stay experimental in 2.0 because TAP-10 and TAP-11 are Drafts; how the
+  // default follows a changed text is in docs/guides/upgrade-2.0.md ("How the default follows changes in the official TAPs").
+  // 状态名只增不改（TAP-11 §2.3），2.0 里仍是实验性，因为 TAP-10 与 TAP-11 还是 Draft；默认怎样跟随文本的变化见 upgrade-2.0 指南。
   // createTapeAPI({ conform: 'tap10' }) resolves as TAP-10 v1.1 §3–§7 and TAP-11 §2.2 say, at one TAP-10 pinned block
   // (§5.3): identity (§4.2, §4.3 with the processor number found from the shipped snapshot or a paged cpuAt scan), the site
   // status in the order of §6.2 (store-changed, identity outcome, not-opened, unpaid), then the manifest (TAP-11 §2.2 steps
@@ -1665,8 +1906,8 @@ export function createTapeAPI(opts = {}) {
   async function viewTap(to, name, args, at) { return decodeReturn(name, await needRpc().ethCall(to, encodeCall(name, args), at, TAP10_READ)) }
   const reverted = (e) => isRevert(e) || (e instanceof TapeAPIError && e.code === 'ABI_INVALID')
   // factory.isCPU under the same read rule as every other read of the mode. A true answer is kept for good in knownCPUs,
-  // shared with the default mode: isCPU never goes back to false (the processor list is append-only).
-  // 与本模式其它读取同样的规则读 factory.isCPU。为真的回答永久记在 knownCPUs，与默认模式共用：isCPU 不会由真变假（处理器列表只增不减）。
+  // shared with the 1.x resolution: isCPU never goes back to false (the processor list is append-only).
+  // 与本模式其它读取同样的规则读 factory.isCPU。为真的回答永久记在 knownCPUs，与 1.x 解析共用：isCPU 不会由真变假（处理器列表只增不减）。
   async function isCPUTap(circuits, at) {
     const k = String(circuits).toLowerCase()
     if (knownCPUs.has(k)) return true
@@ -1677,14 +1918,14 @@ export function createTapeAPI(opts = {}) {
 
   // §5.4 for siteStatus (any mode): one eth_chainId per client before its first adopted read; only a success is kept.
   // Default agreement (quorum operators, every answer equal), not strict: siteStatus authorises nothing, TAP-10 §5.4 makes
-  // strict a MUST for messaging clients only, and strict would let one node down stop siteStatus where the default mode
-  // goes on. The conformance mode's resolve uses checkChainStrict instead (shared with the messaging path): it reads ownerOf
+  // strict a MUST for messaging clients only, and strict would let one node down stop siteStatus where the 1.x resolution
+  // (conform: false) goes on. The conformance mode's resolve uses checkChainStrict instead (shared with the messaging path): it reads ownerOf
   // and a contract holder's EIP-1271 calls (eth_getCode, isValidSignature, for the delegation and for contentSig) under
   // strict agreement anyway (TAP-11 §2.2), so a node that cannot answer stops it before any state is read. Every other read
   // of a resolution stays under default agreement (TAP-11 §2.2's MUST). A node on another chain disagrees in both checks,
   // and all of them is wrong-chain.
   // siteStatus（任何模式）的 §5.4：每个客户端在第一次采用读取之前做一次 eth_chainId；只保留成功的结果。用默认共识，不用严格共识：
-  // siteStatus 不授权任何东西，TAP-10 §5.4 只对消息客户端规定严格共识为 MUST，严格共识会让一个节点宕机就停掉 siteStatus 而默认模式照常。
+  // siteStatus 不授权任何东西，TAP-10 §5.4 只对消息客户端规定严格共识为 MUST，严格共识会让一个节点宕机就停掉 siteStatus 而 1.x 解析（conform: false）照常。
   // 一致模式的 resolve 改用 checkChainStrict（与消息路径共用）：它反正要用严格共识读 ownerOf 与合约持有人的 EIP-1271 调用（TAP-11
   // §2.2），所以作答不了的节点让它在读任何状态之前就停下。解析的其它读取仍用默认共识（TAP-11 §2.2 的 MUST）。别的链上的节点在两种检查里
   // 都造成分歧，全都在别的链上即 wrong-chain。
@@ -1915,12 +2156,12 @@ export function createTapeAPI(opts = {}) {
     // then scan: processorNumberOf), read with the steps of §4.2 below in one turn.
     // 第 2、3 步：是 TapeOut 处理器，再找它的处理器号（快照，然后扫描），与下面 §4.2 的读取同一轮发出。
     // A container whose token() names this chain is this chain's or nothing: not-tapeout below is a verdict. A processor
-    // contract#ID string gets here unsure only from siteStatus on a default client (under conform it is refused first).
-    // token() 指明本链的容器只能是本链的：下面的 not-tapeout 是结论。不确定的"处理器合约#ID"字符串只会来自默认客户端的 siteStatus。
+    // contract#ID string gets here unsure only from siteStatus on a conform: false client (in the conformance mode it is refused first).
+    // token() 指明本链的容器只能是本链的：下面的 not-tapeout 是结论。不确定的"处理器合约#ID"字符串只会来自 conform: false 客户端的 siteStatus。
     let numberP = null
     if (input.kind !== 'name') {
-      // siteStatus on a default client reads a processor contract#ID string on this chain only (unsure): one that is no
-      // processor here may be one on another chain (1.4's unsupported) / 默认客户端的 siteStatus 只在本链读"处理器合约#ID"字符串
+      // siteStatus on a conform: false client reads a processor contract#ID string on this chain only (unsure): one that is no
+      // processor here may be one on another chain (1.4's unsupported) / conform: false 客户端的 siteStatus 只在本链读"处理器合约#ID"字符串
       const notCpu = () => { if (unsure && input.kind === 'pair') throw otherChain(out.circuits, 'is not a TapeOut processor here'); return stop('not-tapeout') }
       let cpu
       try { cpu = await isCPUTap(out.circuits, at) } catch (e) { if (reverted(e)) return notCpu(); throw e }
@@ -2010,7 +2251,8 @@ export function createTapeAPI(opts = {}) {
    * 'no-such-cpu', 'no-such-token' or 'not-tapeout' and is never thrown. Throws only for an input error, `ambiguous`,
    * `unsupported`, wrong-chain and reads that cannot be adopted (stale-block, unavailable). With allChains (1.5) a container
    * address or processor contract#ID string is looked up on every chain, and the result carries `chains`, what each chain
-   * said. Activation is a site rule (TAP-10 §6.3): messaging is never gated by it (§12.2).
+   * said. Activation is a site rule (TAP-10 §6.3): messaging is never gated by it (§12.2). The status names only grow
+   * (TAP-11 §2.3); the tag stays in 2.0 because they follow a Draft (docs/guides/upgrade-2.0.md).
    * @experimental（1.4）目标的 TAP-10 站点状态，任何模式可用：在一个 TAP-10 钉块上做身份（§4）与站点状态（§6.2），不读清单。status
    * 绝不抛出；只有输入错误、ambiguous、unsupported、wrong-chain 与无法采用的读取才抛错。开启 allChains（1.5）时，容器地址或
    * "处理器合约#ID"字符串在每条链上查找，结果带 chains（各链的结果）。激活是站点规则（§6.3），绝不限制消息（§12.2）。
@@ -2023,9 +2265,9 @@ export function createTapeAPI(opts = {}) {
         const { winner, chains, candidates } = await everyChain(input, givenOf(target), (local) => local.site(input))
         return { ...winner.v, chains, ...(candidates ? { candidates } : {}) }
       }
-      // Under conform: 'tap10' a processor contract#ID string needs every chain (TAP-10 §4.1). siteStatus on a default
+      // Under conform: 'tap10' a processor contract#ID string needs every chain (TAP-10 §4.1). siteStatus on a conform: false
       // client keeps 1.4's answer: resolved on this client's chain, `unsupported` when it is no processor here.
-      // 一致模式下"处理器合约#ID"字符串需要所有链。默认客户端的 siteStatus 保持 1.4 的回答：在本链解析，在本链不是处理器即 unsupported。
+      // 一致模式下"处理器合约#ID"字符串需要所有链。conform: false 客户端的 siteStatus 保持 1.4 的回答：在本链解析，在本链不是处理器即 unsupported。
       if (chainless && input.kind === 'pair' && conformMode) throw pairNeedsAllChains(input)
       return (await siteHere(input, { unsure: chainless })).v
     } catch (e) { throw withStatus(e) }
@@ -2208,8 +2450,8 @@ export function createTapeAPI(opts = {}) {
       } })
     }
     const contribution = await contributionP
-    // Step 7: the content signature as in the default mode, a contract holder's EIP-1271 reads strict (TAP-11 §5)
-    // 第 7 步：内容签名与默认模式相同，合约持有人的 EIP-1271 读取用严格共识
+    // Step 7: the content signature as in the 1.x resolution (conform: false), a contract holder's EIP-1271 reads strict (TAP-11 §5)
+    // 第 7 步：内容签名与 1.x 解析（conform: false）相同，合约持有人的 EIP-1271 读取用严格共识
     let contentSig = null
     if (requireContentSig || src.manifest?.[MANIFEST_CONTENT_FIELD] !== undefined) {
       let why
@@ -2253,7 +2495,8 @@ export function createTapeAPI(opts = {}) {
     const svc = { manifest, container: checksumAddress(manifest.container), chainId, verified, contribution, file: src.file, target, fetchedAt: now() }
     if (aiProblems) svc.aiProblems = aiProblems
     svc.pinned = { number: pinned.number, hash: pinned.hash, timestamp: pinned.timestamp, tag: 'tap10', by: 'hash', mode: 'tap10', lag: pinned.lag, maxLag: pinned.maxLag }
-    svc.conform = { ...site, status: 'resolved', site: 'ok', ...(chains ? { chains } : {}) }
+    // `profile` (2.0, only added): the texts this resolution followed, CONFORM_PROFILE / 本次解析依据的文本版本
+    svc.conform = { ...site, status: 'resolved', site: 'ok', ...(chains ? { chains } : {}), profile: CONFORM_PROFILE }
     if (sentinel) svc.sentinel = sentinel
     if (contentSig) svc.contentSig = contentSig
     if (proofs) {
@@ -2263,6 +2506,7 @@ export function createTapeAPI(opts = {}) {
     }
     if (warnings.length) svc.warnings = warnings
     ACCEPTED.set(svc, pricesOf(manifest))
+    recordUsdPrices(svc, manifest)
     return svc
   }
 
@@ -2313,6 +2557,12 @@ export function createTapeAPI(opts = {}) {
   // escrow's token() to be BEM (dev services are not checked). / 收费调用要求托管代币是 BEM。
   async function requireBemEscrow(svc) {
     if (svc.verified?.dev === true) return
+    // @experimental F1 from configuration (settlementFacts.token), until a settlement TAP names the function / 由配置提供 F1
+    if (settlementFacts?.token) {
+      const esc = escrowAddressOf(svc), token = await settlementFacts.token(esc)
+      if (!eqAddr(token, MAINNET.bem)) throw new TapeAPIError('UNSUPPORTED_PAYMENT_TOKEN', `${svc.container}: settlementFacts.token says its settlement contract ${esc} settles ${token}, not BEM`, { data: { reason: 'not-bem', escrow: esc, token } })
+      return
+    }
     const info = await paymentTokenOf(escrowAddressOf(svc))
     if (!eqAddr(info.token, MAINNET.bem)) {
       throw new TapeAPIError('UNSUPPORTED_PAYMENT_TOKEN', `${svc.container} prices its methods in BEM (priceBEM), but its escrow ${info.escrow} holds ${info.display}: a voucher for the price would be an amount of another token. The escrow contract takes any admitted token; manifest prices in other tokens are not yet specified (TAPI-22 §3.5)`, { data: { reason: 'not-bem', escrow: info.escrow, token: info.token } })
@@ -2325,7 +2575,7 @@ export function createTapeAPI(opts = {}) {
   async function call(svc, method, params = {}, options = {}) {
     const owner = ownerOf(svc)
     if (owner) return owner.call(svc, method, params, options)
-    const { payer, id, signal, timeoutMs = 30000, manifestTtlMs = conformMode ? CONFORM_TTL_MS : MANIFEST_TTL_MS, maxPrice } = options ?? {}
+    const { payer, id, signal, timeoutMs = 30000, manifestTtlMs = conformMode ? CONFORM_TTL_MS : MANIFEST_TTL_MS, maxPrice, maxPriceUSD } = options ?? {}
     let m = svc?.manifest; if (!m) throw new TapeAPIError('INVALID_ARGUMENT', 'svc.manifest missing')
     // 信封只对 manifest.signer 验签，而 signer 的可信度完全来自 resolve() 做过的委托校验。
     // 自己拼一个 { manifest, container } 直接 call，等于没有任何来源认证，所以必须拒绝（M-16）。
@@ -2386,6 +2636,11 @@ export function createTapeAPI(opts = {}) {
     // is covered by the TAPI-21 v2 digest, so a retry must not change it.
     // 整次调用（含重试）共用一个 id：它是提供者可用于去重的幂等键，且被 TAPI-21 v2 摘要覆盖，重试不得更换。
     const reqId = id || uuid()
+    // @experimental TAP draft "Payment Vouchers": a priced call to a service whose manifest has usdPricing / 带 usdPricing 的计价调用
+    // a halt (§8.3) holds even if the reread manifest no longer has usdPricing (review S8) / 重读后去掉 usdPricing 也不绕过停止
+    if (price > 0n && payer && (HALTED.size || typeof payer.haltOf === 'function') && haltedFor(svc, payer)) await unhalt(svc, payer)
+    const tap = price > 0n ? tapOf(svc) : null
+    if (tap) return callTap(svc, def, method, params, price, tap, { payer, reqId, signal, timeoutMs, maxPrice, maxPriceUSD })
     const first = await attempt(svc, def, method, params, price, { payer, reqId, signal, timeoutMs, retried: false })
     if (!first.retry) return first.value
     if (first.refreshPrice) {
@@ -2409,6 +2664,92 @@ export function createTapeAPI(opts = {}) {
     if (price > 0n) await requireBemEscrow(svc)
     const second = await attempt(svc, def, method, params, price, { payer, reqId, signal, timeoutMs, retried: true })
     return second.value
+  }
+
+  // @experimental The draft's client (§8): take a quote only from a verified envelope (a PAYMENT_REQUIRED asked for without
+  // a voucher when none is held), check it against the reference rate, compute the charge exactly, sign the voucher with
+  // the quote's `rate`, check the charge record of the answer (attempt), and retry once on `rate`, `stale` or
+  // `insufficient` or a changed price. Any other reason, or one it does not know, is a refusal.
+  // 草稿的客户端：只从已验信封取报价（没有报价时不带凭证请求一次 PAYMENT_REQUIRED），对照参考汇率核对，精确算出收费，凭证写上报价的
+  // `rate`，核对回答里的计费记录（在 attempt 里），遇 `rate`、`stale`、`insufficient` 或价格变化重试一次；其它或不认识的 reason 即拒绝。
+  // §8.2: `last` is the highest cumulative of an accepted charge record, so the priced calls of one service go one at a
+  // time (per payer): stacking on an in-flight voucher, as 1.8.1 does, would let a provider that serves the later voucher
+  // first sign an amount covering both, which §8.3 must then call a provider fault.
+  // §8.2：`last` 是已接受计费记录的最高累计额，所以同一服务的计价调用（按 payer）逐个进行；像 1.8.1 那样叠加在途凭证，
+  // 提供者先处理后到的凭证时签出的金额会包含两笔，§8.3 只能判为提供者过错。
+  const TAP_SERIAL = new Map()   // channel key -> Map(payer -> tail promise) / 每个通道、每个 payer 一条队列
+  function callTap(svc, def, method, params, cap, tap, o) {
+    const k = tapKey(svc)
+    let byPayer = TAP_SERIAL.get(k)
+    if (!byPayer) { byPayer = new Map(); TAP_SERIAL.set(k, byPayer) }
+    const prev = byPayer.get(o.payer) ?? Promise.resolve()
+    const run = prev.then(() => callTapNow(svc, def, method, params, cap, tap, o))
+    const tail = run.catch(() => {})
+    byPayer.set(o.payer, tail)
+    tail.then(() => { if (byPayer.get(o.payer) === tail) byPayer.delete(o.payer); if (!byPayer.size && TAP_SERIAL.get(k) === byPayer) TAP_SERIAL.delete(k) })
+    return run
+  }
+  async function callTapNow(svc, def, method, params, cap, tap, { payer, reqId, signal, timeoutMs, maxPrice, maxPriceUSD }) {
+    let retried = false
+    for (;;) {
+      const cfg = tap.usdPricing ?? null
+      const listed = (m) => { const ms = svc.manifest.usdPricing?.methods; return ms && typeof ms === 'object' && Object.prototype.hasOwnProperty.call(ms, m) }
+      // §4.1: with an invalid usdPricing a USD-priced method is not paid; free and BEM-priced methods stay usable
+      if (!cfg && listed(method)) throw new TapeAPIError('MANIFEST_INVALID', `${svc.container}: its usdPricing is invalid (${tap.error.message}), so ${method}, priced in US dollars, cannot be paid`, { data: { method } })
+      const usd = cfg && Object.prototype.hasOwnProperty.call(cfg.methods, method) ? cfg.methods[method] : null
+      if (haltedFor(svc, payer)) await unhalt(svc, payer)
+      let charge = cap, quote = null
+      if (usd) gateUsdPrice(svc, method, usd, maxPriceUSD)
+      if (usd) {
+        quote = QUOTES.get(tapKey(svc)) ?? null
+        if (!quote || quote.validUntil < now() + QUOTE_MARGIN_S) {
+          const probe = await attempt(svc, def, method, params, 0n, { payer, reqId, signal, timeoutMs, retried: true, tapCtx: { probe: true, cfg } })
+          if (!probe.probe) return probe.value                 // the provider answered without asking for payment / 提供者没要钱就答了
+          quote = acceptQuote(svc, probe.probe.data?.quote, probe.probe.ts, cfg.maxQuoteS)
+          if (!quote) throw new TapeAPIError('BAD_QUOTE', `${svc.container} asked for payment for ${method} without a valid quote`, { data: { quote: probe.probe.data?.quote ?? null } })
+          // review S3: the probe's hints against our own copy of the manifest. Another priceUSD is a changed price (reread
+          // once); another price at that quote is a provider error, reported, never paid by / 探测提示与本地清单比对
+          const pd = probe.probe.data ?? {}
+          if (!retried && pd.priceUSD !== undefined && UP.amountValue(pd.priceUSD, 'USD') !== UP.parseUsdPrice(usd)) {
+            retried = true
+            await rereadForPrice(svc, method, typeof pd.price === 'string' ? pd.price : null)
+            ;({ def, cap, tap } = await afterReread(svc, method, maxPrice))
+            if (!tap) return call(svc, method, params, { payer, id: reqId, signal, timeoutMs, maxPrice, maxPriceUSD })
+            continue
+          }
+          const local = UP.convertUsd({ priceUSD: usd, rate: quote.rate, priceBEM: def.priceBEM }).charge
+          if (typeof pd.price === 'string' && pd.price !== local.toString()) {
+            try { onWarning({ code: 'PAYMENT_HINT_MISMATCH', message: `${svc.container} states price ${pd.price} for ${method} at rate ${quote.rate}; the manifest gives ${local}`, container: svc.container, method, stated: pd.price, computed: local.toString() }) } catch { /* a reporter never breaks a call / 报告函数绝不影响调用 */ }
+          }
+        }
+        await checkQuote(svc, cfg, quote)
+        charge = UP.convertUsd({ priceUSD: usd, rate: quote.rate, priceBEM: def.priceBEM }).charge
+        if (charge > cap) throw new TapeAPIError('INTERNAL', 'a charge above the cap')   // cannot happen: min(converted, P) / 不会发生
+      }
+      if (tapOpts.approve && !(await tapOpts.approve({ svc, method, charge, cap, quote, priceUSD: usd }))) throw new TapeAPIError('PAYMENT_DECLINED', `the charge of ${charge} base units for ${method} was not approved`, { data: { method, charge: charge.toString() } })
+      const out = await attempt(svc, def, method, params, charge, { payer, reqId, signal, timeoutMs, retried, tapCtx: { cfg, cap, rate: quote?.rate, usd: usd ? { priceUSD: usd, priceBEM: def.priceBEM } : null } })
+      if (!out.retry) return out.value
+      retried = true
+      if (out.refreshPrice) {
+        await rereadForPrice(svc, method, out.quoted ?? null)
+        ;({ def, cap, tap } = await afterReread(svc, method, maxPrice))
+        if (!tap) return call(svc, method, params, { payer, id: reqId, signal, timeoutMs, maxPrice, maxPriceUSD })
+      }
+    }
+  }
+  // a provider's price hint rereads the manifest, at most once per HINT_MIN_INTERVAL_S / 价格提示触发重读，限频
+  async function rereadForPrice(svc, method, quoted) {
+    const last = HINT_REFRESHED.get(svc)
+    if (last && now() - last < HINT_MIN_INTERVAL_S) throw new TapeAPIError('BAD_VOUCHER', `provider quotes a price for ${method} that the chain does not show (manifest re-read ${now() - last}s ago)`, { data: { quoted } })
+    HINT_REFRESHED.set(svc, now())
+    await refresh(svc)
+  }
+  // after a reread: the method, its consented cap, and whether the service is still under the draft (tap null: back to call())
+  async function afterReread(svc, method, maxPrice) {
+    const def = findMethod(svc.manifest, method)
+    if (!def) throw new TapeAPIError('METHOD_NOT_FOUND', `method ${method} was removed from the manifest`)
+    const cap = gatePrice(svc, method, methodPrice(def), maxPrice)
+    return { def, cap, tap: cap === 0n ? null : tapOf(svc) }
   }
 
   // TAPI-21 §3.4 / TAPI-20 §3.6: an envelope signed by someone other than manifest.signer may mean the holder rotated
@@ -2436,11 +2777,20 @@ export function createTapeAPI(opts = {}) {
     try { await refresh(svc); return true } catch { return false }
   }
 
-  async function attempt(svc, def, method, params, price, { payer, reqId, signal, timeoutMs, retried }) {
+  // Whatever path leaves attempt, a lease still open is released (review: try/finally); commit and release are idempotent.
+  // 无论从哪条路径离开 attempt，仍未了结的预留都被释放；commit 与 release 都是幂等的。
+  async function attempt(svc, def, method, params, price, o) {
+    const box = { lease: null }
+    try { return await attemptBody(svc, def, method, params, price, o, box) } finally { box.lease?.release() }
+  }
+  async function attemptBody(svc, def, method, params, price, { payer, reqId, signal, timeoutMs, retried, tapCtx }, box) {
     const m = svc.manifest
     const body = { id: reqId, method, params }
     let lease = null
-    if (price > 0n) { lease = await payer.reserve(svc, price); body.voucher = lease.voucher }
+    // tapCtx (@experimental TAP draft): the voucher names the quote's rate and is sent with v of 27 or 28
+    // the 1.8.1 path passes only waitMs: it waits (only while a draft voucher of the channel is in flight) as long as the
+    // draft path does / 1.8.1 路径只传 waitMs：仅在有草稿凭证在途时等待，时长与草稿路径相同
+    if (price > 0n) { lease = tapCtx ? await payer.reserve(svc, price, { rate: tapCtx.rate, strictV: true, waitMs: timeoutMs + 30_000 }) : await payer.reserve(svc, price, { waitMs: timeoutMs + 30_000 }); box.lease = lease; body.voucher = lease.voucher }
     let timedOut = false
     const ac = new AbortController(); const t = setTimeout(() => { timedOut = true; ac.abort() }, timeoutMs)
     const onAbort = () => ac.abort()
@@ -2540,6 +2890,7 @@ export function createTapeAPI(opts = {}) {
       // A priced method called without a voucher: the method was free in our copy of the manifest and is priced
       // now (TAPI-20 §3.6). Re-read the manifest; the consent gate decides whether we may pay (runtime D5).
       // 没带凭证却被要求付费：我们手里的清单说它免费，现在收费了。重读清单，由价格同意闸门决定能否付。
+      if (tapCtx) return tapRefusal(svc, payer, lease, tapCtx, { code, data, env, res, retried })
       if (!lease && code === 'PAYMENT_REQUIRED' && !retried) return { retry: true, refreshPrice: true, quoted: typeof data?.price === 'string' ? data.price : null }
       if (lease) {
         // 任何已签名的错误都释放预留：提供者的 reserve/commit 只为"交付了的结果"计费，失败的调用不入账。
@@ -2571,8 +2922,47 @@ export function createTapeAPI(opts = {}) {
       }
       throw new TapeAPIError(code, env.error?.message || code, { signed: true, ts: env.ts, block: env.block, id: env.id, sig: env.sig, error: env.error, httpStatus: res.status, data })
     }
+    if (tapCtx && lease) {
+      // @experimental §8.3: the charge record of an accepted result / 已接受结果的计费记录
+      const chk = UP.checkChargeRecord(env.result?.charge, { voucher: lease.voucher, last: lease.next - lease.amount, usd: tapCtx.usd })
+      if (!chk.ok) {
+        lease.release()
+        HALTED.set(tapKey(svc), chk)
+        payer.halt?.(svc, chk)
+        const who = chk.kind === 'unbound' ? 'the path changed the voucher or the answer, or the provider erred: the client cannot tell which' : 'a provider fault, signed by the provider'
+        throw new TapeAPIError('CHARGE_MISMATCH', `${svc.container}: ${chk.why} (${who}); no further voucher before the service is reread and the amount paid is read`, { signed: true, ts: env.ts, block: env.block, id: env.id, sig: env.sig, httpStatus: res.status, data: { kind: chk.kind, result: env.result } })
+      }
+      if (tapCtx.cfg && env.result.charge.quote !== undefined) acceptQuote(svc, env.result.charge.quote, env.ts, tapCtx.cfg.maxQuoteS)
+    }
     lease?.commit()
     return { value: { result: env.result, verified: true, ts: env.ts, block: env.block ?? null, id: reqId, sig: env.sig } }
+  }
+  // @experimental A signed error to a call under the TAP draft (§6, §8.1): quotes in it are kept; BAD_VOUCHER without a
+  // known `reason` is a refusal; a changed price rereads the manifest; `rate` retries with the new quote; `stale` and
+  // `insufficient` resync on proof (strict v) and retry. Each at most once.
+  // 草稿下的签名错误：保留其中的报价；没有已知 `reason` 的 BAD_VOUCHER 即拒绝；价格变化则重读清单；`rate` 用新报价重试；
+  // `stale` 与 `insufficient` 凭证明重新同步后重试。每种至多一次。
+  async function tapRefusal(svc, payer, lease, tapCtx, { code, data, env, res, retried }) {
+    const refuse = (extra) => new TapeAPIError(code, env.error?.message || code, { signed: true, ts: env.ts, block: env.block, id: env.id, sig: env.sig, error: env.error, httpStatus: res.status, data: extra ?? data })
+    if (tapCtx.probe) { if (code === 'PAYMENT_REQUIRED') return { probe: { data: data ?? {}, ts: env.ts } }; throw refuse() }
+    lease?.release()
+    // a refused rate is dropped even when the provider's new quote ends sooner / 被拒的汇率即使新报价更早到期也要丢掉
+    if (code === 'BAD_VOUCHER' && data?.reason === 'rate' && QUOTES.get(tapKey(svc))?.rate === tapCtx.rate) QUOTES.delete(tapKey(svc))
+    // quotes only from the two codes that carry them (§4.4, §6; review S8) / 只从带报价的两种错误收报价
+    if ((code === 'PAYMENT_REQUIRED' || code === 'BAD_VOUCHER') && data?.quote !== undefined && tapCtx.cfg) acceptQuote(svc, data.quote, env.ts, tapCtx.cfg.maxQuoteS)
+    if (code === 'BAD_VOUCHER' && !UP.BAD_VOUCHER_REASONS.includes(data?.reason)) throw refuse({ ...(data ?? {}), unknownReason: true })
+    if (!retried && (code === 'BAD_VOUCHER' || code === 'PAYMENT_REQUIRED') && data) {
+      const changed = tapCtx.usd
+        ? data.priceUSD !== undefined && UP.amountValue(data.priceUSD, 'USD') !== UP.parseUsdPrice(tapCtx.usd.priceUSD)
+        : typeof data.price === 'string' && /^\d+$/.test(data.price) && BigInt(data.price) !== tapCtx.cap
+      if (changed) return { retry: true, refreshPrice: true, quoted: typeof data.price === 'string' ? data.price : null }
+      if (code === 'BAD_VOUCHER' && data.reason === 'rate' && tapCtx.usd) return { retry: true }
+      if (code === 'BAD_VOUCHER' && (data.reason === 'stale' || data.reason === 'insufficient') && typeof data.lastCumulative === 'string' && /^\d+$/.test(data.lastCumulative)) {
+        await payer.resync(svc, data.lastCumulative, data, { strictV: true })
+        return { retry: true }
+      }
+    }
+    throw refuse()
   }
 
   // ---- quorum：多提供者一致 / multi-provider agreement (TAPI-23 §1 client rule) ----
@@ -2838,7 +3228,29 @@ export function createTapeAPI(opts = {}) {
       return `${chainId}:${(escrowOf(svc, false) || 'no-escrow').toLowerCase()}:${svc.container.toLowerCase()}`
     }
     const storeKey = (k) => `${consumerAddr.toLowerCase()}:${k}`
-    const acct = (svc) => { const k = key(svc); let a = accounts.get(k); if (!a) { a = { k, committed: 0n, loaded: false, inflight: new Set(), chain: Promise.resolve() }; accounts.set(k, a) } return a }
+    const acct = (svc) => { const k = key(svc); let a = accounts.get(k); if (!a) { a = { k, committed: 0n, loaded: false, inflight: new Set(), draft: new Set(), chain: Promise.resolve(), idle: [] }; accounts.set(k, a) } return a }
+    // @experimental (TAP draft §8.2, review M1) wake whoever waits for this account to have nothing in flight
+    // 唤醒等待该账户没有在途凭证的人
+    // each waiter has its own condition: a draft reserve waits for nothing in flight, a 1.8.1 reserve for no draft voucher
+    // in flight / 每个等待者有自己的条件：草稿预留等没有任何在途凭证，1.8.1 预留等没有草稿在途凭证
+    const wake = (a) => { if (!a.idle.length) return; const ready = a.idle.filter((w) => w.until()); a.idle = a.idle.filter((w) => !ready.includes(w)); for (const w of ready) w.go() }
+    // the account is per chain, escrow and container, whatever svc object or api instance asks: a TAP reserve waits here
+    // until no voucher of the channel is in flight, instead of stacking on it / 账户按链、托管与容器，与 svc 对象或 api 实例无关
+    //   noWait: refuse at once (PAYMENT_BUSY with data.noWait) instead of waiting, for a caller that waits outside its own
+    //   lock (the agent spend limiter, review L1) / 立即拒绝而不等待，供在自己的锁外等待的调用方使用
+    function idleOf(a, waitMs, until = () => !a.inflight.size, noWait = false) {
+      if (until()) return Promise.resolve()
+      if (noWait) return Promise.reject(new TapeAPIError('PAYMENT_BUSY', 'a voucher of this channel is in flight; this call waits for it instead of stacking on it', { data: { noWait: true } }))
+      return new Promise((resolve, reject) => {
+        const w = { until, go: () => { clearTimeout(t); resolve() } }
+        const t = setTimeout(() => { a.idle = a.idle.filter((x) => x !== w); reject(new TapeAPIError('PAYMENT_BUSY', `a voucher of this channel has been in flight for ${waitMs} ms; this call waits for it instead of stacking on it`)) }, waitMs)
+        a.idle.push(w)
+      })
+    }
+    // what a reserve with this `extra` waits for: a draft one for nothing in flight, a 1.8.1 one for no draft voucher
+    // 带此 `extra` 的预留等什么：草稿预留等没有任何在途凭证，1.8.1 预留等没有草稿在途凭证
+    const isDraftExtra = (extra) => !!(extra && (extra.rate !== undefined || extra.strictV))
+    const untilFor = (a, extra) => (isDraftExtra(extra) ? () => !a.inflight.size : () => !a.draft.size)
     const serial = (a, fn) => { const p = a.chain.then(fn, fn); a.chain = p.catch(() => {}); return p }
     async function load(a) {
       if (a.loaded) return
@@ -2848,7 +3260,7 @@ export function createTapeAPI(opts = {}) {
     }
     const persist = (a) => Promise.resolve(st.set(storeKey(a.k), a.committed.toString()))
     const floor = (a) => { let f = a.committed; for (const n of a.inflight) if (n > f) f = n; return f }
-    async function sign(svc, next) {
+    async function sign(svc, next, extra) {
       const esc = escrowOf(svc, true)   // 与 key(svc) 同一个地址 / the same address the counter is keyed on
       const t = now()
       const expires = t + ttl
@@ -2866,7 +3278,11 @@ export function createTapeAPI(opts = {}) {
       else {
         sig = await signTypedData(voucherTypedData(chainId, esc, v))
         if (typeof sig !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(sig)) throw new TapeAPIError('BAD_VOUCHER', 'signTypedData must return 65-byte hex signature')
+        // @experimental TAP draft §3.1: a signer sends v of 27 or 28; a wallet's 0/1 is rewritten / 钱包给的 0/1 改写为 27/28
+        if (extra?.strictV) sig = UP.normaliseV(sig)
       }
+      // @experimental TAP draft §3.2: a USD-priced call names the rate of the quote it used / 美元计价调用写上所用报价的汇率
+      if (extra?.rate !== undefined) return { consumer: v.consumer, provider: v.provider, cumulative: next.toString(), expires: v.expires, sig, signer: signerAddr, rate: extra.rate }
       return { consumer: v.consumer, provider: v.provider, cumulative: next.toString(), expires: v.expires, sig, signer: signerAddr }
     }
     const self = {
@@ -2875,6 +3291,14 @@ export function createTapeAPI(opts = {}) {
       cumulativeOf: (svc) => acct(svc).committed,
       // 在途预留数 / number of in-flight reservations
       inflightOf: (svc) => acct(svc).inflight.size,
+      // @experimental (TAP draft §8.3) the halt of this payer's channel after a charge record it could not accept
+      // 本 payer 的通道在计费记录不被接受后的停止状态
+      // @experimental resolves once a reserve with this `extra` would not wait (PAYMENT_BUSY after waitMs); for a wrapper
+      // that must not wait inside its own lock (review L1) / 预留不再需要等待时完成；供不能在自己锁内等待的包装层使用
+      whenFree: (svc, extra, waitMs = 60_000) => { const a = acct(svc); return idleOf(a, Number(waitMs), untilFor(a, extra)) },
+      halt: (svc, why) => { acct(svc).halted = why ?? true },
+      haltOf: (svc) => acct(svc).halted ?? null,
+      clearHalt: (svc) => { delete acct(svc).halted },
       // 从持久化/链上 claimed 恢复起点 / Resume from a persisted or on-chain cumulative.
       setCumulative: (svc, v) => { const a = acct(svc); a.committed = BigInt(v); a.loaded = true; return persist(a) },
       // 采用提供者报告的 lastCumulative——但只在它能被证明时。
@@ -2889,7 +3313,8 @@ export function createTapeAPI(opts = {}) {
       // the consumer in one call. Only two sources are accepted: the on-chain claimed figure, which
       // anyone can verify independently, and a voucher the consumer itself signed, verified against
       // a locally recomputed digest. With neither, refuse and let the call fail loudly.
-      resync: (svc, last, evidence) => serial(acct(svc), async () => {
+      // extra.strictV (@experimental TAP draft §3.1, §8.1): the proof voucher must have v of 27 or 28
+      resync: (svc, last, evidence, extra) => serial(acct(svc), async () => {
         const a = acct(svc); await load(a)
         const b = BigInt(last)
         if (b <= a.committed) return a.committed
@@ -2900,7 +3325,10 @@ export function createTapeAPI(opts = {}) {
         // A2-01：提供者给的 `onChainClaimed` 只是它的说法，不是证据——它和报 `lastCumulative` 的是同一方。
         // 自己从该服务的托管读 claimedOf；没有 RPC 时，唯一可接受的证据是下面我们自己的签名。
         let onChain = null
-        if (rpc) {
+        // @experimental F2 from configuration when given (settlementFacts.amountPaid) / 配置了就用配置的 F2
+        if (settlementFacts?.amountPaid) {
+          try { onChain = BigInt(await settlementFacts.amountPaid(escrowOf(svc, true), consumerAddr, svc.container)) } catch { onChain = null }
+        } else if (rpc) {
           try { onChain = BigInt(await view(escrowOf(svc, true), 'claimedOf', [consumerAddr, svc.container])) } catch { onChain = null }
         }
         let proved = onChain != null && onChain >= b
@@ -2919,7 +3347,7 @@ export function createTapeAPI(opts = {}) {
             // signature that recovers to one of them can only have come from us.
             // 两种自己的签名都算证据：消费者本人直签（钱包流程），或它授权的会话密钥。
             // 摘要本身已绑定 `consumer`，因此能恢复到这两者之一的签名只可能出自我方。
-            const rec = recoverAddress(digest, v.sig)
+            const rec = extra?.strictV ? recoverAddress(digest, v.sig, { strictV: true }) : recoverAddress(digest, v.sig)
             proved = eqAddr(rec, signerAddr) || eqAddr(rec, consumerAddr)
           } catch { proved = false }
         }
@@ -2931,18 +3359,30 @@ export function createTapeAPI(opts = {}) {
         return a.committed
       }),
       // 预留并签发一张凭证；返回 lease { voucher, next, commit(), release() } / reserve + sign; returns a lease
-      reserve: (svc, price) => serial(acct(svc), async () => {
+      // extra (@experimental TAP draft): { rate, strictV } / 草稿：写入 rate、v 只用 27/28
+      //   extra.rate / extra.strictV mark a call under the draft: §8.2 signs `last + charge` with `last` the highest
+      //   accepted record, so it waits (at most extra.waitMs, default 60 s) until nothing of the channel is in flight
+      //   rather than stacking on an in-flight voucher (review M1: two svc objects, or two api instances sharing this
+      //   payer, would otherwise stack). / 草稿下的调用等在途凭证结束再签，而不是叠加在它上面。
+      reserve: (svc, price, extra) => serial(acct(svc), async () => {
         const a = acct(svc); await load(a)
         const amount = BigInt(price)
         if (amount <= 0n) throw new TapeAPIError('INVALID_ARGUMENT', 'price must be positive')
+        // review P1 (mixed paths): a 1.8.1 reserve keeps stacking on 1.8.1 vouchers (unchanged, golden test), but waits while
+        // a draft voucher of the same channel is in flight, e.g. a svc resolved before the holder added usdPricing beside
+        // one resolved after. Waiting always would change 1.8.1's concurrency. / 1.8.1 预留仍叠加在 1.8.1 凭证上（不变），
+        // 但同一通道有草稿凭证在途时等待；一律等待会改变 1.8.1 的并发行为。
+        const isDraft = isDraftExtra(extra)
+        await idleOf(a, Number(extra?.waitMs ?? 60_000), untilFor(a, extra), extra?.noWait === true)
         const next = floor(a) + amount
-        const voucher = await sign(svc, next)
+        const voucher = await sign(svc, next, extra)
         a.inflight.add(next)
+        if (isDraft) a.draft.add(next)
         let done = false
         return {
           voucher, next, amount,
-          commit() { if (done) return Promise.resolve(); done = true; a.inflight.delete(next); if (next > a.committed) { a.committed = next; return persist(a).catch(() => {}) } return Promise.resolve() },
-          release() { if (done) return; done = true; a.inflight.delete(next) },
+          commit() { if (done) return Promise.resolve(); done = true; a.inflight.delete(next); a.draft.delete(next); if (next > a.committed) { a.committed = next; wake(a); return persist(a).catch(() => {}) } wake(a); return Promise.resolve() },
+          release() { if (done) return; done = true; a.inflight.delete(next); a.draft.delete(next); wake(a) },
         }
       }),
       // 手工构造请求用：签发并立即视为已消费 / manual use: sign and treat as consumed immediately
@@ -3003,7 +3443,7 @@ export function createTapeAPI(opts = {}) {
     const seen = [...new Set(readings.filter((r) => r.bps !== null).map((r) => r.bps))]
     const consistent = seen.length <= 1
     const warning = consistent ? null
-      : `the contribution of ${checksumAddress(provider)} differs across escrow instances: ${readings.filter((r) => r.bps !== null).map((r) => `${r.escrow} ${r.bps} bps`).join(', ')}. Each instance keeps its own setting, and one never set applies the default ${DEFAULT_CONTRIBUTION_BPS} bps; set it on each with tx.setContribution({ escrow }) if that is not what you meant`
+      : `the contribution of ${checksumAddress(provider)} differs across escrow instances: ${readings.filter((r) => r.bps !== null).map((r) => `${r.escrow} ${r.bps} bps`).join(', ')}. Each instance keeps its own setting, and one never set applies the default ${DEFAULT_CONTRIBUTION_BPS} bps; set it on each with tx.setContribution({ escrow }), or on all of them with tx.setContributionAll, if that is not what you meant`
     return { provider: checksumAddress(provider), readings, consistent, warning }
   }
 
@@ -3102,6 +3542,22 @@ export function createTapeAPI(opts = {}) {
       if (!Number.isInteger(n) || n < 0 || n > MAX_CONTRIBUTION_BPS) throw new TapeAPIError('INVALID_ARGUMENT', `bps must be an integer 0..${MAX_CONTRIBUTION_BPS}`)
       return { to: isAddress(esc) ? esc : needEscrow(), data: encodeCall('setContribution', [circuits, BigInt(tokenId), n]), value: '0x0' }
     },
+    // Experimental: one setContribution per escrow instance, since each keeps its own setting and one never set applies
+    // the default (PLAN-1.0 "1.8"; the doctor's --escrows warning). `escrows` defaults to the instances this client builds
+    // for (AUDITED_ESCROWS of the chain, then allowEscrows), the same list as chain.escrow.contributions; duplicates count
+    // once; none at all is an error, never an empty list. The holder sends every transaction.
+    // 实验性：每个托管实例一笔 setContribution（各实例各自保存设置，从未设置的按默认）。`escrows` 默认为本客户端为之构造交易的实例
+    // （该链的 AUDITED_ESCROWS，再加 allowEscrows），与 chain.escrow.contributions 相同；重复的只算一次；一个都没有就报错，绝不返回空列表。
+    setContributionAll: ({ circuits, tokenId, bps, escrows } = {}) => {
+      const list = escrows === undefined ? [...allowedEscrows] : escrows
+      // Review B5: null is not "the default" (only leaving it out is), and the `escrow` option is not in the default list
+      // (it is the one escrow setContribution uses alone): both said in the error / 审查 B5：null 不是默认；escrow 选项不计入默认名单
+      if (!Array.isArray(list) || !list.every(isAddress)) throw new TapeAPIError('INVALID_ARGUMENT', `setContributionAll: escrows must be an array of escrow addresses${escrows === null ? ' (null is not the default: leave escrows out for the instances this client builds for)' : ''}`)
+      const each = [...new Map(list.map((e) => [e.toLowerCase(), checksumAddress(e)])).values()]
+      const own = escrows === undefined && isAddress(escrow) ? `; the escrow option ${checksumAddress(escrow)} is not part of that list (it is the escrow setContribution uses alone): pass escrows: ['${checksumAddress(escrow)}'] to set it` : ''
+      if (!each.length) throw new TapeAPIError('INVALID_ARGUMENT', `setContributionAll: no escrow instance to set: pass escrows${escrows === undefined ? ` (this client builds for none: AUDITED_ESCROWS for chain ${chainId} is empty and no allowEscrows was given${own})` : ''}`)
+      return { txs: each.map((escrow) => tx.setContribution({ circuits, tokenId, bps, escrow })), escrows: each }
+    },
     // `value` defaults to 0 on purpose. The directory keeps whatever is attached in every branch, and
     // the reference deployment sets labelFee to 0, so any BNB sent here is forfeited silently and
     // permanently. Read `labelFee()` first and pass exactly that, or nothing.
@@ -3164,6 +3620,12 @@ export function createTapeAPI(opts = {}) {
     const acc = ACCEPTED.get(svc) || {}
     if (method === undefined) ACCEPTED.set(svc, cur)
     else { if (!(method in cur)) throw new TapeAPIError('METHOD_NOT_FOUND', `method ${method} not in manifest`); ACCEPTED.set(svc, { ...acc, [method]: cur[method] }) }
+    // @experimental the USD prices too, for a manifest with usdPricing / 带 usdPricing 的清单也接受其美元价
+    if (Object.prototype.hasOwnProperty.call(svc.manifest, 'usdPricing')) {
+      const usdNow = usdPricesOf(svc.manifest)
+      if (method === undefined) ACCEPTED_USD.set(svc, usdNow)
+      else if (usdNow[method] !== undefined) ACCEPTED_USD.set(svc, { ...(ACCEPTED_USD.get(svc) || {}), [method]: usdNow[method] })
+    }
     return ACCEPTED.get(svc)
   }
   const acceptedPrice = (svc, method) => { const owner = ownerOf(svc); return owner ? owner.acceptedPrice(svc, method) : ACCEPTED.get(svc)?.[method] }
@@ -3200,6 +3662,22 @@ export function createTapeAPI(opts = {}) {
       if (!conformMode) throw new TapeAPIError('INTERNAL', `the client of chain ${chainId} is not in the conformance mode`)
       return prepareConform(input, { hold: true })
     },
+  })
+  // The client that resolves as TAP-11 §2 says with this client's options (conform-sibling.js): this one in the
+  // conformance mode; otherwise a sibling made on first use (only a success is kept) with the same options and the same
+  // RPC client, the shared stores as forChain passes them, never allChains, and no other chain (the kit's chain is fixed
+  // by the mandate's domain). Making it sends nothing. / 按 TAP-11 §2 解析、选项相同的客户端：一致模式下就是本客户端；否则首次
+  // 用到时建一个同胞（只保留成功）：选项与 RPC 客户端相同、共用的存储同 forChain，绝不开 allChains，不访问别的链。建立时不发请求。
+  CONFORM_MODE.set(api, conformMode)
+  let sibling = null
+  CONFORM_SIBLINGS.set(api, () => {
+    if (conformMode) return api
+    sibling ??= createTapeAPI({
+      ...opts, conform: 'tap10', pin: undefined, allChains: undefined, [SHARED_RPC]: rpc,
+      delegationFloor: delegationFloor ?? undefined, channelRecordFloor: recordFloor, sealStatusStore,
+      [ROUTER]: (n) => { throw new TapeAPIError('INVALID_ARGUMENT', `unsupported: chain ${n} is not this client's chain ${chainId}; the conformance resolution made for this client reads no other chain`, { data: { status: 'unsupported', chainId: Number(chainId) } }) },
+    })
+    return sibling
   })
   return api
 }

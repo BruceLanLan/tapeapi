@@ -13,7 +13,7 @@
   }
   // <html lang> and the tab title follow the language too (screen readers, bookmarks).
   // <html lang> 与标签页标题也随语言切换（读屏软件、书签）。
-  var TITLE = { en: document.title, zh: 'TapeAPI — 每次 AI 调用，都附一张签名回执' };
+  var TITLE = { en: document.title, zh: 'TapeAPI 2.0 — 标准即默认，每次 AI 调用都附签名回执' };
   function setLang(l) {
     root.setAttribute('data-lang', l);
     root.lang = l === 'zh' ? 'zh-CN' : 'en';

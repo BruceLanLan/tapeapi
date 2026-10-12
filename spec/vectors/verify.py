@@ -1208,7 +1208,7 @@ for acc in MN['accounts']:
 check('proof/mainnet a wrong stateRoot refuses every account', bad_root, len(MN['accounts']))
 
 # ================================================ Container agents, phase 0 (experimental) ====
-# Written from EIP-712 and the field lists below (docs/DESIGN-container-agent.md): the holder's four types in the TAP-11
+# Written from EIP-712 and the field lists below (internal design notes, phase 0): the holder's four types in the TAP-11
 # delegation domain. encodeType appends referenced struct types; a struct array hashes as keccak256 of the concatenated
 # hashStruct of its items, a bytes32 array as keccak256 of the concatenated elements, an empty one as keccak256("").
 # 只按 EIP-712 与下面的字段表实现：持有人的四个类型，在 TAP-11 委托域中。
@@ -1373,11 +1373,12 @@ _SIG65 = _re.compile(r'^0x[0-9a-fA-F]{130}$')
 _SEGMENT = _re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$')
 _Z20 = '0x' + '00' * 20
 _Z32 = '0x' + '00' * 32
-def _num(x): return isinstance(x, int) and not isinstance(x, bool)
+# (named _num until the reviews section: it shadowed canonical's number formatter for every later canonical() call)
+def _is_int(x): return isinstance(x, int) and not isinstance(x, bool)
 def f_addr(x, nonzero=False): return isinstance(x, str) and bool(_ADDR.match(x)) and not (nonzero and x.lower() == _Z20)
 def f_b32(x, nonzero=False): return isinstance(x, str) and bool(_B32.match(x)) and not (nonzero and x == _Z32)
-def f_u8(x, allowed): return _num(x) and x in allowed
-def f_u64(x): return _num(x) and 0 <= x <= 2 ** 53 - 1
+def f_u8(x, allowed): return _is_int(x) and x in allowed
+def f_u64(x): return _is_int(x) and 0 <= x <= 2 ** 53 - 1
 def f_u256(x): return isinstance(x, str) and bool(_DEC.match(x)) and int(x) < 2 ** 256
 def f_bool(x): return isinstance(x, bool)
 def f_obj(x): return isinstance(x, dict)
@@ -1433,6 +1434,753 @@ for c in inf['cases']:
         raise ValueError(c['type'])
     check('input-forms/%s/%s' % (c['type'], c['name']), got, c['expect'])
 
+
+# ---------- container agents, phase 1 (experimental): the static rules and the plan ----------
+# The static rules are written from the internal design notes, phase 1, §5.1-§5.2; the order of the static problems
+# is the reference implementation's (the draft fixes none). The plan (p1_plan below) was, up to M3, close to a port of
+# the SDK's escrowPlan (review p1m3 R2 said so); it is now a table of rules written from §6.1 S4 and §2.3-§2.5, every
+# rule evaluated, the first in the draft's order reported. The ORDER is still the draft's, which the SDK follows too.
+# 阶段 1（实验）：静态规则按设计稿 §5.1–§5.2 实现（问题顺序取参考实现的）。计划段到 M3 为止近乎 SDK 的移植（审查 p1m3 R2 指出）；
+# 现按 §6.1 S4 与 §2.3–§2.5 重写为规则表：全部求值，按设计稿顺序取第一条。顺序本身仍是设计稿的，SDK 也照此实现。
+p1v = ca['phase1']
+def p1_funded(m):
+    return any(s['cap'] != '0' or s['token'].lower() != _Z20 for s in m['scope']) or m['feeCap'] != '0' or m['feeToken'].lower() != _Z20
+def p1_phase0(m):
+    out = []
+    if p1_funded(m): out.append('phase0-no-funds')
+    if m['subdelegate']: out.append('subdelegate-not-allowed')
+    return out
+def p1_static(m):
+    out = []
+    for s in m['scope']:
+        if (s['token'].lower() == _Z20) != (s['cap'] == '0'): out.append('scope-token-cap-mismatch')
+    if (m['feeToken'].lower() == _Z20) != (m['feeCap'] == '0'): out.append('fee-token-cap-mismatch')
+    capped = [s['provider'].lower() for s in m['scope'] if s['cap'] != '0']
+    reported = set()
+    for s in m['scope']:
+        k = s['provider'].lower()
+        if capped.count(k) > 1 and k not in reported:
+            out.append('scope-duplicate-provider'); reported.add(k)
+    if m['mode'] == 0 and any(s['cap'] != '0' or s['token'].lower() != _Z20 for s in m['scope']): out.append('mode-scope-mismatch')
+    if m['subdelegate']: out.append('subdelegate-not-allowed')
+    return out
+P1_BLOCKS_NONCE = {'phase0-no-funds', 'subdelegate-not-allowed', 'scope-token-cap-mismatch', 'fee-token-cap-mismatch', 'scope-duplicate-provider', 'mode-scope-mismatch'}
+for c in p1v['static']:
+    m, e = c['mandate'], c['expect']
+    funded = p1_funded(m)
+    probs = p1_static(m) if funded else p1_phase0(m)
+    warns = ['scope-includes-agent' for s in m['scope'] if s['cap'] != '0' and s['provider'].lower() == m['agent'].lower()] if funded else []
+    check('phase1/static/funded/' + c['name'], funded, e['funded'])
+    check('phase1/static/without the switch/' + c['name'], p1_phase0(m), e['withoutSwitch'])
+    check('phase1/static/phase/' + c['name'], 1 if funded else 0, e['phase'])
+    check('phase1/static/problems/' + c['name'], probs, e['problems'])
+    check('phase1/static/warnings/' + c['name'], warns, e['warnings'])
+    check('phase1/static/nonce/' + c['name'], not any(p in P1_BLOCKS_NONCE for p in probs), e['recordsNonce'])
+
+AUDITED = {56: []}   # chains.js AUDITED_ESCROWS: none is audited yet / 尚无已审计托管
+MAX_SESSION = 30 * 86400
+# The plan (§6.1 S4, §2.3-§2.5), rewritten after review p1m3 R2. Each refusal is a rule written from the draft's text:
+# a predicate over the case's facts that says whether the rule applies, evaluated for EVERY rule (none depends on an
+# earlier one having passed); the refusal reported is the first applicable rule in the order §6.1 S4 lists them
+# ("计划拒绝的输入，按此顺序"), transcribed below. So the structure is not the SDK's (which stops at its first throw), but
+# the ORDER is the draft's and therefore the SDK's too: an order both got wrong would be caught only by the vectors' hand-
+# written expectations. The steps are built from §2.5 steps 1-4 and the budget of a re-run from §10.4 B1.
+# 计划段（审查 p1m3 R2 后重写）：每条拒绝都是按设计稿文字写的谓词，全部求值（互不依赖前一条通过），报告 §6.1 S4 所列顺序中第一条适用的。
+# 结构不是 SDK 的；顺序抄自设计稿，因此与 SDK 相同：两边都错的顺序只有手写的向量期望能抓住。
+P1_PLAN_ORDER_GLOBAL = ['static', 'nothing-to-plan', 'session-expired', 'session-too-long', 'holder-not-current', 'holder-changed-since-signing',
+                        'principal-not-deployed', 'principal-not-opened', 'execute-fee-too-high', 'holder-short-of-fee',
+                        'execute-reverts', 'key-reused', 'pin-not-after-record']
+P1_PLAN_ORDER_ITEM = ['agent-key-on-fee-channel', 'provider-is-consumer', 'provider-is-escrow', 'provider-unresolvable',
+                      'escrow-not-allowed', 'escrow-other-chain', 'escrow-token-mismatch', 'funded-elsewhere', 'other-path-funded', 'withdraw-pending',
+                      'channel-exceeds-cap', 'key-already-authorised', 'channel-spent', 'channel-exceeds-budget',
+                      'budget-exhausted', 'channel-session-live']
+def p1_mandate_hash(m, base):
+    return h(typed_digest(eip712_domain(ca['domain']['name'], ca['domain']['version'], base['chainId'], base['hub']), ca_struct('Mandate', m)))
+def p1_plan(c, base):
+    m, facts, path = c['mandate'], c.get('facts', {}), c['path']
+    lo = lambda a: a.lower() if isinstance(a, str) else a
+    now, hist = c.get('now'), c.get('history')
+    holder = base['holder'] if path == 'holder' else c.get('holder', base['holder'])   # S6: both paths have a holder
+    consumer = lo(base['holder'] if path == 'holder' else m['principal'])
+    capped = [s for s in m['scope'] if s['cap'] != '0']
+    mh = p1_mandate_hash(m, base) if hist is not None else None
+    expires = m['expires']
+    # an entry of the history that is this mandate's: its hash, or (from the logs, no hash) one of its channels for this
+    # consumer ending at its expires (§2.4, §10.3 e) / 属于本授权书的历史条目
+    def ours(e):
+        if e['mandateHash'] is not None: return lo(e['mandateHash']) == mh
+        return lo(e['consumer']) == consumer and e['expires'] == expires and lo(e['provider']) in {lo(s['provider']) for s in capped}
+    static = p1_static(m) if p1_funded(m) else []
+    glob = {
+        'static': bool(static),
+        'nothing-to-plan': not p1_funded(m) or not capped,
+        'session-expired': now is not None and expires <= now,
+        'session-too-long': now is not None and expires > now + MAX_SESSION,
+        'holder-not-current': 'currentHolder' in facts and holder is not None and lo(holder) != lo(facts['currentHolder']),
+        # review p1m3 recheck 3: the mandate's signer (the holder when it was signed) is not the plan's holder, or null
+        # 复核 3：签署人（签署时的持有人）不是本计划的 holder，或为 null
+        'holder-changed-since-signing': 'signer' in facts and (facts['signer'] is None or lo(facts['signer']) != lo(holder)),
+        'principal-not-deployed': path == 'container' and facts.get('principalDeployed') is False,
+        'principal-not-opened': path == 'container' and facts.get('principalOpened') is False,
+        # the case's maxExecuteFee, else planBase's (an executeFee without one is an input error, review p1m3 recheck)
+        'execute-fee-too-high': path == 'container' and int(base['executeFee']) > int(facts.get('maxExecuteFee', base['maxExecuteFee'])),
+        # review p1m3 S4: the holder cannot pay even one execute's fee / 持有人连一笔 execute 的费都付不起
+        'holder-short-of-fee': path == 'container' and 'holderBalance' in facts and int(base['executeFee']) > 0 and int(facts['holderBalance']) < int(base['executeFee']),
+        'execute-reverts': path == 'container' and facts.get('executeReverts') is not None,
+        'key-reused': hist is not None and any(e['chainId'] == base['chainId'] and lo(e['key']) == lo(m['agentKey']) and not ours(e) for e in hist),
+        # review p1m3 recheck 3: a record at or after the pinned block, of this mandate (its key, any channel) or on a
+        # channel this plan funds (the item's escrow, this consumer, its provider) / 不早于钉块的记录：本授权书的，或本计划所充通道的
+        'pin-not-after-record': hist is not None and 'pinBlock' in facts and any(
+            e['chainId'] == base['chainId'] and e.get('block') is not None and e['block'] >= facts['pinBlock'] and (
+                (lo(e['key']) == lo(m['agentKey']) and ours(e)) or
+                any(lo(e['provider']) == lo(s['provider']) and lo(e['consumer']) == consumer and lo(e['escrow']) == lo(next((p['escrow'] for p in c['providers'] if lo(p['provider']) == lo(s['provider'])), None)) for s in capped))
+            for e in hist),
+    }
+    for code in P1_PLAN_ORDER_GLOBAL:
+        if glob[code]: return {'refused': static[0] if code == 'static' else code}
+    allowed = {lo(a) for a in AUDITED.get(base['chainId'], []) + base['allowEscrows']}
+    by = {lo(e['provider']): e for e in c['providers']}
+    named = {lo(by[lo(s['provider'])].get('escrow')) for s in capped if by.get(lo(s['provider']), {}).get('escrow')}
+    items = []
+    for i, s in enumerate(capped):
+        e, prov, cap = by[lo(s['provider'])], lo(s['provider']), int(s['cap'])
+        esc, tok = lo(e.get('escrow')), lo(e.get('token'))
+        ch, session = int(e.get('channel', '0')), int(e.get('session', 0))
+        claimed = None if e.get('claimed') is None else int(e['claimed'])
+        # this session's own history entries with claimedAtPlan (§10.4 B1): same chain, escrow, consumer, provider, key,
+        # expires, and a hash that is this mandate's or none / 本会话自己的、带 claimedAtPlan 的历史条目
+        starts = [int(x['claimedAtPlan']) for x in (hist or []) if x.get('claimedAtPlan') is not None and x['chainId'] == base['chainId']
+                  and lo(x['escrow']) == esc and lo(x['consumer']) == consumer and lo(x['provider']) == prov and lo(x['key']) == lo(m['agentKey'])
+                  and x['expires'] == expires and (x['mandateHash'] is None or lo(x['mandateHash']) == mh)]
+        applied = session == expires   # the key's session is already this mandate's: the plan was applied / 计划已应用过
+        budgeted = applied and bool(starts) and claimed is not None
+        # review p1m3 recheck (§10.5): the cap is per (mandate, provider). The history's entries of this mandate (ours) for
+        # this provider on ANOTHER channel (escrow, consumer); such a channel is released only when its consumer is this
+        # plan's, the history has its claimedAtPlan, and the case's `elsewhere` fact for it says channel 0, no live request,
+        # with its claimedOf. What the key spent on the released channels counts toward this channel's budget.
+        # 复核（§10.5）：cap 按（授权书, provider）计。历史里本授权书在另一条通道上的条目；只有同一 consumer、有 claimedAtPlan、
+        # 事实显示余额 0 且无存活请求并给出 claimedOf 时才放行；放行通道上钥匙花掉的计入本通道预算。
+        others = {}
+        for x in (hist or []):
+            if x['chainId'] == base['chainId'] and lo(x['provider']) == prov and lo(x['key']) == lo(m['agentKey']) and ours(x) and (lo(x['escrow']), lo(x['consumer'])) != (esc, consumer):
+                others.setdefault((lo(x['escrow']), lo(x['consumer'])), []).append(x)
+        seen = {(lo(f['escrow']), lo(f['consumer'])): f for f in e.get('elsewhere', [])}
+        def base_of(xs): return min([int(x['claimedAtPlan']) for x in xs if x.get('claimedAtPlan') is not None], default=None)
+        def released(k, xs):
+            f = seen.get(k)
+            return (k[1] == consumer and base_of(xs) is not None and f is not None and f.get('claimed') is not None
+                    and int(f.get('channel', '0')) == 0 and not f.get('pendingLive'))
+        blocked = any(not released(k, xs) for k, xs in others.items())
+        spent_else = 0 if blocked else sum(int(seen[k]['claimed']) - base_of(xs) for k, xs in others.items())
+        spent_here = claimed - min(starts) if budgeted else 0
+        budget = max(cap - spent_else - spent_here, 0)
+        earlier_tokens = {lo(by[lo(x['provider'])].get('escrow')): lo(by[lo(x['provider'])].get('token')) for x in reversed(capped[:i]) if by[lo(x['provider'])].get('escrow')}
+        rules = {
+            'agent-key-on-fee-channel': prov == lo(m['agent']),
+            'provider-is-consumer': prov == consumer,
+            'provider-is-escrow': prov in named,
+            'provider-unresolvable': esc is None,
+            'escrow-not-allowed': esc is not None and esc not in allowed,
+            'escrow-other-chain': e.get('escrowCode') is False,
+            'escrow-token-mismatch': tok is None or tok != lo(s['token']) or (esc in earlier_tokens and earlier_tokens[esc] != tok),
+            'funded-elsewhere': blocked,
+            # review p1m3 S1: the other funding path's channel to this provider holds money or a session of this key
+            'other-path-funded': 'otherPath' in e and (int(e['otherPath'].get('channel', '0')) != 0 or int(e['otherPath'].get('session', 0)) != 0),
+            'withdraw-pending': bool(e.get('pendingLive')),
+            'channel-exceeds-cap': ch > cap,
+            'key-already-authorised': session not in (0, expires),
+            # review p1m3 recheck (2): without this session's claimedAtPlan, a claimedOf above 0 is never taken as the baseline
+            'channel-spent': applied and not budgeted and (ch < cap or (not starts and claimed not in (None, 0))),
+            'channel-exceeds-budget': ch > budget,
+            # review p1m3 recheck 3 (N2): nothing left of the cap on a fresh channel: no session alone on an empty channel
+            'budget-exhausted': budget == 0 and ch == 0 and session == 0,
+            'channel-session-live': hist is not None and any(x['chainId'] == base['chainId'] and lo(x['escrow']) == esc and lo(x['consumer']) == consumer
+                                                             and lo(x['provider']) == prov and lo(x['key']) != lo(m['agentKey']) and x['expires'] >= now for x in hist),
+        }
+        for code in P1_PLAN_ORDER_ITEM:
+            if rules[code]: return {'refused': code}
+        start = min(starts) if applied and starts else claimed   # the history's baseline is kept, claimed or not / 沿用历史基线
+        items.append({'prov': prov, 'esc': esc, 'need': budget - ch, 'session': session, 'claimedAtPlan': None if start is None else str(start), 'spentElsewhere': str(spent_else)})
+    # §2.5 steps 1-3: per escrow (in the order first named) one approve of what its channels need; a fund per channel that
+    # needs anything; an authorizeSession per channel without the key's session; step 4: an allowance check per approve
+    # §2.5 第 1–3 步与第 4 步
+    escrows = list(dict.fromkeys(it['esc'] for it in items))
+    approves = [(x, sum(it['need'] for it in items if it['esc'] == x)) for x in escrows]
+    steps = [['approve', x, None, str(n)] for x, n in approves if n]
+    steps += [['fund', it['esc'], it['prov'], str(it['need'])] for it in items if it['need']]
+    steps += [['authorizeSession', it['esc'], it['prov'], None] for it in items if it['session'] == 0]
+    fee = int(base['executeFee'])
+    # review p1m3 S4, last: the holder must pay the fee of every execute of the plan / 最后：持有人须付得起计划中每笔 execute 的费
+    if path == 'container' and 'holderBalance' in facts and int(facts['holderBalance']) < fee * len(steps): return {'refused': 'holder-short-of-fee'}
+    return {'steps': steps, 'checks': [x for x, n in approves if n], 'to': 'principal' if path == 'container' else 'direct',
+            'claimedAtPlan': [it['claimedAtPlan'] for it in items], 'spentElsewhere': [it['spentElsewhere'] for it in items],
+            'recordBlock': [facts.get('pinBlock') for it in items],
+            'fees': {'perExecute': str(fee), 'executes': len(steps), 'total': str(fee * len(steps))} if path == 'container' else None,
+            # review p1m3 recheck 3: a history left out is not an empty one / 没给历史不等于空历史
+            'checked': {'history': hist is not None, 'signer': 'signer' in facts}}
+low = lambda v: v.lower() if isinstance(v, str) else v
+for c in p1v['plan']:
+    got, e = p1_plan(c, p1v['planBase']), c['expect']
+    if 'refused' in e:
+        check('phase1/plan/refused/' + c['name'], got.get('refused'), e['refused'])
+        continue
+    check('phase1/plan/steps/' + c['name'], got.get('steps'), [[row[0], low(row[1]), low(row[2]), row[3]] for row in e['steps']])
+    check('phase1/plan/checks/' + c['name'], got.get('checks'), [low(x) for x in e['checks']])
+    check('phase1/plan/to/' + c['name'], got.get('to'), e['to'])
+    if 'claimedAtPlan' in e: check('phase1/plan/claimedAtPlan/' + c['name'], got.get('claimedAtPlan'), e['claimedAtPlan'])
+    if 'spentElsewhere' in e: check('phase1/plan/spentElsewhere/' + c['name'], got.get('spentElsewhere'), e['spentElsewhere'])
+    if 'fees' in e: check('phase1/plan/fees/' + c['name'], got.get('fees'), e['fees'])
+    if 'checked' in e: check('phase1/plan/checked/' + c['name'], got.get('checked'), e['checked'])
+    if 'recordBlock' in e: check('phase1/plan/recordBlock/' + c['name'], got.get('recordBlock'), e['recordBlock'])
+
+# ---------- phase 1, M3: the close-out (§2.3 rule 6, §2.6) and the read-back after a plan (§2.5 step 4) ----------
+# Written from the draft and TapeAPIEscrow.sol (requestWithdraw replaces a request and restarts its clock; withdraw pays
+# min(requested, channel) inside [requestedAt + 48 h, + 7 d]). Its refusal order is the draft's (§6.1 S4), which the
+# SDK follows too; only the hand-written expectations would catch an order both got wrong. / 按设计稿与合约文字实现；拒绝顺序取设计稿的。
+def p1_close(c, cb):
+    m = c['mandate']
+    facts = c.get('facts', {})
+    holder = cb['holder'] if c['path'] == 'holder' else c.get('holder')
+    if c['path'] == 'container' and 'currentHolder' in facts and holder is not None and holder.lower() != facts['currentHolder'].lower(): return {'refused': 'holder-not-current'}
+    if c['path'] == 'container' and int(cb['executeFee']) > int(facts.get('maxExecuteFee', cb['maxExecuteFee'])): return {'refused': 'execute-fee-too-high'}
+    fee = int(cb['executeFee'])
+    if c['path'] == 'container' and 'holderBalance' in facts and fee > 0 and int(facts['holderBalance']) < fee: return {'refused': 'holder-short-of-fee'}
+    if c['path'] == 'container' and facts.get('executeReverts') is not None: return {'refused': 'execute-reverts'}
+    # review p1m3 S2: the history's sessions of this mandate name the consumer that funded / 历史里本授权书的会话写明出资的 consumer
+    m_ = c['mandate']
+    consumer = (cb['holder'] if c['path'] == 'holder' else m_['principal']).lower()
+    capped_ = {s['provider'].lower() for s in m_['scope'] if s['cap'] != '0'}
+    rec = [x for x in c.get('history', []) if x['chainId'] == cb['chainId'] and x['key'].lower() == m_['agentKey'].lower() and x['expires'] == m_['expires'] and x['provider'].lower() in capped_]
+    if rec and not any(x['consumer'].lower() == consumer for x in rec): return {'refused': 'consumer-unknown'}
+    if any(e['escrow'] is None for e in c['channels']): return {'refused': 'escrow-unknown'}
+    now, cool, win = cb['now'], cb['cooldown'], cb['window']
+    by = {e['provider'].lower(): e for e in c['channels']}
+    reqs, wds, items, windows = [], [], [], {}
+    for s in [x for x in m['scope'] if x['cap'] != '0']:
+        e = by[s['provider'].lower()]
+        ch = int(e['channel'])
+        p = e.get('pending') or {}
+        amt, at = int(p.get('amount', 0)), int(p.get('requestedAt', 0))
+        prov = s['provider'].lower()
+        if ch == 0: items.append([prov, 'empty', None, '0']); continue
+        live = at != 0 and now <= at + cool + win
+        if live and not (c.get('fullRequest') and amt < ch):   # S5: fullRequest replaces a request for less / 全额重新请求
+            out = min(amt, ch)
+            items.append([prov, 'requested', str(out), str(ch - out)]); wds.append(['withdraw', prov, None]); windows[prov] = (at + cool, at + cool + win)
+            continue
+        items.append([prov, 'replace' if live else 'lapsed' if at != 0 else 'request', str(ch), '0'])
+        reqs.append(['requestWithdraw', prov, str(ch)]); wds.append(['withdraw', prov, None])
+    if not reqs and not wds: return {'refused': 'nothing-to-close'}
+    n = len(reqs) + len(wds)
+    if c['path'] == 'container' and 'holderBalance' in facts and int(facts['holderBalance']) < fee * n: return {'refused': 'holder-short-of-fee'}
+    return {'steps': reqs + wds, 'items': items, 'windows': windows, 'to': 'principal' if c['path'] == 'container' else 'direct',
+            'fees': {'perExecute': str(fee), 'executes': n, 'total': str(fee * n)} if c['path'] == 'container' else None,
+            'checked': {'history': 'history' in c}}
+for c in p1v['closeOut']:
+    got, e = p1_close(c, p1v['closeOutBase']), c['expect']
+    if 'refused' in e:
+        check('phase1/closeOut/refused/' + c['name'], got.get('refused'), e['refused'])
+        continue
+    check('phase1/closeOut/steps/' + c['name'], got.get('steps'), [[r[0], low(r[1]), r[2]] for r in e['steps']])
+    check('phase1/closeOut/items/' + c['name'], got.get('items'), [[low(r[0]), r[1], r[2], r[3]] for r in e['items']])
+    for prov, a, b in e.get('windows', []):
+        check('phase1/closeOut/window/' + c['name'], got['windows'].get(prov.lower()), (a, b))
+    check('phase1/closeOut/to/' + c['name'], got.get('to'), e['to'])
+    if 'fees' in e: check('phase1/closeOut/fees/' + c['name'], got.get('fees'), e['fees'])
+    if 'checked' in e: check('phase1/closeOut/checked/' + c['name'], got.get('checked'), e['checked'])
+for c in p1v['applied']:
+    pc = p1v['plan'][c['plan']]
+    plan = p1_plan(pc, p1v['planBase'])
+    m, rd = pc['mandate'], c['readings']
+    allow = {a['escrow'].lower(): int(a['allowance']) for a in rd['allowances']}
+    chans = {x['provider'].lower(): x for x in rd['channels']}
+    probs, zero, causes = [], [], []
+    for esc in plan['checks']:
+        if allow[esc] != 0: probs.append('allowance-not-zero'); zero.append(esc)
+    for i, s in enumerate([x for x in m['scope'] if x['cap'] != '0']):
+        r = chans[s['provider'].lower()]
+        start = plan['claimedAtPlan'][i]
+        # review p1m3 B1: what the key spent since the plan counts toward the cap / 钥匙自计划以来花掉的计入 cap
+        spent = 0 if start is None else int(r['claimed']) - int(start)
+        # review p1m3 recheck: after a release the channel is compared with what is left of the cap / 放行后按 cap 的余量比较
+        target = max(int(s['cap']) - int(plan['spentElsewhere'][i]), 0)
+        if int(r['channel']) + spent != target:
+            probs.append('channel-not-at-cap')
+            # review p1m3 recheck (3): above is excess; below, a fund that failed leaves its allowance, else withdrawn or never sent
+            # 复核建议 3：超出即 excess；不足时失败的 fund 会留下额度，否则是取回或没发
+            esc = [x for x in plan['steps'] if x[0] == 'fund' and x[2] == s['provider'].lower()]
+            esc = esc[0][1] if esc else None
+            if start is not None:
+                causes.append('excess' if int(r['channel']) + spent > target else 'fund-failed' if allow.get(esc, 0) != 0 else 'withdrawn-or-not-sent')
+        if int(r['session']) != m['expires']: probs.append('session-not-set')
+    check('phase1/applied/problems/' + c['name'], probs, c['expect']['problems'])
+    check('phase1/applied/approveZero/' + c['name'], zero, [x.lower() for x in c['expect']['approveZero']])
+    if 'causes' in c['expect']: check('phase1/applied/causes/' + c['name'], causes, c['expect']['causes'])
+
+# review p1m3 recheck 3 (N3): the session history, one entry per session; a later record only fills a null
+# claimedAtPlan; a log entry (no hash) of a session kept with its hash adds nothing. Written from the rule text.
+# 复核 3（N3）：会话历史每会话一条；之后的记录只填 null 的 claimedAtPlan；无哈希的日志条目对带哈希的会话不新增。按规则文字实现。
+def p1_session_key(e, with_hash=True):
+    return (e['chainId'], e['escrow'].lower(), e['consumer'].lower(), e['provider'].lower(), e['key'].lower(), e['expires'],
+            (e['mandateHash'].lower() if e['mandateHash'] is not None else None) if with_hash else None)
+for c in p1v.get('history', []):
+    kept = []
+    for e in c['records']:
+        same = [x for x in kept if p1_session_key(x) == p1_session_key(e)]
+        if same:
+            if same[0]['claimedAtPlan'] is None and e.get('claimedAtPlan') is not None: same[0]['claimedAtPlan'] = e['claimedAtPlan']
+            if e.get('block') is not None and (same[0]['block'] is None or e['block'] > same[0]['block']): same[0]['block'] = e['block']
+            continue
+        if e['mandateHash'] is None and any(p1_session_key(x, False) == p1_session_key(e, False) for x in kept): continue
+        kept.append(dict(e, claimedAtPlan=e.get('claimedAtPlan'), block=e.get('block')))
+    got = [[x['escrow'].lower(), x['mandateHash'], x['claimedAtPlan'], x['block']] for x in kept]
+    check('phase1/history/' + c['name'], [g[:len(w)] for g, w in zip(got, c['expect'])] if len(got) == len(c['expect']) else got, [[w[0].lower()] + list(w[1:]) for w in c['expect']])
+
+
+# ---------- phase 1: the channel mapping (§3b.2 items 2-7) and the lifetime of a withdraw request (R21) ----------
+# Written from §3b.2, §2.4 and §2.6 alone: the chain state of each abstract case is read the way the draft says a verifier
+# reads it, and the problems, warnings and enforcement compared with what the case requires. Not a port of the SDK.
+# 阶段 1：通道映射核验与提现请求的存活，只按设计稿 §3b.2、§2.4、§2.6 的文字实现，不是 SDK 的移植。
+LIFETIME = 48 * 3600 + 7 * 86400
+def p1_live(requested_at, now): return requested_at != 0 and now <= requested_at + LIFETIME
+lv = p1v['liveness']
+check('phase1/liveness/lifetime', LIFETIME, p1v['mapping']['times']['lifetime'])
+for at, now, live in lv['cases']:
+    check('phase1/liveness/%d at %d' % (at, now), p1_live(at, now), live)
+TOKENS_WITH_DECIMALS = {'A': 8, 'B': 18}   # C answers no decimals() / C 没有 decimals()
+def p1_channel(party, token, consumer_kind, now, probs, unresolvable):
+    if party is None or party.get('manifest') in ('none', 'no-escrow'):
+        probs.append(unresolvable); return None
+    e = party['escrow']
+    if not e['listed']: probs.append('escrow-not-allowed'); return None
+    if not e['code']: probs.append('escrow-other-chain'); return None
+    if e['token'] != token: probs.append('escrow-token-mismatch'); return None
+    st = party.get(consumer_kind) or {'channel': '0', 'session': 0, 'pending': None, 'claimed': '0'}
+    pend = st.get('pending') or ['0', 0]
+    live = p1_live(pend[1], now)
+    avail = max(0, int(st['channel']) - (int(pend[0]) if live else 0))
+    return {'channel': int(st['channel']), 'session': st['session'], 'live': live, 'available': str(avail), 'decimals': TOKENS_WITH_DECIMALS.get(token)}
+T1 = p1v['mapping']['times']
+for c in p1v['mapping']['cases']:
+    now, expires = c.get('at', T1['N']), T1['expires']
+    kind = 'principal' if c['path'] == 'container' else 'holder'
+    probs, warns, readings = [], [], []
+    for item in c['scope']:
+        r = p1_channel(c['chain'].get(item['provider']), item['token'], kind, now, probs, 'provider-unresolvable')
+        readings.append(r)
+        if r is None: continue
+        se = r['session']
+        if se == 0 or se < now: probs.append('session-missing')
+        elif se != expires: probs.append('session-expiry-mismatch')
+        if r['live']: probs.append('withdraw-pending')
+        if r['available'] == '0': probs.append('channel-empty')
+        if r['channel'] > int(item['cap']): probs.append('channel-exceeds-cap')   # review p1m12 F2: fails closed / 失败关闭
+    if c['fee']:
+        r = p1_channel(c['chain'].get('agent'), c['fee']['token'], kind, now, probs, 'agent-unresolvable')
+        if r is not None:
+            if r['session'] != 0: probs.append('agent-key-on-fee-channel')
+            if 'feeDue' in c and int(r['available']) < int(c['feeDue']): probs.append('fee-channel-short')
+    e = c['expect']
+    if now > expires: probs.insert(0, 'mandate-expired')   # the mandate's own window comes first / 授权书自身的时间窗先报
+    check('phase1/mapping/problems/' + c['name'], probs, e['problems'])
+    check('phase1/mapping/warnings/' + c['name'], warns, e['warnings'])
+    check('phase1/mapping/enforcement/' + c['name'], 'escrow-channel' if not probs else 'none', e['enforcement'])
+    if 'live' in e: check('phase1/mapping/live/' + c['name'], [r['live'] if r else None for r in readings], e['live'])
+    if 'available' in e: check('phase1/mapping/available/' + c['name'], [r['available'] if r else None for r in readings], e['available'])
+    if 'decimals' in e: check('phase1/mapping/decimals/' + c['name'], [r['decimals'] if r else None for r in readings], e['decimals'])
+
+
+# ---------- phase 1, M4: the agent runtime's spend limiter (draft §3b.2, §6.1 S5, §10.7) ----------
+# Written from the vectors' own rule text (phase1.rules.spend, phase1.rules.recheck) as a table of predicates: every rule is
+# evaluated on the case and the first that applies, in the rule text's order, is the refusal. Not a port of the SDK; the
+# order is the rule text's, which the SDK follows too, so an order wrong in both is caught only by the hand-written expect.
+# 阶段 1 的 M4：代理运行时的花费限额器，按向量里的规则文字写成谓词表：全部求值，取规则文字顺序中第一条适用的。不是 SDK 的移植。
+SPEND_STOP = {'spend-other-chain', 'spend-escrow-changed', 'spend-consumer-changed', 'spend-expired'}
+def p1_spend(rec, rq):
+    lo = lambda a: a.lower() if isinstance(a, str) else a
+    pin = next((x for x in rec.get('providers', []) if lo(x['provider']) == lo(rq['provider'])), None)
+    cum, price = int(rq['cumulative']), int(rq['price'])
+    ceiling = int(pin['base']) + int(pin['cap']) if pin else None
+    started = rec.get('state') == 'started'
+    rules = [
+        ('spend-not-started', not started),
+        ('spend-stopped', started and rec.get('stopped') is not None),
+        ('spend-other-chain', rq['chainId'] != rec['chainId']),
+        ('spend-out-of-scope', pin is None),
+        ('spend-escrow-changed', pin is not None and lo(rq['escrow']) != lo(pin['escrow'])),
+        ('spend-consumer-changed', started and lo(rq['consumer']) != lo(rec['consumer'])),
+        ('spend-not-yet', started and rq['now'] < rec['notBefore']),
+        ('spend-expired', started and rq['now'] > rec['expires']),
+        ('spend-bad-amount', price == 0 or cum == 0),
+        # the per-call ceiling (Bruce, 2026-10-08): maxPrice when given, else floor(cap * 10 / 100); 0 is no default
+        ('spend-call-price-ceiling-above-cap', pin is not None and rq.get('maxPrice') is not None and int(rq['maxPrice']) > int(pin['cap'])),
+        ('spend-call-price-ceiling-unset', pin is not None and rq.get('maxPrice') is None and int(pin['cap']) * 10 // 100 == 0),
+        ('spend-call-price-above-ceiling', pin is not None and price > (int(rq['maxPrice']) if rq.get('maxPrice') is not None else int(pin['cap']) * 10 // 100)),
+        ('spend-cap-exceeded', ceiling is not None and cum > ceiling),
+    ]
+    for code, applies in rules:
+        if applies: return {'refused': code, 'stop': code in SPEND_STOP}
+    hi = max(int(pin['hi']), cum)
+    return {'hi': str(hi), 'spent': str(hi - int(pin['base'])), 'remaining': str(ceiling - hi)}
+for c in p1v['spend']:
+    check('phase1/spend/' + c['name'], p1_spend(c['record'], c['request']), c['expect'])
+def p1_recheck(rec, ck):
+    lo = lambda a: a.lower() if isinstance(a, str) else a
+    stop = []
+    if ck.get('mandateHash') is not None and lo(ck['mandateHash']) != lo(rec['mandateHash']): stop.append('spend-mandate-changed')
+    if 'mandate-revoked' in ck['problems']: stop.append('spend-revoked')
+    if 'mandate-expired' in ck['problems']: stop.append('spend-expired')
+    if ck.get('consumer') is not None and lo(ck['consumer']) != lo(rec['consumer']): stop.append('spend-consumer-changed')
+    same_consumer = ck.get('consumer') is not None and lo(ck['consumer']) == lo(rec['consumer'])
+    readings = {lo(x['provider']): x for x in ck.get('scope', [])}
+    moved = False
+    every_reading = True
+    hi = []
+    for p in rec['providers']:
+        r = readings.get(lo(p['provider']))
+        if r is None or r.get('escrow') is None or r.get('claimedAtCheck') is None: every_reading = False
+        on_pin = r is not None and r.get('escrow') is not None and lo(r['escrow']) == lo(p['escrow'])
+        if r is not None and r.get('escrow') is not None and not on_pin: moved = True
+        counts = same_consumer and on_pin and r.get('claimedAtCheck') is not None
+        hi.append(str(max(int(p['hi']), int(r['claimedAtCheck']) if counts else 0)))
+    if moved: stop.append('spend-escrow-changed')
+    problems = list(ck['problems'])
+    # review p1m4: no problem of its own, yet not an enforced phase-1 check with every reading / 审查 p1m4
+    if not problems and (ck.get('phase') != 1 or ck.get('enforcement') != 'escrow-channel' or not every_reading): problems.append('spend-not-enforced')
+    return {'ok': not stop and not problems and ck['ok'] is True, 'stop': stop, 'problems': problems, 'hi': hi}
+for c in p1v['recheck']:
+    check('phase1/recheck/' + c['name'], p1_recheck(c['record'], c['check']), c['expect'])
+
+# ---------- @experimental TAPI-22 §3.6 / TAP draft "Payment Vouchers" (TAPs#52): USD prices paid in BEM ----------
+# Written from the draft's text: exact integer conversion (§4.3), the voucher with v of 27 or 28 only (§3.1), the signed
+# answers that carry quotes and charge records (§4.4, §6, §7), and the reference-rate arithmetic (§4.5) in Decimal.
+# 照草稿正文独立实现：精确整数换算、只收 v 为 27/28 的凭证、带报价与计费记录的签名回答、用 Decimal 算参考汇率。
+from decimal import Decimal as _D, getcontext as _getcontext
+_getcontext().prec = 120
+usd = load_vec('tapi-22-usd.json')
+_PRICE = re.compile(r'^[0-9]+(\.[0-9]{1,8})?$'); _RATE = re.compile(r'^[0-9]+(\.[0-9]{1,18})?$'); _AMT = re.compile(r'^[0-9]+\.[0-9]{8}$')
+def _units(s, rx, d):
+    if not isinstance(s, str) or not rx.match(s): return None
+    i, _, f = s.partition('.')
+    return int(i) * 10 ** d + int((f + '0' * d)[:d] or '0')
+def _amount8(n):
+    s = str(n).rjust(9, '0')
+    return s[:-8] + '.' + s[-8:]
+def usd_convert(p, r, c):
+    U = _units(p, _PRICE, 8)
+    if not U: return {'refused': 'priceUSD'}
+    R = _units(r, _RATE, 18)
+    if not R: return {'refused': 'rate'}
+    P = _units(c, _PRICE, 8)
+    if not P: return {'refused': 'priceBEM'}
+    conv = (U * 10 ** 18 + R - 1) // R
+    return {'U': str(U), 'R': str(R), 'P': str(P), 'converted': str(conv), 'charge': str(min(conv, P)), 'capped': conv > P,
+            'usd': {'currency': 'USD', 'amount': _amount8(U)}, 'bem': {'currency': 'BEM', 'amount': _amount8(min(conv, P))}}
+for c in usd['conversion']['cases']:
+    got = usd_convert(c['priceUSD'], c['rate'], c['priceBEM'])
+    check('usd/conversion/' + c['name'], got, {k: c[k] for k in got})
+for c in usd['conversion']['invalid']:
+    check('usd/conversion-refused/' + c['name'], usd_convert(c['priceUSD'], c['rate'], c['priceBEM']).get('refused'), c['refused'])
+
+uv = usd['voucher']; d = uv['domain']
+udom = eip712_domain(d['name'], d['version'], d['chainId'], d['verifyingContract'])
+check('usd/voucher/domainSeparator', h(udom), uv['domainSeparator'])
+check('usd/voucher/typeHash', h(keccak256(uv['type'].encode())), uv['typeHash'])
+def voucher_struct(v):
+    return keccak256(keccak256(uv['type'].encode()) + addr32(v['consumer']) + addr32(v['provider']) +
+                     int(v['cumulative']).to_bytes(32, 'big') + u64(v['expires']).rjust(32, b'\x00'))
+def recover_voucher(digest32, sig_hex):
+    """§3.1: 65 bytes, v of 27 or 28 only (0 and 1 refused, unlike TAP-13 §5), r in [1, n-1], s in [1, n/2]."""
+    sig = bytes.fromhex(sig_hex[2:])
+    if len(sig) != 65: return 'length'
+    if sig[64] not in (27, 28): return 'v'
+    r, s = int.from_bytes(sig[:32], 'big'), int.from_bytes(sig[32:64], 'big')
+    if not (0 < r < _SN and 0 < s <= _SN // 2): return 'r-or-s'
+    return recover_address(digest32, sig_hex)
+for c in uv['cases']:
+    sh = voucher_struct(c); dg = typed_digest(udom, sh)
+    check('usd/voucher-struct/' + c['name'], h(sh), c['structHash'])
+    check('usd/voucher-digest/' + c['name'], h(dg), c['digest'])
+    check('usd/voucher-signer/' + c['name'], recover_voucher(dg, c['sig']), c['recoversTo'].lower())
+first = uv['cases'][0]; fdg = typed_digest(udom, voucher_struct(first))
+for e in uv['refusedEncodingsOfCase1']:
+    check('usd/voucher-refused/' + e['name'], recover_voucher(fdg, e['sig']), e['refused'])
+    if 'recoversWhenUnchecked' in e:   # the high-s twin really is a valid signature of the same key / 高 s 孪生签名确是同一把钥匙的签名
+        sig = bytes.fromhex(e['sig'][2:]); r, s, v = int.from_bytes(sig[:32], 'big'), int.from_bytes(sig[32:64], 'big'), sig[64] - 27
+        y2 = (pow(r, 3, _SP) + 7) % _SP; y = pow(y2, (_SP + 1) // 4, _SP)
+        if y & 1 != v: y = _SP - y
+        ri = pow(r, -1, _SN); Q = _sec_add(_sec_mul(s * ri % _SN, (r, y)), _sec_mul((-int.from_bytes(fdg, 'big') * ri) % _SN, _SG))
+        check('usd/voucher-highs-unchecked', '0x' + keccak256(Q[0].to_bytes(32, 'big') + Q[1].to_bytes(32, 'big'))[12:].hex(), e['recoversWhenUnchecked'].lower())
+
+# canonical() reads the module-level _num, which a later section rebinds (line "def _num(x)"); these bodies hold only
+# strings, booleans and safe integers, so a local copy of TAP-11 §6 for them / 局部的规范 JSON（只含字符串、布尔与安全整数）
+def usd_canonical(v):
+    if v is None or isinstance(v, bool): return canonical(v)
+    if isinstance(v, int):
+        assert abs(v) <= 2 ** 53 - 1
+        return str(v)
+    if isinstance(v, str): return _str(v)
+    if isinstance(v, list): return '[' + ','.join(usd_canonical(x) for x in v) + ']'
+    return '{' + ','.join(_str(k) + ':' + usd_canonical(v[k]) for k in sorted(v, key=_utf16_key)) + '}'
+def usd_response_digest(container, id_, method, params, ok, body, ts):
+    return keccak256(b'TAPI-1/resp/v2' + bytes.fromhex(container[2:]) + keccak256(id_.encode()) +
+                     keccak256(usd_canonical({'method': method, 'params': params}).encode()) + (b'\x01' if ok else b'\x00') +
+                     keccak256(usd_canonical(body).encode()) + u64(ts))
+ue = usd['envelopes']; up = ue['manifestExcerpt']['usdPricing']; ucap = ue['manifestExcerpt']['methods'][0]['priceBEM']
+def quote_ok(q, ts):
+    return (isinstance(q, dict) and sorted(q) == ['asOf', 'rate', 'validUntil'] and bool(_units(q['rate'], _RATE, 18))
+            and q['asOf'] <= ts and q['asOf'] < q['validUntil'] <= q['asOf'] + up['maxQuoteS'])
+for c in ue['cases']:
+    check('usd/envelope-canonical/' + c['name'], usd_canonical(c['body']), c['canonicalBody'])
+    dg = usd_response_digest(ue['container'], c['id'], c['request']['method'], c['request']['params'], c['ok'], c['body'], c['ts'])
+    check('usd/envelope-digest/' + c['name'], h(dg), c['digest'])
+    check('usd/envelope-eip191/' + c['name'], h(eip191(dg)), c['eip191Digest'])
+    check('usd/envelope-signer/' + c['name'], recover_address(eip191(dg), c['sig']), ue['signer'].lower())
+    data = c['body']['charge'] if c['ok'] else c['body']['data']
+    check('usd/envelope-quote/' + c['name'], quote_ok(data['quote'], c['ts']), True)
+    price = up['methods']['search']
+    if c['ok']:
+        cv = usd_convert(price, data['rate'], ucap)
+        # §7: amount = cumulative − last (last = 0 here), price = the manifest's, capped present exactly when it caps
+        check('usd/charge-record/' + c['name'], (data['amount'], data['price'], 'capped' in data, data['cumulative']), (cv['bem'], cv['usd'], cv['capped'], cv['charge']))
+    else:
+        cv = usd_convert(price, data['quote']['rate'], ucap)
+        check('usd/error-price/' + c['name'], (data['price'], data['priceUSD']), (cv['charge'], cv['usd']))
+        if c['body']['code'] == 'BAD_VOUCHER':
+            check('usd/error-reason/' + c['name'], data['reason'] in ('malformed', 'provider', 'expired', 'lifetime', 'signature', 'rate', 'stale', 'insufficient', 'funds'), True)
+
+urs = usd['rateSource']
+def usd_rate(t, bem0, du):
+    p = _D('1.0001') ** t
+    return p * _D(10) ** (8 - du) if bem0 else 1 / (p * _D(10) ** (du - 8))
+_rates = []
+for s in urs['constructed']:
+    t = (int(s['tickCumulatives'][1]) - int(s['tickCumulatives'][0])) // s['window']   # floor: toward negative infinity
+    check('usd/meanTick/' + s['name'], str(t), s['meanTick'])
+    r = usd_rate(t, s['bemIsToken0'], s['usdDecimals'])
+    check('usd/rate/' + s['name'], abs(r - _D(repr(s['rate']))) / r < _D('1e-9'), True)
+    _rates.append(r)
+_ref = (_rates[0] + _rates[1]) / 2
+check('usd/median-of-two', abs(_ref - _D(repr(urs['referenceOfFirstTwo']))) / _ref < _D('1e-9'), True)
+for c in urs['checks']:
+    check('usd/check/%s @%d' % (c['name'], c['toleranceBps']), _D(c['rate']) * 10000 >= _ref * (10000 - c['toleranceBps']), c['accepted'])
+for r in urs['recordedReads']['reads']:
+    check('usd/recorded/' + r['pool'], str((int(r['tickCumulatives'][1]) - int(r['tickCumulatives'][0])) // r['window']), r['meanTick'])
+
+# phase 1, restart: may an order resume with the key its vault opened (phase1.rules.resume), predicates in the rule's order
+# 阶段 1 的重启：能否恢复订单，按规则文字顺序的谓词
+def p1_resume(rec, rq):
+    lo = lambda a: a.lower() if isinstance(a, str) else a
+    key, mh = rq['key'], rq.get('mandateHash')
+    started = rec is not None and rec.get('state') == 'started'
+    rules = [
+        ('spend-state-lost', rec is None),
+        ('spend-stopped', rec is not None and rec.get('stopped') is not None),
+        ('spend-key-lost', key == 'missing'),
+        ('spend-key-unreadable', key == 'unreadable'),
+        ('spend-key-mismatch', rec is not None and (rq['chainId'] != rec['chainId'] or lo(rq['agentKey']) != lo(rec['agentKey']) or lo(key) != lo(rec['agentKey']))),
+        ('spend-resume-mismatch', rec is not None and ((started and (mh is None or lo(mh) != lo(rec['mandateHash']))) or (not started and mh is not None))),
+    ]
+    for code, applies in rules:
+        if applies: return {'ok': False, 'refused': code}
+    return {'ok': True}
+for c in p1v['resume']:
+    check('phase1/resume/' + c['name'], p1_resume(c['record'], c['request']), c['expect'])
+
+# ---------- phase 1, M7: the spend statement of a delivery and its reconciliation (draft §2.3 rule 5, §6.1 S8, R16) ----------
+# Written from the vectors' rule text (phase1.rules.statement, phase1.rules.evidence) as predicates, not ported from the
+# SDK: the order is the rule text's, which the SDK follows too, so an order wrong in both is caught only by the
+# hand-written expect. Addresses compare in any case (the statement is compared in lower case).
+# 阶段 1 的 M7：交付的花费说明与对账，按规则文字写成谓词，不是 SDK 的移植；地址不区分大小写（说明按小写比较）。
+import re as _re
+_DEC = _re.compile(r'^(0|[1-9][0-9]*)$')
+def _dec(v): return isinstance(v, str) and bool(_DEC.match(v)) and int(v) < 2 ** 256
+def _addr(v): return isinstance(v, str) and bool(_re.match(r'^0x[0-9a-fA-F]{40}$', v))
+def _lo(v): return v.lower() if isinstance(v, str) else v
+def p1_statement(rec, ck):
+    if ck.get('consumer') is None or _lo(ck['consumer']) != _lo(rec['consumer']): return []
+    out = []
+    for p in rec['providers']:
+        r = next((x for x in ck.get('scope', []) if _lo(x.get('provider')) == _lo(p['provider'])), None)
+        if r is None or r.get('escrow') is None or _lo(r['escrow']) != _lo(p['escrow']) or not _dec(r.get('claimedAtCheck')): continue
+        if int(r['claimedAtCheck']) < int(p['base']): continue
+        out.append({'provider': _lo(p['provider']), 'escrow': _lo(p['escrow']), 'claimedAtStart': p['base'], 'claimedAtDelivery': r['claimedAtCheck'], 'spent': str(int(r['claimedAtCheck']) - int(p['base']))})
+    return out
+for c in p1v['statement']:
+    want = [{k: _lo(x) for k, x in e.items()} for e in c['expect']]
+    check('phase1/statement/' + c['name'], p1_statement(c['record'], c['check']), want)
+def p1_evidence(spend, mandate, calls, readings, prices):
+    capped = [s for s in mandate['scope'] if s['cap'] != '0']
+    probs, warns, items = [], [], []
+    if not isinstance(spend, list) or len(spend) > len(capped): return {'problems': ['spend-evidence-malformed'], 'warnings': [], 'items': []}
+    named, seen = set(), set()
+    for e in spend:
+        has_addr = isinstance(e, dict) and _addr(e.get('provider'))
+        if has_addr: named.add(_lo(e['provider']))
+        well_formed = has_addr and _addr(e.get('escrow')) and int(e['escrow'], 16) != 0 and all(_dec(e.get(k)) for k in ('claimedAtStart', 'claimedAtDelivery', 'spent'))
+        rules = [
+            ('spend-evidence-malformed', not well_formed or _lo(e['provider']) in seen),
+            ('spend-provider-out-of-scope', well_formed and not any(_lo(s['provider']) == _lo(e['provider']) for s in capped)),
+            ('spend-evidence-inconsistent', well_formed and (int(e['claimedAtDelivery']) < int(e['claimedAtStart']) or int(e['spent']) != int(e['claimedAtDelivery']) - int(e['claimedAtStart']))),
+        ]
+        hit = next((code for code, applies in rules if applies), None)
+        if well_formed and hit != 'spend-evidence-malformed': seen.add(_lo(e['provider']))
+        if hit: probs.append(hit); continue
+        cap = next(s for s in capped if _lo(s['provider']) == _lo(e['provider']))
+        start, spent = int(e['claimedAtStart']), int(e['spent'])
+        it = {'reconciled': None, 'spentNow': None, 'expected': None}
+        r = next((x for x in (readings or []) if _lo(x.get('provider')) == _lo(e['provider'])), None) if readings is not None else None
+        if r is not None and _addr(r.get('escrow')) and _dec(r.get('claimedAtCheck')):
+            if _lo(r['escrow']) != _lo(e['escrow']): warns.append('spend-escrow-changed')
+            else:
+                now = int(r['claimedAtCheck'])
+                if now >= start: it['spentNow'] = str(now - start)
+                if now < int(e['claimedAtDelivery']): warns.append('spend-above-chain')
+        if (int(it['spentNow']) if it['spentNow'] is not None else spent) > int(cap['cap']): warns.append('spend-above-cap')
+        mine = [c for c in calls if c.get('ok') is True and _lo(c.get('provider')) == _lo(e['provider'])]
+        table = (prices or {}).get(_lo(e['provider'])) if prices is not None else None
+        if isinstance(table, dict) and all(isinstance(c.get('method'), str) and c['method'] in table and _dec(table[c['method']]) for c in mine):
+            expected = sum(int(table[c['method']]) for c in mine)
+            it['expected'] = str(expected)
+            measured = int(it['spentNow']) if it['spentNow'] is not None else spent
+            it['reconciled'] = 'equal' if measured == expected else ('above' if measured > expected else 'below')
+            if it['reconciled'] == 'above': warns.append('spend-exceeds-receipts')
+            if it['reconciled'] == 'below': warns.append('spend-below-receipts')
+        items.append(it)
+    for s in capped:
+        if _lo(s['provider']) not in named: warns.append('spend-evidence-incomplete')
+    return {'problems': probs, 'warnings': warns, 'items': items}
+for c in p1v['evidence']:
+    r = p1_evidence(c['spend'], c['mandate'], c['calls'], c['readings'], c['prices'])
+    got = {'problems': r['problems'], 'warnings': r['warnings'], 'reconciled': [i['reconciled'] for i in r['items']], 'spentNow': [i['spentNow'] for i in r['items']], 'expected': [i['expected'] for i in r['items']]}
+    check('phase1/evidence/' + c['name'], got, c['expect'])
+
+
+# ---------- phase 1, restart: the key vault (phase1.rules.keyVault) ----------
+# scrypt is checked with hashlib.scrypt where this Python has it (OpenSSL builds, e.g. CI's 3.12); a Python linked against
+# LibreSSL has none, and scrypt at N = 2^17 in pure Python is too slow to run here, so the KDF step is then reported as not
+# checked (never counted as passed). The AEAD step is always checked, with the key each case gives: XChaCha20-Poly1305 from
+# this file's own ChaCha20, Poly1305 and HChaCha20; opening = decrypt, then seal again and compare.
+# 阶段 1 的重启：钥匙保险箱。scrypt 只在本 Python 带 hashlib.scrypt 时核对（OpenSSL 构建，如 CI 的 3.12）；LibreSSL 构建没有它，
+# 纯 Python 的 scrypt（N = 2^17）太慢，此时 KDF 一步明确报"未核对"（不计入通过）。AEAD 一步总是核对，用各例给出的密钥。
+import hashlib as _hashlib
+kv = p1v['keyVault']
+KV_PREFIX = kv['params']['prefix']
+kv_kdf_checked = 0
+def kv_kdf(passphrase, salt_hex):
+    global kv_kdf_checked
+    if not hasattr(_hashlib, 'scrypt'): return None
+    kv_kdf_checked += 1
+    pr = kv['params']
+    return _hashlib.scrypt(passphrase.encode('utf-8'), salt=bytes.fromhex(salt_hex), n=pr['N'], r=pr['r'], p=pr['p'], maxmem=2 ** 28, dklen=pr['dkLen']).hex()
+def kv_aad(context): return ('tapeapi/key-vault/v1\n' + context).encode('utf-8')
+def kv_parse(blob):
+    if not isinstance(blob, str) or not blob.startswith(KV_PREFIX): return None
+    h = blob[len(KV_PREFIX):]
+    if len(h) < 2 * (16 + 24 + 16) or len(h) % 2 or any(ch not in '0123456789abcdef' for ch in h): return None
+    b = bytes.fromhex(h)
+    return b[:16], b[16:40], b[40:]
+def kv_open(key, blob, context):
+    parts = kv_parse(blob)
+    if parts is None: return 'key-vault-malformed', None
+    salt, nonce, sealed = parts
+    ct = sealed[:-16]
+    sub = _hchacha20(key, nonce[:16])
+    pt = _chacha20(sub, 1, b'\x00' * 4 + nonce[16:24], ct)
+    if xchacha20poly1305_seal(key, nonce, kv_aad(context), pt) != sealed: return 'key-vault-open-failed', None
+    return 'ok', pt
+for c in kv['seal']:
+    check('phase1/keyVault/aad/' + c['name'], kv_aad(c['context']).hex(), c['aad'])
+    blob = KV_PREFIX + c['salt'] + c['nonce'] + xchacha20poly1305_seal(bytes.fromhex(c['key']), bytes.fromhex(c['nonce']), kv_aad(c['context']), bytes.fromhex(c['plaintext'])).hex()
+    check('phase1/keyVault/seal/' + c['name'], blob, c['blob'])
+    check('phase1/keyVault/open/' + c['name'], kv_open(bytes.fromhex(c['key']), c['blob'], c['context']), ('ok', bytes.fromhex(c['plaintext'])))
+    k = kv_kdf(c['passphrase'], c['salt'])
+    if k is not None: check('phase1/keyVault/kdf/' + c['name'], k, c['key'])
+for c in kv['open']:
+    parts = kv_parse(c['blob'])
+    check('phase1/keyVault/parse/' + c['name'], parts is None, c['expect'] == 'key-vault-malformed')
+    if c['key'] is not None:
+        check('phase1/keyVault/open/' + c['name'], kv_open(bytes.fromhex(c['key']), c['blob'], c['context'])[0], c['expect'])
+        k = kv_kdf(c['passphrase'], parts[0].hex())
+        if k is not None: check('phase1/keyVault/kdf/' + c['name'], k, c['key'])
+if kv_kdf_checked == 0:
+    # on stderr: stdout stays the one summary line sdk/test/vectors.test.mjs reads / 写到 stderr：stdout 只留一行总结
+    print('NOTE: this Python has no hashlib.scrypt (built against %s): the key-vault KDF step (scrypt N=2^17) was NOT checked here; the AEAD step was. CI (Python 3.12, OpenSSL) checks both.' % __import__('ssl').OPENSSL_VERSION, file=sys.stderr)
+
+# ======================================== Evidence-backed reviews (experimental, draft TAPs #54) ====
+# Written from the draft's §2.1, §4.2 and §4.3 alone: the Review type in the TAP-11 domain whose chainId is the
+# reviewer's (read from its endpoint ID, TAP-10 §12.1), the review hash of every case the vectors accept, the signer of
+# every case signed by the holder or the delegate, every level-1 subject (the TAP-13 §5 digest rebuilt from a hash-only
+# receipt) and its signer, every level-2 subject (the mandate hash in the principal's chain) and the delivery's signer.
+# The rules of §6 (which problem, counted or not) are the SDK's; this checks only the hashes and signatures they rest on.
+# 只按草稿 §2.1、§4.2、§4.3 实现：类型哈希、域、每条被接受用例的评价哈希与签名者、1 级 subject 与签名者、2 级 subject 与交付签名者。
+rv = load_vec('tap-draft-container-reviews.json')
+RV_FIELDS = [('bytes32', 'reviewer'), ('bytes32', 'reviewee'), ('uint8', 'kind'), ('uint8', 'score'), ('bytes32', 'subject'),
+             ('bytes32', 'evidenceHash'), ('bytes32', 'textHash'), ('uint64', 'issued')]
+rv_type = 'Review(%s)' % ','.join('%s %s' % f for f in RV_FIELDS)
+check('review/type', rv_type, rv['constants']['REVIEW_TYPE'])
+rv_th = keccak256(rv_type.encode())
+check('review/typehash', h(rv_th), rv['constants']['REVIEW_TYPEHASH'])
+check('review/typehash as the draft prints it', h(rv_th), '0xb9c66a727a6fba79714dcc4f0dfdbaf876840b1a35de576ed8fe3eef1f1b9a0b')
+rv_hub = rv['constants']['hub']
+for cid, dsep in rv['constants']['domainSeparator'].items():
+    check('review/domain %s' % cid, h(eip712_domain('TapeAPI', '1', int(cid), rv_hub)), dsep)
+check('review/domain 56 is TAP-11\'s', rv['constants']['domainSeparator']['56'], '0xa73ee348b5672f12dbc174f66a7d162c69e0d64befdba88475d9d7e3c0fd3ac7')
+def rv_chain(ep):
+    return int(ep[10:26], 16)
+def rv_digest(r):
+    out = rv_th
+    for t, f in RV_FIELDS:
+        out += ca_b32(r[f]) if t == 'bytes32' else ca_word(r[f])
+    return typed_digest(eip712_domain('TapeAPI', '1', rv_chain(r['reviewer']), rv_hub), keccak256(out))
+def rv_facts(c, k):
+    m = dict(rv['facts'][k]); m.update((c.get('facts') or {}).get(k) or {})
+    return {a.lower(): b.lower() for a, b in m.items()}
+rv_counts = {'hash': 0, 'signer': 0, 'l1': 0, 'l2': 0}
+for c in rv['cases']:
+    e, rec = c['expect'], c['record']
+    if not e['valid']:
+        if 'record-signature' in e['problems']:
+            check('review/high-s is refused/' + c['name'], recover_address(rv_digest(rec['review']), rec['sig']), None)
+        continue
+    r = rec['review']
+    dg = rv_digest(r)
+    check('review/hash/' + c['name'], h(dg), e['hash']); rv_counts['hash'] += 1
+    holders, signers = rv_facts(c, 'holders'), rv_facts(c, 'signers')
+    if e['signedBy'] == 'holder':
+        check('review/signer holder/' + c['name'], recover_address(dg, rec['sig']), holders[r['reviewer']]); rv_counts['signer'] += 1
+    elif e['signedBy'] == 'delegate':
+        check('review/signer delegate/' + c['name'], recover_address(dg, rec['sig']), signers[r['reviewer']]); rv_counts['signer'] += 1
+    if 'text' in rec and r['textHash'] != '0x' + '00' * 32:
+        check('review/textHash/' + c['name'], h(keccak256(canonical(rec['text']).encode('utf-8'))), r['textHash'])
+    if e['level'] == 1:
+        rc = rec['evidence']['receipt']
+        reviewee = '0x' + r['reviewee'][26:]
+        sd = keccak256(b'TAPI-1/resp/v2' + bytes.fromhex(reviewee[2:]) + keccak256(rc['id'].encode('utf-8')) + ca_b32(rc['requestHash']) +
+                       (b'\x01' if rc['ok'] else b'\x00') + ca_b32(rc['bodyHash']) + u64(rc['ts']))
+        check('review/level-1 subject/' + c['name'], h(sd), r['subject'])
+        check('review/level-1 signer/' + c['name'], recover_address(eip191(sd), rc['sig']), signers[r['reviewee']])
+        check('review/level-1 id names the reviewer/' + c['name'], rc['id'].startswith('tape-review:0x' + r['reviewer'][26:] + ':'), True)
+        check('review/evidenceHash/' + c['name'], h(keccak256(canonical(rec['evidence']).encode('utf-8'))), r['evidenceHash'])
+        rv_counts['l1'] += 1
+    if e['level'] == 2:
+        ev = rec['evidence']
+        m = ev['mandate']
+        parties = {('0x' + r['reviewer'][26:]).lower(): r['reviewer'], ('0x' + r['reviewee'][26:]).lower(): r['reviewee']}
+        pep, aep = parties[m['principal'].lower()], parties[m['agent'].lower()]
+        pdom = eip712_domain('TapeAPI', '1', rv_chain(pep), rv_hub)
+        md = typed_digest(pdom, ca_struct('Mandate', m))
+        check('review/level-2 subject/' + c['name'], h(md), r['subject'])
+        check('review/level-2 mandate signer/' + c['name'], recover_address(md, ev['mandateSig']), holders[pep])
+        check('review/level-2 verdict signer/' + c['name'], recover_address(typed_digest(pdom, ca_struct('TaskVerdict', ev['verdict'])), ev['verdictSig']), holders[pep])
+        dl = ev['deliver']
+        dd = response_digest('TAPI-1/resp/v2', '0x' + aep[26:], dl['id'], dl['method'], dl.get('params', {}), True, dl['result'], dl['ts'])
+        check('review/level-2 delivery signer/' + c['name'], recover_address(eip191(dd), dl['sig']), signers[aep])
+        check('review/evidenceHash/' + c['name'], h(keccak256(canonical(ev).encode('utf-8'))), r['evidenceHash'])
+        rv_counts['l2'] += 1
+check('review/coverage (hashes, signers, level 1, level 2)', (rv_counts['hash'], rv_counts['signer'], rv_counts['l1'], rv_counts['l2']), (45, 39, 12, 4))
+allth.append(rv_th)
+check('review/the Review typehash differs from every other type of the hub domain', len(set(allth)), len(allth))
 
 if fail:
     print('FAIL: %d of %d checks disagreed with the reference implementation\n' % (len(fail), checked))

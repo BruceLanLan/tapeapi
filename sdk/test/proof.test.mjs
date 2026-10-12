@@ -87,7 +87,11 @@ const at = async (fn) => {
   mock.timers.enable({ apis: ['Date'], now: (fx.block.timestamp + 1) * 1000 })
   try { return await fn() } finally { mock.timers.reset() }
 }
-const client = (r, o = {}) => createTapeAPI({ rpcUrls: RPC, quorum: 2, fetch: r.fetch, pin: true, onWarning: () => {}, ...o })
+// 2.0: conform: false warns once (DEPRECATED, option 'conform') on onWarning; the collectors below record the warnings under test only.
+// 2.0：conform: false 会在 onWarning 上警告一次（DEPRECATED）；下面的收集器只记录被测的警告。
+const sink = (arr, f = (w) => w) => (w) => { if (!(w.code === 'DEPRECATED' && w.option === 'conform')) arr.push(f(w)) }
+// 1.x behaviour; 2.0 default is conform: 'tap10'
+const client = (r, o = {}) => createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, fetch: r.fetch, pin: true, onWarning: () => {}, ...o })
 
 // ---------------------------------------------------------------- verifier ----
 test('CONFIRMED PROOF-1: the recorded eth_getProof answers verify against the pinned stateRoot and prove exactly what the nodes answered by eth_call', () => {
@@ -255,7 +259,7 @@ test('FIXED PROOF-8: pin + proofs \'strict\' resolves 11.1013.tape offline with 
 test('FIXED PROOF-9: proofs: true warns and keeps the quorum reads when no node serves proofs; \'strict\' refuses with PROOF_UNAVAILABLE', async () => {
   const r = replay({ prover: () => false })
   const warned = []
-  const svc = await at(() => client(r, { proofs: true, onWarning: (w) => warned.push(w) }).resolve(fx.name))
+  const svc = await at(() => client(r, { proofs: true, onWarning: sink(warned) }).resolve(fx.name))
   assert.equal(svc.verified.holder, fx.holder)
   assert.deepEqual(svc.proofs.verified, [])
   assert.deepEqual(svc.proofs.unavailable.map((x) => x.read).sort(), ['cpuAt', 'fileInfo', 'isCPU', 'ownerOf'])
@@ -275,7 +279,7 @@ test('FIXED PROOF-10: a served proof changed in one byte is PROOF_INVALID in str
   const tamper = (a, address) => { if (address.toLowerCase() === '0xd006ffdd5ae313b17729621a00999cd3c71ce5e6') a.storageProof[2].proof[1] = flip(a.storageProof[2].proof[1], 40); return a }
   await assert.rejects(at(() => client(replay({ tamper }), { proofs: 'strict' }).resolve(fx.name)), (e) => e.code === 'PROOF_INVALID' && e.data.read === 'fileInfo' && /does not hash/.test(e.message))
   const warned = []
-  const svc = await at(() => client(replay({ tamper }), { proofs: true, onWarning: (w) => warned.push(w) }).resolve(fx.name))
+  const svc = await at(() => client(replay({ tamper }), { proofs: true, onWarning: sink(warned) }).resolve(fx.name))
   assert.deepEqual(svc.proofs.invalid.map((x) => x.read), ['fileInfo'])
   assert.deepEqual(warned.map((w) => w.code), ['PROOF_INVALID'])
   // every node reports the same, wrong, stateRoot: the proofs do not verify against it / 所有节点报同一个错误的 stateRoot
@@ -317,11 +321,11 @@ test('CONFIRMED PROOF-11: nodes that all collude on eth_call can hand a pinned c
 
 test('FIXED PROOF-12: proofs is off by default and needs pin; it adds no round, only the eth_getProof requests', async () => {
   const invalid = (re) => (e) => e instanceof TapeAPIError && e.code === 'INVALID_ARGUMENT' && re.test(e.message)
-  assert.throws(() => createTapeAPI({ rpcUrls: RPC, proofs: true }), invalid(/proofs needs pin/))
-  assert.throws(() => createTapeAPI({ rpcUrls: RPC, pin: false, proofs: 'strict' }), invalid(/proofs needs pin/))
-  assert.throws(() => createTapeAPI({ rpcUrls: RPC, pin: true, proofs: 'yes' }), invalid(/proofs: pass true/))
-  assert.throws(() => createTapeAPI({ rpcUrls: RPC, pin: true, proofs: true, chains: { 196: { pin: false } } }).forChain(196), invalid(/proofs needs pin/))
-  createTapeAPI({ rpcUrls: RPC, pin: true, proofs: false })
+  assert.throws(() => createTapeAPI({ conform: false, rpcUrls: RPC, proofs: true }), invalid(/proofs needs pin/))
+  assert.throws(() => createTapeAPI({ conform: false, rpcUrls: RPC, pin: false, proofs: 'strict' }), invalid(/proofs needs pin/))
+  assert.throws(() => createTapeAPI({ conform: false, rpcUrls: RPC, pin: true, proofs: 'yes' }), invalid(/proofs: pass true/))
+  assert.throws(() => createTapeAPI({ conform: false, rpcUrls: RPC, pin: true, proofs: true, chains: { 196: { pin: false } } }).forChain(196), invalid(/proofs needs pin/))
+  createTapeAPI({ conform: false, rpcUrls: RPC, pin: true, proofs: false })
   // Rounds: a round starts when nothing is in flight / 轮：没有请求在途时开始新一轮
   const metered = (r) => {
     const m = { rounds: 0, inflight: 0, requests: 0 }
@@ -356,7 +360,7 @@ test('FIXED PROOF-12: proofs is off by default and needs pin; it adds no round, 
   }
   const resolveMetered = async (o, apiOpts) => {
     const r = replay(o), m = metered(r)
-    const svc = await atTicking(() => createTapeAPI({ rpcUrls: RPC, quorum: 2, fetch: m.fetch, pin: true, ...apiOpts }).resolve(fx.name))
+    const svc = await atTicking(() => createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, fetch: m.fetch, pin: true, ...apiOpts }).resolve(fx.name))
     return { r, m, svc }
   }
   const { r: off, m: mOff, svc: plain } = await resolveMetered({}, {})
@@ -390,7 +394,7 @@ test('FIXED PROOFR-1: a node serving a bad proof no longer vetoes strict: the re
   assert.equal(asked(r.log, RPC[1]), 6, 'b serves every proof of both resolutions')
   // the same with proofs: true: nothing left to warn about / proofs: true 同样：没有可警告的
   const w = []
-  const svc = await at(() => client(replay({ prover: () => true, tamper: (a, _x, url) => { if (url === RPC[0]) a.accountProof[3] = flip(a.accountProof[3], 7); return a } }), { proofs: true, onWarning: (x) => w.push(x) }).resolve(fx.name))
+  const svc = await at(() => client(replay({ prover: () => true, tamper: (a, _x, url) => { if (url === RPC[0]) a.accountProof[3] = flip(a.accountProof[3], 7); return a } }), { proofs: true, onWarning: sink(w) }).resolve(fx.name))
   assert.equal(svc.proofs.verified.length, 4)
   assert.deepEqual(svc.proofs.invalid, [])
   assert.equal(w.length, 0)
@@ -446,7 +450,7 @@ test('FIXED PROOFR-2: a verified proof that contradicts the quorum is refused wi
   // Before: proofs: true warned PROOF_INVALID twice and returned the attacker's holder and endpoint.
   // 修前：proofs: true 只警告两次 PROOF_INVALID，照样返回攻击者的持有人与端点。
   const w = []
-  await assert.rejects(at(() => client(replay({ forge }), { proofs: true, onWarning: (x) => w.push(x) }).resolve(fx.name)),
+  await assert.rejects(at(() => client(replay({ forge }), { proofs: true, onWarning: sink(w) }).resolve(fx.name)),
     (e) => e.code === 'PROOF_INVALID' && e.data.read === 'fileInfo' && /differs from what the nodes answered/.test(e.message) && e.data.block === fx.block.number)
   // the circuit's proven owner slot differs from the nodes' ownerOf: refused at ownerOf with proofs: true too
   // 电路合约已证明的 owner 槽与节点的 ownerOf 不同：proofs: true 同样在 ownerOf 拒绝
@@ -455,7 +459,7 @@ test('FIXED PROOFR-2: a verified proof that contradicts the quorum is refused wi
   // a proof that cannot be had still falls back with proofs: true (PROOF-9), and a forged answer then goes through, as
   // without proofs: detection only / 拿不到证明时 proofs: true 仍回退（PROOF-9），伪造的回答此时照样通过：只是检测
   const w2 = []
-  const fooled = await at(() => client(replay({ forge, prover: () => false }), { proofs: true, onWarning: (x) => w2.push(x) }).resolve(fx.name))
+  const fooled = await at(() => client(replay({ forge, prover: () => false }), { proofs: true, onWarning: sink(w2) }).resolve(fx.name))
   assert.deepEqual(fooled.manifest.endpoints.live, ['https://evil.example/tapeapi/v1'])
   assert.ok(w2.length > 0 && w2.every((x) => x.code === 'PROOF_UNAVAILABLE'))
 })
@@ -573,7 +577,7 @@ test('FIXED PROOFR-5: a confirming node that leaves the stateRoot out is not cou
   }
   // Resolve: one of three nodes leaves the stateRoot out; strict proves everything / 解析：三个节点中一个省略，strict 全部证明
   const r = replay({ rootOf: (url) => (url === RPC[0] ? undefined : B.stateRoot) })
-  const svc = await at(() => createTapeAPI({ rpcUrls: [...RPC, 'https://c.invalid'], quorum: 2, fetch: r.fetch, pin: true, proofs: 'strict', onWarning: () => {} }).resolve(fx.name))
+  const svc = await at(() => createTapeAPI({ conform: false, rpcUrls: [...RPC, 'https://c.invalid'], quorum: 2, fetch: r.fetch, pin: true, proofs: 'strict', onWarning: () => {} }).resolve(fx.name))
   assert.equal(svc.proofs.verified.length, 4)
   // two nodes, one without it: not enough operators, so the proofs are unavailable (never RPC_DISAGREE)
   // 两个节点、一个省略：运营方不够，证明不可用（绝不是 RPC_DISAGREE）

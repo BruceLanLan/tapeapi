@@ -71,6 +71,8 @@ A document that intends to become Stable (v1) MAY say so while still in Draft wi
 3. A verifier MUST NOT accept a message under a version it does not implement, and MUST NOT interpret a message of one version under the rules of the other. An implementation MAY implement both versions side by side, and a provider MAY offer both at once.
 4. v1 MUST NOT be moved to Withdrawn earlier than 12 months after v2 becomes Stable, and the planned date MUST be written into the v1 document at least 3 months in advance.
 
+**Stable (vN) and the `-vN.md` files.** Version N of a document (N ≥ 2) made under these rules is a document of its own, in the file `TAPI-<number>-vN.md` beside the version-1 file `TAPI-<number>.md` (for example `TAPI-26-v2.md` beside `TAPI-26.md`). It keeps the number, says `<number> (version N)` in its `TAPI` row, and names the version it replaces in its `Requires` row. It goes through the statuses above on its own: Draft, then **Stable (vN)**, written with its version number (Stable (v2), Stable (v3), …). Stable (vN) means what Stable (v1) means, for version N: version N is frozen under the freeze above, read with "version N" in place of "version 1", and a change the freeze does not allow is made as version N+1 under items 1 to 4, with "vN" and "vN+1" in place of "v1" and "v2". "Becomes Stable" in item 4 means that the later version's `Status` row reads Stable (vN). Which version an implementation uses by default is the implementation's choice and is not a status: the earlier version keeps its own status until it is withdrawn under item 4.
+
 **Relationship to TapeKit.** These statuses exist only because TapeKit has no process yet. When the TapeKit maintainers assign a number or a status to one of these documents, or adopt a process of their own, TapeKit's assignment prevails: the document takes the number and status TapeKit gives it, and its front matter records how the status used here maps onto it (for example "Stable (v1), now TapeKit Final"). If TapeKit asks for an incompatible change to a Stable (v1) document, the change is made as v2 under the rules above, so the mapping never breaks a v1 implementation.
 
 ## 5. Numbering
@@ -191,6 +193,8 @@ TapeKit 目前还没有编号提案流程（§5），因此任何文档都无法
 2. 发布 v2 不改变 v1：v1 仍为 Stable (v1)，合规的 v1 实现仍然合规。
 3. 验证方 MUST NOT 按自己未实现的版本接受消息，也 MUST NOT 按另一版本的规则解释某一版本的消息。实现 MAY 并行实现两个版本，提供者 MAY 同时提供两个版本。
 4. v2 进入 Stable 之后未满 12 个月，v1 MUST NOT 被改为 Withdrawn；计划日期 MUST 至少提前 3 个月写入 v1 文档。
+
+**Stable (vN) 与 `-vN.md` 文件。** 按上述规则做出的文档第 N 版（N ≥ 2）是一份独立的文档，文件名为 `TAPI-<编号>-vN.md`，与第 1 版的文件 `TAPI-<编号>.md` 并列（例如 `TAPI-26-v2.md` 与 `TAPI-26.md`）。它沿用原编号，`TAPI` 行写 `<编号> (version N)`，并在 `Requires` 行写明它所替代的版本。它独立经历上面的状态：先是 Draft，然后是 **Stable (vN)**，写上自己的版本号（Stable (v2)、Stable (v3)……）。Stable (vN) 对第 N 版的含义与 Stable (v1) 对第 1 版的含义相同：第 N 版按上面的冻结规则冻结（把"第 1 版"读作"第 N 版"）；冻结规则不允许的修改按第 1 至 4 项作为第 N+1 版做出（把"v1""v2"读作"vN""vN+1"）。第 4 项中的"进入 Stable"指后一版本的 `Status` 行写为 Stable (vN)。实现默认使用哪个版本由实现自己决定，不是状态：前一版本在按第 4 项撤回之前保持其自身的状态。
 
 **与 TapeKit 的关系。** 这些状态只因 TapeKit 尚无流程而存在。TapeKit 维护者一旦为其中某份文档分配编号或状态，或采纳自己的流程，即以 TapeKit 为准：文档采用 TapeKit 给出的编号与状态，并在头部记录此处所用状态与之的对应关系（例如"Stable (v1)，现为 TapeKit Final"）。若 TapeKit 要求对某份 Stable (v1) 文档做不兼容的修改，按上述规则作为 v2 进行，因此这种映射永远不会破坏 v1 的实现。
 

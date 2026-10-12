@@ -1,4 +1,9 @@
 // TAPI-26 real-time private channels. Shapes are deliberately loose: see docs/guides/channels.md and spec/TAPI-26.
+// Since 2.0 the module uses TAPI-26 v2 by default (spec/TAPI-26-v2.md: labels begin with `tape-channel/`); TAPI-26 v1
+// (`TAP-26/` labels, the 1.x default) is selected with `labels: 'v1'`, deprecated in 2.x (see Labels below).
+// Errors (2.0): a mistake in the caller's own options or arguments throws INVALID_ARGUMENT, before anything is sent;
+// TAPI-26 data (an invite, a handshake message, a frame, a sealed invite, a key or relay list read from them) that is
+// malformed, unauthorised, expired or replayed throws CHANNEL_INVALID. 1.x reported both as CHANNEL_INVALID.
 import type { Address, TxRequest } from './common.js'
 import type { Rpc } from './rpc.js'
 import type { ResolvedService, Payer } from './index.js'
@@ -41,9 +46,10 @@ export interface Invite {
 export interface AcceptMessage { t: 'accept'; cid: string; e: string; confirm: string }
 export interface ReadyMessage { t: 'ready'; cid: string; confirm: string }
 /**
- * The label version of a channel or group (since 1.8.1). 'v1': TAPI-26 / TAPI-27 version 1 (labels TAP-26/, TAP-27/),
- * the default in 1.x. 'v2': version 2 (spec/TAPI-26-v2.md, TAPI-27-v2.md, Draft: labels tape-channel/, tape-group/), the
- * default from 2.0. An invite does not say which: both sides must be told the same; the versions do not interoperate.
+ * The label version of a channel or group (since 1.8.1). 'v2': TAPI-26 / TAPI-27 version 2 (spec/TAPI-26-v2.md,
+ * TAPI-27-v2.md: labels tape-channel/, tape-group/), the default from 2.0 (an option in 1.8.1). 'v1': version 1 (labels
+ * TAP-26/, TAP-27/), the default in 1.x; in 2.x it is still accepted to talk to 1.x peers, and deprecated. An invite does
+ * not say which: both sides must be told the same; the versions do not interoperate.
  */
 export type Labels = 'v1' | 'v2'
 /** Opaque initiator handle from createInvite; only the original object works in completeInvite. */
@@ -85,7 +91,7 @@ export declare function createInvite(opts: {
   webrtc?: unknown
   now?: number
   random?: RandomBytes
-  /** 'v1' (default: TAPI-26/27 v1, labels TAP-26/, TAP-27/) or 'v2' (TAPI-26/27 v2, labels tape-channel/, tape-group/; since 1.8.1, the default from 2.0). Both sides must use the same. */
+  /** 'v2' (default from 2.0: TAPI-26/27 v2, labels tape-channel/, tape-group/) or 'v1' (TAPI-26/27 v1, labels TAP-26/, TAP-27/; the 1.x default, deprecated in 2.x). Both sides must use the same. */
   labels?: Labels
 }): { invite: Invite; pending: PendingInvite }
 
@@ -96,7 +102,7 @@ export declare function acceptInvite(opts: {
   now?: number
   random?: RandomBytes
   seen?: Set<string>
-  /** 'v1' (default: TAPI-26/27 v1, labels TAP-26/, TAP-27/) or 'v2' (TAPI-26/27 v2, labels tape-channel/, tape-group/; since 1.8.1, the default from 2.0). Both sides must use the same. */
+  /** 'v2' (default from 2.0: TAPI-26/27 v2, labels tape-channel/, tape-group/) or 'v1' (TAPI-26/27 v1, labels TAP-26/, TAP-27/; the 1.x default, deprecated in 2.x). Both sides must use the same. */
   labels?: Labels
 }): { accept: AcceptMessage; session: ChannelSession }
 
@@ -156,7 +162,7 @@ export declare function generateKeyPair(random?: RandomBytes): KeyPair
 export declare function generateIdentity(random?: RandomBytes): Identity
 export declare function publicKeyOf(secretKey: Uint8Array): Uint8Array
 export declare function roomsFor(cid: Uint8Array | string, opts?: { labels?: Labels }): { toInitiator: string; toResponder: string }
-/** One inbox room per label version: { labels: 'v2' } gives the v2 room (since 1.8.1). */
+/** One inbox room per label version: the default gives the v2 room (2.0); { labels: 'v1' } the v1 room of 1.x peers. */
 export declare function inboxRoom(container: Address, chainId?: number, opts?: { labels?: Labels }): string
 export declare function endpointBytes(container: Address, chainId?: number): Uint8Array
 export declare function inviteHash(invite: Invite): Uint8Array

@@ -8,18 +8,33 @@ the [changelog](../CHANGELOG.md).
 
 ## 1. Now (live)
 
-The current release is **1.8.1** (2026-10-08): container agents, experimental, phase 0. What each release added is in
-the [changelog](../CHANGELOG.md); in short:
+The current release is **2.0.0** (2026-10-12): standards by default. What each release added is in the
+[changelog](../CHANGELOG.md); in short:
 
-- **Container agents** (1.7, experimental, phase 0): `@tapeapi/sdk/agent` (mandates, task threads, a read-only payment
-  check, `forWallet`), `tapeapi-verify task` and [`examples/agent-service/`](../examples/agent-service/). The holder
-  signs a mandate, the agent delivers, the principal accepts, and payment is a plain transfer anyone can verify; no new
-  contract. Phase 0 has no on-chain enforcement and a mandate limits no spending; the subpath is outside the 1.x
-  compatibility promise. See the [container agents guide](guides/container-agents.md).
+- **Standards by default** (2.0). With no options, `createTapeAPI()` resolves a service the way TapeOut's official TAPs
+  say (TAP-10 v1.1 §3 to §7 and TAP-11 §2): one pinned block per resolution, strict agreement of the nodes on the chain
+  and the owner, and a status from the TAPs (`e.data.status`; names only grow; experimental in 2.0) for a name that was
+  never opened (`not-opened`), is not activated or paid up (`unpaid`), or whose site store or payment contract changed
+  (`store-changed`). `conform: false` keeps the 1.x resolution (deprecated, kept in all of 2.x); `tapeapi-verify`,
+  `tapeapi-mcp` and `tapeapi-doctor` take `--no-conform`. TAP-10 and TAP-11 are Drafts, so the default follows their
+  text by one rule: a loosening or a new status name in a 2.x minor release, a tightening first as an optional profile
+  and the default in 3.0. One known exception: without `allChains`, a processor contract#ID such as `0x…#4246` is
+  refused (`data.status: 'unsupported'`, a name of TapeAPI's own), where TAP-11 §2.1 says a client must accept it; pass
+  `allChains: true` to resolve it on every chain as TAP-10 §4.1 says (this also queries the nodes of Base and X Layer). Private channels and groups use version 2 of their specs by default (`tape-channel/` and `tape-group/`
+  labels; `labels: 'v1'` for a 1.x peer). See [Upgrading to 2.0](guides/upgrade-2.0.md).
+- **Bounded agents** (2.0, experimental, **not usable on mainnet**). An agent may spend for a container, and the most it
+  can lose is fixed by escrow channels and checkable on chain: the phase-1 checks
+  (`{ enforcement: 'escrow-channel' }`), the holder's plan and close-out, the agent's spend limiter, and orders that
+  resume after a restart with the keys and order records sealed. The escrow contract is not audited and not deployed,
+  so this is checked on local chains and in tests only.
+- **Prices in US dollars, paid in BEM, and reviews between containers** (2.0, experimental): the reference
+  implementations of the TAP drafts #52 (TAPI-22 §3.6) and #54 (`@tapeapi/sdk/review`). No escrow is deployed, so
+  nothing is charged.
+- **Container agents, phase 0** (1.7 to 1.8, experimental): `@tapeapi/sdk/agent` (mandates, task threads, a read-only
+  payment check, `forWallet`), `tapeapi-verify task` and [`examples/agent-service/`](../examples/agent-service/). See
+  the [container agents guide](guides/container-agents.md).
 - **Streamed usage you can check** (1.6, opt-in `requestUsage`) and **streamed AI receipts that fail when a stream is cut
   short or has content added** (1.5); see the [AI providers guide](guides/ai-providers.md#the-usage-of-a-streamed-chat-answer-three-ways).
-- **The TAP-10 conformance mode** (1.4 to 1.5, experimental, off by default); see
-  [Upgrading to 1.0](guides/upgrade-1.0.md#the-tap-10-conformance-mode-14-experimental).
 
 - **Public service** at `https://api.tapeapi.fun`, TapeOut name `11.1013.tape`: eight free, signed
   methods, pinned to a block except `blockNumber` (block number, balances, token and NFT reads, pair price, BNB/USD, name lookup). See the
@@ -29,8 +44,7 @@ the [changelog](../CHANGELOG.md); in short:
   the chain. See the [MCP guide](guides/mcp.md).
 - **Tape out your MCP server** (available, not a hosted service): a signing proxy you run in front of your own MCP
   server, with Node or as a Cloudflare Worker ([`examples/mcp-proxy/`](../examples/mcp-proxy/)), and holder console
-  support for publishing its manifest. Your server gets an on-chain identity, tool definitions pinned by `toolsSha256`
-  in the on-chain manifest, and a signature on every result. No third-party MCP server has been taped out yet. See
+  support for publishing its manifest. No third-party MCP server has been taped out yet. See
   [Tape out your own MCP server](guides/mcp.md#tape-out-your-own-mcp-server).
 - **Public relay** at relay.tapeapi.fun (`12.1013.tape`) for end-to-end encrypted channels between containers (TAPI-26).
 - **ChannelBus** on BNB Chain at `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`: a stateless, ownerless event bus that
@@ -43,46 +57,57 @@ the [changelog](../CHANGELOG.md); in short:
   [`docs/guides/`](guides/).
 - **Holder console** at [tapeapi.fun/console](https://tapeapi.fun/console/): take a service live, publish its manifest
   and sign its delegation from a phone wallet.
-- **Specifications** TAPI-20 to TAPI-27 (TapeAPI's own specs; not TAPs, which the editors of TapeOutProtocol/TAPs number; ten TAP drafts are submitted there, of which the service manifest (TAP-11) and signed responses (TAP-13) are merged as Drafts, and eight are under review), the SDK and the provider runtime, used from this repository.
-  Since 1.0.0, TAPI-20, TAPI-21, TAPI-23, TAPI-26 and TAPI-27 are Stable (v1) (TAPI-20 §3.5, the service directory, is
-  Experimental); TAPI-22 and TAPI-25 are Experimental.
+- **Specifications** TAPI-20 to TAPI-27 (TapeAPI's own specs; not TAPs). TAPI-20, TAPI-21 and TAPI-23 are Stable (v1);
+  TAPI-26 v2 and TAPI-27 v2 are Stable (v2) and the SDK's default since 2.0, and their version 1 stays Stable (v1)
+  (`labels: 'v1'`); TAPI-20 §3.5 (the service directory), TAPI-22 and TAPI-25 are Experimental. TAPI-20 to TAPI-27
+  remain the basis of the 2.x compatibility promise.
 
 ## 2. Next
 
-- **Container agents, phase 1: enforcement on an escrow channel.** The limits in a mandate enforced by a contract. This
-  needs a new contract and an independent audit; nothing is deployed before the audit.
-- **TAP drafts for container agents.** Phase 0 (the mandate and task messages) is submitted as
-  [TapeOutProtocol/TAPs#47](https://github.com/TapeOutProtocol/TAPs/pull/47), and the agent member of the service
-  manifest as [#49](https://github.com/TapeOutProtocol/TAPs/pull/49); both are under review, with no response from the
-  editors yet. The draft for phase 1 (enforcement on an escrow channel) has not been submitted.
-- **Escrow: the audit candidate (v3) is in the repository.** It holds one token per instance (custody assets, see
-  section 3) and is waiting for a decision about the audit; it stays undeployed until an independent audit is done, so
-  no channel exists.
+- **The official TAP review.** We submitted twelve TAP drafts to TapeOut's TAP process
+  ([TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), TAP-01), all written against TAP-10: eight on
+  2026-09-30 and 2026-10-01, two on the container-agent formats on 2026-10-04 and 2026-10-05, and two on 2026-10-08.
+  The service identity and manifest was merged as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)
+  (Draft, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8), 2026-10-01) and signed responses as
+  [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md) (Draft, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10), 2026-10-04);
+  a merge into Draft is not adoption. Ten are open pull requests, waiting for the editors, with no number yet: private channels
+  [#12](https://github.com/TapeOutProtocol/TAPs/pull/12), MCP tool binding [#16](https://github.com/TapeOutProtocol/TAPs/pull/16),
+  attested reads [#18](https://github.com/TapeOutProtocol/TAPs/pull/18), private groups [#20](https://github.com/TapeOutProtocol/TAPs/pull/20),
+  AI usage receipts [#26](https://github.com/TapeOutProtocol/TAPs/pull/26), proof-verified reads [#28](https://github.com/TapeOutProtocol/TAPs/pull/28),
+  container agent mandates and task messages, phase 0 [#47](https://github.com/TapeOutProtocol/TAPs/pull/47), the agent
+  member of the service manifest [#49](https://github.com/TapeOutProtocol/TAPs/pull/49), payment vouchers (prices in
+  US dollars, settled in BEM) [#52](https://github.com/TapeOutProtocol/TAPs/pull/52) and evidence-backed reviews between
+  containers [#54](https://github.com/TapeOutProtocol/TAPs/pull/54). Follow-up edits are waiting for the editors too:
+  to TAP-11, [#51](https://github.com/TapeOutProtocol/TAPs/pull/51) (drops the `TAP-26/` label mention),
+  [#53](https://github.com/TapeOutProtocol/TAPs/pull/53) (`priceBEM` as a per-call upper bound for a later TAP; where the
+  escrow's chain is named) and [#55](https://github.com/TapeOutProtocol/TAPs/pull/55) (the reference implementation
+  brought up to date, with a mainnet vector that ends in `resolved`); to TAP-13,
+  [#56](https://github.com/TapeOutProtocol/TAPs/pull/56) (an outdated sentence in its reference implementation section).
+  When the editors assign numbers, we rename our references.
+- **Stable status names, after the review.** Once TAP-11 is in Review and its review period ends with no unresolved
+  objection, we will consider raising `data.status`, `SiteStatus` and `svc.conform` to Stable. This is a
+  consideration, not a promise, and it has no date.
+- **A Standards TAP for the escrow interface, and the bounded-agents draft.** The draft for bounded agents (phase 1)
+  depends on a Standards TAP for the escrow's interface, which does not exist yet, and is submitted only after #47 is
+  numbered.
+- **Escrow: audit, then deployment.** The audit candidate (v3) is in the repository; the first instance is planned to
+  hold BEM (TAPI-22 §3.5). It stays undeployed until an independent audit is done, so no channel exists, no call is
+  charged, and bounded agents run on local chains and in tests only.
 - **Developer dashboard, full version.** A read-only *My services* page is live at https://tapeapi.fun/dashboard/ (add
   service names; see health, delegation expiry, links to try or renew). Next: list the circuits you hold automatically
   (needs an index), and renew and manage them from the same page.
-- **Receipt-grounded reputation.** Reviews of a service that only a caller can write, and only with a signed receipt
-  for its own request; the reviewer must itself be a container. A review then costs a real call and a real circuit.
 - **npm packages** `@tapeapi/sdk` and `@tapeapi/server`. Today both install from each GitHub release (the SDK first,
   then the server), or are used from a clone of this repository.
-- **TAP drafts in the official process.** We submitted ten TAP drafts to TapeOut's TAP process
-  ([TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), TAP-01): eight on 2026-09-30 and 2026-10-01, and two
-  on the container-agent formats on 2026-10-04 and 2026-10-05, all written against TAP-10. The service identity and manifest was merged as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md) (Draft, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8), 2026-10-01); a merge
-  into Draft is not adoption. Signed responses were merged as [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md) (Draft, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10), 2026-10-04), likewise not adoption. Eight more are under review and have no number yet: private
-  channels [#12](https://github.com/TapeOutProtocol/TAPs/pull/12), MCP tool binding [#16](https://github.com/TapeOutProtocol/TAPs/pull/16), attested reads [#18](https://github.com/TapeOutProtocol/TAPs/pull/18), private groups [#20](https://github.com/TapeOutProtocol/TAPs/pull/20), AI usage receipts [#26](https://github.com/TapeOutProtocol/TAPs/pull/26),
-  proof-verified reads [#28](https://github.com/TapeOutProtocol/TAPs/pull/28), container agent mandates and task messages, phase 0 [#47](https://github.com/TapeOutProtocol/TAPs/pull/47)
-  and the agent member of the service manifest [#49](https://github.com/TapeOutProtocol/TAPs/pull/49); #16 and #18 have passed the format review, and the drafts they require (TAP-11, TAP-13) are now merged.
-  The drafts list, under Backwards Compatibility, where TapeAPI's own 1.x behaviour differs from TAP-10; the SDK follows TAP-10 in an optional mode (`conform: 'tap10'`, experimental: the resolution path since 1.4, all-chain resolution, the messaging path and strict reads since 1.5), and its default behaviour does not change before 2.0. TAPI-20 to
-  TAPI-27 remain the basis of the 1.x compatibility promise.
 
 ## 3. Later
 
-- **Container agents, phase 2: a spending vault.** An agent spending a container's funds within limits. It too needs a
-  contract and an audit first.
-- **Escrow audit, then paid calls.** The paid-call escrow (TAPI-22, `contracts/src/TapeAPIEscrow.sol`) is written and
-  tested but **not deployed**. It will be deployed only after an independent third-party audit; paid calls start
-  after that. Until then every live method is free. The version that goes to audit has the default 1% contribution
-  (a provider can set 0; the contract caps it at 20% since 1.7) and is planned to settle in USDT (Binance-Peg) first, with BEM and WBNB on demand. See [SECURITY.md](../SECURITY.md).
+- **Bounded agents and paid calls on mainnet.** Both rely on the escrow (TAPI-22, `contracts/src/TapeAPIEscrow.sol`),
+  which is written and tested but **not deployed**. It will be deployed only after an independent third-party audit;
+  paid calls and bounded agents on mainnet start after that. Until then every live method is free. The version that
+  goes to audit has the default 1% contribution (a provider can set 0; the contract caps it at 20%) and is planned to
+  hold BEM first, with the USDT peg (Binance-Peg) and WBNB on demand. See [SECURITY.md](../SECURITY.md).
+- **Container agents, phase 2: a spending vault.** An agent calling whitelisted contracts within per-call and total
+  caps, with immediate revocation. It needs a new contract and an audit first.
 - **Service directory.** A place to find services by what they do. It is for discovery only: resolution always goes
   to the chain, and a listing never changes what a client trusts.
 
@@ -93,6 +118,10 @@ the [changelog](../CHANGELOG.md); in short:
 - Make a client depend on an endpoint we run in order to resolve or verify a service. Resolution and verification stay
   free and on-chain.
 - Let a directory or a listing override what the chain says.
+- Fall back silently. A configuration the default resolution cannot follow (your own addresses, a local chain) is an
+  error that names `conform: false`, never a quiet switch to another rule.
+- Make input that resolves fail within 2.x just to keep up with a Draft. A tightening in the TAP texts is offered first
+  as an optional profile, and becomes the default only in 3.0.
 
 ## 5. Having a say
 
@@ -103,23 +132,34 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
 
 ## 1. 现在（已上线）
 
-当前版本是 **1.8.1**（2026-10-08）：容器代理，实验性，阶段 0。每一版加了什么见[更新日志](../CHANGELOG.md)；简要如下：
+当前版本是 **2.0.0**（2026-10-12）：标准即默认。每一版加了什么见[更新日志](../CHANGELOG.md)；简要如下：
 
-- **容器代理**（1.7，实验性，阶段 0）：`@tapeapi/sdk/agent`（授权书、任务线程、只读的付款核验、`forWallet`）、`tapeapi-verify task`
-  与 [`examples/agent-service/`](../examples/agent-service/)。持有人签授权书，代理交付，委托方验收，付款是一笔任何人都能核验的普通转账；
-  不需要新合约。阶段 0 没有链上强制执行，授权书不限制花钱；该子路径不受 1.x 兼容承诺约束。见[容器代理指南](guides/zh-CN/container-agents.md)。
+- **标准即默认**（2.0）。不传任何选项，`createTapeAPI()` 就按 TapeOut 官方 TAP（TAP-10 v1.1 §3 至 §7 与 TAP-11 §2）解析服务：
+  每次解析钉一个区块，链 ID 与持有人要所有节点一致；名字从未开通（`not-opened`）、未激活或付费到期（`unpaid`）、站点存储或付费
+  合约换了实现（`store-changed`），都给出 TAP 里的状态（`e.data.status`；状态名只增不改；2.0 里仍是实验性的）。`conform: false`
+  保留 1.x 的解析方式（已弃用，整个 2.x 保留）；`tapeapi-verify`、`tapeapi-mcp`、`tapeapi-doctor` 都接受 `--no-conform`。
+  TAP-10 与 TAP-11 还是 Draft，默认按一条规则跟随它们的文本：放宽与新增状态名在 2.x 次版本里生效，收紧先作为可选 profile、
+  默认到 3.0 才切。一个已知例外：不开 `allChains` 时，形如 `0x…#4246` 的"处理器合约#ID"会被拒绝（`data.status: 'unsupported'`，
+  这是 TapeAPI 自己的名字），而 TAP-11 §2.1 要求接受它；传 `allChains: true` 即按 TAP-10 §4.1 读遍所有链解析（会同时访问
+  Base 与 X Layer 的节点）。私密通道与群聊默认使用规范第 2 版
+  （`tape-channel/`、`tape-group/` 标签；与 1.x 对端通信用 `labels: 'v1'`）。见[升级到 2.0](guides/zh-CN/upgrade-2.0.md)。
+- **有界代理**（2.0，实验性，**主网不可用**）。代理可以替容器花钱，最多会亏多少由托管通道定死、可在链上核对：阶段 1 的核验
+  （`{ enforcement: 'escrow-channel' }`）、持有人的计划与收尾、代理的累计限额器，以及重启后接着处理订单（钥匙与订单记录加密
+  保存）。托管合约未经审计、未部署，所以只在本地链与测试中验证。
+- **美元报价、BEM 结算，以及容器之间的评价**（2.0，实验性）：TAP 草稿 #52（TAPI-22 §3.6）与 #54（`@tapeapi/sdk/review`）的
+  参考实现。托管合约没有部署，所以不收任何费用。
+- **容器代理，阶段 0**（1.7 至 1.8，实验性）：`@tapeapi/sdk/agent`（授权书、任务线程、只读的付款核验、`forWallet`）、
+  `tapeapi-verify task` 与 [`examples/agent-service/`](../examples/agent-service/)。见[容器代理指南](guides/zh-CN/container-agents.md)。
 - **流式用量可核验**（1.6，可选的 `requestUsage`）与**被截断或被追加内容的流不再核验通过**（1.5）；见
   [AI 服务方指南](guides/zh-CN/ai-providers.md#流式-chat-的用量三条路)。
-- **TAP-10 一致模式**（1.4 至 1.5，实验性，默认关闭）；见[升级到 1.0](guides/zh-CN/upgrade-1.0.md#tap-10-一致模式14实验性)。
 
 - **公共服务** `https://api.tapeapi.fun`，TapeOut 名称 `11.1013.tape`：八个免费、签名的方法（除 `blockNumber` 外都锚定区块）
   （区块号、余额、代币与 NFT 读取、交易对价格、BNB/USD、名称查询）。见[公共 API 指南](guides/zh-CN/public-api.md)。
 - **MCP 服务器** `https://api.tapeapi.fun/mcp`：同样的八个方法作为 Claude、Cursor 和任何 MCP 客户端的工具，按网址添加，
   无需安装。每个结果都有签名，并附带任何人都能对照链上核验的回执。见 [MCP 指南](guides/zh-CN/mcp.md)。
 - **Tape out 你的 MCP 服务器**（可以使用，不是托管服务）：你自己运行、放在自己 MCP 服务器前面的签名代理，可用 Node
-  运行或部署成 Cloudflare Worker（[`examples/mcp-proxy/`](../examples/mcp-proxy/)），持有人控制台支持发布它的清单。
-  你的服务器由此获得链上身份、由链上清单里的 `toolsSha256` 钉住的工具定义，以及每个结果上的签名。目前还没有任何第三方
-  MCP 服务器被 tape out。见 [Tape out 你自己的 MCP 服务器](guides/zh-CN/mcp.md#tape-out-你自己的-mcp-服务器)。
+  运行或部署成 Cloudflare Worker（[`examples/mcp-proxy/`](../examples/mcp-proxy/)），持有人控制台支持发布它的清单。目前还没有
+  任何第三方 MCP 服务器被 tape out。见 [Tape out 你自己的 MCP 服务器](guides/zh-CN/mcp.md#tape-out-你自己的-mcp-服务器)。
 - **公共中继** relay.tapeapi.fun（`12.1013.tape`），用于容器之间的端到端加密通道（TAPI-26）。
 - **ChannelBus** 已部署在 BNB Chain，地址 `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`：无状态、无所有者的事件总线，
   不想用中继时在链上承载通道帧。
@@ -129,36 +169,43 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
   自动开 GitHub issue。
 - **手册** [tapeapi.fun/docs](https://tapeapi.fun/docs/)，中英双语，由 [`docs/guides/`](guides/) 生成。
 - **持有人控制台** [tapeapi.fun/console](https://tapeapi.fun/console/)：用手机钱包让服务上线、发布清单、签署委托。
-- **规范** TAPI-20 至 TAPI-27（TapeAPI 自己的规范；不是 TAP，TAP 由 TapeOutProtocol/TAPs 的编辑编号；我们已向那里提交 10 份 TAP 草稿，其中服务清单（TAP-11）与签名回答（TAP-13）已合并为 Draft，另 8 份在评审中），以及 SDK 与提供者运行时，目前从本仓库使用。自 1.0.0 起，TAPI-20、TAPI-21、
-  TAPI-23、TAPI-26 与 TAPI-27 为 Stable (v1)（稳定；TAPI-20 §3.5 服务目录为实验性）；TAPI-22 与 TAPI-25 为实验性。
+- **规范** TAPI-20 至 TAPI-27（TapeAPI 自己的规范，不是 TAP）。TAPI-20、TAPI-21、TAPI-23 为 Stable (v1)；TAPI-26 v2 与
+  TAPI-27 v2 为 Stable (v2)，2.0 起是 SDK 的默认，它们的第 1 版仍为 Stable (v1)（`labels: 'v1'`）；TAPI-20 §3.5（服务目录）、
+  TAPI-22 与 TAPI-25 为实验性。TAPI-20 至 TAPI-27 仍是 2.x 兼容性承诺的依据。
 
 ## 2. 接下来
 
-- **容器代理阶段 1：托管通道上的强制执行。** 让授权书里的限额由合约执行。需要新合约和独立审计；审计之前不部署任何东西。
-- **容器代理的 TAP 草稿。** 阶段 0（授权书与任务消息）已提交为 [TapeOutProtocol/TAPs#47](https://github.com/TapeOutProtocol/TAPs/pull/47)，
-  清单里的代理成员已提交为 [#49](https://github.com/TapeOutProtocol/TAPs/pull/49)；两份都在评审中，编辑尚无回复。
-  阶段 1（托管通道上的强制执行）的草稿尚未提交。
-- **托管合约：送审候选版（v3）已在仓库。** 每个实例托管一种代币（托管资产，见第 3 节），等待关于审计的决定；
-  独立审计完成之前一直不部署，所以不存在任何通道。
+- **官方 TAP 评审。** 我们向 TapeOut 的 TAP 流程（[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)，TAP-01）
+  提交了 12 份草稿，一律按 TAP-10 写：8 份在 2026-09-30 至 10-01，2 份关于容器代理格式在 2026-10-04 与 10-05，2 份在 2026-10-08。
+  服务身份与清单已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)，2026-10-01），
+  签名响应已合并为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（Draft，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)，2026-10-04）；
+  合并为 Draft 不等于被采纳。另有 10 份是尚未合并的拉取请求，等待编辑处理，尚无编号：私密通道 [#12](https://github.com/TapeOutProtocol/TAPs/pull/12)、
+  MCP 工具绑定 [#16](https://github.com/TapeOutProtocol/TAPs/pull/16)、多家交叉验证读取 [#18](https://github.com/TapeOutProtocol/TAPs/pull/18)、
+  私密群聊 [#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、AI 用量回执 [#26](https://github.com/TapeOutProtocol/TAPs/pull/26)、
+  证明核验读取 [#28](https://github.com/TapeOutProtocol/TAPs/pull/28)、容器代理授权书与任务消息（阶段 0）[#47](https://github.com/TapeOutProtocol/TAPs/pull/47)、
+  清单里的代理成员 [#49](https://github.com/TapeOutProtocol/TAPs/pull/49)、付费凭证（美元报价、BEM 结算）[#52](https://github.com/TapeOutProtocol/TAPs/pull/52)、
+  有证据的容器间评价 [#54](https://github.com/TapeOutProtocol/TAPs/pull/54)。后续修改也在等待编辑处理：对 TAP-11 的
+  [#51](https://github.com/TapeOutProtocol/TAPs/pull/51)（删去对 `TAP-26/` 标签的提及）、[#53](https://github.com/TapeOutProtocol/TAPs/pull/53)
+  （允许后续 TAP 把 `priceBEM` 读作单次调用的上限；托管合约所在的链由谁规定）与 [#55](https://github.com/TapeOutProtocol/TAPs/pull/55)
+  （参考实现更新到当前版本，并加一条以 `resolved` 结束的主网向量）；对 TAP-13 的 [#56](https://github.com/TapeOutProtocol/TAPs/pull/56)
+  （参考实现一节里一句过时的话）。编辑分配编号后，我们改引用。
+- **评审之后再考虑稳定的状态名。** TAP-11 进入 Review、评审期满且没有未解决的异议之后，我们再考虑把 `data.status`、`SiteStatus`
+  与 `svc.conform` 升为 Stable。这是"考虑"，不是承诺，也没有日期。
+- **托管接口的 Standards TAP 与有界代理草稿。** 有界代理（阶段 1）的草稿依赖一份规定托管接口的 Standards TAP（目前还没有），
+  并要等 #47 拿到编号才提交。
+- **托管合约：先审计，再部署。** 送审候选版（v3）已在仓库，首个实例计划托管 BEM（TAPI-22 §3.5）。独立审计完成之前一直不部署，
+  所以不存在任何通道、不收任何费用，有界代理只在本地链与测试中可用。
 - **开发者控制台（完整版）。** 只读版*我的服务*已在 https://tapeapi.fun/dashboard/ 上线（添加服务名，查看健康、
   委托到期、试用和续期链接）。接下来：自动列出你持有的电路（需要索引），并在同一页面完成续期与管理。
-- **凭回执的信誉。** 只有调用方才能评价一个服务，而且必须持有该服务为它自己的请求签发的回执；评价者本身也必须是一个容器。
-  这样每条评价都要付出一次真实调用和一个真实电路的代价。
 - **npm 包** `@tapeapi/sdk` 与 `@tapeapi/server`。目前两者都从每个 GitHub Release 安装（先装 SDK，再装服务端包），或在本仓库的克隆目录里使用。
-- **按官方流程提交 TAP 草稿。** 2026-09-30 至 10-01，我们向 TapeOut 的 TAP 流程
-  （[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)，TAP-01）提交了 10 份草稿（8 份在 2026-09-30 至 10-01，另 2 份关于容器代理格式，在 2026-10-04 与 10-05），一律按 TAP-10 写。
-  服务身份与清单已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)，2026-10-01）；合并为 Draft 不等于被采纳。签名响应已合并为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（Draft，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)，2026-10-04），同样不等于被采纳。另有 8 份在评审中、
-  尚无编号：私密通道 [#12](https://github.com/TapeOutProtocol/TAPs/pull/12)、MCP 工具绑定 [#16](https://github.com/TapeOutProtocol/TAPs/pull/16)、多家交叉验证读取 [#18](https://github.com/TapeOutProtocol/TAPs/pull/18)、私密群聊 [#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、
-  AI 用量回执 [#26](https://github.com/TapeOutProtocol/TAPs/pull/26)、证明核验读取 [#28](https://github.com/TapeOutProtocol/TAPs/pull/28)、容器代理授权书与任务消息（阶段 0）[#47](https://github.com/TapeOutProtocol/TAPs/pull/47)、清单里的代理成员 [#49](https://github.com/TapeOutProtocol/TAPs/pull/49)；其中 #16、#18 已通过格式审查，它们要求的草稿（TAP-11、TAP-13）现已合并。
-  草稿在 Backwards Compatibility 里列出 TapeAPI 自己的 1.x 行为与 TAP-10 的不同；SDK 以可选模式（`conform: 'tap10'`，实验性：解析路径自 1.4，全链解析、消息路径与 strict 读取自 1.5）跟上 TAP-10，2.0 之前默认行为不变。TAPI-20 至 TAPI-27 仍是 1.x 兼容性承诺的依据。
 
 ## 3. 更远
 
-- **容器代理阶段 2：支出金库。** 让代理在限额内花容器的钱。同样要先有合约和审计。
-- **托管合约审计，然后才有付费调用。** 付费调用的托管合约（TAPI-22，`contracts/src/TapeAPIEscrow.sol`）已写好并有
-  测试，但**未部署**。只有通过独立第三方审计后才会部署，付费调用在那之后才开始。在此之前所有线上方法都免费。
-  送审的版本带默认 1% 的维护贡献（提供者可设为 0；自 1.7 起合约上限为 20%），并计划首先支持 USDT（Binance-Peg）结算，BEM 与 WBNB 按需。
+- **有界代理与付费调用上主网。** 两者都依赖托管合约（TAPI-22，`contracts/src/TapeAPIEscrow.sol`），它已写好并有测试，但
+  **未部署**。只有通过独立第三方审计后才会部署，主网上的付费调用与有界代理在那之后才开始。在此之前所有线上方法都免费。
+  送审的版本带默认 1% 的维护贡献（提供者可设为 0；合约上限 20%），计划首先托管 BEM，USDT 锚定币（Binance-Peg）与 WBNB 按需。
   见 [SECURITY.md](../SECURITY.md)。
+- **容器代理阶段 2：支出金库。** 让代理在单次与总额上限内调用白名单上的合约，并能立即撤销。需要新合约，也要先审计。
 - **服务目录。** 按功能查找服务的地方，只用于发现：解析永远以链上为准，登记与否不改变客户端信任什么。
 
 ## 4. 我们不会做的事
@@ -167,6 +214,8 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
   可以把它设为 0（[FEES.md](FEES.md)）。
 - 让客户端必须经过我们运营的端点才能解析或验证服务。解析与验证始终免费、在链上完成。
 - 让目录或登记凌驾于链上事实之上。
+- 悄悄降级。默认解析方式跟不上的配置（自定义地址、本地链）一律报错并写明 `conform: false`，绝不悄悄换一套规则。
+- 为追赶一份 Draft 而在 2.x 里让原本能解析的输入失败。TAP 文本的收紧只先作为可选 profile 提供，默认到 3.0 才切换。
 
 ## 5. 参与决定
 

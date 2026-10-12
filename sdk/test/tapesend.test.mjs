@@ -28,13 +28,13 @@ test('every official opening case gives the same outcome', () => {
   for (const c of V.opening) {
     const run = () => tapesend.open({ payload: h(c.payload), secretKey: c.secretKey ? h(c.secretKey) : undefined, to: c.to, from: c.from, hub: c.hub, ref: c.ref })
     if (c.expect === 'ok') assert.equal(toHex(run().content), V.sealed.input.content, c.name)
-    else assert.throws(run, (e) => e instanceof TapeAPIError && e.reason === c.expect, `${c.name}: expected ${c.expect}`)
+    else assert.throws(run, (e) => e instanceof TapeAPIError && e.data.reason === c.expect, `${c.name}: expected ${c.expect}`)
   }
 })
 
 test('public payloads, rejected recipient keys and message ids match the reference', () => {
   assert.equal(toHex(tapesend.encodePublic(h(V.public.content))), V.public.payload)
-  for (const r of V.rejectedRecipientKeys) assert.throws(() => tapesend.assertValidPublicKey(h(r.key)), (e) => e.reason === 'bad-key', r.name)
+  for (const r of V.rejectedRecipientKeys) assert.throws(() => tapesend.assertValidPublicKey(h(r.key)), (e) => e.data.reason === 'bad-key', r.name)
   for (const m of V.messageIds) assert.equal(tapesend.messageId(m), m.id)
 })
 
@@ -63,7 +63,7 @@ test('a TAPI-26 invite sent by TapeSend is sealed to the recipient\'s usable TAP
   // B 用 TapeSend 私钥打开（与官方应用相同）；通道私钥打不开
   const opened = tapesend.open({ payload, secretKey: tb.secretKey, to: B.container, from: A.container, hub: HUB })
   assert.deepEqual(channel.decodeInviteContent(opened.content), invite)
-  assert.throws(() => tapesend.open({ payload, secretKey: kb.secretKey, to: B.container, from: A.container, hub: HUB }), (e) => e.reason === 'not-for-key')
+  assert.throws(() => tapesend.open({ payload, secretKey: kb.secretKey, to: B.container, from: A.container, hub: HUB }), (e) => e.data.reason === 'not-for-key')
   // the TapeSend content rules: v is 1 and kind is not "message", so the official app shows it as unsupported
   // TapeSend 内容规则：v 为 1、kind 不是 "message"，官方应用显示为"不支持"
   const asJson = JSON.parse(new TextDecoder().decode(opened.content))
@@ -98,7 +98,7 @@ const sealWith = (over) => {
   return tapesend.seal({ content: h(i.content), recipients: i.recipientSecretKeys.map((k) => x25519.getPublicKey(h(k))), hub: HUB, ref: i.ref, random: () => queue.shift(), ...over })
 }
 const openWith = (payload, over) => tapesend.open({ payload, secretKey: h(V.sealed.input.recipientSecretKeys[0]), hub: HUB, ref: V.sealed.input.ref, ...over })
-const reason = (e) => e instanceof TapeAPIError && e.reason
+const reason = (e) => e instanceof TapeAPIError && e.data.reason
 
 test('TAP10-X1 endpoints: an address on Base and one on BNB get their own chain; a 32-byte endpoint is taken as given', () => {
   assert.equal(toHex(tapesend.endpoint(RECIPIENT, BASE)), EP_RECIPIENT_BASE)

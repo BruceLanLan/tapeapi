@@ -15,7 +15,7 @@
 // The identity file holds secrets; nothing in the record or the transaction does.
 // 身份文件里是私钥；记录与交易里都没有私钥。
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { createTapeAPI, sig, channel, MAINNET } from '../sdk/src/index.js'
+import { createTapeAPI, sig, channel, MAINNET, CHAINS } from '../sdk/src/index.js'
 
 const [cmd, ...rest] = process.argv.slice(2)
 const args = {}
@@ -63,7 +63,15 @@ if (cmd === 'new') {
     tapechannel: '1', container: id.container, chainId: id.chainId, x25519: id.x25519, ed25519: id.ed25519,
     issued: id.issued, expires: id.expires, sig: signature, inbox: id.inbox,
   }
-  const api = createTapeAPI({ chainId: id.chainId, hub: id.hub })
+  // 2.0: the default client accepts only the hub TAP-10 lists for the chain (construction fails otherwise). A custom hub
+  // (--hub at `new`, kept in the identity file; or any hub other than the chain's own, or a chain TAP-10 does not list) is
+  // what this script is for in tests and on private deployments, so it gets the 1.x client (conform: false, one DEPRECATED
+  // warning on stderr); the default mainnet hub keeps the default client, unchanged.
+  // 2.0：默认客户端只接受 TAP-10 为该链列出的 hub（否则建客户端即报错）。自定义 hub（`new` 时的 --hub，记在身份文件里；或任何不是该链
+  // 自己的 hub，或 TAP-10 没列的链）是本脚本在测试与私有部署里的用法，所以用 1.x 客户端（conform: false，stderr 一次 DEPRECATED
+  // 警告）；默认的主网 hub 仍用默认客户端，不变。
+  const customHub = !CHAINS[id.chainId]?.hub || String(id.hub).toLowerCase() !== String(CHAINS[id.chainId].hub).toLowerCase()
+  const api = createTapeAPI({ chainId: id.chainId, hub: id.hub, ...(customHub ? { conform: false } : {}) })
   const { txs, sha256Hash, size } = api.tx.publishChannelKeys({ container: id.container, record })
   console.log(JSON.stringify({
     signer,
@@ -71,7 +79,8 @@ if (cmd === 'new') {
       ? 'This must equal ownerOf(circuits, tokenId) of the circuit; clients refuse the record otherwise.'
       : 'No ECDSA signer: valid only if the holder is a contract that accepts it under EIP-1271.',
     record, size, sha256Hash, publish: txs,
-    inboxRoom: channel.inboxRoom(id.container, id.chainId),
+    inboxRoom: channel.inboxRoom(id.container, id.chainId),                        // TAPI-26 v2, the default from 2.0
+    inboxRoomV1: channel.inboxRoom(id.container, id.chainId, { labels: 'v1' }),    // where 1.x peers post / 1.x 对端投递之处
   }, null, 2))
 } else {
   die('usage: channel-keys.mjs new --container 0x.. | record --identity file --sig 0x..')

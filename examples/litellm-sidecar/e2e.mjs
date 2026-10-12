@@ -91,7 +91,8 @@ async function main() {
         `HTTP ${res.status} model=${r?.model} tokens=${r?.usage ? `${r.usage.prompt_tokens}+${r.usage.completion_tokens}` : '-'} ${r?.prices ? r.prices.map((p) => `${p.amount} ${p.currency}`).join(' / ') : 'unpriced'}${problems.length ? `  problems: ${problems.join('; ')}` : ''}`)
     }
     // 2. The official SDKs, strict: an answer whose receipt does not verify throws. / 官方 SDK，strict：回执核验不过即抛出。
-    const api = createTapeAPI({ dev: true })
+    // 1.x behaviour; 2.0 default is conform: 'tap10'
+    const api = createTapeAPI({ dev: true, conform: false })
     const service = await api.resolve({ dev: stack.sidecar.url })
     const reports = []
     const vf = ai.createVerifyingFetch({ api, service, onReport: (r) => reports.push(r) })

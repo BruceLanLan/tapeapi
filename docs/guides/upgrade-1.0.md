@@ -151,6 +151,10 @@ An MCP server in front of a service (`createMcpProxy`) reports its own refusals 
 
 ## The TAP-10 conformance mode (1.4, experimental)
 
+**Since 2.0 this mode is the default** ([Upgrading from 1.x to 2.0](upgrade-2.0.md)). This section describes it as 1.x
+shipped it: where it says "off by default", "the default mode" or "a default client", read the 1.x resolution, which
+2.0 keeps as `conform: false`.
+
 `createTapeAPI({ conform: 'tap10' })` resolves services the way the official TAP-10 v1.1 (§3–§7) and TAP-11 §2.2 describe.
 It is off by default: without it, `resolve` and the `chain.*` reads behave exactly as before (a test pins every request
 and result of the default mode). `api.siteStatus()` is the TAP-10 path in any mode, so it changed in 1.5 on a default
@@ -375,7 +379,20 @@ read the TAP-10 way too. The default mode is unchanged.
   container opener TAP-10 lists for its chain (TAP-10 §2.2; anything else is `INVALID_ARGUMENT`). The sticky statuses
   last as long as the client (sub-clients from `forChain` included); to keep them across restarts pass
   `sealStatusStore`, a `{ get, set }` store like `channelRecordFloor`, keyed `<chainId>:<hub, lowercase>`, value
-  `{ circuitsChangedAt, factorySealSeenAt, factorySealLost }`.
+  `{ circuitsChangedAt, factorySealSeenAt, factorySealLost }` (and `upgradedLog`, below).
+- **The hub's `Upgraded` logs** (`tapeSendKey`, TAP-10 §13.8, a conditional SHOULD): at the same block, one
+  `eth_getLogs` for the hub's `Upgraded` events from the hub's creation block (`TAP10_HUB_HISTORY`) to the pinned block,
+  under strict agreement. If an answer is adopted and any log names an implementation that is neither the boot
+  implementation nor one TAP-10 lists for the chain (current or replaced), the hub is `hub-changed` even though its slot
+  shows the current one again (an upgrade can rewrite storage and restore an accepted implementation in one
+  transaction); `data.upgradedLog` names the log, and the client keeps it (in `sealStatusStore` too) for as long as its
+  list does not accept that implementation. A node's answer counts only if it holds the history's anchors (the boot
+  implementation at the creation block and an upgrade to the current one), so a node with pruned history that answers
+  `[]` does not count. Public nodes rarely serve this (the BNB Chain dataseed refuses every `eth_getLogs`, 48 Club caps a
+  range at 5,000 blocks, OKX at 100): then, and when nodes disagree, the hub is judged by its slot alone as before, and
+  `result.tap10.hub` says so: `basis: 'slot'` and `upgraded: { status: 'unavailable', reason }`, retried after 300 s.
+  With the scan done: `basis: 'slot+logs'`, `upgraded: { status: 'ok', from, to, implementations }`. To get it, configure
+  nodes that serve the hub's whole log history (every configured node is asked).
 - **The key** (§12.2, §14.4 steps 1-3): `hub.keyFor` must name the resolved container and its endpoint
   (`hub-mismatch`), be usable (`no-key` when never published, `key-stale` otherwise), suite 1, and pass the X25519 key
   checks (`bad-key`), which the default mode leaves to the handshake. Step 4, whether the recipient reads the chain you
@@ -405,14 +422,12 @@ The results carry `tap10`: `{ version: '1.1', status: 'ok', pinned, endpoint, hu
 | `not-tapeout` (a container of this chain whose circuit fails a check), `hub-mismatch`, `bad-key`, `not-found`, `no-hash`, `incomplete`, `record-invalid` | `CHANNEL_INVALID` |
 
 `not-found` and `record-invalid` are TapeAPI's names (TAP-10 names no outcome for a record); the others are TAP-10's.
-The hub's `Upgraded` logs (§13.8, a SHOULD that needs `eth_getLogs`) are not read.
 
 **Not covered yet.** With 1.5.0 the conformance mode covers the resolve path (strict agreement for `ownerOf` and
 EIP-1271 included) and the messaging path above, input without chain information on every chain with `ambiguous`, and
-the processor number of a container or processor contract. Within those paths one thing is still not done: the hub's
-`Upgraded` log scan of TAP-10 §13.8, a conditional SHOULD (when nodes that serve `eth_getLogs` are available, read every
-`Upgraded` log of the hub and accept it only if each implementation named is the boot implementation or one TAP-10
-lists). `tapeSendKey` checks the hub's current implementation slot only, which cannot see an upgrade that rewrote
+the processor number of a container or processor contract. The hub's `Upgraded` log scan of TAP-10 §13.8 (a conditional
+SHOULD) is done when the configured nodes serve the logs; with the default public nodes it is not, and `tapeSendKey`
+then checks the hub's current implementation slot only (`hub.basis: 'slot'`), which cannot see an upgrade that rewrote
 storage and restored an accepted implementation within one transaction.
 
 ## Formats that are now frozen

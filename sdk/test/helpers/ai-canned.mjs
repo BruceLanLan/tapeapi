@@ -76,7 +76,7 @@ export async function cannedWorld({ live, formats } = {}) {
   const up = cannedUpstream()
   const proxy = createAIProxy({ upstream: { baseUrl: 'http://upstream.local/v1' }, fetch: up.fetch, manifestBase: manifestBase(live), signerKey: KEY, models: MODELS, allowHttp: true, rateLimit: false, log: () => {}, ...(formats ? { formats } : {}) })
   await proxy.ready
-  const api = createTapeAPI({ dev: true, fetch: (u, i) => proxy.handleRequest(new Request(u, i)) })
+  const api = createTapeAPI({ conform: false, dev: true, fetch: (u, i) => proxy.handleRequest(new Request(u, i)) })
   const service = live ? null : await api.resolve({ dev: BASE })
   return { up, proxy, api, service }
 }

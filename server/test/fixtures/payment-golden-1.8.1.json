@@ -1,0 +1,718 @@
+{
+ "client": [
+  {
+   "committed": "0",
+   "error": null,
+   "inflight": 0,
+   "name": "free call",
+   "sent": [
+    {
+     "body": {
+      "id": "c1",
+      "method": "free",
+      "params": {}
+     },
+     "url": "http://127.0.0.1:PORT/tapeapi/v1/free"
+    }
+   ],
+   "value": {
+    "block": 62000000,
+    "id": "c1",
+    "result": {
+     "block": 62000000
+    },
+    "sig": "0xb76aac10dcc496cbb2992d40afd875c162aa69da962ac701e1904b080857af400a108a3334d995e22efc789e9cc2a17e31915dbd097c81cf872865e1d56386501b",
+    "ts": 1789000000,
+    "verified": true
+   }
+  },
+  {
+   "committed": "10000",
+   "error": null,
+   "inflight": 0,
+   "name": "first priced call",
+   "sent": [
+    {
+     "body": {
+      "id": "c2",
+      "method": "paid",
+      "params": {},
+      "voucher": {
+       "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+       "cumulative": "10000",
+       "expires": 1789003600,
+       "provider": "0x6060606060606060606060606060606060606060",
+       "sig": "0xa2c6c214fcf48500512d7c1592124392000d006a3fa4fdb7822628d2b4206c5226152f2ebf414180785cf93d8d78435e0aec8f5fc2a5798276c0c01f807a97eb1c",
+       "signer": "0x7564105E977516C53bE337314c7E53838967bDaC"
+      }
+     },
+     "url": "http://127.0.0.1:PORT/tapeapi/v1/paid"
+    }
+   ],
+   "value": {
+    "block": 62000000,
+    "id": "c2",
+    "result": {
+     "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+     "cumulative": "10000"
+    },
+    "sig": "0xd8ddbc865e67da3c48bcce8cd1dfc61ce179a325a6a071a4393f8bbf99416f11214caf4d165184ca082391246e2a4b4b563b5ea139041a3d8b08801f7f3c2ea21b",
+    "ts": 1789000000,
+    "verified": true
+   }
+  },
+  {
+   "committed": "20000",
+   "error": null,
+   "inflight": 0,
+   "name": "second priced call",
+   "sent": [
+    {
+     "body": {
+      "id": "c3",
+      "method": "paid",
+      "params": {},
+      "voucher": {
+       "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+       "cumulative": "20000",
+       "expires": 1789003600,
+       "provider": "0x6060606060606060606060606060606060606060",
+       "sig": "0xe52195e51800c8dc9b5604db3e7a6fd5cde1a9acabb33e7d227b7202ef028c0575e06edeaff219f6e8907799a51a157f15608e2d5e74c1ba86881f8f069868b41c",
+       "signer": "0x7564105E977516C53bE337314c7E53838967bDaC"
+      }
+     },
+     "url": "http://127.0.0.1:PORT/tapeapi/v1/paid"
+    }
+   ],
+   "value": {
+    "block": 62000000,
+    "id": "c3",
+    "result": {
+     "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+     "cumulative": "20000"
+    },
+    "sig": "0x1c28a903470ac6e1b46945311d1f9f671e89129e1506277dc544147e030ba0be6a69a482615d059264a19f512069eb230b2baaf5cc9d6b519477f7d6c9aa70311b",
+    "ts": 1789000000,
+    "verified": true
+   }
+  },
+  {
+   "committed": "30000",
+   "error": null,
+   "inflight": 0,
+   "name": "a priced result that is not an object",
+   "sent": [
+    {
+     "body": {
+      "id": "c4",
+      "method": "paidString",
+      "params": {},
+      "voucher": {
+       "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+       "cumulative": "30000",
+       "expires": 1789003600,
+       "provider": "0x6060606060606060606060606060606060606060",
+       "sig": "0x6682642b185c4ab27974a4b13563e2b7d649d88c712a47ed32af53b40e7ff066600c02aa02cdc26caa91fd44592679cb4cea7eccde1cba01226181ed2e51d22e1b",
+       "signer": "0x7564105E977516C53bE337314c7E53838967bDaC"
+      }
+     },
+     "url": "http://127.0.0.1:PORT/tapeapi/v1/paidString"
+    }
+   ],
+   "value": {
+    "block": 62000000,
+    "id": "c4",
+    "result": "a plain string result",
+    "sig": "0xa81ae42c4879c18d1e6dcb77fa1df3d381b6e629ae64d9963c82cc69a71c9e706d79c2cb118e5f2e26b55cbe6b468e6a39b9e84cb05b2c7bcedc1d1a4dcb76521c",
+    "ts": 1789000000,
+    "verified": true
+   }
+  },
+  {
+   "committed": "40000",
+   "error": null,
+   "inflight": 0,
+   "name": "a priced result with its own member \"charge\"",
+   "sent": [
+    {
+     "body": {
+      "id": "c5",
+      "method": "paidCharge",
+      "params": {},
+      "voucher": {
+       "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+       "cumulative": "40000",
+       "expires": 1789003600,
+       "provider": "0x6060606060606060606060606060606060606060",
+       "sig": "0x517c74c52259d60e9687d169429625aeab8711093d8e8778cac5ce10536af4045935b654c7a719c3865e6d4dcc5da5d0c026bff6e27d5a1be8cfc482123bda8c1b",
+       "signer": "0x7564105E977516C53bE337314c7E53838967bDaC"
+      }
+     },
+     "url": "http://127.0.0.1:PORT/tapeapi/v1/paidCharge"
+    }
+   ],
+   "value": {
+    "block": 62000000,
+    "id": "c5",
+    "result": {
+     "charge": "the method uses this name itself"
+    },
+    "sig": "0xa2c778ec8a8c8c208b49d87fb563601fb8df6a25d323b3fa7c540bbc1d8c62b9478735815c09124ff1d36f8559c228727dfc363bd3e28421676289af6e4b4ebc1b",
+    "ts": 1789000000,
+    "verified": true
+   }
+  },
+  {
+   "committed": "40000",
+   "error": {
+    "code": "INTERNAL",
+    "data": null,
+    "message": "internal error",
+    "signed": true
+   },
+   "inflight": 0,
+   "name": "handler throws",
+   "sent": [
+    {
+     "body": {
+      "id": "c6",
+      "method": "paidBoom",
+      "params": {},
+      "voucher": {
+       "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+       "cumulative": "50000",
+       "expires": 1789003600,
+       "provider": "0x6060606060606060606060606060606060606060",
+       "sig": "0x6bfebf3a3b322ef2fe7f562833a3af6ff0aca99aed37a8de009b2e4afef1c7027a5c4f6d65c8c804899b790535322b54f16c54dec8c97ebee9a651b7a6687f6e1b",
+       "signer": "0x7564105E977516C53bE337314c7E53838967bDaC"
+      }
+     },
+     "url": "http://127.0.0.1:PORT/tapeapi/v1/paidBoom"
+    }
+   ],
+   "value": null
+  },
+  {
+   "committed": "50000",
+   "error": null,
+   "inflight": 0,
+   "name": "after the failure the counter is unchanged",
+   "sent": [
+    {
+     "body": {
+      "id": "c7",
+      "method": "paid",
+      "params": {},
+      "voucher": {
+       "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+       "cumulative": "50000",
+       "expires": 1789003600,
+       "provider": "0x6060606060606060606060606060606060606060",
+       "sig": "0x6bfebf3a3b322ef2fe7f562833a3af6ff0aca99aed37a8de009b2e4afef1c7027a5c4f6d65c8c804899b790535322b54f16c54dec8c97ebee9a651b7a6687f6e1b",
+       "signer": "0x7564105E977516C53bE337314c7E53838967bDaC"
+      }
+     },
+     "url": "http://127.0.0.1:PORT/tapeapi/v1/paid"
+    }
+   ],
+   "value": {
+    "block": 62000000,
+    "id": "c7",
+    "result": {
+     "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+     "cumulative": "50000"
+    },
+    "sig": "0x721138e440531a048bd4aefe36822957121bf56c32fa930ef9b4987ade637c295f9984b4a678bb686974083e32cdd5fbbfdcb23bb92cccf8d5594de96cf1ddb41b",
+    "ts": 1789000000,
+    "verified": true
+   }
+  },
+  {
+   "committed": "60000",
+   "error": null,
+   "name": "a second payer resyncs from the signed stale answer",
+   "sent": [
+    {
+     "body": {
+      "id": "c8",
+      "method": "paid",
+      "params": {},
+      "voucher": {
+       "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+       "cumulative": "10000",
+       "expires": 1789003600,
+       "provider": "0x6060606060606060606060606060606060606060",
+       "sig": "0xa2c6c214fcf48500512d7c1592124392000d006a3fa4fdb7822628d2b4206c5226152f2ebf414180785cf93d8d78435e0aec8f5fc2a5798276c0c01f807a97eb1c",
+       "signer": "0x7564105E977516C53bE337314c7E53838967bDaC"
+      }
+     },
+     "url": "http://127.0.0.1:PORT/tapeapi/v1/paid"
+    },
+    {
+     "body": {
+      "id": "c8",
+      "method": "paid",
+      "params": {},
+      "voucher": {
+       "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+       "cumulative": "60000",
+       "expires": 1789003600,
+       "provider": "0x6060606060606060606060606060606060606060",
+       "sig": "0xf52919fd187c759cb19e41edcb1146d4139512d488dfcf5516754266e03918535a29ef399c335c69b8df4ebffc1d49018faa82bf0a586366892d2b76a8eafd0d1c",
+       "signer": "0x7564105E977516C53bE337314c7E53838967bDaC"
+      }
+     },
+     "url": "http://127.0.0.1:PORT/tapeapi/v1/paid"
+    }
+   ],
+   "value": {
+    "block": 62000000,
+    "id": "c8",
+    "result": {
+     "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+     "cumulative": "60000"
+    },
+    "sig": "0xd8937da02fcf5666f3effecb908fa1565f993e0e41fa6a44a82e5c18363476122b6fee5829692ae2a985e4d5c308a73c91128fbc1b1fee6fe995c2b1c1fd04ac1b",
+    "ts": 1789000000,
+    "verified": true
+   }
+  }
+ ],
+ "provider": [
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "id": "g1",
+    "ok": true,
+    "result": {
+     "block": 62000000
+    },
+    "sig": "0x87ad092ca4f68113520697172bce450c5db9ce9cbe79d9e62c490005a8c97e751c13302ced0341eca9e7cf5d58d8e93ae718f75de49e4451189ae14df6d3c7191b",
+    "ts": 1789000000
+   },
+   "name": "free call",
+   "paid": false,
+   "rateLimited": null,
+   "status": 200
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "error": {
+     "code": "PAYMENT_REQUIRED",
+     "data": {
+      "price": "10000"
+     },
+     "message": "paid costs 0.0001 BEM per call"
+    },
+    "id": "g2",
+    "ok": false,
+    "sig": "0xb68b610d071b166a0dcee592d5456296c26da5931ef7b8a0005ce226105442d813880e95e6e757a7b705fa53bcf990fbc96c910f30be2c2f69055ed8885e417b1b",
+    "ts": 1789000000
+   },
+   "name": "priced call without a voucher",
+   "paid": false,
+   "rateLimited": null,
+   "status": 402
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "id": "g3",
+    "ok": true,
+    "result": {
+     "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+     "cumulative": "10000"
+    },
+    "sig": "0xbac2f1b567d48f5aa59ef818bec0e21c5ef74cfb07b7f92d2dc08d7176b4541b31a603e6c534b4dde12b5d6cd29fda87ebe56e1d33187a90393f9a879c0e7c3d1c",
+    "ts": 1789000000
+   },
+   "name": "first voucher, session key",
+   "paid": true,
+   "rateLimited": null,
+   "status": 200
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "error": {
+     "code": "BAD_VOUCHER",
+     "data": {
+      "lastCumulative": "10000",
+      "onChainClaimed": "0",
+      "price": "10000",
+      "voucher": {
+       "cumulative": "10000",
+       "expires": 1789003600,
+       "sig": "0xa2c6c214fcf48500512d7c1592124392000d006a3fa4fdb7822628d2b4206c5226152f2ebf414180785cf93d8d78435e0aec8f5fc2a5798276c0c01f807a97eb1c"
+      }
+     },
+     "message": "cumulative 10000 < last 10000 + price 10000"
+    },
+    "id": "g4",
+    "ok": false,
+    "sig": "0xd818e463f6001efde61214ca90cae86592e84590d923e6428f30fcad1e357c0f7b7e3835c07b45de45c5a04187a94ba045845a9dc2e09bf355ca7e021130b0151b",
+    "ts": 1789000000
+   },
+   "name": "the same cumulative again: stale",
+   "paid": false,
+   "rateLimited": null,
+   "status": 402
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "error": {
+     "code": "BAD_VOUCHER",
+     "data": {
+      "lastCumulative": "10000",
+      "onChainClaimed": "0",
+      "price": "10000",
+      "voucher": {
+       "cumulative": "10000",
+       "expires": 1789003600,
+       "sig": "0xa2c6c214fcf48500512d7c1592124392000d006a3fa4fdb7822628d2b4206c5226152f2ebf414180785cf93d8d78435e0aec8f5fc2a5798276c0c01f807a97eb1c"
+      }
+     },
+     "message": "cumulative 19999 < last 10000 + price 10000"
+    },
+    "id": "g5",
+    "ok": false,
+    "sig": "0xb33f00806a156fec5ae8d694ecd266312db33825bfebdd97606eaf33a8228d0614b253ba854329c4ef1a8fbc2d3c9ba9dbc149fbe13d4bec70f73edb68487ad31b",
+    "ts": 1789000000
+   },
+   "name": "insufficient: one base unit short",
+   "paid": false,
+   "rateLimited": null,
+   "status": 402
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "error": {
+     "code": "BAD_VOUCHER",
+     "data": {
+      "price": "10000"
+     },
+     "message": "voucher expired"
+    },
+    "id": "g6",
+    "ok": false,
+    "sig": "0x47cdbc30dc20fc3b4af8e32cba52bc1f0163462684460576e51564b107bad18e1c384e587bc01985fc0a0c1f895f00be760ef35cf8c43bd93192cac798fb8ccd1b",
+    "ts": 1789000000
+   },
+   "name": "expired voucher",
+   "paid": false,
+   "rateLimited": null,
+   "status": 402
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "error": {
+     "code": "BAD_VOUCHER",
+     "data": {
+      "minVoucherLifeS": 600,
+      "price": "10000"
+     },
+     "message": "voucher expires in 60 s; this provider needs at least 600 s to settle"
+    },
+    "id": "g7",
+    "ok": false,
+    "sig": "0x4662ec0120dd7ba1a2d53e811210a5c40d2c209e75e61d319aa5b2637f14d3e4411a971a87dd31536e4dabc830f479d3a569e1d287ded60aed4474d378e5ad4a1c",
+    "ts": 1789000000
+   },
+   "name": "short lifetime under minVoucherLifeS 600",
+   "paid": false,
+   "rateLimited": null,
+   "status": 402
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "error": {
+     "code": "BAD_VOUCHER",
+     "data": {
+      "price": "10000"
+     },
+     "message": "session key 0xe1fAE9b4fAB2F5726677ECfA912d96b0B683e6a9 not authorised or expired"
+    },
+    "id": "g8",
+    "ok": false,
+    "sig": "0xdc0ff9b405fb7dc92cf47c89e3fdc5abb320fd162f071847560ac73eb64338c85f90c8aa35a479907f308ca898056d6a274c5705703040fb3396d501767c6f971c",
+    "ts": 1789000000
+   },
+   "name": "signed by a key that is not authorised",
+   "paid": false,
+   "rateLimited": null,
+   "status": 402
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "id": "g9",
+    "ok": true,
+    "result": {
+     "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+     "cumulative": "20000"
+    },
+    "sig": "0x12fd41d8dcc13c2d34ed0e33132445968db0053a7e7d9c19df659d22f2eba50c00cff115887789bfa743efd7a0dbfbbba11cc21f1939bf7742ddf07218246e881c",
+    "ts": 1789000000
+   },
+   "name": "v written as 0/1 (accepted by 1.8.1)",
+   "paid": true,
+   "rateLimited": null,
+   "status": 200
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "id": "g9b",
+    "ok": true,
+    "result": {
+     "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+     "cumulative": "30000"
+    },
+    "sig": "0x21661ef34012a70fca62768e9227fc1f3e2a92643c9b0f390c54b0ad35c1d2415054181ba1dd7d8bc8abbeb5c8171bdb0e506ca9bafc7fbd2c856b04edaa725b1b",
+    "ts": 1789000000
+   },
+   "name": "v written as 0/1 again, next figure",
+   "paid": true,
+   "rateLimited": null,
+   "status": 200
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "error": {
+     "code": "BAD_VOUCHER",
+     "data": {
+      "price": "10000"
+     },
+     "message": "voucher.provider is not this container"
+    },
+    "id": "g10",
+    "ok": false,
+    "sig": "0xf29bf3fce301140fc0ade5b4b1a00257f42c987cdc6177a0ae8d1a1b41a2173274d19908391b87570f16b9d3746dfa2a8d60ada6c907bb5c22a9525fc5bba39d1b",
+    "ts": 1789000000
+   },
+   "name": "voucher for another provider",
+   "paid": false,
+   "rateLimited": null,
+   "status": 402
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "id": "g11",
+    "ok": true,
+    "result": {
+     "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+     "cumulative": "40000"
+    },
+    "sig": "0xd9861be3764f9b31db979c2f5f175fa5a675c406ba61b17e91b66d18dd2e84600dfdb5abb889357832a4d5c98b75003fe46948cf0a3f0b81dc128bb854de3d6f1c",
+    "ts": 1789000000
+   },
+   "name": "cumulative with a leading zero (accepted by 1.8.1)",
+   "paid": true,
+   "rateLimited": null,
+   "status": 200
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "error": {
+     "code": "BAD_VOUCHER",
+     "data": {
+      "price": "10000"
+     },
+     "message": "unsettled 1000000 exceeds the available channel 100000 (channel 100000, armed withdraw 0)"
+    },
+    "id": "g12",
+    "ok": false,
+    "sig": "0x7149a10cf8d1d1e4a235b9b31f927f62399bc36c441208e7f17be5c495405c4e671fb505702e5cb30aadb3cac49cce4232043faadc81f41385eff584a10aafe91b",
+    "ts": 1789000000
+   },
+   "name": "over the channel",
+   "paid": false,
+   "rateLimited": null,
+   "status": 402
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "id": "g13",
+    "ok": true,
+    "result": {
+     "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+     "cumulative": "50000"
+    },
+    "sig": "0x1cc75e4e8c4818814a740a8422d4fca51475c53a7bc5884594e34bd1e10c6e0554aaf16c9a2109151dd099d3273654181ee49d97c65fab8f2d6221d7883719e31b",
+    "ts": 1789000000
+   },
+   "name": "the consumer signs itself",
+   "paid": true,
+   "rateLimited": null,
+   "status": 200
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "id": "g14",
+    "ok": true,
+    "result": "a plain string result",
+    "sig": "0x30ff80ee82582898084f441a694493950897721b501ee0c5119937951434635c35e70099023f640dccf4f30a4d317c4d68387048cf44bf4457d1dbbf7c71ecd51c",
+    "ts": 1789000000
+   },
+   "name": "a priced result that is not an object",
+   "paid": true,
+   "rateLimited": null,
+   "status": 200
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "id": "g15",
+    "ok": true,
+    "result": {
+     "charge": "the method uses this name itself"
+    },
+    "sig": "0xf83a6ed7b419dc0c2fc0fbf06a0e915756105ed8690c01c0dcb8814a0326704e216742f3e16d856215b4ddc05f53a3fd9837c7993c350ee5ff41ffe643aa27091b",
+    "ts": 1789000000
+   },
+   "name": "a priced result with its own member \"charge\"",
+   "paid": true,
+   "rateLimited": null,
+   "status": 200
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "error": {
+     "code": "BAD_VOUCHER",
+     "data": {
+      "price": "10000"
+     },
+     "message": "voucher.signer does not match signature"
+    },
+    "id": "g16",
+    "ok": false,
+    "sig": "0xe1d91441176a184f328e7d7989845800856bd56ba68191ff3584313e179110633f74859dd0d2f25143c906f381461d29088333cb920c85620577366fd0d38a381b",
+    "ts": 1789000000
+   },
+   "name": "signer member that does not match",
+   "paid": false,
+   "rateLimited": null,
+   "status": 402
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "error": {
+     "code": "INTERNAL",
+     "message": "internal error"
+    },
+    "id": "g17",
+    "ok": false,
+    "sig": "0xf6b1bc440a73287951e261d8600830f103a3a238dcbd68ba0e76e4292d7fd21055e4b22172909a864ddf7609a311954a7c3979c6481877f55a4f4103e23391f11b",
+    "ts": 1789000000
+   },
+   "name": "handler throws: INTERNAL, nothing charged",
+   "paid": false,
+   "rateLimited": null,
+   "status": 500
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "id": "g18",
+    "ok": true,
+    "result": {
+     "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+     "cumulative": "80000"
+    },
+    "sig": "0xc0cde8102edf3e10c5e7d4390b49e26b484eb94b0e9809d859e594cee8a813c90f66c08193b35fb4f0ff52d4b004604a22bf5045f9371143f630bd0841dba8161c",
+    "ts": 1789000000
+   },
+   "name": "the same voucher again after INTERNAL is accepted",
+   "paid": true,
+   "rateLimited": null,
+   "status": 200
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "error": {
+     "code": "BAD_VOUCHER",
+     "data": {
+      "price": "10000"
+     },
+     "message": "voucher missing"
+    },
+    "id": "g19",
+    "ok": false,
+    "sig": "0xc8cdb44dae7e9ea682959e258ef80fa60c7d2a9181f4028cdc4f42ec8fa1894a0fec32b2b98b281be1c08fcc7ffde396e6e3a04da9b089290ef51c7596b1ded21b",
+    "ts": 1789000000
+   },
+   "name": "malformed voucher (not an object)",
+   "paid": false,
+   "rateLimited": null,
+   "status": 402
+  },
+  {
+   "env": {
+    "block": 62000000,
+    "container": "0x6060606060606060606060606060606060606060",
+    "error": {
+     "code": "BAD_VOUCHER",
+     "data": {
+      "price": "10000"
+     },
+     "message": "voucher.cumulative must be decimal string"
+    },
+    "id": "g20",
+    "ok": false,
+    "sig": "0x83645bf1f5ca397f2a8a52c1c34f954cbf8889dc71e790c2f257e12bc4981319316d44f8566317e858959d166973936eff4c2020bd6ba06b2d6a3c88659b74251c",
+    "ts": 1789000000
+   },
+   "name": "malformed cumulative",
+   "paid": false,
+   "rateLimited": null,
+   "status": 402
+  },
+  {
+   "name": "store after the run",
+   "store": [
+    {
+     "consumer": "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+     "cumulative": "80000",
+     "expires": 1789003600,
+     "provider": "0x6060606060606060606060606060606060606060",
+     "sig": "0xcaeef623c017f051aa1e67f75a6704cae2a905c4d700e83f4661e463ab1bd2da335ef2487228bbca4b13c0a39f1928d9a61fd6a3b74931d66c5f0c584982e26c1c",
+     "signer": "0x7564105E977516C53bE337314c7E53838967bDaC",
+     "updatedAt": 1789000000
+    }
+   ]
+  }
+ ]
+}

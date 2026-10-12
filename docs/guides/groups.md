@@ -240,15 +240,17 @@ day (TAPI-27 §8).
 ## Label versions (`labels`, since 1.8.1)
 
 Groups have a version 2 too,
-[TAPI-27 v2](../../spec/TAPI-27-v2.md) (Draft): labels that begin with
-`tape-group/`, and invites in the v2 inbox rooms of [TAPI-26 v2](channels.md#7-label-versions-labels-since-181). It is an option since 1.8.1 and the
-default in 2.0; it is not format 2, and either format can use it.
+[TAPI-27 v2](../../spec/TAPI-27-v2.md) (Stable (v2) since 2.0.0): labels that begin with
+`tape-group/`, and invites in the v2 inbox rooms of [TAPI-26 v2](channels.md#7-label-versions-labels-since-181). It was an option in 1.8.1 and
+**is the default from 2.0**; it is not format 2, and either format can use it.
 
-- The owner passes `labels: 'v2'` to `createGroup`; members pass it to `checkGroupInvites` (which then reads the v2
-  inbox room) and to `joinGroup`. `deliverGroupUpdate` and `inviteFor` follow the group's version (`group.labels`).
+- With no `labels`, `createGroup`, `checkGroupInvites` (which reads the v2 inbox room) and `joinGroup` use version 2.
+  `deliverGroupUpdate` and `inviteFor` follow the group's version (`group.labels`). For a group whose members are still
+  on 1.x, everyone passes `labels: 'v1'` (deprecated in 2.x, not removed in 2.x).
 - A group keeps its version for life. A v2 owner's `snapshot()` says `v: 3, labels: 'v2'`, so SDKs up to 1.8.0 refuse
   it instead of resuming the group under the v1 labels, and `resumeGroup` takes the version from it (a `labels` that
-  disagrees is `GROUP_INVALID`).
+  disagrees is `GROUP_INVALID`). A 1.x snapshot (`v: 1` or `v: 2`) is a v1 group and resumes as one in 2.0: upgrading
+  the owner does not move an existing group to v2.
 - A member on the other version reads another inbox room and another group room, so it usually sees nothing; an epoch
   message of the other version that reaches it is refused with `GROUP_INVALID`, `e.data.labels` and
   `e.data.peerLabels`. The SDK never switches versions on its own.

@@ -6,7 +6,7 @@
 | Implementation | Not deployed (2026-09-27). `contracts/src/TapeAPIEscrow.sol` (v2; v3 since 2026-10-05: one immutable token per instance, pull treasury) is implemented and tested, and the SDK and server implement the voucher, but no escrow is deployed on BNB Chain and it needs an independent audit before it holds real funds. The live services (`11.1013.tape`, `12.1013.tape`) are free and name no escrow. Since 2026-10-05 the v3 contract implements §3.4 as written (default 100 bps, cap 2000 bps, "never set" kept apart from 0); it is still unaudited (§7). |
 | Type | Standards |
 | Created | 2026-09-20 |
-| Revision | v2 (2026-09-21): per-(consumer, provider) channels. Supersedes the v1 shared-pool + commitment-accounting escrow; the v1 contract and its tests are archived under `contracts/archive/`. The voucher (§3.1) is unchanged. 2026-09-28, before any deployment: the §3.4 contribution defaults to 100 bps and each provider can set it from 0 to 5000 (was: default 0, 100 recommended). 2026-10-05, before any deployment: the cap is 2000 bps (20%; was 5000), directories are no longer allowed to rank or badge services by the contribution (previously allowed to rank by it), the escrow keeps "never set" (default applies) apart from "set to 0", and `Settled` carries the applied `bps`. Also 2026-10-05: new informative §3.5 (custody assets): USDT-pegged token first, admission criteria, planned changes for the audited version; the token list in §3.4 is replaced by a pointer to it. Later on 2026-10-05, factual only: the §3.3 constructor argument and view are named `token` (was `bem`), the solvency line reads `≥` (direct transfers stay in the escrow), and §3.5 and §7 record which planned items the repository contract now has. Later on 2026-10-05, specifying the escrow that goes to audit (before any deployment): `settle` accrues the contribution to `treasuryAccrued` instead of transferring it, and `claimTreasury()` (anyone) pays it to the treasury (§3.3); `setTreasury` first pays the outgoing treasury and refuses the escrow and its token as treasury (§3.4); voucher amounts are in base units of the instance's token (§3.1); every token call that does not answer success reverts `TransferFailed()`; `upto` settlement is explicitly out of scope. |
+| Revision | v2 (2026-09-21): per-(consumer, provider) channels. Supersedes the v1 shared-pool + commitment-accounting escrow; the v1 contract and its tests are archived under `contracts/archive/`. The voucher (§3.1) is unchanged. 2026-09-28, before any deployment: the §3.4 contribution defaults to 100 bps and each provider can set it from 0 to 5000 (was: default 0, 100 recommended). 2026-10-05, before any deployment: the cap is 2000 bps (20%; was 5000), directories are no longer allowed to rank or badge services by the contribution (previously allowed to rank by it), the escrow keeps "never set" (default applies) apart from "set to 0", and `Settled` carries the applied `bps`. Also 2026-10-05: new informative §3.5 (custody assets): USDT-pegged token first, admission criteria, planned changes for the audited version; the token list in §3.4 is replaced by a pointer to it. Later on 2026-10-05, factual only: the §3.3 constructor argument and view are named `token` (was `bem`), the solvency line reads `≥` (direct transfers stay in the escrow), and §3.5 and §7 record which planned items the repository contract now has. Later on 2026-10-05, specifying the escrow that goes to audit (before any deployment): `settle` accrues the contribution to `treasuryAccrued` instead of transferring it, and `claimTreasury()` (anyone) pays it to the treasury (§3.3); `setTreasury` first pays the outgoing treasury and refuses the escrow and its token as treasury (§3.4); voucher amounts are in base units of the instance's token (§3.1); every token call that does not answer success reverts `TransferFailed()`; `upto` settlement is explicitly out of scope. 2026-10-08, before any deployment: the first custody asset is BEM (§3.5; decision of 2026-10-08, replacing the USDT peg of 2026-10-05), with its read-only admission check recorded; new experimental §3.6, prices in US dollars paid in BEM, after the TAP draft "Payment Vouchers for Container Services" (TapeOutProtocol/TAPs#52): the manifest member `usdPricing`, quotes, the voucher member `rate`, the `BAD_VOUCHER` member `reason`, the charge record, and `v` of 27 or 28 for the vouchers of such a service. A service without `usdPricing` is unchanged. |
 | Requires | TAPI-20, TAPI-21 |
 | License | CC0-1.0 |
 
@@ -43,6 +43,8 @@ Wire form inside a TAPI-21 request:
 ```json
 "voucher": { "consumer": "0x..", "provider": "0x..", "cumulative": "123", "expires": 1758400000, "sig": "0x..", "signer": "0x.." }
 ```
+
+A voucher for a method priced in US dollars (§3.6) also carries `rate`.
 
 ### 3.2 Provider Checks
 
@@ -113,13 +115,13 @@ Solvency (checked by the reference invariant suite): `token.balanceOf(escrow) �
 - **Treasury.** `treasury` is set in the constructor and MUST be published in §6 (and the repository README) before Final. It MAY be changed only by the owner via `setTreasury`, which MUST emit `TreasuryChanged(old, new)`, MUST reject the zero address (`ZeroAddress()`), and MUST reject the escrow itself and its token (`BadTreasury()`; the constructor refuses them too), since a claim to either would strand the accrual. The treasury role includes what is accrued but not yet claimed. When something is accrued, `setTreasury` MUST first attempt `claimTreasury()` for the outgoing treasury, so that a rotation cannot redirect what that treasury has earned; when the attempt fails it is rolled back in full and the rotation MUST still succeed, leaving the accrual for the new treasury. That is how a treasury that cannot receive the token (frozen, or a contract that rejects it) is replaced without loss and can never block its own replacement. Rotating to the current treasury changes nothing and emits nothing. Beyond rotation the owner MUST have no other power: no fee switch, no pause, no access to channels or user balances, no ability to change any provider's `bps` or the default, and no way to pay the accrual to anyone but `treasury`.
 - **Alternative deployments.** Any escrow implementing §3.1–§3.3 is conforming; it MAY omit `setContribution` / `contributionOf`, in which case clients MUST treat the contribution as 0. A service selects its escrow via `manifest.payment.escrow`; clients MUST use that address and MUST NOT assume a canonical deployment. If the community ever wants a uniform protocol fee, the path is a new TAP and a new escrow deployment, never a change to an existing one.
 
-**The version that goes to audit (informative).** The escrow that will be audited and deployed holds one ERC-20 token per instance on BNB Smart Chain, the USDT-pegged token first, with BEM, WBNB and (through WBNB) BNB on demand (§3.5). §3.1–§3.4 apply to every instance, with amounts in base units of that instance's token. `upto` settlement by measured usage is not implemented and not specified in this revision, and it is not part of the audit scope. Until an escrow is deployed, no call is charged anything.
+**The version that goes to audit (informative).** The escrow that will be audited and deployed holds one ERC-20 token per instance on BNB Smart Chain, BEM first, with the USDT-pegged token, WBNB and (through WBNB) BNB on demand (§3.5). §3.1–§3.4 apply to every instance, with amounts in base units of that instance's token. `upto` settlement by measured usage is not implemented and not specified in this revision, and it is not part of the audit scope. Until an escrow is deployed, no call is charged anything.
 
 ### 3.5 Custody assets (informative)
 
-Experimental, not deployed, not audited. This subsection records which token the escrow that goes to audit is planned to hold, how a token is admitted, and what that means for the contract and the SDK. It specifies no interface: §3.1–§3.4 apply to every instance. The evidence is two rounds of read-only on-chain evaluation (2026-10-04) against three independent RPC operators, the second round re-checking the first.
+Experimental, not deployed, not audited. This subsection records which token the escrow that goes to audit is planned to hold, how a token is admitted, and what that means for the contract and the SDK. It specifies no interface: §3.1–§3.4 apply to every instance. The evidence is two rounds of read-only on-chain evaluation (2026-10-04) against three independent RPC operators, the second round re-checking the first, and for BEM a read-only check on 2026-10-08 (below).
 
-**Which asset (decision of 2026-10-05).** The first supported instance holds the USDT-pegged token on BNB Smart Chain: Binance-Peg "BSC-USD", `0x55d398326f99059fF775485246999027B3197955`. It is issued by Binance, not by Tether, and its `name()` reads "Tether USD", so an SDK or console SHOULD show it as "USDT (Binance-Peg)" together with the address. BEM, WBNB and BNB (through WBNB) are planned on demand, from the same bytecode, one instance per token, with the token an immutable constructor argument; they are not part of the first deployment. No contract holds a token table that an owner can edit.
+**Which asset (decision of 2026-10-08).** The first supported instance holds BEM, `0x5ce033B2bFCa3Af30b3e8C8457DeaF776A8b695a` on BNB Smart Chain, 8 decimals: the token that pays for TapeOut services, in which `priceBEM` is already stated. This replaces the decision of 2026-10-05, which named the USDT-pegged token. The USDT peg (Binance-Peg "BSC-USD", `0x55d398326f99059fF775485246999027B3197955`, evaluated below), WBNB and BNB (through WBNB) are planned on demand, from the same bytecode, one instance per token, with the token an immutable constructor argument; they are not part of the first deployment. The USDT peg is issued by Binance, not by Tether, and its `name()` reads "Tether USD", so an SDK or console SHOULD show it as "USDT (Binance-Peg)" together with the address. No contract holds a token table that an owner can edit.
 
 **Admission criteria.** A token is eligible for an instance only if every item holds. Each is checkable on chain or against verified source, and the result is recorded per instance.
 
@@ -131,7 +133,17 @@ Experimental, not deployed, not audited. This subsection records which token the
 
 Mint authority and issuer backing are value risk, not lock-up risk: they are disclosed per instance and do not decide admission. Items 1 and 2 are not relaxed. The reason is the shape of the escrow: one instance is one address holding every channel of its token, and it has no rescue path by design. A freeze of that address stops `fund`, `settle` and `withdraw` on every channel at once. A pause is worse: `requestWithdraw` does not touch the token, so a withdrawal cooldown can run out while every provider's `settle` reverts, and when the pause ends the consumer's `withdraw` and the provider's `settle` race for the same funds. Pausable tokens are therefore excluded, not handled in the contract.
 
-**Why the USDT-peg qualifies (evaluation of 2026-10-04).**
+**Why BEM qualifies (check of 2026-10-08).** Read-only, every read pinned to block 126436586 and identical on all three operators for every read that answered (bsc-dataseed.bnbchain.org, rpc-bsc.48.club, bsc-rpc.publicnode.com), and calls that revert revert on all three; the script and its output are kept with the internal research notes.
+
+- Item 1: 2,205 bytes of runtime code; every proxy slot (EIP-1967 implementation, admin and beacon, EIP-1822) is zero; no `DELEGATECALL`, `SELFDESTRUCT`, `CALLCODE`, `CALL` or `CREATE` opcode outside the compiler metadata (so no receiver hook and no external call at all).
+- Item 2: 15 dispatch selectors: the ERC-20 functions, `mint(address,uint256)`, `minter()`, `MAX_SUPPLY()`, `remainingSupply()`, `DECIMALS()` and one more getter that answers the constant 10^8 whatever it is given. No owner (`owner()` reverts), and no freeze, pause, blacklist, burn, rescue or upgrade function. A simulated `mint` succeeds only from `minter()` and reverts `NotMinter()` from any other sender.
+- Item 3: simulated with a state override (a helper contract given 10 BEM): `transfer` and `approve` + `transferFrom` of 1 BEM into an externally owned account and into a contract (a PancakeSwap v3 pool) return `true` and move both balances by exactly the amount: no fee on transfer.
+- Item 4: `decimals()` is 8 and no function sets it.
+- Item 5, still open: verification of the source on the block explorer has not been checked. Who can mint: only `minter()`, `0x7E2E0DC66a3bD9103E69b766afA62d9f7b697b46`, a UUPS proxy (EIP-1967) whose implementation is `0xa3DBe873DA37cD4e4a13c7cEf23a7dB6Ca60f898` and whose `owner()` answers the zero address; whether that removes every way to upgrade it depends on the implementation's source, which has not been read. Supply at the check: 310,304.7 BEM of a `MAX_SUPPLY` of 21,000,000.
+
+What remains is value risk: the price of BEM moves, and the minter can issue up to `MAX_SUPPLY`. Methods priced in US dollars (§3.6) move the price risk of one call to the rate, bounded by `priceBEM`.
+
+**Why the USDT peg qualifies (evaluation of 2026-10-04; planned on demand).**
 
 - Item 1: 4,413 bytes of runtime code; every proxy slot is zero; no `DELEGATECALL`, `SELFDESTRUCT` or `CALL` opcode (so no receiver hook); the same code hash on three operators.
 - Item 2: all 30 `PUSH4` constants in the bytecode are accounted for: 20 dispatch selectors (ERC-20 with `increaseAllowance` and `decreaseAllowance`, `mint(uint256)`, `burn(uint256)`, `owner`, `getOwner`, `renounceOwnership`, `transferOwnership`, and the public `_name`, `_symbol` and `_decimals` getters) and 10 constants that are not selectors (a compiler metadata marker, a mask, revert-string fragments, bytes inside a 24-byte constant). None is a freeze, pause, blacklist, rescue or upgrade function. The owner is a single externally owned account (`0xF68a4b64162906efF0fF6aE34E2bB1Cd42FEf62d`) that can mint to itself and burn its own tokens and nothing else: a simulated `mint` from the owner credits only the owner, from anyone else it reverts, and there is no `burnFrom` and no `mint(address,uint256)`.
@@ -152,7 +164,7 @@ What remains is value risk: a claim on reserves held off chain by the issuer, an
 
 Also not planned: Binance-Peg BUSD, ETH and DAI (no custody use), and lisUSD (upgrade time lock of one day, shorter than the 48-hour cooldown). Issuer-native USDC and USDT, where they exist on a chain, carry issuer blacklists by design and would fail item 2.
 
-**Prices and amounts.** The default unit is USDT. Escrowed amounts (`fund`, `channelOf`, a voucher's `cumulative`, a withdrawal) are in the token's own base units, as its `decimals()` defines them: the USDT-peg has 18, so 10 USDT is `10000000000000000000`. An SDK and the documentation SHOULD read `decimals()` from the token and SHOULD NOT hard-code the 8 decimals of BEM into a custody amount; that convention belongs to `priceBEM`, which stays exactly as it is for compatibility. No conversion between tokens is ever made: an instance counts only its own token. Prices in several tokens (a `prices` map keyed by token address), how a manifest lists several escrows, and the form of `data.price` for a token other than BEM are not yet specified.
+**Prices and amounts.** The first instance's unit is BEM, so `priceBEM`, `data.price` and a voucher's `cumulative` are all in the same base unit, 10⁻⁸ BEM. Escrowed amounts (`fund`, `channelOf`, a voucher's `cumulative`, a withdrawal) are in the token's own base units, as its `decimals()` defines them: for a later USDT-peg instance, which has 18, 10 USDT is `10000000000000000000`. An SDK and the documentation SHOULD read `decimals()` from the token and SHOULD NOT hard-code the 8 decimals of BEM into a custody amount; that convention belongs to `priceBEM`, which stays exactly as it is for compatibility. No conversion between tokens is ever made: an instance counts only its own token. Prices in several tokens (a `prices` map keyed by token address), how a manifest lists several escrows, and the form of `data.price` for a token other than BEM are not yet specified.
 
 **Client behaviour (experimental).** An SDK SHOULD, by default, build `approve` and `fund` transactions only for escrows on a list of audited deployments (shipped with the SDK or supplied by the caller), and SHOULD require an explicit opt-in for any other escrow. `approve` gives an escrow the right to pull tokens, and a hostile manifest can name a contract that reports a real token's address while its `fund` takes everything approved. No escrow is deployed, so the list is empty today. The `payment.escrow` address a service names still decides which escrow a voucher is signed for (§3.4).
 
@@ -166,6 +178,24 @@ Also not planned: Binance-Peg BUSD, ETH and DAI (no custody use), and lisUSD (up
 
 **Native BNB is not a custody asset.** The escrow holds ERC-20 only, and BNB is held as WBNB, which the payer wraps (`WBNB.deposit`) before `approve` and `fund`; the contract never unwraps. Two tests on 2026-10-04 (state override and `eth_estimateGas`) show why. A service container accepts native BNB only when the sender supplies enough gas (a plain transfer needs about 32,000 gas in total, and a push with 2,300 gas fails). WBNB's `withdraw` pushes native BNB with exactly 2,300 gas, so a container cannot unwrap WBNB itself: the call reverts, while the same call from an ordinary address succeeds. WBNB received by a container has to be moved to the holder's wallet and unwrapped there. Native BNB remains a way to top up a container directly, with enough gas; it is a top-up path, not an escrowed asset.
 
+
+### 3.6 Prices in US dollars, paid in BEM (experimental)
+
+Experimental; first released in TapeAPI 2.0.0, with no escrow deployed. This section follows the TAP draft "Payment Vouchers for Container Services" (TapeOutProtocol/TAPs#52), whose text is authoritative for the details. It applies only to a service whose manifest has the top-level member `usdPricing`; for every other service §3.1 and §3.2 are unchanged.
+
+**The member.** `usdPricing` is `{ methods, toleranceBps, maxQuoteS, rateSources }`: `methods` maps the name of a priced method to its price in US dollars (a non-zero decimal string with at most 8 fraction digits); `toleranceBps` is an integer from 1 to 2000; `maxQuoteS` an integer from 1 to 900; `rateSources` a non-empty array of `{ "type": "v3-twap", pool, usd, window }`, a Uniswap or PancakeSwap v3 pool of BEM and a dollar token with an averaging window of 600 to 86400 seconds. A client MUST NOT pay a USD-priced method of a service whose `usdPricing` breaks a rule; it MAY still pay that service's other methods. A source of an unknown type, or whose `usd` the client does not recognise, is ignored, and a member with no source left is invalid.
+
+**The cap and the conversion.** The method's `priceBEM` is the most BEM one call can cost. With `U` the dollar price in 10⁻⁸ USD, `R` the rate (USD per 1 BEM) in 10⁻¹⁸ USD and `P` the cap in base units, the charge is `min(ceil(U × 10^18 / R), P)`, and it is `capped` when the first term exceeds `P`. Implementations MUST compute it with exact integers.
+
+**Quotes.** A provider states a rate as a quote `{ rate, asOf, validUntil }` (at most 18 fraction digits; `asOf` not later than the envelope's `ts`; `asOf < validUntil ≤ asOf + maxQuoteS`) inside a signed answer only: in `data.quote` of `PAYMENT_REQUIRED` and `BAD_VOUCHER`, and in the charge record. A provider MUST honour every quote it has stated, on every instance that answers for the service, until its `validUntil`, and MUST NOT accept a `rate` it has not stated.
+
+**The client's check.** Before it signs at a quote's rate, a client MUST obtain a reference rate and MUST refuse the quote when `rate × 10000 < reference × (10000 − toleranceBps)`. The reference SHOULD be the median of the time-weighted averages of `rateSources`, read with `observe([window, 0])` at one block agreed by the nodes and no older than `maxQuoteS`. A quote above the reference passes.
+
+**The voucher and the refusals.** A voucher for a USD-priced method carries `rate`, the quote's rate exactly as written, and costs the conversion at that rate. For every voucher of such a service, `v` MUST be 27 or 28: a verifier MUST reject 0 and 1, which the reference escrow would accept but other on-chain recovery routines refuse. Every `BAD_VOUCHER` of such a service MUST carry `data.reason`, one of `malformed`, `provider`, `expired`, `lifetime`, `signature`, `rate`, `stale`, `insufficient`, `funds`, in the order the checks run, and a client MUST treat a value it does not know as a refusal. `data.price` is the charge at the current quote, with `data.priceUSD` and `data.quote` for a USD-priced method; `PAYMENT_REQUIRED` also carries `minVoucherLifeS` when the provider enforces one. `stale` and `insufficient` carry `lastCumulative`, `onChainClaimed` and the proof voucher of §3.2.
+
+**The charge record.** The result of every priced call of such a service MUST be a JSON object with the member `charge`: `{ consumer, cumulative, amount }`, where `amount` (an amount object in `"BEM"` with 8 fraction digits) is `cumulative` minus the provider's `last`, and for a USD-priced method also `price`, `rate`, `rateAsOf`, `capped` (present only when true) and the next `quote`. It is inside the signed body. A failed call charges nothing. A client MUST NOT raise its counter from a record that names another consumer or cumulative than its voucher, or whose amount, price, rate or `capped` is wrong, and MUST NOT sign another voucher for the service until it has reread the manifest and read `claimedOf`.
+
+Test vectors: `spec/vectors/tapi-22-usd.json` (§6).
 
 ## 4. Rationale
 
@@ -183,10 +213,11 @@ Adds nothing to `SPEC.md`; no change to name grammar or §15.1 invariants. TAPI-
 | `keccak256("TapeAPIEscrow")` | `0x9e119fcf121b28516e9297f2c41bbb6b5899ca62f3f2122145a86c0b2ddf863a` |
 | Reference escrow address / `treasury` | TODO (not deployed) |
 | Worked voucher digest | `spec/vectors/tapi-22-voucher.json`, checked independently by `spec/vectors/verify.py` and by the Solidity suite |
+| §3.6 (experimental) | `spec/vectors/tapi-22-usd.json`: conversions and refused inputs, vouchers with the refused encodings (`v` 0/1 included), signed answers with quotes and a charge record, reference-rate arithmetic; checked independently by `spec/vectors/verify.py` |
 
 ## 7. Reference Implementation
 
-`contracts/src/TapeAPIEscrow.sol` (v1 archived as `contracts/archive/TapeAPIEscrow.v1.sol`); regression suite `contracts/test/Attacks.t.sol` (every audited v1 attack replayed against v2) and `contracts/test/EscrowInvariant.t.sol` (solvency, monotone `claimed`, no over-payment, in-range vouchers payable in full inside the cooldown). SDK `api.payer` (accepts `sessionExpiry` only to refuse issuing once the session has lapsed; `voucher.expires` is bounded by `ttl` alone), `api.tx.fund / requestWithdraw / cancelWithdraw / withdraw / authorizeSession(provider, key, expires) / settle / setContribution`, `api.chain.escrow.channelOf / claimedOf / sessionExpiry / pendingWithdraw`, and `svc.contribution` from `api.resolve`; server voucher verification reads `channelOf`, `claimedOf` and `pendingWithdraw(consumer, provider)` per §3.2, `pendingSettlements` / `settleTx`, and `provider.contribution()` (not exposed in `/tapeapi/v1/health`). Not deployed: see the header. Since 2026-10-05 the v3 contract implements §3.4 as written: `DEFAULT_CONTRIBUTION_BPS = 100`, `MAX_CONTRIBUTION_BPS = 2000`, "never set" kept apart from "set to 0", and the applied `bps` in `Settled`. It is still unaudited; the escrow version that goes to audit and deployment builds on it with the planned items noted under §3.4 and §3.5, and only that version will be audited and deployed. The repository contract already has the items §3.5 marks as done or implemented, including the pull treasury (§3.3, §3.4).
+`contracts/src/TapeAPIEscrow.sol` (v1 archived as `contracts/archive/TapeAPIEscrow.v1.sol`); regression suite `contracts/test/Attacks.t.sol` (every audited v1 attack replayed against v2) and `contracts/test/EscrowInvariant.t.sol` (solvency, monotone `claimed`, no over-payment, in-range vouchers payable in full inside the cooldown). SDK `api.payer` (accepts `sessionExpiry` only to refuse issuing once the session has lapsed; `voucher.expires` is bounded by `ttl` alone), `api.tx.fund / requestWithdraw / cancelWithdraw / withdraw / authorizeSession(provider, key, expires) / settle / setContribution`, `api.chain.escrow.channelOf / claimedOf / sessionExpiry / pendingWithdraw`, and `svc.contribution` from `api.resolve`; server voucher verification reads `channelOf`, `claimedOf` and `pendingWithdraw(consumer, provider)` per §3.2, `pendingSettlements` / `settleTx`, and `provider.contribution()` (not exposed in `/tapeapi/v1/health`). Not deployed: see the header. Since 2026-10-05 the v3 contract implements §3.4 as written: `DEFAULT_CONTRIBUTION_BPS = 100`, `MAX_CONTRIBUTION_BPS = 2000`, "never set" kept apart from "set to 0", and the applied `bps` in `Settled`. It is still unaudited; the escrow version that goes to audit and deployment builds on it with the planned items noted under §3.4 and §3.5, and only that version will be audited and deployed. The repository contract already has the items §3.5 marks as done or implemented, including the pull treasury (§3.3, §3.4). §3.6 (experimental, unreleased): the SDK namespace `usdPricing` (`sdk/src/usd-pricing.js`), the client side in `api.call` (options `usdPricing` and `settlementFacts` of `createTapeAPI`), and the provider side in `createProvider` (options `usdRate`, `quoteStore`, `quoteValidS`, `settlementFacts`); `server/test/payment-golden.test.mjs` checks that a manifest without `usdPricing` answers byte for byte as before.
 
 ## 8. Security Considerations
 
@@ -217,6 +248,8 @@ Copyright and related rights waived via CC0-1.0.
 
 > **状态：** Experimental（实验性，见 [TAPI-1](TAPI-1.md) §4.1）：不在 TapeAPI 1.0 的稳定承诺之内，可能不兼容地修改或撤回。
 
+> **修订（2026-10-08，部署之前）：** 首个托管资产改为 BEM（§3.5；2026-10-08 的决定，取代 2026-10-05 的 USDT 锚定币），并记录其只读准入核验；新增实验性 §3.6：按美元报价、以 BEM 支付，依据 TAP 草稿《Payment Vouchers for Container Services》（TapeOutProtocol/TAPs#52）：清单成员 `usdPricing`、报价、凭证成员 `rate`、`BAD_VOUCHER` 成员 `reason`、计费记录，以及此类服务的凭证 `v` 只能是 27 或 28。没有 `usdPricing` 的服务不受影响。
+
 RFC 2119 关键词适用。
 
 ## 1. 摘要
@@ -244,6 +277,8 @@ TAPI-21 请求中的线上形式：
 ```json
 "voucher": { "consumer": "0x..", "provider": "0x..", "cumulative": "123", "expires": 1758400000, "sig": "0x..", "signer": "0x.." }
 ```
+
+按美元计价的方法（§3.6）的凭证另带 `rate`。
 
 ### 3.2 提供者校验
 
@@ -314,13 +349,13 @@ errors: ZeroAddress, ZeroAmount, BadProvider, BadTreasury, InsufficientBalance, 
 - **金库。** `treasury` 在构造函数中设定，MUST 在 Final 前发布于 §6（及仓库 README）。它 MAY 仅由 owner 通过 `setTreasury` 修改，该函数 MUST 发出 `TreasuryChanged(old, new)`，MUST 拒绝零地址（`ZeroAddress()`），并 MUST 拒绝托管自身与其代币（`BadTreasury()`；构造函数同样拒绝），因为领到这两处的应收额会永久卡死。"金库"角色包括已记账未领取的应收额。有应收时，`setTreasury` MUST 先为旧金库尝试一次 `claimTreasury()`，使更换无法改走该金库已经挣得的钱；这次尝试失败时它被完整回滚，而更换 MUST 照样成功，应收额留给新金库。收不了该代币的金库（被冻结，或拒收的合约）就是这样被无损替换的，它永远挡不住自己被替换。换成当前金库什么也不改变、也不发事件。除更换金库外 owner MUST 没有任何其它权力：没有费率开关、不能暂停、不能动通道或用户余额、不能修改任何 provider 的 `bps` 或默认值，也无法把应收额付给 `treasury` 以外的任何人。
 - **替代部署。** 任何实现 §3.1–§3.3 的托管即为合规；它 MAY 省略 `setContribution` / `contributionOf`，此时客户端 MUST 将贡献视为 0。服务通过 `manifest.payment.escrow` 选择其托管；客户端 MUST 使用该地址，MUST NOT 假定存在规范部署。若社区将来希望有统一协议费，正确路径是新的 TAP 与新的托管部署，而不是修改现有合约。
 
-**送审的那一版（说明性内容）。** 将送审并部署的托管在 BNB Smart Chain 上每个实例只托管一种 ERC-20，首个是 USDT 锚定币，BEM、WBNB 与（经 WBNB 的）BNB 按需（§3.5）。§3.1–§3.4 适用于每个实例，金额以该实例代币的最小单位计。按实际用量结算的 `upto` 本版未实现、未规定，也不在送审范围内。在托管部署之前，任何调用都不收取任何费用。
+**送审的那一版（说明性内容）。** 将送审并部署的托管在 BNB Smart Chain 上每个实例只托管一种 ERC-20，首个是 BEM，USDT 锚定币、WBNB 与（经 WBNB 的）BNB 按需（§3.5）。§3.1–§3.4 适用于每个实例，金额以该实例代币的最小单位计。按实际用量结算的 `upto` 本版未实现、未规定，也不在送审范围内。在托管部署之前，任何调用都不收取任何费用。
 
 ### 3.5 托管资产（说明性）
 
-实验性，未部署，未经审计。本小节记录送审的那一版托管计划托管哪种代币、一种代币如何被准入，以及这对合约与 SDK 意味着什么。它不规定任何接口：§3.1–§3.4 适用于每个实例。依据是 2026-10-04 对三家独立 RPC 运营方做的两轮只读链上评估，第二轮复核第一轮。
+实验性，未部署，未经审计。本小节记录送审的那一版托管计划托管哪种代币、一种代币如何被准入，以及这对合约与 SDK 意味着什么。它不规定任何接口：§3.1–§3.4 适用于每个实例。依据是 2026-10-04 对三家独立 RPC 运营方做的两轮只读链上评估，第二轮复核第一轮；BEM 另有 2026-10-08 的只读核验（见下）。
 
-**托管什么（2026-10-05 的决定）。** 首个支持的实例托管 BNB Smart Chain 上的 USDT 锚定币：Binance-Peg "BSC-USD"，`0x55d398326f99059fF775485246999027B3197955`。它由 Binance 而非 Tether 发行，其 `name()` 写着 "Tether USD"，所以 SDK 与控制台 SHOULD 把它显示为 "USDT (Binance-Peg)" 并附上地址。BEM、WBNB 与 BNB（经 WBNB）按需，用同一份字节码，每种代币一个实例，代币是不可变的构造参数；它们不是首次部署的一部分。没有任何合约持有可由 owner 编辑的代币表。
+**托管什么（2026-10-08 的决定）。** 首个支持的实例托管 BEM：BNB Smart Chain 上的 `0x5ce033B2bFCa3Af30b3e8C8457DeaF776A8b695a`，8 位小数，即为 TapeOut 服务付费的代币，`priceBEM` 本来就以它计价。这取代 2026-10-05 的决定（当时定的是 USDT 锚定币）。USDT 锚定币（Binance-Peg "BSC-USD"，`0x55d398326f99059fF775485246999027B3197955`，评估见下）、WBNB 与 BNB（经 WBNB）按需，用同一份字节码，每种代币一个实例，代币是不可变的构造参数；它们不是首次部署的一部分。USDT 锚定币由 Binance 而非 Tether 发行，其 `name()` 写着 "Tether USD"，所以 SDK 与控制台 SHOULD 把它显示为 "USDT (Binance-Peg)" 并附上地址。没有任何合约持有可由 owner 编辑的代币表。
 
 **准入标准。** 一种代币只有在下面每一项都成立时才有资格拥有实例。每一项都能在链上或对照已验证的源码核查，结果按实例记录。
 
@@ -332,7 +367,17 @@ errors: ZeroAddress, ZeroAmount, BadProvider, BadTreasury, InsufficientBalance, 
 
 增发权与发行方背书是价值风险，不是锁死风险：它们按实例披露，不决定准入。第 1、2 项不放宽。原因在于托管的形状：一个实例就是一个地址，持有该代币的全部通道，且按设计没有救援路径。该地址被冻结，会让每条通道的 `fund`、`settle` 与 `withdraw` 同时停止。暂停更糟：`requestWithdraw` 不碰代币，所以提现冷静期可能在每个提供者的 `settle` 都回滚的时候走完，暂停结束时，消费者的 `withdraw` 与提供者的 `settle` 会抢同一笔钱。因此可暂停的代币被排除，而不是在合约里处理。
 
-**USDT 锚定币为什么合格（2026-10-04 评估）。**
+**BEM 为什么合格（2026-10-08 核验）。** 只读，全部读取钉在区块 126436586 上，每个有回答的读取三家运营方（bsc-dataseed.bnbchain.org、rpc-bsc.48.club、bsc-rpc.publicnode.com）答案都一致，回退的调用三家都回退；脚本与输出保存在内部研究笔记里。
+
+- 第 1 项：运行时代码 2,205 字节；所有代理槽（EIP-1967 的实现、管理员与 beacon 槽，EIP-1822 槽）均为零；编译器元数据之外没有 `DELEGATECALL`、`SELFDESTRUCT`、`CALLCODE`、`CALL` 或 `CREATE` 操作码（因此没有收款方钩子，也没有任何外部调用）。
+- 第 2 项：15 个分发选择器：ERC-20 各函数、`mint(address,uint256)`、`minter()`、`MAX_SUPPLY()`、`remainingSupply()`、`DECIMALS()`，以及另一个无论传什么都返回常量 10^8 的读取函数。没有 owner（`owner()` 回退），没有冻结、暂停、拉黑、销毁、救援或升级函数。模拟 `mint`：只有 `minter()` 发起时成功，其他发送方回退 `NotMinter()`。
+- 第 3 项：用状态覆盖模拟（给一个辅助合约 10 BEM）：向外部账户和合约（一个 PancakeSwap v3 池子）`transfer` 以及 `approve` + `transferFrom` 1 BEM，都返回 `true`，双方余额的变化恰好等于金额：转账不扣费。
+- 第 4 项：`decimals()` 为 8，没有设置它的函数。
+- 第 5 项，仍未完成：区块浏览器上的源码验证尚未核查。谁能铸币：只有 `minter()`，即 `0x7E2E0DC66a3bD9103E69b766afA62d9f7b697b46`，一个 UUPS 代理（EIP-1967），实现为 `0xa3DBe873DA37cD4e4a13c7cEf23a7dB6Ca60f898`，其 `owner()` 返回零地址；这是否消除了升级它的一切途径取决于实现的源码，尚未阅读。核验时的供应量：310,304.7 BEM，`MAX_SUPPLY` 为 21,000,000。
+
+剩下的是价值风险：BEM 的价格会变动，铸币者可以增发到 `MAX_SUPPLY`。按美元计价的方法（§3.6）把单次调用的价格风险转到汇率上，并以 `priceBEM` 为界。
+
+**USDT 锚定币为什么合格（2026-10-04 评估；按需）。**
 
 - 第 1 项：运行时代码 4,413 字节；所有代理槽均为零；没有 `DELEGATECALL`、`SELFDESTRUCT` 或 `CALL` 操作码（因此没有收款方钩子）；三家运营方读到的代码哈希相同。
 - 第 2 项：字节码里全部 30 个 `PUSH4` 常量都已认领：20 个分发选择器（ERC-20 及 `increaseAllowance`、`decreaseAllowance`，`mint(uint256)`、`burn(uint256)`，`owner`、`getOwner`、`renounceOwnership`、`transferOwnership`，以及公开的 `_name`、`_symbol`、`_decimals` getter）与 10 个不是选择器的常量（编译器元数据标记、一个掩码、revert 字符串片段、一个 24 字节常量内部的字节）。没有一个是冻结、暂停、拉黑、救援或升级函数。owner 是单个外部账户（`0xF68a4b64162906efF0fF6aE34E2bB1Cd42FEf62d`），只能给自己增发、销毁自己的代币，别无其它：模拟 owner 调 `mint` 只增加 owner 自己的余额，其他任何人调用都回滚，也没有 `burnFrom` 与 `mint(address,uint256)`。
@@ -353,7 +398,7 @@ errors: ZeroAddress, ZeroAmount, BadProvider, BadTreasury, InsufficientBalance, 
 
 另外不在计划内的：Binance-Peg 的 BUSD、ETH 与 DAI（没有托管用途），以及 lisUSD（升级时间锁为一天，短于 48 小时冷静期）。发行方原生的 USDC 与 USDT，凡在某条链上存在的，按设计带有发行方黑名单，都过不了第 2 项。
 
-**价格与金额。** 默认计价单位是 USDT。托管金额（`fund`、`channelOf`、凭证的 `cumulative`、提现）一律用代币自己的最小单位，以其 `decimals()` 定义：USDT 锚定币是 18 位，所以 10 USDT 是 `10000000000000000000`。SDK 与文档 SHOULD 从代币读取 `decimals()`，SHOULD NOT 把 BEM 的 8 位小数硬编码进托管金额；8 位小数的约定只属于 `priceBEM`，它为兼容起见保持不变。永远不在代币之间换算：一个实例只记自己的代币。多币种价格（以代币地址为键的 `prices` 映射）、清单如何列出多个托管，以及 BEM 以外的代币的 `data.price` 的形式，目前尚未规定。
+**价格与金额。** 首个实例的单位是 BEM，所以 `priceBEM`、`data.price` 与凭证的 `cumulative` 都是同一个最小单位 10⁻⁸ BEM。托管金额（`fund`、`channelOf`、凭证的 `cumulative`、提现）一律用代币自己的最小单位，以其 `decimals()` 定义：对之后的 USDT 锚定币实例（18 位），10 USDT 是 `10000000000000000000`。SDK 与文档 SHOULD 从代币读取 `decimals()`，SHOULD NOT 把 BEM 的 8 位小数硬编码进托管金额；8 位小数的约定只属于 `priceBEM`，它为兼容起见保持不变。永远不在代币之间换算：一个实例只记自己的代币。多币种价格（以代币地址为键的 `prices` 映射）、清单如何列出多个托管，以及 BEM 以外的代币的 `data.price` 的形式，目前尚未规定。
 
 **客户端行为（实验性）。** SDK SHOULD 默认只为已审计部署名单内的托管构造 `approve` 与 `fund` 交易（名单随 SDK 发布，或由调用方提供），对名单以外的托管 SHOULD 要求明确选择启用。`approve` 把拉取代币的权利交给托管，而恶意清单可以指向一个报出真实代币地址的合约，其 `fund` 却会拿走全部已授权的额度。托管尚未部署，所以这份名单今天是空的。服务所指定的 `payment.escrow` 地址仍决定凭证为哪个托管而签（§3.4）。
 
@@ -367,6 +412,24 @@ errors: ZeroAddress, ZeroAmount, BadProvider, BadTreasury, InsufficientBalance, 
 
 **原生 BNB 不是托管资产。** 托管只持有 ERC-20，BNB 以 WBNB 持有，由付款方在 `approve` 与 `fund` 之前自己包装（`WBNB.deposit`）；合约永不拆包。2026-10-04 的两项测试（状态覆盖与 `eth_estimateGas`）说明了原因。服务容器只有在发送方提供足够 gas 时才能收下原生 BNB（一笔普通转账总共需要约 32,000 gas，2,300 gas 的推送会失败）。WBNB 的 `withdraw` 恰好用 2,300 gas 推送原生 BNB，所以容器自己无法拆 WBNB：调用回滚，而同一调用从普通地址发出则成功。容器收到的 WBNB 必须转到持有人钱包再在那里拆包。原生 BNB 仍可在 gas 足够时直接充值到容器；它是充值路径，不是托管资产。
 
+
+### 3.6 美元报价、BEM 支付（实验性）
+
+实验性；首次随 TapeAPI 2.0.0 发布，托管合约未部署。本节依据 TAP 草稿《Payment Vouchers for Container Services》（TapeOutProtocol/TAPs#52），细节以其文本为准。它只适用于清单带顶层成员 `usdPricing` 的服务；对其它服务，§3.1 与 §3.2 不变。
+
+**成员。** `usdPricing` 为 `{ methods, toleranceBps, maxQuoteS, rateSources }`：`methods` 把计价方法的名字映射到它的美元价格（非零的十进制字符串，至多 8 位小数）；`toleranceBps` 为 1 到 2000 的整数；`maxQuoteS` 为 1 到 900 的整数；`rateSources` 为非空数组，元素为 `{ "type": "v3-twap", pool, usd, window }`，即一个 BEM 与美元代币的 Uniswap 或 PancakeSwap v3 池子，平均窗口 600 到 86400 秒。`usdPricing` 违反任一规则的服务，客户端 MUST NOT 为其按美元计价的方法付费；它的其它方法客户端 MAY 照常付费。未知类型的来源、或其 `usd` 客户端不认识的来源被忽略，一个来源都不剩的成员无效。
+
+**上限与换算。** 方法的 `priceBEM` 是一次调用最多花的 BEM。记 `U` 为以 10⁻⁸ 美元计的美元价，`R` 为以 10⁻¹⁸ 美元计的汇率（每 1 BEM 值多少美元），`P` 为以最小单位计的上限，则收费为 `min(ceil(U × 10^18 / R), P)`；第一项超过 `P` 时记为 `capped`。实现 MUST 用精确整数计算。
+
+**报价。** 提供者只在已签名的回答里以报价 `{ rate, asOf, validUntil }` 说出汇率（至多 18 位小数；`asOf` 不晚于信封的 `ts`；`asOf < validUntil ≤ asOf + maxQuoteS`）：在 `PAYMENT_REQUIRED` 与 `BAD_VOUCHER` 的 `data.quote` 里，以及计费记录里。提供者 MUST 在 `validUntil` 之前、在为该服务作答的每个实例上兑现它说过的每个报价，并且 MUST NOT 接受它没有说过的 `rate`。
+
+**客户端的核对。** 按某个报价的汇率签名之前，客户端 MUST 取得一个参考汇率，并在 `rate × 10000 < reference × (10000 − toleranceBps)` 时 MUST 拒绝该报价。参考汇率 SHOULD 是 `rateSources` 各时间加权平均的中位数，用 `observe([window, 0])` 在节点一致确认、且不旧于 `maxQuoteS` 的同一个区块上读取。高于参考汇率的报价通过。
+
+**凭证与拒绝。** 按美元计价的方法的凭证带 `rate`，即报价里原样写出的汇率，并按该汇率的换算收费。此类服务的每张凭证，`v` MUST 为 27 或 28：校验方 MUST 拒绝 0 和 1——参考托管合约会接受它们，但其它链上恢复例程拒绝。此类服务的每个 `BAD_VOUCHER` MUST 带 `data.reason`，取值为 `malformed`、`provider`、`expired`、`lifetime`、`signature`、`rate`、`stale`、`insufficient`、`funds` 之一，顺序即检查的顺序；客户端遇到不认识的值时 MUST 当作拒绝。`data.price` 为按当前报价的收费，按美元计价的方法另带 `data.priceUSD` 与 `data.quote`；提供者有最短寿命要求时，`PAYMENT_REQUIRED` 也带 `minVoucherLifeS`。`stale` 与 `insufficient` 带 `lastCumulative`、`onChainClaimed` 以及 §3.2 的证明凭证。
+
+**计费记录。** 此类服务每个计价调用的结果 MUST 是带成员 `charge` 的 JSON 对象：`{ consumer, cumulative, amount }`，其中 `amount`（以 `"BEM"` 计、8 位小数的金额对象）等于 `cumulative` 减去提供者的 `last`；按美元计价的方法另有 `price`、`rate`、`rateAsOf`、`capped`（仅在为真时出现）以及下一次用的 `quote`。它在签名正文之内。失败的调用不收费。计费记录所写的消费者或累计额与凭证不同，或其金额、价格、汇率、`capped` 不对时，客户端 MUST NOT 据此推进计数，并且在重读清单并读取 `claimedOf` 之前 MUST NOT 再为该服务签凭证。
+
+测试向量：`spec/vectors/tapi-22-usd.json`（§6）。
 
 ## 4. 原理
 
@@ -384,10 +447,11 @@ errors: ZeroAddress, ZeroAmount, BadProvider, BadTreasury, InsufficientBalance, 
 | `keccak256("TapeAPIEscrow")` | `0x9e119fcf121b28516e9297f2c41bbb6b5899ca62f3f2122145a86c0b2ddf863a` |
 | 参考托管地址 / `treasury` | TODO（未部署） |
 | 凭证摘要算例 | `spec/vectors/tapi-22-voucher.json`，由 `spec/vectors/verify.py` 与 Solidity 测试套件独立校验 |
+| §3.6（实验性） | `spec/vectors/tapi-22-usd.json`：换算与应拒绝的输入、凭证及应拒绝的编码（含 `v` 0/1）、带报价与计费记录的签名回答、参考汇率算术；由 `spec/vectors/verify.py` 独立校验 |
 
 ## 7. 参考实现
 
-`contracts/src/TapeAPIEscrow.sol`（v1 归档于 `contracts/archive/TapeAPIEscrow.v1.sol`）；回归套件 `contracts/test/Attacks.t.sol`（v1 审计中的每个攻击对 v2 重放）与 `contracts/test/EscrowInvariant.t.sol`（偿付恒等式、`claimed` 单调、不超付、通道内凭证在冷静期内足额兑付）。SDK `api.payer`（接受 `sessionExpiry` 仅用于在会话已失效时拒绝签发；`voucher.expires` 只受 `ttl` 约束）、`api.tx.fund / requestWithdraw / cancelWithdraw / withdraw / authorizeSession(provider, key, expires) / settle / setContribution`、`api.chain.escrow.channelOf / claimedOf / sessionExpiry / pendingWithdraw`，以及 `api.resolve` 返回的 `svc.contribution`；服务端凭证校验按 §3.2 读取 `channelOf`、`claimedOf` 与 `pendingWithdraw(consumer, provider)`，`pendingSettlements` / `settleTx` 与 `provider.contribution()`（不在 `/tapeapi/v1/health` 中公开）。尚未部署：见本译文开头的实现状态。自 2026-10-05 起，v3 合约按本文 §3.4 实现：`DEFAULT_CONTRIBUTION_BPS = 100`、`MAX_CONTRIBUTION_BPS = 2000`、区分"从未设定"与"设为 0"，并在 `Settled` 中给出所用的 `bps`。它仍未经审计；送审并部署的那一版托管在此基础上加入 §3.4 末尾与 §3.5 所列的计划内容，只有那一版会送审并部署。仓库中的合约已经具备 §3.5 标为已完成或已实现的各项，包括拉取式金库（§3.3、§3.4）。
+`contracts/src/TapeAPIEscrow.sol`（v1 归档于 `contracts/archive/TapeAPIEscrow.v1.sol`）；回归套件 `contracts/test/Attacks.t.sol`（v1 审计中的每个攻击对 v2 重放）与 `contracts/test/EscrowInvariant.t.sol`（偿付恒等式、`claimed` 单调、不超付、通道内凭证在冷静期内足额兑付）。SDK `api.payer`（接受 `sessionExpiry` 仅用于在会话已失效时拒绝签发；`voucher.expires` 只受 `ttl` 约束）、`api.tx.fund / requestWithdraw / cancelWithdraw / withdraw / authorizeSession(provider, key, expires) / settle / setContribution`、`api.chain.escrow.channelOf / claimedOf / sessionExpiry / pendingWithdraw`，以及 `api.resolve` 返回的 `svc.contribution`；服务端凭证校验按 §3.2 读取 `channelOf`、`claimedOf` 与 `pendingWithdraw(consumer, provider)`，`pendingSettlements` / `settleTx` 与 `provider.contribution()`（不在 `/tapeapi/v1/health` 中公开）。尚未部署：见本译文开头的实现状态。自 2026-10-05 起，v3 合约按本文 §3.4 实现：`DEFAULT_CONTRIBUTION_BPS = 100`、`MAX_CONTRIBUTION_BPS = 2000`、区分"从未设定"与"设为 0"，并在 `Settled` 中给出所用的 `bps`。它仍未经审计；送审并部署的那一版托管在此基础上加入 §3.4 末尾与 §3.5 所列的计划内容，只有那一版会送审并部署。仓库中的合约已经具备 §3.5 标为已完成或已实现的各项，包括拉取式金库（§3.3、§3.4）。§3.6（实验性，未发布）：SDK 命名空间 `usdPricing`（`sdk/src/usd-pricing.js`），客户端在 `api.call` 里（`createTapeAPI` 的选项 `usdPricing` 与 `settlementFacts`），提供者在 `createProvider` 里（选项 `usdRate`、`quoteStore`、`quoteValidS`、`settlementFacts`）；`server/test/payment-golden.test.mjs` 核对不带 `usdPricing` 的清单的回答与之前逐字节相同。
 
 ## 8. 安全考量
 

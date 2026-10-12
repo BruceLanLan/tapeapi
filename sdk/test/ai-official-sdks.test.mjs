@@ -55,7 +55,7 @@ async function world() {
     const r = await proxy.handleRequest(new Request(input, init))
     return state.deliver ? state.deliver(r) : edited(r, state.edit)
   }
-  const api = createTapeAPI({ dev: true, fetch: (u, i) => proxy.handleRequest(new Request(u, i)) })
+  const api = createTapeAPI({ conform: false, dev: true, fetch: (u, i) => proxy.handleRequest(new Request(u, i)) })
   const service = await api.resolve({ dev: BASE })
   const eps = Object.fromEntries(service.manifest.ai.endpoints.map((e) => [e.format, e.baseUrl]))
   return { proxy, state, route, api, service, eps }

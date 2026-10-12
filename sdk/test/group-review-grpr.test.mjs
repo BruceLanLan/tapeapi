@@ -215,11 +215,11 @@ test('FIXED GRPR-7: every refusal of a format-2 roster is GROUP_INVALID, relays 
   const craft = (rosterBytes) => {
     const E = x25519.getPublicKey(e)
     const ef = cat(u32(G.FORMAT_V2_MARK), u32(5))
-    const header = cat(Uint8Array.of(4), gid, ef, E, N, sha256(cat(te.encode('TAP-27/commit/v2'), K)), Uint8Array.of(0, 3))
-    const slots = cat(...ms.map((m) => { const R = m.identity.x25519.publicKey; return xchacha20poly1305(hkdf(sha256, x25519.getSharedSecret(e, R), te.encode('TAP-27/wrap/v2'), cat(E, R, gid, ef), 32), N, header).encrypt(K) }))
+    const header = cat(Uint8Array.of(4), gid, ef, E, N, sha256(cat(te.encode('tape-group/commit/v2'), K)), Uint8Array.of(0, 3))
+    const slots = cat(...ms.map((m) => { const R = m.identity.x25519.publicKey; return xchacha20poly1305(hkdf(sha256, x25519.getSharedSecret(e, R), te.encode('tape-group/wrap/v2'), cat(E, R, gid, ef), 32), N, header).encrypt(K) }))
     const ct = xchacha20poly1305(K, N, cat(header, slots)).encrypt(rosterBytes)
     const body = cat(header, slots, u32(ct.length), ct)
-    return cat(body, ed25519.sign(cat(te.encode('TAP-27/epoch/v2'), body), ms[0].identity.ed25519.secretKey))
+    return cat(body, ed25519.sign(cat(te.encode('tape-group/epoch/v2'), body), ms[0].identity.ed25519.secretKey))
   }
   const rosterOf = (tail) => {
     const t = te.encode(tail)

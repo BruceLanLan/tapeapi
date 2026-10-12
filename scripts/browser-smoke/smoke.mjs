@@ -26,7 +26,7 @@ try {
     check(`envelope sig: ${c.name}`, signDigest(pd, env.signerKey), c.sig)
     check(`envelope recover: ${c.name}`, recoverAddress(pd, c.sig).toLowerCase(), c.recoversTo.toLowerCase())
   }
-  const v = await load('tapi-26-channel.json')
+  const v = await load('tapi-26-v2-channel.json')   // the default labels are v2 from 2.0 / 2.0 起默认标签为 v2
   const hx = channel.fromHex
   const replay = (...chunks) => { let i = 0; return () => chunks[i++] }
   const A = { container: v.initiator.container, chainId: 56 }, B = { container: v.responder.container, chainId: 56 }

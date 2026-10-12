@@ -43,6 +43,17 @@ export interface VoucherStore {
 /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. The default in-process store (lost on restart; one instance only). */
 export declare function memoryStore(): Required<VoucherStore>
 
+/** @experimental (TAP draft "Payment Vouchers", TAPs#52) A quote a service stated (§4.4). */
+export interface StatedQuote { rate: string; asOf: number; validUntil: number }
+/** @experimental Every quote a service stated, shared by all its instances: get(rate) is the quote with that rate string and the latest validUntil. */
+export interface QuoteStore {
+  /** `container`: the service, so one store can serve several. */
+  put(q: StatedQuote, container: string): Promise<void> | void
+  get(rate: string, container: string): Promise<StatedQuote | null> | StatedQuote | null
+}
+/** @experimental The default per-process quote store. */
+export declare function memoryQuoteStore(): QuoteStore
+
 /** Context passed to every method handler. */
 export interface MethodContext {
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. The paying consumer, or null for a free call. */
@@ -51,6 +62,8 @@ export interface MethodContext {
   voucherSigner?: string
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   cumulative?: unknown
+  /** @experimental (TAP draft "Payment Vouchers") The charge of this call in base units: only for a manifest with usdPricing. */
+  charge?: bigint
   /** The block the answer is pinned to (0 without rpcUrls). */
   block: number
   manifest: Manifest
@@ -99,7 +112,7 @@ export interface CreateProviderOptions {
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   minVoucherLifeS?: number
   /** false disables the built-in rate limiter. */
-  rateLimit?: false | { windowMs?: number; free?: number; paid?: number; max?: number; ip?: number }
+  rateLimit?: false | { windowMs?: number; free?: number; paid?: number; max?: number; ip?: number; /** @experimental (TAP draft) quote requests (a priced call without a voucher) to a service with usdPricing; default: free */ quote?: number }
   /** Proxy header that carries the client IP (e.g. 'cf-connecting-ip'); unset, the socket peer is used. */
   clientIpHeader?: string
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
@@ -112,6 +125,18 @@ export interface CreateProviderOptions {
   cacheMax?: number
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   withdrawCloseS?: number
+  /** @experimental (TAP draft "Payment Vouchers"; a manifest with usdPricing) The rate source: USD per 1 BEM and the end of its averaging period. Default: the manifest's own rateSources. */
+  usdRate?: () => Promise<{ rate: string | number; asOf?: number }>
+  /** @experimental How long a quote stays valid, 1..usdPricing.maxQuoteS (default maxQuoteS). */
+  quoteValidS?: number
+  /** @experimental Shared by every instance behind the URL (default memoryQuoteStore()). */
+  quoteStore?: QuoteStore
+  /** @experimental F2, F4 and F3 of the draft's §2.2 from configuration instead of the TapeAPIEscrow reads. */
+  settlementFacts?: {
+    amountPaid(consumer: string): Promise<bigint | string | number>
+    fundsAvailable(consumer: string): Promise<bigint | string | number>
+    keyAuthorisedUntil(consumer: string, key: string): Promise<bigint | string | number>
+  }
 }
 
 /** A Node http.Server (typed structurally so consumers need no @types/node). */

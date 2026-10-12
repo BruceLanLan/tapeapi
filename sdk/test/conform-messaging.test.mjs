@@ -1,18 +1,18 @@
-// The TAP-10 conformance mode, 1.5: the messaging path (rows 17, 18, 21 of the Opus draft's table, docs/DESIGN-tap10-conform.md).
+// The TAP-10 conformance mode, 1.5: the messaging path (TAP-10 §12.2 and §14.4).
 // api.chain.tapeSendKey resolves the endpoint as TAP-10 §12.2 and reads the key as §14.4 steps 1-3 (fresh pinned block,
 // strict agreement, eth_chainId, the hub accepted, circuits not changed, the key checks); api.chain.channelKeys reads the
 // channel record as the private-channels draft §3.3 (TAPI-26 §3.1 under TAP-10's read rules); neither judges activation
 // or opening (§12.2). tapesend.js refuses chainIds above 2^53 - 1 under conform: 'tap10' (§12.1). Offline: every RPC goes
-// to the conform chain (helpers/conform-chain.mjs). GOLDEN TAP10-0 (default-mode-trace.test.mjs) pins that the default mode
-// is unchanged.
+// to the conform chain (helpers/conform-chain.mjs). GOLDEN TAP10-0 (default-mode-trace.test.mjs) pins that the 1.x resolution
+// (conform: false since 2.0, when the conformance mode became the default) is unchanged.
 // TAP-10 一致模式 1.5：消息路径。tapeSendKey 按 §12.2 解析端点、按 §14.4 第 1–3 步读密钥；channelKeys 按私密通道草稿 §3.3 读记录；
 // 两者都不判激活与开通。tapesend.js 在 conform: 'tap10' 下拒绝大于 2^53 − 1 的 chainId。全部离线；默认模式不变由黄金测试钉住。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { createTapeAPI, MANIFEST_KEY, CHANNEL_KEYS_KEY, MAINNET, CHAINS, TAP10_SEALS, TAP10_MAX_CHAIN_ID, TapeAPIError, sig, channel, canonicalJSON, tapesend } from '../src/index.js'
-import { createConformChain, ADDR, HUB_OWNER } from './helpers/conform-chain.mjs'
-import { utf8ToBytes } from '../src/abi.js'
+import { createTapeAPI, MANIFEST_KEY, CHANNEL_KEYS_KEY, MAINNET, CHAINS, TAP10_SEALS, TAP10_MAX_CHAIN_ID, TAP10_HUB_BOOT, TAP10_HUB_HISTORY, TapeAPIError, sig, channel, canonicalJSON, tapesend } from '../src/index.js'
+import { createConformChain, ADDR, HUB_OWNER, defaultUpgraded } from './helpers/conform-chain.mjs'
+import { utf8ToBytes, checksumAddress } from '../src/abi.js'
 
 const HOLDER_KEY = '0x' + '11'.repeat(32), SIGNER_KEY = '0x' + '22'.repeat(32), OTHER_KEY = '0x' + '33'.repeat(32)
 const holder = sig.privateKeyToAddress(HOLDER_KEY), signer = sig.privateKeyToAddress(SIGNER_KEY)
@@ -42,13 +42,15 @@ function world({ chainId = 56, tokenId = 4246, record = true, key = KEY } = {}) 
   return { chain, c, keys, recordText }
 }
 const conformApi = (chain, o = {}) => createTapeAPI({ conform: 'tap10', rpcUrls: RPC, fetch: chain.fetch, clock: () => T, quiet: true, onWarning: () => {}, ...o })
-const defaultApi = (chain, o = {}) => createTapeAPI({ rpcUrls: RPC, fetch: chain.fetch, clock: () => T, quiet: true, onWarning: () => {}, ...o })
+// 2.0: the default-mode controls are the 1.x resolution, conform: false / 2.0：默认模式对照即 1.x 的解析，conform: false
+const defaultApi = (chain, o = {}) => createTapeAPI({ conform: false, rpcUrls: RPC, fetch: chain.fetch, clock: () => T, quiet: true, onWarning: () => {}, ...o })
 const isStatus = (code, status, re) => (e) => {
   assert.ok(e instanceof TapeAPIError, String(e)); assert.equal(e.code, code, e.message); assert.equal(e.data?.status, status, e.message)
   if (re) assert.match(e.message, re)
   return true
 }
 const since = (chain, from) => chain.conform.log.slice(from)
+const log0 = since
 
 // ── chains.js: the §13.8 constants, read back on chain / chains.js 的 §13.8 常量，链上核对 ─────────────────────────────
 test('TAP10_SEALS equals what the chains answered on 2026-10-02 (fixtures/tap10-seal-onchain.json) and TAP-10\'s Deployments', () => {
@@ -85,7 +87,11 @@ test('tapeSendKey (TAP-10 §12.2, §14.4): one fresh pinned block, every read st
     assert.equal(k.staticPublic, KEY); assert.equal(k.container, c.container); assert.equal(k.tokenId, '4246')
     assert.equal(k.holder, holder); assert.equal(k.opened, true); assert.equal(k.chainsBitmap, '111'); assert.equal(k.version, 1)
     assert.equal(k.tap10.version, '1.1'); assert.equal(k.tap10.status, 'ok'); assert.equal(k.tap10.circuits, 'ok')
-    assert.deepEqual(k.tap10.hub, { implementation: TAP10_SEALS[56].hub.toLowerCase(), accepted: true })
+    // The fake chain's block (62,000,000) is below the hub's creation block: no Upgraded scan, the slot alone (T-b tests below)
+    // 假链区块低于中枢创建块：不扫描日志，只看实现槽（日志扫描的测试见下）
+    assert.deepEqual(k.tap10.hub, { implementation: TAP10_SEALS[56].hub.toLowerCase(), accepted: true, basis: 'slot',
+      upgraded: { status: 'unavailable', from: TAP10_HUB_HISTORY[56].createdAt, to: k.tap10.pinned.number, reason: `the pinned block ${k.tap10.pinned.number} is before the hub's creation block ${TAP10_HUB_HISTORY[56].createdAt}` } })
+    assert.ok(!log0(chain, from).some((x) => x.method === 'eth_getLogs'))
     assert.deepEqual(k.tap10.seal, { factory: false, hub: false })   // nothing is sealed (TAP-10 Deployments)
     assert.equal(k.tap10.endpoint, '0x' + '00'.repeat(4) + (56).toString(16).padStart(16, '0') + c.container.slice(2).toLowerCase())
     assert.equal(k.tap10.pinned.maxLag, 400)
@@ -346,16 +352,21 @@ test('forChain passes the messaging path on: a Base sub-client checks Base\'s hu
   await assert.rejects(api.forChain(8453).chain.tapeSendKey(worlds[8453].c.container), isStatus('CONTRACT_UNKNOWN', 'circuits-changed'))
   assert.equal((await api.forChain(196).chain.tapeSendKey(worlds[196].c.container)).tap10.circuits, 'ok', 'X Layer is not affected')
   assert.equal((await api.chain.tapeSendKey(worlds[56].c.container)).tap10.circuits, 'ok', 'nor BNB Smart Chain')
-  // and a default parent gives default sub-clients / 默认的父客户端给出默认的子客户端
-  const plain = createTapeAPI({ rpcUrls: urls(56), fetch, quiet: true, chains: { 8453: { rpcUrls: urls(8453) } } })
+  // and a conform: false parent gives conform: false sub-clients (2.0: false is passed on, not undefined, which is now the
+  // conformance mode) / conform: false 的父客户端给出 conform: false 的子客户端（2.0：传 false，因为 undefined 现在就是一致模式）
+  const plain = createTapeAPI({ conform: false, rpcUrls: urls(56), fetch, quiet: true, onWarning: () => {}, chains: { 8453: { rpcUrls: urls(8453) } } })
   assert.equal((await plain.forChain(8453).chain.tapeSendKey(worlds[8453].c.container)).tap10, undefined)
+  // 2.0 (D-4): a parent that leaves conform out gives conformance sub-clients / 2.0：不传 conform 的父客户端给出一致模式的子客户端
+  worlds[8453].chain.setSeal({ beaconImplementation: TAP10_SEALS[8453].circuitImplementation })
+  const byDefault = createTapeAPI({ rpcUrls: urls(56), fetch, clock: () => T, quiet: true, chains: { 8453: { rpcUrls: urls(8453) } } })
+  assert.equal((await byDefault.forChain(8453).chain.tapeSendKey(worlds[8453].c.container)).tap10.circuits, 'ok')
 })
 
 // ── tapesend.js, TAP-10 §12.1 ─────────────────────────────────────────────────────────────────────────────────────
 test("tapesend under conform: 'tap10' refuses a chainId above 2^53 - 1 everywhere (TAP-10 §12.1); without it the bound stays 2^64 - 1", () => {
   const A = '0x86DDaEF00401E3F10418398D67D7189fc458eA95', B = '0x19366c3c69ffeb3b286d9fa6cc5e616375baafd3', HUB = MAINNET.hub
   const max = 2n ** 53n - 1n, over = 2n ** 53n
-  const badInput = (re) => (e) => e instanceof TapeAPIError && e.reason === 'bad-input' && (!re || re.test(e.message))
+  const badInput = (re) => (e) => e instanceof TapeAPIError && e.data.reason === 'bad-input' && (!re || re.test(e.message))
   const ep = (id, c) => '0x' + '00'.repeat(4) + id.toString(16).padStart(16, '0') + c.slice(2).toLowerCase()
   // endpoint() / 端点
   assert.equal(tapesend.endpoint(A, over).length, 32, 'default: up to 2^64 - 1, as in 1.4')
@@ -504,4 +515,227 @@ test('a record whose read() reverts while fileInfo answers is incomplete', async
   const { chain, c } = world()
   chain.setFileBytes(c.container, CHANNEL_KEYS_KEY, null)
   await assert.rejects(conformApi(chain).chain.channelKeys(c.container), isStatus('CHANNEL_INVALID', 'incomplete', /read\(\) reverted/))
+})
+
+// ── T-b: TAP-10 §13.8, the hub's Upgraded logs / 中枢的 Upgraded 日志 ────────────────────
+// "When log-capable nodes are available, a client SHOULD read every Upgraded log of the hub and accept the hub only if
+// every implementation it names is the boot implementation or listed under Deployments (current or replaced)."
+const HEAD = 126_300_000   // above every hub's creation block / 高于各链中枢的创建块
+const scanWorld = (o) => { const w = world(o); w.chain.state.block = HEAD; return w }
+const getLogs = (log) => log.filter((x) => x.method === 'eth_getLogs')
+const cs = checksumAddress
+
+test('TAP10_HUB_HISTORY: the creation blocks and Upgraded logs read on chain (fixtures/tap10-hub-history-onchain.json), and TAP-10\'s Deployments', () => {
+  const fx = JSON.parse(readFileSync(new URL('./fixtures/tap10-hub-history-onchain.json', import.meta.url), 'utf8'))
+  const lc = (a) => String(a).toLowerCase()
+  assert.equal(lc(TAP10_HUB_BOOT), fx.boot); assert.equal(fx.hub, lc(MAINNET.hub))
+  assert.deepEqual(Object.keys(TAP10_HUB_HISTORY).map(Number).sort((a, b) => a - b), [56, 196, 8453])
+  for (const id of [56, 196, 8453]) {
+    const h = TAP10_HUB_HISTORY[id], r = fx.chains[id]
+    assert.equal(h.createdAt, r.createdAt, `${id} creation block`)
+    // the constructor's Upgraded(boot) is at the creation block / 构造时的 Upgraded(boot) 在创建块
+    assert.deepEqual([r.logs[0].block, r.logs[0].implementation], [h.createdAt, fx.boot], `${id} boot log`)
+    // the current implementation is listed first, the replaced ones after / 当前实现在前，已替换的在后
+    assert.equal(lc(h.listed[0]), lc(TAP10_SEALS[id].hub))
+    assert.ok(Object.isFrozen(h) && Object.isFrozen(h.listed))
+    // review A1: the second anchor, the Upgraded to the current implementation, was read on chain too; every log read names
+    // the boot implementation or one TAP-10 lists, in order / 第二个锚点（升级到当前实现）同样在链上读到；每条日志都是 boot 或列出的实现
+    assert.ok(r.logs.some((l) => l.implementation === lc(TAP10_SEALS[id].hub) && l.block > h.createdAt), `${id}: Upgraded(current) read on chain`)
+    for (const l of r.logs) assert.ok([fx.boot, ...h.listed.map(lc)].includes(l.implementation), `${id} ${l.block}`)
+    assert.deepEqual(r.logs.map((l) => [l.block, l.logIndex]), [...r.logs].sort((a, b) => a.block - b.block || a.logIndex - b.logIndex).map((l) => [l.block, l.logIndex]), `${id} order`)
+  }
+  // BNB Smart Chain: v3 current since block 122623031, v2 and v1 replaced (TAP-10 Deployments) / BSC：v3 自 122623031 起为当前
+  assert.deepEqual(TAP10_HUB_HISTORY[56].listed.map(lc), ['0x80afe7b77f2dfd08e9feab7675780bac34a7ee85', '0x7df03218910e0f37fc3a8da8792831ab7580340f', '0xf5f18e3fe811b9b382c90539d14440654e789d92'])
+  // the whole BSC history read on chain: boot, v1, v2, v3 (current since 122623031) / BSC 的全部历史：boot、v1、v2、v3
+  assert.deepEqual(fx.chains[56].logs.map((l) => [l.block, l.implementation]), [[122571550, fx.boot], [122571622, lc(TAP10_HUB_HISTORY[56].listed[2])], [122573605, lc(TAP10_HUB_HISTORY[56].listed[1])], [122623031, lc(TAP10_SEALS[56].hub)]])
+  assert.deepEqual([fx.chains[196].logs[1].block, fx.chains[8453].logs[1].block], [71019488, 51499091])
+  for (const id of [196, 8453]) assert.equal(TAP10_HUB_HISTORY[id].listed.length, 1)
+})
+
+test('T-b: with log-capable nodes, one eth_getLogs over the whole history under strict agreement; every implementation listed: ok, basis slot+logs', async () => {
+  for (const chainId of [56, 8453, 196]) {
+    const { chain, c } = scanWorld({ chainId })
+    const api = conformApi(chain, { chainId })
+    const from = chain.conform.log.length
+    const k = await api.chain.tapeSendKey(c.container)
+    const h = TAP10_HUB_HISTORY[chainId]
+    assert.deepEqual(k.tap10.hub, { implementation: TAP10_SEALS[chainId].hub.toLowerCase(), accepted: true, basis: 'slot+logs',
+      upgraded: { status: 'ok', from: h.createdAt, to: k.tap10.pinned.number, implementations: [TAP10_HUB_BOOT, ...[...h.listed].reverse()].map((a) => cs(a)) } }, String(chainId))
+    const logs = getLogs(since(chain, from))
+    assert.deepEqual(logs.map((x) => x.url).sort(), RPC, 'strict: every node was asked, once')
+  }
+  // the filter: the hub, the Upgraded topic, from the creation block to the pinned block / 过滤条件
+  const { chain, c } = scanWorld()
+  const seen = []
+  const fetch = (u, i) => { const b = JSON.parse(i.body); for (const r of [b].flat()) if (r.method === 'eth_getLogs') seen.push(r.params[0]); return chain.fetch(u, i) }
+  const k = await conformApi(chain, { fetch }).chain.tapeSendKey(c.container)
+  assert.deepEqual(seen[0], { address: MAINNET.hub, topics: ['0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b'], fromBlock: '0x' + TAP10_HUB_HISTORY[56].createdAt.toString(16), toBlock: '0x' + k.tap10.pinned.number.toString(16) })
+})
+
+test('T-b: an Upgraded log naming an unlisted implementation is hub-changed even with the current implementation in the slot, and it sticks', async () => {
+  const EVIL = '0x' + 'e7'.repeat(20)
+  const { chain, c } = scanWorld()
+  const h = TAP10_HUB_HISTORY[56]
+  // the owner upgraded to EVIL, rewrote storage and restored v3 in one transaction / 一笔交易里升级到 EVIL、改存储、再恢复 v3
+  chain.setUpgradedLogs([...defaultUpgraded(56), { block: h.createdAt + 1000, logIndex: 4, implementation: EVIL, tx: '0x' + 'ab'.repeat(32) }, { block: h.createdAt + 1000, logIndex: 5, implementation: TAP10_SEALS[56].hub }])
+  const store = new Map()
+  await assert.rejects(conformApi(chain, { sealStatusStore: store }).chain.tapeSendKey(c.container), (e) => {
+    isStatus('CONTRACT_UNKNOWN', 'hub-changed', /an Upgraded log .* at block 122572550 .* names implementation 0xE7e7.*neither the boot implementation nor one TAP-10 lists/i)(e)
+    assert.deepEqual(e.data.upgradedLog, { block: h.createdAt + 1000, logIndex: 4, tx: '0x' + 'ab'.repeat(32), implementation: cs(EVIL) })
+    assert.equal(e.data.implementation, TAP10_SEALS[56].hub.toLowerCase(), 'the slot shows the current one')
+    return true
+  })
+  // kept: later the nodes refuse logs, the slot is fine, still hub-changed (same store, a new client) / 粘住
+  for (const u of RPC) chain.setLogFault(u, 'refuse')
+  await assert.rejects(conformApi(chain, { sealStatusStore: store }).chain.tapeSendKey(c.container), isStatus('CONTRACT_UNKNOWN', 'hub-changed', /Upgraded log/))
+  assert.equal(store.get(`56:${MAINNET.hub.toLowerCase()}`).upgradedLog.implementation, cs(EVIL))
+  // a client without that store sees only the slot: accepted, and it says so / 没有该存储的客户端只看实现槽，并注明
+  const fresh = await conformApi(chain).chain.tapeSendKey(c.container)
+  assert.deepEqual([fresh.tap10.hub.accepted, fresh.tap10.hub.basis, fresh.tap10.hub.upgraded.status], [true, 'slot', 'unavailable'])
+  // a stored log naming an implementation this SDK lists (v2, replaced) does not count: judged again on every read
+  // 存储里指向本 SDK 已列出实现（v2，已替换）的日志不算：每次重新判断
+  const listed = new Map([[`56:${MAINNET.hub.toLowerCase()}`, { upgradedLog: { block: 1, logIndex: 0, tx: '0x00', implementation: TAP10_HUB_HISTORY[56].listed[1] } }]])
+  assert.equal((await conformApi(chain, { sealStatusStore: listed }).chain.tapeSendKey(c.container)).tap10.hub.accepted, true)
+  // replaced implementations (v1, v2) in the history are accepted; only the slot must be the current one / 历史里的 v1、v2 可接受
+  for (const u of RPC) chain.setLogFault(u, null)
+  chain.setUpgradedLogs(defaultUpgraded(56))
+  assert.equal((await conformApi(chain).chain.tapeSendKey(c.container)).tap10.hub.upgraded.status, 'ok')
+})
+
+test('T-b: logs unavailable (refused, a short range, too few operators) or disputed: the slot alone, said in the result, never hub-changed', async () => {
+  const { chain, c } = scanWorld()
+  const api = conformApi(chain)
+  // every node refuses, as the BNB Chain dataseed does / 全部拒绝
+  for (const u of RPC) chain.setLogFault(u, 'refuse')
+  let from = chain.conform.log.length
+  const k = await api.chain.tapeSendKey(c.container)
+  assert.deepEqual([k.staticPublic, k.tap10.hub.accepted, k.tap10.hub.basis, k.tap10.hub.upgraded.status], [KEY, true, 'slot', 'unavailable'])
+  assert.match(k.tap10.hub.upgraded.reason, /^RPC_UNAVAILABLE: eth_getLogs: only 0\/3/)
+  assert.equal(getLogs(since(chain, from)).length, 3)
+  // not asked again for 300 s / 300 秒内不再询问
+  from = chain.conform.log.length
+  const again = await api.chain.tapeSendKey(c.container)
+  assert.deepEqual([again.tap10.hub.basis, getLogs(since(chain, from)).length], ['slot', 0])
+  assert.equal(again.tap10.hub.upgraded.reason, k.tap10.hub.upgraded.reason)
+  // one node with a short range (48 Club) is enough to make a strict read unavailable / 一个节点区间受限即不可用
+  for (const u of RPC) chain.setLogFault(u, null)
+  chain.setLogFault('http://rpc3', 'range')
+  assert.equal((await conformApi(chain).chain.tapeSendKey(c.container)).tap10.hub.upgraded.status, 'unavailable')
+  // a node with pruned history answers []: it did not answer (no anchor), it does not vouch for an empty history
+  // 历史被裁剪的节点答 []：不算作答（没有锚点），不能替空历史作保
+  chain.setLogFault('http://rpc3', 'empty')
+  const pruned = await conformApi(chain).chain.tapeSendKey(c.container)
+  assert.equal(pruned.tap10.hub.upgraded.status, 'unavailable')
+  assert.match(pruned.tap10.hub.upgraded.reason, /rpc3.*no Upgraded\(boot\) at the hub's creation block/)
+  // every node pruned, all agreeing on []: still no answer, never "no upgrade ever" / 全部被裁剪、一致答 []：仍不算作答
+  for (const u of RPC) chain.setLogFault(u, 'empty')
+  assert.equal((await conformApi(chain).chain.tapeSendKey(c.container)).tap10.hub.upgraded.status, 'unavailable')
+  for (const u of RPC) chain.setLogFault(u, null)
+  chain.setLogFault('http://rpc3', 'empty')
+  // ...and with a fourth operator, strict agreement still has three: the scan completes without it / 有第四家时仍有三家，扫描完成
+  const four = await conformApi(chain, { rpcUrls: [...RPC, 'http://rpc4'] }).chain.tapeSendKey(c.container)
+  assert.deepEqual([four.tap10.hub.basis, four.tap10.hub.upgraded.status], ['slot+logs', 'ok'])
+  // one node invents an unlisted implementation: a disagreement, unavailable, never hub-changed / 单个节点编造：分歧，不可用，绝不 hub-changed
+  chain.setLogFault('http://rpc3', { logs: [...defaultUpgraded(56), { block: TAP10_HUB_HISTORY[56].createdAt + 50, logIndex: 1, implementation: '0x' + 'e7'.repeat(20) }] })
+  const store = new Map()
+  const lied = await conformApi(chain, { sealStatusStore: store }).chain.tapeSendKey(c.container)
+  assert.deepEqual([lied.tap10.hub.accepted, lied.tap10.hub.basis], [true, 'slot'])
+  assert.match(lied.tap10.hub.upgraded.reason, /^RPC_DISAGREE/)
+  assert.equal(store.get(`56:${MAINNET.hub.toLowerCase()}`)?.upgradedLog, undefined, 'nothing kept')
+  // a log of another contract or topic in an answer: that node did not answer / 回答里夹着别的合约或 topic 的日志：该节点不算作答
+  chain.setLogFault('http://rpc3', { logs: [...defaultUpgraded(56), { block: TAP10_HUB_HISTORY[56].createdAt + 50, implementation: TAP10_HUB_BOOT, address: '0x' + '12'.repeat(20) }] })
+  assert.match((await conformApi(chain).chain.tapeSendKey(c.container)).tap10.hub.upgraded.reason, /rpc3.*a log outside the filter/)
+})
+
+// Review of T-b (2026-10-08): A2, A3, B1, B2. Each was checked by removing the line that implements it.
+// T-b 审查：A2、A3、B1、B2，每条都做过反向检查。
+test('FIXED T-b-A2: a node whose history lacks the Upgraded to the current implementation did not answer: unavailable, history incomplete', async () => {
+  const { chain, c } = scanWorld()
+  chain.setUpgradedLogs(defaultUpgraded(56).filter((l) => l.implementation.toLowerCase() !== TAP10_SEALS[56].hub.toLowerCase()))
+  const k = await conformApi(chain).chain.tapeSendKey(c.container)
+  assert.deepEqual([k.tap10.hub.accepted, k.tap10.hub.basis, k.tap10.hub.upgraded.status], [true, 'slot', 'unavailable'])
+  assert.match(k.tap10.hub.upgraded.reason, /no Upgraded to the current implementation: history incomplete/)
+})
+
+test('FIXED T-b-B1: logs that are not the filter\'s answer make that node not answer (removed, outside the range, another topic 0, a topic 1 with high bits); of two unlisted logs the earlier is reported', async () => {
+  const EVIL = '0x' + 'e7'.repeat(20)
+  const h = TAP10_HUB_HISTORY[56]
+  const unanswered = async (setup, re) => {
+    const { chain, c } = scanWorld()
+    setup(chain)
+    const store = new Map()
+    const k = await conformApi(chain, { sealStatusStore: store }).chain.tapeSendKey(c.container)
+    assert.deepEqual([k.tap10.hub.accepted, k.tap10.hub.basis, k.tap10.hub.upgraded.status], [true, 'slot', 'unavailable'], String(re))
+    assert.match(k.tap10.hub.upgraded.reason, re)
+    assert.equal(store.get(`56:${MAINNET.hub.toLowerCase()}`)?.upgradedLog, undefined, 'nothing kept')
+  }
+  const extra = (o) => (chain) => chain.setUpgradedLogs([...defaultUpgraded(56), { block: h.createdAt + 7, logIndex: 1, implementation: EVIL, ...o }])
+  const answered = (logs) => (chain) => { for (const u of RPC) chain.setLogFault(u, { logs: [...defaultUpgraded(56), ...logs] }) }
+  await unanswered(extra({ removed: true }), /a log outside the filter/)
+  await unanswered(extra({ topics: ['0x' + '99'.repeat(32), '0x' + EVIL.slice(2).padStart(64, '0')] }), /a log outside the filter/)
+  await unanswered(extra({ topics: ['0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b', '0x' + 'ff'.repeat(12) + EVIL.slice(2)] }), /topic 1 is not an address word/)
+  await unanswered(answered([{ block: HEAD + 10, logIndex: 0, implementation: EVIL }]), new RegExp(`a log at block ${HEAD + 10}, outside ${h.createdAt}\\.\\.\\d+`))
+  await unanswered(answered([{ block: h.createdAt - 1, logIndex: 0, implementation: EVIL }]), new RegExp(`a log at block ${h.createdAt - 1}, outside`))
+  // two unlisted implementations, answered in reverse order: the earlier is the one reported and kept
+  // 两个未列出的实现、倒序作答：报告并保留较早的那条
+  const { chain, c } = scanWorld()
+  const late = { block: h.createdAt + 2000, logIndex: 0, implementation: '0x' + 'd4'.repeat(20), tx: '0x' + 'cd'.repeat(32) }
+  const early = { block: h.createdAt + 1000, logIndex: 3, implementation: EVIL, tx: '0x' + 'ab'.repeat(32) }
+  for (const u of RPC) chain.setLogFault(u, { logs: [...defaultUpgraded(56), late, early] })
+  const store = new Map()
+  await assert.rejects(conformApi(chain, { sealStatusStore: store }).chain.tapeSendKey(c.container), (e) => {
+    isStatus('CONTRACT_UNKNOWN', 'hub-changed')(e)
+    assert.deepEqual(e.data.upgradedLog, { block: early.block, logIndex: 3, tx: early.tx, implementation: cs(EVIL) })
+    return true
+  })
+  // a stored record later than the scan's: the scan's earlier one replaces it; an earlier stored one stays
+  // 存储的记录晚于扫描的：换成扫描的较早那条；存储的更早：保留
+  const key = `56:${MAINNET.hub.toLowerCase()}`
+  const later = new Map([[key, { upgradedLog: { block: h.createdAt + 5000, logIndex: 0, tx: '0x01', implementation: cs('0x' + 'd5'.repeat(20)) } }]])
+  await assert.rejects(conformApi(chain, { sealStatusStore: later }).chain.tapeSendKey(c.container), (e) => e.data?.upgradedLog?.block === early.block)
+  assert.equal(later.get(key).upgradedLog.block, early.block)
+  const earlier = new Map([[key, { upgradedLog: { block: h.createdAt + 500, logIndex: 0, tx: '0x02', implementation: cs('0x' + 'd6'.repeat(20)) } }]])
+  await assert.rejects(conformApi(chain, { sealStatusStore: earlier }).chain.tapeSendKey(c.container), (e) => e.data?.upgradedLog?.block === h.createdAt + 500)
+})
+
+test('FIXED T-b-A3: a stored upgradedLog that is not of the shape this client writes is no record (never hub-changed "at block undefined"); a real one is written over it', async () => {
+  const EVIL = '0x' + 'e7'.repeat(20)
+  const key = `56:${MAINNET.hub.toLowerCase()}`
+  const good = { block: 122_572_000, logIndex: 0, tx: '0x' + 'ab'.repeat(32), implementation: cs(EVIL) }
+  for (const bad of [{ implementation: 'hello' }, { ...good, implementation: 'hello' }, { ...good, block: 'abc' }, { ...good, block: 1.5 }, { ...good, logIndex: -1 }, { ...good, logIndex: '0' }, { ...good, tx: 7 }, { block: 1, logIndex: 0, implementation: EVIL }, 'x']) {
+    const { chain, c } = scanWorld()
+    const store = new Map([[key, { upgradedLog: bad }]])
+    const k = await conformApi(chain, { sealStatusStore: store }).chain.tapeSendKey(c.container)
+    assert.deepEqual([k.tap10.hub.accepted, k.tap10.hub.upgraded.status], [true, 'ok'], JSON.stringify(bad))
+  }
+  // the well-formed record still sticks / 形状正确的记录仍然粘住
+  const { chain, c } = scanWorld()
+  await assert.rejects(conformApi(chain, { sealStatusStore: new Map([[key, { upgradedLog: good }]]) }).chain.tapeSendKey(c.container), isStatus('CONTRACT_UNKNOWN', 'hub-changed', /at block 122572000/))
+  // a malformed record and a real unlisted log: the real one is reported and stored / 形状错误的记录加真实的未列出日志：报告并存储真实的
+  const real = { block: TAP10_HUB_HISTORY[56].createdAt + 9, logIndex: 2, implementation: EVIL, tx: '0x' + 'ef'.repeat(32) }
+  chain.setUpgradedLogs([...defaultUpgraded(56), real])
+  const store = new Map([[key, { upgradedLog: { block: 'abc', implementation: '0x' + 'd4'.repeat(20) } }]])
+  await assert.rejects(conformApi(chain, { sealStatusStore: store }).chain.tapeSendKey(c.container), (e) => e.data?.upgradedLog?.block === real.block)
+  assert.equal(store.get(key).upgradedLog.block, real.block)
+})
+
+test('FIXED T-b-B2: every chain the conformance mode accepts has a hub history whose current implementation comes first', () => {
+  assert.deepEqual(Object.keys(TAP10_SEALS).sort(), Object.keys(TAP10_HUB_HISTORY).sort())
+  for (const id of Object.keys(TAP10_SEALS).map(Number)) {
+    const h = TAP10_HUB_HISTORY[id]
+    assert.ok(Number.isSafeInteger(h.createdAt) && h.listed.length > 0 && h.listed[0].toLowerCase() === TAP10_SEALS[id].hub.toLowerCase(), String(id))
+    assert.doesNotThrow(() => conformApi(createConformChain({ chainId: id }), { chainId: id }), String(id))
+  }
+})
+
+test('T-b: the default mode never scans: tapeSendKey on the same chain sends no eth_getLogs (GOLDEN TAP10-0 pins the rest)', async () => {
+  const { chain, c } = scanWorld()
+  const from = chain.conform.log.length
+  const d = await defaultApi(chain).chain.tapeSendKey(c.container)
+  assert.equal(d.staticPublic, KEY); assert.equal(d.tap10, undefined)
+  assert.ok(!since(chain, from).some((x) => x.method === 'eth_getLogs' || x.method === 'eth_chainId'))
+  // channelKeys in the conformance mode reads no hub state either / 一致模式的 channelKeys 也不读中枢状态
+  const f2 = chain.conform.log.length
+  await conformApi(chain).chain.channelKeys(c.container)
+  assert.ok(!since(chain, f2).some((x) => x.method === 'eth_getLogs'))
 })

@@ -59,7 +59,7 @@ test('FIXED AI-INJ: a whole answer is always compared: usage raised, prices reco
   // Without the request bytes too: a whole answer has nothing taken out of it. / 没有请求字节也一样。
   assert.match(check(forged, { requestBytes: undefined }).problems.join(), /but the answer reports/)
   // The same through the verifying fetch. / 经由核验 fetch 也一样。
-  const svc = await createTapeAPI({ dev: true }).resolve({ dev: structuredClone(m) })
+  const svc = await createTapeAPI({ conform: false, dev: true }).resolve({ dev: structuredClone(m) })
   const reports = []
   const vf = ai.createVerifyingFetch({ service: svc, strict: false, salt: false, onReport: (x) => reports.push(x), fetch: async () => {
     const h = new Headers(res.headers); h.set(ai.RECEIPT_HEADER, ai.encodeReceipt(forged)); return new Response(bytes, { status: 200, headers: h })
@@ -84,7 +84,7 @@ test('AI-INJ: the honest sidecar\'s receipt for a stream request answered as JSO
   assert.deepEqual([r.ok, r.problems], [true, []])
   assert.ok(!usageUnchecked(r), r.unchecked.join())
   // Through the verifying fetch, end to end. / 经由核验 fetch，端到端。
-  const svc = await createTapeAPI({ dev: true }).resolve({ dev: structuredClone(m) })
+  const svc = await createTapeAPI({ conform: false, dev: true }).resolve({ dev: structuredClone(m) })
   const reports = []
   const vf = ai.createVerifyingFetch({ service: svc, strict: true, salt: false, onReport: (x) => reports.push(x), fetch: (u, i) => post(p, i.body) })
   await (await vf('https://ai.example/v1/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: req })).arrayBuffer()

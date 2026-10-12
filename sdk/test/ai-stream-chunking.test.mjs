@@ -178,7 +178,8 @@ async function world(upstream = null) {
   const logs = []
   const proxy = createAIProxy({ upstream: { baseUrl: 'http://fake.local/v1' }, fetch: upstream ?? fake.fetch, manifestBase, signerKey: KEY, models: MODELS, allowHttp: true, rateLimit: false, log: (l) => logs.push(l) })
   await proxy.ready
-  const api = createTapeAPI({ dev: true, fetch: (u, i) => proxy.handleRequest(new Request(u, i)) })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const api = createTapeAPI({ conform: false, dev: true, fetch: (u, i) => proxy.handleRequest(new Request(u, i)) })
   const service = await api.resolve({ dev: BASE })
   const eps = Object.fromEntries(service.manifest.ai.endpoints.map((e) => [e.format, e.baseUrl]))
   return { proxy, api, service, eps, logs }

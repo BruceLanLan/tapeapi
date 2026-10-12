@@ -42,7 +42,8 @@ function world({ manifest, owner = holder, routes = {}, directory } = {}) {
     if (!routes[host]) throw new TypeError(`fetch failed: ${host}`)
     return routes[host](u, init)
   }
-  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, allowHttp: true, fetch, ...(directory ? { directory } : {}) })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const api = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, allowHttp: true, fetch, ...(directory ? { directory } : {}) })
   return { chain, api, hits }
 }
 const provider = () => createProvider({
@@ -133,9 +134,9 @@ test('FIXED SD-6: the 1 MiB cap is measured in UTF-8 bytes on the no-stream path
   const LIMIT = 1024 * 1024
   const body = JSON.stringify('€'.repeat(400_000))   // 400,002 UTF-16 units, 1,200,002 UTF-8 bytes
   const textOnly = { headers: { get: () => null }, text: async () => body }
-  await assert.rejects(readJsonBounded(textOnly, LIMIT, { code: 'PROVIDER_UNAVAILABLE' }), (e) => e.code === 'PROVIDER_UNAVAILABLE' && e.tooLarge === true)
+  await assert.rejects(readJsonBounded(textOnly, LIMIT, { code: 'PROVIDER_UNAVAILABLE' }), (e) => e.code === 'PROVIDER_UNAVAILABLE' && e.data.tooLarge === true)
   const bufferOnly = { headers: { get: () => null }, arrayBuffer: async () => new TextEncoder().encode(body).buffer, text: async () => body }
-  await assert.rejects(readJsonBounded(bufferOnly, LIMIT, { code: 'PROVIDER_UNAVAILABLE' }), (e) => e.tooLarge === true)
+  await assert.rejects(readJsonBounded(bufferOnly, LIMIT, { code: 'PROVIDER_UNAVAILABLE' }), (e) => e.data.tooLarge === true)
   // Under the cap in bytes still parses / 字节数在上限内照常解析
   const small = { headers: { get: () => null }, text: async () => JSON.stringify('€'.repeat(1000)) }
   assert.equal(await readJsonBounded(small, LIMIT), '€'.repeat(1000))
@@ -181,7 +182,7 @@ test('FIXED SD-9: relayRecv always carries `epoch`, null until the relay has nam
   const sent = []
   let epoch = null
   const api = { call: async (svc, method, params) => { sent.push(params); return { result: { frames: [], next: -1, epoch } } } }
-  const t = relayTransport({ api, svc: { manifest: { methods: [] } }, inbound: 'aa'.repeat(32), outbound: 'bb'.repeat(32) })
+  const t = relayTransport({ api, service: { manifest: { methods: [] } }, inbound: 'aa'.repeat(32), outbound: 'bb'.repeat(32) })
   await t.poll(0)
   assert.ok(Object.hasOwn(sent[0], 'epoch'), 'the field is present')
   assert.equal(sent[0].epoch, null)

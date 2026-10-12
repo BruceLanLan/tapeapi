@@ -23,7 +23,8 @@ const replayFetch = async (url, init) => {
     : { jsonrpc: '2.0', id: req.id, result: c.result }
   return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
 }
-const api = () => createTapeAPI({ rpcUrls: ['https://a.invalid', 'https://b.invalid'], quorum: 2, fetch: replayFetch })
+// 1.x behaviour; 2.0 default is conform: 'tap10'
+const api = () => createTapeAPI({ conform: false, rpcUrls: ['https://a.invalid', 'https://b.invalid'], quorum: 2, fetch: replayFetch })
 
 test('registryKey strips leading slashes only', () => {
   assert.equal(registryKey('/index.html'), 'index.html')

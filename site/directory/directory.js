@@ -6,7 +6,7 @@
 // 显示每一条：本页从不排序或排名。放在 <head> 里，主题与语言在首次绘制前生效。存储可能抛错（隐私窗口），每次访问都有保护。
 (function (global) {
   // The doctor from the SDK's release package, as in the guide for AI providers. / 与 AI 服务方指南相同的发布包里的诊断。
-  var DOCTOR = 'npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-doctor'
+  var DOCTOR = 'npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-doctor'
   var CHAINS = { bnb: ['BNB Smart Chain', 'BNB Smart Chain'], 2: ['X Layer', 'X Layer'], 3: ['Base', 'Base'] }
   var FLAG = {
     ok: { state: 'up', label: ['通过', 'Passing'] },
@@ -28,6 +28,21 @@
     if (typeof iso !== 'string') return null
     var d = new Date(iso)
     return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
+  }
+  // 2.0: status.json's `defaultMode` (what a client in the SDK's default mode says of the name, beside the doctor's flag).
+  // Shown only when it is not ok; it never changes the flag, the badge or the order. / 2.0：status.json 的 defaultMode
+  // （SDK 默认模式的客户端对名字的结论，在诊断的标记旁边）。只在不是 ok 时显示；从不改变标记、徽标或顺序。
+  var DEFAULT_MODE = {
+    'not-opened': ['容器尚未开通：2.0 默认客户端不解析这个名字。', 'The container has not been opened: a 2.0 default client does not resolve this name.'],
+    unpaid: ['名字未激活或付费期已过：2.0 默认客户端不解析这个名字，也核验不了它以前的回执。', 'The name is not activated or its paid period ran out: a 2.0 default client does not resolve it, nor verify its earlier receipts.'],
+    'store-changed': ['站点存储或付费合约运行着 SDK 未列出的实现：2.0 默认客户端拒绝读取。', 'The site store or payment contract runs an implementation the SDK does not list: a 2.0 default client refuses to read it.'],
+    unavailable: ['今天读不到链，没有结论。', 'The chain could not be read today; no conclusion.'],
+  }
+  var OTHER_MODE = ['2.0 默认客户端报告的状态。', 'The status a 2.0 default client reports.']
+  function defaultModeOf(s) {
+    var d = s && s.defaultMode
+    if (!d || typeof d !== 'object' || typeof d.status !== 'string' || !/^[a-z][a-z0-9-]{0,39}$/.test(d.status) || d.status === 'ok') return null
+    return { status: d.status, note: DEFAULT_MODE[d.status] || OTHER_MODE, conclusive: d.status !== 'unavailable' }
   }
   var list = function (a) { return Array.isArray(a) ? a.filter(function (x) { return typeof x === 'string' }) : [] }
   var safeUrl = function (u) { return typeof u === 'string' && /^https:\/\/[^\s]+$/.test(u) && u.length <= 200 ? u : null }
@@ -52,6 +67,7 @@
           consecutiveFailures: s && Number.isInteger(s.consecutiveFailures) ? s.consecutiveFailures : 0,
           verdict: s && flag === 'undecided' && FLAG[s.verdict] ? FLAG[s.verdict].label : null,
           verdictAt: s && flag === 'undecided' ? utc(s.verdictAt) : null,
+          defaultMode: defaultModeOf(s),
           added: typeof e.added === 'string' ? e.added : null, contact: safeUrl(e.contact),
           command: DOCTOR + ' ' + e.name,
         }
@@ -90,6 +106,10 @@
       row(bi(doc, '前一次结论', 'Last verdict'), e.verdict
         ? el(doc, 'span', null, [bi(doc, e.verdict[0], e.verdict[1]), e.verdictAt ? ' · ' + e.verdictAt : ''])
         : bi(doc, '还没有', 'none yet'))
+    }
+    if (e.defaultMode) {
+      row(bi(doc, '2.0 默认客户端', '2.0 default client'), el(doc, 'span', null, [e.defaultMode.status,
+        el(doc, 'span', { class: 'sub' }, [' ', bi(doc, e.defaultMode.note[0], e.defaultMode.note[1])])]), e.defaultMode.conclusive ? 'mono bad' : 'mono')
     }
     if (e.added) row(bi(doc, '登记于', 'Listed on'), e.added, 'mono')
     if (e.contact) row(bi(doc, '联系', 'Contact'), el(doc, 'a', { href: e.contact, rel: 'nofollow noopener noreferrer' }, [e.contact]))

@@ -58,7 +58,7 @@ export interface GroupHandle {
   readonly isOwner: boolean
   /** 1 (TAPI-27 v1, the default) or 2 (TAPI-27 §3.8, @experimental). */
   readonly format: 1 | 2
-  /** Since 1.8.1: the label version ('v1' default, 'v2' TAPI-27 v2). */
+  /** Since 1.8.1: the label version ('v2' TAPI-27 v2, the default from 2.0; 'v1' TAPI-27 v1). */
   readonly labels: Labels
   /** The current epoch, or null before the first one was accepted. */
   readonly epoch: number | null
@@ -129,7 +129,7 @@ export declare function createGroup(opts: {
    *  default 86400. An entry with a verdict still within it is not read again; a new or changed entry, or one whose
    *  verdict aged out, is read past the cache. 0 reads every member on every epoch. */
   verifyReuseS?: number
-  /** Since 1.8.1: 'v2' for a TAPI-27 v2 group (labels tape-group/, invites in the v2 inbox rooms); default 'v1'. A group keeps it for life. */
+  /** Since 1.8.1: 'v2' (the default from 2.0) for a TAPI-27 v2 group (labels tape-group/, invites in the v2 inbox rooms); 'v1' (deprecated in 2.x) for a group with 1.x members. A group keeps it for life. */
   labels?: Labels
 }): Promise<{ group: OwnerGroupV2; epochWire: Uint8Array; epoch: number; added: GroupUpdate['added'] }>
 /**
@@ -151,7 +151,7 @@ export declare function createGroup(opts: {
   /** How many member checks (§3.3 step 6, one channel-record read each) run at once: an integer in 1..64, default
    *  VERIFY_CONCURRENCY (8). The outcome is the serial loop's: the error is the first failing member's in roster order. */
   verifyConcurrency?: number
-  /** Since 1.8.1: 'v2' for a TAPI-27 v2 group (labels tape-group/, invites in the v2 inbox rooms); default 'v1'. A group keeps it for life. */
+  /** Since 1.8.1: 'v2' (the default from 2.0) for a TAPI-27 v2 group (labels tape-group/, invites in the v2 inbox rooms); 'v1' (deprecated in 2.x) for a group with 1.x members. A group keeps it for life. */
   labels?: Labels
 }): Promise<{ group: OwnerGroup; epochWire: Uint8Array; epoch: number; added: GroupUpdate['added'] }>
 /** Owner after a restart: starts the next epoch at once; `added` is empty (members already joined). */
@@ -219,7 +219,7 @@ export declare function joinGroup(opts: {
   verifyConcurrency?: number
   verifyMember?: MemberVerifierV2 | 'trust-roster'
   verifyReuseS?: number
-  /** Since 1.8.1: 'v2' for a TAPI-27 v2 group (labels tape-group/, invites in the v2 inbox rooms); default 'v1'. A group keeps it for life. */
+  /** Since 1.8.1: 'v2' (the default from 2.0) for a TAPI-27 v2 group (labels tape-group/, invites in the v2 inbox rooms); 'v1' (deprecated in 2.x) for a group with 1.x members. A group keeps it for life. */
   labels?: Labels
 }): GroupHandleV2
 export declare function joinGroup(opts: {
@@ -236,7 +236,7 @@ export declare function joinGroup(opts: {
   /** Format-2 options: a format-1 group ignores them, as 1.1.0 did (pass them to any invite). */
   verifyMember?: MemberVerifierV2 | 'trust-roster'
   verifyReuseS?: number
-  /** Since 1.8.1: 'v2' for a TAPI-27 v2 group (labels tape-group/, invites in the v2 inbox rooms); default 'v1'. A group keeps it for life. */
+  /** Since 1.8.1: 'v2' (the default from 2.0) for a TAPI-27 v2 group (labels tape-group/, invites in the v2 inbox rooms); 'v1' (deprecated in 2.x) for a group with 1.x members. A group keeps it for life. */
   labels?: Labels
 }): GroupHandle
 

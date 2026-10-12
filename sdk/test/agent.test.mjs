@@ -267,7 +267,7 @@ test('FIXED CA-11: phishing names: identities are the container and the on-chain
   for (const u of RPC) z.lie(u, (method, params, honest) => (method === 'eth_call' && params[0].data.startsWith(CPU_AT) ? '0x' + '00'.repeat(12) + '42'.repeat(20) : honest))
   for (const factory of [MAINNET_FACTORY, ADDR.factory]) {
     const kit = createAgentKit(z.api({ factory }), { clock: () => NOW })
-    await assert.rejects(kit.identityOf(AG), (e) => e.code === 'AGENT_INVALID' && e.reason === 'not-tapeout' && /processor list/.test(e.message), factory)
+    await assert.rejects(kit.identityOf(AG), (e) => e.code === 'AGENT_INVALID' && e.data.reason === 'not-tapeout' && /processor list/.test(e.message), factory)
   }
 })
 

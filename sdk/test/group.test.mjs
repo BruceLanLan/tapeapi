@@ -33,7 +33,8 @@ const entry = (m) => ({ container: m.container, chainId: 56, x25519: hex(m.ident
 
 test('three containers, one group, nothing but the chain: invites to inboxes, a hidden roster, signed messages', async () => {
   const chain = createFakeChain()
-  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: chain.fetch })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const api = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: chain.fetch })
   const rpc = createRpc({ urls: RPC, quorum: 2, fetch: chain.fetch })
   const verifyMember = api.groupVerifier()
   const [A, B, Cm] = [member(chain, 1), member(chain, 2), member(chain, 3)]
@@ -164,7 +165,7 @@ test('a malicious owner cannot hand members different keys: the signed commitmen
   w.set(liar.wire.slice(114 + 48, 114 + 96), 114 + 48)   // slot 1 (slots are 48 bytes) / 第 1 格（每格 48 字节）
   const { ed25519 } = await import('@noble/curves/ed25519')
   const body = w.slice(0, w.length - 64)
-  w.set(ed25519.sign(new Uint8Array([...new TextEncoder().encode('TAP-27/epoch/v1'), ...body]), ms[0].identity.ed25519.secretKey), w.length - 64)
+  w.set(ed25519.sign(new Uint8Array([...new TextEncoder().encode('tape-group/epoch/v1'), ...body]), ms[0].identity.ed25519.secretKey), w.length - 64)
   await assert.rejects(gb.acceptEpoch(w, { verifyMember: 'trust-roster' }), bad(/not a member|commitment/))
 })
 

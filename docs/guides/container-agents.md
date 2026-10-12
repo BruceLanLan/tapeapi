@@ -20,8 +20,8 @@ Version 1.7 ships **phase 0**, through the subpath `@tapeapi/sdk/agent`:
   it afterwards from the chain, read only. It never signs, sends, pays gas or holds funds.
 - **Enforced limits are a later phase.** Caps that an agent cannot exceed need contracts that are not deployed (see
   [What comes next](#what-comes-next)).
-- **Experimental.** The whole subpath is Experimental under [what 1.0 promises](upgrade-1.0.md): it may change in a 1.x
-  minor release, and it is outside the 1.x compatibility promise. The formats follow two public discussions in
+- **Experimental.** The whole subpath is Experimental under [what 1.0 promises](upgrade-1.0.md), which 2.0 keeps: it may
+  change in a 2.x minor release, and it is outside the 2.x compatibility promise. The formats follow two public discussions in
   TapeOutProtocol/TAPs, the Ideas [#40](https://github.com/TapeOutProtocol/TAPs/issues/40) (the mandate) and
   [#41](https://github.com/TapeOutProtocol/TAPs/issues/41) (the task protocol and agent listings), and may change with
   them. Neither has a TAP number.
@@ -147,15 +147,27 @@ implementations, and the revocation list. A node too far behind (`stale-block`) 
 TAP-10 §4.3 says: `token()`, the factory's `isCPU`, the processor number, the container opener's `accountOf`, then
 `ownerOf` for the holder.
 
-The agent and the providers are resolved by the client's `resolve` (or the kit's `resolve` option). The draft TAP asks
-for TAP-11 §2, which `createTapeAPI({ conform: 'tap10' })` implements (one pinned block per resolution, `ownerOf` and
-EIP-1271 under strict agreement); a default client resolves them as TapeAPI 1.x does. For a verifier that should follow
-the draft, give the kit a conformance-mode client for resolution:
+The draft TAP asks for the agent and the providers to be resolved as TAP-11 §2 says (one pinned block per resolution,
+`ownerOf` and EIP-1271 under strict agreement), which is what `createTapeAPI({ conform: 'tap10' })` does. Since 1.9 the
+kit does this by default: it makes a conformance-mode client from your client, with the same nodes, quorum, RPC timeout,
+`fetch` and other options, and resolves the agent and every provider through it. It never turns on `allChains` and never
+reads another chain, so it sends requests only to the nodes you configured. A client already in the conformance mode is
+used as it is. Pass the `resolve` option to resolve them yourself; your function is then used unchanged. `kit.resolution`
+says which is in use:
+
+| `kit.resolution` | Resolution |
+|---|---|
+| `'tap10'` | The conformance mode made from your client (TAP-11 §2): a container that is not opened or not activated, or a site store or payment contract running an implementation TAP-10 does not list, is `agent-unresolvable` or `provider-unresolvable`. |
+| `'client'` | Your client's own `resolve`, as in 1.8. Only for a client whose contracts are not the ones TAP-10 lists for its chain (a local or test deployment, such as the fake chain of the example above), where the conformance mode cannot be made. |
+| `'caller'` | Your `resolve` option. |
 
 ```js
-const strict = createTapeAPI({ rpcUrls, quorum: 2, conform: 'tap10' })
-const kit = createAgentKit(api, { resolve: (container) => strict.resolve(container) })
+const kit = createAgentKit(api)
+kit.resolution                                   // 'tap10' on BNB Smart Chain, X Layer and Base
 ```
+
+Before 1.9 the default was the client's own `resolve`. To keep that behaviour, pass it:
+`createAgentKit(api, { resolve: (container) => api.resolve(container) })`.
 
 ### Sign a mandate
 
@@ -359,7 +371,7 @@ tapeapi-verify task thread.json --payment <agent container> <inbox index>
 tapeapi-verify task thread.json --rpc https://node-a.example,https://node-b.example
 ```
 
-Without installing anything, use `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-verify task thread.json`;
+Without installing anything, use `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-verify task thread.json`;
 in a checkout, `node sdk/bin/tapeapi-verify.js task thread.json`.
 
 - `--payment <recipient> <index>` also checks the TapeSend message at that index in the recipient's inbox. The recipient
@@ -536,8 +548,12 @@ Thrown errors (`TapeAPIError`, details in `data`):
 
 ## What comes next
 
-Nothing beyond phase 0 is built. Idea [#40](https://github.com/TapeOutProtocol/TAPs/issues/40) sketches two further
-phases:
+Phase 0 is what this guide describes. Since 2.0 the SDK also has phase 1 as an experimental subpath feature, bounded
+agents (`{ enforcement: 'escrow-channel' }`, the holder's plan, the agent's spend limiter): it relies on the escrow
+contract of TAPI-22, which is **not audited and not deployed**, so it is checked on local chains and in tests only and
+does not work on mainnet. See [Bounded agents](https://github.com/BruceLanLan/tapeapi#bounded-agents-experimental-not-usable-on-mainnet)
+and the [changelog](../../CHANGELOG.md). Idea [#40](https://github.com/TapeOutProtocol/TAPs/issues/40) sketches the two
+further phases:
 
 - **Phase 1, payment channels.** The principal funds a channel per provider and authorises the agent's key as a
   session key on it, so the channel balance is the cap and the session's expiry the time limit. It builds on the

@@ -22,13 +22,21 @@
 //                                  TAP10_SEALS, the factory as the beacon's owner, nothing sealed, the hub owner TAP-10 lists.
 //                                  setSeal({ beaconImplementation, beaconOwner, factorySealed, hubSealed, hubOwner }) takes an
 //                                  address, a number or a raw 32-byte word (to test non-canonical answers), or 'revert'.
+//   TAP-10 §13.8 Upgraded logs     eth_getLogs for the hub's Upgraded topic answers `upgraded` ({ block, logIndex,
+//                                  implementation, tx }) within the filter's range: by default the history TAP-10 lists
+//                                  (boot at TAP10_HUB_HISTORY.createdAt, then every listed implementation, the current one
+//                                  last). setUpgradedLogs(list) replaces it; setLogFault(url, kind): 'refuse' (-32005 "limit
+//                                  exceeded", as the BNB Chain dataseed), 'range' (-32000 "exceed maximum block range: 5000",
+//                                  as 48 Club), 'empty' ([] as a pruned node), { logs } (another answer); null clears it.
+//                                  The fake chain's block is 62,000,000, below every hub's creation block: a test that
+//                                  wants a scan sets chain.state.block above it.
 //   setCallFault(url, read, kind)  one node's fault for one kind of read only (ownerOf, isValidSignature, eth_getCode, ...),
 //                                  to test strict agreement read by read.
 // Every request is logged in `log` as { url, method, to, fn, block } (block: the block parameter of a state read), and
 // `index` for a cpuAt read.
 import { createFakeChain, eachCall, ADDR } from './fake-chain.mjs'
 import { functionBySelector, decodeCall, encodeReturn, ZERO_ADDRESS, selector } from '../../src/abi.js'
-import { CHAINS, TAP10_SEALS } from '../../src/chains.js'
+import { CHAINS, TAP10_SEALS, TAP10_HUB_BOOT, TAP10_HUB_HISTORY } from '../../src/chains.js'
 import { erc6551Account } from '../../src/security.js'
 
 export const LEGACY_BINDING = '0x4e8684eaea48b524245b2191dee451eaa1c1ca94'   // BSC DomainBinding before 2026-09-13, no isContainerLive
@@ -41,6 +49,14 @@ const wordOf = (v) => (typeof v === 'string' && /^0x[0-9a-fA-F]{64}$/.test(v) ? 
   : '0x' + (typeof v === 'string' ? v.slice(2).toLowerCase().padStart(64, '0') : BigInt(v).toString(16).padStart(64, '0')))
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } })
 
+const UPGRADED = '0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b'
+// The hub's Upgraded history TAP-10 lists: boot at the creation block, then each listed implementation, the current last
+// 中枢的 Upgraded 历史：创建块上的 boot，然后依次是列出的实现，当前的在最后
+export function defaultUpgraded(chainId) {
+  const h = TAP10_HUB_HISTORY[chainId]
+  return [{ block: h.createdAt, logIndex: 0, implementation: TAP10_HUB_BOOT }, ...[...h.listed].reverse().map((implementation, i) => ({ block: h.createdAt + 10 * (i + 1), logIndex: 0, implementation }))]
+}
+
 export function createConformChain({ chainId = 56, processors } = {}) {
   const c = CHAINS[chainId]
   const chain = createFakeChain({ chainId, addr: { ...ADDR, factory: c.factory } })
@@ -52,6 +68,7 @@ export function createConformChain({ chainId = 56, processors } = {}) {
     accounts: new Map(), opened: new Map(), live: new Set(), containerLive: new Map(), defaultLive: true,
     paidUntil: new Map(), fee: 0n, heads: new Map(), headState: new Set(), chainIds: new Map(), log: [], callFaults: new Map(),
     seal: { beaconImplementation: TAP10_SEALS[chainId].circuitImplementation, beaconOwner: c.factory, factorySealed: 0, hubSealed: 0, hubOwner: HUB_OWNER },
+    upgraded: defaultUpgraded(chainId), logFaults: new Map(),
   }
   const key = (circuits, tokenId) => `${lc(circuits)}:${BigInt(tokenId)}`
   const derive = (circuits, tokenId) => erc6551Account({ registry: c.erc6551Registry, implementation: c.accountImplementation, chainId, tokenContract: circuits, tokenId })
@@ -71,6 +88,8 @@ export function createConformChain({ chainId = 56, processors } = {}) {
     setHeadLag(url, n, { state = false } = {}) { if (n) st.heads.set(url, n); else st.heads.delete(url); if (n && state) st.headState.add(url); else st.headState.delete(url) },
     setChainIdAnswer(url, id) { if (id == null) st.chainIds.delete(url); else st.chainIds.set(url, id) },
     setSeal(over) { Object.assign(st.seal, over) },
+    setUpgradedLogs(list) { st.upgraded = list },
+    setLogFault(url, kind) { if (kind == null) st.logFaults.delete(url); else st.logFaults.set(url, kind) },
     /** One node's answer to one kind of read only: `read` is a function name as logged ('ownerOf', 'isValidSignature') or a
      *  method ('eth_getCode'); `kind` 'http500' (no answer), 'rpcerror' (-32000, not an answer under TAP-10 §1), 'revert', or
      *  { result } (another answer); null clears it. `data`: only eth_calls whose calldata contains this hex (e.g. one digest).
@@ -121,6 +140,17 @@ export function createConformChain({ chainId = 56, processors } = {}) {
       if (n !== null && n > head) return json({ jsonrpc: '2.0', id: req.id, error: { code: -32000, message: b?.blockHash ? `header for hash ${b.blockHash} not found` : 'header not found' } })
     }
     if (req.method === 'eth_chainId' && st.chainIds.has(url)) return reply(req, '0x' + st.chainIds.get(url).toString(16))
+    if (req.method === 'eth_getLogs' && lc(req.params?.[0]?.address) === lc(c.hub) && lc(req.params[0].topics?.[0]) === UPGRADED) {
+      const f = st.logFaults.get(url)
+      if (f === 'refuse') return json({ jsonrpc: '2.0', id: req.id, error: { code: -32005, message: 'limit exceeded' } })
+      if (f === 'range') return json({ jsonrpc: '2.0', id: req.id, error: { code: -32000, message: 'exceed maximum block range: 5000' } })
+      if (f === 'empty') return reply(req, [])
+      const lo = Number(BigInt(req.params[0].fromBlock)), hi = Number(BigInt(req.params[0].toBlock))
+      const logs = f?.logs ?? st.upgraded.filter((l) => l.block >= lo && l.block <= hi)
+      return reply(req, logs.map((l) => ({ address: l.address ?? c.hub.toLowerCase(), topics: l.topics ?? [UPGRADED, '0x' + lc(l.implementation).slice(2).padStart(64, '0')], data: '0x',
+        blockNumber: '0x' + l.block.toString(16), logIndex: '0x' + (l.logIndex ?? 0).toString(16), transactionHash: l.tx ?? '0x' + l.block.toString(16).padStart(64, '0'), removed: l.removed ?? false,
+        ...(url === 'http://rpc2' ? { blockTimestamp: '0x68000000' } : {}) })))
+    }
     if (!call) return inner(url, init)
     // §13.8 / 封存状态
     const sealAnswer = (v) => (v === 'revert' ? revert(req) : reply(req, wordOf(v)))

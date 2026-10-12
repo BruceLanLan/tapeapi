@@ -68,7 +68,8 @@ async function setup(upstreamFetch, { base = 'http://127.0.0.1:8798' } = {}) {
   const manifestBase = { ...MANIFEST, endpoints: { live: [`${base}/tapeapi/v1`], async: false } }
   const proxy = createAIProxy({ upstream: { baseUrl: 'http://upstream.invalid/v1' }, fetch: upstreamFetch, manifestBase, signerKey: SIGNER_KEY, models: MODELS, allowHttp: true, log: () => {} })
   const manifest = await proxy.ready
-  const svc = await createTapeAPI({ dev: true }).resolve({ dev: manifest })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const svc = await createTapeAPI({ dev: true, conform: false }).resolve({ dev: manifest })
   const fetch = (url, init) => proxy.handleRequest(new Request(url, init), { clientIp: '127.0.0.1' })
   return { proxy, manifest, svc, fetch }
 }

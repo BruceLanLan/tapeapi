@@ -6,7 +6,10 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { validateDirectory, nextStatus, recheck, rpcMeter, newlyFailing, STALE_AFTER, PROVIDERS_FILE, STATUS_FILE, RPC_BUDGET_PER_NAME, FLAGS } from './recheck.mjs'
+import { validateDirectory, nextStatus, recheck, rpcMeter, newlyFailing, directoryApi, directoryDefaultApi, defaultModeStatus, SITE_STATUSES, STALE_AFTER, PROVIDERS_FILE, STATUS_FILE, RPC_BUDGET_PER_NAME, FLAGS } from './recheck.mjs'
+import { createTapeAPI, sig, CHAINS, TapeAPIError } from '../sdk/src/index.js'
+import { CONFORM_MODE } from '../sdk/src/conform-sibling.js'
+import { createConformChain } from '../sdk/test/helpers/conform-chain.mjs'
 
 const entry = (name, extra = {}) => ({ name, added: '2026-10-01', ...extra })
 const doc = (...providers) => ({ version: 1, providers })
@@ -138,4 +141,152 @@ test('rpc budget: counted per name, refused past the cap, and a spent budget is 
     assert.deepEqual(out.providers['42.1013.tape'].failed, [])
     assert.deepEqual(out.providers['42.1013.tape'].undecided, ['rpc-budget'])
   } finally { globalThis.fetch = origFetch }
+})
+
+test('2.0: the recheck client is the 1.x one (conform: false): one DEPRECATED warning per client, the same nodes and quorum, the metered fetch', async () => {
+  const warnings = []
+  const seen = []
+  const api = directoryApi(async (u, init) => { seen.push(u); return new Response('{}') }, { onWarning: (w) => warnings.push(w) })
+  assert.deepEqual(warnings.map((w) => [w.code, w.option]), [['DEPRECATED', 'conform']])
+  assert.equal(api.chainId, 56)
+  assert.equal(typeof api.resolve, 'function')
+  directoryApi(async () => new Response('{}'), { onWarning: (w) => warnings.push(w) })
+  assert.equal(warnings.length, 2, 'one per client, as the SDK says')
+  // the metered fetch is what the client reads through / 客户端经计数的 fetch 读取
+  const m = rpcMeter(3, async () => new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: '0x38' })))
+  const metered = directoryApi(m.fetch, { onWarning: () => {} })
+  await metered.rpc.call('eth_chainId', []).catch(() => {})
+  assert.ok(m.used >= 1, 'the client sent its requests through the meter')
+})
+
+// ── 2.0 (E20): the default-mode conclusion beside the flag / 标记旁边的默认模式结论 ───────────────────────────────────
+// Offline: every RPC goes to the conform chain (sdk/test/helpers/conform-chain.mjs), a fake TAP-10 chain. The doctor is a
+// stand-in, as above; the default-mode step is the real api.siteStatus of a default (conformance-mode) client.
+// 离线：所有 RPC 都发往 conform 假链。诊断仍是替身；默认模式一步是默认（一致模式）客户端真实的 api.siteStatus。
+const T = 1_790_000_000
+const RPC = ['http://rpc1', 'http://rpc2', 'http://rpc3']
+const HOLDER = sig.privateKeyToAddress('0x' + '11'.repeat(32))
+const NAME = '4246.7.tape'   // processor 7 #4246 on the conform chain / conform 链上的 7 号处理器 #4246
+function conformWorld(set = () => {}) {
+  const chain = createConformChain()
+  chain.state.headTime = T
+  const c = chain.circuit(4246, { holder: HOLDER })
+  set(chain, c)
+  return { chain, c }
+}
+const fakeDefaultApi = (fetch) => createTapeAPI({ rpcUrls: RPC, quorum: 2, fetch, clock: () => T, quiet: true, onWarning: () => {} })
+async function withChain(chain, fn) {
+  const orig = globalThis.fetch
+  globalThis.fetch = chain.fetch
+  try { return await fn() } finally { globalThis.fetch = orig }
+}
+const stand = (exitCode, failed = [], { rpc = 0 } = {}) => async (name, { api }) => {
+  for (let i = 0; i < rpc; i++) { try { await api.fetch('http://rpc1', { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: i, method: 'eth_blockNumber', params: [] }) }) } catch { /* spent */ } }
+  return report(exitCode, failed)
+}
+const meteredApi = (fetch) => ({ fetch })   // what the stand-in doctor reads through / 替身诊断读取用的
+
+test('E20: every site status the default client can give is recorded as defaultMode, and the flag stays the doctor\'s', async () => {
+  const cases = [
+    ['ok', () => {}],
+    ['not-opened', (chain, c) => chain.setOpened(c.circuits, 4246, false)],
+    ['unpaid', (chain) => chain.setUnactivated()],
+    ['store-changed', (chain) => chain.setImplementation(CHAINS[56].binding, '0x' + 'ab'.repeat(20))],
+  ]
+  for (const [want, set] of cases) {
+    const { chain } = conformWorld(set)
+    const out = await withChain(chain, () => recheck({ doc: doc(entry(NAME)), diagnoseFn: stand(0), apiFor: meteredApi, defaultApiFor: fakeDefaultApi, now: () => 't' }))
+    const s = out.providers[NAME]
+    assert.equal(s.flag, 'ok', `${want}: the doctor exited 0, so the flag is ok whatever the default mode says`)
+    assert.equal(s.verdict, 'ok'); assert.equal(s.consecutiveFailures, 0); assert.equal(s.rpcRequests, 0, 'rpcRequests stays the doctor\'s count')
+    assert.equal(s.defaultMode.status, want, want)
+    assert.ok(s.defaultMode.rpcRequests > 0 && s.defaultMode.rpcRequests <= RPC_BUDGET_PER_NAME, `${want}: ${s.defaultMode.rpcRequests}`)
+    assert.ok(SITE_STATUSES.includes(s.defaultMode.status))
+    if (want === 'store-changed') {
+      const bad = s.defaultMode.implementations.filter((i) => !i.accepted)
+      assert.deepEqual(bad.map((i) => [i.role, i.implementation.toLowerCase()]), [['binding', '0x' + 'ab'.repeat(20)]])
+    } else assert.equal(s.defaultMode.implementations, undefined, 'implementations only for store-changed')
+    assert.equal(s.defaultMode.reason, undefined)
+    assert.deepEqual(newlyFailing(null, out), [])
+    assert.doesNotThrow(() => JSON.stringify(out), 'no bigint in status.json')
+  }
+})
+
+test('E20: nodes that cannot be read give defaultMode unavailable (no verdict); a doctor that fails still fails on its own', async () => {
+  const { chain } = conformWorld((ch) => { for (const u of RPC) ch.setFault(u, 'http500') })
+  const out = await withChain(chain, () => recheck({ doc: doc(entry(NAME)), diagnoseFn: stand(1, ['cors']), apiFor: meteredApi, defaultApiFor: fakeDefaultApi, now: () => 't' }))
+  const s = out.providers[NAME]
+  assert.equal(s.flag, 'failing'); assert.deepEqual(s.failed, ['cors'])
+  assert.equal(s.defaultMode.status, 'unavailable')
+  assert.equal(s.defaultMode.reason, undefined, 'the nodes, not the budget')
+  assert.equal(typeof s.defaultMode.detail, 'string')
+  // a client that throws a TAP name keeps it; a plain error is unavailable / 带 TAP 名字的错误保留名字；普通错误记为 unavailable
+  const m = rpcMeter(5)
+  assert.equal((await defaultModeStatus(NAME, { siteStatus: async () => { throw new TapeAPIError('INVALID_ARGUMENT', 'x', { data: { status: 'unsupported' } }) } }, m)).status, 'unsupported')
+  assert.equal((await defaultModeStatus(NAME, { siteStatus: async () => { throw new Error('fetch failed') } }, m)).status, 'unavailable')
+  assert.equal((await defaultModeStatus(NAME, undefined, m)).status, 'unavailable')
+  // a default-mode client that throws when it is made: the flag is the doctor's, the recheck goes on / 建客户端时抛错：标记仍是诊断的，复核继续
+  const boom = await recheck({ doc: doc(entry(NAME)), diagnoseFn: stand(0), apiFor: meteredApi, defaultApiFor: () => { throw new Error('boom') }, now: () => 't' })
+  assert.equal(boom.providers[NAME].flag, 'ok')
+  assert.deepEqual([boom.providers[NAME].defaultMode.status, boom.providers[NAME].defaultMode.detail], ['unavailable', 'boom'])
+  assert.equal((await defaultModeStatus(NAME, { siteStatus: async () => ({ status: 'something-new' }) }, m)).status, 'unavailable', 'an unknown answer is no conclusion')
+})
+
+test('E20: the default-mode step shares the name\'s RPC cap; running it out never changes the flag, the verdict or newlyFailing', async () => {
+  // The doctor uses 50 of 60 and passes; the default-mode step needs more than the 10 left. / 诊断用了 60 中的 50 并通过；默认模式一步剩 10 次不够。
+  const { chain } = conformWorld()
+  const yesterday = { providers: { [NAME]: nextStatus(null, report(0), 'y') } }
+  const out = await withChain(chain, () => recheck({ doc: doc(entry(NAME)), previous: yesterday, diagnoseFn: stand(0, [], { rpc: 50 }), apiFor: meteredApi, defaultApiFor: fakeDefaultApi, now: () => 't' }))
+  const s = out.providers[NAME]
+  assert.equal(s.flag, 'ok', 'the doctor finished within the cap: its verdict stands')
+  assert.deepEqual(s.undecided, []); assert.equal(s.rpcRequests, 50)
+  assert.deepEqual([s.defaultMode.status, s.defaultMode.reason], ['unavailable', 'rpc-budget'])
+  assert.equal(s.rpcRequests + s.defaultMode.rpcRequests, RPC_BUDGET_PER_NAME, 'both together stay within the cap')
+  assert.deepEqual(newlyFailing(yesterday, out), [])
+  // The same doctor failing: newly failing exactly as without the step. / 同一个诊断失败：与没有这一步时一样是新近失败。
+  const failing = await withChain(chain, () => recheck({ doc: doc(entry(NAME)), previous: yesterday, diagnoseFn: stand(1, ['cors'], { rpc: 50 }), apiFor: meteredApi, defaultApiFor: fakeDefaultApi, now: () => 't' }))
+  assert.equal(failing.providers[NAME].flag, 'failing')
+  assert.deepEqual(newlyFailing(yesterday, failing), [NAME])
+  // A doctor that spent the whole budget: undecided as before, and the step is refused at once. / 诊断用完全部预算：照旧无法判定，这一步立即被拒。
+  const spent = await withChain(chain, () => recheck({ doc: doc(entry(NAME)), previous: yesterday, diagnoseFn: stand(1, ['cors'], { rpc: 70 }), apiFor: meteredApi, defaultApiFor: fakeDefaultApi, now: () => 't' }))
+  const sp = spent.providers[NAME]
+  assert.equal(sp.flag, 'undecided'); assert.deepEqual(sp.undecided, ['rpc-budget']); assert.equal(sp.verdict, 'ok')
+  assert.deepEqual([sp.defaultMode.status, sp.defaultMode.reason, sp.defaultMode.rpcRequests], ['unavailable', 'rpc-budget', 0])
+  assert.deepEqual(newlyFailing(yesterday, spent), [], 'undecided is not a failure, with or without the step')
+})
+
+test('E20: old and new fields side by side: every 1.x field is what it was without the step; a default-mode problem alone is never newly failing', async () => {
+  const { chain } = conformWorld((ch) => ch.setUnactivated())
+  // yesterday's file is the old format (no defaultMode) / 昨天的文件是旧格式（没有 defaultMode）
+  const yesterday = { providers: { [NAME]: { checkedAt: 'y', exitCode: 0, failed: [], warned: [], undecided: [], flag: 'ok', consecutiveFailures: 0, since: 'y', verdict: 'ok', verdictAt: 'y', rpcRequests: 36 } } }
+  for (const [exitCode, failed, flag, newly] of [[0, [], 'ok', []], [1, ['activation'], 'failing', [NAME]], [3, [], 'undecided', []]]) {
+    const run = (defaultApiFor) => withChain(chain, () => recheck({ doc: doc(entry(NAME)), previous: yesterday, diagnoseFn: stand(exitCode, failed), apiFor: meteredApi, defaultApiFor, now: () => 't' }))
+    const [without, withStep] = [await run(null), await run(fakeDefaultApi)]
+    assert.equal(without.providers[NAME].defaultMode, undefined, 'no step, no field')
+    const { defaultMode, ...rest } = withStep.providers[NAME]
+    assert.deepEqual(rest, without.providers[NAME], `exit ${exitCode}: the 1.x fields are unchanged`)
+    assert.equal(defaultMode.status, 'unpaid')
+    assert.equal(rest.flag, flag)
+    assert.deepEqual(newlyFailing(yesterday, withStep), newly)
+    assert.deepEqual(newlyFailing(yesterday, withStep), newlyFailing(yesterday, without))
+    // tomorrow reads today's file (new format) the same way / 明天按同样方式读今天的新格式文件
+    const tomorrow = nextStatus(withStep.providers[NAME], report(0), 'z')
+    assert.equal(tomorrow.flag, 'ok'); assert.equal(tomorrow.defaultMode, undefined, 'nextStatus does not carry it over: each recheck reads it afresh')
+  }
+  assert.ok(!/rank|score|featured|sponsor/i.test(JSON.stringify(yesterday)))
+})
+
+test('E20: the default-mode client is the SDK default (conformance mode, no DEPRECATED warning) on the same nodes, quorum and metered fetch', async () => {
+  const warned = []
+  const orig = console.warn
+  console.warn = (...a) => warned.push(a.join(' '))
+  let api
+  try { api = directoryDefaultApi(async () => new Response('{}')) } finally { console.warn = orig }
+  assert.deepEqual(warned, [], 'no deprecation warning: it is the default')
+  assert.equal(CONFORM_MODE.get(api), true, 'the TAP-10 conformance mode')
+  assert.equal(CONFORM_MODE.get(directoryApi(async () => new Response('{}'), { onWarning: () => {} })), false, 'the doctor\'s client stays 1.x')
+  assert.equal(api.chainId, 56)
+  const m = rpcMeter(3, async () => new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: '0x38' })))
+  await directoryDefaultApi(m.fetch).rpc.call('eth_chainId', []).catch(() => {})
+  assert.ok(m.used >= 1, 'the client sent its requests through the meter')
 })

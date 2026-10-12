@@ -96,7 +96,11 @@ Usage: tapeapi-verify [options] <service>
   --rpc <url,url,...>  BNB Chain nodes; each chain read needs 2 to agree (default: ${DEFAULT_RPC.length} public nodes of distinct operators)
   --rpc-xlayer <urls>  X Layer nodes, for a name with area code 2 (default: ${rpcUrlsFor(196).length} public nodes of 2 operators, no spare)
   --rpc-base <urls>    Base nodes, for a name with area code 3 (default: ${rpcUrlsFor(8453).length} public nodes of distinct operators)
-  --dev <url>          TESTING ONLY: read the manifest from a local sidecar, no on-chain identity check
+  --dev <url>          TESTING ONLY: read the manifest from a local sidecar, no on-chain identity check. It also makes the
+                       names this run reads on chain resolve the 1.x way (dev: true counts as conform: false); the
+                       "resolution:" line says so
+  --no-conform         resolve as 1.x did (createTapeAPI({ conform: false }), deprecated): only for a service that the
+                       TAP-10 / TAP-11 resolution, the default since 2.0, refuses (for example an unpaid name: SITE_STATUS unpaid)
   --quiet              no line for calls that carry no receipt (models, count_tokens, ...)
   --version, --help
 
@@ -116,7 +120,7 @@ or a verification link made with its content, contains that conversation.
 `
 
 function parseArgs(argv) {
-  const o = { target: null, dev: null, rpc: null, chainRpc: {}, port: DEFAULT_PORT, host: '127.0.0.1', log: null, strict: false, maxSkew: 300, quiet: false, salt: true, stripSession: false, requestUsage: false }
+  const o = { target: null, dev: null, rpc: null, chainRpc: {}, port: DEFAULT_PORT, host: '127.0.0.1', log: null, strict: false, maxSkew: 300, quiet: false, salt: true, stripSession: false, requestUsage: false, noConform: false }
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i], v
     const eq = a.startsWith('--') ? a.indexOf('=') : -1
@@ -137,6 +141,8 @@ function parseArgs(argv) {
       case '--no-salt': o.salt = false; break
       case '--strip-session-headers': o.stripSession = true; break
       case '--request-usage': o.requestUsage = true; break
+      // 2.0: the 1.x resolution (conform: false, deprecated) / 2.0：1.x 的解析（conform: false，已弃用）
+      case '--no-conform': o.noConform = true; break
       case '--max-skew': o.maxSkew = Number(value()); if (!Number.isFinite(o.maxSkew) || o.maxSkew <= 0) throw new Error('--max-skew must be a positive number of seconds'); break
       case '--rpc': o.rpc = value().split(',').map((s) => s.trim()).filter(Boolean); break
       case '--rpc-xlayer': case '--rpc-base': o.chainRpc[chainByKey(a.slice(6)).chainId] = value().split(',').map((s) => s.trim()).filter(Boolean); break
@@ -230,6 +236,8 @@ function verdictLine(rep) {
 async function main() {
   // `task` (experimental, 1.7) is taken first and only as the very first word; everything else below is as it was in 1.6
   if (process.argv[2] === 'task') { process.exitCode = await taskMain(process.argv.slice(3)); return }
+  // `review` (experimental, internal: draft TAPs #54) likewise, only as the very first word; --help above is unchanged
+  if (process.argv[2] === 'review') { process.exitCode = await reviewMain(process.argv.slice(3)); return }
   let opts
   try { opts = parseArgs(process.argv.slice(2)) } catch (e) { process.stderr.write(`tapeapi-verify: ${e.message}\n\n${USAGE}`); process.exit(2) }
   if (opts.help) { process.stdout.write(USAGE + TASK_USAGE); return }
@@ -249,7 +257,10 @@ async function main() {
   // A name on X Layer or Base is read there (--rpc-xlayer / --rpc-base, or the SDK's defaults for that chain).
   // X Layer 或 Base 上的名字在那条链上读取。
   const chains = Object.fromEntries(Object.entries(opts.chainRpc).map(([id, urls]) => [id, { rpcUrls: urls }]))
-  const api = createTapeAPI({ ...(rpcUrls ? { rpcUrls, quorum: 2 } : {}), ...(opts.dev ? { dev: true } : {}), chains })
+  // 2.0: the TAP-10 / TAP-11 resolution by default; --no-conform for the 1.x one (--dev means it too)
+  // 2.0：默认按 TAP-10 / TAP-11 解析；--no-conform 为 1.x 的解析（--dev 同样如此）
+  const api = createTapeAPI({ ...(rpcUrls ? { rpcUrls, quorum: 2 } : {}), ...(opts.dev ? { dev: true } : {}), ...(opts.noConform ? { conform: false } : {}), chains })
+  log(`resolution: ${opts.noConform ? '1.x (--no-conform: conform: false, deprecated)' : opts.dev ? '1.x (--dev)' : 'TAP-10 / TAP-11 (the default since 2.0; --no-conform for the 1.x one)'}`)
   let svc, routes
   try {
     svc = await api.resolve(opts.dev ? { dev: opts.dev } : opts.target)
@@ -673,6 +684,124 @@ async function taskMain(argv) {
   const rpcUrls = o.rpc ?? DEFAULT_RPC
   if (new Set(rpcUrls.map(operatorOf)).size < 2) { process.stderr.write('tapeapi-verify: --rpc needs nodes of at least 2 independent operators (every chain read must be agreed by 2)\n'); return 2 }
   return runTask(argv, { api: createTapeAPI({ rpcUrls, quorum: 2 }) })
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// `tapeapi-verify review <reviewee>` (EXPERIMENTAL, internal, outside the 1.x compatibility promise): the reviews of one
+// container under the draft "Evidence-Backed Reviews between Containers" (TapeOutProtocol/TAPs pull request #54), with
+// createReviewKit (@tapeapi/sdk/review). It reads the chain; it signs nothing, sends nothing and pays for nothing.
+// `review`（实验性，内部）：按 TAPs PR #54 草稿读取并核验一个容器收到的评价，打印逐条结果与汇总。只读链。
+// ---------------------------------------------------------------------------------------------------------------
+const REVIEW_USAGE = `
+tapeapi-verify review (experimental, internal; not covered by the 1.x compatibility promise): the reviews of one container.
+
+Usage: tapeapi-verify review <reviewee> [--reviewer <container>]... [--records <file.json>] [--inbox <start>:<count>] [--rpc <url,url,...>]
+
+  <reviewee>           the reviewed container: an address on BNB Smart Chain or a 32-byte endpoint ID (another chain)
+  --reviewer <c>       read the review file (.well-known/tapeapi-reviews.json) in the site of this reviewer (repeatable)
+  --records <file>     a JSON array of records to verify as well (any carriage)
+  --inbox <start>:<count>
+                       read public TapeSend messages in the reviewee's inbox (on its chain) that carry a record
+  --rpc <url,url,...>  nodes of the reviewee's chain; each read needs 2 to agree
+
+Prints every record (level, by whom it is signed, counted or not, problems; text as plain text, stated by the reviewer) and
+the summary: level 1 and level 2 apart, distinct reviewers and holders, scores, the time range. A summary counts
+counterparties, never amounts, and is not proof of quality, honesty or availability. Exit status: 0 read, 1 a runtime
+failure (the chain cannot be read), 2 a usage mistake.
+`
+function parseReviewArgs(argv) {
+  const o = { reviewee: null, reviewers: [], records: null, inbox: null, rpc: null, help: false }
+  for (let i = 0; i < argv.length; i++) {
+    let a = argv[i], v
+    const eq = a.startsWith('--') ? a.indexOf('=') : -1
+    if (eq > 0) { v = a.slice(eq + 1); a = a.slice(0, eq) }
+    const value = () => { if (v !== undefined) return v; if (i + 1 >= argv.length) throw new Error(`${a} needs a value`); return argv[++i] }
+    const party = (x) => { if (ADDRESS_RE.test(x) || /^0x[0-9a-f]{64}$/.test(x)) return x; throw new Error(`${x} is not a container address or an endpoint ID`) }
+    switch (a) {
+      case '--help': case '-h': o.help = true; break
+      case '--rpc': o.rpc = value().split(',').map((x) => x.trim()).filter(Boolean); break
+      case '--reviewer': o.reviewers.push(party(value())); break
+      case '--records': o.records = value(); break
+      case '--inbox': {
+        const m = /^(0|[1-9][0-9]{0,15}):([1-9][0-9]{0,3})$/.exec(value())
+        if (!m) throw new Error('--inbox takes <start>:<count> (count 1 to 9999)')
+        o.inbox = { start: Number(m[1]), limit: Number(m[2]) }
+        break
+      }
+      default:
+        if (a.startsWith('-')) throw new Error(`unknown option ${a}`)
+        if (o.reviewee) throw new Error('name one reviewee')
+        o.reviewee = party(a)
+    }
+  }
+  return o
+}
+/**
+ * The `review` subcommand. `argv` follows the word `review`; `api` a createTapeAPI() client with rpcUrls of at least two
+ * operators (tests pass one with a fixed `clock`). Returns the exit status: 0, 1 or 2.
+ * @experimental
+ */
+export async function runReview(argv, { api, clock, out = (t) => process.stdout.write(t), err = (t) => process.stderr.write(t) } = {}) {
+  let o
+  try { o = parseReviewArgs(argv) } catch (e) { err(`tapeapi-verify review: ${e.message}\n${REVIEW_USAGE}`); return 2 }
+  if (o.help) { out(REVIEW_USAGE.replace(/^\n/, '')); return 0 }
+  if (!o.reviewee) { err(`tapeapi-verify review: name the reviewee\n${REVIEW_USAGE}`); return 2 }
+  if (!o.reviewers.length && !o.records && !o.inbox) { err(`tapeapi-verify review: give --reviewer, --records or --inbox\n${REVIEW_USAGE}`); return 2 }
+  let records = []
+  if (o.records) {
+    let text
+    try {
+      const st = statSync(o.records)
+      if (!st.isFile() || st.size > THREAD_LIMIT) throw new Error(st.isFile() ? `larger than ${THREAD_LIMIT} bytes` : 'not a file')
+      text = readFileSync(o.records, 'utf8')
+    } catch (e) { err(`tapeapi-verify review: cannot read ${o.records}: ${e.code ?? e.message}\n`); return 1 }
+    try { records = JSON.parse(text) } catch (e) { err(`tapeapi-verify review: ${o.records} is not JSON: ${e.message}\n`); return 2 }
+    if (!Array.isArray(records)) { err(`tapeapi-verify review: ${o.records} must be a JSON array of records\n`); return 2 }
+  }
+  const R = await import('../src/review-public.js')
+  const { plainText } = await import('../src/agent-verify.js')
+  const kit = R.createReviewKit(api, clock ? { clock } : {})
+  const revieweeEp = ADDRESS_RE.test(o.reviewee) ? R.endpointId(Number(api.chainId), o.reviewee) : o.reviewee
+  const items = [], notes = []
+  try {
+    for (const rv of o.reviewers) {
+      const f = await kit.readReviewFile(rv, { reviewee: revieweeEp })
+      notes.push(`file of ${rv}: ${f.status}${f.reason ? ` (${plainText(f.reason, 120)})` : ''}, ${f.items.length} record(s) about the reviewee${f.ignored ? `, ${f.ignored} naming another reviewer ignored` : ''}`)
+      items.push(...f.items)
+    }
+    if (o.inbox) {
+      const m = await kit.readReviewMessages(revieweeEp, o.inbox)
+      notes.push(`inbox: ${m.count} message(s), ${m.items.length} carrying a record${m.skipped.length ? `, skipped ${m.skipped.map((s) => `#${s.inboxIndex} ${s.why}`).join(', ')}` : ''}`)
+      items.push(...m.items)
+    }
+    if (records.length) for (const x of await kit.verifyReviews(records)) items.push({ ...x, carriage: { kind: 'given' } })
+  } catch (e) { err(`tapeapi-verify review: cannot read the chain: ${e?.code ? e.code + ': ' : ''}${e?.message ?? e}\n`); return 1 }
+  const mine = items.filter((x) => x.record?.review?.reviewee === revieweeEp)
+  const lines = [`tapeapi-verify review: ${revieweeEp}   EXPERIMENTAL (draft TAPs #54)`, ...notes]
+  for (const { record, result: r, carriage: c } of mine) {
+    if (r.rejected) { lines.push(`- rejected (not shown): ${r.problems.join(', ')}`); continue }
+    const who = r.reviewer ? `${r.reviewer.container}${r.reviewer.name ? ` (${r.reviewer.name})` : ''}` : '?'
+    const what = record.review.kind === 1 ? `score ${record.review.score}/5` : 'withdrawal'
+    lines.push(`- ${what}  by ${who}  level ${r.level}  ${r.signedBy ? `signed by the ${r.signedBy}` : 'NOT signed for the reviewer now'}  ${r.counted ? 'counted' : 'not counted'}  via ${c?.kind ?? '?'}  issued ${record.review.issued}  hash ${r.hash}`)
+    if (r.problems.length) lines.push(`    problems: ${r.problems.join(', ')}`)
+    const t = R.reviewTextForDisplay(record)
+    if (t) lines.push(`    text (stated by the reviewer): "${plainText(t.body, 200)}"${t.tags.length ? ` tags ${t.tags.join(', ')}` : ''}`)
+    else if (r.textWithheld) lines.push('    text: withheld (only its hash is published)')
+    if (c?.kind === 'tapesend') lines.push(`    TapeSend #${c.inboxIndex} at ${c.time}: sending wallet ${c.sendingWallet ?? (c.indirect ? 'indirect' : 'unavailable')}${c.walletDiffersFromHolder ? '  DIFFERS from the current holder: the circuit changed hands since' : ''}`)
+  }
+  const s = R.summarizeReviews(mine)
+  const lvl = (n, x) => `level ${n}: ${x.reviewers} reviewer(s), ${x.holders} holder(s), scores 1-5 ${x.scores.join('/')}${x.issued ? `, issued ${x.issued[0]}..${x.issued[1]}` : ''}`
+  lines.push('summary (counts counterparties, never amounts; not proof of quality, honesty or availability):', `  ${lvl(1, s.level1)}`, `  ${lvl(2, s.level2)}`, `  pairs with only uncounted records: ${s.uncountedPairs}; conflicts dropped: ${s.conflicts}`)
+  out(lines.join('\n') + '\n')
+  return 0
+}
+async function reviewMain(argv) {
+  let o
+  try { o = parseReviewArgs(argv) } catch (e) { process.stderr.write(`tapeapi-verify review: ${e.message}\n${REVIEW_USAGE}`); return 2 }
+  if (o.help || !o.reviewee) return runReview(argv, { api: null })
+  const rpcUrls = o.rpc ?? DEFAULT_RPC
+  if (new Set(rpcUrls.map(operatorOf)).size < 2) { process.stderr.write('tapeapi-verify: --rpc needs nodes of at least 2 independent operators (every chain read must be agreed by 2)\n'); return 2 }
+  return runReview(argv, { api: createTapeAPI({ rpcUrls, quorum: 2 }) })
 }
 
 // Run as a program, not when imported (tests import routesOf / route). / 作为程序运行时才启动（测试只导入函数）。

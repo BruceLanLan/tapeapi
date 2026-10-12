@@ -33,10 +33,17 @@ export function signDigest(digest, pk) {
   const out = new Uint8Array(65); out.set(s.toCompactRawBytes()); out[64] = 27 + s.recovery
   return toHex(out)
 }
-export function parseSignature(sig) {
+// `{ strictV: true }` (@experimental, the payment-voucher TAP draft §3.1): v of 0 or 1 is refused instead of being read
+// as 27 or 28. A voucher is settled by an on-chain ECDSA.recover, and OpenZeppelin's refuses 0 and 1. The default is
+// unchanged: TAPI-21 / TAP-13 envelopes keep reading 0 and 1 as 27 and 28.
+// `{ strictV: true }`（实验性，付费凭证 TAP 草稿 §3.1）：v 为 0 或 1 时拒绝，而不是当作 27 或 28。凭证由链上 ECDSA.recover 结算，
+// OpenZeppelin 的实现拒绝 0 和 1。默认不变：TAPI-21 / TAP-13 信封仍把 0、1 读作 27、28。
+export function parseSignature(sig, { strictV = false } = {}) {
   const b = typeof sig === 'string' ? hexToBytes(sig) : sig
   if (b.length !== 65) throw new TapeAPIError('BAD_SIGNATURE', 'signature must be 65 bytes')
-  let v = b[64]; if (v === 0 || v === 1) v += 27
+  let v = b[64]
+  if ((v === 0 || v === 1) && strictV) throw new TapeAPIError('BAD_SIGNATURE', 'v must be 27 or 28 (0 and 1 are refused in a voucher)')
+  if (v === 0 || v === 1) v += 27
   if (v !== 27 && v !== 28) throw new TapeAPIError('BAD_SIGNATURE', 'bad v')
   return { r: b.subarray(0, 32), s: b.subarray(32, 64), v }
 }
@@ -46,9 +53,9 @@ const bytesToBigInt = (b) => BigInt('0x' + bytesToHex(b))
 // 与合约 ECDSA.recover 一致：拒绝高 s（s > n/2）与 v ∉ {27,28}（0/1 先归一化）。高 s 的凭证链上无法结算（C-02）。
 // Mirrors the contract's ECDSA.recover: rejects high-s (s > n/2) and v outside {27,28} after normalising 0/1.
 // A high-s voucher can never settle on-chain, so it must not be accepted off-chain either (review C-02).
-export function recoverAddress(digest, sig) {
+export function recoverAddress(digest, sig, opts) {
   const d = typeof digest === 'string' ? hexToBytes(digest) : digest
-  const { r, s, v } = parseSignature(sig)
+  const { r, s, v } = parseSignature(sig, opts)
   const S = bytesToBigInt(s), R = bytesToBigInt(r)
   if (S === 0n || S >= CURVE_N || R === 0n || R >= CURVE_N) throw new TapeAPIError('BAD_SIGNATURE', 'r/s out of range')
   if (S > HALF_N) throw new TapeAPIError('BAD_SIGNATURE', 'high-s signature (malleable); s must be <= n/2')
@@ -111,6 +118,8 @@ export function delegationDomain(chainId, hub) { return { name: 'TapeAPI', versi
 export function voucherDomain(chainId, escrow) { return { name: 'TapeAPIEscrow', version: '1', chainId, verifyingContract: escrow } }
 export function delegationDigest(chainId, hub, d) { return typedDigest(delegationDomain(chainId, hub), hashDelegation(d)) }
 export function voucherDigest(chainId, escrow, v) { return typedDigest(voucherDomain(chainId, escrow), hashVoucher(v)) }
+/** @experimental (payment-voucher TAP draft §3.1, item 15) The voucher signer, recovered with low s AND v of 27 or 28 only. */
+export function recoverVoucherSigner(chainId, escrow, v, sig) { return recoverAddress(voucherDigest(chainId, escrow, v), sig, { strictV: true }) }
 // Same domain as the TAPI-20 delegation (anchored on the hub), different struct / 与 TAPI-20 委托同域、不同结构
 export function channelKeysDigest(chainId, hub, k) { return typedDigest(delegationDomain(chainId, hub), hashChannelKeys(k)) }
 export function channelKeysTypedData(chainId, hub, k) {

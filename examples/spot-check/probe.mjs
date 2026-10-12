@@ -413,7 +413,8 @@ async function main() {
   if (o.dev) log('--dev: TESTING ONLY. The service identity is NOT checked on chain; records carry service.dev = true.')
   const rpcUrls = o.rpc ?? (o.target ? rpcUrlsFor(56) : null)
   if (rpcUrls && new Set(rpcUrls.map(operatorOf)).size < 2) { process.stderr.write('spot-check: --rpc needs nodes of at least 2 independent operators\n'); return 2 }
-  const api = createTapeAPI({ ...(rpcUrls ? { rpcUrls, quorum: 2 } : {}), ...(o.dev ? { dev: true } : {}) })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const api = createTapeAPI({ ...(rpcUrls ? { rpcUrls, quorum: 2 } : {}), ...(o.dev ? { dev: true, conform: false } : {}) })
   let svc
   try {
     svc = await api.resolve(o.dev ? { dev: o.dev } : o.target)

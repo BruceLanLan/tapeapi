@@ -177,7 +177,7 @@ function world() {
   const { invite, pending } = createInvite({ self: { ...A, staticSecret: ka.secretKey }, peer: { ...B, staticPublic: kb.publicKey }, relays: [R1, R2], bus: BUS })
   const rooms = roomsFor(invite.cid)
   const start = chain.state.block
-  const relayLink = (i, inbound, outbound) => relayTransport({ api: apiFor(cores[i]), svc: {}, inbound, outbound, waitMs: 20, retryMs: 5 })
+  const relayLink = (i, inbound, outbound) => relayTransport({ api: apiFor(cores[i]), service: {}, inbound, outbound, waitMs: 20, retryMs: 5 })
   const busLink = (inbound, outbound) => busTransport({ rpc, bus: BUS, inbound, outbound, sendTx: async (tx) => { const h = chain.submit(tx); chain.mine(3); return h }, fromBlock: start, pollMs: 10 })
   // A: listens on toInitiator, writes to toResponder, on every transport the invite names / A 在邀请所列的每个传输上监听
   const aLinks = () => [relayLink(0, rooms.toInitiator, rooms.toResponder), relayLink(1, rooms.toInitiator, rooms.toResponder), busLink(rooms.toInitiator, rooms.toResponder)]
@@ -264,7 +264,8 @@ test('FIXED A3 (consumer): a lapsed provider\'s unsigned 503 is reported as DELE
     const url = `http://127.0.0.1:${srv.address().port}/tapeapi/v1`
     provider.manifest.endpoints.live = [url]
     cc.writeFile(A.container, MANIFEST_KEY, JSON.stringify(mf(url)))
-    const api = createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, chainId: 56, hub: A.hub, siteRegistry: A.siteRegistry, allowHttp: true, fetch: cc.fetchWith((u, init) => fetch(u, init)), rpcTimeoutMs: 1000 })
+    // 1.x behaviour; 2.0 default is conform: 'tap10'
+    const api = createTapeAPI({ conform: false, rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, chainId: 56, hub: A.hub, siteRegistry: A.siteRegistry, allowHttp: true, fetch: cc.fetchWith((u, init) => fetch(u, init)), rpcTimeoutMs: 1000 })
     const svc = await api.resolve(A.container)
     assert.equal((await api.call(svc, 'ping', {})).verified, true)
     provider.manifest.delegation.expires = Math.floor(Date.now() / 1000)          // lapses on the provider / 提供者一侧过期
@@ -305,7 +306,7 @@ function counted(chain) {
   const fetch = (url, init) => { const { method } = JSON.parse(init.body); n.all++; n[method] = (n[method] || 0) + 1; return chain.fetch(url, init) }
   return { n, fetch }
 }
-const client = (chain, fetch, o = {}) => createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch, ...o })
+const client = (chain, fetch, o = {}) => createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch, ...o })
 async function later(ms, fn) { const real = Date.now; Date.now = () => real() + ms; try { return await fn() } finally { Date.now = real } }
 
 test('FIXED B7: 20 forged invites naming the same unpublished `from` cost the chain reads of one; 20 at once share one read', async () => {
@@ -958,14 +959,14 @@ test('FIXED R2-6: a factory address with no code is a configuration error, never
   const { MAINNET } = await import('../src/index.js')
   const { n, fetch } = counted(chain)
   const noCode = (url, init) => { const b = JSON.parse(init.body); return b.method === 'eth_call' && String(b.params[0].to).toLowerCase() === MAINNET.factory.toLowerCase() ? new Response(JSON.stringify({ jsonrpc: '2.0', id: b.id, result: '0x' }), { headers: { 'content-type': 'application/json' } }) : fetch(url, init) }
-  const api97 = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 97, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: noCode })
+  const api97 = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 97, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: noCode })
   const config = (e) => e.code === 'BAD_KEY' && /no code on chain 97/.test(e.message) && /opts\.factory/.test(e.message)
   await assert.rejects(api97.chain.channelKeys(c), config)
   const before = n.all
   await assert.rejects(api97.chain.channelKeys(c), config, 'not cached as a negative answer')
   assert.ok(n.all > before)
   await assert.rejects(api97.groupVerifier()({ container: c, chainId: 97, x25519: keys.x25519, ed25519: keys.ed25519 }), config, 'the verifier throws: nobody is dropped for it')
-  assert.equal((await createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 97, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch: noCode }).chain.channelKeys(c)).x25519, keys.x25519, 'with opts.factory it resolves')
+  assert.equal((await createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 97, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch: noCode }).chain.channelKeys(c)).x25519, keys.x25519, 'with opts.factory it resolves')
   // on chain 56, a wrong factory is caught the same way (the fake answers isCPU only at ADDR.factory and the mainnet address)
   // 56 链上配错工厂同样被发现（假链只在 ADDR.factory 与主网地址回答 isCPU）
   const chain56 = createFakeChain()
@@ -1165,9 +1166,9 @@ test('FIXED R3-4: "execution reverted" on one node and "header not found" (same 
   for (const [a, b] of [['execution reverted', 'header not found'], ['header not found', 'execution reverted']]) {
     await assert.rejects(rpcOf(a, b).call('eth_call', []), (e) => e.code === 'RPC_DISAGREE', `${a} / ${b}`)
   }
-  await assert.rejects(rpcOf('execution reverted', 'VM execution error: reverted').call('eth_call', []), (e) => e.code === 'RPC_ERROR' && e.rpcRevert === true)
-  await assert.rejects(rpcOf('execution reverted', 'execution reverted', 3).call('eth_call', []), (e) => e.code === 'RPC_ERROR' && e.rpcRevert === true)
-  await assert.rejects(rpcOf('header not found', 'header not found').call('eth_call', []), (e) => e.code === 'RPC_ERROR' && e.rpcRevert !== true)
+  await assert.rejects(rpcOf('execution reverted', 'VM execution error: reverted').call('eth_call', []), (e) => e.code === 'RPC_ERROR' && e.data.rpcRevert === true)
+  await assert.rejects(rpcOf('execution reverted', 'execution reverted', 3).call('eth_call', []), (e) => e.code === 'RPC_ERROR' && e.data.rpcRevert === true)
+  await assert.rejects(rpcOf('header not found', 'header not found').call('eth_call', []), (e) => e.code === 'RPC_ERROR' && e.data.rpcRevert !== true && 'rpcCode' in e.data)
 })
 
 test('FIXED R3-7: a node that never comes back keeps the cursor held (safe), and after 10 holds `warn` says so once, naming the node by index, the blocks, and the way out', async () => {
@@ -1235,19 +1236,19 @@ test('FIXED R4-1: a JSON-RPC error sent with an HTTP error status is read (bound
   const [old403] = ANSWERS
   const one = (fetch, o = {}) => createRpc({ urls: ['https://bsc-rpc.publicnode.com'], quorum: 1, fetch, ...o })
   await assert.rejects(one(async (_u, init) => recorded(old403, JSON.parse(init.body).id)).call('eth_getLogs', [{}]),
-    (e) => e.code === 'RPC_UNAVAILABLE' && e.refusals?.[0]?.code === -32602 && /^Archive requests/.test(e.refusals[0].message) && /http 403/.test(e.message))
+    (e) => e.code === 'RPC_UNAVAILABLE' && e.data?.refusals?.[0]?.code === -32602 && /^Archive requests/.test(e.data.refusals[0].message) && /http 403/.test(e.message))
   // Cloudflare's HTML 520: nothing the node said / Cloudflare 的 HTML 520：没有节点原话
   await assert.rejects(one(async () => new Response('<html>520</html>', { status: 520, headers: { 'content-type': 'text/html' } })).call('eth_getLogs', [{}]),
-    (e) => e.code === 'RPC_UNAVAILABLE' && e.refusals === undefined && /http 520/.test(e.message))
+    (e) => e.code === 'RPC_UNAVAILABLE' && e.data?.refusals === undefined && /http 520/.test(e.message))
   // the body is read with the same cap as any answer / 响应体与任何回答同样有上限
   await assert.rejects(one(async () => new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32602, message: 'x'.repeat(5000) } }), { status: 403, headers: { 'content-type': 'application/json' } }), { bodyLimit: 1000 }).call('eth_getLogs', [{}]),
-    (e) => e.code === 'RPC_UNAVAILABLE' && e.refusals === undefined && /http 403/.test(e.message))
+    (e) => e.code === 'RPC_UNAVAILABLE' && e.data?.refusals === undefined && /http 403/.test(e.message))
   // A 403 from one node on an eth_call is "did not answer": two others agree and the call succeeds (never RPC_DISAGREE)
   // 一个节点对 eth_call 返回 403 是"没有作答"：另两个一致即成功，绝不是分歧
   const urls = ['http://rpc1', 'http://rpc2', 'http://rpc3']
   const f = async (url, init) => { const b = JSON.parse(init.body); return url === 'http://rpc3' ? recorded(old403, b.id) : new Response(JSON.stringify({ jsonrpc: '2.0', id: b.id, result: '0x01' }), { headers: { 'content-type': 'application/json' } }) }
   assert.equal(await createRpc({ urls, quorum: 2, disagreeRetryMs: 0, fetch: f }).ethCall('0x' + '11'.repeat(20), '0x'), '0x01')
-  await assert.rejects(createRpc({ urls, quorum: 3, disagreeRetryMs: 0, fetch: f }).ethCall('0x' + '11'.repeat(20), '0x'), (e) => e.code === 'RPC_UNAVAILABLE' && e.refusals?.[0]?.code === -32602)
+  await assert.rejects(createRpc({ urls, quorum: 3, disagreeRetryMs: 0, fetch: f }).ethCall('0x' + '11'.repeat(20), '0x'), (e) => e.code === 'RPC_UNAVAILABLE' && e.data?.refusals?.[0]?.code === -32602)
 })
 
 test('FIXED R4-1: the recorded BSC answers replayed through rpc.js and the scanner: the default node set, cursor older than the window, advances with one warning and loses nothing inside it', async () => {
@@ -1971,10 +1972,10 @@ test('FIXED R6-3: a block stuffed with frames cannot stop a room: split to one b
 })
 
 test('FIXED R6-3: only a cap on logs is split; a node refusing every range, whatever the wording, still holds (R3-1) within a bounded number of requests', () => {
-  const k = (message, extra = {}) => channel._busKindOf(Object.assign(new Error('x'), { code: 'RPC_UNAVAILABLE', refusals: [{ code: -32005, message }] }, extra))
+  const k = (message) => channel._busKindOf(new TapeAPIError('RPC_UNAVAILABLE', 'x', { refusals: [{ code: -32005, message }] }))
   for (const m of ['query returned more than 10000 results', 'Log response size exceeded. You can make eth_getLogs requests with up to a 2K block range', 'too many logs']) assert.equal(k(m).big, true, m)
   for (const m of ['invalid block range params', 'block range too large', 'limit exceeded', 'exceed maximum block range: 50', 'rate limit exceeded']) assert.equal(k(m).big, false, m)
-  assert.equal(channel._busKindOf(Object.assign(new Error('x'), { code: 'RPC_UNAVAILABLE', tooLarge: true })).big, true, 'our own body limit, set by rpc.js')
+  assert.equal(channel._busKindOf(new TapeAPIError('RPC_UNAVAILABLE', 'x', { tooLarge: true })).big, true, 'our own body limit, set by rpc.js')
   assert.equal(channel._busKindOf(Object.assign(new Error('response body exceeds limit'), { code: 'RPC_UNAVAILABLE' })).big, false, 'never read from words')
 })
 
@@ -1982,7 +1983,7 @@ test('FIXED R7-1: publicnode\'s real result cap ("query exceeds max results 2000
   const cap = ANSWERS.find((a) => a.case.startsWith('result cap'))
   assert.ok(cap, 'the recorded answer is in fixtures/bsc-getlogs-answers.json')
   const said = (b) => new Response(JSON.stringify({ ...cap.body, id: b.id }), { status: cap.status, headers: { 'content-type': cap.contentType } })
-  assert.equal(channel._busKindOf(Object.assign(new Error('x'), { code: 'RPC_ERROR', rpcCode: cap.body.error.code, message: `eth_getLogs: ${cap.body.error.message}` })).big, true, 'the recorded wording is a cap on logs')
+  assert.equal(channel._busKindOf(new TapeAPIError('RPC_ERROR', `eth_getLogs: ${cap.body.error.message}`, { rpcCode: cap.body.error.code })).big, true, 'the recorded wording is a cap on logs')
   // The production node set in miniature: rpc1 = publicnode (answers the recorded cap when a range holds more than 100
   // logs, the 20,000 scaled down), rpc2 = a dataseed (limit exceeded). A block stuffed with junk must not stop the room.
   // 缩小版的生产节点集：rpc1 = publicnode（一个区间超过 100 条就答录制的原话），rpc2 = dataseed。塞满的区块不能让房间停住。

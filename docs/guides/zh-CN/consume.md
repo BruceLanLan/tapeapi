@@ -18,7 +18,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz
 ```
 
 把下面的脚本保存为 `.mjs` 文件，放在能解析到 `@tapeapi/sdk` 的地方，然后用 `node <文件>.mjs` 运行：用克隆时，**放在 `tapeapi`
@@ -168,7 +168,7 @@ expires)`），然后改为传入 `{ consumer, sessionKey, sessionExpiry }`。�
 即使你已把该托管加入 `allowEscrows`。
 
 你只付提供者标明的价格：TapeAPI 不在消费者这一侧加任何费用。维护贡献（如果提供者保留它）从提供者的所得中划出
-（[`docs/FEES.md`](../../FEES.md)）。一次付费调用以它所用的托管实例的代币结算：下一版托管计划在 BNB Smart Chain 上首先支持 USDT（Binance-Peg），BEM 与 WBNB（包装的 BNB）按需、用同一份字节码（见 [`docs/FEES.md`](../../FEES.md)）。清单里的价格在规范其它代币的写法之前仍以 BEM（`priceBEM`）书写，所以本 SDK 只为持有 BEM 的托管构造付费调用。
+（[`docs/FEES.md`](../../FEES.md)）。一次付费调用以它所用的托管实例的代币结算：下一版托管计划在 BNB Smart Chain 上首先支持 BEM，USDT 锚定币（Binance-Peg）与 WBNB（包装的 BNB）按需、用同一份字节码（见 [`docs/FEES.md`](../../FEES.md)）。清单里的价格在规范其它代币的写法之前仍以 BEM（`priceBEM`）书写，所以本 SDK 只为持有 BEM 的托管构造付费调用。
 
 > 托管合约尚未部署，因此付费服务还没有在主网上线。以上内容都可以针对示例运行（本地使用 `FREE_ALL=1` 跳过付费）。
 

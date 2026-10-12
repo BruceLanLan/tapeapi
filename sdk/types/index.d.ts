@@ -18,7 +18,7 @@ export type { RpcNode } from './rpc-defaults.js'
 export { CHAINS, CHAIN_IDS, HOME_CHAIN_ID, IMPL_SLOT, chainById, chainByArea, chainByKey, parseTapeName, formatTapeName, isNameShaped, parseTapeInput, MAX_TOKEN_ID, MAX_PROCESSOR } from './chains.js'
 export type { TapeOutChain, ParsedTapeName } from './chains.js'
 /** @experimental (1.5) TAP-10 §13.8 messaging constants per chain, and the §12.1 endpoint chainId bound (2^53 − 1). */
-export { TAP10_SEALS, TAP10_MAX_CHAIN_ID } from './chains.js'
+export { TAP10_SEALS, TAP10_MAX_CHAIN_ID, TAP10_HUB_BOOT, TAP10_HUB_HISTORY } from './chains.js'
 /** @experimental (TAPI-22 §3.5) Escrow token labels and the (empty) audited escrow list; may change in a 1.x minor release. */
 export { PAYMENT_TOKENS, AUDITED_ESCROWS } from './chains.js'
 export type { Tap10Seals } from './chains.js'
@@ -42,6 +42,8 @@ export * as ai from './ai.js'
 export * as security from './security.js'
 /** @experimental security 1.2: RLP and Merkle-Patricia proof checks (EIP-1186), and the storage slots resolve can prove. */
 export * as proof from './proof.js'
+/** @experimental prices in US dollars paid in BEM (TAP draft "Payment Vouchers", TAPs#52); internal, unreleased. */
+export * as usdPricing from './usd-pricing.js'
 
 /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export declare const MAX_CONTRIBUTION_BPS: number
@@ -59,7 +61,7 @@ export declare const MAINNET: {
   readonly bem: Address
   readonly channelBus: Address
 }
-/** Nodes that serve eth_getLogs for reading ChannelBus; use with createRpc({ urls: BUS_RPC_URLS, quorum: 2, timeoutMs: 15000 }). */
+/** Nodes that serve eth_getLogs for reading ChannelBus; use with createRpc({ urls: BUS_RPC_URLS, quorum: 2, rpcTimeoutMs: 15000 }). */
 export declare const BUS_RPC_URLS: readonly string[]
 export declare const MANIFEST_PATH: string
 export declare const MANIFEST_KEY: string
@@ -71,12 +73,22 @@ export declare const IDENTITY_CACHE_SIZE: number
 export declare const MANIFEST_LIMIT: number
 export declare const ENVELOPE_LIMIT: number
 export declare const MANIFEST_TTL_MS: number
-/** @experimental (1.4) The reread age of a kept service under conform: 'tap10' (TAP-11 §7.1, TAP-10 §11): 60 s. */
+/** @experimental (1.4) The reread age of a kept service in the conformance mode (the default since 2.0; not with
+ *  `conform: false`): 60 s (TAP-11 §7.1, TAP-10 §11). */
 export declare const CONFORM_TTL_MS: number
+/** @experimental (2.0) Which texts the conformance mode resolves by, also in `svc.conform.profile`: TAP-10 at its
+ *  `version` 1.1 (the `version` of every TAP-10 result) and TAP-11, which has no version yet and is a Draft. A value
+ *  never changes meaning; an SDK that follows a changed text has another value. A loosening of a text, or a new
+ *  status name, reaches the default in a minor release; a tightening is first an optional profile and reaches the
+ *  default in 3.0 (docs/guides/upgrade-2.0.md, "How the default follows changes in the official TAPs"). */
+export declare const CONFORM_PROFILE: 'tap10@1.1+tap11@draft'
 export declare const DEFAULT_MAX_SKEW_S: number
 /** SiteRegistry key for a path (strips leading slashes). */
 export declare function registryKey(path: string): string
 
+/** @deprecated since 2.0: `conform: false` (or `null`) is the 1.x resolution, kept in 2.x with no removal date set. Since
+ *  2.0 createTapeAPI() resolves as TAP-10 / TAP-11 §2 say by default (leave `conform` out); see docs/guides/upgrade-2.0.md. */
+export type ConformOff = false | null
 export interface CreateTapeAPIOptions {
   /** JSON-RPC nodes of at least `quorum` distinct operators (see `operatorOf`; `rpcUrlsFor(56)` gives three).
    *  Without them every chain read throws INVALID_ARGUMENT (a configuration mistake, not an outage). */
@@ -91,7 +103,8 @@ export interface CreateTapeAPIOptions {
    *  INVALID_ARGUMENT (api.call keeps its own per-call `timeoutMs`). */
   rpcTimeoutMs?: number
   fetch?: FetchLike
-  /** Allow resolve({ dev }) and http:// endpoints. Does not relax checks on chain-sourced manifests. */
+  /** Allow resolve({ dev }) and http:// endpoints. Does not relax checks on chain-sourced manifests. Since 2.0 it also
+   *  means `conform: false` unless `conform: 'tap10'` is passed (no deprecation warning). */
   dev?: boolean
   /** Accept http:// endpoints outside dev (tests only). */
   allowHttp?: boolean
@@ -101,7 +114,7 @@ export interface CreateTapeAPIOptions {
   identityCacheSize?: number
   /** Persist the highest channel-record `issued` seen per container across restarts. */
   channelRecordFloor?: { get(key: string): unknown; set(key: string, value: unknown): unknown }
-  /** @experimental (1.5) Only with conform: 'tap10': where the sticky TAP-10 §13.8 statuses of the messaging path are kept,
+  /** @experimental (1.5) Only in the conformance mode (the default since 2.0; not with `conform: false`): where the sticky TAP-10 §13.8 statuses of the messaging path are kept,
    *  key `<chainId>:<hub, lowercase>`, value `{ circuitsChangedAt: number | null; factorySealSeenAt: number | null;
    *  factorySealLost: boolean }`. get/set may be async. Default: a Map of this client (and its forChain sub-clients). */
   sealStatusStore?: { get(key: string): unknown; set(key: string, value: unknown): unknown }
@@ -118,7 +131,15 @@ export interface CreateTapeAPIOptions {
   opener?: Address
   /** @experimental (1.4) TAP-10 payment contract DomainBinding (isLive, isContainerLive), read by `conform` and `siteStatus`. Default: the chain's. */
   binding?: Address
-  /** @experimental (1.4) The TAP-10 conformance mode (TAP-10 v1.1, the resolution path): resolve as TAP-10 §3-§7 and TAP-11
+  /** The TAP-10 conformance mode (TAP-10 v1.1), **the default since 2.0**: left out, it is `'tap10'` (except with `dev: true`,
+   *  which means `false`). `false` or `null`: the 1.x resolution, **deprecated** in 2.x (kept in 2.x, no removal date; one
+   *  `onWarning` with code `DEPRECATED` when the client is made; never an error, never another behaviour). Under the default,
+   *  a configuration that is not TAP-10's (your own `hub`, `factory`, `siteRegistry`, `opener` or `binding`, a chain without
+   *  TAP-10 lists such as a local chain, or a `pin` other than `'tap10'`) is INVALID_ARGUMENT when the client is made, and the
+   *  message says to pass `conform: false`. `forChain` passes the choice on. The command lines take `--no-conform`.
+   *  The default follows changes in the TAP-10 and TAP-11 texts as docs/guides/upgrade-2.0.md says: a loosening or a new
+   *  status name in a minor release; a tightening first as an optional profile, with the default switched in 3.0.
+   *  Introduced (1.4, @experimental) as an option: resolve as TAP-10 §3-§7 and TAP-11
    *  §2.2 say, at one TAP-10 pinned block (implies `pin: 'tap10'`; another explicit `pin` is INVALID_ARGUMENT). Accepts the
    *  TAP-10 §3.4 input forms (display label, tape:// URL, processor contract#ID) and refuses directory labels; reads the
    *  container from the opener, `isOpened`, and activation (`isLive`, `isContainerLive`); refuses an unaccepted SiteRegistry
@@ -135,19 +156,20 @@ export interface CreateTapeAPIOptions {
    *  without chain information is searched on every chain with `allChains`. Since 1.5.0 resolve checks `eth_chainId` and reads `ownerOf`
    *  and a contract holder's EIP-1271 calls (`eth_getCode`, `isValidSignature`; delegation and contentSig) under strict
    *  agreement (TAP-11 §2.2); its other reads, and `siteStatus`, keep default agreement. */
-  conform?: 'tap10' | false | null
+  conform?: 'tap10' | ConformOff
   /** @experimental (1.5) Resolve input without chain information (a container address or a processor contract#ID
    *  string, TAP-10 §4.1) on EVERY TapeOut chain, each at its own TAP-10 pinned block: more than one chain resolving it is
    *  INVALID_ARGUMENT with `data.status` 'ambiguous' and `data.candidates`; a chain that cannot be read (or whose site
    *  contracts are `store-changed`) is reported with its own status instead of a guess or `not-tapeout`; every result and
    *  such error carries `chains` / `data.chains`, what each chain said. This sends reads to the other chains' nodes
    *  (`chains[id].rpcUrls`, or the SDK defaults for that chain), so it is off unless you pass `true`.
-   *  Applies to the TAP-10 path only: `resolve` under `conform: 'tap10'`, and `siteStatus` in any mode; passed on by
+   *  Applies to the TAP-10 path only: `resolve` in the conformance mode (the default since 2.0), and `siteStatus` in any mode; passed on by
    *  `forChain`. Only `true` turns it on; any other value is ignored (1.4 ignored the option). Off: a container address is
    *  resolved on this client's chain when it is a container of this chain and is `unsupported` otherwise (never
-   *  `not-tapeout`); under `conform: 'tap10'` a processor contract#ID string is `unsupported` before any request (TAP-10
-   *  resolves it only when exactly one chain does), while `siteStatus` on a default client resolves it on this client's
-   *  chain as 1.4 did. `{ circuits, tokenId, chainId? }` names its chain (this client's when `chainId` is left out) and
+   *  `not-tapeout`); in the conformance mode a processor contract#ID string is `unsupported` before any request (TAP-10
+   *  resolves it only when exactly one chain does; TAP-11 §2.1 says a client MUST accept it, and `unsupported` is
+   *  TapeAPI's own name, not a TAP outcome: see docs/guides/upgrade-2.0.md), while `siteStatus` on a `conform: false`
+   *  client resolves it on this client's chain as 1.4 did. `{ circuits, tokenId, chainId? }` names its chain (this client's when `chainId` is left out) and
    *  `{ chainId, container }` names its own; neither is searched. `{ container }` without `chainId` is an input error. */
   allChains?: boolean | null
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
@@ -167,7 +189,8 @@ export interface CreateTapeAPIOptions {
    *  reuses a pin. Default: unpinned (chains.js `pin: 'latest'`). A stale block is RPC_STALE.
    *  `'tap10'` (@experimental, 1.4): TAP-10 §5.3 instead: the second highest operator head minus 2, stale by block lag only
    *  (chains.js `tap10MaxPinLag`: BSC 400, Base 150, X Layer 300; RPC_STALE with data.status 'stale-block'), reads by
-   *  the block's hash. */
+   *  the block's hash. Since 2.0 the conformance mode is the default and implies `'tap10'`: any other `pin` needs
+   *  `conform: false` (INVALID_ARGUMENT otherwise). */
   pin?: boolean | 'latest' | 'tap10' | { tag?: 'finalized' | 'safe' | 'latest'; maxAgeS?: number; by?: 'hash' | 'number'; cacheS?: number }
   /** @experimental (security 1.1) Identity-root sentinel: compare the DeWebHub's and the SiteRegistry's ERC-1967
    *  implementations with chains.js `expectedImpl`, and re-derive the container locally (ERC-6551). 'warn' (default)
@@ -176,6 +199,23 @@ export interface CreateTapeAPIOptions {
   sentinel?: 'warn' | 'strict' | 'off'
   /** @experimental (security 1.1) Refuse a manifest without a valid holder `contentSig` (TAPI-20 §3.10) (default false). */
   requireContentSig?: boolean
+  /** @experimental (TAP draft "Payment Vouchers", TAPs#52) The client side of USD-priced methods; only a manifest with
+   *  `usdPricing` uses it. */
+  usdPricing?: {
+    /** dollar tokens recognised for a `v3-twap` source (default usdPricing.DEFAULT_USD_TOKENS) */
+    usdTokens?: string[]
+    /** a smaller tolerance than the manifest's, 0..2000 */
+    toleranceBps?: number
+    /** the client's own reference rate (USD per 1 BEM) instead of the median of the manifest's pools */
+    reference?: (a: { svc: ResolvedService; sources: unknown[]; quote: { rate: string; asOf: number; validUntil: number } }) => Promise<number | null> | number | null
+    /** a budget or the user approves each charge (base units) before the voucher is signed */
+    approve?: (a: { svc: ResolvedService; method: string; charge: bigint; cap: bigint; quote: { rate: string; asOf: number; validUntil: number } | null; priceUSD: string | null }) => Promise<boolean> | boolean
+  }
+  /** @experimental F1 and F2 of the draft's §2.2 from configuration instead of the TapeAPIEscrow reads. */
+  settlementFacts?: {
+    token?: (escrow: string) => Promise<string> | string
+    amountPaid?: (escrow: string, consumer: string, provider: string) => Promise<bigint | string | number> | bigint | string | number
+  }
   /** @experimental (security 1.1) Refuse a delegation whose signed `expires` is below the highest seen for the same
    *  container, holder and signer (a delegation to another signer starts its own floor). `true` keeps it in memory; a
    *  { get, set, delete? } store keeps it across restarts (default off). Limits: it cannot refuse an older holder-signed
@@ -210,7 +250,8 @@ export interface ProofEntry {
 
 /** @experimental (security 1.1) A finding that did not stop a resolution. */
 export interface ResolveWarning {
-  code: 'IMPL_UNKNOWN' | 'IMPL_UNREAD' | 'CONTAINER_MISMATCH' | 'CONTENT_SIG_INVALID' | 'CONTENT_SIG_UNCHECKED' | 'PROOF_UNAVAILABLE' | 'PROOF_INVALID' | string
+  /** `DEPRECATED` (2.0, with `option: 'conform'`): sent once when a client is made with `conform: false` or `null`. */
+  code: 'IMPL_UNKNOWN' | 'IMPL_UNREAD' | 'CONTAINER_MISMATCH' | 'CONTENT_SIG_INVALID' | 'CONTENT_SIG_UNCHECKED' | 'PROOF_UNAVAILABLE' | 'PROOF_INVALID' | 'DEPRECATED' | string
   message: string
   [key: string]: unknown
 }
@@ -224,7 +265,9 @@ export type ResolveTarget =
   | { chainId: number; container: Address }
   | { dev: string | Record<string, unknown> }
 
-/** @experimental (1.4) The TAP-10 site status of a target (api.siteStatus), and the identity behind it. */
+/** @experimental (1.4) The TAP-10 site status of a target (api.siteStatus), and the identity behind it. The status
+ *  names only grow (TAP-11 §2.3: none is renamed or removed); the tag stays in 2.0 because they follow a Draft
+ *  (docs/guides/upgrade-2.0.md, "How the default follows changes in the official TAPs"). */
 export interface SiteStatus {
   /** The TAP-10 version this follows. */
   version: '1.1'
@@ -268,11 +311,17 @@ export interface ResolvedService {
   fetchedAt: number
   /** Why the manifest's `ai` field was dropped (TAPI-20 §3.9: an invalid field is refused, the rest of the manifest is kept). */
   aiProblems?: string[]
-  /** @experimental (security 1.1) The block every read of this resolution was made at (only with `pin`). `mode`, `lag`
-   *  and `maxLag` with pin: 'tap10' or conform: 'tap10'. */
+  /** @experimental (security 1.1) The block every read of this resolution was made at (with `pin`, and always in the
+   *  conformance mode, the default since 2.0). `mode`, `lag` and `maxLag` with pin: 'tap10' or in the conformance mode. */
   pinned?: { number: number; hash: Hex; timestamp: number; tag: string; by: 'hash' | 'number'; mode?: 'tap10'; lag?: number; maxLag?: number }
-  /** @experimental (1.4) What the TAP-10 conformance mode resolved (only with conform: 'tap10'). */
-  conform?: Omit<SiteStatus, 'status'> & { status: 'resolved'; site: 'ok'; derivation?: 'match' | 'mismatch' }
+  /** @experimental (1.4) What the TAP-10 conformance mode resolved (the default since 2.0; absent with
+   *  `conform: false`, `null` or `dev: true`). It stays experimental in 2.0 because the texts it follows are Drafts:
+   *  its status names only grow, and a tightening is first an optional profile (docs/guides/upgrade-2.0.md). */
+  conform?: Omit<SiteStatus, 'status'> & {
+    status: 'resolved'; site: 'ok'; derivation?: 'match' | 'mismatch'
+    /** (2.0, only added) The texts this resolution followed: `CONFORM_PROFILE` of the SDK that made it. */
+    profile: typeof CONFORM_PROFILE
+  }
   /** @experimental (security 1.1) What the identity-root sentinel saw (absent when it did not run). */
   sentinel?: {
     mode: 'warn' | 'strict'
@@ -301,6 +350,8 @@ export interface CallOptions {
   manifestTtlMs?: number
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. Highest price (base units) you consent to if the provider raised it. */
   maxPrice?: BigNumberish
+  /** @experimental (TAP draft "Payment Vouchers") consent to a higher USD price (a decimal string of US dollars) for a method in usdPricing */
+  maxPriceUSD?: string
 }
 
 /** A verified TAPI-21 answer. `result` is the method's JSON result. */
@@ -346,7 +397,7 @@ export interface PaymentToken {
 export declare function formatPaymentAmount(amount: BigNumberish, token: PaymentToken): string
 
 /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
-export interface SignedVoucher { consumer: Address; provider: Address; cumulative: string; expires: number; sig: Hex; signer: Address }
+export interface SignedVoucher { consumer: Address; provider: Address; cumulative: string; expires: number; sig: Hex; signer: Address; /** @experimental (TAP draft "Payment Vouchers") the rate of the quote a USD-priced call used */ rate?: string }
 
 /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export interface PayerOptions {
@@ -367,9 +418,17 @@ export interface Payer {
   readonly signer: Address
   cumulativeOf(svc: ResolvedService): bigint
   inflightOf(svc: ResolvedService): number
+  /** @experimental (TAP draft §8.3) halt this payer's channel after a charge record it could not accept; every api instance using the payer stops until it rereads and reads F2. */
+  halt?(svc: ResolvedService, why?: unknown): void
+  /** @experimental */
+  haltOf?(svc: ResolvedService): unknown
+  /** @experimental */
+  clearHalt?(svc: ResolvedService): void
+  /** @experimental resolves once a reserve with this `extra` would not wait (PAYMENT_BUSY after waitMs). */
+  whenFree?(svc: ResolvedService, extra?: { rate?: string; strictV?: boolean }, waitMs?: number): Promise<void>
   setCumulative(svc: ResolvedService, value: BigNumberish): Promise<void>
-  resync(svc: ResolvedService, last: BigNumberish, evidence?: { voucher?: Record<string, unknown> }): Promise<bigint>
-  reserve(svc: ResolvedService, price: BigNumberish): Promise<{ voucher: SignedVoucher; next: bigint; amount: bigint; commit(): Promise<void>; release(): void }>
+  resync(svc: ResolvedService, last: BigNumberish, evidence?: { voucher?: Record<string, unknown> }, extra?: { strictV?: boolean }): Promise<bigint>
+  reserve(svc: ResolvedService, price: BigNumberish, extra?: { rate?: string; strictV?: boolean; waitMs?: number; noWait?: boolean }): Promise<{ voucher: SignedVoucher; next: bigint; amount: bigint; commit(): Promise<void>; release(): void }>
   voucherFor(svc: ResolvedService, price: BigNumberish): Promise<SignedVoucher>
   [key: string]: unknown
 }
@@ -408,6 +467,10 @@ export interface TxBuilders {
   claimTreasury(escrow?: Address | ResolvedService): TxRequest
   /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
   setContribution(opts: { circuits: Address; tokenId: BigNumberish; bps: number; escrow?: Address }): TxRequest
+  /** @experimental One `setContribution` per escrow instance (each keeps its own setting). `escrows` defaults to the
+   *  instances this client builds for (`AUDITED_ESCROWS` of the chain, then `allowEscrows`); duplicates count once; none
+   *  at all throws INVALID_ARGUMENT. Send every `txs` entry from the circuit holder's wallet. */
+  setContributionAll(opts: { circuits: Address; tokenId: BigNumberish; bps: number; escrows?: readonly Address[] }): { txs: TxRequest[]; escrows: Address[] }
   publishManifest(opts: { container: Address; manifest: string | Record<string, unknown>; contentType?: string }): { txs: TxRequest[]; key: string; size: number; sha256Hash: Hex }
   removeManifest(container: Address): TxRequest
   publishChannelKeys(opts: { container: Address; record: Record<string, unknown> }): { txs: TxRequest[]; key: string; size: number; sha256Hash: Hex }
@@ -430,7 +493,7 @@ export interface ChannelKeysRecord {
   holder: Address
   keys: string
   inbox: { room: string; relays: unknown[]; bus?: unknown }
-  /** @experimental (1.5) Only with conform: 'tap10': how the record was read (the private-channels draft §3.3). From the
+  /** @experimental (1.5) Only in the conformance mode (the default since 2.0): how the record was read (the private-channels draft §3.3). From the
    *  identity cache, `pinned` is the block of the read that filled it; `{ fresh: true }` reads again. */
   tap10?: Tap10MessagingRead & { implementations: Array<{ role: 'siteRegistry' | 'binding'; proxy: Address; implementation: Address | null; accepted: boolean }> }
   [key: string]: unknown
@@ -443,6 +506,12 @@ export interface Tap10MessagingRead {
   /** The fresh TAP-10 pinned block every read was made at (by its hash). */
   pinned: { number: number; hash: Hex; lag: number; maxLag: number }
 }
+
+/** @experimental TAP-10 §13.8: the scan of the hub's Upgraded logs from its creation block (`from`) to the pinned block
+ *  (`to`). `implementations`: every one named, oldest first. `unavailable`: no adopted answer (`reason` says why). */
+export type Tap10UpgradedScan =
+  | { status: 'ok'; from: number; to: number; implementations: Address[] }
+  | { status: 'unavailable'; from: number; to: number; reason: string }
 
 /** A container's TapeSend (TAP-10) key as the hub serves it (TAPI-26 §3.1 fallback; loose). */
 export interface TapeSendKeyRecord {
@@ -458,11 +527,13 @@ export interface TapeSendKeyRecord {
   opened: boolean
   /** The receiving-chains bitmap in binary (TAP-10 §14.3): bit 0 BNB Smart Chain, 1 Base, 2 X Layer. */
   chainsBitmap: string
-  /** @experimental (1.5) Only with conform: 'tap10' (TAP-10 §12.2, §13.8, §14.4 steps 1-3). */
+  /** @experimental (1.5) Only in the conformance mode (the default since 2.0; not with `conform: false`) (TAP-10 §12.2, §13.8, §14.4 steps 1-3). */
   tap10?: Tap10MessagingRead & {
     /** uint32(0) ‖ uint64(chainId) ‖ container, hex. */
     endpoint: Hex
-    hub: { implementation: Address | null; accepted: true }
+    /** `basis`: what `accepted` rests on: the implementation slot and every Upgraded log of the hub (§13.8), or the slot
+     *  alone when the log scan was `unavailable` (nodes that do not serve the history, or disagree). */
+    hub: { implementation: Address | null; accepted: true; basis: 'slot' | 'slot+logs'; upgraded: Tap10UpgradedScan }
     circuits: 'ok'
     /** §13.8: read, reported, never required. `factoryLost`: this client saw the factory seal in effect, then not. */
     seal: { factory: boolean; hub: boolean; factoryLost?: true }

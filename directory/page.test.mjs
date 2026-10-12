@@ -195,6 +195,52 @@ test('render: the empty directory says so and gives the two steps; entries show 
   assert.match(box.shown('en'), /Could not read providers\.json/)
 })
 
+test('2.0 (E20): defaultMode beside the flag: old files read as before, a status that is not ok shows its reason, the entry never disappears', async () => {
+  const { D } = await runScript()
+  const base = { flag: 'ok', checkedAt: '2026-10-02T03:20:00Z', since: '2026-10-01T03:20:00Z', failed: [], undecided: [], verdict: 'ok', verdictAt: '2026-10-02T03:20:00Z' }
+  const names = ['1.1013.tape', '2.1013.tape', '3.1013.tape', '4.1013.tape', '5.1013.tape', '6.1013.tape', '7.1013.tape', '8.1013.tape']
+  const st = status({
+    '1.1013.tape': base,                                                         // an old file: no defaultMode / 旧文件
+    '2.1013.tape': { ...base, defaultMode: { status: 'ok', rpcRequests: 18 } },
+    '3.1013.tape': { ...base, defaultMode: { status: 'unpaid', rpcRequests: 18 } },
+    '4.1013.tape': { ...base, defaultMode: { status: 'not-opened', rpcRequests: 18 } },
+    '5.1013.tape': { ...base, defaultMode: { status: 'store-changed', rpcRequests: 18, implementations: [{ role: 'binding', proxy: '0x68809Fd2fb343aA57D0aeB7f33Defe477c9666f9', implementation: '0x' + 'ab'.repeat(20), accepted: false }] } },
+    '6.1013.tape': { ...base, defaultMode: { status: 'unavailable', reason: 'rpc-budget', rpcRequests: 6 } },
+    '7.1013.tape': { ...base, flag: 'failing', verdict: 'failing', failed: ['activation'], consecutiveFailures: 1, defaultMode: { status: 'unsupported' } },
+    '8.1013.tape': { ...base, defaultMode: { status: '<img src=x>' } },          // not a status name: ignored / 不是状态名：忽略
+  })
+  const m = clone(D.model(listed(...names), st))
+  assert.deepEqual(m.entries.map((e) => e.name), names, 'every entry stays, in the file\'s order')
+  assert.deepEqual(m.entries.map((e) => e.flag), ['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'failing', 'ok'], 'the flag is the doctor\'s, whatever defaultMode says')
+  assert.deepEqual(m.entries.map((e) => e.defaultMode && e.defaultMode.status), [null, null, 'unpaid', 'not-opened', 'store-changed', 'unavailable', 'unsupported', null])
+  assert.deepEqual(m.entries.map((e) => e.defaultMode && e.defaultMode.conclusive), [null, null, true, true, true, false, true, null])
+  // An old file gives exactly the model it gave before the field existed. / 旧文件得到的模型与这个字段出现之前完全相同。
+  const { defaultMode, ...old } = m.entries[0]
+  assert.equal(defaultMode, null)
+  const again = clone(D.model(listed('1.1013.tape'), status({ '1.1013.tape': { ...base, defaultMode: { status: 'ok' } } }))).entries[0]
+  delete again.defaultMode
+  assert.deepEqual(old, again)
+
+  const { doc } = makeDocument()
+  const box = new El('section')
+  D.render(doc, box, D.model(listed(...names), st), false)
+  const cards = box.all((e) => e.tag === 'article')
+  assert.equal(cards.length, names.length)
+  const en = cards.map((c) => c.shown('en')), zh = cards.map((c) => c.shown('zh'))
+  assert.ok(!en[0].includes('2.0 default client') && !en[1].includes('2.0 default client'), 'nothing extra when there is no field or it is ok')
+  assert.match(en[2], /2\.0 default client[^]*unpaid[^]*not activated or its paid period ran out[^]*earlier receipts/)
+  assert.match(zh[2], /2\.0 默认客户端[^]*unpaid[^]*未激活或付费期已过/)
+  assert.match(en[3], /not-opened[^]*has not been opened/)
+  assert.match(en[4], /store-changed[^]*does not list/)
+  assert.match(en[5], /unavailable[^]*could not be read today; no conclusion/)
+  assert.match(en[6], /unsupported[^]*The status a 2\.0 default client reports/)
+  assert.ok(!en[7].includes('<img'), 'a value that is not a status name is not shown')
+  assert.deepEqual(cards.map((c) => c.attrs['data-state']), ['up', 'up', 'up', 'up', 'up', 'up', 'down', 'up'], 'the badge follows the flag only')
+  const bad = cards[2].all((e) => e.tag === 'dd' && /bad/.test(e.attrs.class || ''))
+  assert.equal(bad.length, 1, 'a conclusive status is marked like a failed check')
+  assert.equal(cards[5].all((e) => e.tag === 'dd' && /bad/.test(e.attrs.class || '')).length, 0, 'unavailable is not')
+})
+
 test('boot: language from the browser, <html lang> and <title> follow the switch; the list is drawn from the two files', async () => {
   const { page } = await runScript({ boot: true, language: 'zh-CN', files: { 'providers.json': { version: 1, providers: [] }, 'status.json': 404 } })
   const root = page.doc.documentElement

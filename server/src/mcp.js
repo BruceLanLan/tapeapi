@@ -17,7 +17,7 @@ const NOTE_MAX = 64
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'POST, OPTIONS',
-  'access-control-allow-headers': 'content-type, accept, authorization, mcp-protocol-version, mcp-session-id, last-event-id',
+  'access-control-allow-headers': 'content-type, accept, authorization, mcp-protocol-version, mcp-session-id, last-event-id, mcp-method, mcp-name',
   'access-control-expose-headers': 'mcp-session-id',
 }
 const reply = (status, body, extra = {}) => new Response(body === null ? null : JSON.stringify(body), {

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // DIAGNOSTIC TOOL, NOT PART OF THE SDK'S PUBLIC INTERFACE. Not published to npm: sdk/package.json "files" is
 // ["src", "types", "bin", "README.md", "LICENSE"], and scripts/ is not in it (scripts/packages.test.mjs pins that list).
-// It is not on the public whitelist of scripts/stage-public.mjs either; adding it there is a decision for the maintainers.
+// It is published with the repository's other public scripts, not as part of the SDK package.
 // 诊断工具，不属于 SDK 的公开接口。不放进 npm 包：sdk/package.json 的 files 只有 src、types、bin、README.md、LICENSE，不含 scripts/
-// （scripts/packages.test.mjs 钉住了这份清单）。也不在 scripts/stage-public.mjs 的公开白名单里，是否加入由维护者决定。
+// （scripts/packages.test.mjs 钉住了这份清单）。它随仓库的其它公开脚本一起公开，但不属于 SDK 包。
 //
 // "Where are we against TAP-10?": runs the test cases the official TAP-10 v1.1 carries (sdk/test/fixtures/tap10-test-cases.json,
 // the 'Test Cases / Access layer' table, nothing added) through this SDK's entry points and prints, per case, the TAP-10
@@ -17,17 +17,20 @@
 //
 //   node scripts/tap10-gap.mjs           Markdown table + summary on stdout / 在标准输出打印 Markdown 表与小结
 //   node scripts/tap10-gap.mjs --json    the raw rows as JSON / 原始结果（JSON）
-import { runAll, runAllConform } from '../sdk/test/helpers/tap10-gap.mjs'
+import { runAll, runAllConform, runAllDefault20 } from '../sdk/test/helpers/tap10-gap.mjs'
 
 const esc = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ')
 const { rows, structural, summary, fixture } = await runAll()
 // 1.4/1.5: the same cases under createTapeAPI({ conform: 'tap10', allChains: true }) / 同样的用例在一致模式下（开 allChains）
 const conform = await runAllConform()
+// 2.0: the same cases under createTapeAPI() with neither option, the 2.0 default (allChains off) / 2.0 的默认（不开 allChains）
+const default20 = await runAllDefault20()
 
 if (process.argv.includes('--json')) {
-  console.log(JSON.stringify({ tap: `${fixture.tap} v${fixture.version}`, summary, structural, rows, conform }, null, 2))
+  console.log(JSON.stringify({ tap: `${fixture.tap} v${fixture.version}`, summary, structural, rows, conform, default20 }, null, 2))
 } else {
   console.log(`# Gap against ${fixture.tap} v${fixture.version} (Test Cases, access layer)\n`)
+  console.log('The first table is the 1.x resolution (createTapeAPI({ conform: false }), the default mode before 2.0, deprecated in 2.0).\n')
   console.log('| Case | Input | TAP-10 expects | This SDK does | Verdict | Strength | Source |')
   console.log('|---|---|---|---|---|---|---|')
   for (const r of rows) {
@@ -40,7 +43,7 @@ if (process.argv.includes('--json')) {
   console.log(`\nStructural finding (qualifies those on-chain halves): a full resolution of a valid service issued the reads ${JSON.stringify(structural.calls)}; ` +
     `of the TAP-10 reads cpuCount, isOpened, isLive, isContainerLive it never issued: ${Object.entries(structural.neverIssued).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none'}.`)
   console.log(`\n## The conformance mode (createTapeAPI({ conform: 'tap10', allChains: true }), 1.4 and 1.5, @experimental)\n`)
-  console.log('| Case | Input | Default mode | conform: \'tap10\' does | Verdict |')
+  console.log('| Case | Input | 1.x (conform: false) | conform: \'tap10\' does | Verdict |')
   console.log('|---|---|---|---|---|')
   const byN = new Map(rows.map((r) => [r.n, r]))
   for (const r of conform.rows) {
@@ -50,4 +53,7 @@ if (process.argv.includes('--json')) {
   }
   console.log(`\nConformance mode: judged ${conform.summary.judged}; conforms: ${conform.summary.conforms}; differs: ${conform.summary.gaps}.`)
   console.log(`A full resolution in the conformance mode issues ${Object.entries(conform.structural.neverIssued).filter(([, v]) => !v).map(([k]) => k).join(', ')}.`)
+  console.log(`\n## The 2.0 default (createTapeAPI() without conform; allChains off)\n`)
+  console.log(`Judged ${default20.summary.judged}; conforms: ${default20.summary.conforms}; differs: ${default20.summary.gaps}` +
+    (default20.summary.gaps ? ` (${default20.rows.filter((r) => r.verdict === 'GAP').map((r) => `${r.id}: ${esc(r.ours)}`).join('; ')}; each conforms with allChains: true)` : '') + '.')
 }

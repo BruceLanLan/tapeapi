@@ -29,7 +29,8 @@ test('putFile calldata is byte for byte what api.tx.publishManifest builds', () 
   for (const text of ['{"a":1}', JSON.stringify({ tapeapi: '0.1', name: 'TapeAPI Reader 读取服务', container, methods: [{ name: 'x'.repeat(300) }] })]) {
     const sha = '0x' + createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex')
     const mine = C.putFileTx({ container, text, sha256Hex: sha })
-    const sdk = createTapeAPI({}).tx
+    // 1.x behaviour; 2.0 default is conform: 'tap10'
+    const sdk = createTapeAPI({ conform: false }).tx
     const want = abi.encodeCall('putFile', [container, MANIFEST_KEY, 'application/json', sha, '0x' + Buffer.from(text, 'utf8').toString('hex')])
     assert.equal(mine.data, want.toLowerCase())
     assert.equal(mine.to, MAINNET.siteRegistry)

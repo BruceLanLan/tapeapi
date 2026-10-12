@@ -4,13 +4,17 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createProvider } from '../../server/src/index.js'
-import { createTapeAPI, parseUnits, MANIFEST_KEY } from '../../sdk/src/index.js'
-import * as channel from '../../sdk/src/channel.js'   // the implementation module (svc, toBase64) / 实现模块
+// The public facade, as an application imports it (`import { channel } from '@tapeapi/sdk'`), by path so that this
+// checkout's SDK is the one tested (REVIEW-SDK-API-1.0 F14). / 公开门面，与应用的导入方式相同；按路径导入以测试本检出的 SDK。
+import { createTapeAPI, parseUnits, MANIFEST_KEY, channel } from '../../sdk/src/index.js'
 import { privateKeyToAddress, signDigest, delegationDigest } from '../../sdk/src/sig.js'
 import { createFakeChain, ADDR } from '../../sdk/test/helpers/fake-chain.mjs'
 import { createRelayCore, relayMethods, relayManifestMethods } from './relay-core.mjs'
 
-const { createInvite, acceptInvite, completeInvite, generateKeyPair, relayTransport, encodeWire, decodeWire, fromBase64, toBase64 } = channel
+const { createInvite, acceptInvite, completeInvite, generateKeyPair, relayTransport, encodeWire, decodeWire } = channel
+// The relay core keeps frames as base64; the facade does not export generic byte helpers / 中继核心以 base64 存帧；门面不导出通用字节辅助函数
+const fromBase64 = (s) => new Uint8Array(Buffer.from(s, 'base64'))
+const toBase64 = (b) => Buffer.from(b).toString('base64')
 const HOLDER_KEY = '0x' + '11'.repeat(32), SIGNER_KEY = '0x' + '22'.repeat(32), PAYER_KEY = '0x' + '33'.repeat(32), SESSION_KEY = '0x' + '44'.repeat(32)
 const holder = privateKeyToAddress(HOLDER_KEY), signer = privateKeyToAddress(SIGNER_KEY)
 const payerAddr = privateKeyToAddress(PAYER_KEY), sessionAddr = privateKeyToAddress(SESSION_KEY)
@@ -38,7 +42,8 @@ async function startRelay(priceBEM) {
   chain.writeFile(ADDR.container, MANIFEST_KEY, JSON.stringify({ ...manifest, endpoints: { live: [url], async: false } }))
   // These tests check what arrives, not how fast: a generous timeout keeps a loaded machine from failing a 1 MiB answer
   // 这些测试检查送达什么而不是多快：宽松的超时让负载高的机器不会让 1 MiB 的回答超时失败
-  api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true, fetch: chain.fetchWith(), rpcTimeoutMs: 30_000 })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true, fetch: chain.fetchWith(), rpcTimeoutMs: 30_000, conform: false })
   svc = await api.resolve(ADDR.container)
 }
 
@@ -58,11 +63,11 @@ async function connect({ payer } = {}) {
   // (the invite now travels sealed to B as a TapeSend message; B reads A's static key from the DeWebHub)
   // （邀请此时作为 TapeSend 消息密封发给 B；B 从 DeWebHub 读取 A 的长期公钥）
   const { accept, session: bob } = acceptInvite({ self: { ...B, staticSecret: kb.secretKey }, peer: { ...A, staticPublic: ka.publicKey }, invite })
-  const bobLink = relayTransport({ api, svc, payer, inbound: bob.rooms.inbound, outbound: bob.rooms.outbound, waitMs: 2000 })
+  const bobLink = relayTransport({ api, service: svc, payer, inbound: bob.rooms.inbound, outbound: bob.rooms.outbound, waitMs: 2000 })
   await bobLink.send(encodeWire(accept))
   // A holds only the channel id from its own invite until the accept arrives / 收到 accept 之前，A 只知道自己邀请里的通道号
   const rooms = channel.roomsFor(invite.cid)
-  const aliceLink = relayTransport({ api, svc, payer, inbound: rooms.toInitiator, outbound: rooms.toResponder, waitMs: 2000 })
+  const aliceLink = relayTransport({ api, service: svc, payer, inbound: rooms.toInitiator, outbound: rooms.toResponder, waitMs: 2000 })
   const [w] = await aliceLink.poll()
   const { ready, session: alice } = completeInvite(pending, decodeWire(w).handshake)
   await aliceLink.send(encodeWire(ready))
@@ -126,7 +131,7 @@ test('a priced relay meters one voucher per frame through TAPI-22, and refuses a
   const before = payer.cumulativeOf(svc)
   for (let i = 0; i < 5; i++) await aliceLink.send(encodeWire(alice.seal(`frame ${i}`)))
   assert.equal(payer.cumulativeOf(svc) - before, 5n * parseUnits(PRICE), 'exactly five frames billed')
-  const free = relayTransport({ api, svc, inbound: alice.rooms.inbound, outbound: alice.rooms.outbound })
+  const free = relayTransport({ api, service: svc, inbound: alice.rooms.inbound, outbound: alice.rooms.outbound })
   await assert.rejects(free.send(encodeWire(alice.seal('no payer'))), (e) => e.code === 'PAYMENT_REQUIRED')
   srv.close(); await startRelay('0')
 })
@@ -157,10 +162,10 @@ test('a priced relay carries the handshake for free, so the responder can answer
   const rooms = channel.roomsFor(invite.cid)
   const { accept, session: bob } = acceptInvite({ self: { ...B, staticSecret: kb.secretKey }, peer: { ...A, staticPublic: ka.publicKey }, invite })
   // B has no payer at all / B 完全没有付款方
-  const bobLink = relayTransport({ api, svc: service, inbound: rooms.toResponder, outbound: rooms.toInitiator, waitMs: 500 })
+  const bobLink = relayTransport({ api, service, inbound: rooms.toResponder, outbound: rooms.toInitiator, waitMs: 500 })
   await bobLink.send(encodeWire(accept))          // free: a handshake message / 免费：握手消息
   await assert.rejects(bobLink.send(encodeWire(bob.seal('data needs payment'))), (e) => e.code === 'PAYMENT_REQUIRED')
-  const aliceLink = relayTransport({ api, svc: service, inbound: rooms.toInitiator, outbound: rooms.toResponder, waitMs: 500 })
+  const aliceLink = relayTransport({ api, service, inbound: rooms.toInitiator, outbound: rooms.toResponder, waitMs: 500 })
   const { ready } = completeInvite(pending, decodeWire((await aliceLink.poll(0))[0]).handshake)
   await aliceLink.send(encodeWire(ready))         // A's ready is free too / A 的 ready 同样免费
   bob.confirm(decodeWire((await bobLink.poll(0))[0]).handshake)

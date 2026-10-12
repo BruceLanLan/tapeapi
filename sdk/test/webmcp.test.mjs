@@ -195,7 +195,7 @@ async function world({ providerMethods = METHODS(), chainMethods = METHODS(), ta
     const j = await r.json(); tamper(j)
     return new Response(JSON.stringify(j), { status: r.status, headers: { 'content-type': 'application/json' } })
   })
-  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, escrow: ADDR.escrow, allowHttp: true, fetch: fetchImpl, rpcTimeoutMs: 500 })
+  const api = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, escrow: ADDR.escrow, allowHttp: true, fetch: fetchImpl, rpcTimeoutMs: 500 })
   const payer = api.payer({ consumer, sessionKey: SESSION_KEY })
   return { cc, api, payer, sent, publish, url, close: () => new Promise((r) => srv.close(r)) }
 }

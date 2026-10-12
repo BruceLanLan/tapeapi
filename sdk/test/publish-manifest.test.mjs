@@ -14,7 +14,8 @@ const base = () => ({
   endpoints: { live: ['https://api.example.com/tapeapi/v1'], async: false },
   methods: [{ name: 'ping', priceBEM: '0', params: {}, returns: { ok: 'boolean' } }],
 })
-const api = createTapeAPI({ siteRegistry: ADDR.siteRegistry })
+// 1.x behaviour; 2.0 default is conform: 'tap10'
+const api = createTapeAPI({ conform: false, siteRegistry: ADDR.siteRegistry })
 const sha = (b) => '0x' + createHash('sha256').update(b).digest('hex')
 
 test('small manifest -> one putFile at the bare key with the right hash and bytes', () => {

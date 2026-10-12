@@ -97,13 +97,28 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoyLCJzZXJ2a
 not the params or result.)
 ```
 
+### Protocol versions
+
+The remote server speaks MCP revisions 2025-11-25, 2025-06-18 and 2025-03-26 over Streamable HTTP, and keeps no
+session between calls. It does not implement the newer revision 2026-07-28, which replaces the `initialize` handshake
+with per-request metadata and a `server/discover` call.
+
+- **A client that works with both generations** tries the newer one first. The newer revision tells such a client to
+  fall back to `initialize` when the server does not know it, and it then connects and works as described above.
+- **A client set to accept only revision 2026-07-28** does not connect to this endpoint. It reports that the version
+  could not be negotiated or that a method does not exist.
+
+This follows what the newer revision says about older servers. We have not tried every client. The endpoint also allows
+the `Mcp-Method` and `Mcp-Name` request headers that revision adds, so a browser client is not stopped at the CORS
+preflight.
+
 ## The local verifying command
 
 `tapeapi-mcp` is a local MCP server (stdio) in the SDK's release package. It needs Node.js 20 or later. `npx` fetches
 it from the GitHub release, not from the npm registry:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 What it does differently from the remote server:
@@ -134,7 +149,7 @@ Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -154,7 +169,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -166,7 +181,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### Remote or local
@@ -220,7 +235,7 @@ Save the receipt (the `_meta["fun.tapeapi/receipt"]` object) as `receipt.json`. 
 release, or work inside a clone of the repository as in [Call a service](consume.md):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz
 ```
 
 ```js
@@ -385,7 +400,7 @@ isolate can be restarted at any time. With it, changed tools are refused after a
 
   ```bash
   # 42.1013.tape is an example name: put your service's TapeOut name here
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### What clients check

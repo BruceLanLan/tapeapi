@@ -19,7 +19,8 @@ const replay = async (url, init) => {
 }
 
 test('mainnet vector: container 4246 has a usable X25519 TapeSend key, and a TAPI-26 invite to it builds', async () => {
-  const api = createTapeAPI({ rpcUrls: ['https://a.invalid', 'https://b.invalid'], quorum: 2, fetch: replay })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const api = createTapeAPI({ conform: false, rpcUrls: ['https://a.invalid', 'https://b.invalid'], quorum: 2, fetch: replay })
   const k = await api.chain.tapeSendKey(fx.container)
   assert.equal(k.container.toLowerCase(), fx.container.toLowerCase())
   assert.equal(k.tokenId, '4246')
@@ -34,7 +35,7 @@ test('mainnet vector: container 4246 has a usable X25519 TapeSend key, and a TAP
 
 test('the hub is the only source: a revoked key or a circuit that changed hands is refused, and so is a lying hub', async () => {
   const chain = createFakeChain()
-  const api = createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, hub: ADDR.hub, fetch: chain.fetch })
+  const api = createTapeAPI({ conform: false, rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, hub: ADDR.hub, fetch: chain.fetch })
   const key = channel.toHex(channel.generateKeyPair().publicKey)
   chain.setTapeSendKey(ADDR.container, { tokenId: 4246, key: '0x' + key, holder: ADDR.treasury })
   const ok = await api.chain.tapeSendKey(ADDR.container)

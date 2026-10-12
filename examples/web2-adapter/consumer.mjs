@@ -8,7 +8,8 @@
 import { createTapeAPI, parseUnits, formatUnits, BEM_DECIMALS, sig, abi } from '@tapeapi/sdk'
 
 const base = (process.argv[2] || process.env.PROVIDER_URL || 'http://127.0.0.1:8788').replace(/\/+$/, '')
-const api = createTapeAPI({ dev: true }) // dev: true 才允许 resolve({ dev }) 与 http 端点；不需要链 RPC / dev: true is required for { dev } targets and http endpoints
+// 1.x behaviour; 2.0 default is conform: 'tap10'
+const api = createTapeAPI({ dev: true, conform: false }) // dev: true 才允许 resolve({ dev }) 与 http 端点；不需要链 RPC / dev: true is required for { dev } targets and http endpoints
 
 // 1. 解析清单 / resolve the manifest
 const svc = await api.resolve({ dev: base })

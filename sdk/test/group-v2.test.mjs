@@ -256,10 +256,10 @@ test('CONFIRMED GRP-10: what format 2 keeps: owner signature, commitment, rollba
   const { owner, epochWire, joiner, group } = await v2Group(ms)
   void group
   const g = joiner(ms[1])
-  // signature over "TAP-27/epoch/v2": a format-1 signature over the same bytes, or any change, fails
+  // signature over "tape-group/epoch/v2": a format-1 signature over the same bytes, or any change, fails
   const forged = epochWire.slice(); forged[forged.length - 70] ^= 1
   await assert.rejects(g.acceptEpoch(forged, TRUST), isGroupErr(/not signed by the owner/))
-  const resigned = cat(epochWire.subarray(0, epochWire.length - 64), ed25519.sign(cat(te.encode('TAP-27/epoch/v1'), epochWire.subarray(0, epochWire.length - 64)), ms[0].identity.ed25519.secretKey))
+  const resigned = cat(epochWire.subarray(0, epochWire.length - 64), ed25519.sign(cat(te.encode('tape-group/epoch/v1'), epochWire.subarray(0, epochWire.length - 64)), ms[0].identity.ed25519.secretKey))
   await assert.rejects(g.acceptEpoch(resigned, TRUST), isGroupErr(/not signed by the owner/), 'the format-1 signature domain does not verify')
   await g.acceptEpoch(epochWire, TRUST)
   // equivocation: a second owner-signed message for epoch 0 / 两面行为
@@ -284,11 +284,11 @@ test('CONFIRMED GRP-10: what format 2 keeps: owner signature, commitment, rollba
   const craft = (rosterBytes, count = 3, list = ms.slice(0, 3)) => {
     const E = x25519.getPublicKey(e)
     const ef = cat(Uint8Array.from(MARK), u32(5))
-    const header = cat(Uint8Array.of(4), gid, ef, E, N, sha256(cat(te.encode('TAP-27/commit/v2'), K)), Uint8Array.of(0, count))
-    const slots = cat(...list.map((m) => { const R = m.identity.x25519.publicKey; return xchacha20poly1305(hkdf(sha256, x25519.getSharedSecret(e, R), te.encode('TAP-27/wrap/v2'), cat(E, R, gid, ef), 32), N, header).encrypt(K) }))
+    const header = cat(Uint8Array.of(4), gid, ef, E, N, sha256(cat(te.encode('tape-group/commit/v2'), K)), Uint8Array.of(0, count))
+    const slots = cat(...list.map((m) => { const R = m.identity.x25519.publicKey; return xchacha20poly1305(hkdf(sha256, x25519.getSharedSecret(e, R), te.encode('tape-group/wrap/v2'), cat(E, R, gid, ef), 32), N, header).encrypt(K) }))
     const ct = xchacha20poly1305(K, N, cat(header, slots)).encrypt(rosterBytes)
     const body = cat(header, slots, u32(ct.length), ct)
-    return cat(body, ed25519.sign(cat(te.encode('TAP-27/epoch/v2'), body), ms[0].identity.ed25519.secretKey))
+    return cat(body, ed25519.sign(cat(te.encode('tape-group/epoch/v2'), body), ms[0].identity.ed25519.secretKey))
   }
   const ent = (m, ed = m.identity.ed25519.publicKey) => cat(unhex(m.container), u32(56), ed)
   const rosterOf = (entries, tail = '{"relays":[]}', count = entries.length) => {
@@ -330,7 +330,8 @@ function onChain(chain, n) {
 
 test('FIXED GRP-11: channelKeysVerifier checks a format-2 entry (no x25519) against the chain; api.groupVerifier() cannot, since it compares both keys', async () => {
   const chain = createFakeChain()
-  const api = createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: chain.fetch })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const api = createTapeAPI({ conform: false, rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: chain.fetch })
   const ms = [1, 2, 3].map((n) => onChain(chain, n))
   const verify = G.channelKeysVerifier(api)
   const { owner, epochWire, joiner } = await v2Group(ms, { verifyMember: verify })
@@ -351,24 +352,26 @@ test('FIXED GRP-11: channelKeysVerifier checks a format-2 entry (no x25519) agai
 })
 
 test('FIXED GRP-12: the SDK reproduces spec/vectors/tapi-27-group-v2.json, and a member opens it with the fixed clock', async () => {
+  // tapi-27-group-v2.json is format 2 under TAPI-27 version 1 (TAP-27/ labels): labels 'v1', since v2 is the default from 2.0
+  // tapi-27-group-v2.json 是 TAPI-27 第 1 版（TAP-27/ 标签）的格式 2：2.0 起默认是 v2，所以传 labels 'v1'
   const v = JSON.parse(readFileSync(new URL('../../spec/vectors/tapi-27-group-v2.json', import.meta.url), 'utf8'))
   const ids = v.members.map((m) => ({ container: m.container, chainId: 56, identity: { x25519: { secretKey: unhex(m.x25519Secret), publicKey: unhex(m.x25519) }, ed25519: { secretKey: unhex(m.ed25519Secret), publicKey: unhex(m.ed25519) } } }))
   let prev = '00'.repeat(32)
   for (const ep of v.epochs) {
     const draws = [unhex(ep.K), unhex(ep.ephemeralSecret), unhex(ep.nonce)]
-    const built = G.buildEpochV2({ gid: unhex(v.gid), epoch: ep.epoch, issued: v.issued, prev, owner: { container: ids[0].container, chainId: 56 }, members: ids.map(entry), relays: v.relays, bus: v.bus, ownerEdSecret: ids[0].identity.ed25519.secretKey, random: () => draws.shift() })
+    const built = G.buildEpochV2({ gid: unhex(v.gid), epoch: ep.epoch, issued: v.issued, prev, owner: { container: ids[0].container, chainId: 56 }, members: ids.map(entry), relays: v.relays, bus: v.bus, ownerEdSecret: ids[0].identity.ed25519.secretKey, random: () => draws.shift(), labels: 'v1' })
     assert.equal(hex(built.wire), ep.epochWire, `epoch ${ep.epoch} rebuilt byte for byte`)
     assert.equal(hex(built.rosterBytes), ep.roster)
     assert.equal(ep.prev, prev)
     prev = Buffer.from(sha256(built.rosterBytes)).toString('hex')
   }
-  const m2 = G.joinGroup({ self: ids[2], identity: ids[2].identity, invite: { gid: v.gid.slice(2), owner: { container: ids[0].container, chainId: 56 }, format: 2 }, ownerKeys: entry(ids[0]), clock: () => v.issued })
+  const m2 = G.joinGroup({ self: ids[2], identity: ids[2].identity, invite: { gid: v.gid.slice(2), owner: { container: ids[0].container, chainId: 56 }, format: 2 }, ownerKeys: entry(ids[0]), clock: () => v.issued, labels: 'v1' })
   for (const ep of v.epochs) await m2.acceptEpoch(unhex(ep.epochWire), TRUST)
   for (const m of v.messages) {
     const r = m2.open(unhex(m.wire), { text: true })
     assert.deepEqual([r.index, r.epoch, r.seq.toString(), r.data], [m.sender, m.epoch, m.seq, m.plaintext])
   }
-  v.senderKeys.forEach((k, i) => assert.equal(hex(G.senderKeyV2(unhex(v.epochs[1].K), unhex(v.gid), 1, i)), k))
+  v.senderKeys.forEach((k, i) => assert.equal(hex(G.senderKeyV2(unhex(v.epochs[1].K), unhex(v.gid), 1, i, { labels: 'v1' })), k))
   // the format-1 file is untouched by format 2: its epoch message still opens with format 1 / 格式 1 向量不受影响
   const v1 = JSON.parse(readFileSync(new URL('../../spec/vectors/tapi-27-group.json', import.meta.url), 'utf8'))
   assert.deepEqual([...unhex(v1.epochWire).subarray(17, 21)], [0, 0, 0, 0])
@@ -421,6 +424,10 @@ test('FIXED GRP-15: format 1 stays the default: createGroup without `format` bui
   const inv = G.openGroupInvite(group.inviteFor(entry(ms[1])), { self: { container: ms[1].container, chainId: 56, staticSecret: ms[1].identity.x25519.secretKey } })
   assert.equal('format' in inv, false)
   assert.equal(group.roster.v, 1); assert.equal(group.roster.kind, 'tape.group/roster')
-  assert.equal('format' in group.snapshot(), false)
+  // 2.0: the default group has TAPI-27 v2 labels, so its snapshot is v: 3 and names its format (1); a group with
+  // labels 'v1' keeps the 1.x snapshot, v: 1 with no format. / 2.0：默认群为 v2 标签，快照为 v: 3 并写明格式 1；labels 'v1' 的群仍是 v: 1、无 format。
+  assert.deepEqual([group.snapshot().v, group.snapshot().format], [3, 1])
+  const old = await G.createGroup({ self: ms[0], identity: ms[0].identity, members: ms.slice(1).map(entry), labels: 'v1', ...TRUST })
+  assert.equal(old.group.snapshot().v, 1); assert.equal('format' in old.group.snapshot(), false)
   await assert.rejects(G.createGroup({ format: 3, self: ms[0], identity: ms[0].identity, ...TRUST }), invalid(/format must be 1 or 2/))
 })

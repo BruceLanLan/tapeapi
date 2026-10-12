@@ -47,23 +47,24 @@ test('FIXED P2-O8: every "renamed in 1.0" refusal links the upgrade guide on the
   }
   assert.deepEqual(bad, [])
   const { createTapeAPI } = await import('../src/index.js')
-  assert.throws(() => createTapeAPI({ timeoutMs: 1 }), (e) => e.code === 'INVALID_ARGUMENT' && e.message.includes(UPGRADE_URL))
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  assert.throws(() => createTapeAPI({ conform: false, timeoutMs: 1 }), (e) => e.code === 'INVALID_ARGUMENT' && e.message.includes(UPGRADE_URL))
 })
 
 // FIXED P2-O9: "rpcUrls not configured" did not say how to configure them. / 没说怎么配置。
 test('FIXED P2-O9: a client with no nodes says how to give it some', async () => {
   const { createTapeAPI } = await import('../src/index.js')
-  await assert.rejects(createTapeAPI({}).chain.ownerOf('0x' + '33'.repeat(20), 1), (e) => e.code === 'INVALID_ARGUMENT' && /^rpcUrls not configured/.test(e.message) && /rpcUrls: rpcUrlsFor\(56\)/.test(e.message))
+  await assert.rejects(createTapeAPI({ conform: false }).chain.ownerOf('0x' + '33'.repeat(20), 1), (e) => e.code === 'INVALID_ARGUMENT' && /^rpcUrls not configured/.test(e.message) && /rpcUrls: rpcUrlsFor\(56\)/.test(e.message))
 })
 
 // FIXED P2-O18: the SDK's own code still read deprecated top-level aliases of TapeAPIError (rpc.js `e?.tooLarge`,
 // `reason?.tooLarge`; bus-privacy.js `e?.refusals`), which 2.0 removes; the existing scan missed the `?.` spelling.
-// channel.js is frozen for 1.x and keeps its reads (listed for 2.0). / SDK 自己的代码仍读已弃用的顶层别名（2.0 会删）；
-// 原有扫描漏了 ?. 写法。channel.js 在 1.x 冻结，保留其读取（列入 2.0 待办）。
-test('FIXED P2-O18: the shipped source reads e.data.*, never a deprecated top-level alias of TapeAPIError (channel.js aside)', () => {
+// channel.js was frozen for 1.x and kept its reads; 2.0 unfroze it and removed the aliases, so nothing is exempt now.
+// SDK 自己的代码仍读已弃用的顶层别名；原有扫描漏了 ?. 写法。channel.js 在 1.x 冻结时保留了读取；2.0 解冻并删除别名，现在不再豁免。
+test('FIXED P2-O18: the shipped source reads e.data.*, never a top-level alias of TapeAPIError (channel.js included since 2.0)', () => {
   const ALIAS = /\b(e|err|error|reason|cause)\??\.(tooLarge|rpcCode|rpcRevert|rpcData|agreed|disagreed|quorum|refusals)\b/g
   const hits = []
-  for (const f of sources(['sdk/src', 'server/src']).filter((f) => !/\/(channel|errors)\.js$/.test(f))) {
+  for (const f of sources(['sdk/src', 'server/src']).filter((f) => !/\/errors\.js$/.test(f))) {
     const t = read(f)
     for (const m of t.matchAll(ALIAS)) hits.push(`${f}:${t.slice(0, m.index).split('\n').length} ${m[0]}`)
   }

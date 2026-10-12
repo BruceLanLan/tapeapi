@@ -10,12 +10,13 @@ import http from 'node:http'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
-import { createTapeAPI, CHAINS } from '../src/index.js'
+import { createTapeAPI, CHAINS, MAINNET } from '../src/index.js'
 import { diagnose, formatReport, DOCTOR_CHECKS, INVALID_KEY, doctorCommands, releaseTgz } from '../src/doctor.js'
 import { howRun } from '../bin/tapeapi-doctor.js'
 import { privateKeyToAddress, signDigest, delegationDigest } from '../src/sig.js'
 import { ADDR } from './helpers/fake-chain.mjs'
 import { createActivationChain } from './helpers/activation-chain.mjs'
+import { createConformChain } from './helpers/conform-chain.mjs'
 import { createAIProxy } from '../../server/src/ai-proxy.js'
 import { createFakeUpstream } from '../../examples/ai-proxy/fake-upstream.mjs'
 import { startSidecar } from '../../examples/new-api-sidecar/server.mjs'
@@ -39,10 +40,10 @@ const delegation = (expires, key = HOLDER_KEY, s = signer) => ({ expires, sig: s
 const knobs = { direct: false, tamper: false, nocors: false, setup: false }
 const fake = createFakeUpstream({ keys: ['sk-real'], models: MODELS.map((m) => m.id) })
 let proxy = null, sidecarUrl = null, server = null
-function makeProxy(signerKey = SIGNER_KEY, del = delegation(nowS() + 90 * 86_400)) {
+function makeProxy(signerKey = SIGNER_KEY, del = delegation(nowS() + 90 * 86_400), container = ADDR.container) {
   proxy = createAIProxy({
     upstream: { baseUrl: 'http://fake.local/v1' }, fetch: (u, init) => fake.fetch(u, init), signerKey, models: MODELS, allowHttp: true, rateLimit: false, receiptRateLimit: false, log: () => {},
-    manifestBase: { name: 'Doctor test relay', circuits: ADDR.circuits, tokenId: '42', container: ADDR.container, delegation: del, endpoints: { live: [`${sidecarUrl}/tapeapi/v1`], async: false } },
+    manifestBase: { name: 'Doctor test relay', circuits: ADDR.circuits, tokenId: '42', container, delegation: del, endpoints: { live: [`${sidecarUrl}/tapeapi/v1`], async: false } },
   })
 }
 test.before(async () => {
@@ -76,7 +77,7 @@ function world({ manifest = proxy.manifest(), open = true, owner = holder, file 
   chain.setContainerToken(ADDR.container, { tokenId: 42 })
   if (open) chain.setCode(ADDR.container)
   if (file) chain.writeFile(ADDR.container, '.well-known/tapeapi.json', typeof manifest === 'string' ? manifest : JSON.stringify(manifest))
-  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch: chain.fetchWith(), allowHttp: true })
+  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch: chain.fetchWith(), allowHttp: true, conform: false })
   return { chain, api }
 }
 const run = (api, target = NAME, o = {}) => diagnose(target, { api, allowHttp: true, fetch: globalThis.fetch, ...o })
@@ -780,7 +781,11 @@ test('ACT-8: 14 checks, activation between container and manifest-file, in the h
   const h = await cli(['--help'])
   assert.match(h.out, /14 checks, in order: name, circuit, container, activation, manifest-file/)
   assert.match(h.out, /14 项检查，依次为：名字、电路、容器、激活、清单文件/)
-  assert.match(h.out, /--strict makes that warning fail too/)
+  // 2.0: the 1.x sentence "activation only warns; --strict makes that warning fail too" now holds only with --no-conform
+  // 2.0：1.x 的"激活只警告；--strict 让警告也算失败"现在只在 --no-conform 下成立
+  assert.match(h.out, /With --no-conform the checks resolve as 1\.x did and activation only warns \(--strict: fails\)/)
+  assert.match(h.out, /so an unpaid name FAILS/)
+  assert.match(h.out, /--no-conform\s+resolve as 1\.x did \(createTapeAPI\(\{ conform: false \}\), deprecated\): activation only warns/)
   for (const p of GUIDES) {
     const t = doc(p)
     assert.match(t, /TAP-10 §6\.3/, p)
@@ -832,11 +837,182 @@ test('escrows (experimental): a contribution that differs across escrow instance
     if (!Array.isArray(body)) return zero(body) ? json(zero(body)) : chain.fetch(u, init)
     return json(await Promise.all(body.map(async (req) => zero(req) ?? (await chain.fetch(u, { ...init, body: JSON.stringify(req) })).json())))
   }
-  const api3 = createTapeAPI({ rpcUrls: RPC, quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, allowHttp: true, fetch: (u, i) => (String(u).startsWith('http://rpc') ? rpcFetch(String(u), i) : fetch(u, i)) })
+  const api3 = createTapeAPI({ rpcUrls: RPC, quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, allowHttp: true, conform: false, fetch: (u, i) => (String(u).startsWith('http://rpc') ? rpcFetch(String(u), i) : fetch(u, i)) })
   const diff = await run(api3, NAME, { escrows: [E1, E3] })
   assert.equal(diff.exitCode, same.exitCode)
   assert.equal(diff.warnings.length, 1)
   assert.match(diff.warnings[0].detail, /differs across escrow instances: .*100 bps, .*0 bps/)
   assert.match(diff.warnings[0].detailZh, /贡献比例不一致/)
   assert.match(formatReport(diff, { lang: 'both' }), /note: the contribution of .* differs[\s\S]*提示: .*贡献比例不一致/)
+})
+
+// ---- 2.0: the default resolution (TAP-10 / TAP-11, conform: 'tap10') and --no-conform (1.x) / 2.0：默认解析与 --no-conform ----
+// The tests above run the checks with conform: false (the 1.x resolution) on the plain fake chain, as they always did; these
+// run the same service on a TAP-10 chain (createConformChain: opener, DomainBinding, implementation slots) with the client
+// the CLI makes by default. / 上面的测试用 conform: false（1.x 解析）在普通假链上运行，一如既往；下面在 TAP-10 链上用命令行默认做出的客户端。
+const T0 = () => nowS()
+/** The reference service on a TAP-10 chain: NAME is circuit #42 of processor 7, opened, activated, with its manifest. */
+function confWorld(edit = () => {}, { manifest = true } = {}) {
+  const chain = createConformChain()
+  chain.state.headTime = T0()
+  const c = chain.circuit(42, { holder })
+  chain.setAccount('42', c.container); chain.setCode(c.container)   // the hub's accountOf (what the doctor's container check reads) and the code of an opened container
+  const del = { expires: nowS() + 90 * 86_400 }
+  del.sig = signDigest(delegationDigest(56, MAINNET.hub, { container: c.container, signer, expires: del.expires }), HOLDER_KEY)
+  makeProxy(SIGNER_KEY, del, c.container)
+  if (manifest) chain.writeFile(c.container, '.well-known/tapeapi.json', JSON.stringify(proxy.manifest()))
+  edit(chain, c)
+  const base = { rpcUrls: ['http://rpc1', 'http://rpc2', 'http://rpc3'], quorum: 2, allowHttp: true, clock: () => T0(), quiet: true, onWarning: () => {}, fetch: (url, init) => (String(url).startsWith('http://rpc') ? chain.fetch(String(url), init) : globalThis.fetch(url, init)) }
+  return { chain, c, api: createTapeAPI(base), apiOld: createTapeAPI({ ...base, conform: false }) }
+}
+
+test('2.0 default resolution: the reference service passes all 14 checks, and the report says which resolution was used', async () => {
+  const { api } = confWorld()
+  const rep = await run(api)
+  assert.deepEqual(rep.checks.map((x) => x.id), DOCTOR_CHECKS)
+  assert.deepEqual(rep.checks.filter((x) => x.status !== 'pass').map((x) => `${x.id}: ${x.detail}`), [], formatReport(rep, { lang: 'en' }))
+  assert.equal(rep.exitCode, 0)
+  assert.equal(rep.resolution, 'tap10')
+  assert.match(byId(rep, 'activation').detail, /^activated/)
+  assert.match(formatReport(rep, { lang: 'en' }), /\n {3}resolution: TAP-10 \/ TAP-11 \(the default since 2\.0; --no-conform for the 1\.x one\)\n/)
+  assert.match(formatReport(rep, { lang: 'zh' }), /\n {3}解析：TAP-10 \/ TAP-11（2\.0 起的默认；--no-conform 为 1\.x 的解析）\n/)
+  // the same service and chain read the 1.x way: the same 14 passes, said to be the 1.x resolution / 同一服务、同一条链按 1.x：同样全过，并注明是 1.x
+  const old = await run(confWorld().apiOld)
+  assert.deepEqual(status(old), status(rep)); assert.equal(old.exitCode, 0); assert.equal(old.resolution, '1.x')
+  assert.match(formatReport(old, { lang: 'en' }), /\n {3}resolution: 1\.x \(conform: false, deprecated\)\n/)
+  reset()
+})
+
+test('2.0 ACT-3: both false is a FAILURE under the default resolution (a 2.0 client answers "unpaid"), a WARNING with conform: false / --no-conform', async () => {
+  const fee = 12_500_000_000_000_000n
+  const w = confWorld((chain) => { chain.setUnactivated(); chain.conform.fee = fee })
+  const rep = await run(w.api)
+  const a = byId(rep, 'activation')
+  assert.equal(a.status, 'fail', formatReport(rep, { lang: 'en' }))
+  assert.match(a.detail, /^42\.7\.tape is not activated: isLive and isContainerLive are both false\. Under TAP-11 a client gets "unpaid" and does not resolve this service; the site files stay readable \(TAP-10 §6\.3\)\./)
+  assert.match(a.detail, /Since 2\.0 this is a failure: the default client \(conform: 'tap10', the resolution this check used\) is such a client; --no-conform checks the rest the 1\.x way and only warns here\./)
+  assert.match(a.detailZh, /自 2\.0 起这是失败：默认客户端/)
+  assert.match(a.fix.en, new RegExp(`bind\\("42\\.7\\.tape", ${w.c.container}, months\\)`))
+  assert.ok(a.fix.en && a.fix.zh, 'a failure carries a fix in both languages')
+  assert.equal(rep.exitCode, 1); assert.equal(rep.ok, false); assert.equal(rep.counts.fail, 1)
+  assert.equal(rep.resolution, 'tap10')
+  // the checks that read the chain go on; the default client refuses the service (SITE_STATUS), so delegation is not checked twice
+  // 读链的检查照常进行；默认客户端拒绝此服务（SITE_STATUS），所以委托不再重复记失败
+  for (const id of ['name', 'circuit', 'container', 'manifest-file', 'manifest-format']) assert.equal(byId(rep, id).status, 'pass', `${id}\n${formatReport(rep, { lang: 'en' })}`)
+  assert.equal(byId(rep, 'delegation').status, 'skip'); assert.match(byId(rep, 'delegation').detail, /"activation" did not pass/)
+  for (const id of ['ai-field', 'prices', 'endpoints', 'reach', 'cors', 'receipt', 'receipt-lookup']) assert.equal(byId(rep, id).status, 'skip', id)
+  // the same unpaid name, 1.x resolution: a warning, exit 0 (what ACT-3 above proves on the plain fake chain)
+  const old = await run(confWorld((chain) => { chain.setUnactivated(); chain.conform.fee = fee }).apiOld)
+  assert.equal(byId(old, 'activation').status, 'warn', formatReport(old, { lang: 'en' }))
+  assert.ok(!/Since 2\.0 this is a failure/.test(byId(old, 'activation').detail))
+  assert.equal(old.exitCode, 0); assert.equal(old.counts.fail, 0); assert.equal(old.resolution, '1.x')
+  reset()
+})
+
+test('2.0 ACT-3: --strict is not needed for the default resolution, and conform: false + a warning count is what --strict turns into 1', async () => {
+  // default: already exit 1 / 默认：本来就是 1
+  assert.equal((await run(confWorld((chain) => chain.setUnactivated()).api)).exitCode, 1)
+  // 1.x: exit 0 and one warning (the CLI turns it into 1 only under --strict) / 1.x：退出码 0、一条警告（只有 --strict 时命令行才记为 1）
+  const old = await run(confWorld((chain) => chain.setUnactivated()).apiOld)
+  assert.equal(old.exitCode, 0); assert.equal(old.counts.warn, 1)
+  reset()
+})
+
+test('2.0 ACT-6: container mode under the default resolution: the unpaid container fails, and the report says isLive was not checked', async () => {
+  const w = confWorld((chain) => chain.setUnactivated())
+  const rep = await run(w.api, w.c.container)
+  const a = byId(rep, 'activation')
+  assert.equal(a.status, 'fail', formatReport(rep, { lang: 'en' }))
+  assert.match(a.detail, /isContainerLive is false\..*Container mode: isLive was not checked.*Since 2\.0 this is a failure/)
+  assert.equal(rep.exitCode, 1)
+  const old = await run(confWorld((chain) => chain.setUnactivated()).apiOld, w.c.container)
+  assert.equal(byId(old, 'activation').status, 'warn'); assert.equal(old.exitCode, 0)
+  reset()
+})
+
+test('2.0 ACT-5: the chain cannot be read under the default resolution: activation is "error" (undecided), exit 3, never a false failure', async () => {
+  const w = confWorld()
+  for (const u of ['http://rpc1', 'http://rpc2', 'http://rpc3']) w.chain.setFault(u, 'http500')
+  const rep = await run(w.api)
+  assert.equal(rep.exitCode, 3, formatReport(rep, { lang: 'en' }))
+  assert.equal(rep.counts.fail, 0)
+  assert.equal(byId(rep, 'name').status, 'error'); assert.equal(rep.resolution, 'tap10')
+  reset()
+})
+
+test('2.0 default resolution: a container the opener has not opened fails on "delegation" naming not-opened, not as a bad manifest; conform: false does not see it', async () => {
+  const w = confWorld((chain, c) => chain.setOpened(c.circuits, c.tokenId, false))
+  const rep = await run(w.api)
+  assert.equal(rep.resolution, 'tap10')
+  const d = byId(rep, 'delegation')
+  assert.equal(d.status, 'fail', formatReport(rep, { lang: 'en' }))
+  assert.match(d.detail, /^a 2\.0 client \(the default, TAP-10 \/ TAP-11\) refuses this service: not-opened: /)
+  assert.match(d.fix.en, /Open the container with the TapeOut container opener \(TAP-10 §2\.2\).*--no-conform checks the rest the 1\.x way/)
+  assert.match(d.fix.zh, /容器开通器/)
+  assert.equal(rep.exitCode, 1)
+  assert.ok(!/manifest is|not valid|bad manifest/i.test(d.detail), 'said as a site status, not as a manifest problem')
+  for (const id of ['ai-field', 'reach', 'receipt']) assert.equal(byId(rep, id).status, 'skip', id)
+  // the 1.x resolution does not consult the opener: the same chain, the service resolves / 1.x 不看开通器：同一条链，服务可解析
+  const old = await run(confWorld((chain, c) => chain.setOpened(c.circuits, c.tokenId, false)).apiOld)
+  assert.equal(byId(old, 'delegation').status, 'pass', formatReport(old, { lang: 'en' }))
+  assert.equal(old.resolution, '1.x')
+  reset()
+})
+
+test('2.0 URL mode: the sidecar is read with dev: true (the 1.x resolution) whatever the default is, so the report carries no resolution', async () => {
+  reset()
+  const { chain } = world({ file: false })
+  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch: chain.fetchWith(), allowHttp: true, dev: true })
+  const rep = await run(api, sidecarUrl)
+  assert.equal(rep.mode, 'url'); assert.equal(rep.resolution, null)
+  assert.ok(!/resolution:/.test(formatReport(rep, { lang: 'en' })))
+})
+
+// The CLI against a local JSON-RPC server that serves the TAP-10 chain: three loopback addresses are three nodes
+// / 命令行对着一个提供 TAP-10 链的本地 JSON-RPC 服务：三个回环地址就是三个节点
+async function rpcServer(chain) {
+  const srv = http.createServer(async (req, res) => {
+    const parts = []
+    for await (const c of req) parts.push(c)
+    const r = await chain.fetch('http://rpc1', { method: 'POST', body: Buffer.concat(parts).toString() })
+    res.writeHead(r.status, { 'content-type': 'application/json' })
+    res.end(await r.text())
+  })
+  await new Promise((ok) => srv.listen(0, '::', ok))
+  const { port } = srv.address()
+  return { rpc: [`http://127.0.0.1:${port}/a`, `http://localhost:${port}/b`, `http://[::1]:${port}/c`].join(','), close: () => new Promise((ok) => srv.close(ok)) }
+}
+
+test('2.0 CLI: the default resolution and --no-conform, in the text report and in --json', async () => {
+  const w = confWorld((chain) => chain.setUnactivated())
+  const node = await rpcServer(w.chain)
+  try {
+    const a = await cli(['--rpc', node.rpc, '--json', NAME])
+    assert.equal(a.code, 1, a.out + a.err)
+    const ja = JSON.parse(a.out)
+    assert.equal(ja.resolution, 'tap10'); assert.equal(ja.ok, false)
+    assert.equal(ja.checks.find((c) => c.id === 'activation').status, 'fail')
+    const b = await cli(['--rpc', node.rpc, '--json', '--no-conform', NAME])
+    const jb = JSON.parse(b.out)
+    assert.equal(jb.resolution, '1.x', b.out + b.err)
+    assert.equal(jb.checks.find((c) => c.id === 'activation').status, 'warn')
+    // (the exit status is 1 either way here: this sidecar is plain http, which a name's manifest may not carry; the point is
+    // that with --no-conform the unpaid name is only a warning) / （这里退出码都是 1：旁路是 http，名字的清单不允许；
+    // 要点是 --no-conform 下未付费只是警告）
+    const t = await cli(['--rpc', node.rpc, '--lang', 'en', NAME])
+    assert.match(t.out, /\n {3}resolution: TAP-10 \/ TAP-11 \(the default since 2\.0; --no-conform for the 1\.x one\)\n/)
+    assert.equal(t.code, 1)
+    const t2 = await cli(['--rpc', node.rpc, '--lang', 'en', '--no-conform', NAME])
+    assert.match(t2.out, /\n {3}resolution: 1\.x \(conform: false, deprecated\)\n/)
+  } finally { await node.close(); reset() }
+})
+
+test('2.0 CLI: a URL (dev: true) is the 1.x resolution either way: --no-conform changes nothing there, and --json carries resolution null', async () => {
+  reset()
+  for (const extra of [[], ['--no-conform']]) {
+    const r = await cli(['--offline', '--json', ...extra, sidecarUrl])
+    assert.equal(r.code, 0, r.out + r.err)
+    assert.equal(JSON.parse(r.out).resolution, null)
+    assert.ok(!/resolution:/.test((await cli(['--offline', '--lang', 'en', ...extra, sidecarUrl])).out))
+  }
 })

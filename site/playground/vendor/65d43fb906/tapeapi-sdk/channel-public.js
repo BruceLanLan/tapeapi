@@ -4,7 +4,8 @@
 // below are importable from outside the package.
 //   - not exported: toHex / fromHex (bare hex without 0x, unlike abi.toHex), toBase64 / fromBase64 (generic helpers),
 //     and the test hooks _keySchedule, _busMerge, _busKindOf.
-//   - relayTransport takes `service` (the resolved relay service), like every other 1.0 option.
+//   - relayTransport takes `service` (the resolved relay service), like every other 1.0 option; since 2.0 channel.js
+//     takes it under the same name, and this face only refuses the 0.x `svc` with a pointer to the upgrade guide.
 // @tapeapi/sdk/channel：TAPI-26 通道模块的公开接口。channel.js 是实现，导出的名字多于公开接口（测试钩子、通用字节工具）；
 // 包的 exports 把 `@tapeapi/sdk/channel` 与根导出的 `channel` 指向本文件，包外只能引用下面这些名字。
 import { TapeAPIError } from './errors.js'
@@ -27,7 +28,6 @@ export function relayTransport(opts = {}) {
   if (opts && Object.prototype.hasOwnProperty.call(opts, 'svc')) {
     throw new TapeAPIError('INVALID_ARGUMENT', 'relayTransport takes { service }: the option `svc` was renamed in 1.0 (https://tapeapi.fun/docs/en/upgrade-1.0)')
   }
-  const { service, ...rest } = opts ?? {}
-  if (!service || typeof service !== 'object') throw new TapeAPIError('INVALID_ARGUMENT', 'relayTransport needs { api, service }: service is the resolved relay (await api.resolve(...))')
-  return core.relayTransport({ ...rest, svc: service })
+  if (!opts?.service || typeof opts.service !== 'object') throw new TapeAPIError('INVALID_ARGUMENT', 'relayTransport needs { api, service }: service is the resolved relay (await api.resolve(...))')
+  return core.relayTransport(opts)
 }

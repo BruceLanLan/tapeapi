@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 // ============================================================================================
-// Stateful invariant campaign for the escrow (v2 channels; v3 token rename, pull treasury, `>=` solvency) (docs/DECISION-escrow-v2.md, "谨慎条款" 2;
-// docs/research/RESEARCH-process-security.md 6.1 P0-2; docs/research/RESEARCH-process-channels.md 6.1 item 1).
+// Stateful invariant campaign for the escrow (v2 channels; v3 token rename, pull treasury, `>=` solvency) (the internal escrow v2 decision, "谨慎条款" 2;
+// internal research notes on security processes, 6.1 P0-2, and on payment channels, 6.1 item 1).
 //
 // Runs with `fail_on_revert = true` (foundry.toml). Every handler is an ORACLE: before calling the escrow it
 // predicts the outcome from the current state, replaying src's check order exactly. A predicted revert is

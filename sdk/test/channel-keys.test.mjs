@@ -29,7 +29,7 @@ function publish(chain, container, tokenId, { holderKey = HOLDER_KEY, issued = n
   chain.writeFile(container, CHANNEL_KEYS_KEY, canonicalJSON(record))
   return { id, record }
 }
-const api = (chain) => createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: chain.fetch })
+const api = (chain) => createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: chain.fetch })
 
 test('a published, holder-authorised identity resolves; its keys spread straight into createInvite', async () => {
   const chain = createFakeChain()
@@ -98,7 +98,7 @@ test('a Safe holder authorises through EIP-1271', async () => {
 })
 
 test('publishChannelKeys writes the canonical record with its hash; removeChannelKeys withdraws it', () => {
-  const t = createTapeAPI({ chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry })
+  const t = createTapeAPI({ conform: false, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry })
   const { record } = publish(createFakeChain(), A, 4246)
   const out = t.tx.publishChannelKeys({ container: A, record })
   assert.equal(out.txs.length, 1)
@@ -158,7 +158,7 @@ test('FIXED arch B4: a record the holder replaced cannot be put back by whoever 
   await assert.rejects(client.chain.channelKeys(A, { fresh: true }), (e) => e.code === 'CHANNEL_INVALID' && /older than a record already seen/.test(e.message))
   // a floor passed in survives a restart / 传入的下限可跨重启保留
   const floor = new Map([[A.toLowerCase(), nowS() - 60]])
-  const restarted = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: chain.fetch, channelRecordFloor: floor })
+  const restarted = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: chain.fetch, channelRecordFloor: floor })
   await assert.rejects(restarted.chain.channelKeys(A), /older than a record already seen/)
   // issued is signed, in the past or near-present, and before expires / issued 在签名内，不能在未来，且早于 expires
   publish(chain, A, 4246, { issued: nowS() + 3600 })

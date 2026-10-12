@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-// Deterministic clock-edge tests (docs/research/RESEARCH-process-channels.md 6.1 item 1; RESEARCH-process-security.md
+// Deterministic clock-edge tests (internal research notes on payment channels, 6.1 item 1; on security processes,
 // 6.1 item 11). Four clocks, each pinned at its last valid second and the first invalid one:
 //   cooldown   [requestedAt, requestedAt + 48h)          provider-only: withdraw reverts CooldownActive
 //   window     [requestedAt + 48h, requestedAt + 48h + 7d] withdraw executable, pays min(requested, channel)

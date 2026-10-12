@@ -244,9 +244,9 @@ try {
 } catch (e) {
   if (e instanceof TapeAPIError && e.code === 'QUORUM_FAILED') {
     // 不投票、不取平均、不退化到单家。
-    // 细节在 e.data 里（1.0 起；顶层的 e.groups 等只是弃用别名，2.0 删除）。
-    // No vote, no average, no falling back to one provider. The details are in e.data (1.0; the top-level
-    // e.groups and friends are deprecated aliases, gone in 2.0).
+    // 细节在 e.data 里（1.0 起；1.x 顶层的 e.groups 等弃用别名已在 2.0 删除）。
+    // No vote, no average, no falling back to one provider. The details are in e.data (1.0; the 1.x top-level
+    // aliases such as e.groups are removed in 2.0).
     console.warn('disagreed:', e.data.disagreed, 'groups:', e.data.groups, 'failed:', e.data.failed)
     render({ state: 'refused', reason: 'providers disagreed on the same block; nothing rendered' })
   } else if (e instanceof TapeAPIError) {

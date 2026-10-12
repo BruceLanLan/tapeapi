@@ -17,6 +17,7 @@ import * as ai from './ai.js'
 import { delegationDigest, recoverAddress } from './sig.js'
 import { sha256 } from '@noble/hashes/sha256'
 import { toHex, hexToBytes, encodeCall, decodeReturn } from './abi.js'
+import { CONFORM_MODE } from './conform-sibling.js'
 
 export const DOCTOR_CHECKS = Object.freeze(['name', 'circuit', 'container', 'activation', 'manifest-file', 'manifest-format', 'delegation', 'ai-field', 'prices', 'endpoints', 'reach', 'cors', 'receipt', 'receipt-lookup'])
 /** A delegation with fewer days left than this is a warning (the sidecars log RENEW from the same point). / 少于这么多天即警告。 */
@@ -227,7 +228,7 @@ export async function diagnose(input, o = {}) {
       const r = await api.chain.escrow.contributions(container, o.escrows)
       const shown = r.readings.map((x) => `${x.escrow} ${x.bps === null ? `unread (${x.error})` : `${x.bps} bps`}`).join(', ')
       const shownZh = r.readings.map((x) => `${x.escrow} ${x.bps === null ? `未读到（${x.error}）` : `${x.bps} bps`}`).join('，')
-      if (!r.consistent) warnings.push(T(`${r.warning}`, `${container} 在各托管实例上的贡献比例不一致：${shownZh}。每个实例各自保存设置，从未设置的实例按默认 100 bps（1%）；如非本意，请在每个实例上用 tx.setContribution({ escrow }) 设置`))
+      if (!r.consistent) warnings.push(T(`${r.warning}`, `${container} 在各托管实例上的贡献比例不一致：${shownZh}。每个实例各自保存设置，从未设置的实例按默认 100 bps（1%）；如非本意，请在每个实例上用 tx.setContribution({ escrow }) 设置，或用 tx.setContributionAll 一次设置全部`))
       else if (r.readings.some((x) => x.bps === null)) warnings.push(T(`contribution across escrow instances only partly read: ${shown}`, `多个托管实例上的贡献比例只读到一部分：${shownZh}`))
     } catch (e) { warnings.push(T(`contribution across escrow instances not compared: ${e?.code ?? ''} ${e?.message ?? e}`, `未比对多个托管实例上的贡献比例：${e?.code ?? ''} ${e?.message ?? e}`)) }
   }
@@ -279,6 +280,10 @@ async function diagnoseChecks(input, o) {
   }
   if (mode !== 'url' && !capi) throw new TapeAPIError('INVALID_ARGUMENT', 'a name or a container needs a chain client (api)')
   if (capi && mode === 'name' && typeof capi.forChain === 'function') capi = capi.forChain(chainId)
+  // 2.0: whether the client resolves as TAP-10 / TAP-11 say (the default) or as 1.x did (conform: false, dev: true); null
+  // for a client the SDK did not make or no client / 2.0：客户端按 TAP-10 / TAP-11 解析（默认）还是按 1.x（conform: false、dev）
+  const conformed = () => !!capi && CONFORM_MODE.get(capi) === true
+  const resolutionOf = () => (mode !== 'url' && capi && CONFORM_MODE.has(capi) ? (CONFORM_MODE.get(capi) ? 'tap10' : '1.x') : null)
 
   const IDENTITY = ['circuit', 'container', 'activation', 'manifest-file', 'manifest-format', 'delegation']
   const SERVICE = ['ai-field', 'prices', 'endpoints', 'reach', 'cors', 'receipt', 'receipt-lookup']
@@ -321,8 +326,11 @@ async function diagnoseChecks(input, o) {
     return { bytes, size: bytes.length }
   }
 
-  // Activation (TAP-10 §6.3): a warning, not a failure: the site files stay readable, a TAP-11 client just answers "unpaid".
-  // 激活：只警告不失败——站点文件仍可读取，按 TAP-11 的客户端只是得到 "unpaid"。
+  // Activation (TAP-10 §6.3). With the 1.x resolution (conform: false, --no-conform) a warning, not a failure: the site files
+  // stay readable, only a TAP-11 client answers "unpaid". 2.0: with the default client (the conformance mode) a failure,
+  // because that client is one of them: it does not resolve the service. The checks that read the chain go on.
+  // 激活。1.x 的解析（conform: false、--no-conform）下只警告不失败：站点文件仍可读取，只有按 TAP-11 的客户端得到 "unpaid"。
+  // 2.0：默认客户端（一致模式）下是失败，因为它本身就是这样的客户端，不解析此服务。之后读链的检查照常进行。
   async function chainActivation({ name, container }) {
     let a
     try { a = await activationStatus(capi, chainId, { name, container }) } catch (e) { error('activation', e); return false }
@@ -337,9 +345,13 @@ async function diagnoseChecks(input, o) {
     const fee = a.fee !== null ? T(` The fee now: ${formatNative(a.fee, coin)} per 30 days (monthlyFee(), read from the chain just now; it can change at any time).`, `当前月费：每 30 天 ${formatNative(a.fee, coin)}（monthlyFee()，刚从链上读取；随时可能变化）。`) : T('', '')
     const caveat = name ? T('', '') : T(' Container mode: isLive was not checked (a container address does not give the name); run the doctor with the name.', '容器地址模式：没有检查 isLive（容器地址推不出名字），请改用名字运行。')
     const revert = a.isLiveReverted ? T(' isLive reverted: counted as false.', ' isLive 回退：按 false 处理。') : T('', '')
-    warn('activation',
-      T(`${what} is not activated: ${name ? 'isLive and isContainerLive are both false' : 'isContainerLive is false'}. Under TAP-11 a client gets "unpaid" and does not resolve this service; the site files stay readable (TAP-10 §6.3).${revert.en}${caveat.en}${fee.en}`,
-        `${what} 尚未激活：${name ? 'isLive 与 isContainerLive 都为假' : 'isContainerLive 为假'}。按 TAP-11，客户端会得到 unpaid、不解析此服务；站点文件仍可读取（TAP-10 §6.3）。${revert.zh}${caveat.zh}${fee.zh}`),
+    const strictMode = conformed()
+    const mode = strictMode
+      ? T(' Since 2.0 this is a failure: the default client (conform: \'tap10\', the resolution this check used) is such a client; --no-conform checks the rest the 1.x way and only warns here.', '自 2.0 起这是失败：默认客户端（conform: \'tap10\'，本次检查所用的解析）就是这样的客户端；--no-conform 按 1.x 的方式检查其余各项，这里只警告。')
+      : T('', '')
+    ;(strictMode ? fail : warn)('activation',
+      T(`${what} is not activated: ${name ? 'isLive and isContainerLive are both false' : 'isContainerLive is false'}. Under TAP-11 a client gets "unpaid" and does not resolve this service; the site files stay readable (TAP-10 §6.3).${revert.en}${caveat.en}${fee.en}${mode.en}`,
+        `${what} 尚未激活：${name ? 'isLive 与 isContainerLive 都为假' : 'isContainerLive 为假'}。按 TAP-11，客户端会得到 unpaid、不解析此服务；站点文件仍可读取（TAP-10 §6.3）。${revert.zh}${caveat.zh}${fee.zh}${mode.zh}`),
       T(`Activate it on DomainBinding (${a.binding}): the holder calls bind("${name ?? '<on-chain name>'}", ${container}, months) from the wallet that holds the circuit and pays months x monthlyFee() in ${coin || 'the chain coin'} (you pay it, plus gas; read monthlyFee() on chain when you pay, never trust a number written down). Then run: ${cmd.doctor(input)}`,
         `到 DomainBinding（${a.binding}）激活：持有人用持有该电路的钱包调用 bind("${name ?? '<链上名字>'}", ${container}, 月数)，付 月数 × monthlyFee()（${coin || '该链原生币'}；费用与 gas 由你自己承担，付款时从链上读取 monthlyFee()，不要照抄写下来的数字）。然后运行：${cmd.doctor(input)}`))
     return true
@@ -373,6 +385,18 @@ async function diagnoseChecks(input, o) {
   // The SDK's resolve() is the final word on the delegation (ECDSA or EIP-1271, holder on chain). / 委托以 SDK 的 resolve() 为准。
   async function delegationByResolve(d, target) {
     try { return { svc: await capi.resolve(target) } } catch (e) {
+      // 2.0: the default client refuses an unactivated or unopened service (SITE_STATUS); when the activation check has
+      // already failed for it, the delegation is not checked rather than failed twice / 2.0：默认客户端拒绝未激活或未开通的
+      // 服务；激活检查已为此失败时，委托记为未检查，不重复记失败
+      if (e instanceof TapeAPIError && e.code === 'SITE_STATUS' && done.get('activation') === 'fail') { blocked(['delegation'], 'activation'); return { blockedBy: 'activation' } }
+      // another site status (not-opened: the opener has not opened the container) is said as such, not as a bad manifest
+      // 其它站点状态（not-opened：开通器尚未开通该容器）照实说明，而不是当成清单问题
+      if (e instanceof TapeAPIError && e.code === 'SITE_STATUS') {
+        const st = e.data?.status ?? 'site-status'
+        fail('delegation', T(`a 2.0 client (the default, TAP-10 / TAP-11) refuses this service: ${st}: ${e.message}`, `2.0 客户端（默认，TAP-10 / TAP-11）拒绝此服务：${st}：${e.message}`),
+          T(st === 'not-opened' ? 'Open the container with the TapeOut container opener (TAP-10 §2.2), then run the doctor again; --no-conform checks the rest the 1.x way.' : 'See the status above; --no-conform checks the rest the 1.x way.', st === 'not-opened' ? '先用 TapeOut 的容器开通器开通容器（TAP-10 §2.2），再运行诊断；--no-conform 按 1.x 的方式检查其余各项。' : '见上面的状态；--no-conform 按 1.x 的方式检查其余各项。'))
+        return null
+      }
       if (e instanceof TapeAPIError && e.code === 'DELEGATION_INVALID') fail('delegation', T(e.message, `委托无效：${e.message}`), resignFix, cmd.console)
       else if (undecided(e)) error('delegation', e)
       else fail('delegation', T(e.message, `解析失败：${e.message}`), publishFix, cmd.console)
@@ -441,6 +465,7 @@ async function diagnoseChecks(input, o) {
     if (d.status === 'fail') { record(d); blocked(SERVICE, 'delegation'); return finish() }
     const got = await delegationByResolve(d, mode === 'name' ? parsed.name : input)
     if (!got) { blocked(SERVICE, 'delegation'); return finish() }
+    if (got.blockedBy) { blocked(SERVICE, got.blockedBy); return finish() }
     const by = got.svc.verified?.holder ?? identity.holder
     record(d, T(`; signed by the holder ${by}`, `；由持有人 ${by} 签名`))
     // resolve() drops an invalid ai field; keep it for the next check. / 保留发布的 ai 字段供下一项检查。
@@ -743,7 +768,7 @@ async function diagnoseChecks(input, o) {
     const exitCode = counts.fail ? 1 : counts.error ? 3 : 0
     // Reported in the fixed order, whatever order they ran in. / 按固定顺序报告，不论运行先后。
     checks.sort((a, b) => DOCTOR_CHECKS.indexOf(a.id) - DOCTOR_CHECKS.indexOf(b.id))
-    return redactSecret({ target: input, mode, chainId, ok: exitCode === 0, exitCode, counts, checks, manifest }, o.key)
+    return redactSecret({ target: input, mode, chainId, resolution: resolutionOf(), ok: exitCode === 0, exitCode, counts, checks, manifest }, o.key)
   }
 }
 
@@ -754,6 +779,9 @@ export function formatReport(report, { lang = 'both', version = '' } = {}) {
   const chainName = CHAINS[report.chainId]?.name ?? `chain ${report.chainId}`
   const what = report.mode === 'url' ? T('sidecar URL', '旁路地址') : report.mode === 'name' ? T(`TapeOut name, ${chainName}`, `TapeOut 名字，${chainName}`) : T('container', '容器')
   const lines = [`tapeapi-doctor${version ? ` ${version}` : ''}: ${report.target} (${L(what)})`]
+  // 2.0: which resolution the checks used / 2.0：各项检查所用的解析
+  if (report.resolution === 'tap10') lines.push(`   ${L(T('resolution: TAP-10 / TAP-11 (the default since 2.0; --no-conform for the 1.x one)', '解析：TAP-10 / TAP-11（2.0 起的默认；--no-conform 为 1.x 的解析）'))}`)
+  else if (report.resolution === '1.x') lines.push(`   ${L(T('resolution: 1.x (conform: false, deprecated)', '解析：1.x（conform: false，已弃用）'))}`)
   report.checks.forEach((c, i) => {
     lines.push(`${String(i + 1).padStart(2)} ${mark[c.status]}  ${L(c.title)}`)
     const dz = c.detailZh ?? c.detail

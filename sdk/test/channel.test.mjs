@@ -10,6 +10,8 @@ const A = { container: '0x86DDaEF00401E3F10418398D67D7189fc458eA95', chainId: 56
 const B = { container: '0x19366c3c69ffeb3b286d9fa6cc5e616375baafd3', chainId: 56 }
 const RELAY = [{ url: 'https://relay.example/tapeapi/v1', container: '0x3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a3e1a' }]
 const bad = (re) => (e) => e instanceof TapeAPIError && e.code === 'CHANNEL_INVALID' && re.test(e.message)
+// the caller's own options and arguments (2.0; CHANNEL_INVALID in 1.x) / 调用方自己的选项与参数（2.0 起）
+const arg = (re) => (e) => e instanceof TapeAPIError && e.code === 'INVALID_ARGUMENT' && re.test(e.message)
 
 function keys() { return { a: generateKeyPair(), b: generateKeyPair() } }
 function handshake(k = keys()) {
@@ -107,15 +109,16 @@ test('expired, far-future and malformed invites are refused, and keys are valida
   const lowOrder = 'e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800'
   assert.throws(() => accept({ ...invite, e: lowOrder }), bad(/low-order|failed/))
   assert.throws(() => accept({ ...invite, e: 'ff'.repeat(32) }), bad(/top bit|canonical/))
-  assert.throws(() => mk({ ttlS: 5 }), bad(/ttlS/))
-  assert.throws(() => mk({ relays: [{ url: 'ftp://x' }] }), bad(/http/))
+  assert.throws(() => mk({ ttlS: 5 }), arg(/ttlS/))
+  assert.throws(() => mk({ relays: [{ url: 'ftp://x' }] }), arg(/http/))
+  assert.throws(() => accept({ ...invite, relays: [{ url: 'ftp://x' }] }), bad(/http/), 'the same list read from an invite is TAPI-26 data')
 })
 
 test('a completed pending state cannot be reused, and a closed session refuses everything', () => {
   const { pending, accept, alice } = handshake()
-  assert.throws(() => completeInvite(pending, accept), bad(/already used|not an original handle/))
+  assert.throws(() => completeInvite(pending, accept), arg(/already used|not an original handle/))
   alice.close()
-  assert.throws(() => alice.seal('x'), bad(/closed/))
+  assert.throws(() => alice.seal('x'), arg(/closed/))
 })
 
 test('rooms are unguessable without the channel id, differ by direction, and reveal no identity', () => {

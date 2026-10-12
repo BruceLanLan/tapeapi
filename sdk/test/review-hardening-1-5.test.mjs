@@ -43,13 +43,56 @@ test('FIXED ID-LS (client): call() refuses an id with a lone UTF-16 surrogate be
   }
   const p = createProvider({ manifest, signerKey: KEY, rateLimit: false, log: () => {}, methods: { echo: async ({ text }) => ({ text }) } })
   let sent = 0
-  const api = createTapeAPI({ dev: true, fetch: (u, i) => { sent++; return p.handleRequest(new Request(u, i), { clientIp: '1.1.1.1' }) } })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const api = createTapeAPI({ conform: false, dev: true, fetch: (u, i) => { sent++; return p.handleRequest(new Request(u, i), { clientIp: '1.1.1.1' }) } })
   const svc = await api.resolve({ dev: structuredClone(manifest) })
   const before = sent
   for (const id of ['\ud800', 'a\udfffb']) await assert.rejects(api.call(svc, 'echo', { text: 'x' }, { id }), (e) => e.code === 'BAD_REQUEST' && /well-formed Unicode/.test(e.message), JSON.stringify(id))
   assert.equal(sent, before, 'nothing was sent')
   const r = await api.call(svc, 'echo', { text: 'x' }, { id: 'ok-😀' })
   assert.deepEqual([r.verified, r.result], [true, { text: 'x' }])
+})
+
+// T-c: the signed-responses TAP (TAP-13; TAPI-21 here) says in its Backwards
+// Compatibility that "neither the reference client nor the reference provider checks yet" that a client's id is
+// well-formed Unicode. Both have checked it since FIXED ID-LS (2be2a22, 1.5.0); this pins it end to end, the edges included.
+// T-c：签名回答 TAP 草稿的向后兼容一节说参考客户端与参考提供者"都还没有检查" id 是合法 Unicode。自 FIXED ID-LS（2be2a22，1.5.0）
+// 起两边都已检查；这里端到端钉住，含边界。
+test('CONFIRMED T-c: a client id must be well-formed Unicode; the reference client and the reference provider both check it', async () => {
+  const manifest = {
+    tapeapi: '0.1', name: 'Echo', circuits: CIRCUITS, tokenId: '11', container: CONTAINER, signer: privateKeyToAddress(KEY), dev: true,
+    endpoints: { live: ['https://echo.example/tapeapi/v1'], async: false },
+    methods: [{ name: 'echo', priceBEM: '0', params: { text: 'string' }, returns: { text: 'string' } }],
+  }
+  const p = createProvider({ manifest, signerKey: KEY, rateLimit: false, log: () => {}, methods: { echo: async ({ text }) => ({ text }) } })
+  const bodies = []
+  const api = createTapeAPI({ conform: false, dev: true, fetch: async (u, i) => { if (i?.body) bodies.push(String(i.body)); return p.handleRequest(new Request(u, i), { clientIp: '1.1.1.1' }) } })
+  const svc = await api.resolve({ dev: structuredClone(manifest) })
+  // The client's own ids (no `id` given) are well-formed / 客户端自己生成的 id 是合法的
+  for (let i = 0; i < 3; i++) await api.call(svc, 'echo', { text: 'x' })
+  for (const b of bodies) { const { id } = JSON.parse(b); assert.equal(canonicalJSON(id), JSON.stringify(id)); assert.ok(id.length >= 1 && id.length <= 128) }
+  // 128 UTF-16 code units ending in a surrogate pair is an id; a lone surrogate in the same place is not
+  // 以代理对结尾、共 128 个 UTF-16 单元是合法 id；同一位置的孤立代理项不是
+  const edge = 'a'.repeat(126) + '😀'
+  assert.equal(edge.length, 128)
+  const r = await api.call(svc, 'echo', { text: 'x' }, { id: edge })
+  assert.deepEqual([r.verified, r.id], [true, edge])
+  const sent = bodies.length
+  for (const id of ['a'.repeat(127) + '\ud800', '\udc00' + 'a'.repeat(127), 'a\ud83d\ud83db']) {
+    await assert.rejects(api.call(svc, 'echo', { text: 'x' }, { id }), (e) => e.code === 'BAD_REQUEST' && /well-formed Unicode/.test(e.message))
+  }
+  assert.equal(bodies.length, sent, 'the client sent none of them')
+  // The provider, given the same ids as JSON text on the wire (escapes, as a non-JS client writes them): a signed
+  // BAD_REQUEST bound to id "" (TAPI-21 §3.2 rule 1), never a 500 / 提供者收到线上 JSON 文本（转义写法）：签名的 BAD_REQUEST，id 为 ""
+  for (const raw of [`"${'a'.repeat(127)}\\ud800"`, '"\\udc00x"', '"a\\ud83d\\ud83db"']) {
+    const res = await p.handleRequest(new Request('https://echo.example/tapeapi/v1/echo', { method: 'POST', headers: { 'content-type': 'application/json' }, body: `{"id":${raw},"params":{"text":"hi"}}` }), { clientIp: '1.1.1.1' })
+    const env = await res.json()
+    assert.deepEqual([res.status, env.ok, env.id, env.error.code], [400, false, '', 'BAD_REQUEST'], raw)
+    assert.match(env.error.message, /well-formed Unicode/)
+  }
+  // ...and a well-formed id written with escapes is an id / 用转义写的合法 id 照常是 id
+  const ok = await (await p.handleRequest(new Request('https://echo.example/tapeapi/v1/echo', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"id":"pair-\\ud83d\\ude00","params":{"text":"hi"}}' }), { clientIp: '1.1.1.1' })).json()
+  assert.deepEqual([ok.ok, ok.id], [true, 'pair-😀'])
 })
 
 test('FIXED RPC-ID: a single JSON-RPC answer for another id, or for none, is a node that did not answer', async () => {

@@ -3,8 +3,8 @@
 | Title | Tape Channel: Real-Time Private Channels Between Containers |
 | Author | Bruce (@BruceLanLan) |
 | Status | Stable (v1) since 2026-09-29 (TapeAPI 1.0.0) |
-| Revision | 2026-10-08: a note pointing to version 2 ([TAPI-26 v2](TAPI-26-v2.md), Draft; an option from TapeAPI 1.8.1, the default from 2.0), whose labels begin with `tape-channel/` at the request of the TAPs editors. Non-normative: this version, its labels and its vectors do not change (TAPI-1 §4.1). |
-| Implementation | Live (2026-09-27): ChannelBus is deployed on BNB Chain at `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707` (code byte-for-byte the reference build); a free public relay runs at `relay.tapeapi.fun` (`12.1013.tape`, source `examples/cloudflare-worker/relay-worker.js`); the SDK implements channels over relays and ChannelBus and exports a measured bus node set, `BUS_RPC_URLS` (§3.7). No third-party audit. |
+| Revision | 2026-10-08: a note pointing to version 2 ([TAPI-26 v2](TAPI-26-v2.md), Draft; an option from TapeAPI 1.8.1, the default from 2.0), whose labels begin with `tape-channel/` at the request of the TAPs editors. Non-normative: this version, its labels and its vectors do not change (TAPI-1 §4.1). 2026-10-08, for TapeAPI 2.0.0: implementation status only; from TapeAPI 2.0.0 this version is no longer the SDK's default (see Implementation). |
+| Implementation | Live (2026-09-27): ChannelBus is deployed on BNB Chain at `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707` (code byte-for-byte the reference build); a free public relay runs at `relay.tapeapi.fun` (`12.1013.tape`, source `examples/cloudflare-worker/relay-worker.js`); the SDK implements channels over relays and ChannelBus and exports a measured bus node set, `BUS_RPC_URLS` (§3.7). No third-party audit. From TapeAPI 2.0.0 the SDK's default is [TAPI-26 v2](TAPI-26-v2.md) (`tape-channel/` labels); this version is selected with `labels: 'v1'`, deprecated in 2.x and not removed in 2.x. TapeAPI 1.x keeps this version as its default; after 2.0.0, 1.x receives security fixes for this version for 6 months. |
 | Type | Standards |
 | Created | 2026-09-22 |
 | Requires | TAP-10 (TapeSend), TAPI-20, TAPI-21 |
@@ -216,11 +216,11 @@ Copyright and related rights waived via [CC0](https://creativecommons.org/public
 
 > **不是 TAP。** “TAPI-26”是 TapeAPI 给本文档起的名字，2026-09-30 之前叫“TAP-26”。它不是 TAP：TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 §6.1 分配。其中部分内容已按该流程作为 TAP 草稿提交，在评审中、尚无编号：私密通道（[PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12)）。提交不等于被采纳，草稿的编号以编辑分配为准。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。应 TAPs 编辑要求，标签改以 `tape-channel/` 开头，放在新版本 [TAPI-26 v2](TAPI-26-v2.md)（Draft；自 TapeAPI 1.8.1 起作为选项实现，2.0 起为默认）中；本第 1 版保留 `TAP-26/…` 标签，仍是 Stable (v1)，两个版本不互通（TAPI-1 §4.1）。
 
-> **实现状态（2026-09-27）：** 运行中：ChannelBus 已部署于 BNB Chain `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`（代码与参考构建逐字节一致）；免费公共中继运行于 `relay.tapeapi.fun`（`12.1013.tape`，源码 `examples/cloudflare-worker/relay-worker.js`）；SDK 实现了经中继与 ChannelBus 的通道，并导出一组实测的总线节点 `BUS_RPC_URLS`（§3.7）。未经第三方审计。
+> **实现状态（2026-09-27）：** 运行中：ChannelBus 已部署于 BNB Chain `0x486110c35d9b90a9d6D85c8063A065f9e7b6b707`（代码与参考构建逐字节一致）；免费公共中继运行于 `relay.tapeapi.fun`（`12.1013.tape`，源码 `examples/cloudflare-worker/relay-worker.js`）；SDK 实现了经中继与 ChannelBus 的通道，并导出一组实测的总线节点 `BUS_RPC_URLS`（§3.7）。未经第三方审计。自 TapeAPI 2.0.0 起 SDK 的默认版本是 [TAPI-26 v2](TAPI-26-v2.md)（`tape-channel/` 标签）；本版本以 `labels: 'v1'` 选用，2.x 内已弃用、2.x 内不删除。TapeAPI 1.x 仍以本版本为默认；2.0.0 发布后，1.x 对本版本的安全修复维护 6 个月。
 
 > **状态：** Stable (v1)（稳定，第 1 版，见 [TAPI-1](TAPI-1.md) §4.1），自 2026-09-29（TapeAPI 1.0.0）起生效。
 
-> **修订：** 2026-10-08：加注指向第 2 版（[TAPI-26 v2](TAPI-26-v2.md)，Draft；TapeAPI 1.8.1 起作为选项提供，2.0 起为默认），其标签应 TAPs 编辑要求以 `tape-channel/` 开头。非规范性修订：本版本、其标签与向量均不改变（TAPI-1 §4.1）。
+> **修订：** 2026-10-08：加注指向第 2 版（[TAPI-26 v2](TAPI-26-v2.md)，Draft；TapeAPI 1.8.1 起作为选项提供，2.0 起为默认），其标签应 TAPs 编辑要求以 `tape-channel/` 开头。非规范性修订：本版本、其标签与向量均不改变（TAPI-1 §4.1）。2026-10-08，面向 TapeAPI 2.0.0：仅更新实现状态；自 TapeAPI 2.0.0 起本版本不再是 SDK 的默认版本（见实现状态）。
 
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 

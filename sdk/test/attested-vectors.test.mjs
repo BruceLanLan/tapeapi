@@ -30,7 +30,8 @@ const replay = (c) => async (url, init) => {
 }
 const run = async (c) => {
   // The envelopes carry a fixed ts from 2026; a wide skew window lets them verify today. / 信封的 ts 固定，放宽时间窗才能验证。
-  const api = createTapeAPI({ chainId: 56, dev: true, maxSkewS: 1e12, fetch: replay(c) })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const api = createTapeAPI({ conform: false, chainId: 56, dev: true, maxSkewS: 1e12, fetch: replay(c) })
   const services = [await api.resolve({ dev: manifestOf(v.providers[0]) }), await api.resolve({ dev: manifestOf(v.providers[1]) })]
   return api.callQuorum(services, v.request.method, v.request.params, { id: v.request.id })
 }
@@ -80,5 +81,5 @@ test('TAPI-23 vectors: callQuorum accepts the agreeing pairs and rejects each co
 test('TAPI-23 vectors: an envelope moved to the other provider no longer verifies (the container is in the digest)', async () => {
   const c = v.cases[0]
   const swapped = { ...c, b: { ...c.b, envelope: { ...c.a.envelope, container: v.providers[1].container } } }
-  await assert.rejects(run(swapped), (e) => e.code === 'QUORUM_FAILED' && e.failed.some((f) => f.code === 'BAD_SIGNATURE'))
+  await assert.rejects(run(swapped), (e) => e.code === 'QUORUM_FAILED' && e.data.failed.some((f) => f.code === 'BAD_SIGNATURE'))
 })

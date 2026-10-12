@@ -18,7 +18,7 @@
 - **要付钱，就是一笔普通转账。** SDK 帮你构造转给代理容器的未签名交易，事后再从链上只读地核验。它从不签名、不发送、
   不代付 gas，也不经手资金。
 - **有约束力的额度是以后的阶段。** 让代理无法超支的上限，需要尚未部署的合约（见[接下来](#接下来)）。
-- **实验性。** 整个子路径按 [1.0 的承诺](upgrade-1.0.md)属于"实验性"：可能在 1.x 的次版本里改动，不在 1.x 兼容承诺之内。
+- **实验性。** 整个子路径按 [1.0 的承诺](upgrade-1.0.md)（2.0 沿用）属于"实验性"：可能在 2.x 的次版本里改动，不在 2.x 兼容承诺之内。
   格式跟随 TapeOutProtocol/TAPs 里的两个公开讨论：Idea [#40](https://github.com/TapeOutProtocol/TAPs/issues/40)（授权书）
   与 [#41](https://github.com/TapeOutProtocol/TAPs/issues/41)（任务协议与代理上架），讨论有变化，格式也会跟着变。两者都还
   没有 TAP 编号。
@@ -131,14 +131,24 @@ hub 地址见[简介](introduction.md#链上地址)），假链也有自己固�
 付费合约的实现，以及撤销清单。节点落后太多（`stale-block`）或节点在别的链上（`wrong-chain`）时核验直接抛错，绝不报成某条消息的
 问题。委托方按 TAP-10 §4.3 解析：`token()`、工厂的 `isCPU`、处理器号、容器开通器的 `accountOf`，最后用 `ownerOf` 读持有人。
 
-代理与上游服务由客户端的 `resolve`（或 kit 的 `resolve` 选项）解析。草稿 TAP 要求按 TAP-11 §2 解析，这正是
-`createTapeAPI({ conform: 'tap10' })` 的做法（每次解析一个钉块，`ownerOf` 与 EIP-1271 用严格共识）；默认客户端按 TapeAPI 1.x
-的方式解析。要让核验方遵循草稿，就给 kit 一个一致模式的客户端来做解析：
+草稿 TAP 要求按 TAP-11 §2 解析代理与上游服务（每次解析一个钉块，`ownerOf` 与 EIP-1271 用严格共识），这正是
+`createTapeAPI({ conform: 'tap10' })` 的做法。1.9 起 kit 默认就这样做：它用你的客户端建一个一致模式的客户端（节点、法定数、RPC
+超时、`fetch` 与其它选项都相同），代理与每个上游服务都经它解析。它绝不开启 `allChains`，也不读别的链，所以只向你配置的节点发请求。
+客户端本身已是一致模式时直接用它。传 `resolve` 选项就由你自己解析，你的函数原样使用。`kit.resolution` 说明用的是哪一种：
+
+| `kit.resolution` | 解析方式 |
+|---|---|
+| `'tap10'` | 用你的客户端建立的一致模式（TAP-11 §2）：容器未开通或未激活，或站点存储、付费合约运行的实现不在 TAP-10 的列表里，即为 `agent-unresolvable` 或 `provider-unresolvable`。 |
+| `'client'` | 你的客户端自己的 `resolve`，与 1.8 相同。只用于合约不是 TAP-10 为该链列出的那些的客户端（本地或测试部署，例如上面示例的假链），这时建立不了一致模式。 |
+| `'caller'` | 你的 `resolve` 选项。 |
 
 ```js
-const strict = createTapeAPI({ rpcUrls, quorum: 2, conform: 'tap10' })
-const kit = createAgentKit(api, { resolve: (container) => strict.resolve(container) })
+const kit = createAgentKit(api)
+kit.resolution                                   // 在 BNB Smart Chain、X Layer 与 Base 上为 'tap10'
 ```
+
+1.9 之前的默认是客户端自己的 `resolve`。要保留那种行为，就把它传进去：
+`createAgentKit(api, { resolve: (container) => api.resolve(container) })`。
 
 ### 签一份授权书
 
@@ -323,7 +333,7 @@ tapeapi-verify task thread.json --payment <代理容器> <收件箱序号>
 tapeapi-verify task thread.json --rpc https://node-a.example,https://node-b.example
 ```
 
-不想安装，可以用 `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-verify task thread.json`；
+不想安装，可以用 `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-verify task thread.json`；
 在仓库里则是 `node sdk/bin/tapeapi-verify.js task thread.json`。
 
 - `--payment <收款容器> <序号>` 另外核验该收件箱里那个序号的 TapeSend 消息。收款容器必须是线程里的代理，发件方必须是
@@ -479,7 +489,10 @@ const putFile = {                                    // 交给持有人的钱包
 
 ## 接下来
 
-阶段 0 之后的东西都还没有做。Idea [#40](https://github.com/TapeOutProtocol/TAPs/issues/40) 设想了另外两个阶段：
+本指南讲的是阶段 0。2.0 起 SDK 另有阶段 1 的实验性实现，即有界代理（`{ enforcement: 'escrow-channel' }`、持有人的计划、代理的
+累计限额器）：它依赖 TAPI-22 的托管合约，而该合约**未经审计、未部署**，所以只在本地链与测试中验证，主网上不可用。见
+[有界代理](https://github.com/BruceLanLan/tapeapi/blob/main/README.zh-CN.md#有界代理实验性主网不可用)与[更新日志](../../../CHANGELOG.md)。
+Idea [#40](https://github.com/TapeOutProtocol/TAPs/issues/40) 设想的两个后续阶段是：
 
 - **阶段 1：支付通道。** 委托方为每个服务开一条通道并充值，把代理的钥匙授权为这条通道的会话钥匙，于是通道余额就是
   上限，会话到期时间就是时限。它建立在 Idea #38 的付款凭证设计（TapeAPI 实验性的 TAPI-22）之上，而那份托管合约尚未

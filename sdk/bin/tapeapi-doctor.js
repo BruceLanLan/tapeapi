@@ -6,7 +6,7 @@
 // --key-env names the operator's own. Its own command, not a mode of tapeapi-verify, whose exit 0 means "stopped".
 // tapeapi-doctor（实验性）：服务方对自己 AI 服务的逐项检查，失败时用中英双语给出缺什么、去哪改、下一条命令；退出码供 CI 使用。只读。
 //
-//   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-doctor 42.1013.tape
+//   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-doctor 42.1013.tape
 //   node sdk/bin/tapeapi-doctor.js --offline http://127.0.0.1:8080      (from a checkout / 从检出运行)
 import { readFileSync, realpathSync, existsSync } from 'node:fs'
 import { dirname, join, relative, isAbsolute } from 'node:path'
@@ -34,10 +34,12 @@ const USAGE = `tapeapi-doctor ${VERSION} (experimental): check an AI service on 
 Usage: ${CMDS.doctor('[options] <target>')}
 
 14 checks, in order: name, circuit, container, activation, manifest-file, manifest-format, delegation, ai-field, prices,
-endpoints, reach, cors, receipt, receipt-lookup. "activation" (TAP-10 §6.3) only warns: an unpaid name still has its site
-files, but a TAP-11 client answers "unpaid" and does not resolve the service; --strict makes that warning fail too.
+endpoints, reach, cors, receipt, receipt-lookup. "activation" (TAP-10 §6.3): since 2.0 the checks resolve as TAP-10 / TAP-11
+say (the default of createTapeAPI()), so an unpaid name FAILS: a 2.0 client answers "unpaid" and does not resolve the service
+(its site files stay readable). With --no-conform the checks resolve as 1.x did and activation only warns (--strict: fails).
 14 项检查，依次为：名字、电路、容器、激活、清单文件、清单格式、委托、ai 字段、价目表、端点、可访问、CORS、回执、按 id 取回执。
-“激活”（TAP-10 §6.3）只警告：未付费的名字站点文件仍可读，但按 TAP-11 的客户端会得到 unpaid、不解析此服务；--strict 时这个警告也算失败。
+“激活”（TAP-10 §6.3）：2.0 起各项检查按 TAP-10 / TAP-11 解析（createTapeAPI() 的默认），未付费的名字算失败：2.0 客户端得到 unpaid、
+不解析此服务（站点文件仍可读）。--no-conform 时按 1.x 解析，激活只警告（--strict 时算失败）。
 
   <target>             your TapeOut name (42.1013.tape is an example name; on X Layer or Base with its area code,
                        1.2.344.tape), your container address (0x...), or your sidecar's URL (https://api.example.com;
@@ -59,6 +61,10 @@ files, but a TAP-11 client answers "unpaid" and does not resolve the service; --
   --timeout <s>        per HTTP request (default 15)
   --rpc <url,url,...>  BNB Chain nodes; each chain read needs 2 to agree (default: ${DEFAULT_RPC.length} public nodes of distinct operators)
   --rpc-xlayer <urls>  X Layer nodes      --rpc-base <urls>  Base nodes
+  --no-conform         resolve as 1.x did (createTapeAPI({ conform: false }), deprecated): activation only warns.
+                       Ignored for a sidecar URL, which is always read the 1.x way (dev: true counts as conform: false)
+                       按 1.x 解析（conform: false，已弃用）：激活只警告。对 sidecar 的网址无效：网址模式始终按 1.x 读取
+                       （dev: true 视同 conform: false）
   --escrows <a,b,...>  experimental: escrow instances to compare your contribution across (read-only; a difference is
                        a note, never a failure)
   --version, --help
@@ -75,7 +81,7 @@ chain or the network could not be read (a timeout, a refused connection, DNS), s
 // Usage mistakes in both languages: --lang is not read yet (ONB2-7) / 用法错误双语
 const usage = (en, zh) => Object.assign(new Error(en), { zh })
 function parseArgs(argv) {
-  const o = { target: null, offline: false, allowHttp: false, keyEnv: null, model: null, origin: null, json: false, lang: 'both', strict: false, timeout: 15, rpc: null, chainRpc: {} }
+  const o = { target: null, offline: false, allowHttp: false, keyEnv: null, model: null, origin: null, json: false, lang: 'both', strict: false, timeout: 15, rpc: null, chainRpc: {}, noConform: false }
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i], v
     const eq = a.startsWith('--') ? a.indexOf('=') : -1
@@ -92,6 +98,8 @@ function parseArgs(argv) {
       case '--allow-http': o.allowHttp = true; break
       case '--json': o.json = true; break
       case '--strict': o.strict = true; break
+      // 2.0: the 1.x resolution (conform: false, deprecated) / 2.0：1.x 的解析（conform: false，已弃用）
+      case '--no-conform': o.noConform = true; break
       case '--key-env': o.keyEnv = value(); if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(o.keyEnv)) throw usage('--key-env takes the NAME of an environment variable, not the key itself', '--key-env 接收环境变量的名字，而不是密钥本身'); break
       case '--model': o.model = value(); break
       case '--origin': o.origin = value(); if (!/^https?:\/\/[^/\s]+$/.test(o.origin)) throw usage('--origin must be an origin, like https://example.org', '--origin 必须是一个源，例如 https://example.org'); break
@@ -136,7 +144,9 @@ async function main() {
   const chains = Object.fromEntries(Object.entries(opts.chainRpc).map(([id, urls]) => [id, { rpcUrls: urls }]))
   // URL mode reads the sidecar's own manifest (a dev-sourced resolve, which still checks the holder on chain).
   // 地址模式读取旁路自己的清单（dev 来源的解析，仍在链上核对持有人）。
-  const api = urlMode && opts.offline ? null : createTapeAPI({ rpcUrls, quorum: 2, chains, ...(urlMode ? { dev: true } : {}) })
+  // 2.0: a name or a container is checked with the default resolution (TAP-10 / TAP-11), or the 1.x one with --no-conform
+  // (URL mode reads with dev: true, the 1.x resolution, either way) / 2.0：名字或容器按默认解析检查，--no-conform 时按 1.x
+  const api = urlMode && opts.offline ? null : createTapeAPI({ rpcUrls, quorum: 2, chains, ...(urlMode ? { dev: true } : {}), ...(opts.noConform && !urlMode ? { conform: false } : {}) })
   let report
   try {
     report = await diagnose(opts.target, { api, offline: opts.offline, key, ...(opts.allowHttp ? { allowHttp: true } : {}), model: opts.model ?? undefined, origin: opts.origin ?? undefined, timeoutMs: opts.timeout * 1000, commands: CMDS, ...(opts.escrows ? { escrows: opts.escrows } : {}) })
@@ -148,7 +158,7 @@ async function main() {
   if (opts.strict && exit === 0 && report.counts.warn) exit = 1
   if (opts.json) {
     // No key in the report: every text is redacted (diagnose does it; again here). / 报告里没有密钥：每段文字都已脱敏（diagnose 做过，这里再做一次）。
-    process.stdout.write(JSON.stringify(redactSecret({ tool: 'tapeapi-doctor', version: VERSION, target: report.target, mode: report.mode, chainId: report.chainId, ok: exit === 0, exitCode: exit, strict: opts.strict, counts: report.counts, checks: report.checks, ...(report.warnings ? { warnings: report.warnings } : {}) }, key), null, 2) + '\n')
+    process.stdout.write(JSON.stringify(redactSecret({ tool: 'tapeapi-doctor', version: VERSION, target: report.target, mode: report.mode, chainId: report.chainId, resolution: report.resolution, ok: exit === 0, exitCode: exit, strict: opts.strict, counts: report.counts, checks: report.checks, ...(report.warnings ? { warnings: report.warnings } : {}) }, key), null, 2) + '\n')
   } else {
     process.stdout.write(redactSecret(formatReport(report, { lang: opts.lang, version: VERSION }), key) + '\n')
     if (opts.strict && report.exitCode === 0 && exit === 1) process.stdout.write(`${opts.lang === 'zh' ? '--strict：警告按失败计' : opts.lang === 'en' ? '--strict: warnings count as failures' : '--strict: warnings count as failures / 警告按失败计'}\n`)

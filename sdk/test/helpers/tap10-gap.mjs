@@ -62,8 +62,10 @@ export function buildWorld() {
     }
     return chains[id].fetch(String(url), { ...init, body: JSON.stringify(body) })
   }
+  // 2.0: the KNOWN GAP rows are the 1.x resolution, conform: false (the default mode before 2.0; the fake chain's own
+  // addresses are not TAP-10's, which the 2.0 default refuses) / 2.0：KNOWN GAP 各行是 1.x 的解析（conform: false）
   const api = (extra = {}) => createTapeAPI({
-    rpcUrls: nodes(56), fetch, ...OPTS, chains: { 196: { rpcUrls: nodes(196) }, 8453: { rpcUrls: nodes(8453) } }, ...extra,
+    conform: false, rpcUrls: nodes(56), fetch, ...OPTS, chains: { 196: { rpcUrls: nodes(196) }, 8453: { rpcUrls: nodes(8453) } }, ...extra,
   })
   return { chains, sent, fetch, api, zeroProcessor }
 }
@@ -328,8 +330,9 @@ export function buildConformWorld() {
     return chains[id].fetch(String(url), init)
   }
   // allChains (1.5): TAP-10 §4.1 resolves input without chain information on every active chain / 无链信息的输入在所有活跃链上解析
+  // runAllDefault20 (2.0) leaves both out: the 2.0 default / runAllDefault20 两者都不传：2.0 的默认
   const api = (extra = {}) => createTapeAPI({
-    conform: 'tap10', allChains: true, rpcUrls: nodes(56), quorum: 2, fetch, quiet: true, onWarning: () => {}, chains: { 196: { rpcUrls: nodes(196) }, 8453: { rpcUrls: nodes(8453) } }, ...extra,
+    ...conformRunOpts, rpcUrls: nodes(56), quorum: 2, fetch, quiet: true, onWarning: () => {}, chains: { 196: { rpcUrls: nodes(196) }, 8453: { rpcUrls: nodes(8453) } }, ...extra,
   })
   return { chains, sent, fetch, api, holder }
 }
@@ -419,6 +422,14 @@ export async function readsOfAConformResolution() {
   return { resolved: svc.container === container, site: svc.conform.site, neverIssued: absent }
 }
 
+// The options the conform world's clients get: conform: 'tap10' with allChains (runAllConform), or nothing, the 2.0
+// default (runAllDefault20). / conform 世界的客户端所用选项：一致模式加 allChains，或什么都不传（2.0 的默认）。
+let conformRunOpts = { conform: 'tap10', allChains: true }
+/** Every fixture case under the 2.0 default: createTapeAPI() without conform and without allChains. / 2.0 默认下的全部用例。 */
+export async function runAllDefault20() {
+  conformRunOpts = {}
+  try { return await runAllConform() } finally { conformRunOpts = { conform: 'tap10', allChains: true } }
+}
 /** Every fixture case in the conformance mode. / 一致模式下的全部用例。 */
 export async function runAllConform() {
   const fixture = loadFixture()

@@ -1,6 +1,6 @@
 // @experimental (1.7) Container agents, phase 0: the EIP-712 types a circuit's HOLDER signs (Mandate, TaskOffer,
 // TaskVerdict, MandateRevocation), their hashes, digests and wallet payloads. Pure: no chain reads, no network.
-// See docs/DESIGN-container-agent.md (internal draft). Nothing here is covered by the 1.x compatibility promise: the
+// Designed in internal notes (container agents, phase 0). Nothing here is covered by the 1.x compatibility promise: the
 // format follows the public Idea TapeOutProtocol/TAPs#40/#41 and may change with that discussion.
 //
 // Every type lives in the TAP-11 delegation domain (name "TapeAPI", version "1", chainId, verifyingContract = the DeWEB
@@ -151,10 +151,116 @@ export function phase0Problems(m) {
   if (m.subdelegate) out.push({ code: 'subdelegate-not-allowed', message: 'sub-delegation is not allowed in this version' })
   return out
 }
+// ---------- phase 1 (experimental, internal design notes, phase 1, §5) ----------
+// Phase 1 maps every scope item with a cap to one escrow channel (consumer, provider) whose balance is the cap, with the
+// agentKey as that channel's session key until mandate.expires. Nothing here changes a type, a hash or the phase-0
+// default: a verifier applies these rules only when asked to ({ enforcement: 'escrow-channel' }).
+// 阶段 1（实验）：每个带金额的 scope 项对应一条托管通道。类型、哈希与阶段 0 的默认行为都不变：只有显式要求时才按这些规则核验。
+export const ENFORCEMENT_ESCROW_CHANNEL = 'escrow-channel'
+/**
+ * @experimental (phase 1) Who funds the channels when the caller does not say (draft §2.1): 'holder' (F2, the principal's
+ * current holder from its wallet) or 'container' (F1, the principal container through its execute). Both paths are
+ * implemented; this ONE constant is the default of escrowPlan, of the kit's plan and close-out, and of the check's
+ * fundingPath. Which one it should be is decision D3 of the draft, not yet taken: the value here is the draft's
+ * recommendation, pending D3.
+ * 阶段 1 未指定时由谁出资：'holder'（F2）或 'container'（F1）。两条路径都已实现；计划、收尾与核验的默认值只取这一个常量。
+ * 取哪一个是设计稿的待决策 D3，这里的值是设计稿的推荐，待 D3 定。
+ */
+export const DEFAULT_FUNDING_PATH = 'holder'
+export const FUNDING_PATHS = Object.freeze(['holder', 'container'])
+// A withdraw request's lifetime (draft §2.6, R21) / 提现请求的存活
+export const WITHDRAW_COOLDOWN_S = 48 * 3600   // the escrow's WITHDRAW_COOLDOWN / 托管的冷静期
+export const WITHDRAW_WINDOW_S = 7 * 86400     // the escrow's WITHDRAW_WINDOW / 托管的执行窗口
+/**
+ * @experimental (phase 1) Whether a withdraw request is live at `now`: requestedAt ≠ 0 and now ≤ requestedAt +
+ * WITHDRAW_COOLDOWN_S + WITHDRAW_WINDOW_S (TAPI-22 §3.2(4)). The escrow never clears a lapsed request, so its
+ * pendingWithdraw view keeps showing it; reading the view alone would call the channel withdraw-pending for ever (R21).
+ * 提现请求在 now 是否存活。托管从不清除过期的请求，只看视图会把通道永远判成 withdraw-pending。
+ */
+export function withdrawRequestLive(requestedAt, now) {
+  const at = Number(requestedAt)
+  return at !== 0 && now <= at + WITHDRAW_COOLDOWN_S + WITHDRAW_WINDOW_S
+}
+/** A mandate "names funds" when any scope cap or feeCap is non-zero or any token or feeToken is not the zero address
+ *  (draft §5.1); exactly the mandates phase 0 refuses as phase0-no-funds. / 带金额：任一 cap/feeCap 非零或任一代币非零 */
+export function mandateNamesFunds(m) {
+  return m.scope.some((s) => s.cap !== '0' || s.token !== ZERO_ADDRESS) || m.feeCap !== '0' || m.feeToken !== ZERO_ADDRESS
+}
+/**
+ * @experimental (phase 1) The static rules of draft §5.2 for a mandate that names funds, without the chain, in this
+ * order: scope-token-cap-mismatch (one per scope item whose token is zero and cap is not, or the other way), fee-token-
+ * cap-mismatch, scope-duplicate-provider (one per provider named by two or more items with a cap), mode-scope-mismatch
+ * (mode 0, pay: every cap 0 and every token zero), subdelegate-not-allowed. `m` is a normalised mandate.
+ * 阶段 1 的静态规则（§5.2），按此顺序报告。
+ */
+export function phase1Problems(m) {
+  const out = []
+  m.scope.forEach((s, i) => {
+    if ((s.token === ZERO_ADDRESS) !== (s.cap === '0')) out.push({ code: 'scope-token-cap-mismatch', message: `scope[${i}]: a token names an asset and a cap an amount of it; both or neither (token ${s.token}, cap ${s.cap})` })
+  })
+  if ((m.feeToken === ZERO_ADDRESS) !== (m.feeCap === '0')) out.push({ code: 'fee-token-cap-mismatch', message: `feeToken and feeCap: both or neither (feeToken ${m.feeToken}, feeCap ${m.feeCap})` })
+  // one channel per (consumer, provider): two capped items for one provider would share it (draft §2.2, §2.3)
+  // 每个 (consumer, provider) 一条通道：同一 provider 的两个带金额的项会共用它
+  const seen = new Map()
+  for (const s of m.scope.filter((x) => x.cap !== '0')) seen.set(s.provider.toLowerCase(), (seen.get(s.provider.toLowerCase()) ?? 0) + 1)
+  for (const s of m.scope) {
+    const k = s.provider.toLowerCase()
+    if (seen.get(k) > 1) { out.push({ code: 'scope-duplicate-provider', message: `${s.provider} is named by ${seen.get(k)} scope items with a cap; one channel per provider, so at most one` }); seen.set(k, 0) }
+  }
+  if (m.mode === MODE_PAY && m.scope.some((s) => s.cap !== '0' || s.token !== ZERO_ADDRESS)) out.push({ code: 'mode-scope-mismatch', message: 'mode 0 (pay): the agent pays its own upstream calls, so every scope cap is 0 and every scope token the zero address; a spending budget needs mode 1 (spend)' })
+  if (m.subdelegate) out.push({ code: 'subdelegate-not-allowed', message: 'sub-delegation is not allowed in this version' })
+  return out
+}
+/**
+ * @experimental (phase 1) The static half of scope-includes-agent (draft §5.2, R5; review p1m12 F7): one warning per scope
+ * item with a cap whose provider is the agent's own container. Reported, never refused (as selfHire is), so a warning,
+ * not a problem: it neither fails the check nor keeps the nonce unrecorded. Pure; reported whatever the static problems
+ * are. The other half (a provider held by the agent's holder) needs the chain and is added by the verifier.
+ * 阶段 1：scope-includes-agent 的静态一半（provider 就是代理容器），只报不拒，是警告不是问题；不论有无静态问题都报。同持有人的一半要读链。
+ */
+export function phase1Warnings(m) {
+  return m.scope.filter((s) => s.cap !== '0' && s.provider.toLowerCase() === m.agent.toLowerCase())
+    .map((s) => ({ code: 'scope-includes-agent', message: `${s.provider} is the agent's own container: a channel to it pays the agent` }))
+}
+// Shown with a mandate that names funds when the console builds it for phase 1 ({ enforcement: 'escrow-channel' }). The
+// phase-0 MANDATE_FUNDED_WARNING is unchanged and still shown without that option. / 阶段 1 的钱包警告；阶段 0 的警告不变
+export const MANDATE_ESCROW_CHANNEL_WARNING = 'experimental phase 1: this mandate, together with the escrow channels you fund for it on chain, lets the agent spend at most what is in each of those channels until it expires; signing it moves no money (only your own fund and authorizeSession transactions do), and revoking it does not stop a key holder before you withdraw the channels'
 function gate(m, opts, what) {
+  // review p1m12 F5: the phase-1 switch comes first, so { allowFunds: true, enforcement: 'escrow-channel' } is checked by
+  // the phase-1 rules (it used to skip them while showing the phase-1 warning and amounts) / 阶段 1 开关优先于 allowFunds
+  if (opts?.enforcement === ENFORCEMENT_ESCROW_CHANNEL) {
+    const p = mandateNamesFunds(m) ? phase1Problems(m) : phase0Problems(m)
+    if (p.length) throw new TapeAPIError('AGENT_INVALID', `${what}: ${p.map((x) => x.message).join('; ')}`, { reason: p[0].code })
+    return
+  }
   if (opts?.allowFunds === true) return
   const p = phase0Problems(m)
   if (p.length) throw new TapeAPIError('AGENT_INVALID', `${what}: ${p.map((x) => x.message).join('; ')}; pass { allowFunds: true } only outside phase 0`, { reason: p[0].code })
+}
+// decimals given by the console, read on chain (token.decimals()): { [token address]: 0..255 } / 控制台从链上读到的小数位
+function decimalsMap(d) {
+  if (d === undefined) return new Map()
+  if (!d || typeof d !== 'object' || Array.isArray(d)) fail('decimals must be an object { [token address]: decimals }')
+  const out = new Map()
+  for (const [t, v] of Object.entries(d)) {
+    if (!isAddress(t)) fail(`decimals: ${t} is not a token address`)
+    if (!Number.isInteger(v) || v < 0 || v > 255) fail(`decimals of ${t} must be a whole number from 0 to 255`)
+    out.set(t.toLowerCase(), v)
+  }
+  return out
+}
+// One amount for the console: the smallest unit always, whole tokens only when decimals() was read (decimal string
+// arithmetic, never floating point). / 一个金额：始终给最小单位；读到小数位时再给整币数（十进制字符串运算）
+function amountOf(token, cap, dec) {
+  const d = dec.get(token.toLowerCase())
+  if (d === undefined) return { token, amount: cap, decimals: null, display: `${cap} (smallest unit of ${token}; decimals() not given)` }
+  return { token, amount: cap, decimals: d, display: `${unitsOf(BigInt(cap), d)} of ${token} (${cap} in the smallest unit, ${d} decimals)` }
+}
+function unitsOf(n, d) {
+  if (d === 0) return n.toString()
+  const s = n.toString().padStart(d + 1, '0')
+  const whole = s.slice(0, -d), frac = s.slice(-d).replace(/0+$/, '')
+  return frac ? `${whole}.${frac}` : whole
 }
 // What the console shows next to the wallet prompt, in the same words everywhere. `warnings` and `display` are for the
 // console and MUST be removed before the payload goes to the wallet (wallets read domain, types, primaryType and message);
@@ -170,9 +276,16 @@ export function mandateTypedData(chainId, hub, mandate, opts = {}) {
   gate(m, opts, 'mandateTypedData')
   if (opts.task !== undefined && taskHashOf(opts.task) !== m.taskHash) fail('task does not hash to the mandate\'s taskHash')
   const funded = phase0Problems(m).length > 0
+  // @experimental phase 1: { enforcement: 'escrow-channel', decimals } shows the phase-1 warning and every amount; without
+  // it the payload is exactly 1.8's / 阶段 1：带开关时显示阶段 1 警告与每项金额；不带时与 1.8 完全相同
+  const p1 = opts.enforcement === ENFORCEMENT_ESCROW_CHANNEL && mandateNamesFunds(m)
+  const dec = p1 ? decimalsMap(opts.decimals) : null
   return {
-    warnings: [funded ? MANDATE_FUNDED_WARNING : MANDATE_PHASE0_NOTICE],
-    display: { ...(opts.task !== undefined ? { task: JSON.parse(canonicalJSON(opts.task)) } : {}), notBefore: isoDate(m.notBefore), expires: isoDate(m.expires) },
+    warnings: [p1 ? MANDATE_ESCROW_CHANNEL_WARNING : funded ? MANDATE_FUNDED_WARNING : MANDATE_PHASE0_NOTICE],
+    display: {
+      ...(opts.task !== undefined ? { task: JSON.parse(canonicalJSON(opts.task)) } : {}), notBefore: isoDate(m.notBefore), expires: isoDate(m.expires),
+      ...(p1 ? { amounts: m.scope.filter((s) => s.cap !== '0').map((s) => ({ provider: s.provider, ...amountOf(s.token, s.cap, dec) })), ...(m.feeCap !== '0' ? { fee: { agent: m.agent, ...amountOf(m.feeToken, m.feeCap, dec) } } : {}) } : {}),
+    },
     domain: delegationDomain(chainId, hub),
     types: {
       EIP712Domain: DOMAIN_FIELDS,
@@ -326,7 +439,9 @@ const WALLET_TYPES = new Set(['Mandate', 'TaskOffer', 'TaskVerdict', 'MandateRev
 // forWallet 只接受本模块自己生成的类型、域与消息：多一个、少一个或改动都拒绝。
 const WALLET_SPEC = {
   // the task text in display is checked against message.taskHash again and the dates are recomputed
-  Mandate: { build: (td) => mandateTypedData(td.domain.chainId, td.domain.verifyingContract, td.message, { allowFunds: true, ...(td.display?.task !== undefined ? { task: td.display.task } : {}) }) },
+  // phase 1 (expect.enforcement): rebuilt under the phase-1 rules (a mandate that breaks them is refused), with the
+  // decimals the console read on chain / 阶段 1：按阶段 1 规则重建（违反即拒绝），小数位取控制台从链上读到的
+  Mandate: { build: (td, expect) => mandateTypedData(td.domain.chainId, td.domain.verifyingContract, td.message, { ...(expect.enforcement === ENFORCEMENT_ESCROW_CHANNEL ? { enforcement: ENFORCEMENT_ESCROW_CHANNEL, decimals: expect.decimals } : { allowFunds: true }), ...(td.display?.task !== undefined ? { task: td.display.task } : {}) }) },
   TaskOffer: { build: (td) => taskOfferTypedData(td.domain.chainId, td.domain.verifyingContract, td.message) },
   TaskVerdict: { build: (td) => taskVerdictTypedData(td.domain.chainId, td.domain.verifyingContract, td.message) },
   MandateRevocation: { build: (td) => mandateRevocationTypedData(td.domain.chainId, td.domain.verifyingContract, td.message) },
@@ -348,7 +463,8 @@ export function forWallet(td, expect) {
   if (td.display !== undefined && (td.display === null || typeof td.display !== 'object' || Array.isArray(td.display))) fail(`${what}: display must be an object`)
   const copy = (v) => { try { return JSON.parse(JSON.stringify(v)) } catch (e) { fail(`${what}: ${e.message}`) } }
   let want
-  try { want = WALLET_SPEC[td.primaryType].build(td) } catch (e) { fail(`${what}: ${e.message}`) }
+  if (expect.enforcement !== undefined && expect.enforcement !== ENFORCEMENT_ESCROW_CHANNEL) fail(`forWallet: expect.enforcement is '${ENFORCEMENT_ESCROW_CHANNEL}' (experimental phase 1) or left out`)
+  try { want = WALLET_SPEC[td.primaryType].build(td, expect) } catch (e) { fail(`${what}: ${e.message}`) }
   const same = (a, b) => { try { return canonicalJSON(copy(a)) === canonicalJSON(copy(b)) } catch { return false } }
   for (const k of ['domain', 'types', 'message']) if (!same(td[k], want[k])) fail(`${what}: its ${k} differs from what this module builds`)
   // warnings and display come from the rebuilt payload, never from the input: a message changed to name an amount gets the

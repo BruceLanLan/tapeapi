@@ -31,7 +31,7 @@ test('FIXED H-1: tx.approve({ spender: svc }) requires an explicit, bounded amou
   // 托管 v3 起 approve 为异步、读取托管的 token()，且只为已审计名单或 allowEscrows 里的托管构造；金额规则不变、仍先检查。
   const EVIL = '0x' + 'e5'.repeat(20)   // any contract a hostile provider writes into payment.escrow / 恶意服务方写进清单的任意合约
   const chain = createFakeChain(); chain.setEscrowToken(EVIL, '0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a')
-  const base = { rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, escrow: ADDR.escrow, fetch: chain.fetch }
+  const base = { conform: false, rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, escrow: ADDR.escrow, fetch: chain.fetch }
   const api = createTapeAPI({ ...base, allowEscrows: [EVIL] })
   const svc = { manifest: { payment: { escrow: EVIL } }, container: ADDR.container }
   const abiErr = (re) => (e) => e instanceof TapeAPIError && e.code === 'INVALID_ARGUMENT' && re.test(e.message)
@@ -104,7 +104,7 @@ test('FIXED M-2: EIP-1271 requires the whole first word 0x1626ba7e‖0…0: a ho
     }
     return new Response(JSON.stringify({ jsonrpc: '2.0', id: req.id, error: { code: -32601, message: 'nope' } }))
   }
-  const api = createTapeAPI({ dev: true, rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, fetch, hub: '0x' + '10'.repeat(20) })
+  const api = createTapeAPI({ conform: false, dev: true, rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, fetch, hub: '0x' + '10'.repeat(20) })
   const manifest = {
     tapeapi: '0.1', circuits: CIRCUITS, tokenId: '1', container: CONTAINER, signer: attackerSigner,
     delegation: { expires, sig: delegationSig },
@@ -282,7 +282,7 @@ test('FIXED L-3: busTransport validates chunk/minChunk: minChunk 0 (and other no
   const node = { call: async () => { calls++; return [] } }
   const rpc = { urls: ['http://n'], blockNumber: async () => 2000, call: node.call, single: () => node }
   const base = { rpc, bus: BUS, inbound: ROOM_IN, outbound: ROOM_OUT, fromBlock: 1000, confirmations: 0 }   // head 2000 as written (default 2 since arch B13)
-  const invalid = (e) => e instanceof TapeAPIError && e.code === 'CHANNEL_INVALID' && /chunk and minChunk/.test(e.message)
+  const invalid = (e) => e instanceof TapeAPIError && e.code === 'INVALID_ARGUMENT' && /chunk and minChunk/.test(e.message)   // CHANNEL_INVALID in 1.x
   for (const bad of [{ chunk: 0, minChunk: 0 }, { chunk: 100, minChunk: 0 }, { chunk: 10, minChunk: 20 }, { chunk: 100, minChunk: 1.5 }, { chunk: '100', minChunk: 10 }]) {
     assert.throws(() => busTransport({ ...base, ...bad }), invalid, JSON.stringify(bad))
   }

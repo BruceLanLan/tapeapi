@@ -79,11 +79,11 @@ test('agreed JSON-RPC error surfaces as RPC_ERROR; errors bucket by code, not me
   const chain = createFakeChain()
   chain.setFault('http://rpc1', 'rpcerror'); chain.setFault('http://rpc2', 'rpcerror')
   const rpc = createRpc({ urls: URLS.slice(0, 2), quorum: 2, fetch: chain.fetch })
-  await assert.rejects(rpc.call('eth_blockNumber'), (e) => e.code === 'RPC_ERROR' && e.rpcCode === -32000)
+  await assert.rejects(rpc.call('eth_blockNumber'), (e) => e.code === 'RPC_ERROR' && e.data.rpcCode === -32000)
   // same code, different revert text from each node -> still one agreed RPC_ERROR / 同 code 不同文本仍视为一致
   let i = 0
   const f = async (url, init) => { const r = JSON.parse(init.body); return new Response(JSON.stringify({ jsonrpc: '2.0', id: r.id, error: { code: 3, message: `execution reverted: node ${i++}` } })) }
-  await assert.rejects(createRpc({ urls: ['http://a', 'http://b'], quorum: 2, fetch: f }).call('eth_call', []), (e) => e.code === 'RPC_ERROR' && e.rpcCode === 3)
+  await assert.rejects(createRpc({ urls: ['http://a', 'http://b'], quorum: 2, fetch: f }).call('eth_call', []), (e) => e.code === 'RPC_ERROR' && e.data.rpcCode === 3)
 })
 test('M-11: fewer urls than quorum throws unless allowSingleNode: true; duplicates do not count twice', async () => {
   const chain = createFakeChain()
@@ -224,4 +224,21 @@ test('FIXED P101-3: what a node answered about a batch still stops batching to i
       assert.ok(w.batchedBy('http://rpc1').every((b) => !b), `${what}: never batched again, whatever the time or the count`)
     })
   }
+})
+
+// O6 / F6 (REVIEW-SDK-API-1.0): createRpc takes the timeout under the name createTapeAPI and createProvider use,
+// rpcTimeoutMs, and keeps timeoutMs. / createRpc 接受与 createTapeAPI、createProvider 同名的 rpcTimeoutMs，并保留 timeoutMs。
+test('createRpc: rpcTimeoutMs is the RPC timeout as timeoutMs is; both with different values is INVALID_ARGUMENT', async () => {
+  // Answers after 300 ms unless the request is aborted first / 300 ms 后作答，除非请求先被中止
+  const slow = (url, init) => new Promise((resolve, reject) => {
+    const t = setTimeout(() => resolve(new Response(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(init.body).id, result: '0x1' }))), 300)
+    init.signal?.addEventListener('abort', () => { clearTimeout(t); reject(Object.assign(new Error('aborted'), { name: 'AbortError' })) })
+  })
+  const mk = (o) => createRpc({ urls: ['http://rpc1', 'http://rpc2'], quorum: 2, fetch: slow, transportRetryMs: 0, ...o })
+  for (const o of [{ rpcTimeoutMs: 20 }, { timeoutMs: 20 }, { rpcTimeoutMs: 20, timeoutMs: 20 }]) {
+    await assert.rejects(mk(o).call('eth_blockNumber', []), (e) => e.code === 'RPC_UNAVAILABLE', JSON.stringify(o))
+    await assert.rejects(mk(o).single('http://rpc1').call('eth_blockNumber', []), (e) => e.code === 'RPC_UNAVAILABLE', `single() keeps the timeout: ${JSON.stringify(o)}`)
+  }
+  for (const o of [{ rpcTimeoutMs: 5000 }, { timeoutMs: 5000 }, {}]) assert.equal(await mk(o).call('eth_blockNumber', []), '0x1', JSON.stringify(o))
+  assert.throws(() => mk({ rpcTimeoutMs: 20, timeoutMs: 5000 }), (e) => e.code === 'INVALID_ARGUMENT' && /rpcTimeoutMs.*timeoutMs.*pass one/.test(e.message))
 })

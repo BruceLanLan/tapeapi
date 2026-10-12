@@ -2,7 +2,8 @@
 // (allChains, TAP-10 §4.1: `ambiguous`, a chain that cannot be read reported instead of not-tapeout) and the processor
 // number of a container address or processor contract#ID (§4.3 step 3: the shipped snapshot checked by one cpuAt, then a
 // paged, capped, resumable scan). Offline: three conform chains behind one fetch (helpers/conform-chain.mjs). GOLDEN TAP10-0
-// (default-mode-trace.test.mjs) pins that none of this changes the default mode.
+// (default-mode-trace.test.mjs) pins that none of this changes the 1.x resolution (conform: false, the default mode before
+// 2.0); since 2.0 the conformance mode is the default (GOLDEN TAP10-2.0, conform-default-trace.test.mjs).
 // TAP-10 一致模式 1.5：解析路径的其余部分。无链信息的输入在所有链上解析（allChains，§4.1：ambiguous；读不到的链报其状态而不报
 // not-tapeout），以及容器地址或处理器合约#ID 的处理器号（§4.3 第 3 步：随版本的快照经一次 cpuAt 核实，然后分页、限量、可续的扫描）。
 // 全部离线：三条 conform 链共用一个 fetch。默认模式不受影响由黄金测试 TAP10-0 钉住。
@@ -78,9 +79,9 @@ test('design risk 3: without allChains nothing is sent to Base or X Layer for in
   await assert.rejects(off.siteStatus(`${L2_ONE}#1`), isStatus('INVALID_ARGUMENT', 'unsupported', /allChains: true/))
   await assert.rejects(off.resolve(`${L2_ONE}#1`), isStatus('INVALID_ARGUMENT', 'unsupported'))
   assert.equal(w.sent(196) + w.sent(8453), 0, 'no request to another chain')
-  // the default resolve never reads the switch: a container string with allChains: true reads this chain only
-  // 默认 resolve 从不读这个开关：开了 allChains 的默认客户端解析容器字符串时只读本链
-  const def = createTapeAPI(w.options({ allChains: true, ...common }))
+  // the 1.x resolve (conform: false; the default before 2.0) never reads the switch: a container string with allChains: true
+  // reads this chain only / 1.x 的 resolve（conform: false）从不读这个开关：开了 allChains 也只读本链
+  const def = createTapeAPI(w.options({ conform: false, allChains: true, ...common }))
   await assert.rejects(def.resolve(c.container))
   assert.equal(w.sent(196) + w.sent(8453), 0, 'the default resolve sent nothing to another chain')
   assert.ok(w.sent(56) > 0)
@@ -88,7 +89,7 @@ test('design risk 3: without allChains nothing is sent to Base or X Layer for in
   const s = await w.api().siteStatus(c.container)
   assert.equal(s.status, 'ok'); assert.equal(s.chainId, 8453); assert.equal(s.name, '1.3.1.tape'); assert.equal(s.container, c.container)
   assert.deepEqual(s.chains, [{ chainId: 56, status: 'not-tapeout' }, { chainId: 196, status: 'not-tapeout' }, { chainId: 8453, status: 'ok' }])
-  // siteStatus runs the TAP-10 path in any mode, so a default client with allChains searches too (documented)
+  // siteStatus runs the TAP-10 path in any mode, so a conform: false client with allChains searches too (documented)
   // siteStatus 在任何模式下都走 TAP-10 路径，所以开了 allChains 的默认客户端同样搜索（已写入文档）
   assert.equal((await def.siteStatus(c.container)).chainId, 8453)
 })
@@ -321,10 +322,10 @@ test('the scan is capped per resolution (256 numbers, pages of 8) and resumes wh
   assert.equal(sa.name, '1.11.tape'); assert.equal(sb.name, '2.37.tape')
 })
 
-test('FIXED review F1: siteStatus on a default client resolves a processor contract#ID string on its own chain, as 1.4 did (only the conformance mode refuses it without allChains)', async () => {
+test('FIXED review F1: siteStatus on a conform: false (1.x) client resolves a processor contract#ID string on its own chain, as 1.4 did (only the conformance mode refuses it without allChains)', async () => {
   const { chain, api: _api } = bsc(undefined)
   const c = chain.circuit(4246, { processor: 7, holder })
-  const api = createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2', 'http://rpc3'], fetch: chain.fetch, quiet: true, clock: () => T })
+  const api = createTapeAPI({ conform: false, rpcUrls: ['http://rpc1', 'http://rpc2', 'http://rpc3'], fetch: chain.fetch, quiet: true, clock: () => T })
   const s = await api.siteStatus(`${c.circuits}#4246`)
   assert.equal(s.status, 'ok'); assert.equal(s.container, c.container); assert.equal(s.chainId, 56)
   assert.equal(s.name, '4246.7.tape', '1.4 said null: the processor number is found since 1.5')
@@ -339,7 +340,7 @@ test('FIXED review F1: siteStatus on a default client resolves a processor contr
   assert.deepEqual(Object.keys(count).filter((k) => !(k in v14)).sort(), ['cpuAt', 'cpuCount', 'isLive'])
   // not a processor here: unsupported, as in 1.4 (it may be one on another chain) / 在本链不是处理器：与 1.4 一样 unsupported
   chain.setCounterfeit(c.circuits)   // a fresh client: a true isCPU is kept for good / 新客户端：isCPU 为真会被永久记住
-  await assert.rejects(createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2', 'http://rpc3'], fetch: chain.fetch, quiet: true, clock: () => T }).siteStatus(`${c.circuits}#4246`), isStatus('INVALID_ARGUMENT', 'unsupported', /is not a TapeOut processor here/))
+  await assert.rejects(createTapeAPI({ conform: false, rpcUrls: ['http://rpc1', 'http://rpc2', 'http://rpc3'], fetch: chain.fetch, quiet: true, clock: () => T }).siteStatus(`${c.circuits}#4246`), isStatus('INVALID_ARGUMENT', 'unsupported', /is not a TapeOut processor here/))
   // the conformance mode refuses it before any request / 一致模式在任何请求之前拒绝
   const from = chain.conform.log.length
   await assert.rejects(_api().siteStatus(`${c.circuits}#4246`), isStatus('INVALID_ARGUMENT', 'unsupported', /allChains: true/))

@@ -92,13 +92,25 @@ the chain with the link. Verify: https://tapeapi.fun/verify/#r=eyJ2IjoyLCJzZXJ2a
 not the params or result.)
 ```
 
+### 协议版本
+
+远程服务器通过 Streamable HTTP 使用 MCP 的 2025-11-25、2025-06-18 和 2025-03-26 三个版本，调用之间不保存会话。较新的
+2026-07-28 版本用每个请求自带的元数据和 `server/discover` 调用取代了 `initialize` 握手，本服务器没有实现它。
+
+- **两代协议都能处理的客户端**先试较新的版本。较新版本规定：服务器不认识它时，这样的客户端回退到 `initialize`，之后
+  正常连接，用法同上文。
+- **只接受 2026-07-28 版本的客户端**连不上这个端点，会报告版本无法协商或方法不存在。
+
+以上依据较新版本对旧服务器的规定。我们没有逐个试过各种客户端。端点也放行了该版本新增的 `Mcp-Method` 和 `Mcp-Name`
+请求头，所以浏览器里的客户端不会在 CORS 预检这一步被拦下。
+
 ## 本地核验命令
 
 `tapeapi-mcp` 是 SDK 发布包里的一个本地 MCP 服务器（stdio），需要 Node.js 20 或以上。`npx` 从 GitHub Release 取得它，
 不经过 npm 注册表：
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 它和远程服务器的不同之处：
@@ -127,7 +139,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -147,7 +159,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -159,7 +171,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### 远程还是本地
@@ -208,7 +220,7 @@ claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeap
 [调用服务](consume.md)里那样在仓库的克隆目录里操作：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz
 ```
 
 ```js
@@ -356,7 +368,7 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
 
   ```bash
   # 42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### 客户端核对什么

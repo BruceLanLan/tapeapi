@@ -1,5 +1,6 @@
-// TAPI-26: Tape Channel -- a real-time private channel between two TapeOut containers.
-// TAPI-26：Tape Channel —— 两个 TapeOut 容器之间的实时私密通道。
+// TAPI-26: Tape Channel -- a real-time private channel between two TapeOut containers. Since TapeAPI 2.0 this module
+// implements TAPI-26 v2 (spec/TAPI-26-v2.md: the labels begin with tape-channel/), and only v2.
+// TAPI-26：Tape Channel —— 两个 TapeOut 容器之间的实时私密通道。自 TapeAPI 2.0 起本模块实现 TAPI-26 v2（标签以 tape-channel/ 开头），且只实现 v2。
 //
 // Identity (§3.1): channel keys the application generates and the circuit's holder authorises with an EIP-712
 // signature, published as .well-known/tape-channel.json in the container's site. The TapeSend key on the DeWebHub
@@ -47,21 +48,34 @@ export const MAX_SEQ = 2n ** 32n                    // re-handshake long before 
 const te = new TextEncoder()
 const td = new TextDecoder('utf-8', { fatal: true })
 const P_FIELD = 2n ** 255n - 19n
-const fail = (msg, extra) => { throw new TapeAPIError('CHANNEL_INVALID', msg, extra) }
+// Two codes (2.0, review G1 M1): INVALID_ARGUMENT for the caller's own options and arguments, checked before anything
+// is sent; CHANNEL_INVALID for TAPI-26 data -- an invite, a handshake message, a frame, a sealed invite, a key or a
+// relay list read from them -- that is malformed, unauthorised, expired or replayed. The shared validators (fromHex,
+// endpointBytes, assertPublicKey, checkRelays, checkBus) report CHANNEL_INVALID; `asArgument` re-labels them where
+// they check a caller's own option.
+// 两种错误码（2.0）：调用方自己的选项与参数有误报 INVALID_ARGUMENT（发送任何东西之前检查）；TAPI-26 数据（邀请、握手消息、帧、
+// 密封邀请，以及从中读出的密钥或中继列表）格式错误、未授权、过期或重放报 CHANNEL_INVALID。共用的校验函数报 CHANNEL_INVALID；
+// 它们检查的是调用方自己的选项时，用 `asArgument` 改报 INVALID_ARGUMENT。
+const fail = (msg, extra) => { throw new TapeAPIError('CHANNEL_INVALID', msg, extra) }   // extra: data.labels / data.peerLabels
+const bad = (msg) => { throw new TapeAPIError('INVALID_ARGUMENT', msg) }
+const asArgument = (f) => {
+  try { return f() } catch (e) { if (e instanceof TapeAPIError && e.code === 'CHANNEL_INVALID') bad(e.message); throw e }
+}
 
 // ---------------------------------------------------------------- labels: TAPI-26 v1 and v2 ----
-// Every domain-separation label exists in two versions. v1 (`TAP-26/…`) is TAPI-26 version 1, Stable (v1) and frozen
-// (TAPI-1 §4.1): it is the default and its bytes never change. v2 (`tape-channel/…`) is spec/TAPI-26-v2.md (Draft), the
-// labels the TAPs editors asked for; from 1.8.1 a caller opts in with `labels: 'v2'`, and from 2.0 it is the default.
-// Only the prefix differs. The labels ARE the version marker: the invite, accept and ready objects are the same in both
-// versions (the invite keeps `v: 1`), so both sides must be told the same version. A channel is of one version from its
+// Every domain-separation label exists in two versions. v2 (`tape-channel/…`) is spec/TAPI-26-v2.md, the labels the
+// TAPs editors asked for: an option since 1.8.1 (`labels: 'v2'`) and the default since 2.0. v1 (`TAP-26/…`) is TAPI-26
+// version 1, Stable (v1) and frozen (TAPI-1 §4.1): its bytes never change, and in 2.x `labels: 'v1'` still selects it
+// (deprecated: a compatibility option for channels with 1.x peers; it is not removed in 2.x). Only the prefix differs.
+// The labels ARE the version marker: the invite, accept and ready objects are the same in both versions (the invite
+// keeps `v: 1`), so both sides must be told the same version. A channel is of one version from its
 // invite to its last frame; the SDK never retries, opens or confirms anything under the other version's labels, and
 // where it can tell that a message was made under them it says so (data.labels / data.peerLabels) instead of failing
 // with a generic error.
-// 每个域分隔标签都有两个版本。v1（`TAP-26/…`）即 TAPI-26 第 1 版，Stable (v1) 且冻结：它是默认值，字节永不改变。v2
-// （`tape-channel/…`）即 spec/TAPI-26-v2.md（Draft），是 TAPs 编辑要求的标签；1.8.1 起调用方以 `labels: 'v2'` 选用，2.0 起成为
-// 默认。两者只有前缀不同。**标签本身就是版本标记**：邀请、accept、ready 对象在两个版本里完全相同（邀请仍是 `v: 1`），所以必须让双方
-// 知道同一个版本。一条通道从邀请到最后一帧只属于一个版本；SDK 从不改用另一版本的标签重试、打开或确认任何东西；能看出消息是用另一
+// 每个域分隔标签都有两个版本。v2（`tape-channel/…`）即 spec/TAPI-26-v2.md，是 TAPs 编辑要求的标签：1.8.1 起可以选用
+// （`labels: 'v2'`），2.0 起是默认值。v1（`TAP-26/…`）即 TAPI-26 第 1 版，Stable (v1) 且冻结，字节永不改变；2.x 里仍可用
+// `labels: 'v1'` 选它（已弃用：与 1.x 对端通信的兼容选项，2.x 内不删除）。两者只有前缀不同。**标签本身就是版本标记**：
+// 邀请、accept、ready 对象在两个版本里完全相同（邀请仍是 `v: 1`），所以必须让双方知道同一个版本。一条通道从邀请到最后一帧只属于一个版本；SDK 从不改用另一版本的标签重试、打开或确认任何东西；能看出消息是用另一
 // 版本的标签做出的时候，错误会明说（data.labels / data.peerLabels），而不是给一个笼统的失败。
 const CHANNEL_LABELS = {
   v1: {
@@ -76,13 +90,16 @@ const CHANNEL_LABELS = {
 const LB = Object.fromEntries(Object.entries(CHANNEL_LABELS).map(([v, t]) => [v, Object.fromEntries(Object.entries(t).map(([k, s]) => [k, te.encode(s)]))]))
 /** The other label version / 另一个标签版本 */
 export const otherLabels = (v) => (v === 'v2' ? 'v1' : 'v2')
+/** The label version used when a caller passes none: 'v2' since 2.0 ('v1' in 1.x) / 未传 `labels` 时所用的版本：2.0 起为 'v2'（1.x 为 'v1'） */
+export const DEFAULT_LABELS = 'v2'
 /**
- * `labels`: undefined (= 'v1', the default), 'v1' or 'v2'. Anything else is a configuration mistake, never read as v1.
- * `labels`：undefined（即默认的 'v1'）、'v1' 或 'v2'。其他值都是配置错误，绝不当作 v1。
+ * `labels`: undefined (= DEFAULT_LABELS, 'v2' since 2.0), 'v2' or 'v1' (deprecated in 2.x). Anything else is a
+ * configuration mistake, never read as either version.
+ * `labels`：undefined（即 DEFAULT_LABELS，2.0 起为 'v2'）、'v2' 或 'v1'（2.x 内已弃用）。其他值都是配置错误，绝不当作任何版本。
  */
 export function checkLabels(labels, name = 'labels') {
-  if (labels === undefined) return 'v1'
-  if (labels !== 'v1' && labels !== 'v2') throw new TapeAPIError('INVALID_ARGUMENT', `${name} must be 'v1' (TAPI-26/27 version 1, labels TAP-26/ and TAP-27/, the default) or 'v2' (TAPI-26/27 version 2, labels tape-channel/ and tape-group/)`)
+  if (labels === undefined) return DEFAULT_LABELS
+  if (labels !== 'v1' && labels !== 'v2') throw new TapeAPIError('INVALID_ARGUMENT', `${name} must be 'v2' (TAPI-26/27 version 2, labels tape-channel/ and tape-group/, the default) or 'v1' (TAPI-26/27 version 1, labels TAP-26/ and TAP-27/, deprecated)`)
   return labels
 }
 // The message a version mismatch gets, wherever one is detected / 版本不一致时的统一说明
@@ -156,8 +173,8 @@ export const publicKeyOf = (secretKey) => x25519.getPublicKey(secretKey)
 // are different: anyone can derive one from a container.)
 // 通道房间，每个方向一个，由通道号派生。通道号只出现在密封邀请里，所以通道房间名是猜不到的凭据，也不透露谁在和谁通信。
 // （收件房间不同：任何人都能由容器推导出来。）
-// `labels` (TAPI-26 v2, opt-in from 1.8.1): the rooms of a v2 channel are other rooms; pass the channel's version.
-// `labels`（TAPI-26 v2，1.8.1 起可选）：v2 通道的房间是另外的房间；传入通道的版本。
+// `labels` ('v2' by default since 2.0; 'v1' deprecated): the rooms of each version are other rooms; pass the channel's version.
+// `labels`（2.0 起默认 'v2'；'v1' 已弃用）：两个版本的房间互不相同；传入通道的版本。
 export function roomsFor(cid, { labels } = {}) {
   const L = LB[checkLabels(labels)]
   const c = typeof cid === 'string' ? fromHex(cid, 16, 'cid') : cid
@@ -211,11 +228,11 @@ function otherConfirms(args, labels) {
 
 // ---------------------------------------------------------------- handshake ----
 function party(p, who, needSecret) {
-  if (!p || typeof p !== 'object') fail(`${who} is required`)
+  if (!p || typeof p !== 'object') bad(`${who} is required`)
   const chainId = p.chainId ?? 56
-  const ep = endpointBytes(p.container, chainId)
+  const ep = asArgument(() => endpointBytes(p.container, chainId))
   if (needSecret) {
-    if (!(p.staticSecret instanceof Uint8Array) || p.staticSecret.length !== 32) fail(`${who}.staticSecret must be 32 bytes`)
+    if (!(p.staticSecret instanceof Uint8Array) || p.staticSecret.length !== 32) bad(`${who}.staticSecret must be 32 bytes`)
     return { ep, chainId, container: p.container, secret: p.staticSecret, pub: x25519.getPublicKey(p.staticSecret) }
   }
   const pub = typeof p.staticPublic === 'string' ? fromHex(p.staticPublic, 32, `${who}.staticPublic`) : p.staticPublic
@@ -276,19 +293,19 @@ const PENDING = new WeakMap()
  */
 // `random` exists only so spec vectors can be reproduced; production MUST use the default secure source.
 // `random` 仅为复现规范向量而存在；生产环境 MUST 使用默认的安全随机源。
-// `labels`: 'v1' (default, TAPI-26 v1) or 'v2' (TAPI-26 v2, tape-channel/ labels, opt-in from 1.8.1). The invite object
+// `labels`: 'v2' (default since 2.0, TAPI-26 v2, tape-channel/ labels) or 'v1' (TAPI-26 v1, deprecated in 2.x). The invite object
 // is the same in both versions and does not say which one it is: the responder must be told (pass the same `labels` to
 // acceptInvite). The handle and the session report it as `labels`; the rooms to listen on are roomsFor(cid, { labels }).
-// `labels`：'v1'（默认，TAPI-26 第 1 版）或 'v2'（TAPI-26 第 2 版，tape-channel/ 标签，1.8.1 起可选）。邀请对象在两个版本里
+// `labels`：'v2'（2.0 起默认，TAPI-26 第 2 版，tape-channel/ 标签）或 'v1'（TAPI-26 第 1 版，2.x 内已弃用）。邀请对象在两个版本里
 // 完全相同，也不说明自己属于哪个版本：必须告诉响应方（给 acceptInvite 传同样的 `labels`）。句柄与会话以 `labels` 报告版本；
 // 要监听的房间是 roomsFor(cid, { labels })。
 export function createInvite({ self, peer, relays = [], bus, keys = KEYS_CHANNEL, ttlS = DEFAULT_INVITE_TTL_S, webrtc, now = nowS(), random = randomBytes, labels }) {
   const lv = checkLabels(labels)
   const a = party(self, 'self', true), b = party(peer, 'peer', false)
-  if (!Number.isInteger(ttlS) || ttlS < 30 || ttlS > MAX_INVITE_TTL_S) fail(`ttlS must be an integer in [30, ${MAX_INVITE_TTL_S}]`)
-  checkRelays(relays)
-  checkBus(bus)
-  if (!KEY_KINDS.has(keys)) fail(`keys must be one of ${[...KEY_KINDS].join(', ')}`)
+  if (!Number.isInteger(ttlS) || ttlS < 30 || ttlS > MAX_INVITE_TTL_S) bad(`ttlS must be an integer in [30, ${MAX_INVITE_TTL_S}]`)
+  asArgument(() => checkRelays(relays))
+  asArgument(() => checkBus(bus))
+  if (!KEY_KINDS.has(keys)) bad(`keys must be one of ${[...KEY_KINDS].join(', ')}`)
   dh(a.secret, b.pub, 'the peer static key').fill(0)   // refuse a low-order peer key now, not at step 2 / 立刻拒绝低阶的对方密钥
   const cid = random(16)
   const e = generateKeyPair(random)
@@ -339,7 +356,7 @@ export function acceptInvite({ self, peer, invite, now = nowS(), random = random
   if (!invite.from || typeof invite.from.container !== 'string' || invite.from.container.toLowerCase() !== String(a.container).toLowerCase() || invite.from.chainId !== a.chainId) {
     fail('invite.from does not name the peer whose key was supplied')
   }
-  if (seen !== undefined && !(seen instanceof Set)) fail('seen must be a Set of accepted channel ids')
+  if (seen !== undefined && !(seen instanceof Set)) bad('seen must be a Set of accepted channel ids')
   const cidHex = toHex(cid)
   if (seen?.has(cidHex)) fail(`channel ${cidHex} was already accepted: refusing a replayed invite`)
   const ih = inviteHash(invite)
@@ -369,8 +386,8 @@ export function acceptInvite({ self, peer, invite, now = nowS(), random = random
  */
 export function completeInvite(pending, accept, { now = nowS() } = {}) {
   const st = pending ? PENDING.get(pending) : undefined
-  if (!st) fail('pending state is not an original handle from createInvite (a copy carries no secret): restart the handshake')
-  if (st.done) fail('pending state already used')
+  if (!st) bad('pending state is not an original handle from createInvite (a copy carries no secret): restart the handshake')
+  if (st.done) bad('pending state already used')
   if (!accept || accept.t !== 'accept') fail('not an accept message')
   if (!sameBytes(fromHex(accept.cid, 16, 'accept.cid'), st.cid)) fail('accept is for a different channel')
   if (st.exp <= now) fail('the invite expired before it was accepted')
@@ -430,7 +447,7 @@ function makeSession({ role, cid, sendKey, recvKey, th, peerConfirm, otherConfir
      * 仅响应方：核对发起方的 `ready`。核对通过前拒绝入站帧；邀请过期后才到的 `ready` 也拒绝：握手两侧都有截止时间。
      */
     confirm(ready, { now = nowS() } = {}) {
-      if (role !== 'responder') fail('only the responder confirms')
+      if (role !== 'responder') bad('only the responder confirms')
       if (isConfirmed) return
       if (!ready || ready.t !== 'ready') fail('not a ready message')
       if (!sameBytes(fromHex(ready.cid, 16, 'ready.cid'), cid)) fail('ready is for a different channel')
@@ -448,10 +465,10 @@ function makeSession({ role, cid, sendKey, recvKey, th, peerConfirm, otherConfir
     },
     /** Encrypt one message. Returns frame bytes: uint64 seq || ciphertext || tag. / 加密一条消息。 */
     seal(data) {
-      if (closed) fail('channel is closed')
+      if (closed) bad('channel is closed')
       const pt = typeof data === 'string' ? te.encode(data) : data
-      if (!(pt instanceof Uint8Array)) fail('seal takes a string or Uint8Array')
-      if (pt.length > MAX_FRAME_BYTES) fail(`frame of ${pt.length} bytes exceeds ${MAX_FRAME_BYTES}`)
+      if (!(pt instanceof Uint8Array)) bad('seal takes a string or Uint8Array')
+      if (pt.length > MAX_FRAME_BYTES) bad(`frame of ${pt.length} bytes exceeds ${MAX_FRAME_BYTES}`)
       if (sendSeq >= MAX_SEQ) fail('frame limit reached: open a new channel')
       const seq = sendSeq++
       return concat(u64be(seq), chacha20poly1305(sendKey, nonce(seq), aad(dirOut, seq)).encrypt(pt))
@@ -464,7 +481,7 @@ function makeSession({ role, cid, sendKey, recvKey, th, peerConfirm, otherConfir
      * 由应用决定能否容忍丢失。调用不成功就不消耗任何东西。
      */
     open(frame, { text = false } = {}) {
-      if (closed) fail('channel is closed')
+      if (closed) bad('channel is closed')
       if (role === 'responder' && !isConfirmed) fail('initiator has not confirmed yet: refusing inbound frames')
       if (!(frame instanceof Uint8Array) || frame.length < 8 + 16) fail('frame too short')
       if (frame.length > 8 + MAX_FRAME_BYTES + 16) fail('frame too long')
@@ -494,7 +511,7 @@ const WIRE_HANDSHAKE = 0x01, WIRE_FRAME = 0x02, WIRE_INVITE = 0x03
 export function encodeWire(x) {
   if (x instanceof Uint8Array) return concat(Uint8Array.of(WIRE_FRAME), x)
   if (x && (x.t === 'accept' || x.t === 'ready')) return concat(Uint8Array.of(WIRE_HANDSHAKE), te.encode(JSON.stringify(x)))
-  fail('encodeWire takes a frame or an accept/ready message')
+  bad('encodeWire takes a frame or an accept/ready message')
 }
 export function decodeWire(b) {
   if (!(b instanceof Uint8Array) || b.length < 1) fail('empty wire message')
@@ -530,9 +547,10 @@ const sleep = (ms, signal) => new Promise((r) => {
   const t = setTimeout(r, ms)
   signal?.addEventListener('abort', () => { clearTimeout(t); r() }, { once: true })
 })
-export function relayTransport({ api, svc, payer, inbound, outbound, waitMs = 20_000, retryMs = 1_000 }) {
-  if (!api || typeof api.call !== 'function') fail('relayTransport needs a TapeAPI client (createTapeAPI)')
-  for (const [n, r] of [['inbound', inbound], ['outbound', outbound]]) if (typeof r !== 'string' || !/^[0-9a-f]{64}$/.test(r)) fail(`${n} must be a room id`)
+export function relayTransport({ api, service, payer, inbound, outbound, waitMs = 20_000, retryMs = 1_000 }) {
+  if (!api || typeof api.call !== 'function') bad('relayTransport needs a TapeAPI client (createTapeAPI)')
+  if (!service || typeof service !== 'object') bad('relayTransport needs { api, service }: service is the resolved relay (await api.resolve(...))')
+  for (const [n, r] of [['inbound', inbound], ['outbound', outbound]]) if (typeof r !== 'string' || !/^[0-9a-f]{64}$/.test(r)) bad(`${n} must be a room id`)
   let cursor = -1
   let epoch = null
   let generation = 0
@@ -540,12 +558,12 @@ export function relayTransport({ api, svc, payer, inbound, outbound, waitMs = 20
   // A priced relay still carries the handshake for free through `relayHandshake` (TAPI-26 §3.5): the responder
   // must send `accept` before it has any reason to have funded a channel toward the relay.
   // 收费中继仍通过 `relayHandshake` 免费承载握手：响应方必须先发 `accept`，那时它还没理由已经向中继充值。
-  const hasFreeHandshake = () => (svc.manifest?.methods || []).some((m) => m.name === 'relayHandshake' && (m.priceBEM ?? '0') === '0')
+  const hasFreeHandshake = () => (service.manifest?.methods || []).some((m) => m.name === 'relayHandshake' && (m.priceBEM ?? '0') === '0')
   const send = async (wire) => {
     const handshake = wire instanceof Uint8Array && wire[0] === WIRE_HANDSHAKE
     const method = handshake && hasFreeHandshake() ? 'relayHandshake' : 'relaySend'
     const opts = method === 'relaySend' && payer ? { payer } : {}
-    return (await api.call(svc, method, { room: outbound, frame: toBase64(wire) }, opts)).result
+    return (await api.call(service, method, { room: outbound, frame: toBase64(wire) }, opts)).result
   }
   // One poll. Frames are handed over one by one: a malformed frame is skipped, never allowed to take the good
   // frames around it down with it (audit L-8). When the room was re-created the relay reports a new epoch and
@@ -557,7 +575,7 @@ export function relayTransport({ api, svc, payer, inbound, outbound, waitMs = 20
     // unchanged: the cursor is -1 whenever epoch is still null. / `epoch` 总是发送，中继报出之前为 `null`；行为不变：
     // epoch 仍为 null 时游标必为 -1。
     const params = { room: inbound, after: cursor, waitMs: wait, epoch }
-    const r = await api.call(svc, 'relayRecv', params, { timeoutMs: wait + 10_000, signal })
+    const r = await api.call(service, 'relayRecv', params, { timeoutMs: wait + 10_000, signal })
     const res = r.result || {}
     if (typeof res.epoch === 'string' && res.epoch !== epoch) { epoch = res.epoch; cursor = -1 }
     const out = []
@@ -634,8 +652,8 @@ const logFacts = (logs) => {
   return logs.map((l) => ({ blockNumber: Number(BigInt(l.blockNumber)), logIndex: Number(BigInt(l.logIndex)), data: String(l.data).toLowerCase(), removed: l.removed === true, blockHash: h(l.blockHash), transactionHash: h(l.transactionHash), room: room(l) }))
 }
 const checkWire = (wire) => {
-  if (!(wire instanceof Uint8Array) || wire.length === 0) fail('wire message must be non-empty bytes')
-  if (wire.length > CHANNELBUS_MAX_WIRE) fail(`wire message of ${wire.length} bytes exceeds ${CHANNELBUS_MAX_WIRE}`)
+  if (!(wire instanceof Uint8Array) || wire.length === 0) bad('wire message must be non-empty bytes')
+  if (wire.length > CHANNELBUS_MAX_WIRE) bad(`wire message of ${wire.length} bytes exceeds ${CHANNELBUS_MAX_WIRE}`)
 }
 
 /**
@@ -695,7 +713,7 @@ const checkWire = (wire) => {
  */
 export function busTransport({ rpc, bus, inbound, outbound, sendTx, fromBlock, lookback = 600, confirmations = 2, overlap = 16, pollMs = 1500, chunk = 1000, minChunk = 40, budgetMs = 20_000, verdictMs = VERDICT_MS, startGraceMs = START_GRACE_MS, blockBodyLimit = BLOCK_BODY_LIMIT, warn }) {
   checkBusRpc(rpc, bus)
-  for (const [n, r] of [['inbound', inbound], ['outbound', outbound]]) if (typeof r !== 'string' || !/^[0-9a-f]{64}$/.test(r)) fail(`${n} must be a room id`)
+  for (const [n, r] of [['inbound', inbound], ['outbound', outbound]]) if (typeof r !== 'string' || !/^[0-9a-f]{64}$/.test(r)) bad(`${n} must be a room id`)
   const scanner = busScanner({ rpc, bus, fromBlock, lookback, confirmations, overlap, chunk, minChunk, budgetMs, verdictMs, startGraceMs, blockBodyLimit, warn })
 
   // Gas: a fixed cost per transaction and per event, then 16 per calldata byte and 8 per logged byte; no estimate
@@ -707,7 +725,7 @@ export function busTransport({ rpc, bus, inbound, outbound, sendTx, fromBlock, l
   // Several wire messages to the outbound room in ONE transaction (for example ready + the first frame): the
   // per-transaction base cost is paid once. / 一笔交易发多条（例如 ready 与第一帧），基础费用只付一次。
   const txMany = (wires) => {
-    if (!Array.isArray(wires) || wires.length === 0 || wires.length > CHANNELBUS_MAX_BATCH) fail(`sendMany takes 1..${CHANNELBUS_MAX_BATCH} wire messages`)
+    if (!Array.isArray(wires) || wires.length === 0 || wires.length > CHANNELBUS_MAX_BATCH) bad(`sendMany takes 1..${CHANNELBUS_MAX_BATCH} wire messages`)
     const parts = []
     let total = 0
     for (const w of wires) { checkWire(w); parts.push(Uint8Array.of(w.length >> 8, w.length & 0xff), w); total += 2 + w.length }
@@ -716,7 +734,7 @@ export function busTransport({ rpc, bus, inbound, outbound, sendTx, fromBlock, l
     for (const p of parts) { packed.set(p, at); at += p.length }
     return { to: bus, data: encodeCall('sendMany', ['0x' + outbound, packed]), value: '0x0', gas: hexN(40_000 + wires.length * 12_000 + 48 * total) }
   }
-  const needWallet = () => { if (typeof sendTx !== 'function') fail('busTransport.send needs sendTx: the SDK holds no wallet') }
+  const needWallet = () => { if (typeof sendTx !== 'function') bad('busTransport.send needs sendTx: the SDK holds no wallet') }
   const send = async (wire) => { needWallet(); return sendTx(tx(wire)) }
   const sendMany = async (wires) => { needWallet(); return sendTx(txMany(wires)) }
   const poll = async () => (await scanner.scan([inbound])).map((x) => x.wire)
@@ -762,11 +780,11 @@ export function busReader({ rpc, bus, rooms = [], fromBlock, lookback = 600, con
   // 在途的轮询只更新它开始时的那个请求（比较后设置）。
   const behind = new Map()
   let polled = false           // rooms added before the first poll starts are read from where it starts / 首次轮询开始前加入的房间从其起点读
-  const checkRoom = (r) => { if (typeof r !== 'string' || !/^[0-9a-f]{64}$/.test(r)) fail('room must be a room id (64 lowercase hex)') }
+  const checkRoom = (r) => { if (typeof r !== 'string' || !/^[0-9a-f]{64}$/.test(r)) bad('room must be a room id (64 lowercase hex)') }
   const add = (room, handler = null, { fromBlock: from } = {}) => {
     checkRoom(room)
-    if (handler !== null && typeof handler !== 'function') fail('a room handler must be a function')
-    if (from !== undefined && !(Number.isInteger(from) && from >= 0)) fail('fromBlock must be a block number')
+    if (handler !== null && typeof handler !== 'function') bad('a room handler must be a function')
+    if (from !== undefined && !(Number.isInteger(from) && from >= 0)) bad('fromBlock must be a block number')
     const known = handlers.has(room)
     handlers.set(room, handler)
     // An explicit fromBlock always counts; otherwise a new room (or one removed and added again, in flight or not)
@@ -824,8 +842,8 @@ export function busReader({ rpc, bus, rooms = [], fromBlock, lookback = 600, con
 }
 
 function checkBusRpc(rpc, bus) {
-  if (!rpc || typeof rpc.call !== 'function' || typeof rpc.blockNumber !== 'function') fail('busTransport needs a multi-node rpc client (createRpc / api.rpc)')
-  if (!isAddress(bus)) fail('bus must be a ChannelBus contract address')
+  if (!rpc || typeof rpc.call !== 'function' || typeof rpc.blockNumber !== 'function') bad('busTransport needs a multi-node rpc client (createRpc / api.rpc)')
+  if (!isAddress(bus)) bad('bus must be a ChannelBus contract address')
 }
 
 // Poll until stop(); hands every item to onItem in order. An error from onItem is reported and the batch continues;
@@ -893,7 +911,7 @@ const isResultCap = (m) => /exceeds? max(imum)? results|max results \d+|retry wi
 // error is RPC_ERROR, whose message is the node's after the method name.
 // 节点拒绝 eth_getLogs 时说了什么；连不上时为 null。rpc.js 把节点限制类回答（以及随 HTTP 错误状态码发来的 JSON-RPC 错误）
 // 放在 RPC_UNAVAILABLE 的 `refusals` 里；其它 JSON-RPC 错误是 RPC_ERROR，方法名之后就是节点的原话。
-const refusalOf = (e) => (e?.code === 'RPC_ERROR' ? { code: Number(e.rpcCode), message: String(e.message ?? '').replace(/^eth_getLogs: /, '') } : (e?.refusals?.[0] ?? null))
+const refusalOf = (e) => (e?.code === 'RPC_ERROR' ? { code: Number(e.data?.rpcCode), message: String(e.message ?? '').replace(/^eth_getLogs: /, '') } : (e?.data?.refusals?.[0] ?? null))
 // "This node serves no logs at all" is an ALLOWLIST (review R3-1): -32601 (no such method), exactly "limit exceeded"
 // (bsc-dataseed.bnbchain.org and bsc-dataseed1.defibit.io answer every eth_getLogs, even one block, with -32005 "limit
 // exceeded": recorded 2026-09-25), or a message saying the method is not supported or disabled. Anything else -- "header
@@ -904,7 +922,7 @@ const neverServes = (r) => r.code === -32601 || /^\s*limit exceeded\s*$/i.test(r
 // `big`: the answer holds too many logs -- more than this client accepts (rpc.js sets `tooLarge`) or than the node returns
 // at once (a result cap) -- whatever the span (review R6-3). / `big`：回答里日志太多——超过本客户端接受的大小，或节点单次返回的条数。
 const kindOf = (e) => {
-  const r = refusalOf(e), big = e?.tooLarge === true
+  const r = refusalOf(e), big = e?.data?.tooLarge === true
   return r ? { refusal: r, history: isHistoryLimit(r.message), range: isRangeLimit(r.message), noLogs: neverServes(r), big: big || isResultCap(r.message) } : { refusal: null, history: false, range: false, noLogs: false, big }
 }
 export { kindOf as _busKindOf }   // for tests: how the scanner reads a failed eth_getLogs / 供测试：扫描器如何理解失败的 eth_getLogs
@@ -999,16 +1017,16 @@ export function _busMerge(nodes, lo, hi) {
 // The reading half of busTransport and busReader: one cursor, one reorg memory, per-node state, for any set of rooms.
 // busTransport 与 busReader 的读取部分：一个游标、一份重组记忆、每节点的状态，适用于任意一组房间。
 function busScanner({ rpc, bus, fromBlock, lookback, confirmations, overlap, chunk, minChunk, budgetMs, verdictMs = VERDICT_MS, startGraceMs = START_GRACE_MS, blockBodyLimit = BLOCK_BODY_LIMIT, warn }) {
-  if (fromBlock !== undefined && !(Number.isInteger(fromBlock) && fromBlock >= 0)) fail('fromBlock must be a block number')
-  if (!(Number.isInteger(confirmations) && confirmations >= 0)) fail('confirmations must be a non-negative integer')
-  if (!(Number.isInteger(lookback) && lookback >= 0)) fail('lookback must be a non-negative integer')
-  if (!(Number.isInteger(overlap) && overlap >= 0)) fail('overlap must be a non-negative integer')
-  if (!(Number.isInteger(minChunk) && minChunk >= 1 && Number.isInteger(chunk) && chunk >= minChunk)) fail('chunk and minChunk must be integers with chunk >= minChunk >= 1')
-  if (!(typeof budgetMs === 'number' && budgetMs > 0)) fail('budgetMs must be a positive number of milliseconds')
-  if (!(typeof verdictMs === 'number' && verdictMs >= 0)) fail('verdictMs must be a non-negative number of milliseconds')
-  if (!(typeof startGraceMs === 'number' && startGraceMs >= 0)) fail('startGraceMs must be a non-negative number of milliseconds')
-  if (!(Number.isInteger(blockBodyLimit) && blockBodyLimit > 0)) fail('blockBodyLimit must be a positive number of bytes')
-  if (warn !== undefined && typeof warn !== 'function') fail('warn must be a function')
+  if (fromBlock !== undefined && !(Number.isInteger(fromBlock) && fromBlock >= 0)) bad('fromBlock must be a block number')
+  if (!(Number.isInteger(confirmations) && confirmations >= 0)) bad('confirmations must be a non-negative integer')
+  if (!(Number.isInteger(lookback) && lookback >= 0)) bad('lookback must be a non-negative integer')
+  if (!(Number.isInteger(overlap) && overlap >= 0)) bad('overlap must be a non-negative integer')
+  if (!(Number.isInteger(minChunk) && minChunk >= 1 && Number.isInteger(chunk) && chunk >= minChunk)) bad('chunk and minChunk must be integers with chunk >= minChunk >= 1')
+  if (!(typeof budgetMs === 'number' && budgetMs > 0)) bad('budgetMs must be a positive number of milliseconds')
+  if (!(typeof verdictMs === 'number' && verdictMs >= 0)) bad('verdictMs must be a non-negative number of milliseconds')
+  if (!(typeof startGraceMs === 'number' && startGraceMs >= 0)) bad('startGraceMs must be a non-negative number of milliseconds')
+  if (!(Number.isInteger(blockBodyLimit) && blockBodyLimit > 0)) bad('blockBodyLimit must be a positive number of bytes')
+  if (warn !== undefined && typeof warn !== 'function') bad('warn must be a function')
   let next = fromBlock ?? null          // the next block to read / 下一个要读的区块
   let started = false                   // the cursor has moved once: gaps below it were reported / 游标动过：其下的空洞已报告过
   let oldestServed = null
@@ -1064,7 +1082,7 @@ function busScanner({ rpc, bus, fromBlock, lookback, confirmations, overlap, chu
   // 只有单个区块超限才是说谎：几个塞满的区块合起来可以诚实地超过 64 MiB，为此停用节点会让每个塞满区块都读不了，直到滑出窗口。
   const wholeCall = async (i, method, params, o, single = true) => {
     if (st[i].wholeBad === poll) throw new TapeAPIError('RPC_UNAVAILABLE', `${nodes[i].name} answered over ${blockBodyLimit} bytes this poll`, { tooLarge: true })
-    try { return await nodes[i].whole.call(method, params, o) } catch (e) { if (e?.tooLarge && single) st[i].wholeBad = poll; throw e }
+    try { return await nodes[i].whole.call(method, params, o) } catch (e) { if (e?.data?.tooLarge && single) st[i].wholeBad = poll; throw e }
   }
   // Log data (hex characters) above which a block is remembered as full: half the reader's bodyLimit, at most HEAVY_BLOCK
   // 超过此日志数据量的区块记为塞满：读取方 bodyLimit 的一半，至多 HEAVY_BLOCK
@@ -1181,8 +1199,8 @@ function busScanner({ rpc, bus, fromBlock, lookback, confirmations, overlap, chu
     const split = async (x, y, e0) => {
       if (--splits < 0) throw e0
       if (x === y) return readBlock(x)
-      if (e0?.tooLarge === true && !rangeBad) {
-        try { return await readWhole(x, y) } catch (e) { if (!isBig(e)) throw e; if (e?.tooLarge) rangeBad = true; e0 = e }
+      if (e0?.data?.tooLarge === true && !rangeBad) {
+        try { return await readWhole(x, y) } catch (e) { if (!isBig(e)) throw e; if (e?.data?.tooLarge) rangeBad = true; e0 = e }
       }
       const h = /retry with the range (\d+)-(\d+)/.exec(refusalOf(e0)?.message ?? '')
       // B is the last block before the count ran over, so B + 1 is the one that did: read it alone
@@ -1368,7 +1386,7 @@ function busScanner({ rpc, bus, fromBlock, lookback, confirmations, overlap, chu
         // the second half of the budget is left for the immediate read below (review R12-F1) / 预算的后一半留给下面的当场补读
         if (Date.now() >= deadline - budgetMs / 2) { s.sweepCut = poll; break }
         try { logs.push(...(await receiptsOf(i, topics, b))); cov.push([b, b]); swept.push(b) }
-        catch (e) { if (refusalOf(e)?.code === -32601) { s.noReceipts = poll; break } if (e?.tooLarge) break }
+        catch (e) { if (refusalOf(e)?.code === -32601) { s.noReceipts = poll; break } if (e?.data?.tooLarge) break }
       }
     }
     return { cov, logs, floor: confirmed ? known : null, noLogs, end, cannot, swept }
@@ -1674,9 +1692,9 @@ function busScanner({ rpc, bus, fromBlock, lookback, confirmations, overlap, chu
  * 这只是积木：不含超时、邀请处理与分流。
  */
 export function fanIn(transports, { all = false, window = 1024 } = {}) {
-  if (!Array.isArray(transports) || transports.length === 0) fail('fanIn takes a non-empty array of transports')
-  for (const t of transports) if (!t || typeof t.send !== 'function' || typeof t.poll !== 'function' || typeof t.start !== 'function' || typeof t.stop !== 'function') fail('each transport needs send, poll, start and stop')
-  if (!(Number.isInteger(window) && window >= 1)) fail('window must be a positive integer')
+  if (!Array.isArray(transports) || transports.length === 0) bad('fanIn takes a non-empty array of transports')
+  for (const t of transports) if (!t || typeof t.send !== 'function' || typeof t.poll !== 'function' || typeof t.start !== 'function' || typeof t.stop !== 'function') bad('each transport needs send, poll, start and stop')
+  if (!(Number.isInteger(window) && window >= 1)) bad('window must be a positive integer')
   const seen = new Set()               // digests of the last `window` wire messages, oldest first / 最近 window 条的摘要，旧的在前
   const origin = new WeakMap()         // wire -> index of the transport that delivered it / 线路消息 -> 送达它的传输
   const fresh = (w, index) => {
@@ -1690,7 +1708,7 @@ export function fanIn(transports, { all = false, window = 1024 } = {}) {
   const errorOf = (errs) => new TapeAPIError('CHANNEL_INVALID', `every transport failed: ${errs.map((e, i) => `#${i}: ${e?.message || e}`).join('; ')}`)
   const send = async (wire, { all: every = all, index } = {}) => {
     if (index !== undefined) {
-      if (!transports[index]) fail(`no transport #${index}`)
+      if (!transports[index]) bad(`no transport #${index}`)
       return transports[index].send(wire)
     }
     if (every) {
@@ -1738,8 +1756,10 @@ export function generateIdentity(random = randomBytes) {
 
 /**
  * A container's inbox room on any relay or ChannelBus: where invites to it are posted. A container has one inbox room
- * per label version: { labels: 'v2' } gives the TAPI-26 v2 room, where v2 invites (and TAPI-27 v2 group invites) go.
- * 容器的收件房间。每个标签版本各有一个：{ labels: 'v2' } 给出 TAPI-26 第 2 版的收件房间，v2 邀请（及 TAPI-27 v2 入群邀请）投到那里。
+ * per label version: the default ('v2' since 2.0) gives the TAPI-26 v2 room, where v2 invites (and TAPI-27 v2 group
+ * invites) go; { labels: 'v1' } gives the version-1 room of 1.x peers.
+ * 容器的收件房间。每个标签版本各有一个：默认（2.0 起为 'v2'）给出 TAPI-26 第 2 版的收件房间，v2 邀请（及 TAPI-27 v2 入群邀请）
+ * 投到那里；{ labels: 'v1' } 给出 1.x 对端所用的第 1 版收件房间。
  */
 export function inboxRoom(container, chainId = 56, { labels } = {}) {
   return toHex(sha256(concat(LB[checkLabels(labels)].inbox, endpointBytes(container, chainId))))
@@ -1754,14 +1774,16 @@ export function inboxRoom(container, chainId = 56, { labels } = {}) {
  */
 export function sealInvite(invite, opts) { return sealToInbox(invite, opts) }
 /**
- * Seal any strict-JSON object (a TAPI-26 invite, a TAPI-27 group invite) for a container's inbox. With { labels: 'v2' }
- * it is sealed for the v2 inbox room (post it to inboxRoom(container, chainId, { labels: 'v2' })).
- * 密封任意严格 JSON 对象投进收件房间。{ labels: 'v2' } 时按第 2 版收件房间密封（投到 inboxRoom(容器, chainId, { labels: 'v2' })）。
+ * Seal any strict-JSON object (a TAPI-26 invite, a TAPI-27 group invite) for a container's inbox. By default ('v2' since
+ * 2.0) it is sealed for the v2 inbox room (post it to inboxRoom(container, chainId)); { labels: 'v1' } seals it for the
+ * version-1 room (inboxRoom(container, chainId, { labels: 'v1' })).
+ * 密封任意严格 JSON 对象投进收件房间。默认（2.0 起为 'v2'）按第 2 版收件房间密封（投到 inboxRoom(容器, chainId)）；
+ * { labels: 'v1' } 按第 1 版收件房间密封（投到 inboxRoom(容器, chainId, { labels: 'v1' })）。
  */
 export function sealToInbox(content, { to, random = randomBytes, labels }) {
   const L = LB[checkLabels(labels)]
   const R = assertPublicKey(typeof to?.staticPublic === 'string' ? fromHex(to.staticPublic, 32, 'to.staticPublic') : to?.staticPublic, 'to.staticPublic')
-  const room = fromHex(inboxRoom(to.container, to.chainId ?? 56, { labels }), 32, 'room')
+  const room = fromHex(asArgument(() => inboxRoom(to?.container, to?.chainId ?? 56, { labels })), 32, 'room')
   const e = random(32)
   const E = x25519.getPublicKey(e)
   const N = random(24)
@@ -1772,7 +1794,7 @@ export function sealToInbox(content, { to, random = randomBytes, labels }) {
   const C = xchacha20poly1305(K, N, concat(L.inbox, E, room)).encrypt(te.encode(canonicalJSON(content)))
   K.fill(0)
   const wire = concat(Uint8Array.of(WIRE_INVITE), E, N, C)
-  if (wire.length > MAX_FRAME_BYTES + 64) fail('sealed invite too large')
+  if (wire.length > MAX_FRAME_BYTES + 64) bad('sealed invite too large')
   return wire
 }
 
@@ -1786,10 +1808,10 @@ export function openInvite(wire, opts) { return decodeInviteContent(te.encode(ca
 export function openFromInbox(wire, { self, labels }) {
   const lv = checkLabels(labels)
   if (!(wire instanceof Uint8Array) || wire.length < 1 + 32 + 24 + 16 || wire[0] !== WIRE_INVITE) fail('not a sealed invite')
-  if (!(self?.staticSecret instanceof Uint8Array) || self.staticSecret.length !== 32) fail('self.staticSecret must be 32 bytes')
+  if (!(self?.staticSecret instanceof Uint8Array) || self.staticSecret.length !== 32) bad('self.staticSecret must be 32 bytes')
   const E = assertPublicKey(wire.slice(1, 33), 'sealed invite key')
   const N = wire.slice(33, 57)
-  const roomOf = (v) => fromHex(inboxRoom(self.container, self.chainId ?? 56, { labels: v }), 32, 'room')
+  const roomOf = (v) => fromHex(asArgument(() => inboxRoom(self.container, self.chainId ?? 56, { labels: v })), 32, 'room')
   const rooms = { [lv]: roomOf(lv) }
   const R = x25519.getPublicKey(self.staticSecret)
   const ss = dh(self.staticSecret, E, 'the sealed invite key')

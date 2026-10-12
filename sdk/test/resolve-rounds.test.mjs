@@ -48,7 +48,8 @@ function meter(fetchInner) {
   m.of = (url) => m.http.filter((h) => h.url === url).map((h) => h.fns)
   return m
 }
-const client = (fetch, o = {}) => createTapeAPI({ rpcUrls: RPC, quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch, ...o })
+// 1.x behaviour; 2.0 default is conform: 'tap10'
+const client = (fetch, o = {}) => createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch, ...o })
 
 test('resolve(name): 4 rounds and 12 HTTP requests cold (was 7 and 21), 2 rounds and 6 requests again on the same client (was 6 and 18)', async () => {
   const chain = service()
@@ -98,7 +99,7 @@ function mainnetService(chain = createFakeChain()) {
 test('FIXED SEC11-2 / FIXED SECR-5 budget: on the chain\'s own contracts the sentinel costs no round: 4 rounds, 18 HTTP requests (the two slots alone, never in an eth_call batch), 24 calls cold; the slots are cached like facts', async () => {
   const chain = mainnetService()
   const m = meter(chain.fetch)
-  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, fetch: m.fetch, onWarning: (w) => assert.fail(w.message) })
+  const api = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, fetch: m.fetch, onWarning: (w) => assert.fail(w.message) })
   const svc = await api.resolve(NAME)
   assert.equal(svc.sentinel.container, 'match')
   assert.deepEqual(svc.sentinel.implementations.map((x) => x.expected), [true, true])

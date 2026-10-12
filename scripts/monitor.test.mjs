@@ -2,9 +2,11 @@
 // 监控评估逻辑的离线测试：不联网，结果手工构造。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { evaluate, report, daysUntil, effectiveExpiry, retry, SERVICES, PAGES, WARN_DAYS, ACTIVATION_FAIL_DAYS, checkActivation, activationFindings, ASYNC_WAIT_S, asyncWaitMs, testFrame, judgeAsync, isNetworkError, checkRelayAsync, randomRoom } from './monitor.mjs'
+import { monitorClient, defaultModeLine, evaluate, report, daysUntil, effectiveExpiry, retry, SERVICES, PAGES, WARN_DAYS, ACTIVATION_FAIL_DAYS, checkActivation, activationFindings, ASYNC_WAIT_S, asyncWaitMs, testFrame, judgeAsync, isNetworkError, checkRelayAsync, randomRoom, chainFailure, slotFindings, checkSlots, checkChainAndCall, retryableResolve } from './monitor.mjs'
 import { encodeCall } from '../sdk/src/abi.js'
-import { TapeAPIError } from '../sdk/src/index.js'
+import { TapeAPIError, sig, MANIFEST_KEY, MAINNET } from '../sdk/src/index.js'
+import { CONFORM_MODE } from '../sdk/src/conform-sibling.js'
+import { createConformChain } from '../sdk/test/helpers/conform-chain.mjs'
 import { createRelayCore, relayMethods } from '../examples/relay-service/relay-core.mjs'
 
 const NOW = 1_790_000_000
@@ -452,4 +454,277 @@ test('MON-ACT-9: the --json output of a run with activation results prints (no b
   const a = await checkActivation(fakeChain({ isLive: word(0), isContainerLive: word(0), monthlyFee: word(10n ** 16n) }), { name: '11.1013.tape', container: CONTAINER }, { pauseMs: 0 })
   const text = JSON.stringify({ ...results(svc('api', { activation: a })), ...evaluate(results(svc('api', { activation: a })), NOW) }, null, 2)
   assert.match(text, /"feeText": "0\.01 BNB"/)
+})
+
+// ---------------------------------------------------------------- 2.0: the resolve is sorted by e.data.status / 2.0：解析按 e.data.status 分类
+// The monitor uses the SDK default (the TAP-10 conformance mode), whose errors name the outcome in e.data.status. The old
+// assertions above are untouched: a result with no chain.status keeps its one plain line.
+// 监控用 SDK 默认（TAP-10 一致模式），其错误在 e.data.status 里说明结果。上面的旧断言一字未动：没有 chain.status 的结果仍是原来那一行。
+const IMPL_OK = [
+  { role: 'siteRegistry', proxy: '0xd006ffdd5Ae313B17729621A00999cD3C71CE5e6', implementation: '0x1d279d138a4d803378a7d4557c056f1bed53c261', accepted: true },
+  { role: 'binding', proxy: '0x861EE183de2BBE4a6ecf9D15812C123b566a3DB7', implementation: '0xaa226181a6588d3f9ac0035e5f3dbaf311039bce', accepted: true },
+]
+const IMPL_NEW = [IMPL_OK[0], { ...IMPL_OK[1], implementation: '0x000000000000000000000000000000000000dEaD', accepted: false }]
+const failed = (status, extra = {}, error = `SITE_STATUS: ${status}: x`) => svc('api', { chain: { signer: undefined, expires: undefined, error, status, ...extra }, call: { ok: undefined, skipped: true }, activation: { skipped: true } })
+
+test('MON-2.0-1: unpaid is an ALERT and a problem (exit 1) of its own, not "on-chain resolve failed"', () => {
+  const r = results(failed('unpaid'), svc('relay'))
+  const ev = evaluate(r, NOW)
+  assert.equal(ev.healthy, false)
+  assert.equal(ev.problems.length, 1)
+  assert.match(ev.problems[0], /^api: UNPAID: api\.1013\.tape/)
+  assert.match(ev.problems[0], /no TAP-11 client resolves this service/)
+  assert.doesNotMatch(ev.problems[0], /on-chain resolve failed/)
+  assert.deepEqual(ev.alerts, ev.problems)
+  assert.deepEqual(ev.counts, { unpaid: 1 })
+  const md = report(r, ev, NOW)
+  assert.match(md, /1 problem\(s\), 1 ALERT\(s\)/)
+  assert.ok(md.indexOf('**ALERT**') > 0 && md.indexOf('**ALERT**') < md.indexOf('| Service |'), 'the alert heads the report, above the table')
+  assert.match(md, /Chain read failures by status: unpaid 1\./)
+  assert.doesNotMatch(md, /\*\*Problems\*\*/, 'an alert is not listed a second time under Problems')
+})
+
+test('MON-2.0-2: store-changed is an ALERT that names the implementation the store or payment contract now runs', () => {
+  const ev = evaluate(results(failed('store-changed', { implementations: IMPL_NEW }), svc('relay')), NOW)
+  assert.equal(ev.healthy, false)
+  assert.equal(ev.alerts.length, 1)
+  assert.match(ev.alerts[0], /^api: STORE-CHANGED:/)
+  assert.match(ev.alerts[0], /binding 0x861EE183de2BBE4a6ecf9D15812C123b566a3DB7 runs 0x000000000000000000000000000000000000dEaD/)
+  assert.match(ev.alerts[0], /SDK does not list/)
+  assert.doesNotMatch(ev.alerts[0], /siteRegistry/, 'only the unaccepted one is named')
+  assert.deepEqual(ev.counts, { storeChanged: 1 })
+})
+
+test('MON-2.0-3: not-opened, unsupported and other statuses are problems that say what they are, never alerts', () => {
+  const no = evaluate(results(failed('not-opened')), NOW)
+  assert.equal(no.healthy, false)
+  assert.match(no.problems[0], /^api: NOT OPENED:/)
+  assert.deepEqual([no.alerts, no.counts], [undefined, { notOpened: 1 }])
+  const un = evaluate(results(failed('unsupported')), NOW)
+  assert.match(un.problems[0], /not a form this client resolves \(unsupported\)/)
+  assert.deepEqual(un.counts, { unsupported: 1 })
+  const ot = evaluate(results(failed('manifest-invalid', {}, 'MANIFEST_INVALID: bad')), NOW)
+  assert.deepEqual(ot.problems, ['api: on-chain resolve failed [manifest-invalid] (MANIFEST_INVALID: bad)'])
+  assert.deepEqual(ot.counts, { other: 1 })
+})
+
+test('MON-2.0-4: unavailable is counted on its own, is a problem after the retry, and is not an alert', () => {
+  const ev = evaluate(results(failed('unavailable', {}, 'RPC_UNAVAILABLE: unavailable: quorum not reached'), svc('relay')), NOW)
+  assert.equal(ev.healthy, false)
+  assert.equal(ev.problems.length, 1)
+  assert.match(ev.problems[0], /^api: chain nodes unavailable:/)
+  assert.match(ev.problems[0], /the nodes, not the service/)
+  assert.equal(ev.alerts, undefined)
+  assert.deepEqual(ev.counts, { unavailable: 1 })
+  // two services with different statuses are counted apart / 两个服务状态不同，分别计数
+  const two = evaluate(results(failed('unavailable'), { ...failed('unpaid'), name: 'relay', label: '12.1013.tape' }), NOW)
+  assert.deepEqual(two.counts, { unavailable: 1, unpaid: 1 })
+  assert.equal(two.alerts.length, 1)
+  assert.equal(two.problems.length, 2)
+})
+
+test('MON-2.0-5: a healthy board and one with a plain chain.error keep exactly the 1.x evaluation shape (no alerts, no counts keys)', () => {
+  assert.deepEqual(evaluate(results(svc('api'), svc('relay')), NOW), { healthy: true, problems: [], warnings: [] })
+  const plain = svc('api', { chain: { signer: undefined, expires: undefined, error: 'RPC_UNAVAILABLE: quorum' }, call: { ok: undefined, skipped: true } })
+  assert.deepEqual(evaluate(results(plain), NOW), { healthy: false, problems: ['api: on-chain resolve failed (RPC_UNAVAILABLE: quorum)'], warnings: [] })
+  assert.deepEqual(chainFailure(svc('api')), { problems: [], alerts: [], unavailable: false, kind: null })
+})
+
+test('MON-2.0-6: the implementation-slot check: an unaccepted implementation is an ALERT even when the resolve worked; accepted ones are quiet', () => {
+  const ok = svc('api'); ok.slots = { status: 'ok', implementations: IMPL_OK }
+  assert.deepEqual(evaluate(results(ok, svc('relay')), NOW), { healthy: true, problems: [], warnings: [] })
+  assert.match(report(results(ok), { healthy: true, problems: [], warnings: [] }, NOW), /\| ok \(2 accepted\) \|/)
+  const bad = svc('api'); bad.slots = { status: 'ok', implementations: IMPL_NEW }
+  const ev = evaluate(results(bad, svc('relay')), NOW)
+  assert.equal(ev.healthy, false)
+  assert.match(ev.alerts[0], /^api: STORE-CHANGED: binding 0x861EE183de2BBE4a6ecf9D15812C123b566a3DB7 runs implementation 0x0000/)
+  assert.deepEqual(ev.counts, { storeChanged: 1 })
+  assert.match(report(results(bad), ev, NOW), /CHANGED binding 0x0000…dEaD/)
+  // the resolve already said store-changed: said once, not twice / 解析已说过 store-changed：只说一次
+  const both = failed('store-changed', { implementations: IMPL_NEW }); both.slots = { status: 'store-changed', implementations: IMPL_NEW }
+  const evb = evaluate(results(both), NOW)
+  assert.equal(evb.alerts.length, 1)
+  assert.deepEqual(evb.counts, { storeChanged: 1 })
+})
+
+test('MON-2.0-7: a slot check that could not read is a warning (the exit code stays), counted as unavailable once per service', () => {
+  const s = svc('api'); s.slots = { error: 'RPC_UNAVAILABLE: quorum not reached', status: 'unavailable' }
+  const ev = evaluate(results(s, svc('relay')), NOW)
+  assert.equal(ev.healthy, true)
+  assert.deepEqual(ev.problems, [])
+  assert.match(ev.warnings[0], /^api: implementation slots of the site store and payment contract could not be read \(RPC_UNAVAILABLE/)
+  assert.deepEqual(ev.counts, { unavailable: 1 })
+  assert.match(report(results(s), ev, NOW), /unreadable \(RPC_UNAVAILABLE: quorum not reached\)/)
+  // the resolve was unavailable too: still one count for the service / 解析也 unavailable：该服务仍只计一次
+  const t = failed('unavailable'); t.slots = { error: 'x', status: 'unavailable' }
+  assert.deepEqual(evaluate(results(t), NOW).counts, { unavailable: 1 })
+  assert.deepEqual(slotFindings(svc('api')), { problems: [], alerts: [], warnings: [], unavailable: false })
+})
+
+test('MON-2.0-8: checkSlots reads api.siteStatus, is retried only for a read that could not be adopted, and never throws', async () => {
+  let calls = 0
+  const api = { siteStatus: async (t) => { calls++; assert.deepEqual(t, { circuits: '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', tokenId: 11 }); return { status: 'unpaid', implementations: IMPL_OK, container: '0x1' } } }
+  const a = await checkSlots(api, { circuits: '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', tokenId: 11 }, { pauseMs: 0 })
+  assert.deepEqual(a, { status: 'unpaid', implementations: IMPL_OK })
+  assert.equal(calls, 1)
+  assert.doesNotThrow(() => JSON.stringify(a))
+  let n = 0
+  const flaky = { siteStatus: async () => { if (n++ === 0) throw new TapeAPIError('RPC_UNAVAILABLE', 'quorum', { data: { status: 'unavailable' } }); return { status: 'ok', implementations: IMPL_OK } } }
+  assert.equal((await checkSlots(flaky, {}, { pauseMs: 0 })).status, 'ok')
+  assert.equal(n, 2)
+  n = 0
+  const input = { siteStatus: async () => { n++; throw new TapeAPIError('INVALID_ARGUMENT', 'bad', { data: { status: 'input-error' } }) } }
+  assert.deepEqual(await checkSlots(input, {}, { pauseMs: 0 }), { error: 'INVALID_ARGUMENT: bad', status: 'input-error' })
+  assert.equal(n, 1, 'a definite answer is not asked twice')
+  const dead = { siteStatus: async () => { throw new Error('fetch failed') } }
+  assert.deepEqual(await checkSlots(dead, {}, { pauseMs: 0 }), { error: 'fetch failed', status: 'unavailable' })
+})
+
+test('MON-2.0-9: checkChainAndCall keeps e.data.status, does not retry a definite status, retries unavailable, and keeps the slot check either way', async () => {
+  const target = { circuits: '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', tokenId: 11 }
+  const base = { name: 'api', label: '11.1013.tape', ...target, probe: SERVICES[0].probe }
+  const stop = (status, data = {}) => new TapeAPIError('SITE_STATUS', `${status}: x`, { data: { ...data, status } })
+  // unpaid: asked once, call and activation skipped, slots still read
+  let resolves = 0
+  let r = await checkChainAndCall({ chainId: 56, resolve: async () => { resolves++; throw stop('unpaid', { container: '0x1111111111111111111111111111111111111111' }) }, siteStatus: async () => ({ status: 'unpaid', implementations: IMPL_OK }) }, base, { pauseMs: 0 })
+  assert.equal(resolves, 1)
+  assert.equal(r.chain.status, 'unpaid')
+  assert.equal(r.chain.container, '0x1111111111111111111111111111111111111111')
+  assert.deepEqual([r.call.skipped, r.activation.skipped, r.slots.status], [true, true, 'unpaid'])
+  assert.equal(evaluate(results({ name: 'api', label: base.label, health: svc('api').health, ...r }), NOW).alerts.length, 1)
+  // store-changed carries the implementations from the error
+  r = await checkChainAndCall({ chainId: 56, resolve: async () => { throw stop('store-changed', { implementations: IMPL_NEW }) }, siteStatus: async () => ({ status: 'store-changed', implementations: IMPL_NEW }) }, base, { pauseMs: 0 })
+  assert.deepEqual(r.chain.implementations, IMPL_NEW)
+  // unavailable: tried twice
+  resolves = 0
+  r = await checkChainAndCall({ chainId: 56, resolve: async () => { resolves++; throw stop('unavailable') }, siteStatus: async () => { throw stop('unavailable') } }, base, { pauseMs: 0 })
+  assert.equal(resolves, 2)
+  assert.equal(r.chain.status, 'unavailable')
+  assert.equal(r.slots.status, 'unavailable')
+  // a plain Error (no status) is retried and leaves no status, so the 1.x line stays
+  resolves = 0
+  r = await checkChainAndCall({ chainId: 56, resolve: async () => { resolves++; throw new Error('boom') }, siteStatus: async () => ({ status: 'ok', implementations: IMPL_OK }) }, base, { pauseMs: 0 })
+  assert.equal(resolves, 2)
+  assert.equal(r.chain.status, undefined)
+  assert.deepEqual(evaluate(results({ name: 'api', label: base.label, health: svc('api').health, ...r }), NOW).problems.filter((p) => /resolve failed/.test(p)), ['api: on-chain resolve failed (boom)'])
+  assert.deepEqual([retryableResolve(stop('unpaid')), retryableResolve(stop('unavailable')), retryableResolve(stop('stale-block')), retryableResolve(new Error('x'))], [false, true, true, true])
+})
+
+test('MON-2.0-10: a resolved service with accepted slots goes through checkChainAndCall to a healthy evaluation, and --json prints', async () => {
+  const target = { circuits: '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', tokenId: 11 }
+  const base = { name: 'api', label: '11.1013.tape', ...target, probe: SERVICES[0].probe }
+  const resolved = { container: CONTAINER, manifest: { signer: SIGNER, delegation: { expires: NOW + 60 * DAY }, endpoints: { live: ['https://api.tapeapi.fun'] } } }
+  const chain = fakeChain({ isLive: word(1), isContainerLive: word(1), containerPaidUntil: word(NOW + 25 * DAY) })
+  const api = { ...chain, resolve: async () => resolved, call: async () => ({ verified: true, result: { blockNumber: 7 } }), siteStatus: async () => ({ status: 'ok', implementations: IMPL_OK }) }
+  const r = await checkChainAndCall(api, base, { pauseMs: 0 })
+  assert.equal(r.chain.status, undefined)
+  assert.deepEqual(r.slots, { status: 'ok', implementations: IMPL_OK })
+  assert.equal(r.call.ok, true)
+  const res = results({ name: 'api', label: base.label, health: svc('api').health, ...r })
+  const ev = evaluate(res, NOW)
+  assert.deepEqual(ev, { healthy: true, problems: [], warnings: [] })
+  assert.doesNotThrow(() => JSON.stringify({ ...res, ...ev }))
+})
+
+// ---------------------------------------------------------------- 2.0 (C5): the default mode, resolved, and WARN_DAYS / 2.0（C5）：默认模式、resolved 与 WARN_DAYS
+test('MON-2.0-11: the monitor\'s client is the SDK default (the TAP-10 conformance mode), never conform: false, with no DEPRECATED warning', async () => {
+  const warned = []
+  const orig = console.warn
+  console.warn = (...a) => warned.push(a.join(' '))
+  let api
+  try { api = await monitorClient({ fetch: async () => new Response('{}') }) } finally { console.warn = orig }
+  assert.equal(CONFORM_MODE.get(api), true, 'conformance mode')
+  assert.deepEqual(warned, [], 'no deprecation warning')
+  assert.equal(api.chainId, 56)
+  assert.equal(CONFORM_MODE.get(await monitorClient()), true, 'the default nodes too (no request is made here)')
+})
+
+// A live-looking pair of services on the conform fake chain, resolved by the monitor's own client: the real 2.0 default
+// resolve, offline. `days`: days left on the delegation. / conform 假链上的两个服务，由监控自己的客户端解析：真实的 2.0 默认解析，离线。
+async function onConformChain({ days = 60, set = () => {} } = {}) {
+  const now = Math.floor(Date.now() / 1000)
+  const chain = createConformChain()
+  chain.state.headTime = now
+  const HOLDER_KEY = '0x' + '11'.repeat(32), SIGNER_KEY = '0x' + '22'.repeat(32)
+  const holder = sig.privateKeyToAddress(HOLDER_KEY), signer = sig.privateKeyToAddress(SIGNER_KEY)
+  const expires = now + days * DAY
+  const out = []
+  for (const tokenId of [11, 12]) {
+    const c = chain.circuit(tokenId, { holder })
+    chain.writeFile(c.container, MANIFEST_KEY, JSON.stringify({
+      tapeapi: '0.1', name: `svc${tokenId}`, circuits: c.circuits, tokenId: c.tokenId, container: c.container, signer,
+      delegation: { expires, sig: sig.signDigest(sig.delegationDigest(56, MAINNET.hub, { container: c.container, signer, expires }), HOLDER_KEY) },
+      endpoints: { live: ['https://svc.example/tapeapi/v1'], async: false },
+      methods: [{ name: 'blockNumber', priceBEM: '0', params: {}, returns: {} }],
+    }))
+    out.push({ tokenId, circuits: c.circuits, container: c.container })
+  }
+  set(chain, out)
+  // RPC to the fake chain; the service itself is not reachable here (the verified call fails, which this test does not judge)
+  // RPC 发往假链；服务本身在这里连不上（验签调用失败，本测试不评判它）
+  const fetch = async (url, init) => { if (String(url).startsWith('http://rpc')) return chain.fetch(url, init); throw new TypeError('offline test: no service here') }
+  const api = await monitorClient({ rpcUrls: ['http://rpc1', 'http://rpc2', 'http://rpc3'], fetch })
+  const rows = []
+  for (const [i, name] of ['api', 'relay'].entries()) {
+    const svcDef = { name, label: `${out[i].tokenId}.7.tape`, circuits: out[i].circuits, tokenId: out[i].tokenId, probe: SERVICES[0].probe }
+    const r = await checkChainAndCall(api, svcDef, { pauseMs: 0 })
+    rows.push({ name, label: svcDef.label, health: { status: 200, ok: true, signer, delegationExpires: expires, latencyMs: 1 }, ...r })
+  }
+  return { now, signer, expires, results: { services: rows, pages: pages() } }
+}
+const notCall = (problems) => problems.filter((p) => !/verified blockNumber failed/.test(p))
+
+test('MON-2.0-12: both services resolve in the default mode on a TAP-10 chain: chain.conform is "resolved" and the report says so', async () => {
+  const { now, signer, results: res } = await onConformChain()
+  for (const s of res.services) {
+    assert.equal(s.chain.error, undefined, s.chain.error)
+    assert.equal(s.chain.conform, 'resolved')
+    assert.equal(s.chain.signer, signer)
+    assert.equal(s.slots.status, 'ok'); assert.ok(s.slots.implementations.every((i) => i.accepted))
+    assert.equal(s.activation.live, true)
+  }
+  const ev = evaluate(res, now)
+  assert.ok(res.services.every((s) => /offline test: no service here/.test(s.call.error)), 'the call went through the test fetch, never the network')
+  assert.deepEqual(notCall(ev.problems), [], 'nothing but the unreachable test service')
+  assert.equal(defaultModeLine(res), 'Default-mode resolution (TAP-10): api resolved, relay resolved.')
+  assert.match(report(res, ev, now), /\nDefault-mode resolution \(TAP-10\): api resolved, relay resolved\.\n/)
+  assert.doesNotThrow(() => JSON.stringify({ ...res, ...ev }))
+})
+
+test('MON-2.0-13: WARN_DAYS still holds in the default mode: 10 days left on a resolved service is a problem (exit 1); 20 days is not', async () => {
+  const short = await onConformChain({ days: 10 })
+  assert.equal(short.results.services[0].chain.conform, 'resolved')
+  const ev = evaluate(short.results, short.now)
+  assert.equal(ev.healthy, false)
+  const lines = notCall(ev.problems)
+  assert.equal(lines.length, 2)
+  for (const [i, n] of ['api', 'relay'].entries()) assert.match(lines[i], new RegExp(`^${n}: delegation expires in (9|10) days \\(\\d{4}-\\d{2}-\\d{2}\\); re-sign it now$`))
+  const fine = await onConformChain({ days: 20 })
+  assert.deepEqual(notCall(evaluate(fine.results, fine.now).problems), [])
+  assert.ok(WARN_DAYS === 14)
+})
+
+test('MON-2.0-14: a resolve the default mode refuses (unpaid, store-changed, not-opened) does not hide the delegation: WARN_DAYS falls back to the service\'s own expiry', async () => {
+  // real: one service unactivated on the conform chain / 真实：conform 链上一个服务未激活
+  const { now, results: res } = await onConformChain({ days: 10, set: (chain, out) => chain.setContainerLive(out[0].container, false) })
+  assert.equal(res.services[0].chain.status, 'unpaid')
+  assert.equal(res.services[0].chain.expires, undefined, 'no manifest was read')
+  assert.equal(res.services[1].chain.conform, 'resolved')
+  const ev = evaluate(res, now)
+  assert.ok(ev.alerts.some((a) => /^api: UNPAID/.test(a)))
+  assert.ok(ev.problems.some((p) => /^api: delegation expires in (9|10) days/.test(p)), 'the health check\'s delegationExpires still counts')
+  assert.ok(ev.problems.some((p) => /^relay: delegation expires in (9|10) days/.test(p)))
+  assert.equal(defaultModeLine(res), 'Default-mode resolution (TAP-10): api unpaid, relay resolved.')
+  // by hand: every refusal, and an expired delegation / 手工：每种拒绝，以及已过期的委托
+  for (const st of ['unpaid', 'store-changed', 'not-opened', 'unavailable']) {
+    const s = failed(st); s.health = { ...s.health, delegationExpires: NOW + 5 * DAY }
+    const e = evaluate(results(s, svc('relay')), NOW)
+    assert.ok(e.problems.includes(`api: delegation expires in 5 days (${new Date((NOW + 5 * DAY) * 1000).toISOString().slice(0, 10)}); re-sign it now`), st)
+    const x = failed(st); x.health = { ...x.health, delegationExpires: NOW - DAY }
+    assert.ok(evaluate(results(x, svc('relay')), NOW).problems.some((p) => /^api: delegation EXPIRED /.test(p)), st)
+    const ok = failed(st)   // 60 days left: the refusal alone, no delegation line / 还剩 60 天：只有拒绝，没有委托那一行
+    assert.ok(!evaluate(results(ok, svc('relay')), NOW).problems.some((p) => /delegation/.test(p)), st)
+  }
+  assert.equal(defaultModeLine(results(svc('api'), svc('relay'))), null, 'a result from before 2.0 adds no line')
+  assert.ok(!/Default-mode resolution/.test(report(results(svc('api'), svc('relay')), { healthy: true, problems: [], warnings: [] }, NOW)))
 })

@@ -1,13 +1,13 @@
 // @tapeapi/server：Provider 运行时 / Provider runtime: manifest, health, paid+free method dispatch, signed envelopes.
-import { createRpc, TapeAPIError, validateManifest, safeParseJSON, canonicalJSON, parseUnits, BEM_DECIMALS, METHOD_NAME_RE, abi, sig } from '@tapeapi/sdk'
+import { createRpc, TapeAPIError, validateManifest, safeParseJSON, canonicalJSON, parseUnits, BEM_DECIMALS, METHOD_NAME_RE, abi, sig, usdPricing as UP } from '@tapeapi/sdk'
 
 const { encodeCall, decodeReturn, isAddress, eqAddr, checksumAddress } = abi
-const { voucherDigest, recoverAddress, signResponse, privateKeyToAddress } = sig
+const { voucherDigest, recoverAddress, signResponse, privateKeyToAddress, recoverVoucherSigner } = sig
 // A literal, not a package.json read: `createRequire` is a node:module import, and importing it at module scope
 // would stop this runtime loading on Cloudflare Workers, Deno or a browser. A test asserts the two agree.
 // 写成字面量而不是读 package.json：`createRequire` 属于 node:module，在模块顶层导入会让这套运行时无法在
 // Cloudflare Workers、Deno 或浏览器里加载。有测试断言两者一致。
-export const VERSION = '1.8.1'
+export const VERSION = '2.0.0'
 const now = () => Math.floor(Date.now() / 1000)
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -54,6 +54,25 @@ export function memoryStore() {
   }
 }
 
+// @experimental (TAP draft "Payment Vouchers" §4.4): the quotes a service has stated, so that every instance honours
+// every one of them until its validUntil. put(quote, container) / get(rate, container): the quote with that rate string
+// and the latest validUntil for that service (the container), or null; one store can serve several services (review S8).
+// Instances behind one URL MUST share one store (a table keyed by container and rate); this default is per process.
+// @experimental 服务说过的报价，使每个实例在 validUntil 之前都兑现每一个。按服务（容器）与汇率字符串建键，一个 store 可服务多个服务。
+// 同一 URL 后面的实例 MUST 共用一个 store；默认只在本进程。
+export function memoryQuoteStore() {
+  const m = new Map()
+  const key = (container, rate) => `${String(container ?? '').toLowerCase()}|${rate}`
+  return {
+    async put(q, container) {
+      const k = key(container, q.rate), cur = m.get(k)
+      if (!cur || cur.validUntil < q.validUntil) m.set(k, { rate: q.rate, asOf: q.asOf, validUntil: q.validUntil })
+      if (m.size > 4096) { const t = Math.floor(Date.now() / 1000); for (const [x, v] of m) if (v.validUntil < t) m.delete(x) }
+    },
+    async get(rate, container) { return m.get(key(container, rate)) || null },
+  }
+}
+
 // createProvider 的选项 / createProvider options:
 //   manifest, signerKey, methods   必填三件套；methods 必须为清单里每个方法提供一个处理函数
 //                                  the required trio; `methods` needs one handler per manifest method
@@ -71,6 +90,15 @@ export function memoryStore() {
 //                                  只有把这两个常量设成别的值的托管合约才需要覆盖它。
 //                                  When a withdraw request stops being executable; only an escrow deployed with
 //                                  different constants needs to override the 9-day default.
+//   @experimental (TAP draft "Payment Vouchers", TAPs#52; only for a manifest with the top-level member `usdPricing`)
+//   usdRate                        async () => ({ rate, asOf }): the rate (USD per 1 BEM, a string of §4.4 or a number) and
+//                                  the end of its averaging period; default: the median of the manifest's own rateSources
+//                                  read under node agreement (rpcUrls needed) / 汇率来源，默认读清单自己列的来源
+//   quoteValidS                    how long a quote stays valid, at most usdPricing.maxQuoteS (the default)
+//   quoteStore                     { put(quote), get(rate) } shared by every instance (memoryQuoteStore() per process)
+//   settlementFacts                { amountPaid(consumer), fundsAvailable(consumer), keyAuthorisedUntil(consumer, key) }:
+//                                  F2, F4 and F3 of the draft's §2.2 from configuration instead of the TapeAPIEscrow reads,
+//                                  until a settlement TAP names the functions. Any manifest. / 结算 TAP 之前由配置提供 F2–F4
 export function createProvider(opts = {}) {
   // 1.0 (review G1 S4): as in createTapeAPI, the RPC timeout is `rpcTimeoutMs` (beside handlerTimeoutMs, requestTimeoutMs,
   // headersTimeoutMs). / 与 createTapeAPI 一致，RPC 超时叫 rpcTimeoutMs。
@@ -153,10 +181,14 @@ export function createProvider(opts = {}) {
   // 在读 body 之前按 IP 生效的洪水上限。它必须高于免费加付费，否则一个消费者在付费调用之外再发几个免费请求，
   // 就会被自己的 IP 拒绝；同一 NAT 后面的多个消费者共享这个上限。
   if (rl) rl.ip = Number(opts.rateLimit?.ip ?? rl.free + rl.paid)
+  // @experimental (TAP draft, review S4): a priced call without a voucher to a service with usdPricing is the client asking
+  // for a quote; it has its own budget per IP (default: the free budget), so a caller willing to pay is not refused for
+  // having spent the free one. / 带 usdPricing 的服务上，计价方法的无凭证请求是在要报价：按 IP 单独预算（默认同免费预算）
+  if (rl) rl.quote = Number(opts.rateLimit?.quote ?? rl.free)
   // Numbers, validated at boot: a negative budget would refuse everything and NaN would silently switch a half off.
   // 0 is allowed and means "this half is off". / 启动时校验：负数会拒绝一切，NaN 会悄悄关掉某一半；0 表示关闭该半边。
   if (rl) {
-    for (const k of ['free', 'paid', 'ip', 'max']) if (!Number.isInteger(rl[k]) || rl[k] < 0) throw new TapeAPIError('INVALID_ARGUMENT', `rateLimit.${k} must be a non-negative integer`)
+    for (const k of ['free', 'paid', 'ip', 'max', 'quote']) if (!Number.isInteger(rl[k]) || rl[k] < 0) throw new TapeAPIError('INVALID_ARGUMENT', `rateLimit.${k} must be a non-negative integer`)
     if (!Number.isInteger(rl.windowMs) || rl.windowMs <= 0) throw new TapeAPIError('INVALID_ARGUMENT', 'rateLimit.windowMs must be a positive integer')
   }
   // Which header identifies the caller when the process sits behind a proxy. UNSET BY DEFAULT: trusting a
@@ -201,6 +233,80 @@ export function createProvider(opts = {}) {
   // 会把同一张凭证再服务一次。直接说出来，而不是经由默认静默的 `log`。
   if (anyPriced && !opts.store && !devMode && opts.allowMemoryStore !== true) {
     (opts.warn || ((...a) => console.warn('[tapeapi/server]', ...a)))('priced methods on the in-memory meter: unsettled vouchers are lost on restart, and each instance behind this URL serves the same voucher again. Pass a persistent store with an atomic advance() (e.g. D1), or allowMemoryStore: true if you mean it')
+  }
+
+  // ---- @experimental TAP draft "Payment Vouchers" (TAPs#52): prices in US dollars, paid in BEM ----
+  // `tap` is null for a manifest without `usdPricing`, and then nothing below changes the 1.8.1 behaviour (the golden
+  // test server/test/payment-golden.test.mjs). With it, every priced method of the service follows the draft: BAD_VOUCHER
+  // carries `reason`, PAYMENT_REQUIRED carries `minVoucherLifeS`, a voucher's v must be 27 or 28, and every priced result
+  // is an object carrying the charge record `charge`. An invalid `usdPricing` refuses to boot: it is the operator's.
+  // 没有 `usdPricing` 的清单 `tap` 为 null，下面的一切都不改变 1.8.1 的行为。有它时，该服务的每个计价方法都按草稿：BAD_VOUCHER
+  // 带 `reason`、PAYMENT_REQUIRED 带 `minVoucherLifeS`、凭证 v 只能是 27/28、每个计价结果都是带计费记录 `charge` 的对象。
+  // `usdPricing` 无效即拒绝启动：那是运营者的清单。
+  const tap = UP.validateUsdPricing(manifest, { usdTokens: null })
+  const usdMethods = tap ? tap.methods : {}
+  const anyUsd = Object.keys(usdMethods).length > 0
+  const quoteStore = opts.quoteStore || memoryQuoteStore()
+  if (opts.quoteStore && (typeof quoteStore.put !== 'function' || typeof quoteStore.get !== 'function')) throw new TapeAPIError('INVALID_ARGUMENT', 'quoteStore needs put(quote, container) and get(rate, container)')
+  const quoteValidS = tap ? Number(opts.quoteValidS ?? tap.maxQuoteS) : 0
+  if (tap && (!Number.isInteger(quoteValidS) || quoteValidS < 1 || quoteValidS > tap.maxQuoteS)) throw new TapeAPIError('INVALID_ARGUMENT', `quoteValidS must be an integer from 1 to usdPricing.maxQuoteS (${tap.maxQuoteS})`)
+  if (opts.usdRate != null && typeof opts.usdRate !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'usdRate must be an async function returning { rate, asOf }')
+  if (anyUsd && !rpc && !opts.usdRate) throw new TapeAPIError('INVALID_ARGUMENT', 'usdPricing needs rpcUrls (to read its rateSources) or opts.usdRate')
+  if (anyUsd && !opts.quoteStore && !devMode && opts.allowMemoryStore !== true) {
+    (opts.warn || ((...a) => console.warn('[tapeapi/server]', ...a)))('USD-priced methods on the in-memory quote store: a quote stated by this instance is not honoured by another instance behind this URL. Pass a shared quoteStore, or allowMemoryStore: true if you run one instance')
+  }
+  const facts = opts.settlementFacts ?? null
+  if (facts != null) for (const k of ['amountPaid', 'fundsAvailable', 'keyAuthorisedUntil']) if (typeof facts[k] !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', `settlementFacts.${k} must be a function`)
+  // The current quote: derived from the rate source, stated (stored) before it is ever signed, renewed when half its
+  // life is gone. / 当前报价：由汇率来源导出，签进任何回答之前先登记，过了一半寿命就换新。
+  let quoteNow = null, quotePending = null
+  async function deriveQuote() {
+    let rate, asOf
+    if (opts.usdRate) {
+      const r = await opts.usdRate()
+      rate = typeof r?.rate === 'number' ? UP.formatRate(r.rate) : r?.rate
+      asOf = r?.asOf ?? now()
+    } else {
+      const read = await UP.readReferenceRates(needRpc(), tap.rateSources, { maxAgeS: tap.maxQuoteS })
+      if (read.reference == null) throw new TapeAPIError('INTERNAL', `no rate source answered (${read.sources.map((s) => `${s.pool}: ${s.reason}`).join('; ')})`)
+      rate = UP.formatRate(read.reference)
+      asOf = read.block.timestamp
+    }
+    UP.parseRate(rate)
+    if (!Number.isSafeInteger(asOf)) throw new TapeAPIError('INTERNAL', 'usdRate gave no asOf')
+    asOf = Math.min(asOf, now())                                   // §4.4: asOf ≤ the envelope's ts / 不晚于信封 ts
+    const validUntil = Math.min(asOf + tap.maxQuoteS, now() + quoteValidS)
+    if (validUntil <= now()) throw new TapeAPIError('INTERNAL', `the rate is ${now() - asOf} s old, too old for a quote (maxQuoteS ${tap.maxQuoteS})`)
+    const q = { rate, asOf, validUntil }
+    await quoteStore.put(q, container)                             // honoured from before it is stated / 先登记、后说出
+    return q
+  }
+  async function currentQuote() {
+    if (quoteNow && quoteNow.validUntil - now() >= Math.ceil(quoteValidS / 2) && quoteNow.validUntil > now()) return quoteNow
+    if (!quotePending) quotePending = deriveQuote().then((q) => { quoteNow = q; return q }).finally(() => { quotePending = null })
+    // a rate source that fails while the last quote is still valid: keep stating that one / 来源失败而上一个报价仍有效：继续用它
+    try { return await quotePending } catch (e) { if (quoteNow && quoteNow.validUntil > now()) { log('rate source failed; restating the last quote', e?.message); return quoteNow } throw e }
+  }
+  // §4.4: a rate is honoured while some quote this service stated with exactly that string is within its validUntil.
+  async function honoured(rate) { const q = await quoteStore.get(rate, container); return q && q.validUntil >= now() ? q : null }
+  const usdOf = (def) => (tap && hasOwn(usdMethods, def.name) ? usdMethods[def.name] : null)
+  // What a call costs now, and the hints of §6 (price at the current quote, priceUSD, quote). / 此刻的价格与 §6 的提示
+  //   lenient (BAD_VOUCHER, review S5): never derive before the signature checked out (`derive: false` uses only a quote
+  //   still valid), and a failed derivation leaves out `quote` with `price` at the cap instead of turning the refusal
+  //   into INTERNAL. PAYMENT_REQUIRED is strict: without a quote it cannot be answered (INTERNAL).
+  //   宽松（BAD_VOUCHER）：签名验过之前不派生报价，派生失败就不带 `quote`、`price` 按上限，而不把拒绝变成 INTERNAL。
+  async function priceHints(def, cap, { lenient = false, derive = true } = {}) {
+    const usd = usdOf(def)
+    if (!usd) return { price: cap.toString() }
+    let quote = null
+    if (!lenient) quote = await currentQuote()
+    else {
+      if (derive) { try { quote = await currentQuote() } catch (e) { log('no quote for a refusal', e?.message) } }
+      else if (quoteNow && quoteNow.validUntil > now()) quote = quoteNow
+      if (!quote) return { price: cap.toString(), priceUSD: UP.amountObject(UP.parseUsdPrice(usd), 'USD') }
+    }
+    const { charge, U } = UP.convertUsd({ priceUSD: usd, rate: quote.rate, priceBEM: def.priceBEM })
+    return { price: charge.toString(), priceUSD: UP.amountObject(U, 'USD'), quote }
   }
 
   // 只接受 methods 的自有属性，拒绝原型链上的 constructor/toString 等（L-20 / M-08）/ own properties only
@@ -253,6 +359,11 @@ export function createProvider(opts = {}) {
   // v2 托管：(消费者, 本容器) 通道即上限——没有额度、没有共享余额。生命周期内的提现请求从可用额中扣除：
   // 冷静期内提供者仍可抢先结算，但一旦可执行，该金额可在结算同一区块离开（E-03），对其提供服务等于无担保赊账。
   const escrowState = (consumer) => cached(`escrow:${consumer.toLowerCase()}`, escrowCacheMs, async () => {
+    // @experimental F2 and F4 from configuration (settlementFacts) / 由配置提供 F2 与 F4
+    if (facts) {
+      const [claimed, available] = (await Promise.all([facts.amountPaid(consumer), facts.fundsAvailable(consumer)])).map((x) => BigInt(x))
+      return { channel: available, claimed, pendingWithdraw: { amount: 0n, requestedAt: 0n }, armed: 0n, available }
+    }
     const [channel, claimed, pending] = await Promise.all([
       view(escrow, 'channelOf', [consumer, container]), view(escrow, 'claimedOf', [consumer, container]),
       pendingWithdrawOf(consumer),
@@ -262,7 +373,7 @@ export function createProvider(opts = {}) {
     return { channel, claimed, pendingWithdraw: pending, armed, available }
   })
   // sessions are per channel: (consumer, this container, key) / 会话按通道：(消费者, 本容器, 密钥)
-  const sessionExpiry = (consumer, key) => cached(`sess:${consumer.toLowerCase()}:${key.toLowerCase()}`, sessionCacheMs, () => view(escrow, 'sessionExpiry', [consumer, container, key]))
+  const sessionExpiry = (consumer, key) => cached(`sess:${consumer.toLowerCase()}:${key.toLowerCase()}`, sessionCacheMs, async () => (facts ? BigInt(await facts.keyAuthorisedUntil(consumer, key)) : view(escrow, 'sessionExpiry', [consumer, container, key])))
 
   // 本容器在 escrow 上自设的贡献比例（万分比）。无 RPC 或 RPC 不可用 → null；escrow 无此函数（v0.1 部署）→ 0。
   // This container's opt-in contribution (bps) on the escrow. null when unreadable (no RPC / RPC down); 0 when the
@@ -397,6 +508,82 @@ export function createProvider(opts = {}) {
     })
   }
 
+  // ---- @experimental voucher checks of the TAP draft §5.2, for a service with `usdPricing` ----
+  // The 1.8.1 verifyVoucher above stays as it is for every other manifest. Same serialisation, reservations, store and
+  // reconciliation with the amount paid; in addition: the checks run in the draft's order and each refusal names its
+  // `reason`; v must be 27 or 28; a USD-priced method needs a `rate` this service has quoted and still honours, and costs
+  // its conversion at that rate (capped by priceBEM). Returns the lease with `last` and the charge of this call.
+  // 上面 1.8.1 的 verifyVoucher 对其它清单保持原样。串行、预留、store 与对账都相同；此外：按草稿的顺序检查，每个拒绝写明
+  // `reason`；v 只能是 27/28；USD 计价方法需要本服务报过且仍兑现的 `rate`，按该汇率换算（以 priceBEM 封顶）计费。
+  async function verifyVoucherTap(v, def, cap) {
+    const usd = usdOf(def)
+    let signed = false   // hints derive a quote only once the signature checked out (review S5) / 验签之后才派生报价
+    const bad = async (reason, msg, extra) => { throw new TapeAPIError('BAD_VOUCHER', msg, { data: { reason, ...(await priceHints(def, cap, { lenient: true, derive: signed })), ...(extra || {}) } }) }
+    const wire = UP.voucherWireProblem(v)
+    if (wire) await bad('malformed', `malformed voucher: ${wire}`)
+    if (!eqAddr(v.provider, container)) await bad('provider', 'voucher.provider is not this container')
+    if (v.expires < now()) await bad('expired', 'voucher expired')
+    if (v.expires - now() < minVoucherLifeS) await bad('lifetime', `voucher expires in ${v.expires - now()} s; this provider needs at least ${minVoucherLifeS} s to settle`, { minVoucherLifeS })
+    if (!hasEscrow) throw new TapeAPIError('INTERNAL', 'this provider has no escrow configured, so it cannot take payment; the operator must set ESCROW')
+    let recovered
+    try { recovered = recoverVoucherSigner(chainId, escrow, v, v.sig) } catch (e) { await bad('signature', `bad voucher signature: ${e.message}`) }
+    if (v.signer && !eqAddr(v.signer, recovered)) await bad('signature', 'voucher.signer does not match signature')
+    signed = true
+    if (!eqAddr(recovered, v.consumer)) {
+      const exp = BigInt(await sessionExpiry(v.consumer, recovered))   // F3
+      if (exp < BigInt(now())) await bad('signature', `key ${recovered} is not authorised for this channel, or its authorisation expired`)
+      if (exp - BigInt(now()) < BigInt(minVoucherLifeS)) await bad('lifetime', `key ${recovered} lapses in ${exp - BigInt(now())} s; this provider needs at least ${minVoucherLifeS} s to settle`, { minVoucherLifeS })
+    }
+    let charge = cap, quoted = null, capped = false
+    if (usd) {
+      if (typeof v.rate !== 'string') await bad('rate', 'a USD-priced method needs voucher.rate, the rate of a quote of this provider')
+      quoted = UP.RATE_RE.test(v.rate) ? await honoured(v.rate) : null
+      if (!quoted) await bad('rate', `rate ${String(v.rate).slice(0, 40)} is not a quote of this provider that is still valid`)
+      ;({ charge, capped } = UP.convertUsd({ priceUSD: usd, rate: v.rate, priceBEM: def.priceBEM }))
+    }
+    const cumulative = BigInt(v.cumulative)
+    const key = `${v.consumer.toLowerCase()}|${container.toLowerCase()}`
+    // the lock is taken only to read and reserve; a refusal's hints are computed after it is released
+    // 锁只用于读取与预留；拒绝的提示在释放锁之后才计算
+    const verdict = await withLock(v.consumer.toLowerCase(), async () => {
+      const { channel, claimed, armed, available } = await escrowState(v.consumer)   // F2, F4
+      const inflight = heldOf(key)
+      const prev = await store.get(v.consumer, container)
+      const stored = prev ? BigInt(prev.cumulative) : 0n
+      const held = inflight?.cumulative ?? 0n
+      let last = stored > claimed ? stored : claimed
+      if (held > last) last = held
+      const proof = inflight && held === last && held > claimed ? inflight.voucher
+        : prev && BigInt(prev.cumulative) === last ? { cumulative: prev.cumulative, expires: prev.expires, sig: prev.sig }
+        : undefined
+      const stale = { lastCumulative: last.toString(), onChainClaimed: claimed.toString(), ...(proof ? { voucher: proof } : {}) }
+      if (cumulative <= last) return { refuse: ['stale', `cumulative ${cumulative} is not above the last accepted ${last}`, stale] }
+      // `insufficient` carries the same proof as `stale`: a client whose `last` is behind cannot resync without it
+      // `insufficient` 与 `stale` 带同样的证明：`last` 落后的客户端没有它无法重新同步
+      if (cumulative - last < charge) return { refuse: ['insufficient', `cumulative ${cumulative} − last ${last} is below the charge ${charge}`, stale] }
+      if (cumulative - claimed > available) return { refuse: ['funds', `unsettled ${cumulative - claimed} exceeds the funds held for the channel ${available} (channel ${channel}, armed withdraw ${armed})`] }
+      const mine = { cumulative, voucher: { cumulative: cumulative.toString(), expires: v.expires, sig: v.sig } }
+      if (!reserved.has(key)) reserved.set(key, new Set())
+      reserved.get(key).add(mine)
+      return { last, mine }
+    })
+    if (verdict.refuse) await bad(...verdict.refuse)
+    const { last, mine } = verdict
+    const record = { consumer: checksumAddress(v.consumer), provider: container, cumulative: cumulative.toString(), expires: v.expires, sig: v.sig, signer: recovered, updatedAt: now(), ...(usd ? { rate: v.rate } : {}) }
+    const clear = () => { const s = reserved.get(key); if (s) { s.delete(mine); if (!s.size) reserved.delete(key) } }
+    return {
+      consumer: checksumAddress(v.consumer), signer: recovered, cumulative, last,
+      usd: usd ? { priceUSD: usd, rate: v.rate, rateAsOf: quoted.asOf, capped } : null,
+      commit: async () => {
+        try {
+          if (typeof store.advance === 'function') await store.advance(v.consumer, container, record)
+          else await withLock(v.consumer.toLowerCase(), async () => { const cur = await store.get(v.consumer, container); if (!cur || BigInt(cur.cumulative) < cumulative) await store.set(v.consumer, container, record) })
+        } finally { clear() }
+      },
+      release: clear,
+    }
+  }
+
   // ---- 信封 / envelopes (TAPI-21 v2: digest covers {method, params} and ok) ----
   // TOOLS_CHANGED: an MCP-bound service whose upstream tools no longer match the manifest's toolsSha256 (TAPI-20 §3.8).
   // TOOLS_CHANGED：上游工具与清单 toolsSha256 不再相符的 MCP 绑定服务（TAPI-20 §3.8）。
@@ -492,11 +679,18 @@ export function createProvider(opts = {}) {
         // part (signature recovery, uncached chain reads). A paying consumer whose vouchers verify is never affected.
         // 既耗尽了免费预算、又不断提交验不过的凭证的 IP，在昂贵的部分之前就被拒绝；凭证能验过的付费消费者从不受影响。
         if (rl && overBudget(`fail:${ip}`, FAIL_BUDGET) && overBudget(`free:${ip}`, rl.free)) return { rateLimited: retryAfter(`fail:${ip}`) }
-        if (!body.voucher) { const w = spendFree(); if (w) return { rateLimited: w }; throw new TapeAPIError('PAYMENT_REQUIRED', `${def.name} costs ${def.priceBEM} BEM per call`, { data: { price: price.toString() } }) }
-        try { lease = await verifyVoucher(body.voucher, price) }
+        if (!body.voucher) {
+          const w = tap ? (rl ? rateLimited(`quote:${ip}`, rl.quote) : 0) : spendFree(); if (w) return { rateLimited: w }
+          if (!tap) throw new TapeAPIError('PAYMENT_REQUIRED', `${def.name} costs ${def.priceBEM} BEM per call`, { data: { price: price.toString() } })
+          // @experimental draft §6: price (at the current quote), priceUSD and quote, and minVoucherLifeS when this provider has one
+          const usd = usdOf(def)
+          throw new TapeAPIError('PAYMENT_REQUIRED', usd ? `${def.name} costs ${usd} USD per call, at most ${def.priceBEM} BEM` : `${def.name} costs ${def.priceBEM} BEM per call`, { data: { ...(await priceHints(def, price)), ...(minVoucherLifeS > 0 ? { minVoucherLifeS } : {}) } })
+        }
+        try { lease = tap ? await verifyVoucherTap(body.voucher, def, price) : await verifyVoucher(body.voucher, price) }
         catch (e) { if (rl) { rateLimited(`fail:${ip}`, Infinity); rateLimited(`free:${ip}`, Infinity) } throw e }
         verified = true
         ctx.consumer = lease.consumer; ctx.voucherSigner = lease.signer; ctx.cumulative = lease.cumulative
+        if (tap) ctx.charge = lease.cumulative - lease.last   // @experimental the charge of this call (draft §5.3) / 本次收费
         // Keyed on the consumer the voucher signature PROVED, never on the `consumer` field as sent: an unverified
         // field would let anyone exhaust a victim's budget by writing the victim's address into junk vouchers.
         // 按凭证签名已证明的消费者计，绝不按请求里原样的 `consumer` 字段。
@@ -511,6 +705,14 @@ export function createProvider(opts = {}) {
       try { result = await Promise.race([methods[def.name](params, ctx), timeout]) } finally { clearTimeout(timer) }
       // Lapsed while the handler ran: sign nothing and bill nothing (arch A3) / 处理期间过期：不签名、不计费
       if (delegationLapsed()) { if (lease) lease.release(); return { status: 503, unsigned: lapsedError(), paid: false } }
+      // @experimental draft §5.3 / §7: a priced result is an object and carries the charge record; a method that returns
+      // anything else, or uses the member `charge` itself, is answered INTERNAL and charges nothing.
+      // 计价结果是对象并带计费记录；返回别的、或自己用了 `charge` 成员的方法答 INTERNAL，不收费。
+      if (tap && lease) {
+        if (!isPlainObject(result)) throw new TapeAPIError('INTERNAL', `priced method ${def.name} must return a JSON object: it carries the charge record`)
+        if (hasOwn(result, 'charge')) throw new TapeAPIError('INTERNAL', `priced method ${def.name} uses the result member "charge", which the charge record reserves`)
+        result = { ...result, charge: UP.chargeRecord({ consumer: lease.consumer, cumulative: lease.cumulative, amount: lease.cumulative - lease.last, usd: lease.usd, quote: lease.usd ? await currentQuote() : undefined }) }
+      }
       // Sign FIRST, bill second: a result that cannot be signed (no canonical form) must not be charged for
       // (runtime audit F-06). / 先签名、后计费：签不了名的结果不能收钱。
       const env = envelope(req, true, result ?? null, block)

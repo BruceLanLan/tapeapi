@@ -95,7 +95,7 @@ ChannelBus 消息是事件，而公共 BNB Chain 节点只保留部分历史，�
 
 读 ChannelBus 需要提供 `eth_getLogs` 的节点，而 BNB Chain dataseed 节点拒绝这个方法。请使用 SDK 的 `BUS_RPC_URLS`
 （48 Club 与 1RPC 提供日志、历史至少 500,000 个区块，另加一个 dataseed 提供回执），并单独建一个客户端：
-`createRpc({ urls: BUS_RPC_URLS, quorum: 2, timeoutMs: 15000 })`。用这组节点，读取器读回了 73,700 个区块之前的真实帧
+`createRpc({ urls: BUS_RPC_URLS, quorum: 2, rpcTimeoutMs: 15000 })`。用这组节点，读取器读回了 73,700 个区块之前的真实帧
 （2026-09-27）。读取器的测试包含 publicnode 与 dataseed 节点的录制回答。中继传输完全不依赖这一点。
 
 ## 5. 读取隐私
@@ -110,7 +110,7 @@ ChannelBus 消息是事件，而公共 BNB Chain 节点只保留部分历史，�
 ```js
 import { busPrivacy, channel, createRpc, BUS_RPC_URLS, MAINNET } from '@tapeapi/sdk'
 
-const rpc = createRpc({ urls: BUS_RPC_URLS, quorum: 2, timeoutMs: 15000 })
+const rpc = createRpc({ urls: BUS_RPC_URLS, quorum: 2, rpcTimeoutMs: 15000 })
 const reader = busPrivacy.busPrivacyReader({
   rpc, bus: MAINNET.channelBus,
   rooms: [channel.inboxRoom(myContainer)],
@@ -183,15 +183,18 @@ which rooms this reader reads`。设 `cover.onShort: 'error'` 时改为抛出 `B
 ## 7. 标签版本（`labels`，1.8.1 起）
 
 应 TAPs 编辑要求，私密通道有了第 2 版
-[TAPI-26 v2](../../../spec/TAPI-26-v2.md)（Draft）：同样的通道，标签以
-`tape-channel/` 开头而不是 `TAP-26/`。SDK 自 1.8.1 起作为选项实现它；默认仍是第 1 版，逐字节不变。2.0 起第 2 版成为默认。
+[TAPI-26 v2](../../../spec/TAPI-26-v2.md)（2.0.0 起为 Stable (v2)）：同样的通道，标签以
+`tape-channel/` 开头而不是 `TAP-26/`。1.8.1 把它作为选项加入（`labels: 'v2'`）；**2.0 起它是默认**，不传 `labels` 的代码
+使用第 2 版。第 1 版仍保留给 1.x 的对端：`labels: 'v1'` 选用它（2.x 内已弃用，2.x 内不删除）。
 
 ```js
-const { invite, pending } = channel.createInvite({ self, peer, relays, labels: 'v2' })
-const { accept, session } = channel.acceptInvite({ self, peer, invite, labels: 'v2' })  // 响应方要被告知同样的版本
+const { invite, pending } = channel.createInvite({ self, peer, relays })   // 第 2 版，即默认
+const { accept, session } = channel.acceptInvite({ self, peer, invite })   // 响应方使用同一版本
 channel.roomsFor(pending.cid, { labels: pending.labels })   // 发起方等待 accept 的房间
-channel.inboxRoom(container, chainId, { labels: 'v2' })     // 容器的第 2 版收件房间
-channel.sealInvite(invite, { to, labels: 'v2' })            // 以及 openInvite(wire, { self, labels: 'v2' })
+channel.inboxRoom(container, chainId)                       // 容器的第 2 版收件房间
+// 对端仍在 TapeAPI 1.x（默认第 1 版）：双方都用第 1 版
+channel.createInvite({ self, peer, relays, labels: 'v1' })
+channel.inboxRoom(container, chainId, { labels: 'v1' })     // 第 1 版收件房间，1.x 把密封邀请投到这里
 ```
 
 - **双方传同样的 `labels`。** 邀请不说明自己属于哪个版本（仍是 `v: 1`）。经 TapeSend 发送的邀请，双方要事先约定版本；
@@ -199,6 +202,7 @@ channel.sealInvite(invite, { to, labels: 'v2' })            // 以及 openInvite
 - **不一致时失败关闭。** 房间不同，所以通常什么都收不到，握手超时。另一版本的 accept、ready 或密封邀请即使到了，也会被拒绝，
   错误为 `CHANNEL_INVALID`，带 `e.data.labels` 与 `e.data.peerLabels`。SDK 从不自行切换版本。对密封邀请，这只说明它是
   怎样密封的：任何人都能往收件房间投递，所以这既不证明发送者可信，也不说明你该换版本。
-- **核对实际得到的版本：** `pending.labels` 与 `session.labels`。早于 1.8.1 的 SDK 会忽略这个选项，也没有这两个字段。
-- `api.chain.channelKeys(...).inbox.room` 是第 1 版的收件房间；第 2 版请用 `channel.inboxRoom(container, chainId,
-  { labels: 'v2' })`。通道记录在两个版本中相同。
+- **核对实际得到的版本：** `pending.labels` 与 `session.labels`。早于 1.8.1 的 SDK 会忽略这个选项，也没有这两个字段；
+  1.8.1 及以后的 1.x 不传 `labels: 'v2'` 就用第 1 版。所以一方升级到 2.0 就改变了它所用的版本：见[升级到 2.0](upgrade-2.0.md)。
+- `api.chain.channelKeys(...).inbox.room` 是默认版本的收件房间（2.0 为第 2 版，1.x 为第 1 版）；第 1 版请用
+  `channel.inboxRoom(container, chainId, { labels: 'v1' })`。通道记录在两个版本中相同。

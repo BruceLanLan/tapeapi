@@ -152,7 +152,8 @@ test('litellm-sidecar: without litellmFormats, a strict client refuses LiteLLM\'
     const responses = CALLS.find((c) => c.label === 'OpenAI Responses, streamed')
     const raw = await callAndVerify({ manifest: stack.manifest, ...responses })
     assert.deepEqual(streamProblems({ path: responses.path, body: responses.body, responseBytes: raw.responseBytes }), ['the receipt comes after the end of the stream'])
-    const api = createTapeAPI({ dev: true })
+    // 1.x behaviour; 2.0 default is conform: 'tap10'
+    const api = createTapeAPI({ dev: true, conform: false })
     const service = await api.resolve({ dev: stack.sidecar.url })
     const client = new OpenAI({ baseURL: `${stack.sidecar.url}/v1`, apiKey: DEMO_KEY, fetch: ai.createVerifyingFetch({ api, service, onReport: () => {} }), maxRetries: 0 })
     await assert.rejects(async () => { for await (const e of await client.responses.create({ model: 'gpt-5-mini', stream: true, input: 'hello' })) void e }, (e) => e.code === 'RECEIPT_INVALID')
@@ -162,7 +163,8 @@ test('litellm-sidecar: without litellmFormats, a strict client refuses LiteLLM\'
 test('litellm-sidecar: the official SDKs, streamed and not, verify every receipt in strict mode', { skip: noSdks }, async () => {
   const stack = await startStack()
   try {
-    const api = createTapeAPI({ dev: true })
+    // 1.x behaviour; 2.0 default is conform: 'tap10'
+    const api = createTapeAPI({ dev: true, conform: false })
     const service = await api.resolve({ dev: stack.sidecar.url })
     const reports = []
     const fetch = ai.createVerifyingFetch({ api, service, onReport: (r) => reports.push(r) })
@@ -214,7 +216,8 @@ test('litellm-sidecar: with litellmFormats an event-framed Responses stream veri
       assert.ok(verdict.ok, verdict.problems.join('; '))
       assert.equal((new TextDecoder().decode(responseBytes).match(/: tapeapi-receipt /g) || []).length, 1)
       assert.deepEqual(streamProblems({ path: c.path, body: c.body, responseBytes }), [])
-      const api = createTapeAPI({ dev: true })
+      // 1.x behaviour; 2.0 default is conform: 'tap10'
+      const api = createTapeAPI({ dev: true, conform: false })
       const service = await api.resolve({ dev: stack.sidecar.url })
       const reports = []
       const oa = new OpenAI({ baseURL: `${stack.sidecar.url}/v1`, apiKey: DEMO_KEY, fetch: ai.createVerifyingFetch({ api, service, onReport: (r) => reports.push(r) }), maxRetries: 0 })

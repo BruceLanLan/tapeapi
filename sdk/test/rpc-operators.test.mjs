@@ -55,7 +55,7 @@ test('RPC_DEFAULTS[56] is three distinct operators, and rpcUrlsFor hands out a f
 test('FIXED RPC-OP-1: three dataseed URLs with quorum 2 are refused: one operator', () => {
   assert.throws(() => createRpc({ urls: DATASEEDS, quorum: 2, fetch: canned({}) }), (e) => e.code === 'INVALID_ARGUMENT' && /at least 2 independent operators, got 1 \(nodereal\)/.test(e.message))
   // ...through createTapeAPI too / 经 createTapeAPI 同样拒绝
-  assert.throws(() => createTapeAPI({ rpcUrls: DATASEEDS, quorum: 2, fetch: canned({}) }), (e) => e.code === 'INVALID_ARGUMENT')
+  assert.throws(() => createTapeAPI({ conform: false, rpcUrls: DATASEEDS, quorum: 2, fetch: canned({}) }), (e) => e.code === 'INVALID_ARGUMENT')
   // Two dataseeds and Alchemy: two operators, quorum 2 is allowed; quorum 3 is not / 两家：quorum 2 可以，3 不行
   assert.equal(createRpc({ urls: [NODEREAL, NODEREAL2, ALCHEMY], quorum: 2, fetch: canned({}), quiet: true }).quorum, 2)
   assert.throws(() => createRpc({ urls: [NODEREAL, NODEREAL2, ALCHEMY], quorum: 3, fetch: canned({}) }), /at least 3 independent operators, got 2/)
@@ -79,7 +79,7 @@ test('FIXED RPC-OP-3: two NodeReal URLs agreeing count once: Alchemy disagreeing
   const silent = createRpc({ urls, quorum: 2, disagreeRetryMs: 0, fetch: canned({ [NODEREAL]: '0x01', [NODEREAL2]: '0x01', [ALCHEMY]: 'timeout' }) })
   await assert.rejects(silent.ethCall(TO, '0x'), (e) => e.code === 'RPC_UNAVAILABLE' && /only 1\/2 operators answered/.test(e.message))
   const refusing = createRpc({ urls, quorum: 2, disagreeRetryMs: 0, fetch: canned({ [NODEREAL]: '0x01', [NODEREAL2]: '0x01', [ALCHEMY]: { error: -32005 } }) })
-  await assert.rejects(refusing.ethCall(TO, '0x'), (e) => e.code === 'RPC_UNAVAILABLE' && e.refusals?.[0]?.code === -32005)
+  await assert.rejects(refusing.ethCall(TO, '0x'), (e) => e.code === 'RPC_UNAVAILABLE' && e.data?.refusals?.[0]?.code === -32005)
   // eth_blockNumber counts operators as well / eth_blockNumber 同样按运营方计
   const heads = createRpc({ urls, quorum: 2, fetch: canned({ [NODEREAL]: '0x10', [NODEREAL2]: '0x10', [ALCHEMY]: 'timeout' }) })
   await assert.rejects(heads.blockNumber(), (e) => e.code === 'RPC_UNAVAILABLE' && /only 1\/2 operators answered/.test(e.message))

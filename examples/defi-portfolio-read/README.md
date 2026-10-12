@@ -203,7 +203,7 @@ try {
   console.log('agreed:', r.result.tokens[0].formatted, 'by', r.agreed)
 } catch (e) {
   if (e.code === 'QUORUM_FAILED') {
-    // 细节在 e.data 里（1.0 起；顶层的 e.groups 等只是弃用别名）/ the details are in e.data (1.0; e.groups etc. are deprecated aliases)
+    // 细节在 e.data 里（1.0 起；顶层别名 e.groups 等已在 2.0 删除）/ the details are in e.data (1.0; aliases such as e.groups are removed in 2.0)
     console.error(e.message, e.data.groups, e.data.disagreed, e.data.failed)
   } else throw e
 }
@@ -219,7 +219,7 @@ byte-identical. The block is part of the comparison, so **the same value at a di
 disagreement**. **Step 5 reject**: accept only when at least two verified envelopes arrived and **all** of them
 agree. **Any two differing verified envelopes reject — no majority vote, no reputation, no retrying just the
 minority.** Two-out-of-three agreeing is still a rejection. On failure the details are in `e.data`:
-`e.data.groups` / `e.data.disagreed` / `e.data.failed` (the top-level names are deprecated aliases until 2.0).
+`e.data.groups` / `e.data.disagreed` / `e.data.failed` (1.x also had deprecated top-level aliases; 2.0 removed them).
 
 > `onDissent: 'quorum'` 是一个**明确的降级**，默认关闭：它让唯一达到法定人数的那一组获胜，把失败模式从
 > 「拒绝」换成「可被 `quorum` 家合谋伪造」。只有当你自己挑选并信任这批提供者时才用它。

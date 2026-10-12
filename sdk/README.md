@@ -4,12 +4,12 @@ JavaScript SDK for [TapeAPI](https://tapeapi.fun): find a service on BNB Smart C
 answer whose signature is checked against the key the service's holder delegated on chain. Paid methods use
 EIP-712 vouchers against an escrow; nothing is signed or sent without you.
 
-> **1.8.1.** Semantic versioning from 1.0 on: breaking changes come only in 2.0. See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md).
+> **2.0.0.** Semantic versioning: breaking changes come only in a new major version. By default the SDK now resolves as TapeOut's official TAPs say (TAP-10, TAP-11 §2); `conform: false` keeps the 1.x resolution (deprecated). See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md) and [Upgrading to 2.0](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/upgrade-2.0.md).
 
 ## Install
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz
 ```
 
 Not on the npm registry yet: each GitHub release carries the package file. Built from https://github.com/BruceLanLan/tapeapi
@@ -50,13 +50,14 @@ naming rules.
 | `@tapeapi/sdk/bus-privacy` | `busPrivacyReader`: ChannelBus reads that hide your rooms among cover rooms (`@experimental`) |
 | `@tapeapi/sdk/ai` | AI usage receipts: `createVerifyingFetch` (a `fetch` for the official OpenAI and Anthropic SDKs that checks every answer's receipt), `verifyUsageReceipt`, the format adapters |
 | `@tapeapi/sdk/mcp` | the MCP server core behind `tapeapi-mcp` and `@tapeapi/server/mcp`: tools with signed results and receipts |
-| `@tapeapi/sdk/agent` (`@experimental`, 1.7) | container agents, phase 0: holder-signed mandates and task messages (`createAgentKit`, `createPaymentKit`, `forWallet`, `revocationFileBytes`); outside the 1.x compatibility promise ([guide](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/container-agents.md)) |
+| `@tapeapi/sdk/agent` (`@experimental`, 1.7) | container agents, phase 0: holder-signed mandates and task messages (`createAgentKit`, `createPaymentKit`, `forWallet`, `revocationFileBytes`); since 2.0 also bounded agents (phase 1), checked on local chains only, as the escrow is not audited or deployed; outside the 2.x compatibility promise ([guide](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/container-agents.md)) |
+| `@tapeapi/sdk/review` (`@experimental`, 2.0) | evidence-backed reviews between containers, the reference implementation of a TAP draft that is an open pull request (#54): `makeReview`, `signReview`, `createReviewKit`, `summarizeReviews`; outside the 2.x compatibility promise |
 | `@tapeapi/sdk/chains` | `CHAINS` (BNB Smart Chain, X Layer, Base: factory, opener, DeWebHub, SiteRegistry, area code), `parseTapeName`, `formatTapeName` |
 | `@tapeapi/sdk/rpc`, `/abi`, `/sig`, `/canon`, `/manifest` | the building blocks |
 
-**Stability (1.0).** Every export is Stable (no breaking change within 1.x) unless its type declaration says
+**Stability (2.0).** Every export is Stable (no breaking change within 2.x) unless its type declaration says
 `@experimental` (the whole `agent` subpath, payments, the ServiceDirectory and the `bus-privacy` reader: `api.payer`, `api.acceptPrice`, the payment `api.tx` builders,
-`api.chain.escrow`, ...) or `@internal`. Upgrading from 0.x: [docs/guides/upgrade-1.0.md](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/upgrade-1.0.md).
+`api.chain.escrow`, the conformance results that follow Draft TAPs: `data.status`, `SiteStatus`, `svc.conform`, ...) or `@internal`. Upgrading from 1.x: [docs/guides/upgrade-2.0.md](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/upgrade-2.0.md); from 0.x: [docs/guides/upgrade-1.0.md](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/upgrade-1.0.md).
 
 ## Local MCP server: `tapeapi-mcp`
 
@@ -64,11 +65,11 @@ The package ships a command that exposes any TapeAPI service's free methods as M
 Cursor, any MCP client), and verifies every answer in your own process before the model sees it:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ```json
-{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
+{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
 ```
 
 - **Identity from the chain.** Each service (a TapeOut name like `11.1013.tape` or a container address) is resolved
@@ -101,7 +102,7 @@ Since 1.7 it also has a one-shot subcommand, `tapeapi-verify task <thread.json> 
 
 ```bash
 # Terminal 1. 42.1013.tape is an example name: put your AI provider's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash
@@ -125,13 +126,13 @@ with no key and no cost: in a checkout, run `npm ci` once at the root, then `nod
 Providers check their own AI service, step by step, from the name to a receipt that verifies:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-doctor <your TapeOut name or your sidecar's https URL>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-doctor <your TapeOut name or your sidecar's https URL>
 ```
 
-It runs 14 checks in order, among them that the name is activated on DomainBinding (TAP-10 §6.3; a warning, not a failure:
-under TAP-11 an unpaid name gets `unpaid` and is not resolved). Every failed check says what is missing, where to fix it and the next command, in English and Chinese. Exit status 0
+It runs 14 checks in order, among them that the name is activated on DomainBinding (TAP-10 §6.3; in the 2.0 default a failure,
+because a default client cannot resolve an unpaid name; a warning with `--no-conform`). Every failed check says what is missing, where to fix it and the next command, in English and Chinese. Exit status 0
 passed, 1 failed, 2 a usage mistake, 3 undecided (run it again); `--help` lists every option. Experimental: its checks
-and output may change in a 1.x release.
+and output may change in a 2.x release.
 
 With `--strict` a receipt that does not verify becomes an error to the client. `tapeapi-verify --help` lists every
 option. In your own code, `createVerifyingFetch` from `@tapeapi/sdk/ai` does the same without a proxy

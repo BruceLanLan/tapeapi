@@ -124,6 +124,16 @@ test('transport: GET is 405, OPTIONS is CORS, bad JSON is a parse error, batches
   assert.equal((await (await post({ id: 1, method: 'ping' })).json()).error.code, mcp.JSONRPC.INVALID_REQUEST, 'jsonrpc: "2.0" is required')
 })
 
+// MCP 2026-07-28 clients send Mcp-Method (and Mcp-Name on tools/call); a browser may send them only if the preflight allows them.
+// The earlier headers stay: this is an addition. / 新版客户端会带 Mcp-Method（tools/call 还带 Mcp-Name）；预检允许才能从浏览器发出。原有的头一个不少。
+test('CORS preflight: allows Mcp-Method and Mcp-Name, and still every header it allowed before', async () => {
+  const o = await ep.handleRequest(new Request('https://echo.example/mcp', { method: 'OPTIONS' }))
+  const allowed = o.headers.get('access-control-allow-headers').split(/\s*,\s*/)
+  for (const h of ['content-type', 'accept', 'authorization', 'mcp-protocol-version', 'mcp-session-id', 'last-event-id', 'mcp-method', 'mcp-name']) assert.ok(allowed.includes(h), `${h} is allowed`)
+  assert.equal(o.headers.get('access-control-expose-headers'), 'mcp-session-id')
+  assert.equal(o.headers.get('access-control-allow-methods'), 'POST, OPTIONS')
+})
+
 test('a manifest with no free method cannot become an MCP endpoint', () => {
   assert.throws(() => createMcpEndpoint({ provider, manifest: { ...manifest, methods: [{ name: 'p', priceBEM: '1', params: {}, returns: {} }] } }), /no tool/)
 })

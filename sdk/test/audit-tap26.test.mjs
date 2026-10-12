@@ -26,6 +26,8 @@ const E = { container: '0x000000000000000000000000000000000000dEaD', chainId: 56
 const NOW = Math.floor(Date.now() / 1000)   // real time: the responder now refuses a ready after exp
 const te = new TextEncoder()
 const invalid = (re) => (e) => e instanceof TapeAPIError && e.code === 'CHANNEL_INVALID' && (!re || re.test(e.message))
+// the caller's own options and arguments (2.0; CHANNEL_INVALID in 1.x) / 调用方自己的选项与参数（2.0 起）
+const argument = (re) => (e) => e instanceof TapeAPIError && e.code === 'INVALID_ARGUMENT' && (!re || re.test(e.message))
 const cat = (...p) => { const o = new Uint8Array(p.reduce((a, x) => a + x.length, 0)); let i = 0; for (const x of p) { o.set(x, i); i += x.length } return o }
 const u64 = (n) => { const b = new Uint8Array(8); new DataView(b.buffer).setBigUint64(0, BigInt(n)); return b }
 const dhRaw = (s, p) => x25519.getSharedSecret(s, p)
@@ -42,7 +44,7 @@ function det({ now = NOW, ttlS = 600, self = A, peer = B } = {}) {
   return { sA, sB, eA, eB, SA, SB, EA, EB, cid, invite, pending, accept, bob, ks, now }
 }
 function craft(key, cid, dir, seq, pt) {
-  const aad = cat(te.encode('TAP-26/frame/v1'), cid, Uint8Array.of(dir), u64(seq))
+  const aad = cat(te.encode('tape-channel/frame/v1'), cid, Uint8Array.of(dir), u64(seq))
   return cat(u64(seq), chacha20poly1305(key, cat(new Uint8Array(4), u64(seq)), aad).encrypt(pt))
 }
 function full(opts) {
@@ -89,7 +91,7 @@ test('CONFIRMED KCI-2: with B\'s static secret leaked, Mallory cannot pose as A 
     const ks = _keySchedule({ cid, epA: endpointBytes(A.container), epB: endpointBytes(B.container), SA, SB, EA: EM, EB, exp: invite.exp, ih: channel.inviteHash(invite), dh1, dh2: g, dh3 })
     assert.throws(() => bob.confirm({ t: 'ready', cid: invite.cid, confirm: toHex(ks.confirmA) }), invalid(/does not verify/))
     // nor can he read B's early frame with those keys
-    assert.throws(() => chacha20poly1305(ks.kBA, cat(new Uint8Array(4), u64(0)), cat(te.encode('TAP-26/frame/v1'), cid, Uint8Array.of(1), u64(0))).decrypt(early.subarray(8)))
+    assert.throws(() => chacha20poly1305(ks.kBA, cat(new Uint8Array(4), u64(0)), cat(te.encode('tape-channel/frame/v1'), cid, Uint8Array.of(1), u64(0))).decrypt(early.subarray(8)))
   }
   assert.equal(bob.confirmed, false)
 })
@@ -177,7 +179,7 @@ test('CONFIRMED replay: accept/ready across channels and after completion are re
   assert.throws(() => completeInvite(c2.pending, { ...c1.accept, cid: c2.invite.cid }, { now: c2.now }), invalid(/does not verify/))
   assert.throws(() => c2.bob.confirm(c1.ready), invalid(/different channel/))
   assert.throws(() => c2.bob.confirm({ ...c1.ready, cid: c2.invite.cid }), invalid(/does not verify/))
-  assert.throws(() => completeInvite(c1.pending, c1.accept, { now: c1.now }), invalid(/already used|not an original handle/))
+  assert.throws(() => completeInvite(c1.pending, c1.accept, { now: c1.now }), argument(/already used|not an original handle/))
 })
 
 test('CONFIRMED stale invite: B re-accepting a replayed invite yields a session nobody can read or confirm', () => {
@@ -185,7 +187,7 @@ test('CONFIRMED stale invite: B re-accepting a replayed invite yields a session 
   const { accept: again, session: bob2 } = acceptInvite({ self: { ...B, staticSecret: c.sB }, peer: { ...A, staticPublic: c.SA }, invite: c.invite, now: c.now })
   const early = bob2.seal('early data on the replayed invite')
   assert.throws(() => c.alice.open(early), invalid(/authentication/), 'A\'s real session has different keys')
-  assert.throws(() => completeInvite(c.pending, again, { now: c.now }), invalid(/already used|not an original handle/))
+  assert.throws(() => completeInvite(c.pending, again, { now: c.now }), argument(/already used|not an original handle/))
   assert.throws(() => bob2.confirm(c.ready), invalid(/does not verify/), 'the old ready does not confirm the new session')
 })
 
@@ -196,7 +198,7 @@ test('FIXED L-6: a responder that passes `seen` refuses an invite it has already
   acceptInvite({ self: { ...B, staticSecret: fresh.sB }, peer: { ...A, staticPublic: fresh.SA }, invite: fresh.invite, now: fresh.now, seen })
   assert.ok(seen.has(fresh.invite.cid))
   assert.throws(() => acceptInvite({ self: { ...B, staticSecret: fresh.sB }, peer: { ...A, staticPublic: fresh.SA }, invite: fresh.invite, now: fresh.now, seen }), invalid(/already accepted/))
-  assert.throws(() => acceptInvite({ self: { ...B, staticSecret: h.sB }, peer: { ...A, staticPublic: h.SA }, invite: h.invite, now: h.now, seen: ['x'] }), invalid(/must be a Set/))
+  assert.throws(() => acceptInvite({ self: { ...B, staticSecret: h.sB }, peer: { ...A, staticPublic: h.SA }, invite: h.invite, now: h.now, seen: ['x'] }), argument(/must be a Set/))
 })
 
 // ===================================================================================== protocol: key checks =======
@@ -243,7 +245,7 @@ test('CONFIRMED FS: the ephemeral arrays actually used are zeroed, and no secret
   assert.ok(eA.every((x) => x === 0), 'eA zeroed on success')
   assert.deepEqual(walk(alice), []); assert.deepEqual(walk(bob), [])
   alice.close(); bob.close()
-  assert.throws(() => alice.seal('x'), invalid(/closed/)); assert.throws(() => bob.open(new Uint8Array(40)), invalid(/closed/))
+  assert.throws(() => alice.seal('x'), argument(/closed/)); assert.throws(() => bob.open(new Uint8Array(40)), argument(/closed/))
 })
 
 test('FIXED I-3: acceptInvite erases eB on the error path too', () => {
@@ -257,18 +259,18 @@ test('FIXED I-3: acceptInvite erases eB on the error path too', () => {
 test('FIXED M-3: a structured clone of pending carries no secret and cannot complete, so no nonce is ever reused', () => {
   const h = det()
   const copy = structuredClone(h.pending)
-  assert.throws(() => completeInvite(copy, h.accept, { now: h.now }), invalid(/not an original handle/))
+  assert.throws(() => completeInvite(copy, h.accept, { now: h.now }), argument(/not an original handle/))
   const { session: s1 } = completeInvite(h.pending, h.accept, { now: h.now })
   assert.ok(s1.seal('only one session exists for this ephemeral'))
-  assert.throws(() => completeInvite(copy, h.accept, { now: h.now }), invalid(/not an original handle/))
-  assert.throws(() => completeInvite(JSON.parse(JSON.stringify(h.pending)), h.accept, { now: h.now }), invalid(/not an original handle/))
+  assert.throws(() => completeInvite(copy, h.accept, { now: h.now }), argument(/not an original handle/))
+  assert.throws(() => completeInvite(JSON.parse(JSON.stringify(h.pending)), h.accept, { now: h.now }), argument(/not an original handle/))
 })
 
 test('CONFIRMED: a SHALLOW copy of pending cannot complete at all (secrets live outside the handle)', () => {
   const h = det()
   const copy = { ...h.pending }
   completeInvite(h.pending, h.accept, { now: h.now })
-  assert.throws(() => completeInvite(copy, h.accept, { now: h.now }), invalid(/not an original handle/))
+  assert.throws(() => completeInvite(copy, h.accept, { now: h.now }), argument(/not an original handle/))
 })
 
 // ===================================================================================== key confirmation ===========
@@ -331,7 +333,7 @@ test('CONFIRMED seq bounds: 2^32-1 is the last accepted seq; 2^32 and 2^64-1 are
 test('CONFIRMED: an authentic but oversize frame is refused; the maximum size and the empty frame round-trip', () => {
   const c = full()
   assert.throws(() => c.bob.open(craft(c.ks.kAB, c.cid, 0, 0, new Uint8Array(MAX_FRAME_BYTES + 1))), invalid(/too long/))
-  assert.throws(() => c.alice.seal(new Uint8Array(MAX_FRAME_BYTES + 1)), invalid(/exceeds/))
+  assert.throws(() => c.alice.seal(new Uint8Array(MAX_FRAME_BYTES + 1)), argument(/exceeds/))
   assert.equal(c.bob.open(c.alice.seal(new Uint8Array(MAX_FRAME_BYTES))).data.length, MAX_FRAME_BYTES)
   assert.equal(c.bob.open(c.alice.seal(new Uint8Array(0))).data.length, 0)
 })
@@ -445,8 +447,8 @@ test('FIXED H-1 end to end: through relayTransport, a relay restart loses nothin
   const c = full()
   let core = createRelayCore()
   const api = { call: async (_svc, method, p) => ({ result: method === 'relaySend' ? core.send(p.room, p.frame) : await core.recv(p.room, p.after, 0, p.epoch) }) }
-  const bobLink = relayTransport({ api, svc: {}, inbound: c.bob.rooms.inbound, outbound: c.bob.rooms.outbound })
-  const aliceLink = relayTransport({ api, svc: {}, inbound: c.alice.rooms.inbound, outbound: c.alice.rooms.outbound })
+  const bobLink = relayTransport({ api, service: {}, inbound: c.bob.rooms.inbound, outbound: c.bob.rooms.outbound })
+  const aliceLink = relayTransport({ api, service: {}, inbound: c.alice.rooms.inbound, outbound: c.alice.rooms.outbound })
   for (let k = 0; k < 5; k++) await aliceLink.send(encodeWire(c.alice.seal(`pre ${k}`)))
   for (const w of await bobLink.poll(0)) c.bob.open(decodeWire(w).frame)
   assert.equal(bobLink.cursor, 4)
@@ -516,7 +518,7 @@ const good = (s) => toBase64(encodeWire(te.encode(s)))
 
 test('FIXED L-8: a malformed frame in a batch is skipped; the good frames on either side are delivered', async () => {
   const api = fakeApi([{ frames: [{ i: 0, frame: good('a') }, { i: 1, frame: '!!!!' }, { i: 2, frame: good('c') }] }, { frames: [] }])
-  const link = relayTransport({ api, svc: {}, inbound: ROOM(1), outbound: ROOM(2) })
+  const link = relayTransport({ api, service: {}, inbound: ROOM(1), outbound: ROOM(2) })
   const got = await link.poll(0)
   assert.equal(got.length, 2, 'frames 0 and 2 are delivered')
   assert.equal(link.cursor, 2)
@@ -526,7 +528,7 @@ test('FIXED L-8: a malformed frame in a batch is skipped; the good frames on eit
 
 test('FIXED L-8b: an onWire exception is reported and the rest of the batch is still delivered', async () => {
   const api = fakeApi([{ frames: [{ i: 0, frame: good('x') }, { i: 1, frame: good('y') }, { i: 2, frame: good('z') }] }])
-  const link = relayTransport({ api, svc: {}, inbound: ROOM(1), outbound: ROOM(2), retryMs: 5 })
+  const link = relayTransport({ api, service: {}, inbound: ROOM(1), outbound: ROOM(2), retryMs: 5 })
   const seen = [], errors = []
   await new Promise((resolve) => {
     link.start(async (w) => { seen.push(w.length); if (seen.length === 1) throw new Error('bad frame'); if (seen.length === 3) { link.stop(); resolve() } }, { onError: (e) => errors.push(e) })
@@ -539,7 +541,7 @@ test('FIXED L-1: stop() then start() while a poll is in flight leaves exactly on
   let inflight = 0
   const gates = []
   const api = { call: (_s, _m, p) => { inflight++; return new Promise((res) => gates.push(() => { inflight--; res({ result: { frames: [] } }) })) } }
-  const link = relayTransport({ api, svc: {}, inbound: ROOM(1), outbound: ROOM(2), retryMs: 1 })
+  const link = relayTransport({ api, service: {}, inbound: ROOM(1), outbound: ROOM(2), retryMs: 1 })
   link.start(() => {})
   await new Promise((r) => setTimeout(r, 5))
   link.stop(); link.start(() => {})
@@ -557,7 +559,7 @@ test('FIXED L-9: an onError that throws cannot kill the loop or the process', ()
     import { relayTransport } from ${JSON.stringify(mod)}
     let calls = 0
     const api = { call: async () => { calls++; throw new Error('relay down') } }
-    const link = relayTransport({ api, svc: {}, inbound: '${ROOM(1)}', outbound: '${ROOM(2)}', retryMs: 5 })
+    const link = relayTransport({ api, service: {}, inbound: '${ROOM(1)}', outbound: '${ROOM(2)}', retryMs: 5 })
     link.start(() => {}, { onError: () => { throw new Error('logger failed') } })
     setTimeout(() => { console.log('still alive after ' + calls + ' polls'); link.stop(); process.exit(0) }, 300)`
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', cwd: fileURLToPath(new URL('..', import.meta.url)) })
@@ -573,7 +575,7 @@ test('CONFIRMED/INFO: a malicious relay\'s replay, reorder, injection and cursor
     { frames: [{ i: Number.MAX_SAFE_INTEGER, frame: toBase64(f2) }] },
     { frames: [{ i: 8, frame: toBase64(f2) }] },
   ])
-  const link = relayTransport({ api, svc: {}, inbound: c.bob.rooms.inbound, outbound: c.bob.rooms.outbound })
+  const link = relayTransport({ api, service: {}, inbound: c.bob.rooms.inbound, outbound: c.bob.rooms.outbound })
   const out = []
   for (const w of await link.poll(0)) { try { out.push(c.bob.open(decodeWire(w).frame, { text: true }).data) } catch (e) { out.push(e.code) } }
   assert.deepEqual(out, ['m1', 'CHANNEL_INVALID', 'CHANNEL_INVALID'], 'reordered i:4 dropped by cursor, replay and injection refused by the channel')
@@ -587,7 +589,8 @@ test('CONFIRMED/INFO: a malicious relay\'s replay, reorder, injection and cursor
 
 test('CONFIRMED tapeSendKey: a non-6551 contract returning a crafted token() cannot borrow another container\'s key', async () => {
   const chain = createFakeChain()
-  const api = createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, hub: ADDR.hub, fetch: chain.fetch })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const api = createTapeAPI({ conform: false, rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, hub: ADDR.hub, fetch: chain.fetch })
   const key = '0x' + toHex(generateKeyPair().publicKey)
   chain.setTapeSendKey(ADDR.container, { tokenId: 4246, key })
   const evil = '0x00000000000000000000000000000000000beef1'
@@ -598,7 +601,7 @@ test('CONFIRMED tapeSendKey: a non-6551 contract returning a crafted token() can
   chain.setTapeSendKey(evil, { circuits: fakeCircuits, tokenId: 1, key, usable: false })
   await assert.rejects(api.chain.tapeSendKey(evil), (e) => e.code === 'NOT_FOUND')
   // wrong chain configured on the client: the hub's endpoint embeds block.chainid, so the endpoint check fails
-  const api97 = createTapeAPI({ chainId: 97, rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, hub: ADDR.hub, fetch: chain.fetch })
+  const api97 = createTapeAPI({ conform: false, chainId: 97, rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, hub: ADDR.hub, fetch: chain.fetch })
   await assert.rejects(api97.chain.tapeSendKey({ circuits: ADDR.circuits, tokenId: 4246 }), (e) => e.code === 'CHANNEL_INVALID' && /endpoint/.test(e.message))
   await assert.rejects(api97.chain.tapeSendKey(ADDR.container), (e) => e.code === 'CHANNEL_INVALID' && /chain 56/.test(e.message))
   for (const bad of ['0x123', 'x'.repeat(42), 42, null, { circuits: 'nope', tokenId: 1 }, { circuits: ADDR.circuits }]) {
@@ -608,7 +611,7 @@ test('CONFIRMED tapeSendKey: a non-6551 contract returning a crafted token() can
 
 test('CONFIRMED tapeSendKey -> channel: a hub key with top bit set or non-canonical is refused when used as peer', async () => {
   const chain = createFakeChain()
-  const api = createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, hub: ADDR.hub, fetch: chain.fetch })
+  const api = createTapeAPI({ conform: false, rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, hub: ADDR.hub, fetch: chain.fetch })
   const s = generateKeyPair()
   for (const bad of ['0x' + 'ff'.repeat(32), '0xedffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f']) {
     chain.setTapeSendKey(ADDR.container, { tokenId: 4246, key: bad })

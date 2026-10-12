@@ -161,7 +161,7 @@ test('cover mode: a pool too small is said out loud (warn, stats), never passed 
   // onShort: 'error' throws BUS_PRIVACY before any room-bearing request / 在任何带房间的请求之前抛错
   const strict = await world(2)
   const r3 = busPrivacyReader({ mode: 'cover', rpc: strict.rpc, bus: BUS, rooms: [room()], confirmations: 0, cover: { onShort: 'error' }, warn: quiet })
-  await assert.rejects(r3.poll(), (e) => e instanceof TapeAPIError && e.code === 'BUS_PRIVACY' && e.effectiveK === 3)
+  await assert.rejects(r3.poll(), (e) => e instanceof TapeAPIError && e.code === 'BUS_PRIVACY' && e.data.effectiveK === 3)
   assert.deepEqual(roomAsks(strict.rec.asks), [], 'no request naming a room was sent')
   // A smaller k the pool can meet reads normally / 池子满足得了的更小 k 正常读取
   const r4 = busPrivacyReader({ mode: 'cover', rpc: strict.rpc, bus: BUS, rooms: [room()], confirmations: 0, cover: { k: 3, onShort: 'error' }, warn: quiet })
@@ -264,7 +264,7 @@ test('contract mode: over its download budget it stops with BUS_BUDGET, loudly, 
   const reader = busPrivacyReader({ rpc, bus: BUS, rooms: [mine], mode: 'contract', contract: { maxLogs: 20, onExceed: 'error' }, fromBlock: start, confirmations: 0, warn: quiet })
   assert.deepEqual(await reader.poll(), [{ room: mine, wire: w }], 'the frames of the poll that went over are handed over')
   const n = rec.asks.length
-  await assert.rejects(reader.poll(), (e) => e instanceof TapeAPIError && e.code === 'BUS_BUDGET' && e.logs > 20 && /stopped/.test(e.message))
+  await assert.rejects(reader.poll(), (e) => e instanceof TapeAPIError && e.code === 'BUS_BUDGET' && e.data.logs > 20 && /stopped/.test(e.message))
   await assert.rejects(reader.poll(), (e) => e.code === 'BUS_BUDGET')
   assert.equal(rec.asks.length, n, 'a stopped reader downloads nothing more')
   assert.equal(reader.stats().privacy.stopped, true)

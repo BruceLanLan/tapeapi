@@ -47,7 +47,7 @@ before(async () => {
   const url = `http://127.0.0.1:${port}/tapeapi/v1`
   provider.manifest.endpoints.live = [url]
   publish(manifestAt(CHEAP, [url]))
-  api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true, fetch: chain.fetchWith() })
+  api = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true, fetch: chain.fetchWith() })
 })
 after(() => srv?.close())
 
@@ -95,7 +95,7 @@ test('the provider cannot invent a price: the chain is the authority', async () 
   // 恶意提供者在拒绝里报一个天价。客户端必须重读链上清单，按持有人真正发布的价格付，而不是它要的价。
   const signedAmounts = []
   const greedy = createTapeAPI({
-    rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true,
+    conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true,
     fetch: chain.fetchWith(async (url, init) => {
       try { const b = JSON.parse(init.body); if (b?.voucher?.cumulative) signedAmounts.push(BigInt(b.voucher.cumulative)) } catch { /* not a call */ }
       const res = await fetch(url, init); const j = await res.json()
@@ -202,7 +202,7 @@ test('a signer rotation heals in one call: the chain confirms the new key and th
 
 test('unsigned JSON (a CDN error page, an unsigned 404) is PROVIDER_UNAVAILABLE, not BAD_SIGNATURE (D9)', async () => {
   const cdn = createTapeAPI({
-    rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true,
+    conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true,
     fetch: chain.fetchWith(async () => new Response(JSON.stringify({ ok: false, error: { code: 'NOT_FOUND', message: 'no such route' } }), { status: 404, headers: { 'content-type': 'application/json' } })),
   })
   const svc = await cdn.resolve(ADDR.container)

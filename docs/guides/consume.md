@@ -16,7 +16,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 Or install just the SDK into your own project from the GitHub release (not the npm registry):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz
 ```
 
 Save the scripts below as `.mjs` files where `@tapeapi/sdk` resolves, and run them with `node <file>.mjs`: in a clone,
@@ -174,7 +174,7 @@ escrow that holds anything but BEM, whatever token you name, and even if you all
 
 You pay the provider's listed price and nothing more: TapeAPI adds no fee on the consumer side. The maintenance
 contribution, if the provider keeps it, comes out of the provider's share ([`docs/FEES.md`](../FEES.md)). A paid
-call settles in the token of the escrow instance it uses: the next escrow version plans USDT (Binance-Peg) on BNB Smart Chain first, with BEM and WBNB (wrapped BNB) on demand, from the same bytecode ([`docs/FEES.md`](../FEES.md)). Prices in a manifest are still written in BEM (`priceBEM`) until a form for other tokens is specified, so this SDK builds paid calls only for an escrow that holds BEM.
+call settles in the token of the escrow instance it uses: the next escrow version plans BEM on BNB Smart Chain first, with the USDT-pegged token (Binance-Peg) and WBNB (wrapped BNB) on demand, from the same bytecode ([`docs/FEES.md`](../FEES.md)). Prices in a manifest are still written in BEM (`priceBEM`) until a form for other tokens is specified, so this SDK builds paid calls only for an escrow that holds BEM.
 
 > The escrow contract is not deployed yet, so paid services are not live on mainnet. Everything above works against
 > the examples (`FREE_ALL=1` to skip payment locally).

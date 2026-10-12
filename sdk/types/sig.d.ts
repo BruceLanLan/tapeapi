@@ -4,8 +4,9 @@ export declare function privateKeyToAddress(pk: string | Uint8Array): Address
 export declare function randomPrivateKey(): Hex
 export declare function personalDigest(digest: Uint8Array | string): Uint8Array
 export declare function signDigest(digest: Uint8Array | string, pk: string | Uint8Array): Hex
-export declare function parseSignature(sig: string | Uint8Array): { r: Uint8Array; s: Uint8Array; v: number }
-export declare function recoverAddress(digest: Uint8Array | string, sig: string | Uint8Array): Address
+/** `strictV` (@experimental, payment-voucher TAP draft §3.1): refuse v of 0 or 1 instead of reading them as 27 or 28. */
+export declare function parseSignature(sig: string | Uint8Array, opts?: { strictV?: boolean }): { r: Uint8Array; s: Uint8Array; v: number }
+export declare function recoverAddress(digest: Uint8Array | string, sig: string | Uint8Array, opts?: { strictV?: boolean }): Address
 
 export declare const DELEGATION_TYPE: string
 /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
@@ -37,6 +38,8 @@ export declare function voucherDomain(chainId: number, escrow: Address): EIP712D
 export declare function delegationDigest(chainId: number, hub: Address, d: Delegation): Uint8Array
 /** @experimental Not covered by the 1.0 stability promise (TAPI-22 payments / ServiceDirectory are not deployed); may change in a 1.x minor release. */
 export declare function voucherDigest(chainId: number, escrow: Address, v: Voucher): Uint8Array
+/** @experimental (payment-voucher TAP draft §3.1) The voucher signer: low s and v of 27 or 28 only. */
+export declare function recoverVoucherSigner(chainId: number, escrow: Address, v: Voucher, sig: string | Uint8Array): Address
 export declare function channelKeysDigest(chainId: number, hub: Address, k: Record<string, unknown>): Uint8Array
 export declare function channelKeysTypedData(chainId: number, hub: Address, k: Record<string, unknown>): TypedData
 export declare function delegationTypedData(chainId: number, hub: Address, d: Delegation): TypedData

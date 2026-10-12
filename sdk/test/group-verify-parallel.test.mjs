@@ -181,7 +181,7 @@ test('FIXED GRP-4: cold start of a 32-member epoch with simulated RPC latency: s
   const { epochWire, joiner } = await groupOf(ms)
   const coldStart = async (verifyConcurrency) => {
     requests = 0
-    const api = createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2', 'http://rpc3'], quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch })
+    const api = createTapeAPI({ conform: false, rpcUrls: ['http://rpc1', 'http://rpc2', 'http://rpc3'], quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch })
     const g = joiner(ms[1], { verifyConcurrency })
     const t0 = clock.now()
     await g.acceptEpoch(epochWire, { verifyMember: api.groupVerifier() })

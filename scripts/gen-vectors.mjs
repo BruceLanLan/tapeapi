@@ -6,7 +6,7 @@
 // 中间哈希，以及最终的期望值。
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { canonicalJSON } from '../sdk/src/canon.js'
-import { keccak256, toHex, utf8ToBytes } from '../sdk/src/abi.js'
+import { keccak256, toHex, utf8ToBytes, checksumAddress as abiChecksum } from '../sdk/src/abi.js'
 import * as sig from '../sdk/src/sig.js'
 
 const HOLDER_KEY = '0x' + '11'.repeat(32)
@@ -230,10 +230,10 @@ console.log('done')
 // v1 (labels TAP-26/…, TAP-27/…): TAPI-26 and TAPI-27 version 1, Stable (v1). Their files -- tapi-26-channel.json,
 // tapi-26-identity.json, tapi-27-group.json, tapi-27-group-v2.json -- must come out byte for byte as TapeAPI 1.8.0 wrote
 // them (TAPI-1 §4.1; sdk/test/channel-labels.test.mjs pins their SHA-256). v2 (labels tape-channel/…, tape-group/…):
-// spec/TAPI-26-v2.md and spec/TAPI-27-v2.md, which the SDK implements with { labels: 'v2' } since 1.8.1. Same secrets,
+// spec/TAPI-26-v2.md and spec/TAPI-27-v2.md: { labels: 'v2' } since 1.8.1, the SDK's default from 2.0. Same secrets,
 // same random draws; only the labels differ. spec/vectors/verify.py checks both versions.
 // v1（标签 TAP-26/…、TAP-27/…）：TAPI-26、TAPI-27 第 1 版，Stable (v1)，其向量文件必须与 TapeAPI 1.8.0 写出的逐字节相同。
-// v2（标签 tape-channel/…、tape-group/…）：spec/TAPI-26-v2.md 与 spec/TAPI-27-v2.md，SDK 自 1.8.1 起以 { labels: 'v2' } 实现。
+// v2（标签 tape-channel/…、tape-group/…）：spec/TAPI-26-v2.md 与 spec/TAPI-27-v2.md，1.8.1 起以 { labels: 'v2' } 选用，2.0 起为 SDK 默认。
 // 同样的秘密值、同样的随机抽取，只有标签不同。spec/vectors/verify.py 两个版本都核对。
 for (const labels of ['v1', 'v2']) {
   const P26 = labels === 'v2' ? 'tape-channel/' : 'TAP-26/'
@@ -480,7 +480,7 @@ for (const labels of ['v1', 'v2']) {
   })
 }
 
-// ---------- Container agents, phase 0 (experimental; internal draft docs/DESIGN-container-agent.md) ----------
+// ---------- Container agents, phase 0 (experimental; internal design notes, phase 0) ----------
 // The four EIP-712 types a circuit's holder signs, in the TAP-11 delegation domain (the hub). A message hash is the full
 // typed digest. Scope[] is keccak256 of the concatenated hashStruct of its items; bytes32[] keccak256 of the concatenated
 // elements; an empty array hashes as keccak256 of nothing.
@@ -685,6 +685,690 @@ for (const labels of ['v1', 'v2']) {
       ho('the empty id with ok true: only a refused call has one', { ...hashOnly, id: '' }, H),
     ],
   }
+  // Phase 1 (experimental; internal design notes, phase 1, §5.2, §2.3-§2.5), abstract cases. Every
+  // expectation below is written by hand from the draft, never produced by the SDK: sdk/test/agent-phase1.test.mjs checks
+  // the SDK against them, spec/vectors/verify.py runs an independent model over them. No type, hash or signature changes.
+  // 阶段 1（实验）抽象用例：期望值全部按设计稿手写，不由 SDK 产生；JS 测试核对 SDK，verify.py 用独立模型核对。类型与哈希不变。
+  const E1 = '0x00000000000000000000000000000000000E5c71', E2 = '0x00000000000000000000000000000000000E5c72', E3 = '0x00000000000000000000000000000000000E5c73'
+  const T2 = '0x00000000000000000000000000000000000070C2'
+  const pm = (over) => ({ ...base, mode: 1, scope: [], ...over })
+  const sc = (provider, token, cap) => ({ provider, token, cap })
+  const st = (name, mandate, expect) => ({ name, mandate, expect })
+  const STC = 'scope-token-cap-mismatch', FTC = 'fee-token-cap-mismatch', DUP = 'scope-duplicate-provider', MSM = 'mode-scope-mismatch', SUB = 'subdelegate-not-allowed', P0 = 'phase0-no-funds'
+  // M3 / S4b cases: one provider P1 on E1 holding BEM, cap 100; now N3 inside the mandate's window
+  // M3 / S4b 用例：一个 provider P1、托管 E1、BEM、cap 100；N3 在授权书窗口内
+  const H0 = sig.privateKeyToAddress(HOLDER_KEY), OTHER = '0x00000000000000000000000000000000000000Aa'
+  const OTHER_KEY = '0x00000000000000000000000000000000000000Bb', OTHER_HASH = '0x' + 'ab'.repeat(32)
+  const m3 = pm({ scope: [sc(P1, BEM, '100')] })
+  const M3_HASH = A.mandateHashOf(CHAIN_ID, HUB, m3)
+  const N3 = base.notBefore + 3600
+  const p3 = (o = {}) => ({ provider: P1, escrow: E1, token: BEM, ...o })
+  const hist = (o = {}) => ({ chainId: CHAIN_ID, escrow: E1, consumer: H0, provider: P1, key: base.agentKey, expires: base.expires, mandateHash: M3_HASH, ...o })
+  const phase1 = {
+    rules: {
+      funded: 'a mandate names funds when any scope cap or feeCap is not 0, or any scope token or feeToken is not the zero address (§5.1)',
+      switch: 'without the switch every mandate is checked by the phase-0 rules (phase0-no-funds, subdelegate-not-allowed), exactly as in 1.8; with { enforcement: "escrow-channel" } a mandate that names funds is checked by the phase-1 static rules instead (phase 1), one that names none still by the phase-0 rules (phase 0)',
+      static: 'in this order: scope-token-cap-mismatch for each scope item whose token is zero and cap is not, or the other way; fee-token-cap-mismatch likewise for feeToken and feeCap; scope-duplicate-provider once for each provider named by two or more items with a non-zero cap (addresses compared in any case); mode-scope-mismatch when mode is 0 (pay) and any scope cap is not 0 or any scope token not zero; subdelegate-not-allowed. The order is this implementation\'s; the draft fixes none',
+      warnings: 'scope-includes-agent is reported, never refused, for a scope item with a cap whose provider is the agent (here; the same-holder case needs the chain); it is a static warning, reported whatever the static problems are (review p1m12 F7)',
+      nonce: 'a static problem keeps the nonce unrecorded (as phase0-no-funds does); recordsNonce says whether these static rules alone allow recording it',
+      planRefusals: 'escrowPlan refuses, in this order: the static rules; nothing-to-plan; with now, session-expired then session-too-long; with the facts read on chain (M3): holder-not-current (the plan\'s holder is not the principal\'s current holder), holder-changed-since-signing (review p1m3 recheck 3: the case\'s facts.signer, who signed the mandate, is given and is null or not the plan\'s holder), on the container path principal-not-deployed, principal-not-opened, execute-fee-too-high (executeFee above maxExecuteFee, the case\'s facts or else planBase\'s; an executeFee without maxExecuteFee is an input error, never planned, review p1m3 R1 and recheck), holder-short-of-fee (the holderBalance fact is below one executeFee, review p1m3 S4), execute-reverts (a simulated execute with the fee still reverts); with a session history, key-reused (the agent key is recorded for another mandate: an entry with another mandateHash, or one read from the logs, without a hash, that is not on one of this mandate\'s channels for this consumer ending at its expires); with a history and the case\'s facts.pinBlock (the block the facts were read at), pin-not-after-record (review p1m3 recheck 3: an entry with a block at or after pinBlock that is this mandate\'s, as for key-reused, with its agentKey on any channel, or that is on a channel this plan funds: same chain, the item\'s escrow, this consumer, the item\'s provider). Then each capped scope item in scope order, in this order: the agent\'s own container (agent-key-on-fee-channel); the plan\'s consumer, the holder on the holder path or the principal on the container path (provider-is-consumer); an escrow named by any entry of the plan (provider-is-escrow); a provider whose manifest names no escrow (provider-unresolvable); an escrow on no list (escrow-not-allowed); an escrow without code (escrow-other-chain); a token other than the scope item\'s, none, or an escrow already given with another token by an earlier item (escrow-token-mismatch); a history entry of this mandate (as for key-reused: its hash, or no hash on this consumer\'s channel at its expires) with its agentKey for this provider on another channel, another escrow or another consumer, that is not released (funded-elsewhere, review p1m3 recheck: a channel is released only when its consumer is the plan\'s, an entry for it has claimedAtPlan, and the entry\'s `elsewhere` fact { escrow, consumer, channel, pendingLive, claimed } for that channel says channel 0, no live request, and gives claimed; a missing fact is not released); the other funding path\'s channel to this provider (the principal\'s on the holder path, the holder\'s on the container path: the entry\'s otherPath { channel, session }) holding money or a session of the agent key (other-path-funded, review p1m3 S1); a live request (withdraw-pending); a channel above its cap (channel-exceeds-cap); the agent key with a session on the channel that is neither 0 nor the mandate\'s expires (key-already-authorised); the agent key\'s session already equal to expires (the plan was applied: the key may have spent since) and no history entry of this session (same chain, escrow, consumer, provider, key, expires; a mandateHash that is this mandate\'s or null) with claimedAtPlan, or no claimed fact, while the channel is below its cap, or, without such an entry, while claimed is given and not 0 (channel-spent: the baseline is never reset to today\'s claimedOf, review p1m3 recheck); a channel above its budget (channel-exceeds-budget): cap - spentElsewhere - spentHere, at least 0, where spentElsewhere is the sum over the released channels elsewhere of claimed - the smallest claimedAtPlan of its entries, and spentHere is claimed - the smallest claimedAtPlan of this session\'s entries when the session equals expires and such an entry and claimed are given (0 otherwise); a budget of 0 on a channel holding 0 where the agent key has no session (budget-exhausted, review p1m3 recheck 3: no authorizeSession alone on an empty channel); another key in the history on this channel (same chain, escrow, consumer, provider) whose session ends at or after now (channel-session-live). Last, on the container path, holder-short-of-fee again when holderBalance is below executeFee times the number of steps. The holder is the case\'s `holder`, else planBase.holder, on both paths (review p1m3 S6: the container path needs it too)',
+      planSession: 'a channel where the agent key\'s session already equals expires gets no authorizeSession step (it was authorised for this mandate), and is funded only up to its budget (review p1m3 B1), never back to the cap; every channel, a fresh one too, is funded to its budget - channel, the budget being cap - spentElsewhere - spentHere (see planRefusals), so for each (mandate, provider) the key\'s spending on every channel the history records plus what is open to it never exceeds the cap however often the plan is run (review p1m3 recheck). The plan lists in `record` one history entry per capped item { chainId, escrow, consumer, provider, key, expires, mandateHash, claimedAtPlan, spentElsewhere }: claimedAtPlan is the history entry\'s (carried forward, with or without the claimed fact) where the session equals expires and such an entry exists, else the claimed fact, else null; spentElsewhere is a decimal string; expect.claimedAtPlan and expect.spentElsewhere list them in scope order where a case states them. Each record entry carries block, the case\'s facts.pinBlock or null (expect.recordBlock lists them in scope order where a case states it). expect.checked, where a case states it, is { history, signer }: whether the case gives a history at all, and a facts.signer (an empty one [] is given; review p1m3 recheck 3: a history left out is not checked, never taken as empty)',
+      closeOut: 'closeOutPlan: for each capped scope item in scope order whose channel is not 0: with a live request (requestedAt != 0 and now <= requestedAt + 48 h + 7 d), a withdraw only, inside [requestedAt + 48 h, requestedAt + 48 h + 7 d], for min(requested, channel), the rest remaining; otherwise (no request, or a lapsed one) requestWithdraw(provider, channel) and a withdraw 48 h to 48 h + 7 d after it. Every requestWithdraw comes before every withdraw. Refused, in this order: on the container path holder-not-current (the current holder must send it), execute-fee-too-high (executeFee above the caller\'s maxExecuteFee), holder-short-of-fee (holderBalance below one executeFee) and execute-reverts (a simulated execute still reverts); consumer-unknown (review p1m3 S2: the case\'s history records sessions of this mandate, same chain, its agentKey, its expires and a capped provider, and none for this consumer: the holder on the holder path, the principal on the container path); escrow-unknown (an entry\'s escrow is null: where the money is is not known, R23); all channels empty: nothing-to-close; last, on the container path, holder-short-of-fee when holderBalance is below executeFee times the number of steps. With fullRequest (review p1m3 S5) a live request for less than the channel is replaced: state replace, requestWithdraw(provider, channel) and a withdraw timed from it. On the holder path the wallet that funded closes its own channels',
+      applied: 'after a plan was sent: allowance-not-zero for each escrow of the plan\'s checks whose allowance is not 0 (with its approve(escrow, 0)), then for each capped item channel-not-at-cap and session-not-set (the agent key\'s session != expires). channel-not-at-cap: when the plan\'s record has claimedAtPlan, channel + (claimed - claimedAtPlan) != the target (what the key spent since the plan counts, review p1m3 B1); otherwise channel != the target. The target is cap - the record\'s spentElsewhere, at least 0 (review p1m3 recheck). Where the record has claimedAtPlan, each channel-not-at-cap has a cause (expect.causes, in order, where a case states them): excess above the target; below it, fund-failed when the allowance read for the record\'s escrow is not 0, else withdrawn-or-not-sent',
+      plan: 'escrowPlan: per escrow one approve of exactly the sum of (cap - channel) over its capped providers, omitted when 0; then fund(provider, cap - channel) for each capped provider in scope order, omitted when 0; then authorizeSession(provider, agentKey, expires) for each; then one allowance check per escrow that had an approve. Steps list [kind, escrow, provider, amount]. On the holder path every transaction goes to the token or the escrow; on the container path to the principal (execute), with the caller\'s executeFee as its value, and expect.fees, where a case states it, is { perExecute: executeFee, executes: the number of steps, total: their product } (review p1m3 R1). A refusal names its reason',
+    },
+    static: [
+      st('a phase-0 mandate: names no funds, phase 0 with or without the switch', pm({ mode: 0, scope: [sc(P1, ZERO, '0')] }), { funded: false, withoutSwitch: [], phase: 0, problems: [], warnings: [], recordsNonce: true }),
+      st('spend, one provider with a token and a cap', pm({ scope: [sc(P1, BEM, '100000000')] }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [], warnings: [], recordsNonce: true }),
+      st('spend, two providers in two tokens', pm({ scope: [sc(P1, BEM, '100000000'), sc(P2, T2, '5000')] }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [], warnings: [], recordsNonce: true }),
+      st('spend, a capped provider and an evidence-only one (zero token, cap 0)', pm({ scope: [sc(P1, BEM, '1'), sc(P2, ZERO, '0')] }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [], warnings: [], recordsNonce: true }),
+      st('a token with cap 0', pm({ scope: [sc(P1, BEM, '0')] }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [STC], warnings: [], recordsNonce: false }),
+      st('a cap with the zero token', pm({ scope: [sc(P1, ZERO, '7')] }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [STC], warnings: [], recordsNonce: false }),
+      st('a feeToken with feeCap 0', pm({ scope: [sc(P1, BEM, '1')], feeToken: BEM }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [FTC], warnings: [], recordsNonce: false }),
+      st('a feeCap with the zero feeToken', pm({ scope: [sc(P1, BEM, '1')], feeCap: '9' }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [FTC], warnings: [], recordsNonce: false }),
+      st('pay with a fee only: mode 0 may carry a fee', pm({ mode: 0, scope: [sc(P1, ZERO, '0')], feeToken: BEM, feeCap: '5' }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [], warnings: [], recordsNonce: true }),
+      st('pay with a scope cap', pm({ mode: 0, scope: [sc(P1, BEM, '100')] }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [MSM], warnings: [], recordsNonce: false }),
+      st('pay with a scope token and cap 0: two rules broken', pm({ mode: 0, scope: [sc(P1, BEM, '0')] }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [STC, MSM], warnings: [], recordsNonce: false }),
+      st('one provider capped twice', pm({ scope: [sc(P1, BEM, '1'), sc(P1, BEM, '2')] }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [DUP], warnings: [], recordsNonce: false }),
+      st('one provider capped three times: reported once', pm({ scope: [sc(P1, BEM, '1'), sc(P2, BEM, '1'), sc(P1, BEM, '2'), sc(P1, BEM, '3')] }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [DUP], warnings: [], recordsNonce: false }),
+      st('one provider capped twice, written in two cases', pm({ scope: [sc(P1, BEM, '1'), sc(P1.toUpperCase().replace('0X', '0x'), BEM, '2')] }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [DUP], warnings: [], recordsNonce: false }),
+      st('one provider capped once and listed once more without a cap: not a duplicate', pm({ scope: [sc(P1, BEM, '1'), sc(P1, ZERO, '0')] }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [], warnings: [], recordsNonce: true }),
+      st('sub-delegation with funds', pm({ scope: [sc(P1, BEM, '1')], subdelegate: true }), { funded: true, withoutSwitch: [P0, SUB], phase: 1, problems: [SUB], warnings: [], recordsNonce: false }),
+      st('sub-delegation without funds: phase 0 with the switch too', pm({ mode: 0, scope: [], subdelegate: true }), { funded: false, withoutSwitch: [SUB], phase: 0, problems: [SUB], warnings: [], recordsNonce: false }),
+      st('the agent\'s own container with a cap: reported, not refused', pm({ scope: [sc(AGENT, BEM, '1')] }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [], warnings: ['scope-includes-agent'], recordsNonce: true }),
+      st('the agent\'s own container without a cap: nothing to report', pm({ scope: [sc(AGENT, ZERO, '0')], feeToken: BEM, feeCap: '1' }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [], warnings: [], recordsNonce: true }),
+      st('pay with the agent\'s own container capped: a static problem and the warning, both reported', pm({ mode: 0, scope: [sc(AGENT, BEM, '1')] }), { funded: true, withoutSwitch: [P0], phase: 1, problems: [MSM], warnings: ['scope-includes-agent'], recordsNonce: false }),
+      st('the agent capped and sub-delegation: the warning survives the refusal', pm({ scope: [sc(AGENT, BEM, '1'), sc(P1, BEM, '2')], subdelegate: true }), { funded: true, withoutSwitch: [P0, SUB], phase: 1, problems: [SUB], warnings: ['scope-includes-agent'], recordsNonce: false }),
+      st('every static rule at once, in order', pm({ mode: 0, scope: [sc(P1, BEM, '5'), sc(P1, BEM, '6'), sc(P2, BEM, '0')], feeCap: '1', subdelegate: true }), { funded: true, withoutSwitch: [P0, SUB], phase: 1, problems: [STC, FTC, DUP, MSM, SUB], warnings: [], recordsNonce: false }),
+    ],
+    planBase: { chainId: CHAIN_ID, hub: HUB, holder: sig.privateKeyToAddress(HOLDER_KEY), allowEscrows: [E1, E2, E3], executeFee: '200000000000000', maxExecuteFee: '200000000000000' },
+    plan: [
+      { name: 'holder path, one provider, an empty channel', path: 'holder', mandate: pm({ scope: [sc(P1, BEM, '100000000')] }), providers: [{ provider: P1, escrow: E1, token: BEM }],
+        expect: { steps: [['approve', E1, null, '100000000'], ['fund', E1, P1, '100000000'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'direct' } },
+      { name: 'holder path, two providers on one escrow, one channel partly funded: one approve of the sum', path: 'holder', mandate: pm({ scope: [sc(P1, BEM, '100'), sc(P2, BEM, '50')] }), providers: [{ provider: P1, escrow: E1, token: BEM }, { provider: P2, escrow: E1, token: BEM, channel: '20' }],
+        expect: { steps: [['approve', E1, null, '130'], ['fund', E1, P1, '100'], ['fund', E1, P2, '30'], ['authorizeSession', E1, P1, null], ['authorizeSession', E1, P2, null]], checks: [E1], to: 'direct' } },
+      { name: 'holder path, two providers on two escrows (one token each): two approves', path: 'holder', mandate: pm({ scope: [sc(P1, BEM, '100'), sc(P2, T2, '50')] }), providers: [{ provider: P2, escrow: E2, token: T2 }, { provider: P1, escrow: E1, token: BEM }],
+        expect: { steps: [['approve', E1, null, '100'], ['approve', E2, null, '50'], ['fund', E1, P1, '100'], ['fund', E2, P2, '50'], ['authorizeSession', E1, P1, null], ['authorizeSession', E2, P2, null]], checks: [E1, E2], to: 'direct' } },
+      { name: 'a channel already at its cap: no approve, no fund, the session only', path: 'holder', mandate: pm({ scope: [sc(P1, BEM, '100')] }), providers: [{ provider: P1, escrow: E1, token: BEM, channel: '100' }],
+        expect: { steps: [['authorizeSession', E1, P1, null]], checks: [], to: 'direct' } },
+      { name: 'container path: the same steps, each through the principal\'s execute with the caller\'s fee', path: 'container', mandate: pm({ scope: [sc(P1, BEM, '100000000')] }), providers: [{ provider: P1, escrow: E1, token: BEM }],
+        expect: { steps: [['approve', E1, null, '100000000'], ['fund', E1, P1, '100000000'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'principal' } },
+      { name: 'the fee is not planned: only the scope channel', path: 'holder', mandate: pm({ scope: [sc(P1, BEM, '10')], feeToken: BEM, feeCap: '3' }), providers: [{ provider: P1, escrow: E1, token: BEM }],
+        expect: { steps: [['approve', E1, null, '10'], ['fund', E1, P1, '10'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'direct' } },
+      { name: 'a channel above its cap', path: 'holder', mandate: pm({ scope: [sc(P1, BEM, '100')] }), providers: [{ provider: P1, escrow: E1, token: BEM, channel: '101' }], expect: { refused: 'channel-exceeds-cap' } },
+      { name: 'an escrow on no list', path: 'holder', mandate: pm({ scope: [sc(P1, BEM, '100')] }), providers: [{ provider: P1, escrow: ESCROW, token: BEM }], expect: { refused: 'escrow-not-allowed' } },
+      { name: 'an escrow holding another token', path: 'holder', mandate: pm({ scope: [sc(P1, BEM, '100')] }), providers: [{ provider: P1, escrow: E1, token: T2 }], expect: { refused: 'escrow-token-mismatch' } },
+      { name: 'the agent\'s own container capped: the agent key is never authorised on the agent\'s channel', path: 'holder', mandate: pm({ scope: [sc(AGENT, BEM, '100')] }), providers: [{ provider: AGENT, escrow: E1, token: BEM }], expect: { refused: 'agent-key-on-fee-channel' } },
+      { name: 'a live withdraw request: cancel it first', path: 'holder', mandate: pm({ scope: [sc(P1, BEM, '100')] }), providers: [{ provider: P1, escrow: E1, token: BEM, pendingLive: true }], expect: { refused: 'withdraw-pending' } },
+      // review p1m12 F3: contradictory inputs are refused, never resolved by the last one / 矛盾输入一律拒绝
+      { name: 'one escrow given with two tokens (one per provider): refused, never the last one', path: 'holder', mandate: pm({ scope: [sc(P1, BEM, '1'), sc(P2, T2, '2')] }), providers: [{ provider: P1, escrow: E1, token: BEM }, { provider: P2, escrow: E1, token: T2 }], expect: { refused: 'escrow-token-mismatch' } },
+      { name: 'holder path: a provider that is the holder (a channel to itself)', path: 'holder', mandate: pm({ scope: [sc(sig.privateKeyToAddress(HOLDER_KEY), BEM, '5')] }), providers: [{ provider: sig.privateKeyToAddress(HOLDER_KEY), escrow: E1, token: BEM }], expect: { refused: 'provider-is-consumer' } },
+      { name: 'container path: a provider that is the principal (a channel to itself)', path: 'container', mandate: pm({ scope: [sc(base.principal, BEM, '5')] }), providers: [{ provider: base.principal, escrow: E1, token: BEM }], expect: { refused: 'provider-is-consumer' } },
+      { name: 'holder path: a provider that is the principal container is not the consumer: planned', path: 'holder', mandate: pm({ scope: [sc(base.principal, BEM, '5')] }), providers: [{ provider: base.principal, escrow: E1, token: BEM }],
+        expect: { steps: [['approve', E1, null, '5'], ['fund', E1, base.principal, '5'], ['authorizeSession', E1, base.principal, null]], checks: [E1], to: 'direct' } },
+      { name: 'a provider that is an escrow named in the plan (here another provider\'s)', path: 'holder', mandate: pm({ scope: [sc(P1, BEM, '1'), sc(E2, BEM, '1')] }), providers: [{ provider: P1, escrow: E2, token: BEM }, { provider: E2, escrow: E1, token: BEM }], expect: { refused: 'provider-is-escrow' } },
+      { name: 'a provider that is its own escrow', path: 'holder', mandate: pm({ scope: [sc(E1, BEM, '1')] }), providers: [{ provider: E1, escrow: E1, token: BEM }], expect: { refused: 'provider-is-escrow' } },
+      { name: 'a mandate that breaks a static rule', path: 'holder', mandate: pm({ mode: 0, scope: [sc(P1, BEM, '100')] }), providers: [{ provider: P1, escrow: E1, token: BEM }], expect: { refused: 'mode-scope-mismatch' } },
+      { name: 'a fee and no capped scope item: nothing to plan', path: 'holder', mandate: pm({ mode: 0, scope: [], feeToken: BEM, feeCap: '3' }), providers: [], expect: { refused: 'nothing-to-plan' } },
+      { name: 'expires more than 30 days after now', path: 'holder', now: base.expires - 30 * 86400 - 1, mandate: pm({ scope: [sc(P1, BEM, '1')] }), providers: [{ provider: P1, escrow: E1, token: BEM }], expect: { refused: 'session-too-long' } },
+      { name: 'expires exactly 30 days after now: allowed', path: 'holder', now: base.expires - 30 * 86400, mandate: pm({ scope: [sc(P1, BEM, '1')] }), providers: [{ provider: P1, escrow: E1, token: BEM }],
+        expect: { steps: [['approve', E1, null, '1'], ['fund', E1, P1, '1'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'direct' } },
+      { name: 'expires at now: authorizeSession would revert', path: 'holder', now: base.expires, mandate: pm({ scope: [sc(P1, BEM, '1')] }), providers: [{ provider: P1, escrow: E1, token: BEM }], expect: { refused: 'session-expired' } },
+      // M3: the facts read on chain at the kit's pinned block (owner's decision 1: refuse, never take as given)
+      // M3：钉块上读到的链上事实（负责人决定 1：拒绝，不再照单全收）
+      { name: 'M3 the holder is the current holder: planned', path: 'holder', facts: { currentHolder: H0 }, mandate: m3, providers: [p3()],
+        expect: { steps: [['approve', E1, null, '100'], ['fund', E1, P1, '100'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'direct' } },
+      { name: 'M3 the holder is not the current holder', path: 'holder', facts: { currentHolder: OTHER }, mandate: m3, providers: [p3()], expect: { refused: 'holder-not-current' } },
+      { name: 'M3 container path: the sending holder is not the current holder, before the container\'s own facts', path: 'container', holder: H0, facts: { currentHolder: OTHER, principalDeployed: false }, mandate: m3, providers: [p3()], expect: { refused: 'holder-not-current' } },
+      { name: 'M3 container path: a principal without code', path: 'container', facts: { principalDeployed: false, principalOpened: false }, mandate: m3, providers: [p3()], expect: { refused: 'principal-not-deployed' } },
+      { name: 'M3 container path: a principal not opened', path: 'container', facts: { principalDeployed: true, principalOpened: false }, mandate: m3, providers: [p3()], expect: { refused: 'principal-not-opened' } },
+      { name: 'M3 container path: execute still reverts with the fee (a gate)', path: 'container', facts: { principalDeployed: true, principalOpened: true, executeReverts: '0x5d3b5b49' }, mandate: m3, providers: [p3()], expect: { refused: 'execute-reverts' } },
+      { name: 'M3 container path: deployed, opened, the simulation passes: planned through execute', path: 'container', holder: H0, facts: { currentHolder: H0, principalDeployed: true, principalOpened: true }, mandate: m3, providers: [p3()],
+        expect: { steps: [['approve', E1, null, '100'], ['fund', E1, P1, '100'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'principal' } },
+      // review p1m3 R1: the fee found by simulation is never attached above the caller's ceiling / 费用绝不超过调用方给的上限
+      { name: 'R1 container path: the fee one wei above maxExecuteFee', path: 'container', facts: { principalDeployed: true, principalOpened: true, maxExecuteFee: '199999999999999' }, mandate: m3, providers: [p3()], expect: { refused: 'execute-fee-too-high' } },
+      { name: 'R1 container path: the fee exactly at maxExecuteFee: planned, the total of three executes said', path: 'container', facts: { principalDeployed: true, principalOpened: true, maxExecuteFee: '200000000000000' }, mandate: m3, providers: [p3()],
+        expect: { steps: [['approve', E1, null, '100'], ['fund', E1, P1, '100'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'principal', fees: { perExecute: '200000000000000', executes: 3, total: '600000000000000' } } },
+      { name: 'R1 principal-not-opened comes before execute-fee-too-high', path: 'container', facts: { principalDeployed: true, principalOpened: false, maxExecuteFee: '1' }, mandate: m3, providers: [p3()], expect: { refused: 'principal-not-opened' } },
+      { name: 'R1 execute-fee-too-high comes before execute-reverts', path: 'container', facts: { principalDeployed: true, principalOpened: true, maxExecuteFee: '1', executeReverts: '0x5d3b5b49' }, mandate: m3, providers: [p3()], expect: { refused: 'execute-fee-too-high' } },
+      // review p1m3 S1: the other funding path already funded / 另一条出资路径已充值
+      { name: 'S1 holder path: the principal\'s channel to this provider holds money', path: 'holder', mandate: m3, providers: [p3({ otherPath: { channel: '100', session: 0 } })], expect: { refused: 'other-path-funded' } },
+      { name: 'S1 holder path: the agent key has a session on the principal\'s channel', path: 'holder', mandate: m3, providers: [p3({ otherPath: { channel: '0', session: base.expires } })], expect: { refused: 'other-path-funded' } },
+      { name: 'S1 container path: the holder\'s channel to this provider holds money', path: 'container', mandate: m3, providers: [p3({ otherPath: { channel: '1', session: 0 } })], expect: { refused: 'other-path-funded' } },
+      { name: 'S1 the other path empty: planned', path: 'holder', mandate: m3, providers: [p3({ otherPath: { channel: '0', session: 0 } })],
+        expect: { steps: [['approve', E1, null, '100'], ['fund', E1, P1, '100'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'direct' } },
+      { name: 'S1 escrow-token-mismatch comes before other-path-funded', path: 'holder', mandate: m3, providers: [p3({ token: T2, otherPath: { channel: '1', session: 0 } })], expect: { refused: 'escrow-token-mismatch' } },
+      { name: 'S1 other-path-funded comes before withdraw-pending', path: 'holder', mandate: m3, providers: [p3({ pendingLive: true, otherPath: { channel: '1', session: 0 } })], expect: { refused: 'other-path-funded' } },
+      // review p1m3 S4: the holder's native coin pays the fee of every execute / 持有人的原生币须付得起每笔 execute 的费
+      { name: 'S4 container path: the holder has less than one fee', path: 'container', facts: { holderBalance: '199999999999999' }, mandate: m3, providers: [p3()], expect: { refused: 'holder-short-of-fee' } },
+      { name: 'S4 container path: one fee but not the three of the plan', path: 'container', facts: { holderBalance: '599999999999999' }, mandate: m3, providers: [p3()], expect: { refused: 'holder-short-of-fee' } },
+      { name: 'S4 container path: exactly the three fees: planned', path: 'container', facts: { holderBalance: '600000000000000' }, mandate: m3, providers: [p3()],
+        expect: { steps: [['approve', E1, null, '100'], ['fund', E1, P1, '100'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'principal' } },
+      { name: 'S4 execute-fee-too-high comes before holder-short-of-fee, which comes before execute-reverts', path: 'container', facts: { holderBalance: '1', maxExecuteFee: '1', executeReverts: '0x' }, mandate: m3, providers: [p3()], expect: { refused: 'execute-fee-too-high' } },
+      { name: 'S4 holder-short-of-fee (one fee) comes before execute-reverts', path: 'container', facts: { holderBalance: '1', executeReverts: '0x' }, mandate: m3, providers: [p3()], expect: { refused: 'holder-short-of-fee' } },
+      { name: 'S4 an item\'s refusal comes before the check of the plan\'s total fee', path: 'container', facts: { holderBalance: '200000000000000' }, mandate: m3, providers: [p3({ channel: '101' })], expect: { refused: 'channel-exceeds-cap' } },
+      { name: 'M3 a provider whose manifest names no escrow', path: 'holder', mandate: m3, providers: [p3({ escrow: null, token: null })], expect: { refused: 'provider-unresolvable' } },
+      { name: 'M3 an escrow without code on this chain', path: 'holder', mandate: m3, providers: [p3({ escrowCode: false })], expect: { refused: 'escrow-other-chain' } },
+      { name: 'M3 an escrow that answers no token()', path: 'holder', mandate: m3, providers: [p3({ token: null })], expect: { refused: 'escrow-token-mismatch' } },
+      { name: 'M3 the key already authorised on the channel until expires and the channel at its cap: no authorizeSession step', path: 'holder', mandate: m3, providers: [p3({ channel: '100', session: base.expires, claimed: '0' })],
+        expect: { steps: [], checks: [], to: 'direct', claimedAtPlan: ['0'] } },
+      // review p1m3 B1: a plan run again after it was applied never funds back what the key spent
+      // 审查 p1m3 B1：计划应用后再跑，绝不把钥匙花掉的钱再充回去
+      { name: 'B1 the plan was applied and the key spent 60 (channel 40, session = expires), no history: refused, never topped up', path: 'holder', mandate: m3, providers: [p3({ channel: '40', session: base.expires, claimed: '60' })], expect: { refused: 'channel-spent' } },
+      { name: 'B1 the same without the claimed fact: refused', path: 'holder', mandate: m3, providers: [p3({ channel: '40', session: base.expires })], expect: { refused: 'channel-spent' } },
+      { name: 'B1 the same with the history entry (claimedAtPlan 0) but without the claimed fact: refused', path: 'holder', now: N3, history: [hist({ claimedAtPlan: '0' })], mandate: m3, providers: [p3({ channel: '40', session: base.expires })], expect: { refused: 'channel-spent' } },
+      { name: 'B1 the history entry says claimedAtPlan 0, claimedOf is 60, the channel 40: nothing to fund', path: 'holder', now: N3, history: [hist({ claimedAtPlan: '0' })], mandate: m3, providers: [p3({ channel: '40', session: base.expires, claimed: '60' })],
+        expect: { steps: [], checks: [], to: 'direct', claimedAtPlan: ['0'] } },
+      { name: 'B1 a fund failed after the session was sent (channel 0, nothing spent since claimedAtPlan 5): funded to the cap', path: 'holder', now: N3, history: [hist({ claimedAtPlan: '5' })], mandate: m3, providers: [p3({ channel: '0', session: base.expires, claimed: '5' })],
+        expect: { steps: [['approve', E1, null, '100'], ['fund', E1, P1, '100']], checks: [E1], to: 'direct', claimedAtPlan: ['5'] } },
+      { name: 'B1 the key spent 60 and the channel holds 20: funded by 20 only, to the budget 40', path: 'holder', now: N3, history: [hist({ claimedAtPlan: '0' })], mandate: m3, providers: [p3({ channel: '20', session: base.expires, claimed: '60' })],
+        expect: { steps: [['approve', E1, null, '20'], ['fund', E1, P1, '20']], checks: [E1], to: 'direct', claimedAtPlan: ['0'] } },
+      { name: 'B1 the key spent the whole cap and more was settled since (claimedOf 150): budget 0, nothing to fund', path: 'holder', now: N3, history: [hist({ claimedAtPlan: '0' })], mandate: m3, providers: [p3({ channel: '0', session: base.expires, claimed: '150' })],
+        expect: { steps: [], checks: [], to: 'direct', claimedAtPlan: ['0'] } },
+      { name: 'B1 the key spent 60 and the channel was topped up to 100 by hand: above the budget', path: 'holder', now: N3, history: [hist({ claimedAtPlan: '0' })], mandate: m3, providers: [p3({ channel: '100', session: base.expires, claimed: '60' })], expect: { refused: 'channel-exceeds-budget' } },
+      { name: 'B1 two entries of this session with different claimedAtPlan: the smaller counts (more spent, less funded)', path: 'holder', now: N3, history: [hist({ claimedAtPlan: '30' }), hist({ claimedAtPlan: '0' })], mandate: m3, providers: [p3({ channel: '40', session: base.expires, claimed: '60' })],
+        expect: { steps: [], checks: [], to: 'direct', claimedAtPlan: ['0'] } },
+      { name: 'B1 a log entry of this session (no claimedAtPlan): still refused', path: 'holder', now: N3, history: [hist({ mandateHash: null })], mandate: m3, providers: [p3({ channel: '40', session: base.expires, claimed: '60' })], expect: { refused: 'channel-spent' } },
+      // review p1m3 recheck: was channel-spent (the entry is not this channel's); funded-elsewhere now comes first (the
+      // entry names another channel of this mandate's key, and no fact says it is empty) / 复核：原为 channel-spent；现在 funded-elsewhere 在前
+      { name: 'B1 an entry of this mandate on another escrow is not this channel\'s: funded-elsewhere (no fact about that channel)', path: 'holder', now: N3, history: [hist({ claimedAtPlan: '0', escrow: E2 })], mandate: m3, providers: [p3({ channel: '40', session: base.expires, claimed: '60' })], expect: { refused: 'funded-elsewhere' } },
+      { name: 'B1 an entry with this mandate\'s hash but another expires is not this session\'s: refused', path: 'holder', now: N3, history: [hist({ claimedAtPlan: '0', expires: base.expires + 1 })], mandate: m3, providers: [p3({ channel: '40', session: base.expires, claimed: '60' })], expect: { refused: 'channel-spent' } },
+      { name: 'B1 channel-spent comes before channel-session-live', path: 'holder', now: N3, history: [hist({ key: OTHER_KEY, mandateHash: OTHER_HASH })], mandate: m3, providers: [p3({ channel: '40', session: base.expires, claimed: '60' })], expect: { refused: 'channel-spent' } },
+      { name: 'B1 a first run (session 0) records the channel\'s claimedOf as claimedAtPlan', path: 'holder', mandate: m3, providers: [p3({ claimed: '7' })],
+        expect: { steps: [['approve', E1, null, '100'], ['fund', E1, P1, '100'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'direct', claimedAtPlan: ['7'] } },
+      { name: 'M3 every channel at its cap with the session: nothing to send', path: 'holder', mandate: m3, providers: [p3({ channel: '100', session: base.expires })], expect: { steps: [], checks: [], to: 'direct', claimedAtPlan: [null] } },
+      { name: 'M3 the key has a session on the channel ending at another time', path: 'holder', mandate: m3, providers: [p3({ session: base.expires - 1 })], expect: { refused: 'key-already-authorised' } },
+      { name: 'M3 a lapsed session of the key is still a session (never authorise it again)', path: 'holder', mandate: m3, providers: [p3({ session: base.notBefore - 100 })], expect: { refused: 'key-already-authorised' } },
+      // S4b: the session history / 会话历史
+      { name: 'S4b the key recorded for another mandate', path: 'holder', now: N3, history: [hist({ mandateHash: OTHER_HASH, provider: P2 })], mandate: m3, providers: [p3()], expect: { refused: 'key-reused' } },
+      { name: 'S4b the key recorded for this very mandate (a second run): planned', path: 'holder', now: N3, history: [hist({ mandateHash: M3_HASH })], mandate: m3, providers: [p3()],
+        expect: { steps: [['approve', E1, null, '100'], ['fund', E1, P1, '100'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'direct' } },
+      { name: 'S4b a log entry of the key on this mandate\'s channel ending at its expires: this mandate\'s own', path: 'holder', now: N3, history: [hist({ mandateHash: null })], mandate: m3, providers: [p3()],
+        expect: { steps: [['approve', E1, null, '100'], ['fund', E1, P1, '100'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'direct' } },
+      { name: 'S4b a log entry of the key ending at another time', path: 'holder', now: N3, history: [hist({ mandateHash: null, expires: base.expires + 1 })], mandate: m3, providers: [p3()], expect: { refused: 'key-reused' } },
+      { name: 'S4b a log entry of the key on a channel of another consumer', path: 'holder', now: N3, history: [hist({ mandateHash: null, consumer: OTHER })], mandate: m3, providers: [p3()], expect: { refused: 'key-reused' } },
+      { name: 'S4b a log entry of the key on a provider outside this mandate', path: 'holder', now: N3, history: [hist({ mandateHash: null, provider: P2 })], mandate: m3, providers: [p3()], expect: { refused: 'key-reused' } },
+      { name: 'S4b another key on this channel, its session not over', path: 'holder', now: N3, history: [hist({ key: OTHER_KEY, mandateHash: OTHER_HASH, expires: N3 })], mandate: m3, providers: [p3()], expect: { refused: 'channel-session-live' } },
+      { name: 'S4b another key on this channel, its session over one second ago: planned', path: 'holder', now: N3, history: [hist({ key: OTHER_KEY, mandateHash: OTHER_HASH, expires: N3 - 1 })], mandate: m3, providers: [p3()],
+        expect: { steps: [['approve', E1, null, '100'], ['fund', E1, P1, '100'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'direct' } },
+      { name: 'S4b another key live on this provider at another escrow or for another consumer: not this channel', path: 'holder', now: N3, history: [hist({ key: OTHER_KEY, mandateHash: OTHER_HASH, escrow: E2 }), hist({ key: OTHER_KEY, mandateHash: OTHER_HASH, consumer: OTHER })], mandate: m3, providers: [p3()],
+        expect: { steps: [['approve', E1, null, '100'], ['fund', E1, P1, '100'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'direct' } },
+      { name: 'S4b key-reused comes before the items\' problems', path: 'holder', now: N3, history: [hist({ mandateHash: OTHER_HASH })], mandate: m3, providers: [p3({ channel: '101' })], expect: { refused: 'key-reused' } },
+      { name: 'S4b order within an item: key-already-authorised before channel-session-live', path: 'holder', now: N3, history: [hist({ key: OTHER_KEY, mandateHash: OTHER_HASH })], mandate: m3, providers: [p3({ session: 5 })], expect: { refused: 'key-already-authorised' } },
+      // review p1m3 recheck CE-3/CE-4: the cap is per (mandate, provider) over every channel the history records. The plan
+      // was applied on E1 (claimedAtPlan 0) and the key spent 60 there; the provider's manifest now names E2 (or E3), or the
+      // consumer changed / 复核 CE-3、CE-4：计划已在 E1 上应用、钥匙在那里花了 60；清单改写为 E2（或 E3），或 consumer 变了
+      ...(() => {
+        const old = (o = {}) => ({ escrow: E1, consumer: H0, channel: '0', pendingLive: false, claimed: '60', ...o })
+        const onE2 = (o = {}) => p3({ escrow: E2, claimed: '0', ...o })
+        const h1 = [hist({ claimedAtPlan: '0' })]
+        const FE = 'funded-elsewhere'
+        const fresh = (amount) => ({ steps: [['approve', E2, null, amount], ['fund', E2, P1, amount], ['authorizeSession', E2, P1, null]], checks: [E2], to: 'direct' })
+        return [
+          { name: 'RC CE-3 the provider moved to E2, no fact about the E1 channel: funded-elsewhere, never a second cap', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2()], expect: { refused: FE } },
+          { name: 'RC the E1 channel still holds 40 (the key can spend it): funded-elsewhere', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ elsewhere: [old({ channel: '40' })] })], expect: { refused: FE } },
+          { name: 'RC the E1 channel is empty but a withdraw request on it is live: funded-elsewhere', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ elsewhere: [old({ pendingLive: true })] })], expect: { refused: FE } },
+          { name: 'RC the E1 channel read without claimedOf: funded-elsewhere', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ elsewhere: [old({ claimed: null })] })], expect: { refused: FE } },
+          { name: 'RC the E1 entry has no claimedAtPlan (what the key spent there is not known): funded-elsewhere', path: 'holder', now: N3, history: [hist()], mandate: m3, providers: [onE2({ elsewhere: [old()] })], expect: { refused: FE } },
+          { name: 'RC a log entry of this session on E1 (no hash, no claimedAtPlan): funded-elsewhere', path: 'holder', now: N3, history: [hist({ mandateHash: null })], mandate: m3, providers: [onE2({ elsewhere: [old()] })], expect: { refused: FE } },
+          { name: 'RC released: the E1 channel empty, no request, claimedAtPlan 0 and claimedOf 60: E2 funded to cap - 60 only', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ elsewhere: [old()] })],
+            expect: { ...fresh('40'), claimedAtPlan: ['0'], spentElsewhere: ['60'] } },
+          { name: 'RC released, and E2 holds 50 already (session 0): above the budget 40', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ channel: '50', elsewhere: [old()] })], expect: { refused: 'channel-exceeds-budget' } },
+          // review p1m3 recheck 3 (N2): was planned as an authorizeSession alone on the empty E2 channel; now refused
+          // 复核 3（N2）：原为在空的 E2 通道上单发 authorizeSession；现在拒绝
+          { name: 'RC released, the key spent the whole cap and more on E1 (claimedOf 150): budget-exhausted, no session on an empty channel', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ elsewhere: [old({ claimed: '150' })] })], expect: { refused: 'budget-exhausted' } },
+          { name: 'RC two earlier channels released (E1: 60 spent from 0; E2: 20 spent from 10): E3 funded to cap - 80', path: 'holder', now: N3, history: [hist({ claimedAtPlan: '0' }), hist({ escrow: E2, claimedAtPlan: '10' })], mandate: m3, providers: [p3({ escrow: E3, claimed: '0', elsewhere: [old(), old({ escrow: E2, claimed: '30' })] })],
+            expect: { steps: [['approve', E3, null, '20'], ['fund', E3, P1, '20'], ['authorizeSession', E3, P1, null]], checks: [E3], to: 'direct', spentElsewhere: ['80'] } },
+          { name: 'RC two earlier channels, one of them not released: funded-elsewhere', path: 'holder', now: N3, history: [hist({ claimedAtPlan: '0' }), hist({ escrow: E2, claimedAtPlan: '10' })], mandate: m3, providers: [p3({ escrow: E3, claimed: '0', elsewhere: [old(), old({ escrow: E2, channel: '5', claimed: '40' })] })], expect: { refused: FE } },
+          { name: 'RC the plan applied on E2 too, the key spent 25 there: E2 holds 15, nothing to fund (60 + 25 + 15 = cap)', path: 'holder', now: N3, history: [...h1, hist({ escrow: E2, claimedAtPlan: '0' })], mandate: m3, providers: [onE2({ channel: '15', session: base.expires, claimed: '25', elsewhere: [old()] })],
+            expect: { steps: [], checks: [], to: 'direct', claimedAtPlan: ['0'], spentElsewhere: ['60'] } },
+          { name: 'RC the plan applied on E2 too, then E2 topped up to 40 by hand: above the budget 15', path: 'holder', now: N3, history: [...h1, hist({ escrow: E2, claimedAtPlan: '0' })], mandate: m3, providers: [onE2({ channel: '40', session: base.expires, claimed: '25', elsewhere: [old()] })], expect: { refused: 'channel-exceeds-budget' } },
+          { name: 'RC the plan applied on E2 without its entry (lost), E2 at the cap: above what is left of the cap', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ channel: '100', session: base.expires, elsewhere: [old()] })], expect: { refused: 'channel-exceeds-budget' } },
+          { name: 'RC CE-4 the circuit changed hands: the record names the former holder\'s channel, even empty: funded-elsewhere (another consumer is never released)', path: 'holder', now: N3, history: [hist({ consumer: OTHER, claimedAtPlan: '0' })], mandate: m3, providers: [p3({ claimed: '0', elsewhere: [old({ consumer: OTHER })] })], expect: { refused: FE } },
+          { name: 'RC the container path with the holder path\'s record (another consumer): funded-elsewhere', path: 'container', now: N3, history: h1, mandate: m3, providers: [p3({ claimed: '0', elsewhere: [old()] })], expect: { refused: FE } },
+          { name: 'RC escrow-token-mismatch comes before funded-elsewhere', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ token: T2 })], expect: { refused: 'escrow-token-mismatch' } },
+          { name: 'RC funded-elsewhere comes before other-path-funded', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ otherPath: { channel: '1', session: 0 } })], expect: { refused: FE } },
+          { name: 'RC released, then other-path-funded still applies', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ elsewhere: [old()], otherPath: { channel: '1', session: 0 } })], expect: { refused: 'other-path-funded' } },
+          { name: 'RC funded-elsewhere comes before withdraw-pending', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ pendingLive: true })], expect: { refused: FE } },
+          // review p1m3 recheck (2): the baseline is never reset to today's claimedOf / 复核建议 2：基线绝不重置为今天的 claimedOf
+          { name: 'RC2 applied, the channel at its cap, 60 settled on it, no history: channel-spent (60 is never taken as the baseline)', path: 'holder', mandate: m3, providers: [p3({ channel: '100', session: base.expires, claimed: '60' })], expect: { refused: 'channel-spent' } },
+          { name: 'RC2 the same with a log entry of this session (no claimedAtPlan): channel-spent', path: 'holder', now: N3, history: [hist({ mandateHash: null })], mandate: m3, providers: [p3({ channel: '100', session: base.expires, claimed: '60' })], expect: { refused: 'channel-spent' } },
+          { name: 'RC2 applied, the channel at its cap, nothing ever settled (claimedOf 0), no history: the baseline 0 is exact', path: 'holder', mandate: m3, providers: [p3({ channel: '100', session: base.expires, claimed: '0' })], expect: { steps: [], checks: [], to: 'direct', claimedAtPlan: ['0'] } },
+          { name: 'RC2 the history\'s claimedAtPlan 7 and no claimed fact, the channel at its cap: nothing to send, the baseline 7 kept', path: 'holder', now: N3, history: [hist({ claimedAtPlan: '7' })], mandate: m3, providers: [p3({ channel: '100', session: base.expires })], expect: { steps: [], checks: [], to: 'direct', claimedAtPlan: ['7'] } },
+          { name: 'RC key-reused comes before funded-elsewhere', path: 'holder', now: N3, history: [...h1, hist({ mandateHash: OTHER_HASH, provider: P2 })], mandate: m3, providers: [onE2()], expect: { refused: 'key-reused' } },
+        ]
+      })(),
+      // review p1m3 recheck 3 / 第三轮复核
+      ...(() => {
+        const fresh = { steps: [['approve', E1, null, '100'], ['fund', E1, P1, '100'], ['authorizeSession', E1, P1, null]], checks: [E1], to: 'direct' }
+        // as in the RC cases: the plan applied on E1 (claimedAtPlan 0), the provider now on E2 / 同 RC 用例：E1 上已应用，provider 现在在 E2
+        const old = (o = {}) => ({ escrow: E1, consumer: H0, channel: '0', pendingLive: false, claimed: '60', ...o })
+        const onE2 = (o = {}) => p3({ escrow: E2, claimed: '0', ...o })
+        const h1 = [hist({ claimedAtPlan: '0' })]
+        return [
+          // N1: a history left out is not an empty one; the plan says which it was given / 没给历史不等于空历史，计划写明是哪一种
+          { name: 'RC3 N1 no history given: planned, but checked.history is false (key-reused, funded-elsewhere, channel-session-live not checked)', path: 'holder', mandate: m3, providers: [p3()], expect: { ...fresh, checked: { history: false, signer: false } } },
+          { name: 'RC3 N1 history [] (the console confirms it has none): planned, checked.history is true', path: 'holder', now: N3, history: [], mandate: m3, providers: [p3()], expect: { ...fresh, checked: { history: true, signer: false } } },
+          // N2: the whole cap spent on earlier channels, the new channel fresh: refused, no step at all / cap 已在早先通道花完、新通道是新的：拒绝
+          // CE-4 without a history: the mandate's signer (facts.signer) is the holder when it was signed; verifiers check the
+          // current holder / 无历史时的 CE-4：签署人是签署时的持有人，核验方按当前持有人核对
+          { name: 'RC3 CE-4 the signer is the holder: planned, checked.signer is true', path: 'holder', facts: { signer: H0, currentHolder: H0 }, mandate: m3, providers: [p3()], expect: { ...fresh, checked: { history: false, signer: true } } },
+          { name: 'RC3 CE-4 signed by another wallet (the holder when it was signed): holder-changed-since-signing', path: 'holder', facts: { signer: OTHER, currentHolder: H0 }, mandate: m3, providers: [p3()], expect: { refused: 'holder-changed-since-signing' } },
+          { name: 'RC3 CE-4 a signature that holds for no one named (signer null): holder-changed-since-signing', path: 'holder', facts: { signer: null }, mandate: m3, providers: [p3()], expect: { refused: 'holder-changed-since-signing' } },
+          { name: 'RC3 CE-4 container path: the holder calling execute is not the signer: holder-changed-since-signing', path: 'container', holder: H0, facts: { signer: OTHER }, mandate: m3, providers: [p3()], expect: { refused: 'holder-changed-since-signing' } },
+          { name: 'RC3 CE-4 holder-not-current comes before holder-changed-since-signing', path: 'holder', facts: { signer: OTHER, currentHolder: OTHER }, mandate: m3, providers: [p3()], expect: { refused: 'holder-not-current' } },
+          { name: 'RC3 CE-4 holder-changed-since-signing comes before principal-not-deployed', path: 'container', facts: { signer: OTHER, principalDeployed: false }, mandate: m3, providers: [p3()], expect: { refused: 'holder-changed-since-signing' } },
+          { name: 'RC3 N2 exactly the cap spent on E1 (released), E2 fresh: budget-exhausted', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ elsewhere: [old({ claimed: '100' })] })], expect: { refused: 'budget-exhausted' } },
+          { name: 'RC3 N2 one unit of the cap left: planned (fund 1 and the session)', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ elsewhere: [old({ claimed: '99' })] })],
+            expect: { steps: [['approve', E2, null, '1'], ['fund', E2, P1, '1'], ['authorizeSession', E2, P1, null]], checks: [E2], to: 'direct', spentElsewhere: ['99'] } },
+          { name: 'RC3 N2 budget 0 but the key already authorised on E2 (an earlier run): nothing to send, not refused', path: 'holder', now: N3, history: [...h1, hist({ escrow: E2, claimedAtPlan: '0' })], mandate: m3, providers: [onE2({ session: base.expires, elsewhere: [old({ claimed: '100' })] })],
+            expect: { steps: [], checks: [], to: 'direct', claimedAtPlan: ['0'], spentElsewhere: ['100'] } },
+          { name: 'RC3 N2 budget-exhausted comes before channel-session-live', path: 'holder', now: N3, history: [...h1, hist({ escrow: E2, key: OTHER_KEY, mandateHash: OTHER_HASH })], mandate: m3, providers: [onE2({ elsewhere: [old({ claimed: '100' })] })], expect: { refused: 'budget-exhausted' } },
+          // the container path's record (consumer: the principal), its channel emptied: the holder path never releases it (the
+          // message points to the container path's close-out, not to a new key) / 容器路径的记录（consumer 为委托方）：持有人路径永不放行
+          { name: 'RC3 the holder path with the container path\'s record, the principal\'s channel emptied: funded-elsewhere', path: 'holder', now: N3, history: [hist({ consumer: base.principal, claimedAtPlan: '0' })], mandate: m3, providers: [p3({ claimed: '0', elsewhere: [old({ consumer: base.principal })] })], expect: { refused: 'funded-elsewhere' } },
+          { name: 'RC3 the container path, the provider moved to E2, the principal\'s E1 channel emptied with claimedAtPlan: released, E2 funded to cap - 60', path: 'container', now: N3, history: [hist({ consumer: base.principal, claimedAtPlan: '0' })], mandate: m3, providers: [onE2({ elsewhere: [old({ consumer: base.principal })] })],
+            expect: { steps: [['approve', E2, null, '40'], ['fund', E2, P1, '40'], ['authorizeSession', E2, P1, null]], checks: [E2], to: 'principal', spentElsewhere: ['60'] } },
+          // the pinned block (facts.pinBlock): a record of this mandate (any channel) or of a channel the plan funds at that
+          // block or later: the facts may not show that run yet / 钉块：本授权书（任一通道）或本计划所充通道的记录不早于钉块即拒绝
+          { name: 'RC3 pin-not-after-record: this session\'s record at the very block the facts were read at', path: 'holder', now: N3, facts: { pinBlock: 500 }, history: [hist({ claimedAtPlan: '0', block: 500 })], mandate: m3, providers: [p3({ channel: '100', session: base.expires, claimed: '0' })], expect: { refused: 'pin-not-after-record' } },
+          { name: 'RC3 the pin one block after the record: planned, and the record carries the pin', path: 'holder', now: N3, facts: { pinBlock: 501 }, history: [hist({ claimedAtPlan: '0', block: 500 })], mandate: m3, providers: [p3({ channel: '100', session: base.expires, claimed: '0' })],
+            expect: { steps: [], checks: [], to: 'direct', claimedAtPlan: ['0'], recordBlock: [501] } },
+          { name: 'RC3 pin-not-after-record: a record of this mandate on another escrow above the pin (before funded-elsewhere)', path: 'holder', now: N3, facts: { pinBlock: 500 }, history: [hist({ escrow: E2, claimedAtPlan: '0', block: 600 })], mandate: m3, providers: [p3()], expect: { refused: 'pin-not-after-record' } },
+          { name: 'RC3 pin-not-after-record: another key\'s record on the channel this plan funds, above the pin', path: 'holder', now: N3, facts: { pinBlock: 500 }, history: [hist({ key: OTHER_KEY, mandateHash: OTHER_HASH, expires: N3 - 1, block: 600 })], mandate: m3, providers: [p3()], expect: { refused: 'pin-not-after-record' } },
+          { name: 'RC3 another key\'s record on another provider\'s channel above the pin: not this plan\'s, planned', path: 'holder', now: N3, facts: { pinBlock: 500 }, history: [hist({ key: OTHER_KEY, mandateHash: OTHER_HASH, provider: P2, block: 600 })], mandate: m3, providers: [p3()], expect: { ...fresh, recordBlock: [500] } },
+          { name: 'RC3 no pinBlock given: nothing to compare, planned, the record\'s block null', path: 'holder', now: N3, history: [hist({ claimedAtPlan: '0', block: 500 })], mandate: m3, providers: [p3({ channel: '100', session: base.expires, claimed: '0' })], expect: { steps: [], checks: [], to: 'direct', recordBlock: [null] } },
+          { name: 'RC3 key-reused comes before pin-not-after-record', path: 'holder', now: N3, facts: { pinBlock: 500 }, history: [hist({ mandateHash: OTHER_HASH, provider: P2, block: 600 })], mandate: m3, providers: [p3()], expect: { refused: 'key-reused' } },
+          { name: 'RC3 N2 channel-exceeds-budget (E2 holds 1, nothing left) comes before budget-exhausted', path: 'holder', now: N3, history: h1, mandate: m3, providers: [onE2({ channel: '1', elsewhere: [old({ claimed: '100' })] })], expect: { refused: 'channel-exceeds-budget' } },
+        ]
+      })(),
+    ],
+  }
+  // review p1m3 recheck 3 (N3): the console's session history keeps one entry per session (chain, escrow, consumer,
+  // provider, key, expires, mandateHash); a later record of it only fills a null claimedAtPlan; a log entry (no hash) of a
+  // session recorded with its hash adds nothing. expect: [escrow, mandateHash, claimedAtPlan] per entry, in order
+  // 复核 3（N3）：会话历史每个会话一条；之后的记录只填 null 的 claimedAtPlan；日志条目（无哈希）对带哈希的会话不新增
+  {
+    const H0 = sig.privateKeyToAddress(HOLDER_KEY)
+    const M = A.mandateHashOf(CHAIN_ID, HUB, pm({ scope: [sc(P1, BEM, '100')] }))
+    const r = (o = {}) => ({ chainId: CHAIN_ID, escrow: E1, consumer: H0, provider: P1, key: base.agentKey, expires: base.expires, mandateHash: M, claimedAtPlan: null, ...o })
+    phase1.rules.history = 'sessionHistory: one entry per session (chainId, escrow, consumer, provider, key, expires, mandateHash; addresses in any case). A record of a session already kept adds no entry; its claimedAtPlan replaces the kept one only when that is null and it is not (null -> a value, never a value -> another value or null); its block replaces the kept one when that is null or lower (the latest pin; an expect row with a fourth element states the block). A log entry (mandateHash null) of a session kept with a hash adds nothing and fills nothing. expect lists [escrow, mandateHash, claimedAtPlan] for each entry in the order kept'
+    phase1.history = [
+      { name: 'a re-run fills a null claimedAtPlan', records: [r(), r({ claimedAtPlan: '0' })], expect: [[E1, M, '0']] },
+      { name: 'a value is never replaced by another value', records: [r({ claimedAtPlan: '7' }), r({ claimedAtPlan: '0' })], expect: [[E1, M, '7']] },
+      { name: 'a value is never replaced by null', records: [r({ claimedAtPlan: '7' }), r()], expect: [[E1, M, '7']] },
+      { name: 'filled once, then kept', records: [r(), r({ claimedAtPlan: '5' }), r({ claimedAtPlan: '3' })], expect: [[E1, M, '5']] },
+      { name: 'a log entry of the session adds nothing and fills nothing', records: [r(), r({ mandateHash: null, claimedAtPlan: '9' })], expect: [[E1, M, null]] },
+      { name: 'another escrow is another session', records: [r(), r({ escrow: E2, claimedAtPlan: '4' })], expect: [[E1, M, null], [E2, M, '4']] },
+      { name: 'addresses in another case are the same session', records: [r(), r({ escrow: E1.toLowerCase(), claimedAtPlan: '2' })], expect: [[E1, M, '2']] },
+      // review p1m3 recheck 3: block, the latest pin a run of the session was made at / 本会话各次运行中最晚的钉块
+      { name: 'a later run raises the block', records: [r({ block: 500 }), r({ block: 520 })], expect: [[E1, M, null, 520]] },
+      { name: 'an earlier block never lowers it', records: [r({ block: 520 }), r({ block: 500 }), r()], expect: [[E1, M, null, 520]] },
+      { name: 'a block fills none', records: [r(), r({ claimedAtPlan: '3', block: 7 })], expect: [[E1, M, '3', 7]] },
+    ]
+  }
+  // The channel mapping (§3b.2 items 2-7, R21), abstract: the chain as a verifier reads it at its pinned block, and what
+  // the draft requires. Times are absolute: the check is made at `at` (default N), the mandate runs from N - 60 to
+  // S = N + 86400. Tokens A, B, C stand for three ERC-20s (C has no decimals()); each party has its own escrow. A channel
+  // state is { channel, session (the agent key's sessionExpiry), pending: [amount, requestedAt] or null, claimed } for the
+  // holder (F2) and the principal (F1); a missing one is all zero. The order of problems: scope items in order (for each:
+  // the first of provider-unresolvable, escrow-not-allowed, escrow-other-chain, escrow-token-mismatch, which ends that
+  // item; else session-missing or session-expiry-mismatch, withdraw-pending, channel-empty, channel-exceeds-cap), then the
+  // fee channel. A phase-1 result also says bound 'channel': the chain bounds each channel's balance, never the cap.
+  // 通道映射核验的抽象用例：钉块上读到的链状态与设计稿要求的结果，全部手写。
+  {
+    const N1 = 1791000000, S1 = N1 + 86400, D = 48 * 3600 + 7 * 86400
+    const good = { channel: '100', session: S1, pending: null, claimed: '0' }
+    const esc = (o = {}) => ({ manifest: 'escrow', escrow: { listed: true, code: true, token: 'A', ...o } })
+    const one = (name, holder, expect, more = {}) => ({ name, path: 'holder', scope: [{ provider: 'P1', token: 'A', cap: '100' }], fee: null, chain: { P1: { ...esc(), holder } }, expect: { warnings: [], ...expect }, ...more })
+    const OK = { problems: [], enforcement: 'escrow-channel' }
+    const feeCase = (name, agent, expect, more = {}) => ({ name, path: 'holder', scope: [{ provider: 'P1', token: 'A', cap: '100' }], fee: { token: 'A', cap: '10' }, chain: { P1: { ...esc(), holder: good }, agent }, expect: { warnings: [], ...expect }, ...more })
+    phase1.mapping = {
+      times: { N: N1, notBefore: N1 - 60, expires: S1, lifetime: D },
+      cases: [
+        one('the holder funded (F2): channel at its cap, session = expires, no request', good, { ...OK, live: [false], available: ['100'], sessionExpiry: [S1], decimals: [8] }),
+        { name: 'the principal funded (F1, fundingPath container)', path: 'container', scope: [{ provider: 'P1', token: 'A', cap: '100' }], fee: null, chain: { P1: { ...esc(), principal: good } }, expect: { ...OK, warnings: [], live: [false], available: ['100'] } },
+        { name: 'checked as F2 while the principal funded: the holder\'s channel is empty and has no session', path: 'holder', scope: [{ provider: 'P1', token: 'A', cap: '100' }], fee: null, chain: { P1: { ...esc(), principal: good } }, expect: { problems: ['session-missing', 'channel-empty'], enforcement: 'none', warnings: [], available: ['0'] } },
+        one('no session', { ...good, session: 0 }, { problems: ['session-missing'], enforcement: 'none' }),
+        one('a session that ended before now', { ...good, session: N1 - 1 }, { problems: ['session-missing'], enforcement: 'none' }),
+        one('a session one second after expires', { ...good, session: S1 + 1 }, { problems: ['session-expiry-mismatch'], enforcement: 'none' }),
+        one('a session one second before expires', { ...good, session: S1 - 1 }, { problems: ['session-expiry-mismatch'], enforcement: 'none' }),
+        one('checked at S itself: the session is still live (the escrow settles at S)', good, { ...OK }, { at: S1 }),
+        one('a live request for the whole channel', { ...good, pending: ['100', N1 - 3600] }, { problems: ['withdraw-pending', 'channel-empty'], enforcement: 'none', live: [true], available: ['0'] }),
+        one('a live request for part of the channel', { ...good, pending: ['40', N1 - 3600] }, { problems: ['withdraw-pending'], enforcement: 'none', live: [true], available: ['60'] }),
+        one('a request that lapsed one second ago: the view still shows it, it is not live', { ...good, pending: ['100', N1 - D - 1] }, { ...OK, live: [false], available: ['100'] }),
+        one('a request at the last second of its window: live', { ...good, pending: ['100', N1 - D] }, { problems: ['withdraw-pending', 'channel-empty'], enforcement: 'none', live: [true] }),
+        one('an empty channel', { ...good, channel: '0' }, { problems: ['channel-empty'], enforcement: 'none', available: ['0'] }),
+        // review p1m12 F2: the cap is the console's funding target; the chain's bound is the channel, so a channel above
+        // the cap fails closed / cap 是充值目标，链上上界是通道余额：通道超过 cap 即失败
+        one('a channel above the cap: refused (the chain bounds the channel, not the cap)', { ...good, channel: '150' }, { problems: ['channel-exceeds-cap'], enforcement: 'none', available: ['150'] }),
+        one('a channel one unit above the cap: refused', { ...good, channel: '101' }, { problems: ['channel-exceeds-cap'], enforcement: 'none', available: ['101'] }),
+        one('a top-up during a live request (R24): the request and the excess are both problems', { ...good, channel: '150', pending: ['100', N1 - 3600] }, { problems: ['withdraw-pending', 'channel-exceeds-cap'], enforcement: 'none', live: [true], available: ['50'] }),
+        { ...one('an escrow on no list', good, { problems: ['escrow-not-allowed'], enforcement: 'none' }), chain: { P1: { ...esc({ listed: false }), holder: good } } },
+        { ...one('an escrow with no code on the mandate\'s chain', good, { problems: ['escrow-other-chain'], enforcement: 'none' }), chain: { P1: { ...esc({ code: false }), holder: good } } },
+        { ...one('an escrow that holds another token', good, { problems: ['escrow-token-mismatch'], enforcement: 'none' }), chain: { P1: { ...esc({ token: 'B' }), holder: good } } },
+        { ...one('an escrow without token()', good, { problems: ['escrow-token-mismatch'], enforcement: 'none' }), chain: { P1: { ...esc({ token: null }), holder: good } } },
+        { ...one('a manifest that names no escrow', good, { problems: ['provider-unresolvable'], enforcement: 'none' }), chain: { P1: { manifest: 'no-escrow', holder: good } } },
+        { ...one('a provider without a manifest', good, { problems: ['provider-unresolvable'], enforcement: 'none' }), chain: { P1: { manifest: 'none', holder: good } } },
+        { ...one('a token without decimals(): shown in the smallest unit, not refused', good, { ...OK, decimals: [null] }), scope: [{ provider: 'P1', token: 'C', cap: '100' }], chain: { P1: { ...esc({ token: 'C' }), holder: good } } },
+        { name: 'two providers, the second without a session', path: 'holder', scope: [{ provider: 'P1', token: 'A', cap: '100' }, { provider: 'P2', token: 'A', cap: '50' }], fee: null, chain: { P1: { ...esc(), holder: good }, P2: { ...esc(), holder: { ...good, channel: '50', session: 0 } } }, expect: { problems: ['session-missing'], enforcement: 'none', warnings: [], available: ['100', '50'] } },
+        feeCase('a fee channel funded, the agent key without a session on it', { ...esc(), holder: { channel: '10', session: 0, pending: null, claimed: '0' } }, { ...OK }),
+        feeCase('the agent key authorised on the fee channel', { ...esc(), holder: { channel: '10', session: S1, pending: null, claimed: '0' } }, { problems: ['agent-key-on-fee-channel'], enforcement: 'none' }),
+        feeCase('the agent key\'s session on the fee channel lapsed: still refused (it must be 0)', { ...esc(), holder: { channel: '10', session: N1 - 1, pending: null, claimed: '0' } }, { problems: ['agent-key-on-fee-channel'], enforcement: 'none' }),
+        feeCase('a fee channel short of the amount due', { ...esc(), holder: { channel: '10', session: 0, pending: null, claimed: '0' } }, { problems: ['fee-channel-short'], enforcement: 'none' }, { feeDue: '11' }),
+        feeCase('a fee channel exactly at the amount due', { ...esc(), holder: { channel: '10', session: 0, pending: null, claimed: '0' } }, { ...OK }, { feeDue: '10' }),
+        feeCase('a fee channel with a live request: what is due is compared with what is available', { ...esc(), holder: { channel: '10', session: 0, pending: ['8', N1 - 3600], claimed: '0' } }, { problems: ['fee-channel-short'], enforcement: 'none' }, { feeDue: '5' }),
+        feeCase('a fee escrow that holds another token', { ...esc({ token: 'B' }), holder: { channel: '10', session: 0, pending: null, claimed: '0' } }, { problems: ['escrow-token-mismatch'], enforcement: 'none' }),
+        feeCase('an agent that names no escrow', { manifest: 'no-escrow', holder: { channel: '10', session: 0, pending: null, claimed: '0' } }, { problems: ['agent-unresolvable'], enforcement: 'none' }),
+      ],
+    }
+    phase1.liveness = {
+      rule: 'a withdraw request is live when requestedAt != 0 and now <= requestedAt + 48 h + 7 d (172800 + 604800 s); the escrow never clears a lapsed request, so its pendingWithdraw view still shows it (R21)',
+      cases: [[0, N1, false], [N1, N1, true], [N1 - D, N1, true], [N1 - D - 1, N1, false], [N1 - 172800, N1, true], [N1 + 5, N1, true]],
+    }
+  }
+  // M3: the close-out (requestWithdraw, then withdraw inside its window) and the read-back after a plan, by hand
+  // M3：收尾计划与计划发出后的读回，手写
+  {
+    const C = 48 * 3600, W = 7 * 86400
+    const NC = base.expires + 600   // the mandate has expired; the close-out is due / 授权书已过期，该收尾了
+    const mc = pm({ scope: [sc(P1, BEM, '100'), sc(P2, BEM, '50')] })
+    const ch = (provider, channel, pending = null) => ({ provider, escrow: E1, channel, pending })
+    const H0 = sig.privateKeyToAddress(HOLDER_KEY)
+    phase1.closeOutBase = { chainId: CHAIN_ID, holder: H0, now: NC, executeFee: '200000000000000', maxExecuteFee: '200000000000000', cooldown: C, window: W }
+    const OTHERC = '0x00000000000000000000000000000000000000Aa'
+    const shist = (o = {}) => ({ chainId: CHAIN_ID, escrow: E1, consumer: H0, provider: P1, key: base.agentKey, expires: base.expires, mandateHash: null, ...o })
+    phase1.closeOut = [
+      { name: 'two channels, no request: both requested in full, then both withdrawn 48 h to 48 h + 7 d later', path: 'holder', mandate: mc, channels: [ch(P1, '70'), ch(P2, '50')],
+        expect: { steps: [['requestWithdraw', P1, '70'], ['requestWithdraw', P2, '50'], ['withdraw', P1, null], ['withdraw', P2, null]], items: [[P1, 'request', '70', '0'], [P2, 'request', '50', '0']], to: 'direct' } },
+      { name: 'one channel empty (all spent): only the other', path: 'holder', mandate: mc, channels: [ch(P1, '0'), ch(P2, '50')],
+        expect: { steps: [['requestWithdraw', P2, '50'], ['withdraw', P2, null]], items: [[P1, 'empty', null, '0'], [P2, 'request', '50', '0']], to: 'direct' } },
+      { name: 'every channel empty: nothing to close', path: 'holder', mandate: mc, channels: [ch(P1, '0'), ch(P2, '0')], expect: { refused: 'nothing-to-close' } },
+      { name: 'a live request for the whole channel: the withdraw only, inside the request\'s own window (a new request would restart the clock)', path: 'holder', mandate: mc, channels: [ch(P1, '100', { amount: '100', requestedAt: NC - 3600 }), ch(P2, '0')],
+        expect: { steps: [['withdraw', P1, null]], items: [[P1, 'requested', '100', '0'], [P2, 'empty', null, '0']], windows: [[P1, NC - 3600 + C, NC - 3600 + C + W]], to: 'direct' } },
+      { name: 'a live request for part of the channel: the withdraw of that part, the rest remains', path: 'holder', mandate: mc, channels: [ch(P1, '100', { amount: '40', requestedAt: NC - 3600 }), ch(P2, '0')],
+        expect: { steps: [['withdraw', P1, null]], items: [[P1, 'requested', '40', '60'], [P2, 'empty', null, '0']], to: 'direct' } },
+      { name: 'a live request for more than the channel holds (settled during the cooldown): the withdraw pays what is left', path: 'holder', mandate: mc, channels: [ch(P1, '30', { amount: '100', requestedAt: NC - 3600 }), ch(P2, '0')],
+        expect: { steps: [['withdraw', P1, null]], items: [[P1, 'requested', '30', '0'], [P2, 'empty', null, '0']], to: 'direct' } },
+      { name: 'a request at the last second of its window is still live', path: 'holder', mandate: mc, channels: [ch(P1, '100', { amount: '100', requestedAt: NC - C - W }), ch(P2, '0')],
+        expect: { steps: [['withdraw', P1, null]], items: [[P1, 'requested', '100', '0'], [P2, 'empty', null, '0']], windows: [[P1, NC - W, NC]], to: 'direct' } },
+      { name: 'a request that lapsed one second ago: made again', path: 'holder', mandate: mc, channels: [ch(P1, '100', { amount: '100', requestedAt: NC - C - W - 1 }), ch(P2, '0')],
+        expect: { steps: [['requestWithdraw', P1, '100'], ['withdraw', P1, null]], items: [[P1, 'lapsed', '100', '0'], [P2, 'empty', null, '0']], to: 'direct' } },
+      { name: 'container path: every call through the principal\'s execute with the fee', path: 'container', mandate: mc, channels: [ch(P1, '70'), ch(P2, '0')],
+        expect: { steps: [['requestWithdraw', P1, '70'], ['withdraw', P1, null]], items: [[P1, 'request', '70', '0'], [P2, 'empty', null, '0']], to: 'principal' } },
+      { name: 'container path: the sender is not the current holder (execute is the holder\'s only)', path: 'container', holder: H0, facts: { currentHolder: '0x00000000000000000000000000000000000000Aa' }, mandate: mc, channels: [ch(P1, '70'), ch(P2, '0')], expect: { refused: 'holder-not-current' } },
+      { name: 'container path: a simulated execute still reverts (a gate, draft R20): the F1 channels cannot be closed now', path: 'container', facts: { executeReverts: '0x5d3b5b49' }, mandate: mc, channels: [ch(P1, '70'), ch(P2, '0')], expect: { refused: 'execute-reverts' } },
+      { name: 'the escrow a channel is in is not known (the manifest changed, R23): refused, never nothing-to-close', path: 'holder', mandate: mc, channels: [ch(P1, '0'), { provider: P2, escrow: null, channel: '0', pending: null }], expect: { refused: 'escrow-unknown' } },
+      { name: 'escrow-unknown comes before nothing-to-close and after holder-not-current', path: 'container', holder: H0, facts: { currentHolder: '0x00000000000000000000000000000000000000Aa' }, mandate: mc, channels: [{ provider: P1, escrow: null, channel: '0', pending: null }, ch(P2, '0')], expect: { refused: 'holder-not-current' } },
+      { name: 'R1 container path: the fee above maxExecuteFee', path: 'container', facts: { maxExecuteFee: '199999999999999' }, mandate: mc, channels: [ch(P1, '70'), ch(P2, '0')], expect: { refused: 'execute-fee-too-high' } },
+      { name: 'R1 container path: holder-not-current comes before execute-fee-too-high, which comes before execute-reverts', path: 'container', holder: H0, facts: { currentHolder: '0x00000000000000000000000000000000000000Aa', maxExecuteFee: '1', executeReverts: '0x' }, mandate: mc, channels: [ch(P1, '70'), ch(P2, '0')], expect: { refused: 'holder-not-current' } },
+      { name: 'R1 container path: execute-fee-too-high comes before execute-reverts', path: 'container', facts: { maxExecuteFee: '1', executeReverts: '0x' }, mandate: mc, channels: [ch(P1, '70'), ch(P2, '0')], expect: { refused: 'execute-fee-too-high' } },
+      { name: 'R1 container path: the fee at maxExecuteFee: two executes', path: 'container', facts: { maxExecuteFee: '200000000000000' }, mandate: mc, channels: [ch(P1, '70'), ch(P2, '0')],
+        expect: { steps: [['requestWithdraw', P1, '70'], ['withdraw', P1, null]], items: [[P1, 'request', '70', '0'], [P2, 'empty', null, '0']], to: 'principal', fees: { perExecute: '200000000000000', executes: 2, total: '400000000000000' } } },
+      // review p1m3 S2: the history names the consumer that funded / 历史写明了出资的 consumer
+      { name: 'S2 the history records this mandate\'s sessions for another consumer: consumer-unknown, never nothing-to-close', path: 'holder', history: [shist({ consumer: OTHERC })], mandate: mc, channels: [ch(P1, '0'), ch(P2, '0')], expect: { refused: 'consumer-unknown' } },
+      { name: 'S2 the history records this consumer: nothing-to-close', path: 'holder', history: [shist()], mandate: mc, channels: [ch(P1, '0'), ch(P2, '0')], expect: { refused: 'nothing-to-close' } },
+      { name: 'S2 the history records this consumer among others: closed', path: 'holder', history: [shist({ consumer: OTHERC }), shist({ provider: P2 })], mandate: mc, channels: [ch(P1, '70'), ch(P2, '0')],
+        expect: { steps: [['requestWithdraw', P1, '70'], ['withdraw', P1, null]], items: [[P1, 'request', '70', '0'], [P2, 'empty', null, '0']], to: 'direct' } },
+      { name: 'S2 a history of another key, another expires or a provider outside the scope says nothing: nothing-to-close', path: 'holder', history: [shist({ consumer: OTHERC, key: '0x00000000000000000000000000000000000000Bb' }), shist({ consumer: OTHERC, expires: base.expires + 1 }), shist({ consumer: OTHERC, provider: '0x00000000000000000000000000000000000005e9' })], mandate: mc, channels: [ch(P1, '0'), ch(P2, '0')], expect: { refused: 'nothing-to-close' } },
+      { name: 'S2 container path: the history records the holder\'s sessions (F2), not the principal\'s', path: 'container', history: [shist()], mandate: mc, channels: [ch(P1, '0'), ch(P2, '0')], expect: { refused: 'consumer-unknown' } },
+      { name: 'S2 execute-reverts comes before consumer-unknown, which comes before escrow-unknown', path: 'container', history: [shist()], facts: { executeReverts: '0x' }, mandate: mc, channels: [{ provider: P1, escrow: null, channel: '0', pending: null }, ch(P2, '0')], expect: { refused: 'execute-reverts' } },
+      { name: 'S2 consumer-unknown comes before escrow-unknown', path: 'holder', history: [shist({ consumer: OTHERC })], mandate: mc, channels: [{ provider: P1, escrow: null, channel: '0', pending: null }, ch(P2, '0')], expect: { refused: 'consumer-unknown' } },
+      // review p1m3 S4 / 持有人原生币不足
+      { name: 'S4 container path: the holder has less than one fee', path: 'container', facts: { holderBalance: '1' }, mandate: mc, channels: [ch(P1, '70'), ch(P2, '0')], expect: { refused: 'holder-short-of-fee' } },
+      { name: 'S4 container path: one fee but not the two of the close-out', path: 'container', facts: { holderBalance: '399999999999999' }, mandate: mc, channels: [ch(P1, '70'), ch(P2, '0')], expect: { refused: 'holder-short-of-fee' } },
+      { name: 'S4 container path: nothing-to-close comes before the total fee', path: 'container', facts: { holderBalance: '200000000000000' }, mandate: mc, channels: [ch(P1, '0'), ch(P2, '0')], expect: { refused: 'nothing-to-close' } },
+      // review p1m3 S5: fullRequest / 全额重新请求
+      { name: 'S5 fullRequest: a live request for part of the channel is replaced by one for the whole channel (its clock restarts)', path: 'holder', fullRequest: true, mandate: mc, channels: [ch(P1, '100', { amount: '40', requestedAt: NC - 3600 }), ch(P2, '0')],
+        expect: { steps: [['requestWithdraw', P1, '100'], ['withdraw', P1, null]], items: [[P1, 'replace', '100', '0'], [P2, 'empty', null, '0']], to: 'direct' } },
+      { name: 'S5 fullRequest: a live request for the whole channel is kept', path: 'holder', fullRequest: true, mandate: mc, channels: [ch(P1, '100', { amount: '100', requestedAt: NC - 3600 }), ch(P2, '0')],
+        expect: { steps: [['withdraw', P1, null]], items: [[P1, 'requested', '100', '0'], [P2, 'empty', null, '0']], windows: [[P1, NC - 3600 + C, NC - 3600 + C + W]], to: 'direct' } },
+      { name: 'S5 fullRequest: a live request for more than the channel (settled since) is kept', path: 'holder', fullRequest: true, mandate: mc, channels: [ch(P1, '30', { amount: '100', requestedAt: NC - 3600 }), ch(P2, '0')],
+        expect: { steps: [['withdraw', P1, null]], items: [[P1, 'requested', '30', '0'], [P2, 'empty', null, '0']], to: 'direct' } },
+      { name: 'container path: execute-reverts comes before nothing-to-close', path: 'container', facts: { executeReverts: '0x' }, mandate: mc, channels: [ch(P1, '0'), ch(P2, '0')], expect: { refused: 'execute-reverts' } },
+      // review p1m3 recheck 3 (N1): whether a history was given at all / 第三轮复核：是否给了历史
+      { name: 'RC3 no history given: closed, checked.history is false', path: 'holder', mandate: mc, channels: [ch(P1, '70'), ch(P2, '0')],
+        expect: { steps: [['requestWithdraw', P1, '70'], ['withdraw', P1, null]], items: [[P1, 'request', '70', '0'], [P2, 'empty', null, '0']], to: 'direct', checked: { history: false } } },
+      { name: 'RC3 history [] : closed, checked.history is true', path: 'holder', history: [], mandate: mc, channels: [ch(P1, '70'), ch(P2, '0')],
+        expect: { steps: [['requestWithdraw', P1, '70'], ['withdraw', P1, null]], items: [[P1, 'request', '70', '0'], [P2, 'empty', null, '0']], to: 'direct', checked: { history: true } } },
+    ]
+    // the read-back after a plan (planApplied): the plan of phase1.plan[1] (two providers on E1, P2 partly funded)
+    // 计划发出后的读回：取 phase1.plan[1] 的计划
+    const okCh = [{ provider: P1, channel: '100', session: base.expires }, { provider: P2, channel: '50', session: base.expires }]
+    phase1.applied = [
+      { name: 'everything as planned', plan: 1, readings: { allowances: [{ escrow: E1, allowance: '0' }], channels: okCh }, expect: { problems: [], approveZero: [] } },
+      { name: 'a fund failed midway: the allowance is left, and its channel is short', plan: 1, readings: { allowances: [{ escrow: E1, allowance: '30' }], channels: [okCh[0], { provider: P2, channel: '20', session: base.expires }] }, expect: { problems: ['allowance-not-zero', 'channel-not-at-cap'], approveZero: [E1] } },
+      { name: 'an authorizeSession not sent', plan: 1, readings: { allowances: [{ escrow: E1, allowance: '0' }], channels: [okCh[0], { provider: P2, channel: '50', session: 0 }] }, expect: { problems: ['session-not-set'], approveZero: [] } },
+      { name: 'a channel above its cap and a session one second longer', plan: 1, readings: { allowances: [{ escrow: E1, allowance: '0' }], channels: [{ provider: P1, channel: '101', session: base.expires + 1 }, okCh[1]] }, expect: { problems: ['channel-not-at-cap', 'session-not-set'], approveZero: [] } },
+    ]
+    // review p1m3 B1: a plan whose record has claimedAtPlan 7 (one provider P1, cap 100): what the key spent counts
+    // 审查 p1m3 B1：记录里 claimedAtPlan 为 7 的计划：钥匙花掉的计入 cap
+    const b1 = phase1.plan.findIndex((c) => c.name.startsWith('B1 a first run (session 0)'))
+    const at = (channel, claimed, session = base.expires) => ({ allowances: [{ escrow: E1, allowance: '0' }], channels: [{ provider: P1, channel, session, claimed }] })
+    phase1.applied.push(
+      { name: 'B1 the key spent 60 since the plan: channel 40 + 60 is the cap: nothing wrong (never told to top it up)', plan: b1, readings: at('40', '67'), expect: { problems: [], approveZero: [] } },
+      { name: 'B1 nothing spent, the channel at its cap', plan: b1, readings: at('100', '7'), expect: { problems: [], approveZero: [] } },
+      // review p1m3 recheck (3): with the allowance at 0, short is a withdrawal or a step never sent, not a failed fund
+      // 复核建议 3：额度为 0 时的短缺是取回或没发，不是 fund 失败
+      { name: 'B1 the channel short, nothing spent, the allowance at 0: withdrawn or never sent', plan: b1, readings: at('0', '7'), expect: { problems: ['channel-not-at-cap'], causes: ['withdrawn-or-not-sent'], approveZero: [] } },
+      { name: 'B1 topped up by hand after the key spent 60: 100 + 60 above the cap', plan: b1, readings: at('100', '67'), expect: { problems: ['channel-not-at-cap'], causes: ['excess'], approveZero: [] } },
+      { name: 'RC3 a fund failed midway: the allowance is left and the channel short', plan: b1, readings: { ...at('0', '7'), allowances: [{ escrow: E1, allowance: '100' }] }, expect: { problems: ['allowance-not-zero', 'channel-not-at-cap'], causes: ['fund-failed'], approveZero: [E1] } },
+      { name: 'RC3 the holder withdrew 30 after the key spent 60: the allowance at 0', plan: b1, readings: at('10', '67'), expect: { problems: ['channel-not-at-cap'], causes: ['withdrawn-or-not-sent'], approveZero: [] } },
+    )
+    // review p1m3 recheck: the released plan on E2 (60 spent on E1): the channel is compared with cap - 60, not the cap
+    // 复核：放行后在 E2 上的计划（E1 上已花 60）：按 cap − 60 比较，不按 cap
+    const rc = phase1.plan.findIndex((c) => c.name.startsWith('RC released: the E1 channel empty'))
+    const on2 = (channel, claimed) => ({ allowances: [{ escrow: E2, allowance: '0' }], channels: [{ provider: P1, channel, session: base.expires, claimed }] })
+    phase1.applied.push(
+      { name: 'RC the released plan on E2 applied: 40 is what is left of the cap', plan: rc, readings: on2('40', '0'), expect: { problems: [], approveZero: [] } },
+      { name: 'RC the released plan, then the key spent 25 on E2: 15 + 25 is what is left', plan: rc, readings: on2('15', '25'), expect: { problems: [], approveZero: [] } },
+      { name: 'RC the released plan, E2 at the full cap: above what is left', plan: rc, readings: on2('100', '0'), expect: { problems: ['channel-not-at-cap'], causes: ['excess'], approveZero: [] } },
+    )
+  }
+  // M4: the agent runtime's spend limiter (draft §3b.2 last paragraph, §6.1 S5, §10.7), by hand. A record pins, per
+  // capped provider, the channel the work started on (escrow, consumer) and base, its claimedOf then; hi is the highest
+  // cumulative signed. P1: cap 100 from base 1000; P2: cap 50 from base 0, 30 already signed.
+  // M4：代理运行时的花费限额器，手写。记录按带金额 provider 钉住开工时的通道与 base（当时的 claimedOf）；hi 是签出过的最高累计额。
+  {
+    const H0 = sig.privateKeyToAddress(HOLDER_KEY), OTHER = '0x00000000000000000000000000000000000000Aa'
+    const E3 = '0x00000000000000000000000000000000000E5c73', P3 = '0x00000000000000000000000000000000000005e3'
+    const MH = '0x' + 'cd'.repeat(32), NS = base.notBefore + 3600
+    const rec = (o = {}, p1 = {}, p2 = {}) => ({ v: 1, chainId: CHAIN_ID, agentKey: base.agentKey, state: 'started', mandateHash: MH, consumer: H0, notBefore: base.notBefore, expires: base.expires, stopped: null,
+      providers: [{ provider: P1, escrow: E1, token: BEM, cap: '100', base: '1000', hi: '1000', ...p1 }, { provider: P2, escrow: E2, token: BEM, cap: '50', base: '0', hi: '30', ...p2 }], ...o })
+    const rq = (o = {}) => ({ chainId: CHAIN_ID, provider: P1, escrow: E1, consumer: H0, cumulative: '1010', price: '10', now: NS, ...o })
+    const okv = (hi, spent, remaining) => ({ hi, spent, remaining })
+    const no = (refused, stop = false) => ({ refused, stop })
+    const sp = (name, record, request, expect) => ({ name, record, request, expect })
+    phase1.rules.spend = 'spendDecision(record, request): may the agent key sign a voucher of request.cumulative for request.price to request.provider on request.escrow for request.consumer at request.now? Refused with the first that applies, in this order: spend-not-started (the record\'s state is not started); spend-stopped (the record has stopped); spend-other-chain (request.chainId is not the record\'s); spend-out-of-scope (the provider is none of the record\'s providers); spend-escrow-changed (the escrow is not the provider\'s pinned one); spend-consumer-changed (the consumer is not the record\'s); spend-not-yet (now before notBefore); spend-expired (now after expires); spend-bad-amount (price or cumulative 0); spend-call-price-ceiling-above-cap (request.maxPrice given and above the provider\'s cap); spend-call-price-ceiling-unset (no request.maxPrice and the default per-call ceiling, floor(cap * 10 / 100), is 0); spend-call-price-above-ceiling (the price above the per-call ceiling: request.maxPrice when given, otherwise floor(cap * 10 / 100)); spend-cap-exceeded (cumulative above the provider\'s base + cap). Addresses compare in any case. stop is true for spend-other-chain, spend-escrow-changed, spend-consumer-changed and spend-expired (they stop the order for good). Allowed: hi = max(the provider\'s hi, cumulative), spent = hi - base, remaining = base + cap - hi, decimal strings'
+    phase1.spendBase = { record: rec(), request: rq() }
+    phase1.spend = [
+      sp('a first voucher, one price above the start', rec(), rq(), okv('1010', '10', '90')),
+      sp('a voucher that reaches the ceiling exactly (start + cap)', rec(), rq({ cumulative: '1100' }), okv('1100', '100', '0')),
+      sp('one unit above the ceiling', rec(), rq({ cumulative: '1101' }), no('spend-cap-exceeded')),
+      sp('90 signed before, the last 10 now', rec({}, { hi: '1090' }), rq({ cumulative: '1100' }), okv('1100', '100', '0')),
+      sp('below the highest signed (a released call signed again): no more is spent', rec({}, { hi: '1090' }), rq({ cumulative: '1050' }), okv('1090', '90', '10')),
+      sp('at or below the start: pays nothing, counts nothing', rec(), rq({ cumulative: '500' }), okv('1000', '0', '100')),
+      sp('P2 has its own ceiling: 30 of 50 signed, 20 more (maxCallPrice 50 given)', rec(), rq({ provider: P2, escrow: E2, cumulative: '50', price: '20', maxPrice: '50' }), okv('50', '50', '0')),
+      sp('P2 one above its ceiling, though P1 has room (maxCallPrice 50 given)', rec(), rq({ provider: P2, escrow: E2, cumulative: '51', price: '21', maxPrice: '50' }), no('spend-cap-exceeded')),
+      sp('addresses in another case', rec(), rq({ provider: P1.toUpperCase().replace('0X', '0x'), escrow: E1.toLowerCase(), consumer: H0.toLowerCase() }), okv('1010', '10', '90')),
+      sp('a key accepted but not started', { v: 1, chainId: CHAIN_ID, agentKey: base.agentKey, state: 'accepted' }, rq(), no('spend-not-started')),
+      sp('a stopped order', rec({ stopped: { reasons: ['spend-escrow-changed'], at: NS - 5 } }), rq(), no('spend-stopped')),
+      sp('another chain', rec(), rq({ chainId: 97 }), no('spend-other-chain', true)),
+      sp('a provider the record does not list', rec(), rq({ provider: P3 }), no('spend-out-of-scope')),
+      sp('the provider names another escrow now (R23)', rec(), rq({ escrow: E3 }), no('spend-escrow-changed', true)),
+      sp('another consumer (another wallet, the other path)', rec(), rq({ consumer: OTHER }), no('spend-consumer-changed', true)),
+      sp('one second before notBefore', rec(), rq({ now: base.notBefore - 1 }), no('spend-not-yet')),
+      sp('at notBefore', rec(), rq({ now: base.notBefore }), okv('1010', '10', '90')),
+      sp('at expires', rec(), rq({ now: base.expires }), okv('1010', '10', '90')),
+      sp('one second after expires', rec(), rq({ now: base.expires + 1 }), no('spend-expired', true)),
+      sp('a price of 0', rec(), rq({ price: '0' }), no('spend-bad-amount')),
+      sp('a cumulative of 0', rec(), rq({ cumulative: '0' }), no('spend-bad-amount')),
+      sp('a price above maxPrice', rec(), rq({ maxPrice: '9' }), no('spend-call-price-above-ceiling')),
+      sp('a price equal to maxPrice', rec(), rq({ maxPrice: '10' }), okv('1010', '10', '90')),
+      // the per-call ceiling's default (Bruce, 2026-10-08): 10% of the cap, rounded down; 0 is no default
+      // 单次调用价格上限的默认值：cap 的 10%，向下取整；为 0 即没有默认值
+      sp('default ceiling: 10% of the cap 100 is 10, a price of 11 is above it', rec(), rq({ cumulative: '1011', price: '11' }), no('spend-call-price-above-ceiling')),
+      sp('default ceiling on P2: 10% of the cap 50 is 5, a price of 5', rec(), rq({ provider: P2, escrow: E2, cumulative: '35', price: '5' }), okv('35', '35', '15')),
+      sp('default ceiling on P2: a price of 6 is above it, though the cap has room', rec(), rq({ provider: P2, escrow: E2, cumulative: '36', price: '6' }), no('spend-call-price-above-ceiling')),
+      sp('default rounds down: 10% of the cap 19 is 1, a price of 1', rec({}, { cap: '19' }), rq({ cumulative: '1001', price: '1' }), okv('1001', '1', '18')),
+      sp('default rounds down: 10% of the cap 19 is 1, a price of 2 is above it', rec({}, { cap: '19' }), rq({ cumulative: '1002', price: '2' }), no('spend-call-price-above-ceiling')),
+      sp('default rounds down to 0: the cap 9 has no default, maxCallPrice must be set', rec({}, { cap: '9' }), rq({ cumulative: '1001', price: '1' }), no('spend-call-price-ceiling-unset')),
+      sp('the cap 9 with maxCallPrice 9 given (the cap itself)', rec({}, { cap: '9' }), rq({ cumulative: '1009', price: '9', maxPrice: '9' }), okv('1009', '9', '0')),
+      sp('maxCallPrice above 10% is allowed: 60 of the cap 100', rec(), rq({ cumulative: '1060', price: '60', maxPrice: '60' }), okv('1060', '60', '40')),
+      sp('maxCallPrice equal to the cap: one call may take the whole cap', rec(), rq({ cumulative: '1100', price: '100', maxPrice: '100' }), okv('1100', '100', '0')),
+      sp('maxCallPrice one above the cap', rec(), rq({ maxPrice: '101' }), no('spend-call-price-ceiling-above-cap')),
+      sp('maxCallPrice 0 given: every price is above it (no default then)', rec(), rq({ maxPrice: '0' }), no('spend-call-price-above-ceiling')),
+      sp('order: a price of 0 before the unset ceiling', rec({}, { cap: '9' }), rq({ price: '0' }), no('spend-bad-amount')),
+      sp('order: maxCallPrice above the cap before the price above it', rec(), rq({ maxPrice: '101', price: '200', cumulative: '1200' }), no('spend-call-price-ceiling-above-cap')),
+      sp('order: the unset ceiling before the cap', rec({}, { cap: '9' }), rq({ cumulative: '5000', price: '1' }), no('spend-call-price-ceiling-unset')),
+      sp('order: expired before the price above the ceiling', rec(), rq({ now: base.expires + 1, price: '50', cumulative: '1050' }), no('spend-expired', true)),
+      sp('the largest cumulative', rec(), rq({ cumulative: '115792089237316195423570985008687907853269984665640564039457584007913129639935' }), no('spend-cap-exceeded')),
+      sp('order: stopped before another chain', rec({ stopped: { reasons: ['spend-revoked'], at: NS } }), rq({ chainId: 97 }), no('spend-stopped')),
+      sp('order: another escrow before the cap', rec(), rq({ escrow: E3, cumulative: '5000' }), no('spend-escrow-changed', true)),
+      sp('order: expired before the cap', rec(), rq({ now: base.expires + 1, cumulative: '5000' }), no('spend-expired', true)),
+      sp('order: maxPrice before the cap', rec(), rq({ maxPrice: '9', cumulative: '5000' }), no('spend-call-price-above-ceiling')),
+      sp('order: the default ceiling before the cap', rec(), rq({ price: '11', cumulative: '5000' }), no('spend-call-price-above-ceiling')),
+      sp('order: out of scope before another consumer', rec(), rq({ provider: P3, consumer: OTHER }), no('spend-out-of-scope')),
+    ]
+    phase1.rules.recheck = 'spendRecheck(record, check): a later verifyMandate result against the started record. stop lists, in this order: spend-mandate-changed (the check\'s mandateHash is not the record\'s), spend-revoked (the check has mandate-revoked), spend-expired (mandate-expired), spend-consumer-changed (the check names a consumer, not the record\'s), spend-escrow-changed once (a pinned provider\'s scope reading names an escrow, not the pinned one; a reading without an escrow is no change). problems are the check\'s own problem codes, in order; when it has none, spend-not-enforced if the check\'s phase is not 1, its enforcement is not escrow-channel, or a record provider has no scope reading with both an escrow and a claimedAtCheck (review p1m4: a phase-0 result proves nothing about the channels). hi, per record provider in order: the larger of its hi and the claimedAtCheck the check read on the pinned escrow when the check names the record\'s consumer (a reading on another escrow, for another consumer or a check naming none, or no reading, leaves hi). ok when stop and problems are both empty and the check is ok'
+    const ck = (o = {}, s1 = {}, s2 = {}) => ({ ok: true, phase: 1, enforcement: 'escrow-channel', mandateHash: MH, consumer: H0, problems: [], scope: [{ provider: P1, escrow: E1, claimedAtCheck: '1000', ...s1 }, { provider: P2, escrow: E2, claimedAtCheck: '30', ...s2 }], ...o })
+    const rk = (name, record, check, expect) => ({ name, record, check, expect })
+    const exp = (ok, stop, problems, hi) => ({ ok, stop, problems, hi })
+    phase1.recheck = [
+      rk('the same channels, nothing wrong', rec(), ck(), exp(true, [], [], ['1000', '30'])),
+      rk('claimedOf above the highest signed: hi raised (whatever was settled counts, by anyone)', rec(), ck({}, { claimedAtCheck: '1040' }), exp(true, [], [], ['1040', '30'])),
+      rk('claimedOf below hi: hi kept', rec(), ck({}, {}, { claimedAtCheck: '10' }), exp(true, [], [], ['1000', '30'])),
+      rk('a live withdraw request: the step is refused, the work is not stopped', rec(), ck({ ok: false, problems: ['withdraw-pending'] }), exp(false, [], ['withdraw-pending'], ['1000', '30'])),
+      rk('an empty channel: refused, not stopped', rec(), ck({ ok: false, problems: ['channel-empty'] }), exp(false, [], ['channel-empty'], ['1000', '30'])),
+      rk('P2 names another escrow: stopped; what is read there is not this channel', rec(), ck({ ok: false, problems: ['escrow-not-allowed'] }, {}, { escrow: E3, claimedAtCheck: '999' }), exp(false, ['spend-escrow-changed'], ['escrow-not-allowed'], ['1000', '30'])),
+      rk('both name another escrow: one reason', rec(), ck({}, { escrow: E3 }, { escrow: E3 }), exp(false, ['spend-escrow-changed'], [], ['1000', '30'])),
+      rk('P1 unresolvable (no escrow read): refused, not stopped', rec(), ck({ ok: false, problems: ['provider-unresolvable'] }, { escrow: null, claimedAtCheck: null }), exp(false, [], ['provider-unresolvable'], ['1000', '30'])),
+      rk('another consumer', rec(), ck({ consumer: OTHER }), exp(false, ['spend-consumer-changed'], [], ['1000', '30'])),
+      rk('a check that failed before the chain part names no consumer', rec(), ck({ ok: false, consumer: null, problems: ['not-signed-by-holder'], scope: [] }), exp(false, [], ['not-signed-by-holder'], ['1000', '30'])),
+      rk('another mandate', rec(), ck({ mandateHash: '0x' + 'ef'.repeat(32) }), exp(false, ['spend-mandate-changed'], [], ['1000', '30'])),
+      rk('revoked', rec(), ck({ ok: false, problems: ['mandate-revoked'] }), exp(false, ['spend-revoked'], ['mandate-revoked'], ['1000', '30'])),
+      rk('expired', rec(), ck({ ok: false, problems: ['mandate-expired'] }), exp(false, ['spend-expired'], ['mandate-expired'], ['1000', '30'])),
+      // review p1m4: a phase-0 result, or one without every reading, is not a check of the channels; another consumer's
+      // claimedOf raises nothing / 审查 p1m4：阶段 0 的结果或读数不全的结果不算通道核验；另一 consumer 的 claimedOf 不抬 hi
+      rk('a phase-0 result that is ok (enforcement none, no readings): refused, not stopped', rec(), ck({ phase: 0, enforcement: 'none', scope: [] }), exp(false, [], ['spend-not-enforced'], ['1000', '30'])),
+      rk('phase 1 without problems but enforcement none: refused, not stopped', rec(), ck({ enforcement: 'none' }), exp(false, [], ['spend-not-enforced'], ['1000', '30'])),
+      rk('no reading for P2: refused, not stopped; P1 still raises hi', rec(), ck({ scope: [{ provider: P1, escrow: E1, claimedAtCheck: '1020' }] }), exp(false, [], ['spend-not-enforced'], ['1020', '30'])),
+      rk('a reading without claimedAtCheck: refused, not stopped', rec(), ck({}, {}, { claimedAtCheck: null }), exp(false, [], ['spend-not-enforced'], ['1000', '30'])),
+      rk('another consumer whose channel settled more than hi: stopped, hi not raised', rec(), ck({ consumer: OTHER }, { claimedAtCheck: '1080' }, { claimedAtCheck: '45' }), exp(false, ['spend-consumer-changed'], [], ['1000', '30'])),
+      rk('every stop at once, in order', rec(), ck({ ok: false, mandateHash: '0x' + 'ef'.repeat(32), consumer: OTHER, problems: ['mandate-expired', 'mandate-revoked'] }, { escrow: E3 }), exp(false, ['spend-mandate-changed', 'spend-revoked', 'spend-expired', 'spend-consumer-changed', 'spend-escrow-changed'], ['mandate-expired', 'mandate-revoked'], ['1000', '30'])),
+    ]
+    // phase 1, restart (Bruce, 2026-10-08), by hand: may an order resume after a restart with the key its vault opened?
+    // 阶段 1 的重启，手写：重启后能否以保险箱打开的钥匙恢复订单
+    phase1.rules.resume = 'spendResume(record, request): may an order resume after a restart? record is the spend record of the order\'s agent key (null: none); request.key is the address the sealed key opens to, or "missing" (no sealed key in the store) or "unreadable" (the vault could not open it); request.mandateHash is the hash of the fresh check of the order\'s stored mandate (null: none). Refused with the first that applies, in this order: spend-state-lost (no record); spend-stopped (the record has stopped); spend-key-lost (key missing); spend-key-unreadable (key unreadable); spend-key-mismatch (request.chainId is not the record\'s, or request.agentKey or request.key is not the record\'s agentKey); spend-resume-mismatch (a started record and a mandateHash that is not the record\'s, or none; an accepted record and a mandateHash). Addresses and hashes compare in any case. Otherwise ok'
+    const KA = base.agentKey
+    const ACC = { v: 1, chainId: CHAIN_ID, agentKey: KA, state: 'accepted' }
+    const STOP = { stopped: { reasons: ['spend-revoked'], at: NS } }, MH2 = '0x' + 'ef'.repeat(32)
+    const rq2 = (o = {}) => ({ chainId: CHAIN_ID, agentKey: KA, key: KA, mandateHash: MH, ...o })
+    const rs = (name, record, request, expect) => ({ name, record, request, expect })
+    const yes = { ok: true }, nope = (refused) => ({ ok: false, refused })
+    phase1.resume = [
+      rs('a started order, its own key, its own mandate: resumes', rec(), rq2(), yes),
+      rs('addresses and the hash in another case', rec(), rq2({ agentKey: KA.toLowerCase(), key: KA.toUpperCase().replace('0X', '0x'), mandateHash: MH.toUpperCase().replace('0X', '0x') }), yes),
+      rs('an order that has no mandate yet (accepted), its own key: resumes', ACC, rq2({ mandateHash: null }), yes),
+      rs('no record (a lost record is not a fresh start)', null, rq2(), nope('spend-state-lost')),
+      rs('a stopped order (revoked while running)', rec(STOP), rq2(), nope('spend-stopped')),
+      rs('a stopped order whose sealed key is gone too', rec(STOP), rq2({ key: 'missing' }), nope('spend-stopped')),
+      rs('no sealed key in the store', rec(), rq2({ key: 'missing' }), nope('spend-key-lost')),
+      rs('a sealed key that does not open (a wrong passphrase, a changed blob)', rec(), rq2({ key: 'unreadable' }), nope('spend-key-unreadable')),
+      rs('a sealed key that opens to another key', rec(), rq2({ key: OTHER }), nope('spend-key-mismatch')),
+      rs('the order names another key than the record', rec(), rq2({ agentKey: OTHER }), nope('spend-key-mismatch')),
+      rs('another chain', rec(), rq2({ chainId: 97 }), nope('spend-key-mismatch')),
+      rs('a started order checked for another mandate', rec(), rq2({ mandateHash: MH2 }), nope('spend-resume-mismatch')),
+      rs('a started order without a check', rec(), rq2({ mandateHash: null }), nope('spend-resume-mismatch')),
+      rs('an accepted order given a mandate', ACC, rq2(), nope('spend-resume-mismatch')),
+      rs('order: stopped before a key that does not open', rec(STOP), rq2({ key: 'unreadable' }), nope('spend-stopped')),
+      rs('order: no key before another mandate', rec(), rq2({ key: 'missing', mandateHash: MH2 }), nope('spend-key-lost')),
+      rs('order: a key that does not open before another key', rec(), rq2({ key: 'unreadable', agentKey: OTHER }), nope('spend-key-unreadable')),
+      rs('order: another key before another mandate', rec(), rq2({ key: OTHER, mandateHash: MH2 }), nope('spend-key-mismatch')),
+    ]
+    // M7 (draft §2.3 rule 5, §6.1 S8, R16), by hand: the spend statement a delivery may carry, and its reconciliation.
+    // The started record above: P1 from base 1000 on E1, P2 from base 0 on E2, consumer H0. The mandate of the evidence
+    // cases caps P1 at 100 and P2 at 50, and lists P3 as evidence only (cap 0); each priced call costs 10.
+    // M7：交付可带的花费说明及其对账，手写。记录同上；对账用例的授权书 P1 上限 100、P2 上限 50、P3 只作证据来源；每次调用 10。
+    phase1.rules.statement = 'spendStatement(record, check): the agent\'s spend statement from its started record and its last verifyMandate result before it signs the delivery. Empty when the check names no consumer or another consumer than the record\'s. Otherwise, per record provider in order, the entry { provider, escrow (the pinned ones), claimedAtStart (the provider\'s base), claimedAtDelivery (the check\'s claimedAtCheck for that provider), spent (claimedAtDelivery - claimedAtStart) }, decimal strings, when the check has a scope reading for the provider whose escrow is the pinned one and whose claimedAtCheck is a decimal string at least the base; no entry otherwise (an amount is never made up). Addresses compare in any case; the entry carries the record\'s'
+    const ckS = (o = {}, s1 = {}, s2 = {}) => ({ ok: true, phase: 1, enforcement: 'escrow-channel', mandateHash: MH, consumer: H0, problems: [], scope: [{ provider: P1, escrow: E1, claimedAtCheck: '1060', ...s1 }, { provider: P2, escrow: E2, claimedAtCheck: '30', ...s2 }], ...o })
+    const en = (provider, escrow, claimedAtStart, claimedAtDelivery, spent) => ({ provider, escrow, claimedAtStart, claimedAtDelivery, spent })
+    const both = [en(P1, E1, '1000', '1060', '60'), en(P2, E2, '0', '30', '30')]
+    phase1.statement = [
+      { name: 'both channels read on the pinned escrows', record: rec(), check: ckS(), expect: both },
+      { name: 'nothing settled on P1 since the start', record: rec(), check: ckS({}, { claimedAtCheck: '1000' }), expect: [en(P1, E1, '1000', '1000', '0'), both[1]] },
+      { name: 'P2 read on another escrow: no entry for it', record: rec(), check: ckS({}, {}, { escrow: E3 }), expect: [both[0]] },
+      { name: 'P1 without a reading (it did not resolve): no entry for it', record: rec(), check: ckS({}, { escrow: null, claimedAtCheck: null }), expect: [both[1]] },
+      { name: 'P2 read without claimedAtCheck: no entry for it', record: rec(), check: ckS({}, {}, { claimedAtCheck: null }), expect: [both[0]] },
+      { name: 'P1 read below its start (claimedOf never falls): no entry for it', record: rec(), check: ckS({}, { claimedAtCheck: '999' }), expect: [both[1]] },
+      { name: 'P1 has no reading at all', record: rec(), check: ckS({ scope: [{ provider: P2, escrow: E2, claimedAtCheck: '30' }] }), expect: [both[1]] },
+      { name: 'another consumer: no statement', record: rec(), check: ckS({ consumer: OTHER }), expect: [] },
+      { name: 'a check that names no consumer: no statement', record: rec(), check: ckS({ consumer: null, scope: [] }), expect: [] },
+      { name: 'addresses in another case', record: rec(), check: ckS({ consumer: H0.toLowerCase() }, { provider: P1.toLowerCase(), escrow: E1.toLowerCase() }), expect: both },
+    ]
+    phase1.rules.evidence = 'spendEvidence(spend, { mandate, calls, readings, prices }): the deliver result\'s spend member reconciled. The capped providers are the mandate\'s scope items with a cap other than 0. Problems, in this order: spend-evidence-malformed when spend is not an array or has more entries than capped providers (then nothing else: no item, no warning); for each entry in order, spend-evidence-malformed when it is not an object with a provider address, an escrow address other than zero, and claimedAtStart, claimedAtDelivery and spent as decimal strings without leading zeros below 2^256, or when its provider was already named by an earlier well-formed entry; spend-provider-out-of-scope when its provider is not a capped provider; spend-evidence-inconsistent when claimedAtDelivery is below claimedAtStart or spent is not claimedAtDelivery - claimedAtStart. Every other entry is an item, in order, and gets its warnings in this order: spend-escrow-changed when readings has an entry for the provider with an escrow and a claimedAtCheck and that escrow is not the item\'s; otherwise, with such a reading on the same escrow, claimedNow is its claimedAtCheck, spentNow is claimedNow - claimedAtStart when claimedNow is at least claimedAtStart (else null), and spend-above-chain when claimedNow is below claimedAtDelivery; spend-above-cap when the measured amount (spentNow when not null, else spent) is above the provider\'s cap; then, when prices has a table for the provider (lower case) and every ok call to the provider (calls with ok true whose provider is it) has a method with a decimal-string price in it, expected is the sum of those prices and reconciled compares the measured amount (spentNow when not null, else spent) with it: equal, above (spend-exceeds-receipts) or below (spend-below-receipts); without such a table or with a call whose method has no price, expected and reconciled are null. Last, spend-evidence-incomplete for each capped provider, in scope order, that no entry names by a provider address (a malformed entry with an address names it). Addresses compare in any case. ok when there is no problem. expect lists the problem codes and the warning codes in order and, per item, reconciled, spentNow and expected'
+    const MEV = { ...base, mode: 1, scope: [{ provider: P1, token: BEM, cap: '100' }, { provider: P2, token: BEM, cap: '50' }, { provider: P3, token: ZERO, cap: '0' }] }
+    const call = (provider, n, method = 'read', ok = true) => Array.from({ length: n }, () => ({ provider, method, ok }))
+    const CALLS = [...call(P1, 6), ...call(P2, 3)]
+    const RD = (r1 = {}, r2 = {}) => [{ provider: P1, escrow: E1, claimedAtCheck: '1060', ...r1 }, { provider: P2, escrow: E2, claimedAtCheck: '30', ...r2 }]
+    const PR = { [P1.toLowerCase()]: { read: '10' }, [P2.toLowerCase()]: { read: '10' } }
+    const ev = (name, spend, o, expect) => ({ name, spend, mandate: MEV, calls: o.calls ?? CALLS, readings: o.readings === undefined ? RD() : o.readings, prices: o.prices === undefined ? PR : o.prices, expect })
+    const ex = (problems, warnings, reconciled, spentNow, expected) => ({ problems, warnings, reconciled, spentNow, expected })
+    const U = '115792089237316195423570985008687907853269984665640564039457584007913129639935'
+    phase1.evidence = [
+      ev('agrees with the chain and with the receipts', both, {}, ex([], [], ['equal', 'equal'], ['60', '30'], ['60', '30'])),
+      ev('no readings and no prices: the form only', both, { readings: null, prices: null }, ex([], [], [null, null], [null, null], [null, null])),
+      ev('settled after the delivery: the chain now reads what the receipts say', [en(P1, E1, '1000', '1040', '40'), both[1]], {}, ex([], [], ['equal', 'equal'], ['60', '30'], ['60', '30'])),
+      ev('not settled yet: below the receipts (a warning, never a problem)', [en(P1, E1, '1000', '1040', '40'), both[1]], { readings: RD({ claimedAtCheck: '1040' }) }, ex([], ['spend-below-receipts'], ['below', 'equal'], ['40', '30'], ['60', '30'])),
+      ev('no readings: the statement\'s spent is compared, below the receipts', [en(P1, E1, '1000', '1040', '40'), both[1]], { readings: null }, ex([], ['spend-below-receipts'], ['below', 'equal'], [null, null], ['60', '30'])),
+      ev('more paid than receipted (calls left out, or someone else settled)', both, { calls: [...call(P1, 5), ...call(P2, 3)] }, ex([], ['spend-exceeds-receipts'], ['above', 'equal'], ['60', '30'], ['50', '30'])),
+      ev('the statement is above the chain at the verifier\'s block', both, { readings: RD({ claimedAtCheck: '1050' }) }, ex([], ['spend-above-chain', 'spend-below-receipts'], ['below', 'equal'], ['50', '30'], ['60', '30'])),
+      ev('the chain reads below the start: spentNow unknown, the statement\'s spent compared', both, { readings: RD({ claimedAtCheck: '900' }) }, ex([], ['spend-above-chain'], ['equal', 'equal'], [null, '30'], ['60', '30'])),
+      ev('P1 read on another escrow: not compared with the chain', both, { readings: RD({ escrow: E3 }) }, ex([], ['spend-escrow-changed'], ['equal', 'equal'], [null, '30'], ['60', '30'])),
+      ev('a reading without claimedAtCheck: not compared with the chain', both, { readings: RD({ claimedAtCheck: null }) }, ex([], [], ['equal', 'equal'], [null, '30'], ['60', '30'])),
+      ev('P2 paid 60, above its cap 50 (someone else settled on it too)', [both[0], en(P2, E2, '0', '60', '60')], { calls: [...call(P1, 6), ...call(P2, 6)], readings: RD({}, { claimedAtCheck: '60' }) }, ex([], ['spend-above-cap'], ['equal', 'equal'], ['60', '60'], ['60', '60'])),
+      // review m7 F2: the verifier's own reading decides the cap warning (the statement says 50 = the cap, the chain reads 60)
+      // 审查 m7 F2：cap 警告看核验方自己的读数（说明写 50 = cap，链上读到 60）
+      ev('P2 states exactly its cap 50 but the chain reads 60 since the start: above the cap by the verifier\'s own reading', [both[0], en(P2, E2, '0', '50', '50')], { calls: [...call(P1, 6), ...call(P2, 6)], readings: RD({}, { claimedAtCheck: '60' }) }, ex([], ['spend-above-cap'], ['equal', 'equal'], ['60', '60'], ['60', '60'])),
+      // review p1-restart: the edges of spend-above-cap (exactly the cap: none; the cap plus 1: the warning)
+      // 审查 p1-restart：spend-above-cap 的边界（恰为 cap：无；cap + 1：警告）
+      ev('P2 paid exactly its cap 50, as its 5 receipts say: no warning', [both[0], en(P2, E2, '0', '50', '50')], { calls: [...call(P1, 6), ...call(P2, 5)], readings: RD({}, { claimedAtCheck: '50' }) }, ex([], [], ['equal', 'equal'], ['60', '50'], ['60', '50'])),
+      ev('P2 paid its cap 50 plus 1: above the cap, and above its 5 receipts', [both[0], en(P2, E2, '0', '51', '51')], { calls: [...call(P1, 6), ...call(P2, 5)], readings: RD({}, { claimedAtCheck: '51' }) }, ex([], ['spend-above-cap', 'spend-exceeds-receipts'], ['equal', 'above'], ['60', '51'], ['60', '50'])),
+      ev('a method without a price: P1 not reconciled', both, { calls: [...call(P1, 5), ...call(P1, 1, 'other'), ...call(P2, 3)] }, ex([], [], [null, 'equal'], ['60', '30'], [null, '30'])),
+      ev('a refused call (ok false) does not count', both, { calls: [...CALLS, ...call(P1, 2, 'read', false), ...call(P1, 1, 'other', false)] }, ex([], [], ['equal', 'equal'], ['60', '30'], ['60', '30'])),
+      ev('prices for P1 only: P2 not reconciled', both, { prices: { [P1.toLowerCase()]: { read: '10' } } }, ex([], [], ['equal', null], ['60', '30'], ['60', null])),
+      ev('a price that is not a decimal string: not reconciled', both, { prices: { [P1.toLowerCase()]: { read: 10 }, [P2.toLowerCase()]: { read: '10' } } }, ex([], [], [null, 'equal'], ['60', '30'], [null, '30'])),
+      ev('no calls to P2 and nothing paid there', [both[0], en(P2, E2, '0', '0', '0')], { calls: call(P1, 6), readings: RD({}, { claimedAtCheck: '0' }) }, ex([], [], ['equal', 'equal'], ['60', '0'], ['60', '0'])),
+      ev('the largest amount: above the cap and above the receipts', [en(P1, E1, '0', U, U), both[1]], { readings: null }, ex([], ['spend-above-cap', 'spend-exceeds-receipts'], ['above', 'equal'], [null, null], ['60', '30'])),
+      ev('P2 left out of the statement', [both[0]], {}, ex([], ['spend-evidence-incomplete'], ['equal'], ['60'], ['60'])),
+      ev('an empty statement', [], {}, ex([], ['spend-evidence-incomplete', 'spend-evidence-incomplete'], [], [], [])),
+      ev('addresses in another case', [en(P1.toLowerCase(), E1.toLowerCase(), '1000', '1060', '60'), en(P2.toUpperCase().replace('0X', '0x'), E2.toLowerCase(), '0', '30', '30')], {}, ex([], [], ['equal', 'equal'], ['60', '30'], ['60', '30'])),
+      ev('not an array', { [P1]: '60' }, {}, ex(['spend-evidence-malformed'], [], [], [], [])),
+      ev('more entries than capped providers', [...both, en(P3, E3, '0', '0', '0')], {}, ex(['spend-evidence-malformed'], [], [], [], [])),
+      ev('an amount as a JSON number', [{ ...both[0], spent: 60 }, both[1]], {}, ex(['spend-evidence-malformed'], [], ['equal'], ['30'], ['30'])),
+      ev('an amount with a leading zero', [{ ...both[0], claimedAtStart: '01000' }, both[1]], {}, ex(['spend-evidence-malformed'], [], ['equal'], ['30'], ['30'])),
+      ev('the zero escrow', [{ ...both[0], escrow: ZERO }, both[1]], {}, ex(['spend-evidence-malformed'], [], ['equal'], ['30'], ['30'])),
+      ev('an entry without a provider address: P1 is named by none', [{ ...both[0], provider: 'P1' }, both[1]], {}, ex(['spend-evidence-malformed'], ['spend-evidence-incomplete'], ['equal'], ['30'], ['30'])),
+      ev('P1 named twice', [both[0], both[0]], {}, ex(['spend-evidence-malformed'], ['spend-evidence-incomplete'], ['equal'], ['60'], ['60'])),
+      ev('a provider listed for evidence only (cap 0)', [both[0], en(P3, E3, '0', '10', '10')], {}, ex(['spend-provider-out-of-scope'], ['spend-evidence-incomplete'], ['equal'], ['60'], ['60'])),
+      ev('a provider outside the scope', [both[0], en(OTHER, E3, '0', '10', '10')], {}, ex(['spend-provider-out-of-scope'], ['spend-evidence-incomplete'], ['equal'], ['60'], ['60'])),
+      ev('spent is not the difference', [{ ...both[0], spent: '50' }, both[1]], {}, ex(['spend-evidence-inconsistent'], [], ['equal'], ['30'], ['30'])),
+      ev('claimedAtDelivery below claimedAtStart', [en(P1, E1, '1000', '900', '0'), both[1]], {}, ex(['spend-evidence-inconsistent'], [], ['equal'], ['30'], ['30'])),
+      ev('order: outside the scope before inconsistent', [both[0], en(OTHER, E3, '10', '5', '7')], {}, ex(['spend-provider-out-of-scope'], ['spend-evidence-incomplete'], ['equal'], ['60'], ['60'])),
+      ev('order: malformed before outside the scope', [both[0], en(OTHER, E3, '10', '5', 7)], {}, ex(['spend-evidence-malformed'], ['spend-evidence-incomplete'], ['equal'], ['60'], ['60'])),
+    ]
+  }
+  // phase 1, restart (Bruce, 2026-10-08): the key vault a runtime keeps its agent keys in across a restart, by hand.
+  // scrypt (KEY_VAULT_SCRYPT) derives the key from the passphrase and the blob's salt; XChaCha20-Poly1305 seals with the
+  // associated data `tapeapi/key-vault/v1` LF context. Every case carries the key the opener derives, so that the AEAD
+  // step can be checked without scrypt. / 阶段 1 的重启：钥匙保险箱的向量，手写。每例带打开方派生出的密钥，AEAD 一步可不经 scrypt 核对。
+  {
+    const V = await import('../sdk/src/agent-vault.js')
+    const { hexToBytes: h2b, bytesToHex: b2h } = await import('@noble/hashes/utils')
+    const PASS = 'correct horse battery staple', PASS_U = 'pässwörd-口令-0123'
+    const range = (from, n) => Uint8Array.from({ length: n }, (_, i) => (from + i) & 0xff)
+    const SALT = range(0xa0, 16), SALT2 = range(0x50, 16), NONCE = range(0xb0, 24), NONCE2 = range(0x10, 24)
+    const AK = sig.privateKeyToAddress('0x' + '77'.repeat(32)), AK2 = sig.privateKeyToAddress('0x' + '78'.repeat(32))
+    const CTX = V.spendKeyContext(CHAIN_ID, AK), CTX2 = V.spendKeyContext(CHAIN_ID, AK2)
+    const SECRET = h2b('77'.repeat(32))
+    const K = await V.keyVaultKey(PASS, SALT)
+    const seal = (key, salt, nonce, context, plaintext) => V.keyVaultSeal(key, { salt, nonce, context, plaintext })
+    const pos = async (name, passphrase, salt, nonce, context, plaintext) => {
+      const key = passphrase === PASS && salt === SALT ? K : await V.keyVaultKey(passphrase, salt)
+      const blob = seal(key, salt, nonce, context, plaintext)
+      if (b2h(V.keyVaultOpen(key, blob, { context })) !== b2h(plaintext)) throw new Error('key vault: the blob does not open')
+      return { name, passphrase, salt: b2h(salt), nonce: b2h(nonce), context, plaintext: b2h(plaintext), key: b2h(key), aad: b2h(V.keyVaultAad(context)), blob }
+    }
+    const blob0 = seal(K, SALT, NONCE, CTX, SECRET)
+    const hexOf = (blob) => blob.slice(V.KEY_VAULT_PREFIX.length)
+    const flip = (blob, at) => { const x = h2b(hexOf(blob)); x[at] ^= 1; return V.KEY_VAULT_PREFIX + b2h(x) }
+    const neg = (name, o, expect) => ({ name, passphrase: o.passphrase ?? PASS, context: o.context ?? CTX, blob: o.blob ?? blob0, key: o.key === null ? null : b2h(o.key ?? K), expect })
+    const bodyLen = 16 + 24 + SECRET.length + 16
+    phase1.rules.keyVault = 'A key-vault blob is the string "' + V.KEY_VAULT_PREFIX + '" followed by lower-case hex of salt (16 bytes) || nonce (24 bytes) || ciphertext || tag (16 bytes), at least ' + (16 + 24 + 16) + ' bytes; anything else is key-vault-malformed. key = scrypt(UTF-8(passphrase), salt, N = 131072, r = 8, p = 1, 32 bytes). ciphertext || tag = XChaCha20-Poly1305(key, nonce, aad, plaintext), aad = UTF-8("tapeapi/key-vault/v1" LF context). Opening fails (key-vault-open-failed) when the tag does not verify with the key derived from the passphrase and the blob\'s salt, for the given context. The spend limiter seals an agent key\'s 32-byte secret for the context "tapeapi-spend-key/v1/<chainId>/<agentKey in lower case>". Each case gives key, the key derived from its passphrase and its blob\'s salt (null where the blob is malformed)'
+    phase1.keyVault = {
+      params: { ...V.KEY_VAULT_SCRYPT, saltBytes: V.KEY_VAULT_SALT_BYTES, nonceBytes: V.KEY_VAULT_NONCE_BYTES, prefix: V.KEY_VAULT_PREFIX, minPassphrase: V.KEY_VAULT_MIN_PASSPHRASE },
+      seal: [
+        await pos('an agent key sealed for its own context', PASS, SALT, NONCE, CTX, SECRET),
+        await pos('the same key with another nonce: another blob', PASS, SALT, NONCE2, CTX, SECRET),
+        await pos('another salt: another key', PASS, SALT2, NONCE, CTX, SECRET),
+        await pos('a passphrase outside ASCII (its UTF-8 bytes, as given)', PASS_U, SALT, NONCE, CTX, SECRET),
+        await pos('another agent key\'s context', PASS, SALT, NONCE, CTX2, h2b('78'.repeat(32))),
+      ],
+      open: [
+        neg('the right passphrase and context: opens', {}, 'ok'),
+        neg('a wrong passphrase', { passphrase: PASS + 'r', key: await V.keyVaultKey(PASS + 'r', SALT) }, 'key-vault-open-failed'),
+        neg('the blob of this key opened for another key\'s context (keys swapped in the store)', { context: CTX2 }, 'key-vault-open-failed'),
+        neg('one ciphertext bit flipped', { blob: flip(blob0, 16 + 24 + 3) }, 'key-vault-open-failed'),
+        neg('one tag bit flipped', { blob: flip(blob0, bodyLen - 1) }, 'key-vault-open-failed'),
+        neg('one nonce bit flipped', { blob: flip(blob0, 16 + 5) }, 'key-vault-open-failed'),
+        neg('the salt changed: the passphrase derives another key', { blob: V.KEY_VAULT_PREFIX + b2h(SALT2) + hexOf(blob0).slice(32), key: await V.keyVaultKey(PASS, SALT2) }, 'key-vault-open-failed'),
+        neg('upper-case hex', { blob: V.KEY_VAULT_PREFIX + hexOf(blob0).toUpperCase(), key: null }, 'key-vault-malformed'),
+        neg('another version', { blob: 'tapeapi-key-vault:v2:' + hexOf(blob0), key: null }, 'key-vault-malformed'),
+        neg('shorter than salt, nonce and tag', { blob: V.KEY_VAULT_PREFIX + hexOf(blob0).slice(0, 2 * (16 + 24 + 15)), key: null }, 'key-vault-malformed'),
+        neg('an odd number of hex digits', { blob: blob0 + '0', key: null }, 'key-vault-malformed'),
+      ],
+    }
+  }
   write('container-agent.json', {
     tap: 'Container agents, phase 0 (experimental; Ideas TapeOutProtocol/TAPs#40 and #41): Mandate, TaskOffer, TaskVerdict, MandateRevocation', note,
     domain: { name: 'TapeAPI', version: '1', chainId: CHAIN_ID, verifyingContract: HUB, comment: 'The TAP-11 delegation domain, shared with Delegation, ChannelKeys and ManifestContent; the type name separates them.' },
@@ -711,5 +1395,141 @@ for (const labels of ['v1', 'v2']) {
     ],
     threadRevocation,
     inputForms,
+    phase1,
+  })
+}
+
+// ---------- @experimental TAPI-22 draft: prices in US dollars paid in BEM (TAP draft "Payment Vouchers", TAPs#52) ----------
+// The same inputs as the draft's own vectors (TAPs#52, assets/tap-draft-payment-vouchers/), computed here by the
+// reference implementation (sdk/src/usd-pricing.js, sdk/src/sig.js); sdk/test/usd-pricing.test.mjs pins the canonical
+// hashes of the draft's files, so the two agree. Test keys and addresses only: the escrow and the pools are not deployments.
+// 与草稿自带向量相同的输入，这里由参考实现计算；sdk/test/usd-pricing.test.mjs 固定了草稿文件的规范哈希，两者因此一致。只用测试密钥与测试地址。
+{
+  const U = await import('../sdk/src/usd-pricing.js')
+  const conversionCases = [
+    ['exact division', '0.01', '0.0004', '100'],
+    ['rounded up once', '0.01', '0.0003', '100'],
+    ['the cap applies', '1', '0.0001', '5000'],
+    ['the converted amount equals the cap exactly: not capped', '1', '0.0001', '10000'],
+    ['18 fraction digits in the rate', '0.0025', '0.000123456789012345', '1000'],
+    ['smallest USD price at a high rate: at least one base unit', '0.00000001', '1000000', '1'],
+    ['integer rate', '3', '2', '10'],
+    ['large values stay exact (no floating point)', '999999999.99999999', '0.000000000000000001', '99999999999999999999999999999999.99999999'],
+    ['leading zeros are allowed by the TAP-11 form', '00.5', '0.25', '2'],
+  ]
+  const conversionInvalid = [
+    ['rate zero', '0.01', '0', '1'], ['rate all zeros', '0.01', '0.000000000000000000', '1'],
+    ['rate with 19 fraction digits', '0.01', '0.0000000000000000001', '1'], ['rate in exponent form', '0.01', '1e-4', '1'],
+    ['rate without integer part', '0.01', '.5', '1'], ['rate with trailing dot', '0.01', '1.', '1'], ['rate negative', '0.01', '-1', '1'],
+    ['priceUSD zero (a free method is not USD-priced)', '0', '1', '1'], ['priceUSD with 9 fraction digits', '0.000000001', '1', '1'],
+    ['priceBEM zero in value for a USD-priced method', '1', '1', '0.00'],
+  ]
+  const conv = (priceUSD, rate, priceBEM) => {
+    const r = U.convertUsd({ priceUSD, rate, priceBEM })
+    return { U: r.U.toString(), R: r.R.toString(), P: r.P.toString(), converted: r.converted.toString(), charge: r.charge.toString(), capped: r.capped, usd: U.amountObject(r.U, 'USD'), bem: U.amountObject(r.charge, 'BEM') }
+  }
+  // which input a refusal names: the first of priceUSD, rate, priceBEM that is not valid / 拒绝时指出第一个无效的输入
+  const refusedBy = (priceUSD, rate, priceBEM) => {
+    try { U.parseUsdPrice(priceUSD) } catch { return 'priceUSD' }
+    try { U.parseRate(rate) } catch { return 'rate' }
+    try { U.convertUsd({ priceUSD, rate, priceBEM }) } catch { return 'priceBEM' }
+    throw new Error(`not refused: ${priceUSD} ${rate} ${priceBEM}`)
+  }
+  const conversion = {
+    rule: 'U = priceUSD in 10^-8 USD; R = rate (USD per 1 BEM) in 10^-18 USD; P = priceBEM in BEM base units (10^-8 BEM). converted = ceil(U * 10^18 / R); charge = min(converted, P); capped = converted > P.',
+    cases: conversionCases.map(([name, priceUSD, rate, priceBEM]) => ({ name, priceUSD, rate, priceBEM, ...conv(priceUSD, rate, priceBEM) })),
+    invalid: conversionInvalid.map(([name, priceUSD, rate, priceBEM]) => ({ name, priceUSD, rate, priceBEM, refused: refusedBy(priceUSD, rate, priceBEM) })),
+  }
+
+  const SESSION_KEY = '0x' + '66'.repeat(32)
+  const consumer = sig.privateKeyToAddress(CONSUMER_KEY)
+  const vIn = [
+    { name: 'consumer signs: first call, charge 2500000000 (conversion case "exact division")', key: CONSUMER_KEY, v: { consumer, provider: CONTAINER, cumulative: '2500000000', expires: 1789003600 } },
+    { name: 'consumer signs: second call carries the running total (+3333333334, case "rounded up once")', key: CONSUMER_KEY, v: { consumer, provider: CONTAINER, cumulative: '5833333334', expires: 1789003600 } },
+    { name: 'session key signs for the same channel', key: SESSION_KEY, v: { consumer, provider: CONTAINER, cumulative: '5833333334', expires: 1789003600 } },
+  ]
+  const vOut = vIn.map(({ name, key, v }) => {
+    const d = sig.voucherDigest(CHAIN_ID, ESCROW, v), s = sig.signDigest(d, key)
+    return { name, ...v, structHash: toHex(sig.hashVoucher(v)), digest: toHex(d), sig: s, recoversTo: sig.recoverVoucherSigner(CHAIN_ID, ESCROW, v, s) }
+  })
+  const fb = Buffer.from(vOut[0].sig.slice(2), 'hex'), N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
+  const v01 = Buffer.from(fb); v01[64] -= 27
+  const hs = Buffer.from(fb); const sHigh = N - BigInt('0x' + fb.subarray(32, 64).toString('hex')); Buffer.from(sHigh.toString(16).padStart(64, '0'), 'hex').copy(hs, 32); hs[64] = fb[64] === 27 ? 28 : 27
+  const v29 = Buffer.from(fb); v29[64] = 29
+  const hx0 = (b) => '0x' + b.toString('hex')
+  // what the strict-v recovery refuses each encoding for / 严格恢复拒绝每种编码的理由
+  const refusal = (s) => { try { sig.recoverVoucherSigner(CHAIN_ID, ESCROW, vIn[0].v, s); return null } catch (e) { return /65 bytes/.test(e.message) ? 'length' : /27 or 28|bad v/.test(e.message) ? 'v' : /high-s|out of range/.test(e.message) ? 'r-or-s' : e.message } }
+  // the high-s twin recovers the same address when nothing checks s (secp256k1 directly) / 不查 s 时高 s 孪生签名恢复出同一地址
+  const { secp256k1 } = await import('@noble/curves/secp256k1')
+  const unchecked = (() => { const pub = new secp256k1.Signature(BigInt('0x' + hs.subarray(0, 32).toString('hex')), sHigh).addRecoveryBit(hs[64] - 27).recoverPublicKey(Buffer.from(vOut[0].digest.slice(2), 'hex')).toRawBytes(false); return abiChecksum(toHex(keccak256(pub.subarray(1)).subarray(12))) })()
+  const voucher = {
+    domain: { name: 'TapeAPIEscrow', version: '1', chainId: CHAIN_ID, verifyingContract: ESCROW },
+    type: sig.VOUCHER_TYPE, typeHash: toHex(sig.VOUCHER_TYPEHASH), domainSeparator: toHex(sig.domainSeparator(sig.voucherDomain(CHAIN_ID, ESCROW))),
+    consumerKey: CONSUMER_KEY, consumer, sessionKey: SESSION_KEY, sessionAddress: sig.privateKeyToAddress(SESSION_KEY),
+    cases: vOut,
+    refusedEncodingsOfCase1: [
+      { name: 'v written as 0 or 1: refused in a voucher (an on-chain ECDSA.recover does not normalise it)', sig: hx0(v01) },
+      { name: 'high-s twin: refused although it recovers the same address', sig: hx0(hs), recoversWhenUnchecked: unchecked },
+      { name: 'v = 29: refused', sig: hx0(v29) },
+      { name: '64 bytes: refused', sig: hx0(fb.subarray(0, 64)) },
+    ].map((e) => ({ ...e, refused: refusal(e.sig) })),
+  }
+
+  const manifestExcerpt = {
+    methods: [{ name: 'search', priceBEM: '100', params: { q: 'string' }, returns: { hits: 'array' } }],
+    payment: { escrow: ESCROW },
+    usdPricing: { methods: { search: '0.01' }, toleranceBps: 200, maxQuoteS: 120, rateSources: [{ type: 'v3-twap', pool: '0x00000000000000000000000000000000000B0010', usd: '0x00000000000000000000000000000000000B0005', window: 1800 }] },
+  }
+  const TS = 1789000000
+  const quoteA = { rate: '0.0004', asOf: TS - 30, validUntil: TS + 90 }
+  const quoteB = { rate: '0.0003', asOf: TS + 50, validUntil: TS + 170 }
+  const cA = U.convertUsd({ priceUSD: '0.01', rate: quoteA.rate, priceBEM: '100' }), cB = U.convertUsd({ priceUSD: '0.01', rate: quoteB.rate, priceBEM: '100' })
+  const priceUSD = U.amountObject(cA.U, 'USD')
+  const v1 = vIn[0].v
+  const record = U.chargeRecord({ consumer, cumulative: v1.cumulative, amount: cA.charge, usd: { priceUSD: '0.01', rate: quoteA.rate, rateAsOf: quoteA.asOf, capped: cA.capped }, quote: quoteB })
+  const envIn = [
+    { name: 'PAYMENT_REQUIRED for a USD-priced method, with a quote', id: 'req-1', ts: TS, ok: false,
+      body: { code: 'PAYMENT_REQUIRED', message: 'search costs 0.01 USD per call', data: { price: cA.charge.toString(), priceUSD, quote: quoteA } } },
+    { name: 'priced result with its charge record and the next quote (the voucher of voucher.json case 1, rate 0.0004)', id: 'req-2', ts: TS + 60, ok: true,
+      body: { hits: [], charge: record } },
+    { name: 'BAD_VOUCHER: the voucher names rate 0.00035, which this provider never quoted', id: 'req-3', ts: TS + 100, ok: false,
+      body: { code: 'BAD_VOUCHER', message: 'rate 0.00035 is not a quote of this provider', data: { reason: 'rate', price: cB.charge.toString(), priceUSD, quote: quoteB } } },
+    { name: 'BAD_VOUCHER: stale cumulative (the client sent 2500000000 again), with the consumer\'s own voucher as proof', id: 'req-4', ts: TS + 120, ok: false,
+      body: { code: 'BAD_VOUCHER', message: 'cumulative 2500000000 is not above the last accepted 2500000000', data: { reason: 'stale', price: cB.charge.toString(), priceUSD, quote: quoteB, lastCumulative: v1.cumulative, onChainClaimed: '0', voucher: { cumulative: v1.cumulative, expires: v1.expires, sig: vOut[0].sig } } } },
+  ]
+  const envelopes = {
+    manifestExcerpt, container: CONTAINER, signerKey: SIGNER_KEY, signer: sig.privateKeyToAddress(SIGNER_KEY),
+    cases: envIn.map((c) => {
+      const env = { container: CONTAINER, id: c.id, method: 'search', params: { q: 'bem' }, ok: c.ok, body: c.body, ts: c.ts }
+      const digest = sig.responseDigest(env), pd = sig.personalDigest(digest), s = sig.signResponse(env, SIGNER_KEY)
+      return { name: c.name, id: c.id, request: { method: 'search', params: { q: 'bem' } }, ok: c.ok, ts: c.ts, body: c.body, canonicalBody: canonicalJSON(c.body), digest: toHex(digest), eip191Digest: toHex(pd), sig: s, recoversTo: sig.recoverResponseSigner(env, s) }
+    }),
+  }
+
+  const constructed = [
+    { name: 'USD token (18 decimals) is token0, BEM is token1; the division leaves a remainder, rounded toward negative infinity', pool: '0x00000000000000000000000000000000000B0010', bemIsToken0: false, usdDecimals: 18, window: 1800, tickCumulatives: ['1000000000000', String(1000000000000n - 230271n * 1800n + 7n)] },
+    { name: 'BEM is token0, USD token (6 decimals) is token1; negative delta with a remainder', pool: '0x00000000000000000000000000000000000B0011', bemIsToken0: true, usdDecimals: 6, window: 1800, tickCumulatives: ['-500000000', String(-500000000n - 45855n * 1800n + 5n)] },
+    { name: 'exact division, window 600', pool: '0x00000000000000000000000000000000000B0012', bemIsToken0: false, usdDecimals: 18, window: 600, tickCumulatives: ['0', String(-230250n * 600n)] },
+  ].map((s) => { const t = U.meanTick(s.tickCumulatives, s.window); return { ...s, meanTick: t.toString(), rate: Number(U.rateFromTick(t, s).toPrecision(12)) } })
+  const reference = U.median(constructed.slice(0, 2).map((s) => s.rate))
+  const fix18 = (x) => x.toFixed(18).replace(/0+$/, '').replace(/\.$/, '')
+  const rateSource = {
+    rule: 'meanTick = floor((c1 - c0) / window), toward negative infinity. p = 1.0001^meanTick (token1 base units per token0 base unit). If BEM is token0: rate = p * 10^(8 - d_U); if BEM is token1: rate = 1 / (p * 10^(d_U - 8)). The reference of several sources is their median (for two sources, their mean). A quote passes when rate * 10000 >= reference * (10000 - toleranceBps). Rates are compared with a relative tolerance of 1e-9; the reference may be computed in floating point (§4.5).',
+    constructed,
+    referenceOfFirstTwo: reference,
+    checks: [['1.5 % below the reference', 0.985, 200], ['2.5 % below the reference', 0.975, 200], ['2.5 % below the reference', 0.975, 300], ['10 % above the reference', 1.10, 200]]
+      .map(([name, f, toleranceBps]) => { const rate = fix18(reference * f); return { name, rate, toleranceBps, accepted: U.quotePasses(rate, reference, toleranceBps) } }),
+    recordedReads: {
+      note: 'observe([1800, 0]) on two PancakeSwap v3 pools on BNB Smart Chain, read 2026-10-08 with eth_call pinned to this block; two independent node operators (bsc-dataseed.bnbchain.org, rpc-bsc.48.club) returned the same values. Most public nodes no longer serve state at that block, so these reads cannot be repeated without an archive node.',
+      chainId: 56, block: 126412948, blockHash: '0xe8505604b895e7f04fe264785be3d86fcc4ddfc21a8cbf6b9e44c30a999a0de7',
+      reads: [
+        { pool: '0x3098D7A051045000d68eC0360753A40C8cABEa31', window: 1800, tickCumulatives: ['-1004931584399', '-1005405166621'] },
+        { pool: '0x2f5ec19ab0583D3FCd9bcbcD9AB416d2858EeA38', window: 1800, tickCumulatives: ['-1090302205490', '-1090775805779'] },
+      ].map((r) => ({ ...r, meanTick: U.meanTick(r.tickCumulatives, r.window).toString() })),
+    },
+  }
+  write('tapi-22-usd.json', {
+    tap: 'TAPI-22 §3.6 (experimental): prices in US dollars paid in BEM; the TAP draft "Payment Vouchers for Container Services" (TapeOutProtocol/TAPs#52) §3, §4, §6, §7', note,
+    conversion, voucher, envelopes, rateSource,
   })
 }

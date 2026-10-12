@@ -127,7 +127,8 @@ test('FIXED RPC2-3: a pinned X Layer resolution accepts a safe block 400 s old (
   const t0 = Math.floor(Date.now() / 1000)
   chain.state.headTime = t0
   // the fake chain's safe block is head − 40, so 40 s old at t0 / 假链的 safe 块为 head − 40，t0 时 40 秒旧
-  const client = (dt) => createTapeAPI({ chainId: 196, rpcUrls: ['http://rpc1', 'http://rpc2', 'http://rpc3'], quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch: chain.fetch, pin: true, clock: () => t0 + dt })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const client = (dt) => createTapeAPI({ conform: false, chainId: 196, rpcUrls: ['http://rpc1', 'http://rpc2', 'http://rpc3'], quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch: chain.fetch, pin: true, clock: () => t0 + dt })
   const target = { circuits: ADDR.circuits, tokenId: 4246, chainId: 196 }
   await assert.rejects(client(360).resolve(target), (e) => e.code === 'DELEGATION_INVALID')
   await assert.rejects(client(561).resolve(target), (e) => e.code === 'RPC_STALE' && e.data.ageS === 601 && e.data.maxAgeS === 600)
@@ -224,16 +225,16 @@ test('FIXED RPC2-5: createTapeAPI passes quiet to its rpc client and to the othe
   t.mock.method(console, 'warn', (...a) => { warned.push(a.join(' ')) })
   // Hosts used nowhere else: createRpc says it once per node set per process / 别处不用的主机名：每个节点集合每个进程只说一次
   const pair = (tag) => [`https://a-${tag}.rpc2-5.tapeapi-test.net`, `https://b-${tag}.rpc2-5.tapeapi-test.net`]
-  createTapeAPI({ rpcUrls: pair('loud'), quorum: 2, fetch: async () => json({}) })
+  createTapeAPI({ conform: false, rpcUrls: pair('loud'), quorum: 2, fetch: async () => json({}) })
   assert.equal(warned.length, 1, 'without quiet the notice is shown (the spy works)')
   assert.match(warned[0], /leaves no spare/)
-  createTapeAPI({ rpcUrls: pair('quiet'), quorum: 2, quiet: true, fetch: async () => json({}) })
+  createTapeAPI({ conform: false, rpcUrls: pair('quiet'), quorum: 2, quiet: true, fetch: async () => json({}) })
   assert.equal(warned.length, 1, 'quiet: true silences it')
   // X Layer through forChain, with the chain's own nodes (two operators) / 通过 forChain 的 X Layer（两家运营方）
-  const api = createTapeAPI({ rpcUrls: pair('home'), quorum: 2, quiet: true, fetch: async () => json({}), chains: { 196: { rpcUrls: pair('x1') } } })
+  const api = createTapeAPI({ conform: false, rpcUrls: pair('home'), quorum: 2, quiet: true, fetch: async () => json({}), chains: { 196: { rpcUrls: pair('x1') } } })
   api.forChain(196)
   assert.equal(warned.length, 1, 'the other chain\'s client is quiet too')
-  const loudSub = createTapeAPI({ rpcUrls: pair('home2'), quorum: 2, quiet: true, fetch: async () => json({}), chains: { 196: { rpcUrls: pair('x2'), quiet: false } } })
+  const loudSub = createTapeAPI({ conform: false, rpcUrls: pair('home2'), quorum: 2, quiet: true, fetch: async () => json({}), chains: { 196: { rpcUrls: pair('x2'), quiet: false } } })
   loudSub.forChain(196)
   assert.equal(warned.length, 2, 'chains[id].quiet: false overrides it for that chain')
 })

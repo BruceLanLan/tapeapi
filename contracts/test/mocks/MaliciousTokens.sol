@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 // ============================================================================================
-// Hostile-token family for the escrow (docs/research/RESEARCH-process-security.md 6.1 P0-3, Penpie / Curve lessons).
+// Hostile-token family for the escrow (internal research notes on security processes, 6.1 P0-3, Penpie / Curve lessons).
 // BEM is none of these (mainnet fork, docs/AUDIT-predeploy.md 389-398); they exist so that the escrow's behaviour
 // against each is PINNED by a test instead of assumed.
 // 恶意代币家族：BEM 不属于其中任何一种；它们的存在是为了用测试钉住托管对每一种的行为，而不是靠假设。

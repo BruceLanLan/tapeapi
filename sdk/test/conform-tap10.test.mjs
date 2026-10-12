@@ -1,8 +1,9 @@
 // The TAP-10 conformance mode, 1.4: the resolution path (createTapeAPI({ conform: 'tap10' }), pin: 'tap10',
-// api.siteStatus). docs/DESIGN-tap10-conform.md, rows 1-6, 9-11, 13-16 and 22 of the Opus draft's table. Offline: every
+// api.siteStatus): the resolution rules of TAP-10, one group of tests per rule. Offline: every
 // RPC goes to the conform chain (helpers/conform-chain.mjs), a fake chain that also answers the opener, the DomainBinding,
 // cpuCount and per-node heads, by address. GOLDEN TAP10-0 (default-mode-trace.test.mjs) pins that none of this changes
-// the default mode.
+// the 1.x resolution (the default mode before 2.0, conform: false since 2.0); GOLDEN TAP10-2.0 (conform-default-trace.test.mjs)
+// pins the 2.0 default.
 // TAP-10 一致模式 1.4：解析路径。全部离线：RPC 都发往 conform 链（在假链上按地址回答开通器、DomainBinding、cpuCount 与各节点头块）。
 // 默认模式不受影响由黄金测试 TAP10-0 钉住。
 import { test } from 'node:test'
@@ -54,7 +55,7 @@ test('conform: only the string \'tap10\'; it implies pin: \'tap10\' and refuses 
   assert.throws(() => conformApi(chain, { siteRegistry: ADDR.siteRegistry }), inv(/accepts only the siteRegistry proxies TAP-10 lists/))
   assert.throws(() => conformApi(chain, { binding: '0x' + '12'.repeat(20) }), inv(/accepts only the binding proxies/))
   assert.throws(() => conformApi(chain, { chainId: 97 }), inv(/./))
-  assert.throws(() => createTapeAPI({ pin: 'tap10', chainId: 97, rpcUrls: RPC, fetch: chain.fetch, quiet: true }), inv(/'tap10' needs a TapeOut chain/))
+  assert.throws(() => createTapeAPI({ conform: false, pin: 'tap10', chainId: 97, rpcUrls: RPC, fetch: chain.fetch, quiet: true }), inv(/'tap10' needs a TapeOut chain/))
   assert.deepEqual([56, 196, 8453].map((id) => CHAINS[id].tap10MaxPinLag), [400, 300, 150], 'TAP-10 §2.1 max pin lag')
   assert.deepEqual([56, 196, 8453].map((id) => CHAINS[id].maxPinLagBlocks), [266, 600, 150], 'the security-1.1 values are unchanged')
 })
@@ -293,8 +294,8 @@ test('TAP-10 §1: only a result or a revert is an answer; another JSON-RPC error
   const { chain, c } = world()
   const urls = [...RPC, 'http://rpc4']
   chain.setFault('http://rpc4', 'rpcerror')
-  // the default mode counts "node says no" (-32000) as an answer and refuses the read / 默认模式把它当回答并拒绝该读取
-  await assert.rejects(createTapeAPI({ rpcUrls: urls, fetch: chain.fetch, quiet: true, clock: () => T }).resolve('4246.7'), (e) => e.code === 'RPC_DISAGREE')
+  // the 1.x resolution (conform: false; the default mode before 2.0) counts "node says no" (-32000) as an answer and refuses the read / 1.x 的解析把它当回答并拒绝该读取
+  await assert.rejects(createTapeAPI({ conform: false, rpcUrls: urls, fetch: chain.fetch, quiet: true, clock: () => T }).resolve('4246.7'), (e) => e.code === 'RPC_DISAGREE')
   const svc = await conformApi(chain, { rpcUrls: urls }).resolve('4246.7')
   assert.equal(svc.container, c.container)
 })
@@ -358,11 +359,11 @@ test('the manifest: chunkCount 0 is no-manifest, no-hash, incomplete, a byte ord
     mutate(w)
     await assert.rejects(conformApi(w.chain).resolve('4246.7'), isStatus(code, status), what)
   }
-  // the default mode decodes leniently and drops a byte order mark (TAP-11 Backwards Compatibility) / 默认模式宽松解码
+  // the 1.x resolution (conform: false) decodes leniently and drops a byte order mark (TAP-11 Backwards Compatibility) / 1.x 的解析宽松解码
   const w = world()
   w.chain.writeFile(w.c.container, MANIFEST_KEY, Uint8Array.from([0xef, 0xbb, 0xbf, ...Buffer.from(JSON.stringify(manifestOf(w.c)))]))
   w.chain.setAccount(4246, w.c.container)
-  const svc = await createTapeAPI({ rpcUrls: RPC, fetch: w.chain.fetch, quiet: true, clock: () => T, sentinel: 'off' }).resolve('4246.7')
+  const svc = await createTapeAPI({ conform: false, rpcUrls: RPC, fetch: w.chain.fetch, quiet: true, clock: () => T, sentinel: 'off' }).resolve('4246.7')
   assert.equal(svc.container, w.c.container)
 })
 
@@ -390,9 +391,9 @@ test('activation is a site rule only: an unactivated container is unpaid to reso
 })
 
 // ── siteStatus in any mode / 任何模式下的 siteStatus ─────────────────────────────────────────────────────────────────
-test('api.siteStatus works on a default client too, returns every site status without throwing, and reads no manifest', async () => {
+test('api.siteStatus works on a conform: false (1.x) client too, returns every site status without throwing, and reads no manifest', async () => {
   const { chain, c } = world({ manifest: false })
-  const api = createTapeAPI({ rpcUrls: RPC, fetch: chain.fetch, quiet: true, clock: () => T })
+  const api = createTapeAPI({ conform: false, rpcUrls: RPC, fetch: chain.fetch, quiet: true, clock: () => T })
   let s = await api.siteStatus('#4246@7')
   assert.equal(s.status, 'ok'); assert.equal(s.container, c.container); assert.equal(s.name, '4246.7.tape'); assert.equal(s.pinned.maxLag, 400)
   assert.ok(!fnsOf(chain).includes('fileInfo'))
@@ -440,11 +441,11 @@ test('forChain passes the conformance mode on: Base and X Layer sub-clients read
 })
 
 // ── pin: 'tap10' alone, proofs, sentinel / 单独的 pin: 'tap10'、证明、哨兵 ─────────────────────────────────────────────
-test("pin: 'tap10' alone: the default resolution at a TAP-10 pinned block (no site status, no data.status)", async () => {
+test("pin: 'tap10' alone (conform: false): the 1.x resolution at a TAP-10 pinned block (no site status, no data.status)", async () => {
   const { chain, c } = world()
   chain.setAccount(4246, c.container)
   chain.setUnactivated()
-  const api = createTapeAPI({ pin: 'tap10', rpcUrls: RPC, fetch: chain.fetch, quiet: true, clock: () => T - 300 * 86_400, onWarning: () => {} })
+  const api = createTapeAPI({ conform: false, pin: 'tap10', rpcUrls: RPC, fetch: chain.fetch, quiet: true, clock: () => T - 300 * 86_400, onWarning: () => {} })
   const svc = await api.resolve('4246.7')
   assert.deepEqual({ ...svc.pinned, hash: undefined, timestamp: undefined }, { number: chain.state.block - 2, hash: undefined, timestamp: undefined, tag: 'tap10', by: 'hash', mode: 'tap10', lag: 2, maxLag: 400 })
   assert.equal(svc.conform, undefined)
@@ -485,9 +486,9 @@ test('every error of the conformance mode carries data.status; an outage is unav
   for (const u of RPC) chain.setFault(u, 'http500')
   await assert.rejects(conformApi(chain).resolve('4246.7'), isStatus('RPC_UNAVAILABLE', 'unavailable'))
   await assert.rejects(conformApi(chain).siteStatus('4246.7'), isStatus('RPC_UNAVAILABLE', 'unavailable'))
-  // the default mode's errors carry no data.status (GOLDEN TAP10-0 pins them all) / 默认模式的错误不带 data.status
+  // the 1.x resolution's errors (conform: false) carry no data.status (the conform: false golden test pins them all) / 1.x 解析的错误不带 data.status
   const f = createFakeChain()
-  await assert.rejects(createTapeAPI({ rpcUrls: RPC, fetch: f.fetch, quiet: true }).resolve('4246.8'), (e) => e.code === 'NOT_FOUND' && e.data === undefined)
+  await assert.rejects(createTapeAPI({ conform: false, rpcUrls: RPC, fetch: f.fetch, quiet: true }).resolve('4246.8'), (e) => e.code === 'NOT_FOUND' && e.data === undefined)
 })
 
 test('FIXED review-2: a contract whose token() names an out-of-range #ID is not-tapeout, a TapeAPIError, never a bare RangeError', async () => {
@@ -504,26 +505,39 @@ test('FIXED review-2: a contract whose token() names an out-of-range #ID is not-
   for (const tokenId of [0, 10n ** 18n + 1n, '1' + '0'.repeat(30)]) await assert.rejects(api.siteStatus({ circuits: c.circuits, tokenId }), isStatus('INVALID_ARGUMENT', 'input-error'))
 })
 
-test('FIXED review (regression): conform: undefined, null and false are the default mode, as 1.3 ignored them; a sub-client too', async () => {
+// 2.0: null and false are still accepted (1.3 ignored them, 1.4 made them the default mode) and are the 1.x resolution,
+// deprecated with one warning; undefined is the conformance mode since 2.0 (docs/guides/upgrade-2.0.md).
+// 2.0：null 与 false 仍然接受，是 1.x 的解析（弃用，警告一次）；undefined 自 2.0 起是一致模式。
+test('FIXED review (regression): conform: null and false are the 1.x resolution (deprecated in 2.0: one warning); undefined is the conformance mode since 2.0; a sub-client too', async () => {
   const { chain, c } = world()
   chain.setAccount(4246, c.container)
-  chain.setUnactivated()   // the default mode does not check activation / 默认模式不查激活
-  for (const conform of [undefined, null, false]) {
-    const api = createTapeAPI({ conform, rpcUrls: RPC, fetch: chain.fetch, quiet: true, clock: () => T, onWarning: () => {} })
+  chain.setUnactivated()   // the 1.x resolution does not check activation / 1.x 的解析不查激活
+  for (const conform of [null, false]) {
+    const warned = []
+    const api = createTapeAPI({ conform, rpcUrls: RPC, fetch: chain.fetch, quiet: true, clock: () => T, onWarning: (w) => warned.push(w) })
+    assert.deepEqual(warned.map((w) => [w.code, w.option]), [['DEPRECATED', 'conform']], String(conform))
     const svc = await api.resolve('4246.7')
+    assert.deepEqual(warned.length, 1, 'once, when the client is made; never on resolve')
     assert.equal(svc.conform, undefined, String(conform)); assert.equal(svc.pinned, undefined)
     await assert.rejects(api.resolve('#4246@7'), (e) => e.code === 'MANIFEST_INVALID' && e.data === undefined)
     // pin options that conform: 'tap10' refuses stay fine / conform: 'tap10' 拒绝的钉块选项照常可用
     assert.doesNotThrow(() => createTapeAPI({ conform, pin: false, rpcUrls: RPC, fetch: chain.fetch, quiet: true }))
     assert.doesNotThrow(() => createTapeAPI({ conform, pin: true, rpcUrls: RPC, fetch: chain.fetch, quiet: true }).forChain(8453))
   }
+  // undefined (left out): the conformance mode since 2.0, with its sub-clients; another pin is refused, naming conform: false
+  // undefined（不传）：2.0 起即一致模式，子客户端也是；别的钉块选项被拒，信息写明 conform: false
+  const warned = []
+  const api = createTapeAPI({ conform: undefined, rpcUrls: RPC, fetch: chain.fetch, quiet: true, clock: () => T, onWarning: (w) => warned.push(w) })
+  await assert.rejects(api.resolve('4246.7'), isStatus('SITE_STATUS', 'unpaid'))
+  assert.deepEqual(warned, [])
+  for (const pin of [false, true]) assert.throws(() => createTapeAPI({ pin, rpcUrls: RPC, fetch: chain.fetch, quiet: true }), (e) => e.code === 'INVALID_ARGUMENT' && /cannot be combined/.test(e.message) && /pass conform: false/.test(e.message))
 })
 
 test('isCPU in the conformance mode and siteStatus is read under the TAP-10 rule (only results and reverts are answers), at the pinned block', async () => {
   const { chain, c } = world()
   const urls = [...RPC, 'http://rpc4']
   chain.setFault('http://rpc4', 'rpcerror')   // -32000 "node says no": a node failure here, a disagreement under the default rule
-  for (const api of [conformApi(chain, { rpcUrls: urls }), createTapeAPI({ rpcUrls: urls, fetch: chain.fetch, quiet: true, clock: () => T })]) {
+  for (const api of [conformApi(chain, { rpcUrls: urls }), createTapeAPI({ conform: false, rpcUrls: urls, fetch: chain.fetch, quiet: true, clock: () => T })]) {
     const s = await api.siteStatus({ circuits: c.circuits, tokenId: 4246 })
     assert.equal(s.status, 'ok'); assert.equal(s.container, c.container)
   }

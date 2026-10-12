@@ -93,7 +93,7 @@ excuses the block, and then it tells you.
 
 Reading ChannelBus needs nodes that serve `eth_getLogs`, which the BNB Chain dataseed nodes refuse. Use the SDK's
 `BUS_RPC_URLS` (48 Club and 1RPC, which serve logs with at least 500,000 blocks of history, plus a dataseed for
-receipts) in a client of its own: `createRpc({ urls: BUS_RPC_URLS, quorum: 2, timeoutMs: 15000 })`. With these nodes
+receipts) in a client of its own: `createRpc({ urls: BUS_RPC_URLS, quorum: 2, rpcTimeoutMs: 15000 })`. With these nodes
 the reader read a real frame 73,700 blocks back (2026-09-27). The reader's tests include recorded answers from
 publicnode and the dataseed nodes. The relay transport does not depend on any of this.
 
@@ -111,7 +111,7 @@ when, or how much.
 ```js
 import { busPrivacy, channel, createRpc, BUS_RPC_URLS, MAINNET } from '@tapeapi/sdk'
 
-const rpc = createRpc({ urls: BUS_RPC_URLS, quorum: 2, timeoutMs: 15000 })
+const rpc = createRpc({ urls: BUS_RPC_URLS, quorum: 2, rpcTimeoutMs: 15000 })
 const reader = busPrivacy.busPrivacyReader({
   rpc, bus: MAINNET.channelBus,
   rooms: [channel.inboxRoom(myContainer)],
@@ -199,16 +199,19 @@ What it helps against, and what it does not:
 ## 7. Label versions (`labels`, since 1.8.1)
 
 At the request of the TAPs editors, private channels have a version 2,
-[TAPI-26 v2](../../spec/TAPI-26-v2.md) (Draft): the same channel, with
-labels that begin with `tape-channel/` instead of `TAP-26/`. Since 1.8.1 the SDK implements it as an option; the
-default stays version 1, byte for byte. In 2.0, v2 becomes the default.
+[TAPI-26 v2](../../spec/TAPI-26-v2.md) (Stable (v2) since 2.0.0): the same channel, with
+labels that begin with `tape-channel/` instead of `TAP-26/`. 1.8.1 added it as an option (`labels: 'v2'`); **from 2.0
+it is the default**, so code that passes no `labels` uses version 2. Version 1 is still there for peers on 1.x:
+`labels: 'v1'` selects it (deprecated in 2.x, not removed in 2.x).
 
 ```js
-const { invite, pending } = channel.createInvite({ self, peer, relays, labels: 'v2' })
-const { accept, session } = channel.acceptInvite({ self, peer, invite, labels: 'v2' })  // the responder is told the same
+const { invite, pending } = channel.createInvite({ self, peer, relays })   // version 2, the default
+const { accept, session } = channel.acceptInvite({ self, peer, invite })   // the responder uses the same version
 channel.roomsFor(pending.cid, { labels: pending.labels })   // where the initiator waits for the accept
-channel.inboxRoom(container, chainId, { labels: 'v2' })     // a container's v2 inbox room
-channel.sealInvite(invite, { to, labels: 'v2' })            // and openInvite(wire, { self, labels: 'v2' })
+channel.inboxRoom(container, chainId)                       // a container's v2 inbox room
+// a peer still on TapeAPI 1.x (where v1 is the default): both sides version 1 / 对端仍在 1.x：双方都用第 1 版
+channel.createInvite({ self, peer, relays, labels: 'v1' })
+channel.inboxRoom(container, chainId, { labels: 'v1' })     // the v1 inbox room, where 1.x posts sealed invites
 ```
 
 - **Both sides pass the same `labels`.** The invite does not say which version it is (it keeps `v: 1`). For an invite
@@ -220,6 +223,7 @@ channel.sealInvite(invite, { to, labels: 'v2' })            // and openInvite(wi
   was sealed: anyone can post to an inbox room, so it is no evidence that the sender is genuine or that you should
   switch.
 - **Check the version you got:** `pending.labels` and `session.labels`. An SDK older than 1.8.1 ignores the option and
-  has neither field.
-- `api.chain.channelKeys(...).inbox.room` is the v1 inbox room; for v2 use `channel.inboxRoom(container, chainId,
-  { labels: 'v2' })`. Channel records are the same in both versions.
+  has neither field; 1.8.1 and later 1.x use version 1 unless they pass `labels: 'v2'`. Upgrading one side to 2.0
+  therefore changes the version it speaks: see [Upgrading to 2.0](upgrade-2.0.md).
+- `api.chain.channelKeys(...).inbox.room` is the inbox room of the default version (v2 in 2.0, v1 in 1.x); for v1 use
+  `channel.inboxRoom(container, chainId, { labels: 'v1' })`. Channel records are the same in both versions.

@@ -2,6 +2,12 @@
 // Read-only live probe of the TAPI-20 resolve path on BNB Chain (chainId 56). Sends no transactions.
 // Usage: node scripts/probe-mainnet.mjs [circuits tokenId]   (default: TapeKit SPEC vector 4246 on processor #0)
 // 只读主网探针：走 SDK 的真实解析路径。不发送任何交易。
+//
+// 2.0: the client is the SDK default (the TAP-10 conformance mode), so `tapeSendKey` below also does the TAP-10 §13.8 hub
+// history scan, one more eth_getLogs. The default BSC nodes cannot serve that range, so on them the scan always degrades
+// (the hub is then judged by its implementation slot alone, and the result says hub.basis: 'slot'); this is expected, not an error.
+// 2.0：客户端是 SDK 默认（TAP-10 一致模式），所以下面的 `tapeSendKey` 还会做 TAP-10 §13.8 的中枢历史扫描，多一次 eth_getLogs。
+// 默认的 BSC 节点服务不了那段范围，所以在它们上这次扫描必然降级（中枢只按实现槽判断，结果里写 hub.basis: 'slot'）：这是预期，不是错误。
 import { createTapeAPI, createRpc, MANIFEST_PATH, MANIFEST_KEY, rpcUrlsFor } from '../sdk/src/index.js'
 import { keccak256 } from '../sdk/src/abi.js'
 import { createHash } from 'node:crypto'

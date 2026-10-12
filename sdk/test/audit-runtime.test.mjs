@@ -43,7 +43,7 @@ async function world({ providerPrice, chainPrice, handler = async () => ({ v: 1 
   const rpcCount = { n: 0 }
   const fetchImpl = cc.fetchWith(async (u, init) => { try { sent.push(JSON.parse(init.body)) } catch { /* */ } return fetch(u, init) })
   const counted = (u, init) => { if (String(u).startsWith('http://rpc')) rpcCount.n++; return fetchImpl(u, init) }
-  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true, fetch: counted, rpcTimeoutMs: 300 })
+  const api = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true, fetch: counted, rpcTimeoutMs: 300 })
   const payer = api.payer({ consumer, sessionKey: SESSION_KEY })
   return { cc, pc, provider, srv, url, api, payer, sent, rpcCount, close: () => new Promise((r) => srv.close(r)) }
 }
@@ -139,7 +139,7 @@ test('P-03: refresh() refuses a label that now points at a different (fully vali
   const w = await world({ providerPrice: '0', chainPrice: '0' })
   try {
     const DIR = ADDR.directory
-    const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, directory: DIR, escrow: ADDR.escrow, allowHttp: true, fetch: w.cc.fetchWith() })
+    const api = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, directory: DIR, escrow: ADDR.escrow, allowHttp: true, fetch: w.cc.fetchWith() })
     w.cc.register({ label: 'audit', container: ADDR.container, tokenId: 4246 })
     const svc = await api.resolve('audit')
     // A second, genuine service: its own token, container and valid manifest; the label is re-pointed to it.
@@ -164,7 +164,7 @@ test('I-07: failover after host 1 billed but its reply was lost -- host 2 (own s
     const host2 = `http://127.0.0.1:${s2.address().port}/tapeapi/v1`
     w.cc.writeFile(ADDR.container, MANIFEST_KEY, JSON.stringify(manifestAt('0.0001', [host1, host2])))
     const inner = w.cc.fetchWith()
-    const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true,
+    const api = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true,
       fetch: async (u, init) => {
         if (String(u).startsWith(host1)) { const r = await fetch(String(u).replace(host1, w.url), init); await r.arrayBuffer(); return new Response('<html>502 Bad Gateway</html>', { status: 502 }) }
         return inner(u, init)
@@ -186,7 +186,7 @@ test('P-04: a SIGNED error from host 1 ends the loop -- host 2 is never asked', 
     const host2 = 'http://host2.invalid/tapeapi/v1'
     w.cc.writeFile(ADDR.container, MANIFEST_KEY, JSON.stringify(manifestAt('0', [w.url, host2])))
     const inner = w.cc.fetchWith()
-    const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true,
+    const api = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true,
       fetch: (u, init) => { if (String(u).startsWith(host2)) { host2Hits++; return Promise.reject(new Error('should not be called')) } return inner(u, init) } })
     const svc = await api.resolve(ADDR.container)
     await assert.rejects(api.call(svc, 'quote', {}), (e) => e.code === 'BAD_REQUEST' && e.signed === true)
@@ -200,7 +200,7 @@ test('I-08: host 1 answers a non-JSON 429 and host 2 is unreachable -> reported 
     const h1 = 'http://h1.invalid/tapeapi/v1', h2 = 'http://h2.invalid/tapeapi/v1'
     w.cc.writeFile(ADDR.container, MANIFEST_KEY, JSON.stringify(manifestAt('0', [h1, h2])))
     const inner = w.cc.fetchWith()
-    const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true,
+    const api = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true,
       fetch: async (u, init) => {
         if (String(u).startsWith(h1)) return new Response('Too Many Requests', { status: 429 })
         if (String(u).startsWith(h2)) throw new TypeError('fetch failed')

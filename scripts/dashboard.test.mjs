@@ -220,3 +220,23 @@ test('FIXED P2-F12: the browser smoke test loads "My services", the status page 
   for (const d of [...withModule, 'status']) assert.ok(listed.has(d), `scripts/browser-smoke/smoke.mjs PAGES lacks ${d}`)
   assert.ok(existsSync(join(ROOT, 'scripts/browser-smoke/probe.mjs')))
 })
+
+// 2.0: the pages run the SDK default (the TAP-10 conformance mode), whose errors name the outcome in e.data.status. The dashboard
+// and the playground show a hint per status (both languages), and the dashboard retries a read that could not be adopted.
+// 2.0：页面跑 SDK 默认（TAP-10 一致模式），其错误在 e.data.status 里说明结果。面板与调试台对每个 status 给出提示（中英都有），
+// 面板对读不到的结果重试。
+test('2.0: dashboard and playground have a hint for each TAP-10 status in both languages, looked up by status before code', () => {
+  for (const page of ['dashboard/dashboard.js', 'playground/playground.js']) {
+    const src = read(page)
+    for (const key of ['unavailable', 'unpaid', "'not-opened'", "'store-changed'", 'unsupported']) {
+      assert.equal(src.split(new RegExp(`^      ${key}: `, 'm')).length - 1, 2, `${page}: hint ${key} in zh and en`)
+    }
+    for (const key of ['SITE_STATUS', 'CONTRACT_UNKNOWN', 'INVALID_ARGUMENT', 'RPC_STALE']) {
+      assert.equal(src.split(new RegExp(`^      ${key}: `, 'm')).length - 1, 2, `${page}: hint ${key} in zh and en`)
+    }
+    assert.match(src, /T\[lang\]\.hints\[e\.data\?\.status\] \?\? T\[lang\]\.hints\[e\.code\]/, `${page}: status first, then code`)
+  }
+  assert.match(js, /const transient = .*e\.data\?\.status === 'unavailable'.*e\.data\?\.status === 'stale-block'/)
+  assert.doesNotMatch(js, /conform/, 'the dashboard takes the SDK default: no conform option')
+  assert.doesNotMatch(read('playground/playground.js') + read('verify/verify.js'), /createTapeAPI\([^)]*conform/)
+})

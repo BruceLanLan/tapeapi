@@ -39,7 +39,7 @@ export const LANGS = {
 export const GROUPS = [
   { en: 'Getting started', zh: '开始', pages: ['index', 'public-api', 'mcp', 'consume', 'provide', 'ai-providers'] },
   { en: 'Features', zh: '功能', pages: ['channels', 'groups', 'agents', 'container-agents'] },
-  { en: 'Help', zh: '帮助', pages: ['faq', 'upgrade-1.0', 'changelog'] },
+  { en: 'Help', zh: '帮助', pages: ['faq', 'upgrade-1.0', 'upgrade-2.0', 'changelog'] },
 ]
 const SOURCES = {
   index: { en: 'docs/guides/introduction.md', zh: 'docs/guides/zh-CN/introduction.md' },
@@ -54,6 +54,7 @@ const SOURCES = {
   'container-agents': { en: 'docs/guides/container-agents.md', zh: 'docs/guides/zh-CN/container-agents.md' },
   faq: { en: 'docs/guides/faq.md', zh: 'docs/guides/zh-CN/faq.md' },
   'upgrade-1.0': { en: 'docs/guides/upgrade-1.0.md', zh: 'docs/guides/zh-CN/upgrade-1.0.md' },
+  'upgrade-2.0': { en: 'docs/guides/upgrade-2.0.md', zh: 'docs/guides/zh-CN/upgrade-2.0.md' },   // draft until 2.0 / 2.0 发布前为草稿
   changelog: { en: 'CHANGELOG.md', zh: 'CHANGELOG.md' },
 }
 const ORDER = GROUPS.flatMap((g) => g.pages)

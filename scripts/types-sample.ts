@@ -9,6 +9,8 @@ import {
   type ResolvedService, type CallResult, type TapeAPI, type Rpc,
 } from '@tapeapi/sdk'
 import { TAP10_SEALS, TAP10_MAX_CHAIN_ID, tapesend } from '@tapeapi/sdk'   // 1.5
+import { type ConformOff, CONFORM_PROFILE } from '@tapeapi/sdk'   // 2.0
+import { TAP10_HUB_BOOT, TAP10_HUB_HISTORY, type Tap10UpgradedScan } from '@tapeapi/sdk'   // T-b, §13.8 Upgraded logs
 import { formatPaymentAmount, PAYMENT_TOKENS, AUDITED_ESCROWS, type PaymentToken } from '@tapeapi/sdk'   // escrow v3, experimental
 import { exposeTapeAPI, manifestToTools } from '@tapeapi/sdk/webmcp'
 import { createInvite, acceptInvite, completeInvite, generateIdentity, fanIn } from '@tapeapi/sdk/channel'
@@ -17,6 +19,8 @@ import { canonicalJSON } from '@tapeapi/sdk/canon'
 import { validateManifest, validateAgentMember, type AgentMember } from '@tapeapi/sdk/manifest'
 import * as agentKit from '@tapeapi/sdk/agent'
 import { createAgentKit, createPaymentKit, paymentOrder, mandateTypedData, encodeContent, decodeContent, type Mandate, type ThreadCheck, type MandateCheck, type AttachmentCheck, type ThreadMessage } from '@tapeapi/sdk/agent'
+import * as reviews from '@tapeapi/sdk/review'
+import { createReviewKit, makeReview, signReview, summarizeReviews, type ReviewResult, type ReviewSummary, type ReviewRecord } from '@tapeapi/sdk/review'
 import { voucherDigest } from '@tapeapi/sdk/sig'
 import { encodeCall } from '@tapeapi/sdk/abi'
 import { createRpc as createRpc2 } from '@tapeapi/sdk/rpc'
@@ -64,12 +68,14 @@ async function consumer(): Promise<void> {
   const labels: string | undefined = PAYMENT_TOKENS[56]?.[tok.token.toLowerCase()]?.label
   const audited: readonly string[] = AUDITED_ESCROWS[56] ?? []
   void [shown, accrued, claim.data, labels, audited, abi.eventTopic('TreasuryClaimed'), await api.chain.escrow.token()]
+  const setAll: { txs: Array<{ to: string; data: string }>; escrows: string[] } = api.tx.setContributionAll({ circuits: svc.manifest.circuits, tokenId: 1, bps: 0, escrows: audited })
+  void setAll
   const pub = api.tx.publishManifest({ container: svc.container, manifest: svc.manifest })
   const rpc: Rpc | null = api.rpc
   const head: number | undefined = await rpc?.blockNumber()
   const container: string = await api.chain.accountOf(MAINNET.hub, 1)
   const keys = await api.chain.channelKeys(container)
-  const bus = createRpc({ urls: [...BUS_RPC_URLS], quorum: 2, timeoutMs: 15000 })
+  const bus = createRpc({ urls: [...BUS_RPC_URLS], quorum: 2, rpcTimeoutMs: 15000 })   // timeoutMs, the older name, below
   const rpc2 = createRpc2({ urls: ['http://a', 'http://b'] })
   const reader = busPrivacyReader({ rpc: bus, bus: MAINNET.channelBus, rooms: [channel.inboxRoom(container)], cover: { k: 8, store: new Map() }, contract: { onExceed: 'cover' } })
   reader.add('00'.repeat(32), (wire, { room }) => { void wire.length; void room.length })
@@ -332,6 +338,28 @@ async function conform14() {
 }
 void conform14
 
+// 2.0: the conformance mode is the default; conform: false (or null) is the deprecated 1.x resolution (ConformOff)
+// 2.0：一致模式是默认；conform: false（或 null）是已弃用的 1.x 解析
+function conform20() {
+  const byDefault = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })
+  const legacy = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: false, pin: 'latest', onWarning: (w) => { if (w.code === 'DEPRECATED') { const opt: unknown = w.option; void opt } } })
+  const off: ConformOff = null
+  const alsoLegacy = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: off })
+  void [byDefault, legacy, alsoLegacy]
+}
+void conform20
+
+// 2.0: the texts the conformance mode resolves by (CONFORM_PROFILE, svc.conform.profile) / 一致模式依据的文本版本
+async function conformProfile20() {
+  const svc = await createTapeAPI({ rpcUrls: rpcUrlsFor(56) }).resolve('11.1013.tape')
+  const p: 'tap10@1.1+tap11@draft' = CONFORM_PROFILE
+  const seen: typeof CONFORM_PROFILE | undefined = svc.conform?.profile
+  const asText: string | undefined = svc.conform?.profile
+  const v: '1.1' | undefined = svc.conform?.version
+  void [p, seen, asText, v, seen === CONFORM_PROFILE]
+}
+void conformProfile20
+
 // @experimental 1.5: the conformance mode's messaging path / 一致模式的消息路径
 async function conform15() {
   const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: 'tap10', sealStatusStore: new Map<string, unknown>() })
@@ -339,6 +367,12 @@ async function conform15() {
   const key: string = k.staticPublic
   const sealed: boolean | undefined = k.tap10?.seal.factory
   const block: number | undefined = k.tap10?.pinned.number
+  const basis: 'slot' | 'slot+logs' | undefined = k.tap10?.hub.basis
+  const scan: Tap10UpgradedScan | undefined = k.tap10?.hub.upgraded
+  const named: string[] = scan?.status === 'ok' ? scan.implementations : []
+  const why: string | undefined = scan?.status === 'unavailable' ? scan.reason : undefined
+  const from: number = TAP10_HUB_HISTORY[56].createdAt
+  void [basis, named, why, from, TAP10_HUB_BOOT, TAP10_HUB_HISTORY[56].listed[0]]
   const rec = await api.chain.channelKeys('0x86DDaEF00401E3F10418398D67D7189fc458eA95')
   const accepted: boolean | undefined = rec.tap10?.implementations[0]?.accepted
   const beacon: string = TAP10_SEALS[56].circuitBeacon
@@ -374,7 +408,8 @@ async function agent17() {
   const typed = mandateTypedData(56, MAINNET.hub, m, { task: { kind: 'x' } })
   const w: agentKit.WalletRequest = agentKit.forWallet(typed, { chainId: 56, hub: MAINNET.hub })
   const fileBytes: Uint8Array = agentKit.revocationFileBytes({ chainId: 56, revocation: { principal: m.principal, mandateHashes: [], revokedBefore: 0, issued: 1 }, sig: '0x' })
-  void [w, fileBytes]
+  const resolution: 'tap10' | 'client' | 'caller' = kit.resolution   // 1.9: how the agent and providers are resolved
+  void [w, fileBytes, resolution]
   const checked: MandateCheck = await kit.verifyMandate({ mandate: m, sig: '0x' }, { agentKey: m.agentKey, readSite: true })
   const none: 'none' = checked.enforcement
   const msgs: ThreadMessage[] = []
@@ -396,8 +431,114 @@ async function agent17() {
 }
 void agent17
 
-// 1.8.1: TAPI-26 / TAPI-27 version 2 labels (tape-channel/, tape-group/), opt-in; both sides pass the same.
-// 1.8.1：TAPI-26 / TAPI-27 第 2 版标签（tape-channel/、tape-group/），可选；双方传同样的值。
+// @experimental phase 1 (internal, local chains only): the escrow-channel switch, the phase-1 payload and the holder's plan
+// 阶段 1（内部，仅本地链）：escrow-channel 开关、阶段 1 载荷与持有人交易计划
+async function agentPhase1() {
+  const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })
+  const kit = createAgentKit(api, { clock: () => 1789000000, allowEscrows: ['0x' + 'e1'.repeat(20)] })
+  const m: Mandate = { principal: '0x86DDaEF00401E3F10418398D67D7189fc458eA95', agent: '0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3', agentKey: '0x' + '77'.repeat(20), mode: agentKit.MODE_SPEND, taskHash: agentKit.taskHashOf({ kind: 'x' }), scope: [{ provider: '0x' + '5e'.repeat(20), token: '0x' + 'b0'.repeat(20), cap: '100000000' }], feeToken: '0x' + '00'.repeat(20), feeCap: '0', notBefore: 1, expires: 2, nonce: '1', subdelegate: false }
+  const typed = mandateTypedData(56, MAINNET.hub, m, { enforcement: 'escrow-channel', decimals: { ['0x' + 'b0'.repeat(20)]: 8 } })
+  const shown: string | undefined = typed.display?.amounts?.[0]?.display
+  const w: agentKit.WalletRequest = agentKit.forWallet(typed, { chainId: 56, hub: MAINNET.hub, enforcement: 'escrow-channel', decimals: {} })
+  const plain: MandateCheck = await kit.verifyMandate({ mandate: m, sig: '0x' })
+  const r = await kit.verifyMandate({ mandate: m, sig: '0x' }, { enforcement: 'escrow-channel', fundingPath: 'holder' })
+  const e: 'none' | 'escrow-channel' = r.enforcement
+  if (r.phase === 1) { const s: agentKit.ChannelReading[] | undefined = r.scope; const ws: agentKit.AgentProblem[] = r.warnings; const b: 'channel' = r.bound; void [s, ws, b] }
+  const t = await kit.verifyTaskThread([], { enforcement: 'escrow-channel' })
+  const te: 'none' | 'escrow-channel' = t.enforcement
+  const plan: agentKit.EscrowPlan = agentKit.escrowPlan(m, { chainId: 56, holder: '0x' + '11'.repeat(20), providers: [{ provider: '0x' + '5e'.repeat(20), escrow: '0x' + 'e1'.repeat(20), token: '0x' + 'b0'.repeat(20) }], allowEscrows: ['0x' + 'e1'.repeat(20)] })
+  const first: string = plan.steps[0].tx.data
+  const probs: agentKit.AgentProblem[] = agentKit.phase1Problems(agentKit.normalizeMandate(m))
+  const warns: agentKit.AgentProblem[] = agentKit.phase1Warnings(agentKit.normalizeMandate(m)); void warns
+  const live: boolean = agentKit.withdrawRequestLive(1789000000, 1789000001) && agentKit.WITHDRAW_COOLDOWN_S + agentKit.WITHDRAW_WINDOW_S > 0
+  const withFee = await kit.verifyMandate({ mandate: m, sig: '0x' }, { enforcement: 'escrow-channel', fundingPath: 'container', feeDue: '5' })
+  if (withFee.phase === 1 && withFee.fee) { const k: number | null = withFee.fee.agentKeySession; void k }
+  void [live]
+  // M3: the facts, the session history, the close-out and the read-back / M3：事实、会话历史、收尾与读回
+  const path: agentKit.FundingPath = agentKit.DEFAULT_FUNDING_PATH
+  const hist: agentKit.SessionHistory = agentKit.sessionHistory(plan.record)
+  const p2: agentKit.EscrowPlan = agentKit.escrowPlan(m, { chainId: 56, path, holder: '0x' + '11'.repeat(20), currentHolder: '0x' + '11'.repeat(20), providers: [{ provider: '0x' + '5e'.repeat(20), escrow: null, token: null, escrowCode: true, session: 0, claimed: 0n, otherPath: { channel: '0', session: 0 } }], history: hist.entries(), hub: MAINNET.hub, now: 1 })
+  const close: agentKit.CloseOutPlan = agentKit.closeOutPlan(m, { chainId: 56, holder: '0x' + '11'.repeat(20), now: 1, channels: [{ provider: '0x' + '5e'.repeat(20), escrow: '0x' + 'e1'.repeat(20), channel: '5', pending: null }] })
+  const applied: agentKit.PlanApplied = agentKit.planApplied(plan, m, { allowances: [], channels: [{ provider: '0x' + '5e'.repeat(20), channel: '1', session: 2, claimed: '0' }] })
+  const startAt: string | null | undefined = plan.record[0]?.claimedAtPlan
+  const entry: agentKit.SessionEntry = agentKit.sessionEntry(plan.record[0])
+  void [p2, close, applied, entry, agentKit.FUNDING_PATHS, agentKit.EXECUTE_FEE_SELECTOR]
+  // M4: the spend limiter / M4：花费限额器
+  const casStore: agentKit.SpendStore = { get: (k: string) => k, set: (_k: string, _v: string, o?: { ifSeq: number | null }) => o?.ifSeq !== 1 }
+  const lim: agentKit.SpendLimiter = agentKit.createSpendLimiter({ store: casStore })
+  const rec: agentKit.SpendRecord = await lim.start({ chainId: 56, check: r })
+  const dec: agentKit.SpendDecision = agentKit.spendDecision(rec, { chainId: 56, provider: '0x' + '5e'.repeat(20), escrow: '0x' + 'e1'.repeat(20), consumer: '0x' + '11'.repeat(20), cumulative: 1n, price: '1', now: 1 })
+  if (!dec.ok) { const why: string = dec.refused; void why }
+  const lp: agentKit.LimitedPayer = lim.payer({ chainId: 56, payer: api.payer({ consumer: '0x' + '11'.repeat(20), sessionKey: '0x' + '77'.repeat(32) }) })
+  const seq: number = rec.seq
+  // the per-call ceiling: one amount, one per provider, or the default / 单次上限：一个数、按 provider，或默认值
+  const lp2: agentKit.LimitedPayer = lim.payer({ chainId: 56, payer: api.payer({ consumer: '0x' + '11'.repeat(20), sessionKey: '0x' + '77'.repeat(32) }), maxPrice: { ['0x' + '5e'.repeat(20)]: 10n } })
+  const pct: 10 = agentKit.SPEND_DEFAULT_CALL_PRICE_PERCENT
+  // the key vault / 钥匙保险箱
+  const vault: agentKit.KeyVault = agentKit.passphraseKeyVault({ passphrase: 'correct horse battery staple' })
+  const blob: string = await vault.seal(new Uint8Array(32), { context: agentKit.spendKeyContext(56, '0x' + '11'.repeat(20)) })
+  const opened: Uint8Array = agentKit.keyVaultOpen(await agentKit.keyVaultKey('correct horse battery staple', agentKit.keyVaultParse(blob).salt), blob, { context: 'x' })
+  void [opened, agentKit.KEY_VAULT_SCRYPT.N, agentKit.KEY_VAULT_PREFIX]
+  // resuming after a restart / 重启后恢复
+  const limR: agentKit.SpendLimiter = agentKit.createSpendLimiter({ store: casStore, vault })
+  await limR.keepKey({ chainId: 56, agentKey: '0x' + '11'.repeat(20), secret: '0x' + '77'.repeat(32) })
+  const resumed = await limR.resume({ chainId: 56, agentKey: '0x' + '11'.repeat(20), check: r })
+  const sk: string = resumed.secret
+  const rs = agentKit.spendResume(null, { chainId: 56, agentKey: '0x' + '11'.repeat(20), key: 'missing' })
+  if (!rs.ok) { const why: string = rs.refused; void why }
+  await limR.forgetKey({ chainId: 56, agentKey: '0x' + '11'.repeat(20) })
+  void [sk, agentKit.SPEND_RESUME_REFUSALS]
+  void [lp, lp2, pct, seq, agentKit.SPEND_REFUSALS, agentKit.spendRecheck(rec, r).stop]
+  // M7: the spend statement and its reconciliation / M7：花费说明与对账
+  const stmt: agentKit.SpendStatementEntry[] = agentKit.spendStatement(rec, r)
+  const se = agentKit.spendEvidence(stmt, { mandate: m, calls: [{ provider: '0x' + '5e'.repeat(20), method: 'read', ok: true }], readings: r.phase === 1 ? r.scope ?? null : null, prices: { ['0x' + '5e'.repeat(20)]: { read: '10' } } })
+  const rc: 'equal' | 'above' | 'below' | null | undefined = se.items[0]?.reconciled
+  const evc: agentKit.EvidenceCheck = await kit.verifyEvidence({ receipts: [], receiptsHash: '0x' + '00'.repeat(32), spend: stmt }, { mandate: m, enforcement: 'escrow-channel', scope: r.phase === 1 ? r.scope : undefined })
+  const spendWarn: agentKit.AgentProblem[] | undefined = evc.spend?.warnings
+  void [rc, spendWarn, agentKit.SPEND_EVIDENCE_PROBLEMS, agentKit.SPEND_EVIDENCE_WARNINGS]
+  const kp = await kit.holderPlan(m, { holder: '0x' + '11'.repeat(20), path: 'container', history: hist.entries(), maxExecuteFee: 200000000000000n })
+  const feeAll: string | undefined = kp.fees?.total
+  const fee: string | null | undefined = kp.facts.executeFee
+  const kc = await kit.closeOut(m, { holder: '0x' + '11'.repeat(20), escrows: { ['0x' + '5e'.repeat(20)]: '0x' + 'e1'.repeat(20) }, history: kp.record, fullRequest: true })
+  const replaced: { amount: string; requestedAt: number } | undefined = kc.items[0]?.replaces
+  const bal: string | number | bigint | undefined = kp.facts.holderBalance
+  const ka = await kit.afterPlan(kp, m)
+  const logs: agentKit.SessionEntry[] = await kit.sessionLogs({ escrow: '0x' + 'e1'.repeat(20), consumer: '0x' + '11'.repeat(20), fromBlock: 1, toBlock: 2 })
+  // review p1m3 recheck 3: whether a history was given at all / 是否给了历史
+  const checkedHistory: boolean = kp.checked.history && kc.checked.history && close.checked.history
+  const recordBlock: number | null | undefined = kp.record[0]?.block
+  const ks = await kit.holderPlan(m, { holder: '0x' + '11'.repeat(20), history: [], signed: { mandate: m, sig: '0x' + '11'.repeat(65) } })
+  const kSigner: string | null | undefined = ks.facts.signer
+  const checkedSigner: boolean = ks.checked.signer
+  void [kSigner, checkedSigner, agentKit.escrowPlan(m, { chainId: 56, holder: '0x' + '11'.repeat(20), providers: [], signer: null })]
+  const pinned: agentKit.EscrowPlan = agentKit.escrowPlan(m, { chainId: 56, holder: '0x' + '11'.repeat(20), providers: [], pinBlock: 1 })
+  void [recordBlock, pinned]
+  // @ts-expect-error the kit's holderPlan needs history ([] when the console has none)
+  void kit.holderPlan(m, { holder: '0x' + '11'.repeat(20) }).catch(() => null)
+  // @ts-expect-error the kit's closeOut too
+  void kit.closeOut(m, { holder: '0x' + '11'.repeat(20) }).catch(() => null)
+  void [fee, kc.pin.hash, ka.ok, logs, checkedHistory]
+  void [shown, w, plain, e, te, first, probs, agentKit.ENFORCEMENT_ESCROW_CHANNEL, agentKit.MANDATE_ESCROW_CHANNEL_WARNING, agentKit.MAX_SESSION_S, agentKit.ESCROW_PLAN_PATHS]
+}
+void agentPhase1
+
+// @experimental USD pricing (TAP draft "Payment Vouchers", TAPs#52): the SDK namespace, the client options, the server options.
+import { usdPricing } from '@tapeapi/sdk'
+import { memoryQuoteStore, type QuoteStore } from '@tapeapi/server'
+export async function usdPricingSample(): Promise<void> {
+  const c = usdPricing.convertUsd({ priceUSD: '0.01', rate: '0.0004', priceBEM: '100' })
+  const charge: bigint = c.charge
+  const up = usdPricing.validateUsdPricing({ methods: [], usdPricing: {} }, { usdTokens: null })
+  const q = usdPricing.validateQuote({ rate: '1', asOf: 1, validUntil: 2 }, { maxQuoteS: 120, ts: 1 })
+  const rec = usdPricing.chargeRecord({ consumer: '0x' + '11'.repeat(20), cumulative: 1n, amount: 1n })
+  const api = createTapeAPI({ usdPricing: { toleranceBps: 100, approve: async ({ charge: x }) => x < 10n ** 10n }, settlementFacts: { amountPaid: async () => 0n } })
+  const store: QuoteStore = memoryQuoteStore()
+  await store.put(q, '0x' + '22'.repeat(20))
+  void [charge, up?.maxQuoteS, rec.amount.amount, api, usdPricing.BAD_VOUCHER_REASONS[0], sig.recoverVoucherSigner]
+}
+
+// 1.8.1: TAPI-26 / TAPI-27 version 2 labels (tape-channel/, tape-group/), opt-in; the default from 2.0. Both sides pass the same.
+// 1.8.1：TAPI-26 / TAPI-27 第 2 版标签（tape-channel/、tape-group/），可选；2.0 起为默认。双方传同样的值。
 async function labelsV2(): Promise<void> {
   const labels: channel.Labels = 'v2'
   const a = generateIdentity(), b = generateIdentity()
@@ -417,6 +558,33 @@ async function labelsV2(): Promise<void> {
   const member: group.GroupHandle = group.joinGroup({ self: { container: MAINNET.factory }, identity: me, invite: group.openGroupInvite(wire, { self: {}, labels }), ownerKeys: {}, labels })
   const api = createTapeAPI({})
   const found: GroupInviteCheck = await checkGroupInvites({ self: { container: MAINNET.factory }, identity: me, relayClients: [{ api, service: await api.resolve('12.1013.tape') }], labels })
-  void [listen.toInitiator, inbox, v, snap.labels, resumed.group.labels, room, member.labels, found.room, v3, v1snap]
+  // 2.0: v2 is the default; 'v1' (deprecated) still type-checks for channels and groups with 1.x peers
+  // 2.0：默认 v2；'v1'（已弃用）对与 1.x 对端的通道和群仍可通过类型检查
+  const dflt = createInvite({ self: { container: MAINNET.hub, staticSecret: a.x25519.secretKey }, peer: { container: MAINNET.factory, staticPublic: b.x25519.publicKey } })
+  const old = createInvite({ self: { container: MAINNET.hub, staticSecret: a.x25519.secretKey }, peer: { container: MAINNET.factory, staticPublic: b.x25519.publicKey }, labels: 'v1' })
+  const oldInbox: string = channel.inboxRoom(MAINNET.factory, 56, { labels: 'v1' })
+  void [listen.toInitiator, inbox, v, snap.labels, resumed.group.labels, room, member.labels, found.room, v3, v1snap, dflt.pending.labels, old.pending.labels, oldInbox]
 }
 void labelsV2
+
+// @experimental (internal, draft TAPs #54): evidence-backed reviews between containers / 评价记录（实验，内部）
+async function reviews54() {
+  const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })
+  const kit = createReviewKit(api, { clock: () => 1789000000, eip1271: true })
+  const reviewer = reviews.endpointId(56, '0x86DDaEF00401E3F10418398D67D7189fc458eA95')
+  const id: string = reviews.reviewRequestId('0x86DDaEF00401E3F10418398D67D7189fc458eA95')
+  const { review, text } = makeReview({ reviewer, reviewee: { chainId: 8453, container: '0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3' }, score: 5, text: { body: 'fast', tags: ['fast'] }, issued: 1 })
+  const record: ReviewRecord = { review, sig: signReview(review, '0x' + '11'.repeat(32)), text }
+  const typed = reviews.reviewTypedData(review, { revieweeName: '12.1013.tape', text })
+  const r: ReviewResult = await kit.verifyReview(record)
+  const offline: ReviewResult = await reviews.checkReview(record, { holders: {} }, { now: 1 })
+  const file = await kit.readReviewFile('0x86DDaEF00401E3F10418398D67D7189fc458eA95', { reviewee: review.reviewee })
+  const sent = await kit.readReviewMessages({ chainId: 8453, container: '0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3' }, { chainId: 56, limit: 10 })
+  const s: ReviewSummary = summarizeReviews([...file.items, ...sent.items, { record, result: r }])
+  const bytes: Uint8Array = reviews.reviewFileBytes([record])
+  const content: Uint8Array = reviews.reviewMessageContent(record, { body: 'a review' })
+  const level: 0 | 1 | 2 = offline.level
+  const wallet = sent.items[0]?.carriage?.walletDiffersFromHolder
+  void [id, typed.primaryType, s.level1.scores, bytes, content, level, wallet, reviews.REVIEW_PROBLEMS, reviews.REVIEWS_KEY]
+}
+void reviews54

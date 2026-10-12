@@ -147,8 +147,9 @@ Set `priceBEM` on a method and name an escrow in `payment`. The runtime verifies
 refuses anything below the price. Every endpoint of one paid service must share one atomic meter store (D1 on
 Cloudflare, see [`examples/cloudflare-worker/`](../../examples/cloudflare-worker/)), or the same voucher could be served
 twice. A settler submits vouchers to the escrow in batches. (Experimental, not deployed: the escrow planned for audit holds one
-token per instance and starts with the USDT-pegged token. The default pricing unit will be USDT and escrowed amounts are read
-from the token's own `decimals()`, not BEM's 8; `priceBEM` is unchanged and is still the only per-call price field. Which
+token per instance and starts with BEM, so the first instance's unit is the one `priceBEM` uses (10⁻⁸ BEM); the
+USDT-pegged token and WBNB are planned on demand. Escrowed amounts are read from the token's own `decimals()`, never
+hard-coded to BEM's 8; `priceBEM` is unchanged and is still the only per-call price field. Which
 tokens and why: [`docs/FEES.md`](../FEES.md).) Until a manifest can price in another token, the SDK refuses to fund or
 pay a service whose escrow holds anything but BEM (`UNSUPPORTED_PAYMENT_TOKEN`; the escrow contract itself takes any
 admitted token, the manifest's multi-token pricing is not yet specified), and it builds `approve` and `fund` only for an
@@ -158,7 +159,9 @@ At settlement, a maintenance contribution comes out of your share, never out of 
 1% (100 bps, a constant in the escrow). You can set it to 0 to turn it off, or to anything up to 20%, for your own
 service with `api.tx.setContribution({ circuits, tokenId, bps })`, sent from the circuit holder's wallet. A service at 0
 gets exactly the same treatment. See [`docs/FEES.md`](../FEES.md). Each escrow instance keeps its own setting: with
-several instances, set it on each (`escrow` option), and `tapeapi-doctor --escrows <a,b>` notes when they differ.
+several instances, set it on each (`escrow` option) or on all of them at once with
+`api.tx.setContributionAll({ circuits, tokenId, bps, escrows })` (one transaction per instance; experimental), and
+`tapeapi-doctor --escrows <a,b>` notes when they differ.
 
 > The escrow is not deployed on mainnet yet. Paid methods run against the examples today, and nothing is charged. The
 > reference escrow in the repository already applies the 1% default; it is not audited.

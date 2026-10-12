@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs'
 import { createTapeAPI, MANIFEST_KEY, MAINNET, CHAINS, IMPL_SLOT, TapeAPIError, security, createRpc } from '../src/index.js'
 import * as sig from '../src/sig.js'
 import { createFakeChain, ADDR } from './helpers/fake-chain.mjs'
+import { createConformChain } from './helpers/conform-chain.mjs'
 
 const HOLDER_KEY = '0x' + '11'.repeat(32), SIGNER_KEY = '0x' + '22'.repeat(32), OTHER_KEY = '0x' + '33'.repeat(32)
 const holder = sig.privateKeyToAddress(HOLDER_KEY), signer = sig.privateKeyToAddress(SIGNER_KEY)
@@ -35,9 +36,13 @@ function fakeService({ container = ADDR.container, hub = ADDR.hub, manifest } = 
   return chain
 }
 // A client on test contracts (no sentinel: chains.js knows none of them) / 测试合约上的客户端（chains.js 不认识，无哨兵）
-const testClient = (fetch, o = {}) => createTapeAPI({ rpcUrls: RPC, quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch, ...o })
+// 2.0: conform: false warns once (DEPRECATED, option 'conform') on onWarning; the collectors below record the warnings under test only.
+// 2.0：conform: false 会在 onWarning 上警告一次（DEPRECATED）；下面的收集器只记录被测的警告。
+const sink = (arr, f = (w) => w) => (w) => { if (!(w.code === 'DEPRECATED' && w.option === 'conform')) arr.push(f(w)) }
+// 1.x behaviour; 2.0 default is conform: 'tap10'
+const testClient = (fetch, o = {}) => createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, fetch, ...o })
 // A client on the chain's own contracts: the default configuration / 用本链自己合约的客户端：默认配置
-const ownClient = (fetch, o = {}) => createTapeAPI({ rpcUrls: RPC, quorum: 2, fetch, ...o })
+const ownClient = (fetch, o = {}) => createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, fetch, ...o })
 const invalid = (re) => (e) => e instanceof TapeAPIError && e.code === 'INVALID_ARGUMENT' && (!re || re.test(e.message))
 
 // ---------------------------------------------------------------- SEC11-1 pinned block ----
@@ -116,16 +121,16 @@ test('FIXED SEC11-1: confirmedBlock takes the highest block two operators reache
 })
 
 test('FIXED SEC11-1: the pin option is checked when the client is made; sub-clients use their own chain\'s tag', async () => {
-  assert.throws(() => createTapeAPI({ pin: 'yes' }), invalid(/pin/))
-  assert.throws(() => createTapeAPI({ pin: { tag: 'pending' } }), invalid(/tag/))
-  assert.throws(() => createTapeAPI({ pin: { maxAgeS: 0 } }), invalid(/maxAgeS/))
-  assert.throws(() => createTapeAPI({ pin: { by: 'label' } }), invalid(/by/))
-  assert.throws(() => createTapeAPI({ clock: 5 }), invalid(/clock/))
-  await assert.rejects(createTapeAPI({ rpcUrls: RPC, fetch: fakeService().fetch, clock: () => Date.now() }).resolve(NAME), invalid(/milliseconds|Unix seconds/))
+  assert.throws(() => createTapeAPI({ conform: false, pin: 'yes' }), invalid(/pin/))
+  assert.throws(() => createTapeAPI({ conform: false, pin: { tag: 'pending' } }), invalid(/tag/))
+  assert.throws(() => createTapeAPI({ conform: false, pin: { maxAgeS: 0 } }), invalid(/maxAgeS/))
+  assert.throws(() => createTapeAPI({ conform: false, pin: { by: 'label' } }), invalid(/by/))
+  assert.throws(() => createTapeAPI({ conform: false, clock: 5 }), invalid(/clock/))
+  await assert.rejects(createTapeAPI({ conform: false, rpcUrls: RPC, fetch: fakeService().fetch, clock: () => Date.now() }).resolve(NAME), invalid(/milliseconds|Unix seconds/))
   // The root pins from an explicit `finalized`; its Base sub-client pins too, but from Base's own `safe`.
   // 根客户端显式从 finalized 钉块；它的 Base 子客户端同样钉块，但从 Base 自己的 safe 开始。
   const l2 = createFakeChain({ chainId: 8453 })
-  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, fetch: l2.fetch, pin: { tag: 'finalized', maxAgeS: 60 }, chains: { 8453: { rpcUrls: ['http://b1', 'http://b2'] } } })
+  const api = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, fetch: l2.fetch, pin: { tag: 'finalized', maxAgeS: 60 }, chains: { 8453: { rpcUrls: ['http://b1', 'http://b2'] } } })
   await assert.rejects(api.resolve({ circuits: ADDR.circuits, tokenId: 1, chainId: 8453 }))
   const tags = l2.state.requests.filter((r) => r.url.startsWith('http://b') && r.calls.includes('eth_getBlockByNumber'))
   assert.ok(tags.length >= 2)
@@ -144,7 +149,7 @@ function ownService(manifestExtra = {}) {
 test('FIXED SEC11-2: on the chain\'s own contracts, resolve reads the DeWebHub and SiteRegistry implementation slots and re-derives the container locally; all known: no warning', async () => {
   const chain = ownService()
   const warnings = []
-  const svc = await ownClient(chain.fetch, { onWarning: (w) => warnings.push(w) }).resolve(NAME)
+  const svc = await ownClient(chain.fetch, { onWarning: sink(warnings) }).resolve(NAME)
   assert.deepEqual(warnings, [])
   assert.equal(svc.warnings, undefined)
   assert.equal(svc.sentinel.mode, 'warn')
@@ -166,7 +171,7 @@ test('FIXED SEC11-2: an upgraded hub or SiteRegistry is reported (warn, the defa
   const evil = '0x' + 'e7'.repeat(20)
   chain.setImplementation(MAINNET.siteRegistry, evil)
   const seen = []
-  const svc = await ownClient(chain.fetch, { onWarning: (w) => seen.push(w.code) }).resolve(NAME)
+  const svc = await ownClient(chain.fetch, { onWarning: sink(seen, (w) => w.code) }).resolve(NAME)
   assert.deepEqual(seen, ['IMPL_UNKNOWN'])
   assert.equal(svc.warnings[0].code, 'IMPL_UNKNOWN')
   assert.equal(svc.warnings[0].implementation, evil)
@@ -179,7 +184,7 @@ test('FIXED SEC11-2: an upgraded hub or SiteRegistry is reported (warn, the defa
   const off = await ownClient(quiet.fetch, { sentinel: 'off', onWarning: () => assert.fail('no warning when off') }).resolve(NAME)
   assert.equal(off.sentinel, undefined)
   assert.ok(!quiet.state.reads.some((r) => r.method === 'eth_getStorageAt'))
-  assert.throws(() => createTapeAPI({ sentinel: 'loud' }), invalid(/sentinel/))
+  assert.throws(() => createTapeAPI({ conform: false, sentinel: 'loud' }), invalid(/sentinel/))
 })
 
 test('FIXED SEC11-2: hub.accountOf that differs from the local ERC-6551 derivation is CONTAINER_MISMATCH (strict: MANIFEST_INVALID)', async () => {
@@ -190,7 +195,7 @@ test('FIXED SEC11-2: hub.accountOf that differs from the local ERC-6551 derivati
   chain.setOwner(4246, holder); chain.setAccount(4246, bogus)
   chain.writeFile(bogus, MANIFEST_KEY, JSON.stringify(manifestFor({ container: bogus, hub: MAINNET.hub })))
   const seen = []
-  const svc = await ownClient(chain.fetch, { onWarning: (w) => seen.push(w) }).resolve(NAME)
+  const svc = await ownClient(chain.fetch, { onWarning: sink(seen) }).resolve(NAME)
   assert.equal(svc.sentinel.container, 'mismatch')
   assert.equal(seen[0].code, 'CONTAINER_MISMATCH')
   assert.equal(seen[0].local, REAL)
@@ -201,7 +206,7 @@ test('FIXED SEC11-2: slots a node will not read are IMPL_UNREAD in warn mode (re
   const chain = ownService()
   for (const u of RPC) chain.setFault(u, 'nostorage')
   const seen = []
-  const api = ownClient(chain.fetch, { onWarning: (w) => seen.push(w.code) })
+  const api = ownClient(chain.fetch, { onWarning: sink(seen, (w) => w.code) })
   const svc = await api.resolve(NAME)
   assert.deepEqual(seen, ['IMPL_UNREAD'])
   assert.equal(svc.sentinel.implementations, null)
@@ -246,7 +251,7 @@ test('FIXED SEC11-3: an endpoint swapped under a valid delegation fails the cont
   const swapped = { ...signed, endpoints: { live: ['https://attacker.example/tapeapi/v1'], async: false } }
   const chain = fakeService({ manifest: swapped })
   const seen = []
-  const svc = await testClient(chain.fetch, { onWarning: (w) => seen.push(w.code) }).resolve(NAME)
+  const svc = await testClient(chain.fetch, { onWarning: sink(seen, (w) => w.code) }).resolve(NAME)
   assert.deepEqual(svc.contentSig, { valid: false })
   assert.deepEqual(seen, ['CONTENT_SIG_INVALID'])
   await assert.rejects(testClient(chain.fetch, { requireContentSig: true }).resolve(NAME), (e) => e.code === 'MANIFEST_INVALID' && /contentSig is signed by/.test(e.message))
@@ -260,7 +265,7 @@ test('FIXED SEC11-3: an endpoint swapped under a valid delegation fails the cont
   // a garbled field / 乱码字段
   const garbled = fakeService({ manifest: { ...manifestFor(), contentSig: 'yes' } })
   await assert.rejects(testClient(garbled.fetch, { requireContentSig: true }).resolve(NAME), (e) => e.code === 'MANIFEST_INVALID' && /65 to 1024 bytes/.test(e.message))
-  assert.throws(() => createTapeAPI({ requireContentSig: 'yes' }), invalid(/requireContentSig/))
+  assert.throws(() => createTapeAPI({ conform: false, requireContentSig: 'yes' }), invalid(/requireContentSig/))
 })
 
 test('FIXED SEC11-3: a contract holder signs the content under EIP-1271, and every check is made at the pinned block', async () => {
@@ -310,7 +315,7 @@ async function quorumError(c) {
     const side = url.startsWith(AV.providers[0].endpoint) ? c.a : c.b
     return new Response(JSON.stringify(side.envelope), { status: 200, headers: { 'content-type': 'application/json' } })
   }
-  const api = createTapeAPI({ chainId: 56, dev: true, maxSkewS: 1e12, fetch })
+  const api = createTapeAPI({ conform: false, chainId: 56, dev: true, maxSkewS: 1e12, fetch })
   const services = [await api.resolve({ dev: attestedManifest(AV.providers[0]) }), await api.resolve({ dev: attestedManifest(AV.providers[1]) })]
   try { await api.callQuorum(services, AV.request.method, AV.request.params, { id: AV.request.id }) } catch (e) { return e }
   assert.fail('expected a disagreement')
@@ -326,8 +331,8 @@ test('FIXED SEC11-4: ATTEST_DISAGREE carries both signed envelopes and the reque
   assert.deepEqual(e.data.envelopes.map((x) => x.group).sort(), [0, 1])
   for (const x of e.data.envelopes) assert.equal(x.ok, true)
   // the 1.0 fields are unchanged / 1.0 的字段不变
-  assert.deepEqual(e.agreed, [])
-  assert.equal(e.groups.length, 2)
+  assert.deepEqual(e.data.agreed, [])
+  assert.equal(e.data.groups.length, 2)
   const [rec] = security.contradictionsOf(e)
   assert.equal(rec.tapeapiContradiction, 1)
   assert.equal(rec.requestHash, sig.responseRequestHash(AV.request))
@@ -404,7 +409,7 @@ function signingProviders(answers) {
 test('FIXED SEC11-5: rate 0 (the default) never asks twice; rate p asks one independent provider and compares bytes', async () => {
   const pin = { blockNumber: 7, blockHash: '0x' + '77'.repeat(32) }
   const t = signingProviders({ A: { v: 1, blockPinned: pin }, B: { v: 2, blockPinned: pin }, C: { v: 1, blockPinned: pin } })
-  const api = createTapeAPI({ dev: true, fetch: t.fetch })
+  const api = createTapeAPI({ conform: false, dev: true, fetch: t.fetch })
   const [a, b, c] = await Promise.all(t.P.map((p) => api.resolve({ dev: t.manifest(p) })))
   const off = security.withSpotCheck(api, { alternates: [b, c] })
   for (let i = 0; i < 5; i++) await off.call(a, 'price')
@@ -428,7 +433,7 @@ test('FIXED SEC11-5: rate 0 (the default) never asks twice; rate p asks one inde
 
 test('FIXED SEC11-5: no independent free alternate is an onError report, never a failed call; a priced alternate is skipped unless allowPaid', async () => {
   const t = signingProviders({ A: { v: 1 }, B: { v: 1 }, C: { v: 1 } })
-  const api = createTapeAPI({ dev: true, fetch: t.fetch })
+  const api = createTapeAPI({ conform: false, dev: true, fetch: t.fetch })
   const a = await api.resolve({ dev: t.manifest(t.P[0]) })
   const c = await api.resolve({ dev: t.manifest(t.P[2]) })
   const pricedB = await api.resolve({ dev: t.manifest(t.P[1], '0.001') })
@@ -480,8 +485,8 @@ test('FIXED SEC11-6: the floor lives in an injectable { get, set } store, shared
   chain.writeFile(ADDR.container, MANIFEST_KEY, JSON.stringify(bad))
   await assert.rejects(testClient(chain.fetch, { delegationFloor: store }).resolve(NAME), (e) => e.code === 'DELEGATION_INVALID' && /signed by/.test(e.message))
   assert.equal(store.get(`56:${ADDR.container}:${holder.toLowerCase()}:${signer.toLowerCase()}`), t + 50 * 86400)
-  assert.throws(() => createTapeAPI({ delegationFloor: 'yes' }), invalid(/delegationFloor/))
-  const api = createTapeAPI({ rpcUrls: RPC, fetch: chain.fetch, delegationFloor: store })
+  assert.throws(() => createTapeAPI({ conform: false, delegationFloor: 'yes' }), invalid(/delegationFloor/))
+  const api = createTapeAPI({ conform: false, rpcUrls: RPC, fetch: chain.fetch, delegationFloor: store })
   assert.equal(typeof api.forChain(196).resolve, 'function')
 })
 
@@ -496,4 +501,46 @@ test('security namespace: IMPL_SLOT is the ERC-1967 slot, and the local derivati
   // TAPI-20 §6.1: 11.1013.tape / TAPI-20 §6.1 的主网向量
   assert.equal(security.erc6551Account({ registry: C56.erc6551Registry, implementation: C56.accountImplementation, chainId: 56, tokenContract: '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', tokenId: 11 }), '0x1b2A657BcBa9D3229f57aC2f4FcbEE2AA756aAe8')
   assert.throws(() => security.erc6551Account({ registry: 'x' }), invalid(/registry/))
+})
+
+// ---- the 2.0 default (conform: 'tap10') counterparts / 2.0 默认（一致模式）下对应的行为 ----
+// A valid TAP-10 service on the conform chain: no `conform` option below, so these clients are the 2.0 default.
+// 一致模式假链上的有效 TAP-10 服务；下面不传 `conform`，即 2.0 默认客户端。
+const CT = 1_790_000_000
+function conformWorld() {
+  const chain = createConformChain({ chainId: 56 })
+  chain.state.headTime = CT
+  const c = chain.circuit(4246, { holder })
+  const expires = CT + 30 * 86400
+  const m = {
+    tapeapi: '0.1', name: 'Conform', circuits: c.circuits, tokenId: c.tokenId, container: c.container, signer,
+    delegation: { expires, sig: sig.signDigest(sig.delegationDigest(56, MAINNET.hub, { container: c.container, signer, expires }), HOLDER_KEY) },
+    endpoints: { live: ['https://api.example.com/tapeapi/v1'], async: false },
+    methods: [{ name: 'ping', priceBEM: '0', params: {}, returns: {} }],
+  }
+  chain.writeFile(c.container, MANIFEST_KEY, JSON.stringify(m))
+  return chain
+}
+const defaultClient = (chain, o = {}) => createTapeAPI({ rpcUrls: RPC, fetch: chain.fetch, clock: () => CT, quiet: true, onWarning: () => {}, ...o })
+
+test('2.0 default, SEC11-2: the same questions are fail-closed, not a warning: an unlisted SiteRegistry implementation is CONTRACT_UNKNOWN (store-changed) even with the sentinel off, and an unreadable slot is RPC_UNAVAILABLE', async () => {
+  const chain = conformWorld()
+  const seen = []
+  const svc = await defaultClient(chain, { onWarning: (w) => seen.push(w.code) }).resolve(NAME)
+  assert.ok(svc.conform, 'the default is the conformance mode')
+  assert.deepEqual(seen, [], 'known implementations: no warning, and no DEPRECATED either')
+  const evil = '0x' + 'e7'.repeat(20)
+  chain.setImplementation(C56.siteRegistry, evil)
+  // 1.x: IMPL_UNKNOWN warning (strict: CONTRACT_UNKNOWN). 2.0 default: refused in every sentinel setting, nothing returned.
+  // 1.x：IMPL_UNKNOWN 警告（strict 才拒绝）；2.0 默认：哨兵怎么设都拒绝，不返回结果。
+  for (const o of [{}, { sentinel: 'warn' }, { sentinel: 'off' }]) {
+    await assert.rejects(defaultClient(chain, o).resolve(NAME), (e) => e.code === 'CONTRACT_UNKNOWN' && e.data.status === 'store-changed' && /siteRegistry .* runs implementation 0xe7e7/.test(e.message), JSON.stringify(o))
+  }
+  chain.setImplementation(C56.siteRegistry, C56.expectedImpl[C56.siteRegistry.toLowerCase()][0])
+  // 1.x: IMPL_UNREAD warning, resolve succeeds. 2.0 default: a slot the nodes will not read is no answer: refused.
+  // 1.x：IMPL_UNREAD 警告且解析成功；2.0 默认：节点不肯读的槽位就是没有答案，拒绝。
+  for (const u of RPC) chain.setFault(u, 'nostorage')
+  await assert.rejects(defaultClient(chain).resolve(NAME), (e) => e.code === 'RPC_UNAVAILABLE' && e.data.status === 'unavailable' && /eth_getStorageAt/.test(e.message))
+  for (const u of RPC) chain.setFault(u, null)
+  assert.ok((await defaultClient(chain).resolve(NAME)).conform, 'read again once the nodes answer')
 })

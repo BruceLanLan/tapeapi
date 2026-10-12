@@ -53,7 +53,7 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
     // expectedImpl for this chain's proxies unless set. `reads` logs the block parameter of every state read.
     // 安全加固 1.1：区块与存储。块 n 的哈希由 n 推出（带 'fork' 故障的节点报另一个），时间戳为 headTime − (head − n)。
     // finalized 为 head − 2、safe 为 head − 40，除非 tagLags 为某节点另设。存储：本链代理的实现槽默认答 expectedImpl。
-    headTime: null, tagLags: new Map(), storage: new Map(), reads: [],
+    headTime: null, tagLags: new Map(), storage: new Map(), reads: [], rawCalls: new Map(),
   }
   const k2 = (a, b) => `${a.toLowerCase()}:${b.toLowerCase()}`
   // Files are stored under the bare registry key, as every TapeKit uploader does (SPEC §6 step 3), but LOOKED UP
@@ -125,6 +125,7 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
     setDecimals(token, d) { if (d === null || d === undefined) st.decimals.delete(token.toLowerCase()); else st.decimals.set(token.toLowerCase(), BigInt(d)) },
     setTreasuryAccrued(escrow, v) { st.accrued.set(escrow.toLowerCase(), BigInt(v)) },
     // An address with code, as an opened (deployed) container has. / 有代码的地址，如已开通（已部署）的容器。
+    setRawCall(address, fn) { if (fn) st.rawCalls.set(address.toLowerCase(), fn); else st.rawCalls.delete(address.toLowerCase()) },
     setCode(address, yes = true) { if (yes) st.codes.add(address.toLowerCase()); else st.codes.delete(address.toLowerCase()) },
     setFault(url, kind) { if (kind) st.faults.set(url, kind); else st.faults.delete(url) },
     /** a node's own lag behind head for a tag: setTagLag('http://rpc3', 'finalized', 5000) / 某节点某标签落后 head 的块数 */
@@ -145,6 +146,10 @@ export function createFakeChain({ addr = ADDR, chainId = 56 } = {}) {
     return '0x' + '00'.repeat(12) + (allowed ? allowed[0].slice(2) : '00'.repeat(20))
   }
   function ethCall(to, data) {
+    // A contract a test answers itself (a v3 pool's observe, a token's decimals): fn(data) returns hex or throws.
+    // 测试自己作答的合约（v3 池子的 observe、代币的 decimals）：fn(data) 返回十六进制或抛错。
+    const raw = st.rawCalls.get(String(to).toLowerCase())
+    if (raw) return raw(data)
     // EIP-1271: a contract holder accepts exactly the digests it was given / 合约持有人只认可给定的摘要
     if (data.startsWith('0x1626ba7e')) {
       const set = st.contractHolders.get(to.toLowerCase())

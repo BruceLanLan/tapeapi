@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { importsOf } from './build-playground.mjs'
 import {
   extractReceipt, parseReceipt, readReceipt, envelopeOf, signedBlock, nameClaim, checkName, verdictOf, verifyReceipt,
-  utc, ReceiptError, MAX_INPUT, RECEIPT_META_KEY,
+  utc, ReceiptError, MAX_INPUT, RECEIPT_META_KEY, isDefinite,
 } from '../site/verify/lib.js'
 import { T } from '../site/verify/strings.js'
 import { signResponse, recoverResponseSigner, randomPrivateKey, privateKeyToAddress } from '../sdk/src/sig.js'
@@ -310,6 +310,25 @@ test('verify: the receipt\'s name is checked on chain, since it is not signed', 
   const down = await check(makeReceipt(), { cpuAt: async () => { throw new TapeAPIError('RPC_UNAVAILABLE', 'down') } })
   assert.equal(down.verdict, 'unchecked')
   assert.deepEqual(await checkName(parseReceipt(makeReceipt({ name: null })), () => { throw new Error('not called') }), { state: 'skip' })
+})
+
+// 2.0: the page's client is the SDK default (TAP-10 conformance), whose resolve errors carry the TAP-10 status in e.data.status.
+// 2.0：页面的客户端是 SDK 默认（TAP-10 一致模式），其解析错误在 e.data.status 里带 TAP-10 状态。
+const tapErr = (code, status) => new TapeAPIError(code, `${status}: x`, { data: { status } })
+test('verify 2.0: a never-opened container is still a definite answer; unpaid, store-changed and unavailable only mean "could not check"', async () => {
+  assert.equal(isDefinite(tapErr('SITE_STATUS', 'not-opened')), true, 'it used to be NOT_FOUND / MANIFEST_INVALID: still invalid, not unchecked')
+  for (const code of ['MANIFEST_INVALID', 'DELEGATION_INVALID', 'NOT_FOUND']) assert.equal(isDefinite(new TapeAPIError(code, 'x')), true, code)
+  assert.equal(isDefinite(tapErr('NOT_FOUND', 'no-such-token')), true)
+  for (const [code, status] of [['SITE_STATUS', 'unpaid'], ['CONTRACT_UNKNOWN', 'store-changed'], ['RPC_UNAVAILABLE', 'unavailable'], ['INVALID_ARGUMENT', 'unsupported']]) assert.equal(isDefinite(tapErr(code, status)), false, status)
+  assert.equal(isDefinite(null), false)
+  const sent = async (err) => check(makeReceipt(), { resolve: async () => { throw err } })
+  const notOpened = await sent(tapErr('SITE_STATUS', 'not-opened'))
+  assert.deepEqual([notOpened.verdict, notOpened.failed], ['invalid', 'resolve'])
+  for (const [code, status] of [['SITE_STATUS', 'unpaid'], ['CONTRACT_UNKNOWN', 'store-changed']]) {
+    const o = await sent(tapErr(code, status))
+    assert.equal(o.verdict, 'unchecked', status)
+    assert.equal(o.resolveError.data.status, status, 'the page shows this error')
+  }
 })
 
 test('verify: verdictOf is decided by facts in a fixed order', () => {

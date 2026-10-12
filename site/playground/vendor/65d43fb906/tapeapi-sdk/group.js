@@ -78,13 +78,13 @@ const verifyErr = (e) => e ?? new TapeAPIError('ERROR', 'verifyMember failed wit
 const errText = (e) => String(verifyErr(e)?.message ?? e)
 
 // ---------------------------------------------------------------- labels: TAPI-27 v1 and v2 ----
-// As in channel.js: v1 (`TAP-27/…`, Stable (v1), frozen) is the default; v2 (`tape-group/…`, spec/TAPI-27-v2.md, Draft)
-// is opt-in from 1.8.1 with `labels: 'v2'` and the default from 2.0. Only the prefix differs, in format 1 and in format 2
+// As in channel.js: v2 (`tape-group/…`, spec/TAPI-27-v2.md) is an option since 1.8.1 and the default since 2.0; v1
+// (`TAP-27/…`, Stable (v1), frozen) is still selected by `labels: 'v1'` (deprecated in 2.x). Only the prefix differs, in format 1 and in format 2
 // alike; "labels v2" is not "format 2". A v2 group runs over TAPI-26 v2: its invites are sealed for the v2 inbox room.
 // A group is of one version for its whole life: the handle reports it as `labels`, a v2 snapshot says so (v: 3), and
 // nothing of the other version is accepted.
-// 与 channel.js 相同：v1（`TAP-27/…`，Stable (v1)，冻结）是默认值；v2（`tape-group/…`，spec/TAPI-27-v2.md，Draft）1.8.1 起以
-// `labels: 'v2'` 选用，2.0 起成为默认。两者只有前缀不同，格式 1 与格式 2 都一样；"标签 v2"不是"格式 2"。v2 群运行在 TAPI-26 v2
+// 与 channel.js 相同：v2（`tape-group/…`，spec/TAPI-27-v2.md）1.8.1 起可以选用，2.0 起是默认值；v1（`TAP-27/…`，Stable (v1)，
+// 冻结）仍可用 `labels: 'v1'` 选择（2.x 内已弃用）。两者只有前缀不同，格式 1 与格式 2 都一样；"标签 v2"不是"格式 2"。v2 群运行在 TAPI-26 v2
 // 之上：入群邀请按第 2 版收件房间密封。一个群终生只属于一个版本：句柄以 `labels` 报告，v2 快照写明（v: 3），另一版本的东西一概不收。
 const GROUP_LABELS = {
   v1: {
@@ -102,7 +102,7 @@ const enc = (o) => (typeof o === 'string' ? te.encode(o) : Object.fromEntries(Ob
 const GL = enc(GROUP_LABELS)
 const labelsOf = (opts) => checkLabels(opts?.labels)
 
-/** The one room a group uses: SHA-256("TAP-27/room/v1" ‖ gid), or "tape-group/room/v1" with { labels: 'v2' } / 群所用的唯一房间 */
+/** The one room a group uses: SHA-256("tape-group/room/v1" ‖ gid) by default (2.0), or "TAP-27/room/v1" with { labels: 'v1' } / 群所用的唯一房间 */
 export function groupRoom(gid, { labels } = {}) {
   const g = typeof gid === 'string' ? fromHex(gid, 16, 'gid') : gid
   return toHex(sha256(concat(GL[checkLabels(labels)].room, g)))
@@ -114,8 +114,8 @@ function dh(secret, pub) {
   if (ss.every((x) => x === 0)) fail('X25519 gave the all-zero secret (low-order key)')
   return ss
 }
-const kekFor = (ss, E, R, gid, epoch, lv = 'v1') => hkdf(sha256, ss, GL[lv][1].wrap, concat(E, R, gid, u64(epoch)), 32)
-const commitOf = (K, lv = 'v1') => sha256(concat(GL[lv][1].commit, K))
+const kekFor = (ss, E, R, gid, epoch, lv) => hkdf(sha256, ss, GL[lv][1].wrap, concat(E, R, gid, u64(epoch)), 32)
+const commitOf = (K, lv) => sha256(concat(GL[lv][1].commit, K))
 /** §3.4: the key a sender encrypts under in an epoch / 发送者在某纪元的加密密钥 */
 export const senderKey = (K, gid, epoch, index, { labels } = {}) => hkdf(sha256, K, concat(gid, u64(epoch)), concat(GL[checkLabels(labels)][1].sender, u32(index)), 32)
 
@@ -168,8 +168,8 @@ const formatName = (f) => (f === 2 ? 'format 2 (TAPI-27 §3.8, v2)' : 'format 1 
 // 另一格式的帧（一个群只用一种格式）。错误码 GROUP_INVALID——现有格式 1 客户端遇到格式 2 帧给出的就是它——并附 data.format，
 // 让应用能提示"请升级"而不是"遭到攻击"。
 const wrongFormat = (what, got, mine) => fail(`${what} is ${got ? formatName(got) : 'of an unknown format (epoch field high half neither 0 nor the format-2 mark)'}; this group is ${formatName(mine)}${got === 2 ? ': the group needs a client that supports format 2' : ''}`, { data: { format: got, groupFormat: mine } })
-const kekV2 = (ss, E, R, gid, epoch, lv = 'v1') => hkdf(sha256, ss, GL[lv][2].wrap, concat(E, R, gid, ef2(epoch)), 32)
-const commitV2 = (K, lv = 'v1') => sha256(concat(GL[lv][2].commit, K))
+const kekV2 = (ss, E, R, gid, epoch, lv) => hkdf(sha256, ss, GL[lv][2].wrap, concat(E, R, gid, ef2(epoch)), 32)
+const commitV2 = (K, lv) => sha256(concat(GL[lv][2].commit, K))
 /** §3.8: the key a sender encrypts under in a format-2 epoch / 格式 2 纪元里发送者的加密密钥 */
 export const senderKeyV2 = (K, gid, epoch, index, { labels } = {}) => hkdf(sha256, K, concat(gid, ef2(epoch)), concat(GL[checkLabels(labels)][2].sender, u32(index)), 32)
 const senderKeyOf = (format, labels) => (format === 2 ? (K, g, e, i) => senderKeyV2(K, g, e, i, { labels }) : (K, g, e, i) => senderKey(K, g, e, i, { labels }))
@@ -452,7 +452,7 @@ function parseEpoch(wire) {
   }
 }
 
-function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null, lastSeq = null, random = randomBytes, now = () => Date.now(), concurrency = VERIFY_CONCURRENCY, format = 1, reuseS = VERIFY_REUSE_S, verifier = null, labels = 'v1' }) {
+function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null, lastSeq = null, random = randomBytes, now = () => Date.now(), concurrency = VERIFY_CONCURRENCY, format = 1, reuseS = VERIFY_REUSE_S, verifier = null, labels }) {
   const LF = GL[labels][format]       // this group's labels, of its version and format / 本群（按其版本与格式）的标签
   const epochs = new Map()          // epoch -> { roster, rosterBytes, K, index, members, high, keys, expiresAt, removed, movedOn }
   const accepted = new Map()        // epoch -> sha256 of the accepted epoch message body (equivocation evidence) / 已接受纪元消息的摘要
@@ -767,7 +767,7 @@ function makeGroup({ gid, self, id, ownerRef, ownerEd, isOwner, minEpoch = null,
     gid: toHex(gid), room, isOwner,
     /** 1 or 2 (§3.8, Experimental). / 群格式：1 或 2（实验性）。 */
     format,
-    /** 'v1' or 'v2': the TAPI-27 label version of this group (v2: tape-group/ labels, opt-in from 1.8.1) / 本群的 TAPI-27 标签版本 */
+    /** 'v2' or 'v1': the TAPI-27 label version of this group (v2: tape-group/ labels, the default since 2.0) / 本群的 TAPI-27 标签版本 */
     labels,
     get epoch() { return current },
     get roster() { return current === null ? null : epochs.get(current).roster },
@@ -1056,7 +1056,8 @@ function ownerApi({ group, install, gid, owner, id, verifyMember, random, transp
      * The sealed invite (wire type 0x03) for a member's INBOX room (§3.5): post it to
      * channel.inboxRoom(member.container, member.chainId) -- the CONTAINER address, never the holder's wallet, and the
      * member's own chainId -- not to the group room, where the epoch message goes. deliverGroupUpdate() posts both.
-     * A v2 group (labels: 'v2') seals it for the v2 inbox room: channel.inboxRoom(container, chainId, { labels: 'v2' }).
+     * A v2 group (the default since 2.0) seals it for the v2 inbox room, channel.inboxRoom(container, chainId); a v1 group
+     * (labels: 'v1') for the v1 room, channel.inboxRoom(container, chainId, { labels: 'v1' }).
      * 发往成员**收件房间**的密封入群邀请（线路类型 0x03）：投到 channel.inboxRoom(成员容器地址, chainId)——必须是容器
      * 地址而不是持有人钱包，chainId 用成员自己的——而不是纪元消息所去的群房间。deliverGroupUpdate() 两者都投。
      */
@@ -1187,7 +1188,7 @@ export function channelKeysVerifier(api) {
 
 /**
  * Open a group invite from this container's inbox (§3.5). `labels`: the version of the inbox room it was read from
- * ('v2': inboxRoom(container, chainId, { labels: 'v2' })); pass the same to joinGroup.
+ * (default 'v2': inboxRoom(container, chainId); 'v1': inboxRoom(container, chainId, { labels: 'v1' })); pass the same to joinGroup.
  * 从收件房间打开入群邀请。`labels`：读到它的收件房间的版本；给 joinGroup 传同样的值。
  */
 export function openGroupInvite(wire, { self, labels }) {

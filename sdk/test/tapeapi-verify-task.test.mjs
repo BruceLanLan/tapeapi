@@ -31,6 +31,29 @@ const HP = addrOf(KEYS.principalHolder)
 const HEAD = 62_000_000
 const MB = HEAD - 100
 
+// 2.0 added exactly one option to the usage text, `--no-conform` (two lines, between --dev and --quiet). The 1.6 bytes are
+// compared with those two lines taken out (and checked to be there, once, in that place), so the rest of the 1.6 output,
+// stderr and exit status is still proved byte for byte the same. / 2.0 在用法文本里只多了 --no-conform 两行（在 --dev 与 --quiet 之间）：
+// 取出这两行（并确认它们恰在此处出现一次）后与 1.6 的字节逐字比较，其余部分仍是逐字节相同。
+const NO_CONFORM_LINES = '  --no-conform         resolve as 1.x did (createTapeAPI({ conform: false }), deprecated): only for a service that the\n' +
+  '                       TAP-10 / TAP-11 resolution, the default since 2.0, refuses (for example an unpaid name: SITE_STATUS unpaid)\n'
+// 2.0 also says, on the --dev line, that --dev makes the session's on-chain names resolve the 1.x way (two more lines). They are
+// taken out the same way. / 2.0 还在 --dev 一行里写明 --dev 使本次的链上名字也按 1.x 解析（多两行），同样先取出。
+const DEV_1_6 = '  --dev <url>          TESTING ONLY: read the manifest from a local sidecar, no on-chain identity check\n'
+const DEV_2_0 = '  --dev <url>          TESTING ONLY: read the manifest from a local sidecar, no on-chain identity check. It also makes the\n' +
+  '                       names this run reads on chain resolve the 1.x way (dev: true counts as conform: false); the\n' +
+  '                       "resolution:" line says so\n'
+function without20Option(text, what) {
+  if (!text.includes('--dev <url>')) return text   // no usage text in it / 里面没有用法文本
+  assert.ok(text.includes(DEV_2_0) && text.indexOf(DEV_2_0) === text.lastIndexOf(DEV_2_0), `${what}: the 2.0 --dev note appears once`)
+  text = text.replace(DEV_2_0, DEV_1_6)
+  const at = text.indexOf(NO_CONFORM_LINES)
+  assert.ok(at > 0 && text.indexOf(NO_CONFORM_LINES, at + 1) === -1, `${what}: the 2.0 --no-conform lines appear once`)
+  assert.match(text.slice(0, at), /--dev <url> {10}TESTING ONLY: read the manifest from a local sidecar, no on-chain identity check\n$/, `${what}: after --dev`)
+  assert.ok(text.slice(at + NO_CONFORM_LINES.length).startsWith('  --quiet  '), `${what}: before --quiet`)
+  return text.slice(0, at) + text.slice(at + NO_CONFORM_LINES.length)
+}
+
 test('FIXED TV-01: nothing outside `task` changed: the 1.6 output, stderr and exit status are byte for byte the same, and --help only gained the task text', () => {
   const base = JSON.parse(readFileSync(new URL('./fixtures/tapeapi-verify-1.6-baseline.json', import.meta.url), 'utf8'))
   assert.equal(base.cases.length, 10)
@@ -39,18 +62,40 @@ test('FIXED TV-01: nothing outside `task` changed: the 1.6 output, stderr and ex
     const r = spawn(c.args)
     const what = JSON.stringify(c.args)
     assert.equal(r.code, c.code, `${what}: exit status`)
+    const stdout = without20Option(r.stdout, `${what} stdout`), stderr = without20Option(r.stderr, `${what} stderr`)
     if (c.args.includes('--help') || c.args.includes('-h')) {
       // the 1.6 help, verbatim, then the new text and nothing else
-      assert.ok(r.stdout.startsWith(put(c.stdout)), `${what}: the 1.6 help is the beginning, unchanged`)
-      const extra = r.stdout.slice(put(c.stdout).length)
+      assert.ok(stdout.startsWith(put(c.stdout)), `${what}: the 1.6 help is the beginning, unchanged`)
+      const extra = stdout.slice(put(c.stdout).length)
       assert.match(extra, /^\ntapeapi-verify task \(experimental, 1\.7; not covered by the 1\.x compatibility promise\)/)
       assert.match(extra, /tapeapi-verify task（实验性，1\.7/)
-      assert.equal(r.stderr, '')
+      assert.equal(stderr, '')
+      assert.ok(r.stdout.includes(NO_CONFORM_LINES), `${what}: 2.0: the help names --no-conform`)
     } else {
-      assert.equal(r.stdout, put(c.stdout), `${what}: stdout`)
-      assert.equal(r.stderr, put(c.stderr), `${what}: stderr`)
+      assert.equal(stdout, put(c.stdout), `${what}: stdout`)
+      assert.equal(stderr, put(c.stderr), `${what}: stderr`)
+      // 2.0: every usage mistake still prints the usage, now with --no-conform in it / 每个用法错误仍打印用法，现在其中有 --no-conform
+      if (c.stderr.includes('--dev <url>')) assert.ok(r.stderr.includes(NO_CONFORM_LINES), `${what}: 2.0: the usage names --no-conform`)
     }
   }
+})
+
+// 2.0: the default resolution and --no-conform, as the proxy says them on stderr before it resolves anything (nodes that refuse
+// the connection: no network is used) / 2.0：默认解析与 --no-conform，代理在解析之前先在 stderr 说明（节点拒绝连接：不访问网络）
+test('2.0: tapeapi-verify says which resolution it uses (the TAP-10 / TAP-11 default, --no-conform, --dev) before resolving', () => {
+  const nodes = ['--rpc', 'http://127.0.0.1:1,http://localhost:1,http://[::1]:1', '--port', '0']
+  const d = spawn([...nodes, '11.1013.tape'])
+  assert.equal(d.code, 1)
+  assert.match(d.stderr, /^\[tapeapi-verify\] resolution: TAP-10 \/ TAP-11 \(the default since 2\.0; --no-conform for the 1\.x one\)\n/)
+  assert.ok(!/DEPRECATED/.test(d.stderr), 'the default raises no deprecation warning')
+  const o = spawn(['--no-conform', ...nodes, '11.1013.tape'])
+  assert.equal(o.code, 1)
+  assert.match(o.stderr, /\[tapeapi-verify\] resolution: 1\.x \(--no-conform: conform: false, deprecated\)\n/)
+  assert.match(o.stderr, /\[tapeapi\] DEPRECATED: conform: false is the 1\.x resolution/)
+  const v = spawn(['--dev', 'http://127.0.0.1:1', '--port', '0'])
+  assert.equal(v.code, 1)
+  assert.match(v.stderr, /\[tapeapi-verify\] resolution: 1\.x \(--dev\)\n/)
+  assert.ok(!/DEPRECATED/.test(v.stderr), '--dev is the 1.x resolution without a deprecation warning')
 })
 
 test('the task usage: `task --help` prints only the task text and exits 0; `task` alone is a usage mistake (2)', () => {

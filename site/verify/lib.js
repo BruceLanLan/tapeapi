@@ -16,10 +16,10 @@
 // carry by default, carries only the two hashes the signature is computed over (requestHash, bodyHash), and is checked
 // by rebuilding the digest from them. / MCP / TAPI-21 回执有两种形态：v 1 带明文参数与结果；v 2（核验链接默认的形态）只带签名
 // 所依据的两个哈希，按它们重建摘要来核对。
-import { fromBase64Url, RECEIPT_META_KEY } from '../playground/vendor/87f18f4a0b/tapeapi-sdk/mcp.js'
-import { findDuplicateKey, FORBIDDEN_KEYS } from '../playground/vendor/87f18f4a0b/tapeapi-sdk/canon.js'
-import { envelopeProblems, priceProblems, formatOfMethod, validateAIField, MANIFEST_FIELD, sha256Hex, scanSse, answerProblems, completeOf, isWholeJson } from '../playground/vendor/87f18f4a0b/tapeapi-sdk/ai.js'
-import { parseTapeName } from '../playground/vendor/87f18f4a0b/tapeapi-sdk/chains.js'
+import { fromBase64Url, RECEIPT_META_KEY } from '../playground/vendor/65d43fb906/tapeapi-sdk/mcp.js'
+import { findDuplicateKey, FORBIDDEN_KEYS } from '../playground/vendor/65d43fb906/tapeapi-sdk/canon.js'
+import { envelopeProblems, priceProblems, formatOfMethod, validateAIField, MANIFEST_FIELD, sha256Hex, scanSse, answerProblems, completeOf, isWholeJson } from '../playground/vendor/65d43fb906/tapeapi-sdk/ai.js'
+import { parseTapeName } from '../playground/vendor/65d43fb906/tapeapi-sdk/chains.js'
 
 export { RECEIPT_META_KEY }
 export const MAX_INPUT = 64 * 1024   // bytes of pasted text or link / 粘贴文本或链接的字节上限
@@ -302,7 +302,13 @@ export function chainOfReceipt(r) {
 // network error) means the page could not check, not that the receipt is bad.
 // 说明服务本身有问题的解析失败；其它（节点不可用、节点不一致、超时、网络错误）表示“没能核对”，不代表回执有问题。
 export const DEFINITE_CODES = Object.freeze(['MANIFEST_INVALID', 'DELEGATION_INVALID', 'NOT_FOUND'])
-export const isDefinite = (e) => !!e && DEFINITE_CODES.includes(e.code)
+// 2.0: the default client resolves as TAP-10 / TAP-11 say, so a container that was never opened is SITE_STATUS / not-opened
+// (it was NOT_FOUND or MANIFEST_INVALID before): still a definite answer about the service. unpaid and store-changed are not:
+// the page cannot tell the receipt is bad from them, so those stay "could not check", with the error shown.
+// 2.0：默认客户端按 TAP-10 / TAP-11 解析，从未开通的容器是 SITE_STATUS / not-opened（以前是 NOT_FOUND 或 MANIFEST_INVALID）：
+// 仍是关于该服务的确定回答。unpaid 与 store-changed 不是：页面据此无法断定回执有问题，所以仍是“没能核对”，并显示错误。
+export const DEFINITE_STATUSES = Object.freeze(['not-opened'])
+export const isDefinite = (e) => !!e && (DEFINITE_CODES.includes(e.code) || DEFINITE_STATUSES.includes(e.data?.status))
 
 /**
  * Is the receipt's name this service's name? The name is not signed, so it is checked on chain: the factory's

@@ -15,6 +15,8 @@ node examples/group-chat/index.mjs
 
 输出里能看到每条投递的房间号和中继返回的序号 `i`，以及成员读取的房间号：两边的收件房间号一致，邀请才能送达。
 
+**2.0 提示**：演示里的客户端是 `createTapeAPI({ rpcUrls: rpcUrlsFor(56), quorum: 2 })`，走 2.0 的默认（TAP-10 一致模式），读 BNB Smart Chain 主网。要把它改去读自己的链或自己的合约地址（`CHAIN_ID` 不是 56、196、8453，或自定义 hub 等），默认下构造时就会报错，信息里写明改传 `conform: false`（1.x 的解析，已弃用，建客户端时警告一次）。
+
 ## 演示与正式应用的区别
 
 **演示用的临时身份不需要链上记录。** 容器是随机地址，通道密钥没有发布到链上，所以演示里：
@@ -65,6 +67,8 @@ node examples/group-chat/index.mjs
 
 The output shows the room of every post with the index `i` the relay returned, and the room the member read: the
 invite arrives only when the two inbox room ids are the same.
+
+**2.0 note**: the demo's client is `createTapeAPI({ rpcUrls: rpcUrlsFor(56), quorum: 2 })`, the 2.0 default (the TAP-10 conformance mode), reading BNB Smart Chain mainnet. Pointing it at a chain or contract addresses of your own (a `CHAIN_ID` other than 56, 196, 8453, a custom hub, ...) makes `createTapeAPI` throw when it is made, and the message says to pass `conform: false` (the 1.x resolution, deprecated, one warning when the client is made).
 
 ## The demo versus a real application
 

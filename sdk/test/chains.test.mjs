@@ -206,7 +206,7 @@ function world({ x = {}, base = {} } = {}) {
     throw new Error(`no route to ${url}`)
   }
   const opts = (extra = {}) => ({
-    rpcUrls: ['http://rpc56-a', 'http://rpc56-b'], quorum: 2, fetch, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory,
+    conform: false, rpcUrls: ['http://rpc56-a', 'http://rpc56-b'], quorum: 2, fetch, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory,
     chains: { 196: { rpcUrls: ['http://rpc196-a', 'http://rpc196-b'] }, 8453: { rpcUrls: ['http://rpc8453-a', 'http://rpc8453-b'] } },
     ...extra,
   })
@@ -273,7 +273,8 @@ test('the processor cache is per chain: a CPU on X Layer is not taken for one on
 
 test('a client whose own chain is X Layer resolves BNB names on BNB Smart Chain; its defaults are X Layer\'s', async () => {
   const w = world()
-  const x = createTapeAPI({ chainId: 196, rpcUrls: ['http://rpc196-a', 'http://rpc196-b'], fetch: w.fetch, chains: { 56: { rpcUrls: ['http://rpc56-a', 'http://rpc56-b'], hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory } } })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const x = createTapeAPI({ conform: false, chainId: 196, rpcUrls: ['http://rpc196-a', 'http://rpc196-b'], fetch: w.fetch, chains: { 56: { rpcUrls: ['http://rpc56-a', 'http://rpc56-b'], hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory } } })
   assert.deepEqual(x.addresses, { hub: HUB, siteRegistry: CHAINS[196].siteRegistry, factory: CHAINS[196].factory, directory: undefined, escrow: undefined })
   assert.equal((await x.resolve('4246.2.7.tape')).chainId, 196)
   assert.equal((await x.resolve(X_CONTAINER)).chainId, 196, 'a bare container is read on the client\'s own chain')
@@ -319,7 +320,7 @@ test('with no chains option, an L2 name is read through that chain\'s SDK defaul
   x.setOwner(4246, holder); x.setAccount(4246, X_CONTAINER)
   x.writeFile(X_CONTAINER, MANIFEST_KEY, JSON.stringify(manifestOn(196, X_CONTAINER)))
   const seen = new Set()
-  const api = createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2'], fetch: (url, init) => { seen.add(String(url)); return x.fetch(String(url), init) } })
+  const api = createTapeAPI({ conform: false, rpcUrls: ['http://rpc1', 'http://rpc2'], fetch: (url, init) => { seen.add(String(url)); return x.fetch(String(url), init) } })
   assert.equal((await api.resolve('4246.2.7.tape')).chainId, 196)
   assert.deepEqual([...seen].sort(), [...rpcUrlsFor(196)].sort())
 })
@@ -368,7 +369,7 @@ test('FIXED TAP10-RANGE: #ID <= 10^18 and processor number <= 10^9 in every mode
     assert.ok(r && /out of range: a TapeOut name has 1 <= #ID <= 10\^18 and 0 <= processor number <= 10\^9 \(TAP-10 §3\.1\)/.test(r.error), s)
   }
   let sent = 0
-  const api = createTapeAPI({ rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, quiet: true, fetch: async () => { sent++; throw new Error('no request expected') } })
+  const api = createTapeAPI({ conform: false, rpcUrls: ['http://rpc1', 'http://rpc2'], quorum: 2, quiet: true, fetch: async () => { sent++; throw new Error('no request expected') } })
   await assert.rejects(api.resolve('1000000000000000001.0.tape'), (e) => e.code === 'MANIFEST_INVALID' && /out of range/.test(e.message))
   await assert.rejects(api.resolve('1.1000000001'), (e) => e.code === 'MANIFEST_INVALID' && /out of range/.test(e.message))
   assert.equal(sent, 0)

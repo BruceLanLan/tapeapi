@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-// Split-settlement property (Balancer V2 rounding lesson, docs/research/RESEARCH-process-security.md 2.5 / 6.1 P0-2).
+// Split-settlement property (Balancer V2 rounding lesson, internal research notes on security processes, 2.5 / 6.1 P0-2).
 // Settling one cumulative C in N partial settles vs in one settle, on two otherwise identical channels:
 //   consumer outflow   identical (Σ pay_i == pay_single == min(C, channel))
 //   treasury_split  <= treasury_single                   (floor of a sum >= sum of floors)

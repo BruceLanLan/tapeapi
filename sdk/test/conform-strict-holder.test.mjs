@@ -49,7 +49,8 @@ function world({ chainId = 56, contract = false, contentSig = false } = {}) {
   return { chain, c, digests: { delegation: hexOf(delegation), content: hexOf(content) } }
 }
 const conformApi = (chain, o = {}) => createTapeAPI({ conform: 'tap10', rpcUrls: RPC, fetch: chain.fetch, clock: () => T, quiet: true, onWarning: () => {}, ...o })
-const defaultApi = (chain, o = {}) => createTapeAPI({ rpcUrls: RPC, fetch: chain.fetch, clock: () => T, quiet: true, onWarning: () => {}, sentinel: 'off', ...o })
+// 2.0: the default-mode controls are the 1.x resolution, conform: false / 2.0：默认模式对照即 1.x 的解析，conform: false
+const defaultApi = (chain, o = {}) => createTapeAPI({ conform: false, rpcUrls: RPC, fetch: chain.fetch, clock: () => T, quiet: true, onWarning: () => {}, sentinel: 'off', ...o })
 const isStatus = (code, status, re) => (e) => {
   assert.ok(e instanceof TapeAPIError, String(e)); assert.equal(e.code, code, e.message); assert.equal(e.data?.status, status, e.message)
   if (re) assert.match(e.message, re)
@@ -198,7 +199,7 @@ test('forChain passes it on: on Base and X Layer the holder and a contract holde
   const urls = (id) => ['a', 'b', 'c'].map((x) => `http://rpc${id}-${x}`)
   const chains = { 196: { rpcUrls: urls(196) }, 8453: { rpcUrls: urls(8453) } }
   const api = createTapeAPI({ conform: 'tap10', rpcUrls: urls(56), fetch, clock: () => T, quiet: true, onWarning: () => {}, chains })
-  const plain = createTapeAPI({ rpcUrls: urls(56), fetch, clock: () => T, quiet: true, onWarning: () => {}, sentinel: 'off', chains })
+  const plain = createTapeAPI({ conform: false, rpcUrls: urls(56), fetch, clock: () => T, quiet: true, onWarning: () => {}, sentinel: 'off', chains })
   for (const [id, name] of [[8453, '4246.3.7'], [196, '4246.2.7']]) {
     const w = worlds[id]
     assert.equal((await api.resolve(name)).verified.holder.toLowerCase(), SAFE, `${id}`)

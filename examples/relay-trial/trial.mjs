@@ -90,7 +90,8 @@ export async function runTrial({ say = () => {}, lang = 'both', keep = false } =
 
     // 2. As your users' apps call it: the SDK's verifying fetch. / 像用户的应用那样调用：SDK 的核验 fetch。
     say(L('\n== 2. Calls as your users\' apps make them (OpenAI / Anthropic SDK shape), every receipt verified', '\n== 2. 像用户的应用那样调用（OpenAI / Anthropic SDK 的请求），每份回执都核验'))
-    const api = createTapeAPI({ dev: true })
+    // 1.x behaviour; 2.0 default is conform: 'tap10'
+    const api = createTapeAPI({ dev: true, conform: false })
     const svc = await api.resolve({ dev: url })
     const reports = []
     const vfetch = ai.createVerifyingFetch({ api, service: svc, onReport: (r) => reports.push(r) })

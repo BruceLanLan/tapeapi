@@ -34,7 +34,7 @@ The directory only helps people find services, and lets anyone recheck them with
 1. Make your service pass the doctor, with exit status 0 (warnings allowed):
 
    ```sh
-   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-doctor <your name>
+   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-doctor <your name>
    ```
 
    The [guide for AI providers](../docs/guides/ai-providers.md#from-zero-to-live) takes you there step by step.
@@ -55,7 +55,7 @@ The directory only helps people find services, and lets anyone recheck them with
 1. 先让你的服务通过诊断，退出码为 0（允许警告）：
 
    ```sh
-   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v1.8.1/tapeapi-sdk-1.8.1.tgz tapeapi-doctor <你的名字>
+   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-doctor <你的名字>
    ```
 
    [AI 服务方指南](../docs/guides/zh-CN/ai-providers.md#从零到上线)一步步带你做到这一点。
@@ -73,6 +73,29 @@ The directory only helps people find services, and lets anyone recheck them with
 | `failing` | a check failed (exit 1); the failed checks are listed | 有检查失败（退出码 1），列出失败项 |
 | `stale` | failing 7 daily rechecks in a row; anyone may then propose its removal in a pull request, with the record | 连续 7 次每日复核失败；此后任何人都可以提拉取请求建议移除，附上复核记录 |
 | `undecided` | the chain or the network could not be read (exit 3); yesterday's verdict is kept (`verdict`, `verdictAt`) and a failing or stale flag is not cleared | 读不到链或网络（退出码 3）；保留前一天的结论（`verdict`、`verdictAt`），failing 或 stale 不会被清除 |
+
+### Beside the flag: the 2.0 default client / 标记旁边：2.0 默认客户端
+
+The flag is the doctor's verdict under the 1.x resolution (`conform: false`). Since 2.0 each entry in `status.json` also
+has `defaultMode`: what a client in the SDK's default mode (the TAP-10 conformance mode) says of the name, read with
+`api.siteStatus` at one pinned block: whether the container is opened and the name activated, and whether the site
+store and payment contract run implementations the SDK lists. It is not a full resolve (the doctor has already checked
+the manifest and the delegation). It never changes the flag, `verdict`, `consecutiveFailures` or `rpcRequests`, never
+makes the job fail, and never removes an entry; it shares the name's cap of 60 RPC requests with the doctor.
+
+| `defaultMode.status` | Meaning | 含义 |
+|---|---|---|
+| `ok` | a 2.0 default client gets past the site checks | 2.0 默认客户端越过了站点检查 |
+| `not-opened` | the container has not been opened (TAP-10 §6.2) | 容器尚未开通（TAP-10 §6.2） |
+| `unpaid` | the name is not activated, or its paid period ran out (TAP-10 §6.3): a 2.0 default client does not resolve it, and cannot verify its earlier receipts either | 名字未激活或付费期已过（TAP-10 §6.3）：2.0 默认客户端不解析它，也核验不了它以前的回执 |
+| `store-changed` | the site store or payment contract runs an implementation the SDK does not list (`implementations` names it) | 站点存储或付费合约运行着 SDK 未列出的实现（`implementations` 列出） |
+| `unavailable` | the chain could not be read, or the cap was spent (`reason: "rpc-budget"`); no conclusion | 读不到链，或用完了上限（`reason: "rpc-budget"`）；没有结论 |
+| other | `unsupported`, `no-such-token`, `not-tapeout`, ...: the TAP-10 name, as the SDK reports it | `unsupported`、`no-such-token`、`not-tapeout` 等：SDK 报告的 TAP-10 名字 |
+
+标记是诊断按 1.x 解析（`conform: false`）得出的结论。自 2.0 起，`status.json` 的每一条还有 `defaultMode`：SDK 默认模式（TAP-10
+一致模式）的客户端对这个名字的结论，用 `api.siteStatus` 在一个钉块上读取：容器是否开通、名字是否激活、站点存储与付费合约运行的实现
+是否在 SDK 的列表里。它不是完整解析（清单与委托诊断已经检查过）。它从不改变标记、`verdict`、`consecutiveFailures` 或 `rpcRequests`，
+从不让任务失败，也从不删除条目；它与诊断共用每个名字 60 次 RPC 请求的上限。
 
 ## The daily recheck / 每日复核
 

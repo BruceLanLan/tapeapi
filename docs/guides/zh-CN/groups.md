@@ -218,13 +218,14 @@ if (inv.format === 2 && !G.MAX_MEMBERS_V2) return askToUpdate(inv)
 ## 标签版本（`labels`，1.8.1 起）
 
 群聊也有第 2 版
-[TAPI-27 v2](../../../spec/TAPI-27-v2.md)（Draft）：标签以 `tape-group/` 开头，
-邀请投到 [TAPI-26 v2](channels.md#7-标签版本labels181-起) 的第 2 版收件房间。1.8.1 起作为选项提供，2.0 起为默认；它不是格式 2，两种格式都能用。
+[TAPI-27 v2](../../../spec/TAPI-27-v2.md)（2.0.0 起为 Stable (v2)）：标签以 `tape-group/` 开头，
+邀请投到 [TAPI-26 v2](channels.md#7-标签版本labels181-起) 的第 2 版收件房间。1.8.1 作为选项提供，**2.0 起为默认**；它不是格式 2，两种格式都能用。
 
-- 群主给 `createGroup` 传 `labels: 'v2'`；成员给 `checkGroupInvites`（随即读第 2 版收件房间）与 `joinGroup` 传同样的值。
-  `deliverGroupUpdate` 与 `inviteFor` 跟随群的版本（`group.labels`）。
+- 不传 `labels` 时，`createGroup`、`checkGroupInvites`（读第 2 版收件房间）与 `joinGroup` 都用第 2 版。
+  `deliverGroupUpdate` 与 `inviteFor` 跟随群的版本（`group.labels`）。成员仍在 1.x 的群，所有人传 `labels: 'v1'`（2.x 内已弃用，2.x 内不删除）。
 - 一个群终生保持其版本。第 2 版群主的 `snapshot()` 写为 `v: 3, labels: 'v2'`，所以 1.8.0 及更早的 SDK 会拒收它，而不是用
-  第 1 版标签恢复这个群；`resumeGroup` 从快照取得版本（给出不一致的 `labels` 会得到 `GROUP_INVALID`）。
+  第 1 版标签恢复这个群；`resumeGroup` 从快照取得版本（给出不一致的 `labels` 会得到 `GROUP_INVALID`）。1.x 的快照（`v: 1`
+  或 `v: 2`）是第 1 版的群，在 2.0 里也按第 1 版恢复：群主升级不会把已有的群改成第 2 版。
 - 另一版本的成员读的是另一个收件房间和另一个群房间，所以通常什么都看不到；另一版本的纪元消息即使到了，也会被拒收，
   错误为 `GROUP_INVALID`，带 `e.data.labels` 与 `e.data.peerLabels`。SDK 从不自行切换版本。
 

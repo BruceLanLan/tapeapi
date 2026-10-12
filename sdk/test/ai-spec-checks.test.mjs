@@ -120,7 +120,8 @@ test('streams: the adapter\'s reading of the bytes; with usageInjected the usage
 test('resolve: an invalid ai field is dropped with svc.aiProblems, the rest of the manifest stays usable; the verifying fetch uses only validated endpoints', async () => {
   const p = sidecar(() => json('{}'))
   const good = p.manifest()
-  const api = createTapeAPI({ dev: true })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const api = createTapeAPI({ conform: false, dev: true })
   const ok = await api.resolve({ dev: structuredClone(good) })
   assert.equal(ok.aiProblems, undefined)
   assert.deepEqual(ok.manifest.ai, good.ai)

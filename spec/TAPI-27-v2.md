@@ -2,10 +2,10 @@
 |---|---|
 | Title | Tape Group v2: Private Group Channels Between Containers, `tape-group/` labels |
 | Author | Bruce (@BruceLanLan) |
-| Status | Draft |
-| Target | Stable (v2) at TapeAPI 2.0.0, where it becomes the SDK's default; §3.8 of version 1 (format 2) stays Experimental in this version |
-| Revision | 2026-10-08: implemented as an option from TapeAPI 1.8.1. §3.4 says how an implementation of both versions knows the version of a group; §4, §5 and §7 follow. |
-| Implementation | Implemented as an option (2026-10-08, TapeAPI 1.8.1): `sdk/src/group.js` implements both versions; `labels: 'v2'` selects this one, and [TAPI-27](TAPI-27.md) version 1 stays the default in TapeAPI 1.x. From TapeAPI 2.0.0 this version is the default. Relays and ChannelBus need no change. |
+| Status | Stable (v2) |
+| Target | Reached: Stable (v2) from TapeAPI 2.0.0 (2026-10-12), where it became the SDK's default (TAPI-1 §4.1, Stable (vN)); §3.8 of version 1 (format 2) stays Experimental in this version |
+| Revision | 2026-10-08: implemented as an option from TapeAPI 1.8.1. §3.4 says how an implementation of both versions knows the version of a group; §4, §5 and §7 follow. 2026-10-08, for TapeAPI 2.0.0: this version is the SDK's default from 2.0.0, and version 1 is selected with `labels: 'v1'`; §5 and §7 follow. No normative text changed. |
+| Implementation | Implemented as an option (2026-10-08, TapeAPI 1.8.1): `sdk/src/group.js` implements both versions; `labels: 'v2'` selects this one, and [TAPI-27](TAPI-27.md) version 1 stays the default in TapeAPI 1.x. From TapeAPI 2.0.0 this version is the default: a caller passes no `labels`, and `labels: 'v1'` selects version 1 (deprecated in 2.x, not removed in 2.x). Relays and ChannelBus need no change. |
 | Type | Standards |
 | Created | 2026-10-07 |
 | Requires | TAPI-27 (version 1), TAPI-20, TAPI-21, TAPI-26 v2 |
@@ -66,7 +66,7 @@ An implementation MAY implement both versions (TAPI-1 §4.1). It MUST then keep 
 
 ## 5. Backwards Compatibility
 
-Version 1 and version 2 do not interoperate: a member on version 1 (TapeAPI 1.0.0 to 1.8.0, and later 1.x by default) and a member on version 2 (TapeAPI 1.8.1 and later with `labels: 'v2'`, and 2.0 by default) cannot be in the same group, and an owner on one version cannot invite a member on the other. A group created under version 1 cannot be continued under version 2; its owner creates a new group. Relays and ChannelBus need no change. Version 1 is not changed by this document and stays Stable (v1). Under TAPI-1 §4.1 it cannot be moved to Withdrawn earlier than 12 months after this version becomes Stable, and the planned date has to be written into version 1 at least 3 months in advance; no such date is planned.
+Version 1 and version 2 do not interoperate: a member on version 1 (TapeAPI 1.0.0 to 1.8.0, later 1.x by default, and 2.x with `labels: 'v1'`) and a member on version 2 (TapeAPI 1.8.1 and later 1.x with `labels: 'v2'`, and 2.0 and later by default) cannot be in the same group, and an owner on one version cannot invite a member on the other. A group created under version 1 cannot be continued under version 2; its owner creates a new group. Relays and ChannelBus need no change. Version 1 is not changed by this document and stays Stable (v1); that the SDK's default moves to this version in 2.0.0 changes neither status (TAPI-1 §4.1). A group created under version 1, including one resumed from a 1.x snapshot, stays a version-1 group under TapeAPI 2.x. Under TAPI-1 §4.1 version 1 cannot be moved to Withdrawn earlier than 12 months after this version becomes Stable, and the planned date has to be written into version 1 at least 3 months in advance; no such date is planned.
 
 ## 6. Test Vectors
 
@@ -74,7 +74,7 @@ Version 1 and version 2 do not interoperate: a member on version 1 (TapeAPI 1.0.
 
 ## 7. Reference Implementation
 
-`sdk/src/group.js` and `sdk/src/group-delivery.js` of TapeAPI 1.8.1 and later, with `labels: 'v2'` passed to `createGroup`, `joinGroup`, `openGroupInvite`, `groupRoom` and `checkGroupInvites` (a group handle keeps its version, and `resumeGroup` takes it from the snapshot; the default is `'v1'` in 1.x and `'v2'` from 2.0). Tests: those of version 1 §7, and `sdk/test/channel-labels.test.mjs` (the SDK reproduces the vectors of version 1 by default and those of this version, both formats, with `labels: 'v2'`; an epoch message or invite across the versions fails with a version-mismatch error; a version-2 group delivers to and reads the version-2 inbox rooms).
+`sdk/src/group.js` and `sdk/src/group-delivery.js` of TapeAPI 1.8.1 and later: `createGroup`, `joinGroup`, `openGroupInvite`, `groupRoom` and `checkGroupInvites` take `labels` (a group handle keeps its version, and `resumeGroup` takes it from the snapshot; the default is `'v1'` in 1.x, so 1.8.1 and later 1.x need `labels: 'v2'`; from 2.0 the default is `'v2'` and `labels: 'v1'` selects version 1). Tests: those of version 1 §7, and `sdk/test/channel-labels.test.mjs` (the SDK reproduces the vectors of this version, both formats, by default and with `labels: 'v2'`, and those of version 1 with `labels: 'v1'`; an epoch message or invite across the versions fails with a version-mismatch error; a version-2 group delivers to and reads the version-2 inbox rooms).
 
 ## 8. Security Considerations
 
@@ -92,11 +92,11 @@ Copyright and related rights waived via [CC0](https://creativecommons.org/public
 
 > **不是 TAP。** “TAPI-27”是 TapeAPI 给本文档起的名字，不是 TAP 编号（见 [TAPI-27](TAPI-27.md) 第 1 版）。本文是 TAPI-27 按 TAPI-1 §4.1（"破坏性变更与并存"）出的第 2 版：TAPs 编辑在私密通道（[PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12)）与私密群聊（[PR #20](https://github.com/TapeOutProtocol/TAPs/pull/20)）的评审中要求标签不要看起来像 TAP 编号，而对 Stable (v1) 文档的不兼容修改只能作为 v2 发布，绝不能改 v1。第 1 版不变，仍是 Stable (v1)。本文档的"第 2 版"不是"格式 2"：格式 2 是第 1 版 §3.8 的实验性线路格式，两个版本里都有。
 
-> **状态：** Draft（草稿），目标：TapeAPI 2.0.0 时进入 Stable (v2)，届时成为 SDK 的默认版本；第 1 版 §3.8（格式 2）在本版本中仍是 Experimental（实验性）。
+> **状态：** Stable (v2)（稳定），自 TapeAPI 2.0.0（2026-10-12）起，并自该版本起成为 SDK 的默认版本（TAPI-1 §4.1，Stable (vN)）；第 1 版 §3.8（格式 2）在本版本中仍是 Experimental（实验性）。
 
-> **修订：** 2026-10-08：自 TapeAPI 1.8.1 起作为选项实现。§3.4 说明同时实现两个版本的实现如何得知一个群的版本；§4、§5、§7 随之更新。
+> **修订：** 2026-10-08：自 TapeAPI 1.8.1 起作为选项实现。§3.4 说明同时实现两个版本的实现如何得知一个群的版本；§4、§5、§7 随之更新。2026-10-08，面向 TapeAPI 2.0.0：自 2.0.0 起本版本是 SDK 的默认版本，第 1 版以 `labels: 'v1'` 选用；§5、§7 随之更新。规范性文字未改动。
 
-> **实现状态（2026-10-08，TapeAPI 1.8.1）：** 作为选项实现：`sdk/src/group.js` 实现两个版本；`labels: 'v2'` 选用本版本，TapeAPI 1.x 中 [TAPI-27](TAPI-27.md) 第 1 版仍是默认。自 TapeAPI 2.0.0 起本版本成为默认。中继与 ChannelBus 不需要改动。
+> **实现状态（2026-10-08，TapeAPI 1.8.1）：** 作为选项实现：`sdk/src/group.js` 实现两个版本；`labels: 'v2'` 选用本版本，TapeAPI 1.x 中 [TAPI-27](TAPI-27.md) 第 1 版仍是默认。自 TapeAPI 2.0.0 起本版本成为默认：调用方不传 `labels`，`labels: 'v1'` 选用第 1 版（2.x 内已弃用，2.x 内不删除）。中继与 ChannelBus 不需要改动。
 
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 
@@ -147,7 +147,7 @@ TAPI-27 v2 就是 TAPI-27 第 1 版，只改一处：格式 1 与格式 2 中每
 
 ## 5. 向后兼容
 
-第 1 版与第 2 版不互通：使用第 1 版的成员（TapeAPI 1.0.0 至 1.8.0，以及之后 1.x 的默认）与使用第 2 版的成员（TapeAPI 1.8.1 及以后传 `labels: 'v2'`，以及 2.0 的默认）不能在同一个群里，一个版本的群主也邀请不了另一个版本的成员。按第 1 版建立的群不能在第 2 版下延续，群主要新建一个群。中继与 ChannelBus 不需要改动。本文档不改变第 1 版，第 1 版仍是 Stable (v1)。按 TAPI-1 §4.1，第 1 版最早在本版本进入 Stable 满 12 个月后才能改为 Withdrawn，且计划日期至少提前 3 个月写进第 1 版；目前没有这样的计划。
+第 1 版与第 2 版不互通：使用第 1 版的成员（TapeAPI 1.0.0 至 1.8.0、之后 1.x 的默认，以及 2.x 传 `labels: 'v1'`）与使用第 2 版的成员（TapeAPI 1.8.1 及以后的 1.x 传 `labels: 'v2'`，以及 2.0 及以后的默认）不能在同一个群里，一个版本的群主也邀请不了另一个版本的成员。按第 1 版建立的群不能在第 2 版下延续，群主要新建一个群。中继与 ChannelBus 不需要改动。本文档不改变第 1 版，第 1 版仍是 Stable (v1)；SDK 的默认值在 2.0.0 改为本版本，这不改变任何一个版本的状态（TAPI-1 §4.1）。按第 1 版建立的群（包括从 1.x 快照恢复的群）在 TapeAPI 2.x 下仍是第 1 版的群。按 TAPI-1 §4.1，第 1 版最早在本版本进入 Stable 满 12 个月后才能改为 Withdrawn，且计划日期至少提前 3 个月写进第 1 版；目前没有这样的计划。
 
 ## 6. 测试向量
 
@@ -155,7 +155,7 @@ TAPI-27 v2 就是 TAPI-27 第 1 版，只改一处：格式 1 与格式 2 中每
 
 ## 7. 参考实现
 
-TapeAPI 1.8.1 及以后的 `sdk/src/group.js` 与 `sdk/src/group-delivery.js`，给 `createGroup`、`joinGroup`、`openGroupInvite`、`groupRoom`、`checkGroupInvites` 传 `labels: 'v2'`（群句柄保持其版本，`resumeGroup` 从快照取得版本；默认值在 1.x 中为 `'v1'`，自 2.0 起为 `'v2'`）。测试：第 1 版 §7 所列测试，加上 `sdk/test/channel-labels.test.mjs`（SDK 默认重现第 1 版向量，传 `labels: 'v2'` 时重现本版本两种格式的向量；跨版本的纪元消息或邀请以版本不一致的错误失败；第 2 版的群投递到并读取第 2 版的收件房间）。
+TapeAPI 1.8.1 及以后的 `sdk/src/group.js` 与 `sdk/src/group-delivery.js`：`createGroup`、`joinGroup`、`openGroupInvite`、`groupRoom`、`checkGroupInvites` 接受 `labels`（群句柄保持其版本，`resumeGroup` 从快照取得版本；默认值在 1.x 中为 `'v1'`，因此 1.8.1 及以后的 1.x 要传 `labels: 'v2'`；自 2.0 起默认值为 `'v2'`，`labels: 'v1'` 选用第 1 版）。测试：第 1 版 §7 所列测试，加上 `sdk/test/channel-labels.test.mjs`（SDK 默认及传 `labels: 'v2'` 时重现本版本两种格式的向量，传 `labels: 'v1'` 时重现第 1 版向量；跨版本的纪元消息或邀请以版本不一致的错误失败；第 2 版的群投递到并读取第 2 版的收件房间）。
 
 ## 8. 安全考量
 

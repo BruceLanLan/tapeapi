@@ -6,11 +6,19 @@
 // default mode that 1.4 allows, the TAP-10 §3.1 name ranges (#ID <= 10^18, processor <= 10^9), is deliberately NOT in
 // here (no name in this file is out of range): it has its own tests.
 // Regenerate only on purpose: UPDATE_GOLDEN=1 node --test sdk/test/default-mode-trace.test.mjs (and say why in the commit).
+// 2.0: THE conform: false GOLDEN TEST. The conformance mode became the default in 2.0 (docs/guides/upgrade-2.0.md), so every
+// client here passes conform: false (the deprecated 1.x resolution; its one construction-time warning goes to onWarning,
+// which records nothing here) and the fixture is unchanged, byte for byte: it proves that conform: false IS the 1.x
+// default. File names and the fixture's `about` are kept as they were, so the fixture stays verbatim. The 2.0 default has
+// its own golden test, conform-default-trace.test.mjs, with the same eleven scenarios on the conform chain.
 // 黄金测试 TAP10-0：默认模式逐个请求。在动工做 TAP-10 一致模式（1.4）之前，用固定、确定性的假链与固定时钟录制：下面每次解析，
 // 客户端发出的每个 JSON-RPC 请求（节点、是否批量、方法与参数；不含 JSON-RPC id），以及调用方拿到的结果（服务对象，或错误的
 // code、message、data）。一致模式需显式开启；不开时，1.x 必须逐字节发出同样的请求、同样的顺序，返回同样的结果与错误。1.4 唯一
 // 允许改变的默认行为——TAP-10 §3.1 的名字范围——刻意不放进来（本文件里没有超范围的名字），另有单独的测试。
 // 只在有意时重新生成：UPDATE_GOLDEN=1 node --test sdk/test/default-mode-trace.test.mjs（并在提交信息里说明原因）。
+// 2.0：这是 conform: false 的黄金测试。一致模式在 2.0 成为默认，所以这里每个客户端都显式传 conform: false（已弃用的 1.x 解析；
+// 建客户端时的那一次警告交给 onWarning，这里不记录），夹具逐字节不变：证明 conform: false 就是 1.x 的默认。文件名与夹具的
+// about 保持原样，夹具因此逐字不变。2.0 默认另有黄金测试 conform-default-trace.test.mjs（同样 11 个场景，在 conform 假链上）。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -51,7 +59,8 @@ function world(chainOpts) {
   }
   return { chain, log, fetch }
 }
-const base = (fetch, o = {}) => ({ rpcUrls: RPC, quorum: 2, fetch, clock, quiet: true, onWarning: () => {}, ...o })
+// 2.0: conform: false on every client (the 1.x resolution) / 2.0：每个客户端都传 conform: false（1.x 的解析）
+const base = (fetch, o = {}) => ({ conform: false, rpcUrls: RPC, quorum: 2, fetch, clock, quiet: true, onWarning: () => {}, ...o })
 const fake = (fetch, o = {}) => createTapeAPI(base(fetch, { hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, factory: ADDR.factory, ...o }))
 const json = (x) => JSON.parse(JSON.stringify(x, (k, v) => (typeof v === 'bigint' ? `${v}n` : v)))
 async function outcome(p) {
@@ -163,7 +172,7 @@ if (process.env.UPDATE_GOLDEN === '1') {
 }
 const golden = JSON.parse(readFileSync(FIXTURE, 'utf8'))
 
-test('GOLDEN TAP10-0: the fixture covers every scenario, each with requests and an outcome', () => {
+test('GOLDEN TAP10-0 (conform: false): the fixture covers every scenario, each with requests and an outcome', () => {
   assert.equal(golden.clock, T)
   assert.deepEqual(Object.keys(golden.scenarios), Object.keys(SCENARIOS))
   const steps = Object.values(golden.scenarios).flat()
@@ -173,7 +182,7 @@ test('GOLDEN TAP10-0: the fixture covers every scenario, each with requests and 
 })
 
 for (const name of Object.keys(SCENARIOS)) {
-  test(`GOLDEN TAP10-0: ${name}: the same requests in the same order, the same results and errors`, () => {
+  test(`GOLDEN TAP10-0 (conform: false): ${name}: the same requests in the same order, the same results and errors`, () => {
     const want = golden.scenarios[name], got = now[name]
     assert.equal(got.length, want.length)
     got.forEach((s, i) => {

@@ -72,6 +72,13 @@ TapeAPI is not on npm. `@tapeapi/sdk` and `@tapeapi/server` are installed from t
 - **What this proves, and what it does not.** `SHA256SUMS` sits on the same Release page as the tarballs. It catches a corrupted or truncated download, a proxy or mirror that changed a file, and files taken from two different releases. It does not protect against someone who can edit the Release itself: they could replace the tarballs and the checksum file together. A check that does not depend on the Release page is to compare the contents with the source: check out the release tag, run `tar xzf` on the tarball, and `diff -r package/src sdk/src` (likewise `types` and `bin`; `server/` for the server package). Compare extracted files rather than the hash of a tarball you rebuilt: the same source packed with the same Node and npm gives the same bytes (a rebuild of v1.5.0 with Node 22 and npm 10 matched the published tarballs exactly), but with a different Node version the tar inside is identical while the gzip layer around it is not, so two honest builds can have different `.tgz` hashes. GitHub also records a SHA-256 digest for every uploaded asset (`gh api repos/BruceLanLan/tapeapi/releases/tags/<tag> --jq '.assets[] | [.name, .digest]'`); it is computed by GitHub on upload and is a second place to read the same value, with the same limit as above.
 - **Build provenance (`gh attestation`): not provided.** GitHub's build attestations (signed provenance, checked with `gh attestation verify`) are created by a GitHub Actions workflow that builds the file, using the workflow's own identity. Our releases are built and uploaded by hand from the maintainer's machine (`npm pack`, then `gh release create`); no CI job builds them, so there is no workflow identity to attest, and an attestation for a file built on a laptop would state nothing GitHub observed. If releases are later built and uploaded by a CI workflow, an attestation step can be added then. Until then `SHA256SUMS` is the only integrity evidence we provide, and this section is the full extent of it.
 
+## 6. Supported versions
+
+| Version | Security fixes |
+|---|---|
+| 2.x | Yes: the current major version. |
+| 1.x | Security fixes only, for 6 months after 2.0.0 (released 2026-10-12), that is until 2027-04-12. After that, 1.x is no longer maintained. |
+
 ---
 
 ## 0. 先读这一条（中文）
@@ -143,3 +150,10 @@ TapeAPI 不在 npm 上。`@tapeapi/sdk` 与 `@tapeapi/server` 从 GitHub Release
   每一行都必须以 `OK` 结尾。若出现 `FAILED`，不要安装：重新下载；仍然失败就按 §1 报告。请安装刚校验过的本地文件，而不是直接用 URL，这样装进去的就是校验过的。
 - **这能证明什么，不能证明什么。** `SHA256SUMS` 与 tarball 在同一个 Release 页面上。它能发现下载损坏或被截断、代理或镜像改了文件、以及混用了两个不同发布的文件。它防不了能编辑 Release 本身的人：他们可以把 tarball 和校验文件一起换掉。不依赖 Release 页面的核对方法，是拿内容和源码比：检出该发布的标签，对 tarball 运行 `tar xzf`，再 `diff -r package/src sdk/src`（`types`、`bin` 同理；服务端包对应 `server/`）。请比对解开后的文件，而不是你自己重新构建的 tarball 的哈希：同一份源码用同一版本的 Node 与 npm 打包，字节相同（用 Node 22 与 npm 10 重新构建 v1.5.0，与已发布的 tarball 完全一致）；但换了 Node 版本，里面的 tar 仍相同，外面那层 gzip 却不同，所以两次诚实的构建也可能得到不同的 `.tgz` 哈希。GitHub 还会为每个上传的附件记录一个 SHA-256 摘要（`gh api repos/BruceLanLan/tapeapi/releases/tags/<tag> --jq '.assets[] | [.name, .digest]'`）：它由 GitHub 在上传时计算，是读取同一个值的第二个地方，局限与上面相同。
 - **构建来源证明（`gh attestation`）：目前不提供。** GitHub 的构建证明（带签名的来源证明，用 `gh attestation verify` 检查）由构建该文件的 GitHub Actions 工作流用它自己的身份生成。我们的发布由维护者在自己的机器上手工构建并上传（`npm pack`，再 `gh release create`），没有任何 CI 任务构建它们，所以没有可证明的工作流身份；为笔记本上构建的文件出具证明，写进去的不会是 GitHub 观察到的任何事。以后若改为由 CI 工作流构建并上传发布，那时可以加上证明步骤。在此之前，`SHA256SUMS` 是我们提供的唯一完整性依据，本节就是它的全部范围。
+
+## 6. 支持的版本
+
+| 版本 | 安全修复 |
+|---|---|
+| 2.x | 是：当前的大版本。 |
+| 1.x | 只修安全问题，期限为 2.0.0（2026-10-12 发布）之后 6 个月，即到 2027-04-12。之后 1.x 不再维护。 |

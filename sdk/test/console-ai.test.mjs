@@ -191,7 +191,8 @@ test('the new-api sidecar\'s manifest, ai field included, is publishable as serv
   assert.deepEqual(JSON.parse(mine).ai, C.normalizeAI(C.modelsToAIField(EXAMPLE_MODELS, BASE)), 'which is the imported models.json, converted')
   assert.doesNotThrow(() => validateManifest(JSON.parse(mine), { requireDelegation: true }), 'a valid TAPI-20 manifest')
   assert.equal(Object.keys(JSON.parse(mine)).at(-1), 'ai', 'ai comes last')
-  const svc = await createTapeAPI({ dev: true }).resolve({ dev: JSON.parse(mine) })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const svc = await createTapeAPI({ conform: false, dev: true }).resolve({ dev: JSON.parse(mine) })
   assert.equal(svc.aiProblems, undefined, 'a client keeps the field')
   assert.deepEqual(svc.manifest.ai, m.ai)
   // A local sidecar (loopback http) is publishable too, as a local service is. / 本地旁路（回环 http）同样可以发布。

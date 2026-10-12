@@ -109,6 +109,6 @@ export declare function checkGroupInvites(opts: {
   holder?: Address
   /** true (use relayClients[0].api) or a TapeAPI client: check the container's channel record publishes this identity. */
   checkSelf?: boolean | Pick<TapeAPI, 'chain' | 'chainId'>
-  /** Since 1.8.1: 'v2' reads the v2 inbox room (TAPI-27 v2 groups); default 'v1'. Pass the same to joinGroup. */
+  /** Since 1.8.1: 'v2' (the default from 2.0) reads the v2 inbox room (TAPI-27 v2 groups); 'v1' (deprecated in 2.x) the v1 room of 1.x owners. Pass the same to joinGroup. */
   labels?: 'v1' | 'v2'
 }): Promise<GroupInviteCheck>

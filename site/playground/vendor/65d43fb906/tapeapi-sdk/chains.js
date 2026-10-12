@@ -187,7 +187,7 @@ export function parseTapeName(str) {
   return { tokenId: m[1], processor: m[3], area: chain.area, chainId: chain.chainId, name: formatTapeName({ tokenId: m[1], processor: m[3], chainId: chain.chainId }) }
 }
 
-// TAP-10 §3.4 input forms, for the conformance mode (conform: 'tap10') only. The default mode keeps parseTapeName above,
+// TAP-10 §3.4 input forms, for the conformance mode (the default since 2.0) only. The 1.x resolution (conform: false) keeps parseTapeName above,
 // which takes the canonical name and the short name and refuses every other spelling.
 //   on-chain name / short name   4246.0.tape, 4246.0, 1.3.1.tape, 1.3.1     (`.tape` in any case)
 //   URL                          tape://4246.0.tape/docs/, tape://4246.0/, web+tape://1.3.1.tape/   (scheme in any case; the
@@ -198,7 +198,7 @@ export function parseTapeName(str) {
 // Anything else is an input error (§3.4: "a client MUST NOT guess"), and so is a name out of the §3.1 ranges. Returns
 // { kind: 'name', tokenId, processor, area, chainId, name } | { kind: 'container', container } |
 // { kind: 'pair', circuits, tokenId } | { error }.
-// TAP-10 §3.4 的输入形式，只供一致模式使用。默认模式仍用上面的 parseTapeName：只收规范名字与短名字，其它写法一律拒绝。
+// TAP-10 §3.4 的输入形式，只供一致模式（2.0 起为默认）使用。1.x 解析（conform: false）仍用上面的 parseTapeName：只收规范名字与短名字，其它写法一律拒绝。
 // 其它任何东西都是输入错误（§3.4："客户端不得猜测"），超出 §3.1 范围的名字也是。
 const LABEL_FORM = /^#?([1-9]\d{0,77})@(?:(0|[1-9]\d{0,6})\.)?(0|[1-9]\d{0,77})$/
 const URL_FORM = /^(?:web\+)?tape:\/\/([^/?#]+)(?:[/?#].*)?$/i
@@ -277,6 +277,25 @@ export const TAP10_SEALS = deepFreeze({
   },
   196: { hub: '0xdCC57797089eBD9f26e686379A4323f353a3F9C6', ...L2_SEALS },
   8453: { hub: '0x38A2d320b8984Bbac9b0a2691B6c0FD829A23867', ...L2_SEALS },
+})
+// ── TAP-10 §13.8, the hub's Upgraded logs (the conformance mode, @experimental) ───────────────────────────────────
+// "When log-capable nodes are available, a client SHOULD read every Upgraded log of the hub and accept the hub only if
+// every implementation it names is the boot implementation or listed under Deployments (current or replaced)."
+// `createdAt` is the hub proxy's first block with code: the block of its CREATE2 deployment, whose constructor emits
+// Upgraded(boot); a scan starts there. `listed` is every implementation TAP-10 lists for the chain, current or replaced
+// (BNB Smart Chain v3, v2, v1; Base and X Layer v3); the slot check (TAP10_SEALS.hub) still accepts only the current one.
+// Read 2026-10-08, read-only: eth_getCode bisected on one operator and the block before / at checked on a second
+// (BNB Smart Chain Alchemy then meowrpc; Base mainnet.base.org then dRPC; X Layer OKX then dRPC); the creation block's
+// Upgraded(boot) read on two operators on X Layer, from mainnet.base.org on Base and from the deployment receipt
+// (NodeReal) on BNB Smart Chain (sdk/test/fixtures/tap10-hub-history-onchain.json). The Upgraded to the current implementation
+// (the scan's second anchor) was read on each chain as well, and on BNB Smart Chain the whole history (boot, v1, v2, v3).
+// TAP-10 §13.8 中枢的 Upgraded 日志（一致模式）。`createdAt` 是中枢代理第一个有代码的块（CREATE2 部署所在块，构造时发出
+// Upgraded(boot)），扫描从这里开始。`listed` 是 TAP-10 为该链列出的全部实现（当前或已替换）；实现槽比对仍只接受当前的那个。
+export const TAP10_HUB_BOOT = '0xC0D28CA8689248B0bed26cC0aa328CF16Aa4401e'
+export const TAP10_HUB_HISTORY = deepFreeze({
+  56: { createdAt: 122571550, listed: ['0x80aFE7B77F2dFD08e9feab7675780baC34a7EE85', '0x7dF03218910E0F37FC3A8DA8792831ab7580340F', '0xf5f18e3fe811b9b382C90539d14440654E789d92'] },
+  196: { createdAt: 71019448, listed: ['0xdCC57797089eBD9f26e686379A4323f353a3F9C6'] },
+  8453: { createdAt: 51499079, listed: ['0x38A2d320b8984Bbac9b0a2691B6c0FD829A23867'] },
 })
 // ── Escrow tokens and audited escrow deployments (TAPI-22 §3.5, experimental) ──────────────────────────────────────
 // An escrow token's label, fixed per address: never the token's own name() (the Binance-Peg USDT's reads "Tether USD",

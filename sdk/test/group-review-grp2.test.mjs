@@ -28,7 +28,7 @@ async function groupOf(ms, opts = {}) {
   const created = await G.createGroup({ self: ms[0], identity: ms[0].identity, members: ms.slice(1).map(entry), ...TRUST, ...opts })
   const invite = { gid: created.group.gid, owner: { container: ms[0].container, chainId: 56 }, ...(opts.format === 2 ? { format: 2 } : {}) }
   const join = async (m, o = {}) => {
-    const g = G.joinGroup({ self: m, identity: m.identity, invite, ownerKeys: entry(ms[0]), ...(opts.clock ? { clock: opts.clock } : {}), ...o })
+    const g = G.joinGroup({ self: m, identity: m.identity, invite, ownerKeys: entry(ms[0]), ...(opts.clock ? { clock: opts.clock } : {}), ...(opts.labels ? { labels: opts.labels } : {}), ...o })
     await g.acceptEpoch(created.epochWire, TRUST)
     return g
   }
@@ -126,11 +126,13 @@ test('FIXED GRP2-1: format 1 is unchanged: the owner checks every member on ever
 
 test('FIXED GRP2-2: a format-2 snapshot is v: 2, which TapeAPI 1.0.0 and 1.1.0 refuse instead of resuming it as format 1; 1.2.0\'s v: 1 format-2 snapshots still resume', async (t) => {
   const ms = people(3, 0x9400)
-  const v2 = await groupOf(ms, { format: 2 })
+  // groups of TAPI-27 version 1 labels, the only ones 1.0.0 to 1.8.0 know (the 2.0 default is v2, snapshot v: 3)
+  // TAPI-27 第 1 版标签的群，即 1.0.0 至 1.8.0 唯一认识的群（2.0 默认为 v2，快照 v: 3）
+  const v2 = await groupOf(ms, { format: 2, labels: 'v1' })
   v2.owner.seal('x')
   const snap2 = JSON.parse(JSON.stringify(v2.owner.snapshot()))
   assert.equal(snap2.v, 2); assert.equal(snap2.format, 2)
-  const v1 = await groupOf(ms)
+  const v1 = await groupOf(ms, { labels: 'v1' })
   v1.owner.seal('x')
   const snap1 = JSON.parse(JSON.stringify(v1.owner.snapshot()))
   assert.equal(snap1.v, 1, 'format 1 is unchanged'); assert.equal('format' in snap1, false)

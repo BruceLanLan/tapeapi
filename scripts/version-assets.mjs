@@ -83,7 +83,7 @@ export const stylesheets = (dir = SITE) => pages(dir, '.css')
 
 /**
  * The stylesheet with every local woff2 `url()` replaced by a data URI of the file's bytes (the ?v= stamp dropped), for a
- * copy that must be self-contained (the DeWEB copy of the homepage, scripts/publish-site.mjs). A missing file is an error.
+ * copy that must be self-contained (the DeWEB copy of the homepage, made by the site publisher). A missing file is an error.
  * 把样式表里每个本地 woff2 `url()` 换成该文件字节的 data URI（去掉 ?v= 戳），供必须自包含的副本使用（首页的 DeWEB 副本）。
  */
 export function inlineFonts(css, cssDir) {

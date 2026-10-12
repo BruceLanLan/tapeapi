@@ -163,3 +163,17 @@ test('/mcp: once configured, the Worker answers MCP with the eight public method
   const setup = await rpc({ jsonrpc: '2.0', id: 3, method: 'tools/list' }, { SIGNER_KEY: key, PUBLIC_URL: 'https://api.tapeapi.fun' })
   assert.notEqual(setup.status, 200)
 })
+
+test('/mcp: the Worker\'s CORS preflight allows Mcp-Method and Mcp-Name, and still every header it allowed before', async () => {
+  const holder = '0x' + '11'.repeat(32), key = '0x' + '22'.repeat(32), expires = Math.floor(Date.now() / 1000) + 86400
+  const env = {
+    SIGNER_KEY: key, CIRCUITS: CIRCUITS, TOKEN_ID: '11', CONTAINER: CONTAINER, DELEGATION_EXPIRES: String(expires),
+    DELEGATION_SIG: signDigest(delegationDigest(56, MAINNET.hub, { container: CONTAINER, signer: privateKeyToAddress(key), expires }), holder),
+    PUBLIC_URL: 'https://api.tapeapi.fun', TAPE_NAME: '11.1013.tape', RPC_URLS: 'http://127.0.0.1:9,http://localhost:10',
+  }
+  const headers = { origin: 'https://example.org', 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type,mcp-protocol-version,mcp-method,mcp-name' }
+  const o = await worker.fetch(new Request('https://api.tapeapi.fun/mcp', { method: 'OPTIONS', headers }), env)
+  assert.equal(o.status, 204)
+  const allowed = o.headers.get('access-control-allow-headers').split(/\s*,\s*/)
+  for (const h of ['content-type', 'accept', 'authorization', 'mcp-protocol-version', 'mcp-session-id', 'last-event-id', 'mcp-method', 'mcp-name']) assert.ok(allowed.includes(h), `${h} is allowed`)
+})

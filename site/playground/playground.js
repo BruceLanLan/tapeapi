@@ -5,7 +5,7 @@
 // 调试台：用真实的 SDK 解析并调用 TapeOut 服务，展示 SDK 核对了什么。手写；SDK 由 scripts/build-playground.mjs 放入 vendor/<hash>/，
 // 下面导入里的路径也由它写入。
 // 清单与提供者给出的一切都是不可信文本，只经 textContent 进入页面。
-import { createTapeAPI, TapeAPIError, parseUnits, sig, abi, rpcUrlsFor, operatorOf, CHAINS, chainByArea } from './vendor/87f18f4a0b/tapeapi-sdk/index.js'
+import { createTapeAPI, TapeAPIError, parseUnits, sig, abi, rpcUrlsFor, operatorOf, CHAINS, chainByArea } from './vendor/65d43fb906/tapeapi-sdk/index.js'
 
 // The SDK's default nodes: three distinct operators (NodeReal, Alchemy, 48 Club); the SDK counts agreement by operator.
 // SDK 的默认节点：三家不同运营方；SDK 按运营方计票。
@@ -62,6 +62,15 @@ const T = {
     hints: {
       RPC_UNAVAILABLE: '公共 BSC 节点没有及时回应（网络或节点限流）。稍后再试。',
       RPC_DISAGREE: '节点之间答案不一致，SDK 拒绝采用。稍后再试。',
+      SITE_STATUS: '这个名字的站点状态不允许解析：容器还没开通，或名字没有激活（TAP-10 §6）。',
+      CONTRACT_UNKNOWN: 'TapeOut 的合约换成了本 SDK 版本没有列出的实现，SDK 拒绝读取，直到 SDK 更新。',
+      INVALID_ARGUMENT: '这个输入不是 TAP-10 接受的写法，或本页无法判定它（见上面的错误信息）。',
+      RPC_STALE: '节点的区块落后太多（钉块过旧），SDK 拒绝采用。稍后再试。',
+      unavailable: '公共 BSC 节点没有及时回应（网络或节点限流）。稍后再试。',
+      unpaid: '这个名字在链上没有激活（付费到期或还没付费）：按 TAP-11，客户端不解析没有激活的服务。持有人先激活它（DomainBinding.bind）。',
+      'not-opened': '这个名字对应的容器还没有开通。',
+      'store-changed': 'TapeOut 的站点存储或付费合约升级到了本 SDK 版本没有列出的实现，SDK 拒绝读取，直到 SDK 更新。',
+      unsupported: '这个输入在本页的单链设置下无法判定（它可能是 Base 或 X Layer 上的容器）：改用链上名字，例如 1.2.344.tape。',
       MANIFEST_INVALID: '这个容器没有有效的 TapeAPI 清单，或清单与链上记录不符。',
       DELEGATION_INVALID: '清单的委托不是当前持有人签的，或已过期。',
       NOT_FOUND: '没有找到这个服务。',
@@ -114,6 +123,15 @@ const T = {
     hints: {
       RPC_UNAVAILABLE: 'The public BSC nodes did not answer in time (network or rate limits). Try again shortly.',
       RPC_DISAGREE: 'The nodes gave different answers, so the SDK used none. Try again shortly.',
+      SITE_STATUS: 'The site status of this name does not allow resolving it: the container is not opened, or the name is not activated (TAP-10 §6).',
+      CONTRACT_UNKNOWN: 'TapeOut\'s contracts run an implementation this SDK version does not list, so the SDK refuses to read until it is updated.',
+      INVALID_ARGUMENT: 'This input is not a form TAP-10 accepts, or this page cannot decide it (see the message above).',
+      RPC_STALE: 'The nodes\' blocks are too far behind (the pinned block is too old), so the SDK used none. Try again shortly.',
+      unavailable: 'The public BSC nodes did not answer in time (network or rate limits). Try again shortly.',
+      unpaid: 'This name is not activated on chain (the payment ran out or was never made): under TAP-11 clients do not resolve a service that is not activated. The holder activates it first (DomainBinding.bind).',
+      'not-opened': 'The container of this name has not been opened.',
+      'store-changed': 'TapeOut upgraded the site store or the payment contract to an implementation this SDK version does not list, so the SDK refuses to read until it is updated.',
+      unsupported: 'This page reads one chain and cannot decide this input (it may be a container on Base or X Layer): use the on-chain name instead, for example 1.2.344.tape.',
       MANIFEST_INVALID: 'This container has no valid TapeAPI manifest, or it does not match the chain.',
       DELEGATION_INVALID: 'The manifest\'s delegation was not signed by the current holder, or it expired.',
       NOT_FOUND: 'No such service.',
@@ -206,7 +224,7 @@ function setStatus(key, ...args) { status = key ? [key, args] : null; $('resolve
 // TapeAPIError 显示错误码与说明；其它错误（本页自己的输入检查）只显示消息。
 function errorBox(e) {
   if (!(e instanceof TapeAPIError)) return el('div', { class: 'errbox' }, e?.message || String(e))
-  const hint = T[lang].hints[e.code]
+  const hint = T[lang].hints[e.data?.status] ?? T[lang].hints[e.code]   // 2.0: the TAP-10 status (unpaid, store-changed, ...) says more than the code
   return el('div', { class: 'errbox' }, code(e.code), ' ', e.message, hint ? el('div', { class: 'muted' }, hint) : null)
 }
 

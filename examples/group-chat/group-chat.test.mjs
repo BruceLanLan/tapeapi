@@ -41,7 +41,8 @@ after(() => srv?.close())
 // Each side is its own client: its own RPC reads, its own resolve, its own signature checks.
 // 每一方各自一个客户端：各自读链、各自解析、各自验签。
 async function client() {
-  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, allowHttp: true, fetch: chain.fetchWith(), rpcTimeoutMs: 30_000 })
+  // 1.x behaviour; 2.0 default is conform: 'tap10'
+  const api = createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, allowHttp: true, fetch: chain.fetchWith(), rpcTimeoutMs: 30_000, conform: false })
   return { api, service: await api.resolve(ADDR.container) }
 }
 

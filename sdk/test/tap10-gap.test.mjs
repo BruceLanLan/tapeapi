@@ -8,15 +8,20 @@
 // 本仓库 SDK 与官方 TAP-10 v1.1 的差距，钉住。用例就是 TAP-10 自己在"Test Cases / 访问层"里写的那些。CONFORMS 的测试断言 SDK 与
 // TAP-10 一致；KNOWN GAP 的测试断言 SDK 当前的结果等于下面记录的结果（与 TAP-10 不同）：今天通过，将来做一致模式时翻转它
 // （改成 `wants` 里的值）。这里不改变 SDK 的任何行为；KNOWN GAP 失败说明 SDK 变了：看它是否朝 TAP-10 靠拢，并更新记录。
+// 2.0: the conformance mode is the default. The KNOWN GAP rows are now the 1.x resolution (conform: false, deprecated); the
+// conformance mode with allChains is pinned below as before, and the 2.0 default (no conform, no allChains) has its own
+// section at the end. / 2.0：一致模式成为默认。KNOWN GAP 各行现在是 1.x 的解析（conform: false）；一致模式（开 allChains）照旧
+// 钉在下面；2.0 默认（不传 conform、不开 allChains）在文末单独一节。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { runAll, runAllConform, readsOfAFullResolution, loadFixture } from './helpers/tap10-gap.mjs'
+import { runAll, runAllConform, runAllDefault20, readsOfAFullResolution, loadFixture } from './helpers/tap10-gap.mjs'
 
 const fetchBefore = globalThis.fetch
 const { rows, summary } = await runAll()
 // run before any test is registered: a test may start while the module still awaits, and the runs swap the global fetch
 // 在注册任何测试之前运行：模块仍在 await 时测试可能已经开始，而这些运行会替换全局 fetch
 const conform = await runAllConform()
+const default20 = await runAllDefault20()
 const byN = new Map(rows.map((r) => [r.n, r]))
 
 // What the SDK does today, per case. A RegExp is matched, anything else must be deeply equal. `src` is the TAP-10 place of
@@ -181,3 +186,35 @@ test("CONFORMS (conform: 'tap10') FLIPPED TAP10-S1: a full resolution reads cpuC
   assert.equal(conform.structural.site, 'ok')
   assert.deepEqual(conform.structural.neverIssued, { cpuCount: false, isOpened: false, isLive: false, isContainerLive: false })
 })
+
+// ── the 2.0 default: createTapeAPI() with no conform and no allChains (the 2.0 upgrade guide, docs/guides/upgrade-2.0.md) ───────────────────
+// The conformance mode without allChains (design risk 3: allChains stays off by default in 2.0, so a client given its own
+// BNB Smart Chain nodes never reads another chain's public nodes unless asked). 19 of the 23 judged cases conform; the 4
+// that do not are exactly the input without chain information that TAP-10 §4.1 resolves on every chain: a processor
+// contract#ID (5, 16), a container of another chain (13) and an address on no chain (20) are `unsupported`, before any
+// request to another chain; each conforms with allChains: true (the section above). The plan's estimate was 22 of 23
+// (counting only row 1, the processor contract#ID); measured, it is 19.
+// 2.0 默认：不传 conform、不开 allChains。23 个可判定用例中 19 个一致；不一致的 4 个正是 TAP-10 §4.1 要在所有链上解析的无链信息
+// 输入：处理器合约#ID（5、16）、别链容器（13）、哪条链都不是的地址（20）都是 unsupported，且不向别的链发请求；开 allChains 即一致。
+// 计划估计 22/23（只算了第 1 行），实测 19/23。
+const dByN = new Map(default20.rows.map((r) => [r.n, r]))
+const UNSUPPORTED = { code: 'INVALID_ARGUMENT', status: 'unsupported' }
+const DEFAULT20_GAPS = { 5: UNSUPPORTED, 13: UNSUPPORTED, 16: UNSUPPORTED, 20: UNSUPPORTED }
+
+test('2.0 default (no conform, no allChains): 23 judged, 19 conform; the 4 gaps are input without chain information, unsupported, each conforming with allChains', () => {
+  assert.deepEqual(default20.summary, { rows: 16, cases: 27, judged: 23, conforms: 19, gaps: 4, notJudged: 4 })
+  assert.deepEqual(default20.rows.filter((r) => r.verdict === 'GAP').map((r) => r.n), [5, 13, 16, 20])
+  for (const n of Object.keys(DEFAULT20_GAPS).map(Number)) assert.equal(cByN.get(n).verdict, 'CONFORMS', `${n} conforms with allChains`)
+  // every case that conforms in the conformance mode with allChains and needs no other chain conforms the same way here
+  // 开 allChains 时一致、且不需要别的链的用例，这里同样一致
+  for (const r of default20.rows) if (r.verdict === 'CONFORMS') assert.deepEqual(r.obs, cByN.get(r.n).obs, `TAP10-${r.n}`)
+  assert.equal(default20.structural.resolved, true)
+  assert.deepEqual(default20.structural.neverIssued, { cpuCount: false, isOpened: false, isLive: false, isContainerLive: false })
+})
+for (const [n, obs] of Object.entries(DEFAULT20_GAPS)) {
+  const row = dByN.get(Number(n))
+  test(`KNOWN GAP (2.0 default, allChains off) TAP10-${n}: ${row.input} is unsupported`, () => {
+    assert.equal(row.verdict, 'GAP', row.ours)
+    pin(row.obs, obs)
+  })
+}

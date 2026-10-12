@@ -118,7 +118,11 @@ function brokenConnection(e) {
   return e instanceof TypeError && /fetch failed|failed to fetch|networkerror|load failed/i.test(String(e.message))
 }
 
-export function createRpc({ urls, quorum = 2, timeoutMs = 8000, fetch: fetchImpl, allowSingleNode = false, bodyLimit = RPC_BODY_LIMIT, disagreeRetryMs = 300, maxHeadSpread = 64, quiet = false, warn, transportRetryMs = 250 } = {}) {
+// `rpcTimeoutMs` is the same option under the name createTapeAPI and createProvider use; `timeoutMs` stays. Both
+// given with different values is an error. / `rpcTimeoutMs` 与 createTapeAPI、createProvider 同名；`timeoutMs` 保留；两者不同则报错。
+export function createRpc({ urls, quorum = 2, timeoutMs: timeoutMsOld, rpcTimeoutMs, fetch: fetchImpl, allowSingleNode = false, bodyLimit = RPC_BODY_LIMIT, disagreeRetryMs = 300, maxHeadSpread = 64, quiet = false, warn, transportRetryMs = 250 } = {}) {
+  if (rpcTimeoutMs !== undefined && timeoutMsOld !== undefined && rpcTimeoutMs !== timeoutMsOld) throw new TapeAPIError('INVALID_ARGUMENT', `createRpc: rpcTimeoutMs (${rpcTimeoutMs}) and timeoutMs (${timeoutMsOld}) name the same timeout; pass one`)
+  const timeoutMs = rpcTimeoutMs !== undefined ? rpcTimeoutMs : timeoutMsOld !== undefined ? timeoutMsOld : 8000
   if (!Array.isArray(urls) || urls.length === 0) throw new TapeAPIError('INVALID_ARGUMENT', 'no rpc urls')
   urls = [...new Set(urls.map(String))]
   if (!Number.isInteger(quorum) || quorum < 1) throw new TapeAPIError('INVALID_ARGUMENT', 'quorum must be a positive integer')

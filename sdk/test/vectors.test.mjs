@@ -97,11 +97,12 @@ test('TAPI-26 channel vectors: the real handshake, driven with the fixed secrets
     self: { ...A, staticSecret: hx(v.initiator.staticSecret) }, peer: { ...B, staticPublic: v.responder.staticPublic },
     relays: v.invite.relays, ttlS: v.invite.exp - 1789000000, now: 1789000000,
     random: replay(hx(v.invite.cid), hx(v.initiator.ephemeralSecret)),
+    labels: 'v1',   // tapi-26-channel.json is TAPI-26 version 1; the default is v2 from 2.0 / 本文件为第 1 版；2.0 起默认是 v2
   })
   assert.deepEqual(invite, v.invite)
   const { accept, session: bob } = channel.acceptInvite({
     self: { ...B, staticSecret: hx(v.responder.staticSecret) }, peer: { ...A, staticPublic: v.initiator.staticPublic },
-    invite, now: 1789000000, random: replay(hx(v.responder.ephemeralSecret)),
+    invite, now: 1789000000, random: replay(hx(v.responder.ephemeralSecret)), labels: 'v1',
   })
   assert.deepEqual(accept, v.accept)
   const { ready, session: alice } = channel.completeInvite(pending, accept, { now: 1789000000 })

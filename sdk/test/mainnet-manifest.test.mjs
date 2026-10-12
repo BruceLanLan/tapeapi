@@ -28,7 +28,8 @@ const at = async (unixS, fn) => {
   mock.timers.enable({ apis: ['Date'], now: unixS * 1000 })
   try { return await fn() } finally { mock.timers.reset() }
 }
-const api = () => createTapeAPI({ rpcUrls: ['https://a.invalid', 'https://b.invalid'], quorum: 2, fetch: replayFetch })
+// 1.x behaviour; 2.0 default is conform: 'tap10'
+const api = () => createTapeAPI({ conform: false, rpcUrls: ['https://a.invalid', 'https://b.invalid'], quorum: 2, fetch: replayFetch })
 
 test('TAPI-20 §6.1: the fixture was read under the operator quorum at one pinned block', () => {
   assert.equal(fx.chainId, 56)

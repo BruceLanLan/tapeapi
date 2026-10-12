@@ -14,7 +14,8 @@ const API_KEY = process.env.API_KEY || 'sk-demo'
 
 // Production: createTapeAPI({ rpcUrls }) and api.resolve('<#ID>.<processor>.tape'); the signer then comes from the chain.
 // 生产环境：createTapeAPI({ rpcUrls }) 并 api.resolve('<#ID>.<processor>.tape')；signer 来自链上。
-const api = createTapeAPI({ dev: true })
+// 1.x behaviour; 2.0 default is conform: 'tap10'
+const api = createTapeAPI({ dev: true, conform: false })
 const svc = await api.resolve({ dev: PROXY_URL })
 const show = (r) => console.log(`[client] receipt ${r.ok ? 'OK ' : 'BAD'} ${r.stream ? 'stream ' : 'json   '} id=${r.receipt?.id} model=${r.receipt?.result.model} ` +
   `usage=${JSON.stringify(r.receipt?.result.usage)} prices=${r.receipt?.result.prices ? r.receipt.result.prices.map((p) => `${p.amount} ${p.currency}`).join(' / ') : 'null'}${r.receipt && !r.receipt.result.complete ? ' INCOMPLETE' : ''}` +

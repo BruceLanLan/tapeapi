@@ -77,7 +77,13 @@ for (const [dir, pkg] of Object.entries(PKGS)) {
     // reads, and the unpacked size was at 1,570,928 of 1,572,864, about 1.9 KB short of the old limit. Comments and
     // features stay; the limit moves. / 再由 1.5 MiB 提到 1.75 MiB（1,835,008 字节）：1.7 / 1.8 增加了 agent 子路径与托管代币读取，
     // 解包后 1,570,928 字节，离原上限 1,572,864 只剩约 1.9 KB。注释与功能保留，调整的是上限。
-    assert.ok(info.unpackedSize < 1.75 * 1024 * 1024, `unpacked size ${info.unpackedSize} under 1.75 MiB`)
+    // Raised from 1.75 MiB to 2 MiB (2,097,152 bytes) on the internal phase-1 branch: the key vault and the spend
+    // limiter's restart took the unpacked size from 1,809,793 to 1,837,096, 2 KB over the old limit. The same reasoning:
+    // a guard, not a budget. / 内部阶段 1 分支上由 1.75 MiB 提到 2 MiB：钥匙保险箱与限额器的重启恢复使解包大小由 1,809,793
+    // 增至 1,837,096，超出原上限 2 KB。理由同上：护栏，不是预算。
+    // The experimental USD pricing of the payment-voucher TAP draft (usd-pricing.js and its types, about 30 KB) needed the
+    // same raise on its branch (1,840,007 bytes); merged, both sit under 2 MiB. / 付费凭证草稿的实验性美元计价在其分支上同样需要提到 2 MiB。
+    assert.ok(info.unpackedSize < 2 * 1024 * 1024, `unpacked size ${info.unpackedSize} under 2 MiB`)
   })
 
   // 1.6 release integrity: the packed list IS the package.json `files` whitelist (plus package.json), no more and no

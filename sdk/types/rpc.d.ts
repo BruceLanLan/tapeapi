@@ -8,6 +8,9 @@ export interface RpcOptions {
   urls: readonly string[]
   /** How many independent operators must answer, all with the same answer (default 2). URLs of one operator count once. */
   quorum?: number
+  /** Timeout of one RPC request in ms (default 8000); the same name as in createTapeAPI and createProvider. */
+  rpcTimeoutMs?: number
+  /** The same timeout under its older name; kept. Passing both with different values throws INVALID_ARGUMENT. */
   timeoutMs?: number
   fetch?: FetchLike
   /** Development only: accept fewer nodes than `quorum`. */

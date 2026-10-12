@@ -143,6 +143,9 @@
 
 ## TAP-10 一致模式（1.4，实验性）
 
+**2.0 起这个模式是默认**（[从 1.x 升级到 2.0](upgrade-2.0.md)）。本节按 1.x 发布时的情况描述它：凡是写"默认关闭"、"默认模式"
+或"默认客户端"的地方，请读作 1.x 的解析，即 2.0 里的 `conform: false`。
+
 `createTapeAPI({ conform: 'tap10' })` 按官方 TAP-10 v1.1（§3–§7）与 TAP-11 §2.2 的描述解析服务。默认关闭：不开时 `resolve` 与 `chain.*` 读取的行为与以前完全相同
 （有一个测试逐个钉住默认模式的每个请求与结果）。`api.siteStatus()` 在任何模式下都走 TAP-10 路径，所以在默认客户端上 1.5 也改变了它
 （见下文 *siteStatus 的变化*）。它覆盖解析路径（1.4，1.5 补全），1.5 起也覆盖消息路径（见本节末尾）。它标为
@@ -312,7 +315,15 @@ BNB Smart Chain 1,174 个、X Layer 263 个、Base 101 个，各记有读取时�
   `result.tap10.seal`（`{ factory, hub }`，目前都是 `false`：还没有任何封存），但不作要求。以 `conform: 'tap10'` 创建的客户端只接受 TAP-10
   为该链列出的中枢、处理器工厂与容器开通器（TAP-10 §2.2；其它一律 `INVALID_ARGUMENT`）。粘性状态与客户端同生命周期（含 `forChain` 的子客户端）；
   要跨重启保留，请传 `sealStatusStore`：与 `channelRecordFloor` 一样的 `{ get, set }` 存储，键为 `<chainId>:<小写 hub>`，值为
-  `{ circuitsChangedAt, factorySealSeenAt, factorySealLost }`。
+  `{ circuitsChangedAt, factorySealSeenAt, factorySealLost }`（以及下面的 `upgradedLog`）。
+- **中枢的 `Upgraded` 日志**（`tapeSendKey`，TAP-10 §13.8，有条件的 SHOULD）：在同一块上，以严格共识发一次 `eth_getLogs`，读中枢从创建块
+  （`TAP10_HUB_HISTORY`）到钉块的全部 `Upgraded` 事件。若某个回答被采纳，且其中有日志指向既不是初始实现、也不是 TAP-10 为该链列出的实现
+  （当前或已替换）的地址，即使实现槽又显示为当前实现，中枢也是 `hub-changed`（一次升级可以在一笔交易内改写存储并恢复被接受的实现）；
+  `data.upgradedLog` 指明那条日志，客户端会保留它（也存进 `sealStatusStore`），直到它的名单接受该实现为止。节点的回答必须含历史的锚点
+  （创建块上的初始实现、升级到当前实现的那条）才算作答，所以历史被裁剪、回答 `[]` 的节点不算。公共节点很少提供（BNB Chain 的 dataseed
+  拒绝所有 `eth_getLogs`，48 Club 每次最多 5,000 块，OKX 100 块）：此时以及节点之间不一致时，中枢照旧只按实现槽判断，并在
+  `result.tap10.hub` 里注明：`basis: 'slot'`、`upgraded: { status: 'unavailable', reason }`，300 秒后再试。扫描完成时：`basis: 'slot+logs'`、
+  `upgraded: { status: 'ok', from, to, implementations }`。要用上它，请配置能提供中枢完整日志历史的节点（每个已配置的节点都会被询问）。
 - **密钥**（§12.2、§14.4 第 1–3 步）：`hub.keyFor` 必须指向解析出的容器与其端点（`hub-mismatch`），必须可用（从未发布为 `no-key`，其它为
   `key-stale`），套件为 1，并通过 X25519 密钥检查（`bad-key`；默认模式要到握手时才查）。第 4 步，即收件方是否读你发送所在的链，由你判断：
   结果带 `chainsBitmap`，即二进制的位图，第 0 位（最右一位）是 BNB Smart Chain，第 1 位 Base，第 2 位 X Layer（TAP-10 §2.1）。发送
@@ -336,13 +347,12 @@ BNB Smart Chain 1,174 个、X Layer 263 个、Base 101 个，各记有读取时�
 | `no-such-token`、`no-key`、`key-stale` | `NOT_FOUND` |
 | `not-tapeout`（本链容器，其电路未通过检查）、`hub-mismatch`、`bad-key`、`not-found`、`no-hash`、`incomplete`、`record-invalid` | `CHANNEL_INVALID` |
 
-`not-found` 与 `record-invalid` 是 TapeAPI 起的名字（TAP-10 没有为记录定义结果名）；其余都是 TAP-10 的。中枢的 `Upgraded` 日志（§13.8 的
-SHOULD，需要 `eth_getLogs`）不读。
+`not-found` 与 `record-invalid` 是 TapeAPI 起的名字（TAP-10 没有为记录定义结果名）；其余都是 TAP-10 的。
 
 **尚未覆盖。** 1.5.0 起，一致模式覆盖 resolve 路径（含 `ownerOf` 与 EIP-1271 的严格共识）与上面的消息路径、无链信息的输入在所有链上
-解析（`ambiguous`），以及容器或处理器合约的处理器号。在这些路径之内，仍有一项没做：TAP-10 §13.8 对中枢 `Upgraded` 日志的扫描，这是
-有条件的 SHOULD（有提供 `eth_getLogs` 的节点时，读取中枢的每条 `Upgraded` 日志，只有其中每个实现都是初始实现或 TAP-10 列出的实现才接受
-中枢）。`tapeSendKey` 只查中枢当前的实现槽，看不到在一笔交易内改写存储、又恢复为被接受实现的升级。
+解析（`ambiguous`），以及容器或处理器合约的处理器号。TAP-10 §13.8 对中枢 `Upgraded` 日志的扫描（有条件的 SHOULD）在已配置节点提供日志时
+进行；用默认的公共节点时不进行，`tapeSendKey` 此时只查中枢当前的实现槽（`hub.basis: 'slot'`），看不到在一笔交易内改写存储、又恢复为被接受
+实现的升级。
 
 ## 现已冻结的格式
 

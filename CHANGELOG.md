@@ -2,10 +2,307 @@
 
 All notable changes to this project are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
-From 1.0.0 on, a breaking change comes only in a new major version (2.0); before 1.0.0, a minor version could change
+From 1.0.0 on, a breaking change comes only in a new major version (2.0, then 3.0); before 1.0.0, a minor version could change
 interfaces.
 
 ## [Unreleased]
+
+## [2.0.0] — 2026-10-12
+
+TapeAPI 2.0.0: standards by default. With no options, `createTapeAPI()` resolves a service as TapeOut's official TAPs
+say (TAP-10 v1.1 §3 to §7 and TAP-11 §2), with one known exception (below); TAP-10 and TAP-11 are Drafts (a merge is
+not an adoption), and the status names that follow them stay experimental. No wire format or frozen constant of
+TAPI-20 to TAPI-27 changed: a 2.0 client verifies every 1.x manifest, delegation, signed response and receipt. What to
+change is in [docs/guides/upgrade-2.0.md](docs/guides/upgrade-2.0.md). 1.x receives security fixes for 6 months after
+2.0.0. Bounded agents, US-dollar prices and reviews are new and experimental; the escrow they rely on is not audited
+and not deployed, so bounded agents and paid calls do not work on mainnet.
+
+### Breaking changes
+
+- **`createTapeAPI()` resolves as TAP-10 and TAP-11 §2 say by default (the conformance mode, `conform: 'tap10'`).** Without
+  any option, every read is pinned to one block (TAP-10 §5.3), the chain id and the holder are read strictly (every node
+  must answer and agree), and the states TAP-10 names are reported as `data.status` of the error: `not-opened`,
+  `unpaid`, `store-changed`, `unavailable`, `unsupported`. `conform: false` (or `null`) gives the 1.x resolution back; it
+  is deprecated, kept for all of 2.x, and warns once when the client is made (the warning links the upgrade guide).
+  `dev: true` also means `conform: false`. A configuration that is not a TapeOut chain's (a hub, factory or registry of
+  your own, a local chain, a `pin` other than `'tap10'`) now fails when the client is made, with a message that says
+  to pass `conform: false`; nothing falls back silently. `allChains` stays off by default. `tapeapi-mcp`,
+  `tapeapi-verify` and `tapeapi-doctor` take `--no-conform` and print which resolution they use; `tapeapi-doctor`
+  reports a name that is not activated as a failure in the default (a warning with `--no-conform`). The agent kit
+  resolves this way too (see Changed). Measured on BNB Smart Chain with the default nodes: a cold resolution is about 2
+  times and a warm one about 4 times the JSON-RPC calls of 1.x. Error codes that change, request counts and the
+  checklist for service providers: [docs/guides/upgrade-2.0.md](docs/guides/upgrade-2.0.md).
+- **A resolved manifest is kept for 60 seconds by default, instead of 3,600** (TAP-11 §7.1 says a client SHOULD NOT
+  keep it longer than 60 seconds). A long-lived client reads the manifest about 60 times as often; `conform: false`
+  keeps 3,600 seconds.
+- **A directory label is no longer an input to `resolve` by default** (TAP-10 §3.4): it is refused before anything is
+  read, with `INVALID_ARGUMENT` and `data.status: 'input-error'`, where 1.x resolved it through the directory (or
+  failed with `MANIFEST_INVALID`, `DELEGATION_INVALID` or `NOT_FOUND`). Pass the name, the container or
+  `{ circuits, tokenId, chainId }` instead; `conform: false` keeps the 1.x behaviour.
+- **A manifest that begins with a byte order mark, or is not valid UTF-8, no longer resolves by default.** 1.x resolved
+  it; the 2.0 default refuses it as TAP-11 §3.1 and TAP-10 §16 say, with `MANIFEST_INVALID` and
+  `data.status: 'manifest-invalid'`. The holder publishes the manifest again as valid UTF-8 without a byte order mark;
+  until then `conform: false` is the stop-gap. The upgrade guide lists it under "New failures".
+- **`CONFORM_PROFILE` and `svc.conform.profile`** (only added): `'tap10@1.1+tap11@draft'`, the TAP texts the
+  conformance mode resolves by (TAP-10 version 1.1, TAP-11 Draft). Absent with `conform: false`; `siteStatus`, error data
+  and every existing field are unchanged. The upgrade guide now states the known exception to TAP-11 §2.1 (without
+  `allChains`, a processor contract#ID string is `unsupported`, TapeAPI's own name), and the type declarations no longer
+  say that the default's errors are unchanged.
+- **How the default follows changes in the official TAPs** (wording only; no behaviour, no label changed). TAP-10 and
+  TAP-11 are merged Drafts, so their text can change. A loosening or a new status name becomes the default in a 2.x
+  minor release; a tightening is offered first as an optional new profile and becomes the default in 3.0; status names
+  only grow. `data.status`, `SiteStatus` and `svc.conform` stay experimental in 2.0. `allChains` stays off and the known
+  exception stays recorded. The upgrade guide has the section "How the default follows changes in the official TAPs",
+  and its promise about status names now says exactly this.
+- **Private channels and groups use TAPI-26 v2 and TAPI-27 v2 by default: labels that begin with `tape-channel/` and
+  `tape-group/` instead of `TAP-26/` and `TAP-27/`.** 1.8.1 added version 2 as an option (`labels: 'v2'`); 2.0 makes it
+  the default, and `labels: 'v1'` selects version 1 (deprecated in 2.x, not removed in 2.x). The TAPs editors asked for
+  the rename before merging the drafts of private channels (TapeOutProtocol/TAPs#12) and private groups (#20); TAPI-26
+  and TAPI-27 are Stable (v1), whose labels TAPI-1 §4.1 freezes, so the rename is a version 2 of each. A 2.0 client and
+  a 1.x client that passes no `labels` do not interoperate (nothing fails open: they time out, or the SDK names the
+  mismatch in `data.labels` / `data.peerLabels`); pass `labels: 'v1'` on the 2.0 side to talk to them. A group keeps its
+  version for life: a 1.x snapshot (`v: 1` / `v: 2`) resumes as a version-1 group, a default group's snapshot is
+  `v: 3`. `api.chain.channelKeys(...).inbox.room` is now the version-2 inbox room. Channel records, relays and
+  ChannelBus are unchanged. Vectors are unchanged (version 1's files byte for byte, version 2's from 1.8.1); the
+  default-mode golden trace changes in one value, that inbox room.
+- **Specs.** TAPI-26 v2 and TAPI-27 v2 are Stable (v2) from 2.0.0 (their `Status` was Draft before).
+  TAPI-26 and TAPI-27 (Stable (v1), unchanged) note that from 2.0.0 they are no longer the SDK's default and that 1.x
+  keeps security fixes for them for 6 months after 2.0.0. TAPI-1 §4.1 defines Stable (vN) and the `TAPI-<n>-vN.md`
+  files. No RFC 2119 keyword count changed.
+- **`TapeAPIError` no longer has the deprecated top-level aliases** (`e.tooLarge`, `e.rpcCode`, `e.rpcRevert`,
+  `e.rpcData`, `e.agreed`, `e.disagreed`, `e.failed`, `e.groups`, `e.quorum`, `e.reason`, `e.refusals`, ...): read
+  `e.data.*`, where every detail has been since 1.0. The type declarations no longer list them.
+- **The channel module reports a mistake in the caller's own options or arguments as `INVALID_ARGUMENT`**, like every
+  other module since 1.0 (`createInvite` / `acceptInvite` options, a closed or misused session, `relayTransport`,
+  `busTransport`, `busReader`, `fanIn`, `sealToInbox` / `openFromInbox` options, under either label version). TAPI-26
+  data that fails (invites, handshake messages, frames, sealed invites, including one of the other label version, and
+  keys and relay lists read from them) stays `CHANNEL_INVALID`. The group module keeps `GROUP_INVALID`.
+- **The provider directory and the monitor say what a 2.0 default client concludes.** The daily directory recheck
+  still runs `tapeapi-doctor` with `conform: false`, and its flag (`ok`, `failing`, `stale`, `undecided`) and the job's
+  exit status mean what they meant; each entry in `site/directory/status.json` now also has `defaultMode`, the site
+  status a client in the default mode reads with `api.siteStatus` (`ok`, `not-opened`, `unpaid`, `store-changed`,
+  or `unavailable` when the chain could not be read or the name's cap of 60 RPC requests, shared with the doctor, ran
+  out). The field is only added: it never changes the flag, never fails the job and never removes an entry;
+  `providers.json` is unchanged. The directory page shows a `defaultMode` that is not `ok` on the entry's card, with
+  its reason. `scripts/monitor.mjs` makes its client with the SDK default (a test locks it) and reports per service
+  the default resolution's outcome (`resolved`, or the status it refused with); the 14-day delegation problem (exit 1) is
+  unchanged, also when the default mode refuses the service.
+- `sdk/src/channel.js`, frozen through 1.x, is unfrozen: it takes `service` itself (the public `relayTransport` has
+  taken `service` since 1.0 and no longer translates it) and reads `e.data.*` instead of the aliases.
+
+### Added
+
+- **Prices in US dollars, paid in BEM (experimental; no escrow is deployed, so nothing is charged): the TAP draft "Payment Vouchers for
+  Container Services" (TapeOutProtocol/TAPs#52), TAPI-22 §3.6.** Only a manifest with the new top-level member
+  `usdPricing` is affected; any other manifest answers and pays byte for byte as before
+  (`server/test/payment-golden.test.mjs`, recorded on the 1.8.1 payment code). New SDK namespace `usdPricing`
+  (`validateUsdPricing`, exact `convertUsd` = `min(ceil(U·10^18/R), priceBEM)`, `validateQuote`, `readReferenceRates`
+  over v3 pools at one agreed block, `chargeRecord` / `checkChargeRecord`); `sig.recoverVoucherSigner` and
+  `recoverAddress(…, { strictV })` refuse `v` 0/1 for vouchers while envelopes keep accepting them. Provider
+  (`createProvider` options `usdRate`, `quoteValidS`, `quoteStore`, new `memoryQuoteStore()`): quotes honoured by every
+  instance sharing the store, the draft's checks with `data.reason`, and the signed charge record `charge` in every
+  priced result. Client (`createTapeAPI` option `usdPricing`): quotes only from verified envelopes, the reference check
+  before signing, `rate` in the voucher, the charge-record check with a halt until a reread and an F2 read, priced calls
+  of one channel one at a time (whatever svc objects or api instances share the payer), and consent to a USD price rise
+  (`maxPriceUSD`); the provider gives quote requests their own budget (`rateLimit.quote`) and namespaces
+  `memoryQuoteStore` by service (`put(quote, container)`, `get(rate, container)`). Both sides
+  take `settlementFacts` (F1–F4 from configuration until a settlement TAP exists). Vectors
+  `spec/vectors/tapi-22-usd.json`, reproduced by `verify.py`. TAPI-22 §3.5: the first custody asset is BEM (decision of
+  2026-10-08), with its read-only admission check.
+
+- **`createRpc` takes `rpcTimeoutMs`**, the name `createTapeAPI`, its `chains` and `createProvider` already use for the
+  timeout of one RPC request. `timeoutMs` stays; passing both with different values is `INVALID_ARGUMENT`. The channels
+  guide uses the new name.
+- **`api.tx.setContributionAll({ circuits, tokenId, bps, escrows })` (experimental)**: one `setContribution` per escrow
+  instance, since each instance keeps its own setting. `escrows` defaults to the instances the client builds for
+  (`AUDITED_ESCROWS`, empty today, then `allowEscrows`; not the `escrow` option, which only `setContribution` uses);
+  none at all is `INVALID_ARGUMENT`, never an empty list, and so is `escrows: null` (the errors say both). The
+  `chain.escrow.contributions` and `tapeapi-doctor --escrows` warnings name it.
+- **The conformance mode reads the hub's `Upgraded` logs (TAP-10 §13.8, a conditional SHOULD; experimental).** In the
+  conformance mode (the default since 2.0, or `conform: 'tap10'`), `chain.tapeSendKey` also asks, at its pinned block and under strict agreement, for every `Upgraded`
+  log of the hub since its creation block (new constants `TAP10_HUB_HISTORY`, `TAP10_HUB_BOOT`, read back on chain). A
+  log naming an implementation that is neither the boot implementation nor one TAP-10 lists for the chain (current or
+  replaced) is `hub-changed` even when the implementation slot shows the current one again, with `data.upgradedLog`;
+  it is kept, in `sealStatusStore` too, while the SDK's list does not accept it (a stored record of another shape is
+  ignored). Only answers that hold the history's
+  anchors count. When the logs cannot be read (the default public nodes do not serve this history) or nodes disagree,
+  the hub is judged by its slot as before and `tap10.hub` says so (`basis: 'slot'`, `upgraded.status: 'unavailable'`,
+  retried after 300 s); otherwise `basis: 'slot+logs'`. With `conform: false`, exactly the same requests are sent as in 1.8.1.
+- **`@tapeapi/sdk/agent` (experimental; checked on local chains only, not usable on mainnet): phase-1 rules
+  for mandates that name funds.** Nothing changes by default: without the new option every check is phase 0 exactly
+  as in 1.8, and no type hash, digest or existing vector changed. With `{ enforcement: 'escrow-channel' }`,
+  `verifyMandate` and `verifyTaskThread` check such a mandate by static rules (`scope-token-cap-mismatch`,
+  `fee-token-cap-mismatch`, `scope-duplicate-provider`, `mode-scope-mismatch`, `subdelegate-not-allowed`; a warning
+  `scope-includes-agent`, whose static half, new function `phase1Warnings`, is reported whatever the static problems)
+  instead of `phase0-no-funds`, then read every capped provider's escrow channel at the
+  check's pinned block, the escrow address too (from the provider's manifest as it stands at that block) (`escrow-not-allowed`, `escrow-other-chain`, `escrow-token-mismatch`, `session-missing`,
+  `session-expiry-mismatch`, `withdraw-pending` by the request's lifetime of 48 h + 7 d, `channel-empty`,
+  `channel-exceeds-cap`; with a fee, `agent-key-on-fee-channel` and `fee-channel-short`), and report
+  `enforcement: 'escrow-channel'` with each channel's readings only when all pass. The cap is the console's funding
+  target, not a bound: what the chain bounds is always the channel's balance, every phase-1 result says so with
+  `bound: 'channel'`, and a channel above its cap fails the check. New kit option `allowEscrows`, new
+  options `fundingPath` (holder, the default, or container) and `feeDue`, new function `withdrawRequestLive`. `mandateTypedData` and `forWallet` take the same option and show a phase-1
+  warning and every amount. New pure function `escrowPlan`: the holder's unsigned `approve`, `fund` and
+  `authorizeSession` transactions, from the holder's wallet or through the principal container's `execute` (the
+  TapeOut fee supplied by the caller). It refuses inputs that contradict each other (one escrow given with two tokens,
+  a provider that is the plan's consumer or an escrow of the plan) instead of taking the last one. `escrowPlan` builds
+  `approve` and `fund` for the token the caller names (checked against the scope and the escrow's `token()`):
+  they do not go through 1.8's `tx.fund` and its BEM-only escrow check. That is for checking this experimental subpath
+  on local chains; it does not lift the BEM restriction. New vectors: `phase1` in `spec/vectors/container-agent.json`. The escrow is not
+  deployed or audited and pricing in other tokens is not specified, so none of this works on mainnet.
+- **`@tapeapi/sdk/agent` (experimental; local chains only, not usable on mainnet): the holder's plan reads
+  its facts from the chain, with a close-out and a session history.** Nothing changes by default. New kit methods:
+  `holderPlan` reads, at one pinned block, everything `escrowPlan` needs (the principal's current holder, each
+  provider's escrow from its manifest at that block, the escrow's token, the channel, a live request, the agent key's
+  session) and refuses a holder that is not the current one (`holder-not-current`); on the container path it also
+  refuses a principal that is not deployed or not opened (`principal-not-deployed`, `principal-not-opened`) and finds
+  the TapeOut fee by simulating `execute` (no fee is written in) under a `maxExecuteFee` the caller must give (a fee
+  above it is `execute-fee-too-high`; the plan says the fee times the number of calls in whole coins), refusing when
+  the call still reverts with it (`execute-reverts`). A key already authorised on a channel until another time is `key-already-authorised`; one
+  authorised until the mandate's end gets no new `authorizeSession`, and a plan run again after it was applied never
+  funds back what the key spent: such a channel below its cap is `channel-spent`, unless the session history holds the
+  first run's `record` (its new `claimedAtPlan`, the channel's `claimedOf` then), in which case only the cap minus what
+  the key has spent since is funded, and a channel above that is `channel-exceeds-budget`; without that record, a channel
+  at its cap on which anything was settled is `channel-spent` too. The cap holds per mandate and provider over every
+  channel the session history records: when it names this mandate's key on another channel to the provider (the
+  provider moved its escrow, the circuit changed hands, a second wallet), the plan is `funded-elsewhere` until that
+  channel is closed out to 0 from its own wallet (one of another wallet never counts as closed), and then funds only
+  what the key has not spent on any of them, and when nothing is left of the cap a fresh channel is `budget-exhausted`
+  (no lone `authorizeSession` on an empty channel); a lost history cannot be rebuilt for an escrow the provider no longer
+  names. So `holderPlan` and `closeOut` require `history` (`[]` when the console has no record; left out is an input
+  error), and the pure functions say in `checked.history` whether one was given at all. Each `record` entry carries the
+  pinned `block`; a plan pinned at or before a record's block is `pin-not-after-record` (re-run only once the earlier
+  run's transactions are final). With the signed mandate (`signed`, or its `signer`), a holder that is not the one who
+  signed it is `holder-changed-since-signing`, history or not. `closeOut` (new pure function `closeOutPlan`): `requestWithdraw`
+  of each whole channel, then `withdraw` inside its window. `afterPlan` (new pure function `planApplied`): the
+  allowance, channels and sessions read back after the plan, what the key spent since counting toward the cap, and why
+  a channel is short (a failed fund, or a withdrawal that needs nothing). New `sessionHistory` (one entry per session; a
+  later record only fills a missing `claimedAtPlan`, never replaces one) and `sessionEntry`, and the kit's
+  `sessionLogs` (only the given consumer's logs, up to the kit's pinned block): with a history, a plan refuses a key
+  used for another mandate (`key-reused`) and a channel another key can still spend on (`channel-session-live`). A plan
+  refuses a mandate the other funding path already funded (`other-path-funded`), and on the container path a holder
+  without the native coin for every fee (`holder-short-of-fee`, from a balance read under strict agreement); the pure
+  `escrowPlan` needs `holder` on both paths, and the pure functions take an `executeFee` only with a `maxExecuteFee`. `closeOut` takes the plan's `record` as `history` and refuses a consumer
+  that did not fund (`consumer-unknown`), says when the consumer was not checked, and with `fullRequest: true` replaces
+  a live request for part of a channel by one for all of it. New constants `DEFAULT_FUNDING_PATH` (the one default of every
+  funding path option; which path it should be is not decided yet) and `FUNDING_PATHS`, `EXECUTE_FEE_SELECTOR`. New
+  vectors: `phase1.closeOut` and `phase1.applied`, more `phase1.plan` cases. The plans were executed on a local copy of
+  the escrow only.
+- **`@tapeapi/sdk/agent` (experimental; local chains only, not usable on mainnet): the agent runtime's spend
+  limiter.** Nothing changes by default. New `createSpendLimiter({ store })` wraps `api.payer({ consumer, sessionKey })`
+  for an agent key: per mandate and provider, no voucher whose cumulative is above the channel's `claimedOf` at the check
+  that started the work plus the cap is ever signed out (a refused one is released, never returned); that start never
+  moves up; the escrow and consumer of the start are pinned, and a voucher for another escrow, consumer or chain is
+  refused and stops the order; the voucher is checked to be the one counted; the record is written before the voucher
+  leaves, and a key without its record (a restart without the store) never signs. `accept`, `start` (the same mandate
+  again keeps its start; a stopped order stays stopped, and a check of another escrow or consumer stops it), `recheck` (a
+  later check: a live request, or a result that is not an enforced phase-1 check with every channel reading
+  (`spend-not-enforced`), refuses the step; another escrow, consumer or mandate, a revoked or expired one stops the
+  order), `payer`, `record`, `stop`; pure rules `spendDecision`, `spendRecheck`, `spendPin`, `spendRecord`, constants
+  `SPEND_REFUSALS`, `SPEND_STOPS`. One writer per record is the premise: records carry `seq`, every write re-reads the
+  record and never overwrites one that changed, a store whose `set(key, value, { ifSeq })` compares and sets closes the
+  race between limiters sharing it, and a stop is also kept under a key of its own that no other write can erase. A
+  voucher it lets out carries the unsigned member `mandateHash` (providers ignore unknown members), and the signed
+  mandate until a voucher to that provider was accepted; a channel the last check read short of the price signs nothing
+  (`spend-channel-short`). New vectors: `phase1.spend`, `phase1.recheck`. `examples/agent-service` takes an optional
+  `spend` option that uses it (without it, the example is phase 0 as before; a revocation it receives stops the record);
+  `@tapeapi/server` is unchanged. Checked end to end on a fake chain and, for the transactions and vouchers, on a local
+  copy of the escrow only.
+- **`@tapeapi/sdk/agent` (experimental; local chains only, not usable on mainnet): a delivery's spend
+  statement and its reconciliation.** Nothing changes by default. A phase-1 check already carries each capped channel's
+  `claimedAtCheck`; a deliver result may now carry `spend`, the agent's signed statement, per capped provider, of
+  `claimedAtStart` (`claimedOf` at the check that started the work), `claimedAtDelivery` (at its last check before it
+  signed) and `spent` (their difference). It is covered by the delivery's signature, not by `receiptsHash`. New pure
+  functions `spendStatement` (the agent's side: a channel it could not read on the pinned escrow for the pinned consumer
+  is left out, never given as 0) and `spendEvidence`, constants `SPEND_EVIDENCE_PROBLEMS`, `SPEND_EVIDENCE_WARNINGS`.
+  `verifyTaskThread(..., { enforcement: 'escrow-channel' })` reconciles a delivery's statement against the applied
+  mandate's readings at the same pinned block and against the receipts that verified, priced from the providers'
+  manifests; `verifyEvidence` takes `{ enforcement, scope }` for the same. Only a malformed statement, a provider
+  without a cap, or amounts that do not add up are problems (`spend-evidence-malformed`, `spend-provider-out-of-scope`,
+  `spend-evidence-inconsistent`); every mismatch is a warning in `evidence.spend.warnings` (`spend-escrow-changed`,
+  `spend-above-chain`, `spend-above-cap`, `spend-exceeds-receipts`, `spend-below-receipts`,
+  `spend-evidence-incomplete`), because `claimedOf` moves only when a provider settles (up to 48 hours later), a
+  hash-only receipt does not sign its method, and prices are read from today's manifest in BEM. Without the option, or
+  for a mandate without funds, `spend` is ignored exactly as before; with both and no `spend` member at all, the
+  delivery is warned `spend-evidence-absent` (never a problem). New vectors: `phase1.statement`,
+  `phase1.evidence`. `examples/agent-service` adds the statement to a spend order's delivery; a phase-0 delivery is
+  unchanged.
+- **`@tapeapi/sdk/agent` (experimental; local chains only, not usable on mainnet): a default per-call price
+  ceiling for the spend limiter.** Without `maxPrice`, the limiter's payer now refuses a call that costs more than 10% of
+  the (mandate, provider) cap, rounded down to the token's smallest unit (new constant
+  `SPEND_DEFAULT_CALL_PRICE_PERCENT`); where that rounds down to 0 there is no default and every call is refused until
+  one is given (`spend-call-price-ceiling-unset`). A `maxPrice` given (one amount, or one per provider:
+  `{ [provider]: amount }`) may be above 10% but never above the cap (`spend-call-price-ceiling-above-cap`). A price
+  above the ceiling is `spend-call-price-above-ceiling`, which replaces `spend-price-above-max`; none of the three stops
+  the order, and each message says how to set the ceiling. An explicit `maxPrice` of 0 (in any form, or for a
+  provider), an array or an object that is not a plain one is `INVALID_ARGUMENT`. `examples/agent-service` passes its
+  `spend.maxCallPrice` the same way and checks it when the service is made. More `phase1.spend` vectors.
+- **`@tapeapi/sdk/agent` (experimental; local chains only, not usable on mainnet): an agent runtime can resume
+  its spend orders after a restart, with the agent keys kept sealed.** Nothing changes by default: without a key vault
+  nothing is kept and a restart voids every order, as before. New `KeyVault` interface (`seal`, `open`; the operator's:
+  a passphrase, a key of its own, a KMS) and `passphraseKeyVault({ passphrase })`: scrypt (N 2^17, r 8, p 1, constants
+  `KEY_VAULT_SCRYPT`, `KEY_VAULT_MIN_PASSPHRASE`) and XChaCha20-Poly1305 with a random salt and nonce, the blob bound to
+  its context (the chain and the agent key); a blob that does not authenticate throws `AGENT_KEY_VAULT` and never yields
+  bytes. Pure functions `keyVaultKey`, `keyVaultSeal`, `keyVaultOpen`, `keyVaultParse`, `keyVaultAad`,
+  `spendKeyContext`. `createSpendLimiter({ store, vault })` adds `keepKey` (only the sealed blob is stored),
+  `resume` (on a new limiter over the same store: the record, the sealed key opened and matched, then a fresh check
+  compared as `recheck` does; pure rule `spendResume`, `SPEND_RESUME_REFUSALS`: `spend-state-lost`, `spend-stopped`,
+  `spend-key-lost`, `spend-key-unreadable`, `spend-key-mismatch`, `spend-resume-mismatch`) and `forgetKey`; every stop
+  destroys the sealed key. A stopped, revoked or expired order, or one whose provider moved, never resumes, and the
+  ceiling (the channel's `claimedOf` at the start plus the cap) holds across the restart. `examples/agent-service`
+  takes `spend.vault` with a persistent `spend.store` and gains `recover()`; its new `state.mjs` keeps the state in
+  0600 files and turns persistence on only with `TAPEAPI_AGENT_KEY_PASSPHRASE` and `TAPEAPI_AGENT_STATE_DIR`. New
+  vectors: `phase1.keyVault`, `phase1.resume`. Whoever has both the passphrase and the files has the keys, so the worst
+  loss stays the channels' balances. `resume` refuses a missing or stopped record before the vault is asked to open
+  anything; a vault seals at most 4 MiB, and a longer blob is malformed before any key is derived. In the example the
+  whole order record (offer and task text, mandate, receipts, deliverable) is sealed by the same vault, so a record
+  changed on disk is never signed as the agent's own (`order-record-unreadable`, `order-record-corrupt`); every
+  method refuses `recovering` until `recover()` has run; `ctx.resumed` tells a task what was paid before the restart;
+  one runtime process per state directory (a lock file, taken over only when its process is gone on this host); and
+  the state directory must never be restored from a backup or a snapshot (a rollback revives orders that were
+  stopped, revoked or delivered).
+- **`@tapeapi/sdk/review` (experimental): evidence-backed reviews between containers**, the
+  reference implementation of the draft "Evidence-Backed Reviews between Containers" (TapeOutProtocol/TAPs pull request
+  #54, not merged, no number), which may change. A review record is one EIP-712 type `Review` in the TAP-11 domain (chainId the
+  reviewer's chain): `makeReview`, `reviewHashOf`, `reviewTypedData` (with what a console should show beside the
+  wallet), `signReview` (the reviewer's holder or its delegate, the TAP-11 signer of its service), `reviewRequestId`
+  (`tape-review:<reviewer>:<nonce>`, a label for the request id of a TAP-13 call, never the caller's identity),
+  `subjectOf`, `textHashOf`, `evidenceHashOf`. `createReviewKit(api)` verifies records (`verifyReview`,
+  `verifyReviews`) with the strict readers of `createAgentKit`: both containers' identities and holders, EIP-1271 and
+  the site file at one pinned block per chain, the reviewer's delegate and the reviewee's signer as TAP-11 §2 resolves
+  them, another chain through `api.forChain`; level 1 (a signed answer whose request id names the reviewer, within 90
+  days) and level 2 (a #47 task: mandate and verdict by the principal's holder, delivery by the agent's signer, the
+  phase-0 rule) reuse the SDK's TAP-13 and #47 code. Every result gives the level, `signedBy` (`holder`, `delegate` or
+  null), `counted`, the draft's problem names and whether the text is withheld; a chain or node failure throws, never a
+  problem. Carriages: `readReviewFile` (`.well-known/tapeapi-reviews.json`, at most 262,144 bytes, a larger declared
+  size is not read, records naming another reviewer ignored; `reviewFileBytes`) and `readReviewMessages` (public
+  TapeSend messages with a `review` member from the reviewer, final only, the block time in place of now, the sending
+  wallet marked when it differs from the current holder; `reviewMessageContent` refuses a payload over 16,000 bytes).
+  `summarizeReviews`: only records signed by the current holder or delegate correct, withdraw or conflict; one record
+  per pair; level 1 and level 2 apart; distinct reviewers and holders, never amounts. `checkReview(record, facts)`
+  replays the draft's vectors (`spec/vectors/tap-draft-container-reviews.json`, 59 cases and 6 summaries, a byte copy)
+  with given chain facts; `verify.py` recomputes their hashes and signers independently. `tapeapi-verify review
+  <reviewee>` (experimental subcommand, not in the main `--help`) prints the records of the reviewers' site files, the
+  reviewee's inbox and a records file, and the summary.
+
+### Changed
+
+- `@tapeapi/sdk/agent` (experimental; local chains only, not usable on mainnet): in the spend evidence, `spend-above-cap` now uses the verifier's own reading (`spentNow`) when it has one, and the agent's reported `spent` only otherwise; one more vector, `phase1.evidence` 35 to 36. The SDK and the independent Python implementation change together.
+
+- **`createAgentKit` resolves the agent and the providers as TAP-11 §2 says by default (`@tapeapi/sdk/agent`,
+  experimental).** Without a `resolve` option the kit now resolves them through a conformance-mode client
+  (`conform: 'tap10'`: one pinned block per resolution, strict reads) made from the kit's own client, with the same
+  nodes, quorum, RPC timeout, `fetch` and other options; it never turns on `allChains` and reads no other chain, so no
+  request goes to a node the client was not given. A client already in the conformance mode is used as it is. The
+  results change where TAP-10 does: a container that is not opened or not activated, or a site store or payment
+  contract running an implementation TAP-10 does not list, is now `agent-unresolvable` or `provider-unresolvable`
+  instead of resolving. A client whose contracts are not the ones TAP-10 lists for its chain (a local or test
+  deployment) keeps its own `resolve`, as in 1.8. With a `resolve` option nothing changes. New property
+  `kit.resolution`: `'tap10'`, `'client'` or `'caller'`. `tapeapi-verify task` builds its kit this way too. To keep the
+  1.8 default, pass `resolve: (container) => api.resolve(container)`.
+- **The `/mcp` CORS preflight also allows `Mcp-Method` and `Mcp-Name`** (`createMcpEndpoint`, `createMcpProxy`, and so
+  the public service and the proxy examples), so a browser client of a newer MCP revision can send its requests. The
+  headers allowed before are unchanged. The guide on MCP now says which revisions the endpoint speaks.
 
 ## [1.8.1] — 2026-10-08
 
@@ -1539,7 +1836,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v1.8.1...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.8.1...v2.0.0
 [1.8.1]: https://github.com/BruceLanLan/tapeapi/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/BruceLanLan/tapeapi/compare/v1.7.0...v1.7.1

@@ -35,10 +35,11 @@ const cat = (...xs) => { const out = new Uint8Array(xs.reduce((n, x) => n + x.le
 const u32 = (n) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, Number(n)); return b }
 const u64 = (n) => { const b = new Uint8Array(8); new DataView(b.buffer).setBigUint64(0, BigInt(n)); return b }
 const fpr = (pub) => sha256(pub).slice(0, 8)          // the OLD slot fingerprint (G-04) / 旧版格子指纹
-const commitOf = (K) => sha256(cat(te.encode('TAP-27/commit/v1'), K))
-const kekFor = (ss, E, R, gid, epoch) => hkdf(sha256, ss, te.encode('TAP-27/wrap/v1'), cat(E, R, gid, u64(epoch)), 32)
+const commitOf = (K) => sha256(cat(te.encode('tape-group/commit/v1'), K))
+const kekFor = (ss, E, R, gid, epoch) => hkdf(sha256, ss, te.encode('tape-group/wrap/v1'), cat(E, R, gid, u64(epoch)), 32)
 const isGroupErr = (re) => (e) => e instanceof TapeAPIError && e.code === 'GROUP_INVALID' && (!re || re.test(e.message))
-const api = (chain) => createTapeAPI({ rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: chain.fetch })
+// 1.x behaviour; 2.0 default is conform: 'tap10'
+const api = (chain) => createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, fetch: chain.fetch })
 const entry = (m) => ({ container: m.container, chainId: 56, x25519: hex(m.identity.x25519.publicKey), ed25519: hex(m.identity.ed25519.publicKey) })
 const TRUST = { verifyMember: 'trust-roster' }
 const HEADER_EPOCH = 114, SLOT = 48, HEADER_MSG = 61   // wire layout after the fixes / 修复后的线路布局
@@ -85,7 +86,7 @@ function craftEpoch({ gid, epoch, rosterBytes, slotKeys, K = randomBytes(32), wr
   const slots = cat(...slotKeys.map((R, i) => xchacha20poly1305(kekFor(x25519.getSharedSecret(e, R), E, R, gid, epoch), N, header).encrypt(wrapFor(i))))
   const ct = xchacha20poly1305(K, N, cat(header, slots)).encrypt(rosterBytes)
   const body = cat(header, slots, u32(ct.length), ct)
-  return { wire: cat(body, ed25519.sign(cat(te.encode('TAP-27/epoch/v1'), body), ownerEdSecret)), K }
+  return { wire: cat(body, ed25519.sign(cat(te.encode('tape-group/epoch/v1'), body), ownerEdSecret)), K }
 }
 const rosterOf = ({ gid, epoch, issued = nowS(), prev = '00'.repeat(32), owner, members }) => ({ v: 1, kind: G.ROSTER_KIND, gid: Buffer.from(gid).toString('hex'), epoch, issued, prev, owner, members, relays: [], bus: BUS })
 
@@ -94,7 +95,7 @@ const rosterOf = ({ gid, epoch, issued = nowS(), prev = '00'.repeat(32), owner, 
 function craftMsg({ gid, epoch, index, seq, K, pt, sign, nonce = randomBytes(24) }) {
   const header = cat(Uint8Array.of(0x05), gid, u64(epoch), u32(index), u64(seq), nonce)
   const ct = xchacha20poly1305(G.senderKey(K, gid, epoch, index), nonce, header).encrypt(pt)
-  return cat(header, ct, sign(cat(te.encode('TAP-27/msg/v1'), header, ct)))
+  return cat(header, ct, sign(cat(te.encode('tape-group/msg/v1'), header, ct)))
 }
 
 // ======================================================================================== HIGH ====

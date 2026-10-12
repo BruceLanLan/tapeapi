@@ -30,9 +30,14 @@ export const STALE_AFTER = 7
  * the default three nodes and quorum 2: 36 requests (42 calls, some batched) for a name that gets through every on-chain
  * check; every chain read happens before the `ai-field` check, so a service that passes everything needs the same. The
  * rest is headroom for a node that fails and a retry. A name that reaches the cap is `undecided`, never `failing`.
+ * 2.0: the default-mode step (defaultModeStatus) uses what the doctor leaves of the same cap: 24 requests on the conform
+ * fake chain (3 nodes, with a cpuAt scan the shipped processor table spares processor 1013), so on BNB Chain about 56
+ * of 60 together, unmeasured; when it runs short only `defaultMode` says `rpc-budget`, never the flag.
  * 一个名字在一次复核里最多可用的 JSON-RPC HTTP 请求数（批量请求算一次）。2026-09-30 在 BNB Chain 实测（默认三个节点、quorum 2）：
  * 通过全部链上检查的名字用 36 次（42 个调用，部分合批）；所有链上读取都在 `ai-field` 检查之前，全部通过的服务也一样。其余是给
- * 节点故障与重试的余量。达到上限的名字记为 `undecided`，绝不记为 `failing`。
+ * 节点故障与重试的余量。达到上限的名字记为 `undecided`，绝不记为 `failing`。2.0：默认模式一步用诊断剩下的同一上限：conform 假链上 24 次
+ * （3 个节点，含 1013 号处理器可由随附处理器表省掉的 cpuAt 扫描），BNB Chain 上两者合计约 56/60，未实测；不够时只有 defaultMode 记
+ * rpc-budget，标记不受影响。
  */
 export const RPC_BUDGET_PER_NAME = 60
 const DOCTOR_VERSION = JSON.parse(readFileSync(new URL('../sdk/package.json', import.meta.url), 'utf8')).version
@@ -124,9 +129,11 @@ export function rpcMeter(limit = RPC_BUDGET_PER_NAME, inner = (...a) => globalTh
 /**
  * Recheck every entry with tapeapi-doctor (no key: free), one chain client per name on a metered fetch.
  * 用 tapeapi-doctor 复核每一条（不带密钥：免费），每个名字一个链客户端，走计数的 fetch。
- * @param {{ doc: object, previous?: object, diagnoseFn?: Function, apiFor?: (fetch: Function) => object, rpcBudget?: number, now?: () => string }} o
+ * 2.0: with `defaultApiFor`, each entry's status also gets `defaultMode` (defaultModeStatus below), on the same meter.
+ * 2.0：给了 `defaultApiFor` 时，每条状态还会追加 `defaultMode`（见下面的 defaultModeStatus），用同一个计数器。
+ * @param {{ doc: object, previous?: object, diagnoseFn?: Function, apiFor?: (fetch: Function) => object, defaultApiFor?: ((fetch: Function) => object) | null, rpcBudget?: number, now?: () => string }} o
  */
-export async function recheck({ doc, previous = null, diagnoseFn = diagnose, apiFor = () => undefined, rpcBudget = RPC_BUDGET_PER_NAME, now = () => new Date().toISOString() }) {
+export async function recheck({ doc, previous = null, diagnoseFn = diagnose, apiFor = () => undefined, defaultApiFor = null, rpcBudget = RPC_BUDGET_PER_NAME, now = () => new Date().toISOString() }) {
   const problems = validateDirectory(doc)
   if (problems.length) throw new Error(`providers.json is not valid:\n  ${problems.join('\n  ')}`)
   const at = now()
@@ -135,12 +142,82 @@ export async function recheck({ doc, previous = null, diagnoseFn = diagnose, api
     const meter = rpcMeter(rpcBudget)
     let report
     try { report = await diagnoseFn(e.name, { api: apiFor(meter.fetch) }) } catch (err) { report = { exitCode: 3, checks: [{ id: 'name', status: 'error', detail: String(err?.message || err) }] } }
+    // The flag is the doctor's alone: the meter is read here, before the default-mode step below uses it.
+    // 标记只由诊断决定：在下面的默认模式一步用到计数器之前，先在这里读取它。
+    const exceeded = meter.exceeded, used = meter.used
     // A spent budget decides nothing about the service: whatever the doctor concluded after it, the entry is undecided.
     // 预算用完不能说明服务的任何问题：无论诊断之后得出什么，这一条都记为无法判定。
-    if (meter.exceeded) report = { exitCode: 3, checks: [...report.checks.filter((c) => c.status !== 'fail'), { id: 'rpc-budget', status: 'error' }] }
-    out.providers[e.name] = { ...nextStatus(previous?.providers?.[e.name] ?? null, report, at), rpcRequests: meter.used }
+    if (exceeded) report = { exitCode: 3, checks: [...report.checks.filter((c) => c.status !== 'fail'), { id: 'rpc-budget', status: 'error' }] }
+    const status = { ...nextStatus(previous?.providers?.[e.name] ?? null, report, at), rpcRequests: used }
+    if (defaultApiFor) {
+      // A client that cannot even be made is no conclusion, never a failure of the recheck. / 连客户端都建不起来只是没有结论，绝不让复核失败。
+      let dapi, made = null
+      try { dapi = defaultApiFor(meter.fetch) } catch (err) { made = err }
+      status.defaultMode = made
+        ? { status: 'unavailable', rpcRequests: 0, detail: String(made?.message || made).replace(/\s+/g, ' ').slice(0, 200) }
+        : await defaultModeStatus(e.name, dapi, meter, used)
+    }
+    out.providers[e.name] = status
   }
   return out
+}
+
+/** The site statuses TAP-10 §6.2 names that api.siteStatus returns (never throws). / siteStatus 返回（不抛出）的站点状态。 */
+export const SITE_STATUSES = Object.freeze(['ok', 'unpaid', 'not-opened', 'store-changed', 'no-such-cpu', 'no-such-token', 'not-tapeout'])
+
+/**
+ * 2.0 (E20): what a client in the SDK's default mode (the TAP-10 conformance mode) says of one name, appended to the
+ * entry's status as `defaultMode`. It never changes `flag`, `verdict`, `consecutiveFailures`, `rpcRequests` or
+ * newlyFailing(): the flag stays the doctor's under the 1.x resolution. It is api.siteStatus (TAP-10 identity and site
+ * status at one pinned block: opened, activated, the site store and payment contract implementations), not a full
+ * resolve: the doctor has already checked the manifest and the delegation. It shares the name's RPC meter, so the cap of
+ * RPC_BUDGET_PER_NAME holds for both; what is left after the doctor is all it may use.
+ * { status, rpcRequests, implementations? (store-changed only), reason? ('rpc-budget' when the budget ran out), detail? }.
+ * `status` is a site status (SITE_STATUSES), or, when siteStatus threw, the TAP name it carried ('unavailable',
+ * 'unsupported', 'stale-block', 'wrong-chain', 'input-error', ...; 'unavailable' when it carried none).
+ * 2.0（E20）：SDK 默认模式（TAP-10 一致模式）的客户端对这个名字的结论，作为 `defaultMode` 追加到条目状态里。它从不改变 flag、verdict、
+ * consecutiveFailures、rpcRequests 或 newlyFailing()：标记仍是诊断按 1.x 解析得出的。它是 api.siteStatus（在一个钉块上的 TAP-10 身份与
+ * 站点状态：是否开通、是否激活、站点存储与付费合约的实现），不是完整解析：清单与委托诊断已经检查过。它与诊断共用这个名字的 RPC 计数器，
+ * RPC_BUDGET_PER_NAME 的上限对两者合计成立；诊断用剩的就是它能用的全部。
+ */
+export async function defaultModeStatus(name, api, meter, before = meter.used) {
+  const spent = () => (meter.exceeded ? { reason: 'rpc-budget' } : {})
+  try {
+    if (!api || typeof api.siteStatus !== 'function') throw new TapeAPIError('RPC_UNAVAILABLE', 'no default-mode client')
+    const v = await api.siteStatus(name)
+    const status = SITE_STATUSES.includes(v?.status) ? v.status : 'unavailable'
+    const out = { status, rpcRequests: meter.used - before }
+    if (status === 'store-changed' && Array.isArray(v.implementations)) {
+      out.implementations = v.implementations.map((i) => ({ role: String(i.role), proxy: String(i.proxy), implementation: String(i.implementation), accepted: i.accepted === true }))
+    }
+    return out
+  } catch (err) {
+    const st = typeof err?.data?.status === 'string' ? err.data.status : 'unavailable'
+    return { status: meter.exceeded ? 'unavailable' : st, rpcRequests: meter.used - before, ...spent(), detail: String(err?.message || err).replace(/\s+/g, ' ').slice(0, 200) }
+  }
+}
+
+/**
+ * The chain client of one name's recheck. 2.0: conform: false, the 1.x resolution (deprecated, one DEPRECATED warning per client),
+ * because the directory's labels are not accepted by the conformance mode that is now the default (decision D-3): the listing
+ * has to stay available to them. The warning goes to `onWarning` (default: the SDK's console warning). What a 2.0 default
+ * client says of the name is recorded beside the flag, in `defaultMode` (directoryDefaultApi, defaultModeStatus).
+ * 一个名字复核用的链客户端。2.0：conform: false，即 1.x 的解析（已弃用，每个客户端一次 DEPRECATED 警告），因为目录标签在现在作为默认的
+ * 一致模式下会被拒（决定 D-3）：目录必须对它们保持可用。警告交给 `onWarning`（默认：SDK 的控制台警告）。2.0 默认客户端对这个名字的
+ * 结论另记在标记旁边的 `defaultMode` 里（directoryDefaultApi、defaultModeStatus）。
+ */
+export function directoryApi(fetch, { onWarning } = {}) {
+  return createTapeAPI({ rpcUrls: rpcUrlsFor(56), quorum: 2, fetch, conform: false, ...(onWarning ? { onWarning } : {}) })
+}
+
+/**
+ * The client of the default-mode step (defaultModeStatus): the SDK's default, the TAP-10 conformance mode (no `conform`
+ * option, so no DEPRECATED warning), on the same nodes, quorum and metered fetch as directoryApi.
+ * 默认模式一步（defaultModeStatus）用的客户端：SDK 的默认，即 TAP-10 一致模式（不传 conform，所以没有 DEPRECATED 警告），节点、法定数与
+ * 计数的 fetch 与 directoryApi 相同。
+ */
+export function directoryDefaultApi(fetch) {
+  return createTapeAPI({ rpcUrls: rpcUrlsFor(56), quorum: 2, fetch })
 }
 
 /** Entries that stopped passing today (the job fails so a maintainer sees them). / 今天新近不再通过的条目。 */
@@ -160,8 +237,8 @@ async function main() {
   if (args.includes('--recheck')) {
     let previous = null
     try { previous = JSON.parse(readFileSync(STATUS_FILE, 'utf8')) } catch { /* first run */ }
-    const status = await recheck({ doc, previous, apiFor: (fetch) => createTapeAPI({ rpcUrls: rpcUrlsFor(56), quorum: 2, fetch }) })
-    for (const [name, s] of Object.entries(status.providers)) console.log(`${s.flag.padEnd(9)} ${name}  rpc ${s.rpcRequests}/${status.rpcBudgetPerName}${s.failed.length ? `  failed: ${s.failed.join(', ')}` : ''}${s.consecutiveFailures ? `  (${s.consecutiveFailures} day(s))` : ''}`)
+    const status = await recheck({ doc, previous, apiFor: (fetch) => directoryApi(fetch), defaultApiFor: (fetch) => directoryDefaultApi(fetch) })
+    for (const [name, s] of Object.entries(status.providers)) console.log(`${s.flag.padEnd(9)} ${name}  rpc ${s.rpcRequests}/${status.rpcBudgetPerName}${s.failed.length ? `  failed: ${s.failed.join(', ')}` : ''}${s.consecutiveFailures ? `  (${s.consecutiveFailures} day(s))` : ''}${s.defaultMode ? `  default mode: ${s.defaultMode.status}${s.defaultMode.reason ? ` (${s.defaultMode.reason})` : ''}, rpc ${s.defaultMode.rpcRequests}` : ''}`)
     // An empty directory is not rewritten every day for a new timestamp alone. / 空目录不会只为新的时间戳每天重写。
     const worthWriting = doc.providers.length > 0 || Object.keys(previous?.providers ?? {}).length > 0
     if (args.includes('--write') && worthWriting) writeFileSync(STATUS_FILE, JSON.stringify(status, null, 2) + '\n')

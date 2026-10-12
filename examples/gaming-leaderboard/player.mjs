@@ -23,7 +23,8 @@ if (printOnly) {
   process.exit(0)
 }
 
-const api = createTapeAPI({ dev: true })
+// 1.x behaviour; 2.0 default is conform: 'tap10'
+const api = createTapeAPI({ dev: true, conform: false })
 const svc = await api.resolve({ dev: base })
 console.log(`provider ${svc.manifest.name}   container ${svc.container}   signer ${svc.manifest.signer}`)
 console.log(`player   ${player}${process.env.PLAYER_KEY ? '' : '   (ephemeral key; set PLAYER_KEY to reuse an identity)'}`)
