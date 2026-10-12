@@ -34,6 +34,7 @@ DeWEB 是网站，TapeSend 是消息，TapeAPI 是服务。
 | 让 AI 代理安全地使用服务 | [AI 代理](agents.md) |
 | 让一个容器凭签名授权书替另一个容器办事（实验性） | [容器代理](container-agents.md) |
 | 排查错误 | [常见问题](faq.md) |
+| 查极限参数、费用、隐私、路线图或规范索引 | [参考](reference.md) |
 
 ## 状态
 

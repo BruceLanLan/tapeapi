@@ -38,7 +38,7 @@
   --well-2:    #DCE0E6;
   --ink:       #0C0F14;
   --ink-2:     #3D4550;
-  --ink-3:     #677080;
+  --ink-3:     #5B6474;   /* 5.2:1 on --bg, 4.9:1 on --well: small labels need 4.5 / 小字需 4.5:1 */
   --hair:      #CCD2DA;
   --hair-2:    #E0E4EA;
   --amber:     #B4660A;
@@ -163,6 +163,7 @@ body {
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
+:root[data-lang="zh"] body { line-height: 1.75; }   /* PingFang reads cramped at 1.62 / 中文行高加大 */
 .mono, code, pre, .val, .sym { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 a { color: var(--amber-ink); text-underline-offset: 3px; }
 a:hover { color: var(--amber); }
@@ -171,8 +172,8 @@ a:hover { color: var(--amber); }
 .sheet { max-width: 1060px; margin: 0 auto; padding-left: 20px; padding-right: 20px; padding-block: 0 40px; }
 @media (max-width: 520px) { .sheet { padding-left: 16px; padding-right: 16px; } :root { --hd-pad: 16px; } }
 
-/* ── nameplate ───────────────────────────────────────────── */
-.plate { padding-block: 40px 8px; }
+/* ── nameplate: the product in one sentence, then the limits in one line ── / 首屏：一句话讲清产品，一行写明限定 */
+.plate { padding-block: 34px 0; }
 .docno {
   display: flex; flex-wrap: wrap; gap: 4px 0; margin: 0;
   font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 500; letter-spacing: .1em;
@@ -186,25 +187,25 @@ a:hover { color: var(--amber); }
 .docno > span:first-child { color: var(--amber-ink); }
 h1 {
   font-variation-settings: "wdth" 108;
-  font-weight: 600; letter-spacing: -.028em; line-height: .98;
-  font-size: clamp(40px, 8.2vw, 84px);
-  margin: 26px 0 0; text-wrap: balance; max-width: 18.5ch;
+  font-weight: 600; letter-spacing: -.02em; line-height: 1.05;
+  font-size: clamp(34px, 5.2vw, 58px);
+  margin: 26px 0 0; text-wrap: balance; max-width: 17ch;
 }
-:root[data-lang="zh"] h1 { letter-spacing: -.01em; line-height: 1.1; max-width: 14em; word-break: keep-all; }   /* break at the comma, not inside a word / 在逗号处换行 */
+:root[data-lang="zh"] h1 { letter-spacing: -.01em; line-height: 1.2; max-width: 14em; word-break: keep-all; }   /* break at the comma, not inside a word / 在逗号处换行 */
 .lede {
-  margin: 24px 0 0; max-width: 50ch;
-  font-size: clamp(16.5px, 2.1vw, 19px); line-height: 1.55; color: var(--ink-2);
+  margin: 22px 0 0; max-width: 56ch;
+  font-size: clamp(17px, 1.9vw, 20px); line-height: 1.55; color: var(--ink-2);
 }
-.badges { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 28px 0 0; }
+.badges { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 26px 0 0; }
 .stamp {
   font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 500;
-  letter-spacing: .22em; color: var(--red);
+  letter-spacing: .22em; color: var(--red); white-space: nowrap;
   border: 1.5px solid var(--red); padding: 5px 9px 5px 12px; line-height: 1;
   transform: rotate(-1.2deg); transform-origin: left center;
 }
-.badges .meta { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+.badges .meta { flex: 1 1 300px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); line-height: 1.6; }
 
-.cta { display: flex; flex-wrap: wrap; gap: 10px; margin: 30px 0 0; }
+.cta { display: flex; flex-wrap: wrap; gap: 10px; margin: 28px 0 0; }
 .btn {
   display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 18px;
   font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase;
@@ -224,70 +225,70 @@ a.doclink {
   color: var(--amber-ink); text-decoration: none; border-bottom: 1px solid var(--amber); padding-bottom: 1px;
 }
 a.doclink:hover { color: var(--amber); }
+.more { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 18px; }
 
 /* ── sections: a heavy rule, the section number in the margin, a condensed heading ── */
-section { padding-block: 84px 0; }
+section { padding-block: 52px 0; }
 .shead {
   display: grid; grid-template-columns: 68px minmax(0, 1fr); align-items: baseline;
-  border-top: 2px solid var(--ink); padding-top: 16px; margin-bottom: 28px;
+  border-top: 2px solid var(--ink); padding-top: 16px; margin-bottom: 24px;
 }
 .shead .idx {
   font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 500;
   color: var(--amber-ink); letter-spacing: .06em;
 }
 .shead h2 {
-  margin: 0; font-size: clamp(24px, 3.4vw, 34px); font-weight: 600;
-  font-variation-settings: "wdth" 88; letter-spacing: -.018em; line-height: 1.12; text-wrap: balance;
+  margin: 0; font-size: clamp(22px, 3vw, 30px); font-weight: 600;
+  font-variation-settings: "wdth" 88; letter-spacing: -.018em; line-height: 1.15; text-wrap: balance;
 }
-.shead .line { display: none; }
-@media (max-width: 520px) { .shead { grid-template-columns: 44px minmax(0, 1fr); } section { padding-block: 64px 0; } }
+@media (max-width: 520px) { .shead { grid-template-columns: 44px minmax(0, 1fr); } }
 
 /* ── panels ──────────────────────────────────────────────── */
 .panel { background: var(--panel); border: 1px solid var(--hair-2); box-shadow: var(--shadow); }
 .panel.pad { padding: clamp(18px, 3vw, 30px); }
-
-.fd { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: clamp(20px, 4vw, 52px); }
-@media (max-width: 760px) { .fd { grid-template-columns: 1fr; gap: 26px; } }
-ul.features { list-style: none; margin: 0; padding: 0; }
-ul.features li { padding: 12px 0; border-bottom: 1px solid var(--hair-2); font-size: 15px; line-height: 1.5; }
-ul.features li:first-child { padding-top: 0; }
-ul.features li:last-child { border-bottom: 0; padding-bottom: 0; }
-ul.features b { display: block; font-weight: 600; color: var(--ink); }
-ul.features span.d { color: var(--ink-2); font-size: 14.5px; }
-.desc p { margin: 0 0 16px; color: var(--ink-2); line-height: 1.65; max-width: 62ch; }
-.desc p:last-child { margin: 0; }
-.desc b { color: var(--ink); font-weight: 600; }
+p.plain { margin: 18px 0 0; max-width: 72ch; font-size: 15px; line-height: 1.65; color: var(--ink-2); }
 
 /* ── tables ──────────────────────────────────────────────── */
 .tcap { margin: 0 0 14px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); line-height: 1.5; }
-.tw { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 500px; }
-th, td { text-align: left; padding: 12px 20px 12px 0; border-bottom: 1px solid var(--hair-2); vertical-align: baseline; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 10px 20px 10px 0; border-bottom: 1px solid var(--hair-2); vertical-align: baseline; }
 th:last-child, td:last-child { padding-right: 0; }
 thead th {
   font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 500; letter-spacing: .12em;
-  text-transform: uppercase; color: var(--ink-3); border-bottom: 1px solid var(--ink-3); white-space: nowrap;
+  text-transform: uppercase; color: var(--ink-3); border-bottom: 1px solid var(--ink-3);
   padding-top: 0; padding-bottom: 10px;
 }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover td { background: color-mix(in srgb, var(--well) 55%, transparent); }
-.sym { font-size: 13px; color: var(--amber-ink); white-space: nowrap; }
+.sym { font-size: 13px; color: var(--amber-ink); overflow-wrap: anywhere; }
 .val { font-size: 14px; white-space: nowrap; font-weight: 500; }
-td .u { color: var(--ink-3); font-weight: 400; }
 .yes { color: var(--ok); font-weight: 600; }
 .nope { color: var(--red); font-weight: 600; }
 td.dim { color: var(--ink-2); }
+@media (max-width: 520px) { th, td { padding-right: 12px; } table { font-size: 14px; } }
 
 /* ── figures ─────────────────────────────────────────────── */
 figure { margin: 0; }
 .figbox {
-  background: var(--well); border: 1px solid var(--hair-2); padding: clamp(16px, 3.5vw, 34px) 14px; overflow-x: auto;
+  background: var(--well); border: 1px solid var(--hair-2); padding: clamp(16px, 3vw, 24px) 14px;
   background-image: radial-gradient(circle, color-mix(in srgb, var(--ink-3) 30%, transparent) 1px, transparent 1.2px);
   background-size: 16px 16px; background-position: 8px 8px;
 }
-.figbox svg { display: block; margin: 0 auto; max-width: 100%; height: auto; color: var(--ink); }
 figcaption { margin-top: 14px; font-size: 13.5px; color: var(--ink-3); line-height: 1.55; max-width: 66ch; }
 figcaption .fno { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--amber-ink); margin-right: 10px; }
+
+/* The flow, drawn twice: across on a wide screen, down on a phone, so the labels stay at least 11 px. No script.
+   流程图画两版：宽屏横版、手机竖版，标签渲染后不小于 11 px。不用脚本。 */
+figure.flow p.plain { margin-top: 14px; font-size: 14.5px; }
+@media (min-width: 900px) { figure.flow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 36px; } figure.flow .figbox { grid-column: 1 / -1; } }
+.flow-h, .flow-v { display: block; margin: 0 auto; max-width: 100%; height: auto; color: var(--ink); }
+.flow-v { display: none; max-width: min(100%, 360px); }
+@media (max-width: 520px) { .figbox { padding-inline: 8px; } }
+@media (max-width: 759px) { .flow-h { display: none; } .flow-v { display: block; } }
+.fl-t { font: 500 13px "IBM Plex Mono", ui-monospace, monospace; fill: currentColor; letter-spacing: .04em; }
+.fl-s { font: 400 11.5px "IBM Plex Mono", ui-monospace, monospace; fill: currentColor; opacity: .72; }
+.fl-sv { font-size: 12px; }
+.fl-n { font: 500 11px "IBM Plex Mono", ui-monospace, monospace; fill: currentColor; opacity: .55; letter-spacing: .12em; }
 
 /* ── code ────────────────────────────────────────────────── */
 .code { border: 1px solid var(--hair-2); background: var(--well); min-width: 0; }
@@ -298,117 +299,128 @@ figcaption .fno { font-family: "IBM Plex Mono", monospace; font-size: 11px; lett
 }
 .code .cap::before { content: ""; width: 6px; height: 6px; background: var(--amber); flex: none; }
 .code pre { border: 0; background: transparent; }
-pre { background: var(--well); border: 1px solid var(--hair-2); margin: 0; padding: clamp(16px, 3vw, 24px); overflow-x: auto; font-size: 13.5px; line-height: 1.75; color: var(--ink); tab-size: 2; -webkit-overflow-scrolling: touch; }
+pre { background: var(--well); border: 1px solid var(--hair-2); margin: 0; padding: clamp(14px, 2.6vw, 22px); overflow-x: auto; font-size: 13px; line-height: 1.7; color: var(--ink); tab-size: 2; -webkit-overflow-scrolling: touch; }
 pre .c { color: var(--ink-3); }
 pre .k { color: var(--amber-ink); }
 pre .s { color: var(--ok); }
-code { font-size: .88em; background: var(--well); padding: 1px 5px; border: 1px solid var(--hair-2); }
-
-/* ── notes ───────────────────────────────────────────────── */
-.note { margin: 22px 0 0; padding: 16px 20px; background: var(--amber-well); border-left: 3px solid var(--amber); font-size: 14.5px; line-height: 1.6; color: var(--ink-2); }
-.note b { color: var(--ink); font-weight: 600; }
-
-/* ── applications and roadmap ────────────────────────────── */
-.apps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1px; background: var(--hair-2); border: 1px solid var(--hair-2); }
-.app { background: var(--panel); padding: 22px 22px 24px; }
-.app .no { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--amber-ink); }
-.app h3 { margin: 12px 0 8px; font-size: 17.5px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3; }
-.app p { margin: 0; font-size: 14px; color: var(--ink-2); line-height: 1.55; }
-.app .no.nope { color: var(--red); }
-.app .no.yes { color: var(--ok); }
-/* Not built yet: drawn dashed, the way a schematic draws a part that is not populated.
-   尚未上线：虚线框，就像原理图里“不贴装”的元件。 */
-.apps.road { background: transparent; border: 0; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
-.apps.road .app { background: transparent; border: 1.5px dashed var(--hair); }
-.apps.road .app .no { display: inline-block; border: 1px solid currentColor; padding: 3px 7px; line-height: 1; }
-
-/* ── spec list ───────────────────────────────────────────── */
-.specs { display: grid; gap: 1px; background: var(--hair-2); border: 1px solid var(--hair-2); }
-.spec { background: var(--panel); display: grid; grid-template-columns: 82px minmax(0, 1fr) auto; gap: 18px; align-items: baseline; padding: 14px 20px; }
-.spec:hover { background: color-mix(in srgb, var(--panel) 60%, var(--well)); }
-@media (max-width: 520px) { .spec { grid-template-columns: 70px minmax(0, 1fr); padding: 13px 16px; } .spec .st { grid-column: 2; } }
-.spec .id { font-family: "IBM Plex Mono", monospace; font-size: 13px; font-weight: 500; }
-.spec .id a { color: var(--amber-ink); text-decoration: none; border-bottom: 1px solid transparent; }
-.spec .id a:hover { border-bottom-color: currentColor; }
-.spec .st { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
-.specs + .note { margin-top: 16px; }
-
-/* ── live now ────────────────────────────────────────────── */
-.pins { display: grid; gap: 1px; background: var(--hair-2); border: 1px solid var(--hair-2); box-shadow: var(--shadow); }
-.pin { background: var(--panel); display: grid; grid-template-columns: 60px minmax(0, 1fr) auto; gap: 20px; align-items: baseline; padding: 20px 22px 21px; }
-.pno {
-  justify-self: start; font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 500; letter-spacing: .12em;
-  color: var(--amber-ink); border: 1px solid var(--hair); padding: 3px 6px; line-height: 1.2;
-}
-.pin h3 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3; }
-.pin .where { margin-top: 4px; font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--ink-3); overflow-wrap: anywhere; }
-.pin .where a { color: var(--amber-ink); }
-.pin p { margin: 8px 0 0; font-size: 14.5px; line-height: 1.55; color: var(--ink-2); max-width: 70ch; }
-.pin p.meth { margin-top: 6px; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
-.pin p.meth span { white-space: nowrap; }
-.pin .more { margin-top: 12px; }
-.pin .st, .tool .st { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; }
-.pin .st::before, .tool .st::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); margin-right: 7px; vertical-align: 0; }
-.pin .st.on, .tool .st.on { color: var(--ok); }
-.pin .st.on::before, .tool .st.on::before { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
-@media (max-width: 520px) {
-  .pin { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 16px 16px 17px; }
-  .pin .pno { grid-row: 1; grid-column: 1; }
-  .pin .st { grid-row: 1; grid-column: 2; }
-  .pin .pb { grid-column: 1 / -1; }
-}
-.tools-cap { margin-top: 30px; }
-.tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 1px; background: var(--hair-2); border: 1px solid var(--hair-2); }
-.tool { background: var(--panel); padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.tool .tt { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 2px; }
-.tool h3 { margin: 0; font-size: 16.5px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3; }
-.tool p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--ink-2); }
-.pin h3 a, .tool h3 a { color: var(--ink); text-decoration: none; background: linear-gradient(var(--amber), var(--amber)) 0 100% / 100% 1px no-repeat; padding-bottom: 1px; }
-.pin h3 a:hover, .tool h3 a:hover { color: var(--amber-ink); background-size: 100% 2px; }
-
-.try { margin-top: 56px; }
-.subh { display: grid; grid-template-columns: 68px minmax(0, 1fr); align-items: baseline; margin-bottom: 4px; border-top: 1px solid var(--hair); padding-top: 14px; }
-.subh .idx { font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 500; color: var(--amber-ink); letter-spacing: .04em; }
-.subh h3 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.01em; font-variation-settings: "wdth" 92; }
-@media (max-width: 520px) { .subh { grid-template-columns: 44px minmax(0, 1fr); } }
-.step { margin: 22px 0 10px; font-size: 14.5px; line-height: 1.6; color: var(--ink-2); max-width: 78ch; }
-.step .no { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--amber-ink); margin-right: 10px; border: 1px solid var(--amber); padding: 2px 6px; }
-.step b { color: var(--ink); font-weight: 600; }
-.try pre { font-size: 13px; line-height: 1.7; }
+code { font-size: .88em; background: var(--well); padding: 1px 5px; border: 1px solid var(--hair-2); overflow-wrap: anywhere; }
+pre code { overflow-wrap: normal; }
 /* The embedded mono is subset to this page's Latin characters and has no double quote; a block that needs one uses
    the system mono throughout rather than switching face mid-line.
    内嵌等宽字体按本页拉丁字符子集化，没有双引号；需要双引号的代码块整块改用系统等宽字体，避免行内换字体。 */
 pre.sys { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
 
-/* ── reader paths, AI layer, privacy columns, experimental section ──
-   首页：按读者分入口、AI 回执层、隐私两栏、实验性区块 */
-.lede.sub { margin-top: 14px; font-size: clamp(15px, 1.8vw, 16.5px); color: var(--ink-3); max-width: 58ch; }
-.apps.readers { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
-.apps.readers .app { display: flex; flex-direction: column; }
-ol.path { margin: 14px 0 0; padding: 0 0 0 1.25em; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
-ol.path li { margin: 0 0 6px; padding-left: 2px; }
-ol.path li::marker { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--amber-ink); }
-.app .more { margin-top: auto; padding-top: 14px; display: flex; flex-wrap: wrap; gap: 8px 16px; }
-.app code, .tool code, .pin code, .note code, ol.path code, figcaption code { overflow-wrap: anywhere; }
-figure + .panel, .panel + .panel, .apps + .panel { margin-top: 18px; }
-.panel .tcap:first-child { margin-top: 0; }
-.fd.even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-@media (max-width: 760px) { .fd.even { grid-template-columns: 1fr; } }
-h3.colh { margin: 0 0 14px; font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--amber-ink); }
-.badges.exp { margin: 0 0 18px; }
-p.plain { margin: 0 0 20px; max-width: 72ch; font-size: 15px; line-height: 1.65; color: var(--ink-2); }
-p.plain b { color: var(--ink); font-weight: 600; }
-.quorum-fig { margin-top: 18px; }
-.try .note { max-width: 78ch; }
+/* ── notes and the 2.0 strip ─────────────────────────────── */
+.note { margin: 22px 0 0; padding: 16px 20px; background: var(--amber-well); border-left: 3px solid var(--amber); font-size: 14.5px; line-height: 1.6; color: var(--ink-2); }
+.note b { color: var(--ink); font-weight: 600; }
+.strip { padding: 20px 22px; background: var(--amber-well); border-left: 3px solid var(--amber); }
+.strip p { margin: 12px 0 0; max-width: 78ch; font-size: 14.5px; line-height: 1.65; color: var(--ink-2); }
+.strip b { color: var(--ink); font-weight: 600; }
+.strip .stamp { display: inline-block; }
+.strip .more { margin-top: 16px; }
+.duo { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 36px; }
+@media (min-width: 900px) { .duo { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); } }
+
+/* ── 01 the receipt: the JSON on the left, five numbered notes on the right ── / 回执：左 JSON，右五条编号标注 */
+.receipt { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 760px) { .receipt { grid-template-columns: minmax(0, 1fr); gap: 18px; } }
+.receipt pre { font-size: 12.5px; line-height: 1.62; }
+@media (max-width: 759px) { .receipt pre.sys { position: relative; } .receipt pre.sys i { position: absolute; right: 10px; } }
+
+.receipt pre i, ol.rc-notes li::before {
+  display: inline-block; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
+  font: normal 500 11px/18px "IBM Plex Mono", ui-monospace, monospace; text-align: center;
+  background: var(--amber-ink); color: var(--bg);
+}
+ol.rc-notes { margin: 0; padding: 0; list-style: none; counter-reset: rc; }
+ol.rc-notes li { position: relative; padding: 0 0 10px 32px; margin-bottom: 10px; border-bottom: 1px solid var(--hair-2); font-size: 14.5px; line-height: 1.55; color: var(--ink-2); }
+ol.rc-notes li:last-child { border-bottom: 0; margin-bottom: 0; padding-bottom: 0; }
+ol.rc-notes li::before { counter-increment: rc; content: counter(rc); position: absolute; left: 0; top: 2px; }
+ol.rc-notes code { color: var(--ink); }
+.proves { margin-top: 18px; }
+.proves th:last-child, .proves td:last-child { white-space: nowrap; }
+.proves .note { margin-top: 16px; }
+.proves.pad { padding-block: 22px; }
+
+/* ── 03 who you are: rows, like a pin table ── / 你是谁：按行列出，像引脚定义表 */
+.paths { display: grid; gap: 1px; background: var(--hair-2); border: 1px solid var(--hair-2); box-shadow: var(--shadow); }
+.path-row { display: grid; grid-template-columns: 196px minmax(0, 1fr) 176px; gap: 8px 24px; align-items: baseline; padding: 15px 22px; background: var(--panel); }
+.path-row .no { display: block; font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 500; letter-spacing: .14em; color: var(--amber-ink); }
+.path-row h3 { margin: 4px 0 0; font-size: 16.5px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3; }
+.path-row p { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--ink-2); }
+.path-row .go { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+@media (max-width: 860px) { .path-row { grid-template-columns: 180px minmax(0, 1fr); } .path-row .go { grid-column: 2; flex-direction: row; flex-wrap: wrap; gap: 8px 18px; } }
+@media (max-width: 560px) { .path-row { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 8px; } .path-row .go { grid-column: 1; margin-top: 4px; } }
+
+/* ── 04 try ──────────────────────────────────────────────── */
+.steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
+@media (min-width: 900px) { .steps { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 28px; } .stp:not(.wide) { display: flex; flex-direction: column; } .stp:not(.wide) .code { margin-top: auto; } }
+.stp.wide { grid-column: 1 / -1; }
+.step { margin: 0 0 10px; font-size: 14.5px; line-height: 1.6; color: var(--ink-2); max-width: 82ch; }
+.step .no { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--amber-ink); margin-right: 10px; border: 1px solid var(--amber); padding: 2px 6px; white-space: nowrap; }
+
+/* ── 05 live now: two columns of one-line rows ── / 现已上线：两栏，每项一行 */
+.live { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 760px) { .live { grid-template-columns: minmax(0, 1fr); } }
+.live .col { background: var(--panel); border: 1px solid var(--hair-2); box-shadow: var(--shadow); padding: 20px 22px 8px; min-width: 0; }
+ul.rows { list-style: none; margin: 0; padding: 0; }
+ul.rows li { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--hair-2); font-size: 14.5px; line-height: 1.55; }
+ul.rows b { font-weight: 600; color: var(--ink); }
+ul.rows .m { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--ink-3); overflow-wrap: anywhere; }
+ul.rows a.m { color: var(--amber-ink); }
+ul.rows p.d { margin: 2px 0 0; color: var(--ink-2); }
+ul.rows p.d a { white-space: nowrap; }
+.st { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; padding-top: 3px; }
+.st::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); margin-right: 6px; vertical-align: 0; }
+.st.on { color: var(--ok); }
+.st.on::before { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
+.sitelinks { display: flex; flex-wrap: wrap; gap: 8px 0; margin: 18px 0 0; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; overflow: hidden; }
+.sitelinks a { text-decoration: none; padding: 0 14px; border-left: 1px solid var(--hair); margin-left: -1px; }
+.sitelinks a:first-child { padding-left: 0; }
+
+/* ── 06 reference: the appendix index ── / 参考：附录索引 */
+ol.reflist { margin: 0; padding: 0; list-style: none; counter-reset: ref; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr)); column-gap: 20px; border-top: 1px solid var(--hair); }
+ol.reflist li.exp { grid-column: 1 / -1; }
+ol.reflist li { counter-increment: ref; display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--hair-2); font-size: 15px; }
+ol.reflist li::before { content: "§" counter(ref); font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-3); }
+ol.reflist a { grid-column: 2; color: var(--ink); text-decoration: none; }
+ol.reflist a:hover { color: var(--amber-ink); text-decoration: underline; }
+ol.reflist p.b { grid-column: 2; margin: 2px 0 0; font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--red); }
+
+/* ── phone: fewer, fuller lines ── / 手机：让每行更满、行数更少 */
+@media (max-width: 520px) {
+  section { padding-block: 36px 0; }
+  .shead { margin-bottom: 14px; }
+  .receipt pre { font-size: 11.5px; }
+  ol.rc-notes li { font-size: 14px; padding-left: 28px; }
+  .proves table { font-size: 13.5px; line-height: 1.4; }
+  .proves th, .proves td { padding-block: 8px; }
+  .note { padding: 12px 14px; font-size: 14px; line-height: 1.55; }
+  .strip { padding: 16px; }
+  .strip p { font-size: 14px; line-height: 1.55; }
+  footer p { font-size: 13.5px; line-height: 1.5; }
+  .path-row .who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+  .path-row h3 { margin: 0; }
+  .path-row p, ul.rows li { font-size: 14px; }
+  .path-row p { line-height: 1.5; }
+  ul.rows li { line-height: 1.45; }
+  .live .col { padding: 16px 16px 6px; }
+  ul.rows li { display: block; }
+  ul.rows .st { display: inline-block; margin-right: 8px; }
+  ol.reflist { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; }
+  ol.reflist li { font-size: 14px; grid-template-columns: 30px minmax(0, 1fr); }
+  footer { gap: 20px; margin-top: 40px; }
+}
 
 /* ── footer ──────────────────────────────────────────────── */
-footer { margin-top: 96px; padding-top: 28px; border-top: 2px solid var(--ink); font-size: 14px; color: var(--ink-3); display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 26px 40px; }
+footer { margin-top: 52px; padding-top: 28px; border-top: 2px solid var(--ink); font-size: 14px; color: var(--ink-3); display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 26px 40px; }
 footer .fbrand { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; padding-bottom: 22px; border-bottom: 1px solid var(--hair); }
 footer .fbrand p { margin: 0; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; }
 .fb-brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; }
 .fb-brand:hover .hd-mark { color: var(--amber); }
 footer h4 { margin: 0 0 8px; font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); font-weight: 500; }
 footer p { margin: 0; line-height: 1.6; }
+footer code { overflow-wrap: anywhere; }
 
 /* ── language switch ─────────────────────────────────────── */
 body [lang] { display: none; }

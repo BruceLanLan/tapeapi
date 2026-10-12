@@ -17,6 +17,7 @@ The same guides, with search, are at [tapeapi.fun/docs](https://tapeapi.fun/docs
 | [AI agents](agents.md) | Anyone giving tools to an in-browser agent | Expose a service as WebMCP tools whose answers are always signature-checked. |
 | [Container agents](container-agents.md) (experimental) | Containers that hire another container for a task | Sign a mandate that authorises no money, check a task thread and its evidence, check a plain-transfer payment, revoke; phase 0, nothing enforced on chain. |
 | [FAQ and troubleshooting](faq.md) | Everyone | Error codes, common mistakes, and what the reader's warnings mean. |
+| [Reference](reference.md) | Everyone who wants the datasheet detail | What 2.0 changed, the experimental features (escrow not audited, not deployed, not on mainnet; local chains and tests only; nothing charged today), privacy, the agreement truth table, absolute maximum ratings, the cost of operation, the roadmap, the specification index and the security note. |
 | [Upgrading to 1.0](upgrade-1.0.md) | Everyone with 0.x code | See what 1.0 promises (Stable, Experimental, Internal), what changed from 0.x and what to write instead, and the full error-code table. |
 
 Before you start: Node.js 20 or later, and

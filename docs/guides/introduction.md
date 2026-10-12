@@ -40,6 +40,7 @@ trust with a signature anyone can check:
 | Let an AI agent use services safely | [AI agents](agents.md) |
 | Have one container do a task for another, with a signed mandate (experimental) | [Container agents](container-agents.md) |
 | Fix an error | [FAQ](faq.md) |
+| Look up limits, costs, privacy, the roadmap or the spec index | [Reference](reference.md) |
 
 ## Status
 
