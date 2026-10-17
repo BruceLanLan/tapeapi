@@ -1294,6 +1294,38 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
         }
       }
     } catch { /* not a URL: not ours / 不是 URL：不是我们的 */ }
+    // A metered path of a built-in format (or one of `formats`) for which the manifest declares no endpoint, under one of
+    // its endpoint roots (same origin and root path; another host is left alone): a sidecar that does not serve that
+    // format refuses it or, an older one, passes it through without a receipt. Either way nothing can be verified, so it
+    // is never silent: strict refuses before sending, otherwise onReport says so (FIXED F-1).
+    // 清单没有声明端点的格式（内置格式或 formats 之一）的计量路径，且位于清单某端点的根之下（同源同根路径；别的主机不管）：不提供
+    // 该格式的旁路会拒绝它，旧版旁路则无回执透传。两种情况都无从核验，所以绝不静默：strict 在发出前拒绝，否则由 onReport 说明。
+    let undeclared = null
+    if (!format && !near) {
+      try {
+        const u = new URL(url)
+        const declared = endpoints.map((e) => e?.format)
+        const known = [...formats, ...FORMATS.filter((f) => !formats.some((x) => x.name === f.name))]
+        const others = known.filter((f) => !declared.includes(f.name))
+        for (const ep of endpoints) {
+          const f = formats.find((x) => x.name === ep?.format)
+          const root = f && rootOf(ep.baseUrl, f)
+          if (!root || !others.length) continue
+          const r = new URL(root)
+          const p = r.origin === u.origin ? apiPath(u.pathname, r.pathname) : null
+          const hit = p ? others.find((o) => o.match({ verb, path: p }) || o.match({ verb, path: loosePath(p) })) : null
+          if (hit) { undeclared = { format: hit.name, declared: declared.filter(Boolean) }; break }
+        }
+      } catch { /* not a URL: not ours / 不是 URL：不是我们的 */ }
+    }
+    if (undeclared) {
+      let origin = String(url)
+      try { const u = new URL(url); origin = u.origin + u.pathname } catch { /* keep it as given */ }
+      const why = `${verb} ${origin} is a metered ${undeclared.format} call, but the service's manifest declares no ${undeclared.format} endpoint (it declares ${undeclared.declared.join(', ')}): the call gets no receipt and cannot be verified (not verified: format not declared)`
+      if (strict) throw new TapeAPIError('INVALID_ARGUMENT', why, { data: { format: undeclared.format, declared: undeclared.declared } })
+      report({ ok: false, mismatch: true, problems: [`not verified: format not declared: ${why}`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: 0, salted: false })
+      return doFetch(input, init)
+    }
     if (!format && near) {
       let origin = String(url)
       try { const u = new URL(url); origin = u.origin + u.pathname } catch { /* keep it as given */ }
@@ -1495,4 +1527,72 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
     headers.delete('content-length')
     return new Response(body, { status: res.status, statusText: res.statusText, headers })
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Client settings (@experimental) / 客户端配置（实验性）
+// ---------------------------------------------------------------------------------------------------------------
+/**
+ * @experimental The tools a settings snippet is written for, and the API formats each one needs. A tool gets a snippet
+ * only for a format the service's manifest declares in ai.endpoints.
+ * @experimental 每种工具对应的 API 格式；只有清单 ai.endpoints 声明了该格式，才为该工具生成配置。
+ */
+export const SNIPPET_TOOLS = Object.freeze({ 'openai-sdk': Object.freeze(['openai-chat', 'openai-embeddings']), curl: Object.freeze(['openai-chat']), codex: Object.freeze(['openai-responses']), 'claude-code': Object.freeze(['anthropic-messages']) })
+const js = (s) => `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+// Built with js(): the packages test reads every quoted package name after the word "from" in src/ as an import.
+// 用 js() 拼出：打包测试把 src/ 里 from 之后带引号的包名都当作 import。
+const OPENAI_IMPORT = `import OpenAI from ${js('openai')}`
+const sh = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`)
+
+/**
+ * @experimental Client settings for an AI service, in the order of its manifest's ai.endpoints, only for the formats it
+ * declares (openai-chat: the OpenAI SDK through createVerifyingFetch, any OpenAI-compatible tool through the local proxy,
+ * curl; openai-responses: Codex; anthropic-messages: Claude Code; openai-embeddings: the OpenAI SDK). The token is
+ * never asked for and never written: the snippets read the environment variable API_KEY. Pure: no I/O, the same
+ * strings for the command line and a web page.
+ * @experimental AI 服务的客户端配置，按清单 ai.endpoints 的顺序，只为它声明的格式生成。令牌从不索要也从不写出：配置读取环境变量
+ * API_KEY。纯函数：不做 I/O，命令行与网页得到同样的字符串。
+ * @param {object} manifest  a resolved service's manifest (its `ai` field is read)
+ * @param {{ target?: string, dev?: string|null, port?: number, proxyCommand?: string, tool?: string, format?: string }} [o]
+ *   target: the name the snippets resolve (default '<name>'); dev: a development sidecar URL instead (testing only);
+ *   port: the local proxy's port (default 8790); proxyCommand: the command that starts the proxy (default
+ *   `tapeapi connect <target> --proxy`); tool / format: keep only these ('all' / undefined: every one)
+ * @returns {{ tool: string, format: string, via: 'sdk'|'proxy'|'direct', verifies: boolean, title: { en: string, zh: string }, text: string }[]}
+ */
+export function snippetsFor(manifest, { target = '<name>', dev = null, port = 8790, proxyCommand, tool = 'all', format } = {}) {
+  const eps = Array.isArray(manifest?.[MANIFEST_FIELD]?.endpoints) ? manifest[MANIFEST_FIELD].endpoints : []
+  const models = Array.isArray(manifest?.[MANIFEST_FIELD]?.models) ? manifest[MANIFEST_FIELD].models : []
+  const local = `http://127.0.0.1:${port}`
+  const start = proxyCommand ?? `tapeapi connect ${dev ? `--dev ${sh(dev)}` : sh(target)} --proxy`
+  const modelOf = (f) => (models.find((m) => !m.formats || m.formats.includes(f))?.id ?? '<model>')
+  const sdkHead = dev
+    ? [`import { createTapeAPI, ai } from ${js('@tapeapi/sdk')}`, 'const api = createTapeAPI({ dev: true })   // testing only: the identity is not checked on chain', `const service = await api.resolve({ dev: ${js(dev)} })`]
+    : [`import { createTapeAPI, rpcUrlsFor, ai } from ${js('@tapeapi/sdk')}`, 'const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })', `const service = await api.resolve(${js(target)})`]
+  const out = []
+  const add = (t, f, via, en, zh, lines) => out.push({ tool: t, format: f, via, verifies: via !== 'direct', title: { en, zh }, text: lines.join('\n') })
+  for (const ep of eps) {
+    const f = ep?.format, base = typeof ep?.baseUrl === 'string' ? ep.baseUrl.replace(/\/+$/, '') : null
+    if (!base || (format && format !== f)) continue
+    const m = modelOf(f)
+    if (f === 'openai-chat') {
+      add('openai-sdk', f, 'sdk', 'OpenAI SDK, each receipt checked in your process', 'OpenAI SDK，在你的进程里核验每份回执',
+        [OPENAI_IMPORT, ...sdkHead, 'const fetch = ai.createVerifyingFetch({ api, service })', `const client = new OpenAI({ baseURL: ${js(base)}, apiKey: process.env.API_KEY, fetch })`])
+      add('openai-sdk', f, 'proxy', 'any OpenAI-compatible tool, through the local verifying proxy', '任何 OpenAI 兼容工具，经本地核验代理',
+        [start, `OPENAI_BASE_URL=${local}/v1`])
+      add('curl', f, 'direct', 'curl, direct: not checked here (the receipt is in the x-tapeapi-receipt header)', 'curl 直连：这里不核验（回执在 x-tapeapi-receipt 响应头里）',
+        [`curl -sS -D - ${sh(base + '/chat/completions')} -H "authorization: Bearer $API_KEY" -H 'content-type: application/json' -d ${sh(JSON.stringify({ model: m, messages: [{ role: 'user', content: 'Hi' }] }))}`])
+    } else if (f === 'openai-responses') {
+      add('codex', f, 'proxy', 'Codex (OpenAI Responses), through the local verifying proxy', 'Codex（OpenAI Responses），经本地核验代理',
+        [start, '# ~/.codex/config.toml', '[model_providers.tapeapi]', 'name = "tapeapi-verify (local)"', `base_url = "${local}/v1"`, 'wire_api = "responses"', 'env_key = "API_KEY"'])
+      add('codex', f, 'direct', 'Codex, direct: not checked', 'Codex 直连：不核验', [`OPENAI_BASE_URL=${base}`])
+    } else if (f === 'anthropic-messages') {
+      add('claude-code', f, 'proxy', 'Claude Code (Anthropic Messages), through the local verifying proxy', 'Claude Code（Anthropic Messages），经本地核验代理',
+        [start, `ANTHROPIC_BASE_URL=${local} ANTHROPIC_AUTH_TOKEN="$API_KEY" claude`])
+      add('claude-code', f, 'direct', 'Claude Code, direct: not checked', 'Claude Code 直连：不核验', [`ANTHROPIC_BASE_URL=${base} ANTHROPIC_AUTH_TOKEN="$API_KEY" claude`])
+    } else if (f === 'openai-embeddings') {
+      add('openai-sdk', f, 'sdk', 'OpenAI SDK embeddings, each receipt checked in your process', 'OpenAI SDK 向量，在你的进程里核验每份回执',
+        [OPENAI_IMPORT, ...sdkHead, 'const fetch = ai.createVerifyingFetch({ api, service })', `const client = new OpenAI({ baseURL: ${js(base)}, apiKey: process.env.API_KEY, fetch })`, `await client.embeddings.create({ model: ${js(m)}, input: 'hello' })`])
+    }
+  }
+  return tool && tool !== 'all' ? out.filter((s) => s.tool === tool) : out
 }

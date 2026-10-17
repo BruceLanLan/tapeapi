@@ -190,7 +190,13 @@ export function route(routes, verb, path, headers) {
   const loose = routes.find((r) => r.format.match({ verb, path: lp }))
   if (loose) return { ...loose, metered: false, loose: lp }
   const anthropic = headers.has('anthropic-version') ? routes.find((r) => r.format.name === 'anthropic-messages') : null
-  return { ...(anthropic || routes.find((r) => r.format.baseSuffix === '/v1') || routes[0]), metered: false }
+  const fallback = anthropic || routes.find((r) => r.format.baseSuffix === '/v1') || routes[0]
+  // A metered path of a built-in format the manifest declares no endpoint for (exact or loose): it can get no receipt
+  // (FIXED F-1). `undeclared` names that format. / 清单没有声明端点的内置格式的计量路径：不可能有回执。
+  const declared = new Set(routes.map((r) => r.format.name))
+  const undeclared = ai.FORMATS.find((f) => !declared.has(f.name) && (f.match({ verb, path }) || f.match({ verb, path: lp })))
+  if (undeclared) return { ...fallback, metered: false, undeclared }
+  return { ...fallback, metered: false }
 }
 
 // Errors in the shape the client's format reads. / 按客户端格式可读的错误形状。
@@ -324,6 +330,12 @@ async function main() {
       if (opts.strict) { stats.failed++; log(`FAIL ${why}`); return sendError(400, anthropic, 'bad_path', why) }
       log(`FAIL ${why}: passed on, not verified`)
     }
+    if (r.undeclared) {
+      const why = `${verb} ${url.pathname} is a metered ${r.undeclared.name} call, but the service's manifest declares no ${r.undeclared.name} endpoint (it declares ${routes.map((x) => x.format.name).join(', ')}): it gets no receipt and cannot be verified`
+      stats.failed++
+      if (opts.strict) { log(`FAIL ${why}; not forwarded (--strict)`); return sendError(400, anthropic || r.undeclared.name === 'anthropic-messages', 'format_not_declared', why) }
+      log(`FAIL ${why}: passed on, not verified`)
+    }
     let body
     try { body = verb === 'GET' || verb === 'HEAD' ? null : await readAll(req, REQUEST_LIMIT) } catch (e) {
       return sendError(e.tooLarge ? 413 : 400, anthropic, 'bad_request', e.tooLarge ? `the request is larger than ${REQUEST_LIMIT} bytes` : 'the request body could not be read')
@@ -354,7 +366,8 @@ async function main() {
     const nullBody = verb === 'HEAD' || [101, 204, 205, 304].includes(up.status) || !up.body
     if (!r.metered) {
       stats.passThrough++
-      if (!opts.quiet) log(`--    ${verb} ${url.pathname} ${up.status} (no receipt: not a metered path)`)
+      if (r.undeclared) log(`--    ${verb} ${url.pathname} ${up.status} (no receipt: ${r.undeclared.name} is not declared by the service)`)
+      else if (!opts.quiet) log(`--    ${verb} ${url.pathname} ${up.status} (no receipt: not a metered path)`)
       res.writeHead(up.status, out)
       if (nullBody) return res.end()
       try { for await (const c of up.body) res.write(c) } catch { return res.destroy() }
@@ -529,14 +542,14 @@ async function main() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// `tapeapi-verify task <thread.json>` (EXPERIMENTAL, 1.7, outside the 1.x compatibility promise): check a container-agent task
+// `tapeapi-verify task <thread.json>` (EXPERIMENTAL, 1.7, outside the 2.x compatibility promise): check a container-agent task
 // thread with createAgentKit(...).verifyTaskThread (@tapeapi/sdk/agent), and optionally the payment that belongs to it. It reads the
 // chain; it signs nothing, sends nothing and pays for nothing. Phase 0 has no enforcement: every result says `enforcement: none`.
-// `task`（实验性，1.7，不受 1.x 兼容承诺约束）：用 createAgentKit(...).verifyTaskThread 核验容器代理的任务线程，可选再核验对应的付款。
+// `task`（实验性，1.7，不受 2.x 兼容承诺约束）：用 createAgentKit(...).verifyTaskThread 核验容器代理的任务线程，可选再核验对应的付款。
 // 只读链；不签名、不发送、不付款。阶段 0 没有强制执行：每个结果都写 `enforcement: none`。
 // ---------------------------------------------------------------------------------------------------------------
 const TASK_USAGE = `
-tapeapi-verify task (experimental, 1.7; not covered by the 1.x compatibility promise): check a container-agent task thread.
+tapeapi-verify task (experimental, 1.7; not covered by the 2.x compatibility promise): check a container-agent task thread.
 
 Usage: tapeapi-verify task <thread.json> [--payment <recipient> <index>] [--rpc <url,url,...>]
 
@@ -555,7 +568,7 @@ the chain cannot be read), 2 a usage mistake (an unknown option, no file, a file
 than 2 operators). The revocation floor and nonce store of one run start empty: a one-shot check cannot see an older list put back or a
 reused nonce. A receipt proves who answered which call, not that the work is right.
 
-tapeapi-verify task（实验性，1.7；不受 1.x 兼容承诺约束）：核验容器代理的任务线程。
+tapeapi-verify task（实验性，1.7；不受 2.x 兼容承诺约束）：核验容器代理的任务线程。
 用法：tapeapi-verify task <thread.json> [--payment <收款容器> <序号>] [--rpc <url,url,...>]
 <thread.json> 是按收到顺序排列的消息 JSON 数组；打印状态、问题、是否自雇自、双方身份（容器地址与链上名字；清单给的名字标 untrusted）与
 enforcement: none（阶段 0 的授权书只是签名声明，没有任何东西强制执行）。--payment 另核验付款：收款容器必须是线程里的代理，发件方必须是线程里的
@@ -687,13 +700,13 @@ async function taskMain(argv) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// `tapeapi-verify review <reviewee>` (EXPERIMENTAL, internal, outside the 1.x compatibility promise): the reviews of one
+// `tapeapi-verify review <reviewee>` (EXPERIMENTAL, internal, outside the 2.x compatibility promise): the reviews of one
 // container under the draft "Evidence-Backed Reviews between Containers" (TapeOutProtocol/TAPs pull request #54), with
 // createReviewKit (@tapeapi/sdk/review). It reads the chain; it signs nothing, sends nothing and pays for nothing.
 // `review`（实验性，内部）：按 TAPs PR #54 草稿读取并核验一个容器收到的评价，打印逐条结果与汇总。只读链。
 // ---------------------------------------------------------------------------------------------------------------
 const REVIEW_USAGE = `
-tapeapi-verify review (experimental, internal; not covered by the 1.x compatibility promise): the reviews of one container.
+tapeapi-verify review (experimental, internal; not covered by the 2.x compatibility promise): the reviews of one container.
 
 Usage: tapeapi-verify review <reviewee> [--reviewer <container>]... [--records <file.json>] [--inbox <start>:<count>] [--rpc <url,url,...>]
 

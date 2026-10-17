@@ -614,7 +614,7 @@ for (const labels of ['v1', 'v2']) {
     rules: {
       holder: 'Mandate, TaskOffer, TaskVerdict, MandateRevocation (§3.7): address 0x and 40 hex digits in any case; bytes32 0x and 64 lower-case hex digits; uint8 a JSON number the field allows; uint64 a JSON number, an integer from 0 to 2^53 - 1; uint256 a string, a decimal integer without leading zeros below 2^256; bool true or false; every member present; plus the rules of §3.2-§3.5 (non-zero members, at most 16 scope items and 24 hashes, expires > notBefore). A Mandate that breaks them is mandate-malformed, any other message message-malformed',
       agentMessage: '§7.2 steps 1-3 for the receipt of an agent message, given its kind and the thread\'s agent: the form (v 1, a service object naming a container, the TAP-13 path segment, params an object when present, id a string of 1 to 128 code units, ok true, an object result, sig 65 bytes in hex), then service.container is the agent (agent-mismatch), then result.kind and ts and result.exp in the uint64 form',
-      hashOnlyReceipt: '§8: v 2, a service object naming a container, requestHash and bodyHash in the bytes32 form, id as in TAP-13 (1 to 128 code units; the empty id only when ok is false, TAP-13 §8 binding rule 1), ts in the uint64 form, ok a JSON boolean, sig 65 bytes in hex; anything else is receipt-not-hash-only',
+      hashOnlyReceipt: '§8: v 2, a service object naming a container, requestHash and bodyHash in the bytes32 form, id as in TAP-13 (1 to 128 code units; the empty id only when ok is false, TAP-13 §4 binding rule 1), ts in the uint64 form, ok a JSON boolean, sig 65 bytes in hex; anything else is receipt-not-hash-only',
     },
     cases: [
       { name: 'a mandate in the JSON forms', type: 'Mandate', value: m0, expect: 'ok' },
@@ -681,7 +681,7 @@ for (const labels of ['v1', 'v2']) {
       ho('a service container that is not an address', { ...hashOnly, service: { container: 'provider' } }, H),
       ho('a sig that is not 65 bytes', { ...hashOnly, sig: '0x' + '1c'.repeat(66) }, H),
       ho('an id that is not a string', { ...hashOnly, id: null }, H),
-      ho('the empty id with ok false (TAP-13 §8 binding rule 1)', { ...hashOnly, ok: false, id: '' }, 'ok'),
+      ho('the empty id with ok false (TAP-13 §4 binding rule 1)', { ...hashOnly, ok: false, id: '' }, 'ok'),
       ho('the empty id with ok true: only a refused call has one', { ...hashOnly, id: '' }, H),
     ],
   }

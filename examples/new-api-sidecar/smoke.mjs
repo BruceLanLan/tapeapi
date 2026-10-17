@@ -40,7 +40,8 @@ export async function startStack({ env = {}, quiet = true } = {}) {
   let sidecar
   try {
     sidecar = await startSidecar({
-      env: { ...throwawayIdentity(), UPSTREAM_BASE_URL: fake.baseUrl, MODELS_FILE: EXAMPLE_MODELS, SERVICE_NAME: 'Smoke relay', ...env },
+      // FORMATS=all: the smoke run calls all four formats; a relay sets only those it serves. / 演练调用四种格式；中转站只设它提供的。
+      env: { ...throwawayIdentity(), UPSTREAM_BASE_URL: fake.baseUrl, MODELS_FILE: EXAMPLE_MODELS, SERVICE_NAME: 'Smoke relay', FORMATS: 'all', ...env },
       port: 0, host: '127.0.0.1', quiet, localPublicUrl: true, log: () => {},
     })
   } catch (e) { await fake.close(); throw e }

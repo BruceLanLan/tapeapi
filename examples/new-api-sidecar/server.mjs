@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // The TapeAPI signing sidecar for a relay running new-api: it sits IN FRONT of new-api (client -> sidecar -> new-api),
-// passes /v1/* through byte for byte and signs a usage receipt for every Chat, Responses, Anthropic Messages and
-// Embeddings answer (createAIProxy from @tapeapi/server/ai-proxy). new-api keeps its channels, keys, quotas and billing;
+// passes /v1/* through byte for byte and signs a usage receipt for every answer of the API formats FORMATS selects
+// (among Chat, Responses, Anthropic Messages and Embeddings; createAIProxy from @tapeapi/server/ai-proxy); a metered
+// path of a format FORMATS leaves out is refused (HTTP 400 naming FORMATS). new-api keeps its channels, keys, quotas and billing;
 // your users keep their keys and their SDKs. The operator runs it; nobody else hosts it (it sees your users' API keys).
-// 给运行 new-api 的中转站用的 TapeAPI 签名旁路：放在 new-api **前面**（客户端 -> 旁路 -> new-api），/v1/* 逐字节透传，并为每个
-// Chat、Responses、Anthropic Messages、Embeddings 回答签一份用量回执。new-api 的渠道、密钥、额度与计费都不变；用户的密钥与 SDK
+// 给运行 new-api 的中转站用的 TapeAPI 签名旁路：放在 new-api **前面**（客户端 -> 旁路 -> new-api），/v1/* 逐字节透传，并为
+// FORMATS 所选格式（Chat、Responses、Anthropic Messages、Embeddings 之中）的每个回答签一份用量回执；FORMATS 未启用的格式的计量路径
+// 一律拒绝（HTTP 400，点名 FORMATS）。new-api 的渠道、密钥、额度与计费都不变；用户的密钥与 SDK
 // 也不变。旁路由中转站自己运行，不交给任何第三方托管（它经手用户的 API 密钥）。
 //
 // Environment / 环境变量:
@@ -20,6 +22,18 @@
 //   CLIENT_IP_HEADER     the header your reverse proxy sets to the client's address (x-real-ip, x-forwarded-for, ...);
 //                        unset = the TCP peer (then every caller behind one proxy shares one rate-limit bucket)
 //   SIGNER_ADDRESS       optional: must match SIGNER_KEY (a guard against pasting the wrong key)
+//   FORMATS              SET IT: the API formats your new-api really serves, comma-separated, among openai-chat,
+//                        openai-responses, anthropic-messages, openai-embeddings (or "all" for the four). Only these are
+//                        published in the manifest and get receipts: the manifest is a public statement on chain, so a
+//                        relay whose channels are OpenAI-compatible only sets FORMATS=openai-chat. Unset: all four, as
+//                        2.0.0 published, with a WARNING in the startup log and a "warning" in /tapeapi/v1/health that
+//                        name FORMATS and its values. Unknown names: setup mode, naming the variable. A metered path of
+//                        a format left out (POST /v1/messages without anthropic-messages, ...) is answered HTTP 400 naming
+//                        FORMATS and never forwarded.
+//                        请设置：你的 new-api 真正提供的 API 格式（逗号分隔，或 "all" 表示四种）。只有这些格式写进清单、签发回执：
+//                        清单是链上的公开声明，渠道只兼容 OpenAI 的中转站就设 FORMATS=openai-chat。未设：四种都发布（与 2.0.0 相同），
+//                        启动日志打印 WARNING、/tapeapi/v1/health 带 warning，点名该变量与可选值。名字不认识：设置模式，并点名该变量。
+//                        未启用格式的计量路径（例如未启用 anthropic-messages 时的 POST /v1/messages）答 400 并点名 FORMATS，绝不转发。
 //
 // Until the identity is complete the sidecar runs in SETUP MODE: /tapeapi/v1/health names the signing address (the
 // holder console reads it there to build the delegation) and what is missing; everything else answers 503.
@@ -48,10 +62,49 @@ const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods
  * new-api's, unchanged.
  * 旁路放在哪个网关前面：消息里的名字、日志标签、默认上游，以及可选的格式适配器（默认 ai.FORMATS）与未设 MODELS_FILE 时的价目表。
  * 其它一键包（examples/litellm-sidecar）传入自己的；这里的默认值都是 new-api 的，保持不变。
- * @typedef {{ upstreamName: string, label: string, defaultUpstream: string, formats?: object[], modelsFile?: string }} SidecarProfile
+ * An unset FORMATS keeps every format of the profile (as 2.0.0 published); warnFormatsUnset (new-api's package) then
+ * adds a warning to the startup log and to /tapeapi/v1/health, since the manifest should not claim formats the relay
+ * does not serve. FORMATS set: only those, whatever the profile says.
+ * 未设 FORMATS 时保留该配置的全部格式（与 2.0.0 发布的相同）；warnFormatsUnset（new-api 一键包）再在启动日志与 /tapeapi/v1/health
+ * 里加一条警告，因为清单不应声明中转站并不提供的格式。设了 FORMATS：只用所选格式，与配置无关。
+ * @typedef {{ upstreamName: string, label: string, defaultUpstream: string, formats?: object[], modelsFile?: string, warnFormatsUnset?: boolean }} SidecarProfile
  */
 /** @type {SidecarProfile} */
-export const NEW_API_PROFILE = Object.freeze({ upstreamName: 'new-api', label: 'new-api-sidecar', defaultUpstream: DEFAULT_UPSTREAM })
+export const NEW_API_PROFILE = Object.freeze({ upstreamName: 'new-api', label: 'new-api-sidecar', defaultUpstream: DEFAULT_UPSTREAM, warnFormatsUnset: true })
+export const FORMATS_VAR = 'FORMATS'
+
+/** What to set FORMATS to, in one sentence. / 一句话说明 FORMATS 可以设成什么。 */
+export function formatsChoice(available = ai.FORMATS) {
+  return `choose among ${available.map((f) => f.name).join(', ')} (comma-separated), or all; a relay whose channels are OpenAI-compatible only sets ${FORMATS_VAR}=openai-chat`
+}
+
+/** The warning when FORMATS is not set (every format published, as 2.0.0 did), in one sentence naming the variable and
+ *  its values. / 未设 FORMATS 时的警告（四种格式都发布，与 2.0.0 相同），一句话点名变量与可选值。 */
+export function formatsUnsetWarning(available = ai.FORMATS, upstreamName = 'new-api') {
+  return `${FORMATS_VAR} is not set, so every format is published and signed (${available.map((f) => f.name).join(', ')}), as 2.0.0 did; set ${FORMATS_VAR} to the formats your ${upstreamName} really serves, comma-separated among ${available.map((f) => f.name).join(', ')}, or all (a relay whose channels are OpenAI-compatible only sets ${FORMATS_VAR}=openai-chat)`
+}
+
+/**
+ * The formats FORMATS selects among `available` (adapters with a `name`), in the order of `available` (so the manifest's
+ * endpoints come out the same whatever order the variable lists them in), or a sentence saying what is wrong. Names are
+ * separated by commas or spaces; "all" is every format of `available`; a name twice counts once. Kept in this file on
+ * purpose: the Docker image copies server.mjs alone.
+ * FORMATS 在 available 中选出的格式（按 available 的顺序，清单端点因此与变量里的书写顺序无关），或一句说明哪里不对的话。名字以逗号或
+ * 空白分隔；"all" 表示全部；重复的名字只算一次。刻意放在本文件：Docker 镜像只复制 server.mjs。
+ * @param {string} value
+ * @param {Array<{ name: string }>} available
+ * @returns {object[]|string}
+ */
+export function selectFormats(value, available = ai.FORMATS) {
+  const names = available.map((f) => f.name)
+  const asked = String(value ?? '').split(/[\s,]+/).filter(Boolean)
+  const choose = formatsChoice(available)
+  if (!asked.length) return `${FORMATS_VAR} names no format: ${choose}`
+  if (asked.length === 1 && asked[0].toLowerCase() === 'all') return [...available]
+  const unknown = asked.filter((n) => !names.includes(n))
+  if (unknown.length) return `${FORMATS_VAR} names ${unknown.length === 1 ? 'a format' : 'formats'} this sidecar does not know (${unknown.map((n) => JSON.stringify(n)).join(', ')}): ${choose}`
+  return available.filter((f) => asked.includes(f.name))
+}
 
 /**
  * Read and check the environment. Never throws: `ok: false` is setup mode, with `missing` (variables not set) and
@@ -97,9 +150,16 @@ export function readConfig(rawEnv = process.env, profile = NEW_API_PROFILE) {
   const upstreamBaseUrl = env.UPSTREAM_BASE_URL || profile.defaultUpstream
   try { const u = new URL(upstreamBaseUrl); if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error() } catch { return out(`UPSTREAM_BASE_URL must be ${profile.upstreamName}'s /v1 base, such as ${profile.defaultUpstream}`, { signer }) }
 
-  // The price table / 价目表
+  // The API formats published and signed (FORMATS) / 发布并签名的 API 格式
+  const available = profile.formats || ai.FORMATS
+  const formats = env[FORMATS_VAR] ? selectFormats(env[FORMATS_VAR], available) : [...available]
+  if (typeof formats === 'string') return out(formats, { signer })
+  // Unset: every format, as 2.0.0 published, and a warning that names FORMATS (startup log, health). / 未设：全部格式，加一条警告。
+  const formatsWarning = !env[FORMATS_VAR] && profile.warnFormatsUnset ? formatsUnsetWarning(available, profile.upstreamName) : null
+
+  // The price table, checked against the selected formats / 价目表，按所选格式校验
   const modelsFile = env.MODELS_FILE || profile.modelsFile || DEFAULT_MODELS_FILE
-  const models = readModels(modelsFile, publicUrl)
+  const models = readModels(modelsFile, publicUrl, formats)
   if (typeof models === 'string') return out(models, { signer })
 
   // Rate limit and client address / 限流与客户端地址
@@ -122,7 +182,8 @@ export function readConfig(rawEnv = process.env, profile = NEW_API_PROFILE) {
   return {
     ok: true, missing: [], problem: null, signer,
     config: {
-      publicUrl, loopback, upstreamBaseUrl, modelsFile, models, signerKey, signer, rateIp, clientIpHeader, receiptTtlS, requireRequestHash, forwardSessionHeaders,
+      publicUrl, loopback, upstreamBaseUrl, modelsFile, models, formats, signerKey, signer, rateIp, clientIpHeader, receiptTtlS, requireRequestHash, forwardSessionHeaders,
+      formatsWarning,
       tapeName: env.TAPE_NAME || null,
       manifestBase: {
         tapeapi: '0.1', name, circuits: env.CIRCUITS, tokenId: String(BigInt(env.TOKEN_ID)), container: env.CONTAINER,
@@ -135,24 +196,43 @@ export function readConfig(rawEnv = process.env, profile = NEW_API_PROFILE) {
 
 /**
  * The price table from a file: the models array, or a sentence saying what is wrong with it (file, JSON, or the rules
- * of TAPI-20 §3.9 checked exactly as clients check them). / 从文件读价目表：返回数组，或一句说明哪里不对的话。
+ * of TAPI-20 §3.9 checked exactly as clients check them, against the endpoints of `formats`, the formats FORMATS
+ * selected). / 从文件读价目表：返回数组，或一句说明哪里不对的话（按所选格式的端点校验）。
  */
-export function readModels(file, publicUrl = 'https://sidecar.invalid') {
+export function readModels(file, publicUrl = 'https://sidecar.invalid', formats = ai.FORMATS) {
   let text
   try { text = readFileSync(file, 'utf8') } catch (e) { return `MODELS_FILE ${file} cannot be read (${e.code || e.message}); copy models.example.json to models.json and edit it` }
   let models
   try { models = JSON.parse(text) } catch (e) { return `MODELS_FILE ${file} is not valid JSON: ${e.message}` }
   if (!Array.isArray(models) || !models.length) return `MODELS_FILE ${file} must hold a JSON array of models: [{ "id", "aliases"?, "formats"?, "prices": [{ "currency", "unit": "1M tokens", "input", "output", ... }] }]`
+  // A model limited to a format FORMATS leaves out: said in words before the generic rule. / 模型限定的格式被 FORMATS 排除：先用一句话说清。
+  const enabled = new Set(formats.map((f) => f.name))
+  const known = new Set(ai.FORMATS.map((f) => f.name))
+  for (const [i, m] of models.entries()) {
+    const off = Array.isArray(m?.formats) ? m.formats.filter((f) => typeof f === 'string' && known.has(f) && !enabled.has(f)) : []
+    if (off.length) return `the price table in ${file} is not valid: models[${i}] (${String(m.id).slice(0, 64)}) lists ${off.join(', ')} in "formats", which ${FORMATS_VAR} does not enable (enabled: ${[...enabled].join(', ')}); remove ${off.length === 1 ? 'it' : 'them'} from the model's "formats" or add ${off.length === 1 ? 'it' : 'them'} to ${FORMATS_VAR}`
+  }
   try {
-    ai.validateAIField({ endpoints: ai.FORMATS.map((f) => ({ format: f.name, baseUrl: publicUrl + f.baseSuffix })), models }, { allowHttp: true })
+    ai.validateAIField({ endpoints: formats.map((f) => ({ format: f.name, baseUrl: publicUrl + f.baseSuffix })), models }, { allowHttp: true })
   } catch (e) { return `the price table in ${file} is not valid: ${e.message}` }
   return models
 }
 
-/** The sidecar for a good configuration. Throws what createAIProxy throws. / 按正确配置建出旁路。 */
+/** The end of the refusal of a format FORMATS leaves out: what to change, with the names to choose from.
+ *  FORMATS 未启用的格式被拒绝时消息的结尾：改什么、可选哪些名字。 */
+export function formatsHint(formats, all = ai.FORMATS) {
+  return `${FORMATS_VAR} does not enable it; if your upstream really serves it, add it to ${FORMATS_VAR} (comma-separated among ${all.map((f) => f.name).join(', ')}, or all) and restart the sidecar`
+}
+
+/** The sidecar for a good configuration: the formats FORMATS selected (config.formats), unless `formats` is given.
+ *  Throws what createAIProxy throws. / 按正确配置建出旁路：格式取 FORMATS 所选（config.formats），除非另给 formats。 */
 export function buildProxy(config, { fetch, log, formats } = {}) {
+  const chosen = formats || config.formats
   return createAIProxy({
-    ...(formats ? { formats } : {}),
+    ...(chosen ? { formats: chosen } : {}),
+    // A metered path of a format FORMATS leaves out: HTTP 400 naming FORMATS, never passed through without a receipt.
+    // FORMATS 未启用的格式的计量路径：答 400 并点名 FORMATS，绝不无回执透传。
+    refuseOtherFormats: { hint: formatsHint(chosen) },
     upstream: { baseUrl: config.upstreamBaseUrl },
     manifestBase: config.manifestBase,
     signerKey: config.signerKey,
@@ -181,6 +261,23 @@ export function setupAnswer(state, request) {
 }
 
 /**
+ * The proxy with `warning` added to its GET /tapeapi/v1/health answer (FORMATS unset); everything else untouched.
+ * 在 GET /tapeapi/v1/health 的回答里加上 warning（未设 FORMATS 时）；其它一概不动。
+ */
+export function withHealthWarning(proxy, warning) {
+  return {
+    ...proxy,
+    async handleRequest(request, o) {
+      const res = await proxy.handleRequest(request, o)
+      if (request.method !== 'GET' || new URL(request.url).pathname.replace(/\/+$/, '') !== '/tapeapi/v1/health') return res
+      let body
+      try { body = await res.clone().json() } catch { return res }
+      return new Response(JSON.stringify({ ...body, warning }), { status: res.status, headers: res.headers })
+    },
+  }
+}
+
+/**
  * The request handler for an environment: the sidecar when the configuration is complete, setup mode otherwise.
  * 按环境变量得到请求处理函数：配置完整时是旁路，否则是设置模式。
  */
@@ -188,7 +285,8 @@ export function createSidecar(env = process.env, { fetch, profile = NEW_API_PROF
   let state = readConfig(env, profile)
   let proxy = null
   if (state.ok) {
-    try { proxy = buildProxy(state.config, { fetch, log, formats: profile.formats }) } catch (e) { state = { ok: false, missing: [], problem: e.message, signer: state.signer } }
+    try { proxy = buildProxy(state.config, { fetch, log }) } catch (e) { state = { ok: false, missing: [], problem: e.message, signer: state.signer } }
+    if (proxy && state.config.formatsWarning) proxy = withHealthWarning(proxy, state.config.formatsWarning)
   }
   return {
     state, proxy,
@@ -278,10 +376,19 @@ export async function startSidecar({ env = process.env, port, host, fetch, log, 
     say(`${m.name}: signer ${m.signer}, container ${m.container}, delegation until ${new Date(m.delegation.expires * 1000).toISOString().slice(0, 10)}`)
     say(`upstream ${c.upstreamBaseUrl}   (${profile.upstreamName}; your users' keys pass through to it unchanged)`)
     for (const e of m.ai.endpoints) say(`${e.format.padEnd(18)} ${e.baseUrl}`)
+    if (c.formatsWarning) say(`WARNING  ${c.formatsWarning}`)
     say(`models   ${m.ai.models.length} priced (${m.ai.models.slice(0, 6).map((x) => x.id).join(', ')}${m.ai.models.length > 6 ? ', ...' : ''}) from ${c.modelsFile}`)
     say(`manifest ${c.publicUrl}/.well-known/tapeapi.json   (publish it on chain from ${CONSOLE_URL})`)
     if (c.rateIp && !c.clientIpHeader) say(`rate     ${c.rateIp}/min per TCP peer: behind a reverse proxy set CLIENT_IP_HEADER, or all callers share one bucket (RATE_IP=0 leaves limits to ${profile.upstreamName})`)
-    if (c.tapeName) say(`verify   users of Claude Code or Codex can run: tapeapi-verify ${c.tapeName}`)
+    if (c.tapeName) {
+      // Claude Code speaks anthropic-messages and Codex openai-responses: named only when FORMATS enables that format.
+      // Claude Code 用 anthropic-messages，Codex 用 openai-responses：只有 FORMATS 启用了对应格式才点名。
+      const on = new Set(m.ai.endpoints.map((e) => e.format))
+      const clients = [['Claude Code', 'anthropic-messages'], ['Codex', 'openai-responses']]
+      const served = clients.filter(([, f]) => on.has(f)).map(([n]) => n)
+      say(`verify   clients can check every receipt with: tapeapi-verify ${c.tapeName}${served.length ? `; ${served.join(' and ')} can use it too` : ''}`)
+      for (const [n, f] of clients.filter(([, f]) => !on.has(f))) say(`         ${n} calls ${f}, which ${FORMATS_VAR} does not enable: its calls are refused here (HTTP 400), with no receipt`)
+    }
     const days = Math.floor((m.delegation.expires * 1000 - Date.now()) / 86_400_000)
     if (days < 30) say(`RENEW    the delegation expires in ${days} days: renew it in step 4 of ${CONSOLE_URL}`)
   }

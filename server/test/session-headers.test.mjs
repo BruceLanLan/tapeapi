@@ -56,14 +56,14 @@ test('forwardSessionHeaders: false leaves out exactly the session headers; the r
 test('FORWARD_SESSION_HEADERS=0 in the Worker and in the new-api sidecar; unset keeps them', async () => {
   const env = {
     SIGNER_KEY: KEY, UPSTREAM_BASE_URL: 'https://up.example/v1', MODELS_JSON: JSON.stringify(MODELS), CIRCUITS, TOKEN_ID: '11', CONTAINER,
-    DELEGATION_EXPIRES: '1900000000', DELEGATION_SIG: '0x' + '11'.repeat(65), PUBLIC_URL: BASE,
+    DELEGATION_EXPIRES: '1900000000', DELEGATION_SIG: '0x' + '11'.repeat(65), PUBLIC_URL: BASE, FORMATS: 'all',
   }
   const up = upstream()
   const w = build({ ...env, FORWARD_SESSION_HEADERS: '0' }, { fetch: up.fetch, log: () => {} })
   await (await call(w)).text()
   assert.equal(up.seen[0]['session-id'], undefined)
   assert.equal(build(env, { log: () => {} }).stats().forwardSessionHeaders, true)
-  const complete = { ...throwawayIdentity(), PUBLIC_URL: 'https://api.example.com', MODELS_FILE: EXAMPLE_MODELS }
+  const complete = { ...throwawayIdentity(), PUBLIC_URL: 'https://api.example.com', MODELS_FILE: EXAMPLE_MODELS, FORMATS: 'all' }
   const c = readConfig({ ...complete, FORWARD_SESSION_HEADERS: '0' })
   assert.equal(c.ok, true, c.problem); assert.equal(c.config.forwardSessionHeaders, false)
   assert.equal(buildProxy(c.config, { log: () => {} }).stats().forwardSessionHeaders, false)

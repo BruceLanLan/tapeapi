@@ -51,7 +51,7 @@ services:
       additional_contexts:
         sdk: ../../sdk
         server: ../../server
-    image: tapeapi-new-api-sidecar:2.0.0
+    image: tapeapi-new-api-sidecar:2.1.0
     restart: unless-stopped
     depends_on:
       new-api:
@@ -67,6 +67,8 @@ services:
       CONTAINER: ${CONTAINER:-}
       DELEGATION_EXPIRES: ${DELEGATION_EXPIRES:-}
       DELEGATION_SIG: ${DELEGATION_SIG:-}
+      # Required: the API formats new-api really serves (see env.example); unset = setup mode. / 必填，见 env.example；未设 = 设置模式。
+      FORMATS: ${FORMATS:-}
       # Secret: only in .env, which is never committed. `docker compose config` prints it; do not paste that output.
       # 机密：只放在不提交的 .env 里。`docker compose config` 会把它打印出来，不要外传那段输出。
       SIGNER_KEY: ${SIGNER_KEY:-}

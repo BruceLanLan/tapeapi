@@ -16,7 +16,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 Or install just the SDK into your own project from the GitHub release (not the npm registry):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz
 ```
 
 Save the scripts below as `.mjs` files where `@tapeapi/sdk` resolves, and run them with `node <file>.mjs`: in a clone,
@@ -98,6 +98,11 @@ Resolution ([TAPI-20 §3.6](../../spec/TAPI-20.md)) does, in order:
 
 A resolved service is cached; the SDK re-reads it about once an hour, and at once when a signature or a price stops
 matching. `api.refresh(svc)` forces it.
+
+For an AI service there is also a command that does this resolution and shows the result: `tapeapi connect <name>`
+(experimental, new in 2.1, outside the 2.x compatibility promise) prints the service card and client settings for the
+API formats its manifest declares, and asks for no key and pays nothing; see
+[AI providers, "What your users do"](ai-providers.md#what-your-users-do).
 
 ## 3. Handle errors
 

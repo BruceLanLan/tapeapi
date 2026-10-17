@@ -64,7 +64,7 @@ for (const [dir, pkg] of Object.entries(PKGS)) {
     const [info] = JSON.parse(out)
     const files = info.files.map((f) => f.path).sort()
     for (const f of files) {
-      assert.ok(/^(src\/[a-z0-9-]+\.js|types\/[a-z0-9-]+\.d\.ts|bin\/tapeapi-(doctor|mcp|verify)\.js|README\.md|LICENSE|package\.json)$/.test(f), `unexpected file in the tarball: ${f}`)
+      assert.ok(/^(src\/[a-z0-9-]+\.js|types\/[a-z0-9-]+\.d\.ts|bin\/tapeapi(-(doctor|mcp|verify))?\.js|README\.md|LICENSE|package\.json)$/.test(f), `unexpected file in the tarball: ${f}`)
     }
     for (const f of ['package.json', 'README.md', 'LICENSE']) assert.ok(files.includes(f), `${f} is packed`)
     const srcOnDisk = readdirSync(join(ROOT, dir, 'src')).filter((f) => f.endsWith('.js')).map((f) => `src/${f}`)
@@ -83,7 +83,14 @@ for (const [dir, pkg] of Object.entries(PKGS)) {
     // 增至 1,837,096，超出原上限 2 KB。理由同上：护栏，不是预算。
     // The experimental USD pricing of the payment-voucher TAP draft (usd-pricing.js and its types, about 30 KB) needed the
     // same raise on its branch (1,840,007 bytes); merged, both sit under 2 MiB. / 付费凭证草稿的实验性美元计价在其分支上同样需要提到 2 MiB。
-    assert.ok(info.unpackedSize < 2 * 1024 * 1024, `unpacked size ${info.unpackedSize} under 2 MiB`)
+    // Raised from 2 MiB to 2.25 MiB (2,359,296 bytes) for 2.1.0: the `tapeapi` command and `tapeapi connect` (bin/tapeapi.js,
+    // src/connect.js, src/connect-cli.js, types/connect.d.ts) are a real new feature, and with them the unpacked size is
+    // 2,078,664 bytes, 18,488 bytes (under 20 KB) short of the old limit, so the next small change would trip it. This
+    // test exists to catch an accidental bloat (a stray directory, a fixture, a bundle), which the file list above
+    // already pins file by file; it is still a guard, not a budget. / 2.1.0 由 2 MiB 提到 2.25 MiB（2,359,296 字节）：
+    // `tapeapi` 命令与 `tapeapi connect` 是真实的新功能，加上之后解包 2,078,664 字节，离原上限只剩 18,488 字节（不足 20 KB），
+    // 下一个小改动就会撞线。本测试防的是意外膨胀（误打包的目录、夹具、打包产物），上面的文件清单已逐个钉住；仍是护栏，不是预算。
+    assert.ok(info.unpackedSize < 2.25 * 1024 * 1024, `unpacked size ${info.unpackedSize} under 2.25 MiB`)
   })
 
   // 1.6 release integrity: the packed list IS the package.json `files` whitelist (plus package.json), no more and no

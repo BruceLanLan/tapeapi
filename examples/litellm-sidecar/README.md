@@ -58,6 +58,12 @@ cp models.example.json models.json           # 发布到链上的价目表：改
 
 已经在跑 LiteLLM？不必用这里的 `config.yaml`：保留你自己的配置，照它的 `model_name` 写 `models.json` 即可。
 
+**`FORMATS`（可选，2.1 新增）**：LiteLLM 真正提供的 API 格式，逗号分隔：`openai-chat`、`openai-responses`、`anthropic-messages`、
+`openai-embeddings`，或 `all`。**不设**时四种格式都写进清单，与 2.0.0 相同（2.0.0 的 LiteLLM 包不读这个变量）。**设了**之后只有这些格式
+写进清单、签发回执；未选格式的计量路径（例如没选 `anthropic-messages` 时的 `POST /v1/messages`）旁路直接答 HTTP 400（`bad_path`，
+带 `x-tapeapi-sidecar-error: 1`）并点名 `FORMATS`，**不转发给 LiteLLM**；`/v1/models` 等非计量路径照旧透传。清单是链上的公开声明：
+LiteLLM 只配了 OpenAI Chat 兼容的模型时，写 `FORMATS=openai-chat`。
+
 **2. 启动**
 
 ```sh
@@ -281,6 +287,13 @@ circuit with its container opened, and a checkout of this repository:
    list fallback targets in `models.json` too, each with its own prices. An unmatched answer still gets a signed
    receipt, with `prices: null` (logged once). The table's shape (the frozen `prices[]` of TAPI-20 §3.9) is the new-api
    package's. Already running LiteLLM? Keep your own config and write `models.json` after its `model_name`s.
+   **`FORMATS` (optional, new in 2.1)**: the API formats LiteLLM really serves, comma-separated: `openai-chat`,
+   `openai-responses`, `anthropic-messages`, `openai-embeddings`, or `all`. **Unset**, all four are published, as in
+   2.0.0 (whose LiteLLM package does not read this variable). **Set**, only these are published in the manifest and get
+   receipts; a metered path of a format left out (`POST /v1/messages` without `anthropic-messages`, say) is answered
+   HTTP 400 by the sidecar itself (`bad_path`, with `x-tapeapi-sidecar-error: 1`), naming `FORMATS`, and is **not
+   forwarded to LiteLLM**; unmetered paths (`/v1/models`, ...) pass through as before. The manifest is a public
+   statement on chain: with only OpenAI Chat compatible models in LiteLLM, set `FORMATS=openai-chat`.
 2. **Start.** `docker compose up -d`, then `docker compose logs -f tapeapi-sidecar` (SETUP MODE at first is expected).
    Three services: `litellm` (the official image `ghcr.io/berriai/litellm:v1.103.0`), its `db` (PostgreSQL: virtual
    keys, budgets and spend) and `tapeapi-sidecar`, all on the host's loopback: the sidecar on `127.0.0.1:8080`, LiteLLM

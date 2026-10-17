@@ -29,7 +29,7 @@
 <p>The packages are not on npm yet, so you work inside a clone of the repository (Node.js 20 or later):</p>
 <div class="code"><pre data-lang="bash"><code>git clone https://github.com/BruceLanLan/tapeapi.git &amp;&amp; cd tapeapi &amp;&amp; npm install</code></pre></div>
 <p>Or install just the SDK into your own project from the GitHub release (not the npm registry):</p>
-<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz</code></pre></div>
 <p>Save the scripts below as <code>.mjs</code> files where <code>@tapeapi/sdk</code> resolves, and run them with <code>node &lt;file&gt;.mjs</code>: in a clone, <strong>inside the <code>tapeapi</code> directory</strong> (the package resolves through the repository's workspace); after installing the release package, in that project. Anywhere else a script fails with <code>ERR_MODULE_NOT_FOUND</code>.</p>
 <h3 id="call-the-live-public-service"><a class="anchor" href="#call-the-live-public-service" aria-hidden="true">#</a>Call the live public service</h3>
 <p>A free public service runs at <code>https://api.tapeapi.fun</code> under the TapeOut name <code>11.1013.tape</code>. With curl:</p>
@@ -69,6 +69,7 @@ const byCircuit = await api.resolve({ circuits: '0x&lt;processor contract&gt;', 
 <p>Resolution (<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-20.md" rel="noopener">TAPI-20 §3.6</a>) does, in order:</p>
 <ol><li>derives the container from the circuit (<code>DeWebHub.accountOf</code>) and checks the processor is a real TapeOut one (<code>factory.isCPU</code>), so a counterfeit NFT cannot pose as a service;</li><li>reads <code>.well-known/tapeapi.json</code> from the container's site and checks its length and SHA-256 against the chain;</li><li>validates the manifest;</li><li>checks the circuit holder's EIP-712 delegation of the service's signing key, against the <strong>current</strong> holder.</li></ol>
 <p>A resolved service is cached; the SDK re-reads it about once an hour, and at once when a signature or a price stops matching. <code>api.refresh(svc)</code> forces it.</p>
+<p>For an AI service there is also a command that does this resolution and shows the result: <code>tapeapi connect &lt;name&gt;</code> (experimental, new in 2.1, outside the 2.x compatibility promise) prints the service card and client settings for the API formats its manifest declares, and asks for no key and pays nothing; see <a href="ai-providers#what-your-users-do">AI providers, &quot;What your users do&quot;</a>.</p>
 <h2 id="3-handle-errors"><a class="anchor" href="#3-handle-errors" aria-hidden="true">#</a>3. Handle errors</h2>
 <p>Every failure is a <code>TapeAPIError</code> with a stable <code>code</code>:</p>
 <div class="code"><pre data-lang="js"><code>import { TapeAPIError } from '@tapeapi/sdk'

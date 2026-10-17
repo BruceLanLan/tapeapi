@@ -1404,7 +1404,7 @@ def holder_form(t, v):
         return (f_addr(v.get('principal'), True) and isinstance(mh, list) and len(mh) <= 24 and all(f_b32(h, True) for h in mh)
                 and f_u64(v.get('revokedBefore')) and f_u64(v.get('issued')))
     raise ValueError(t)
-def f_id(x, empty=False): return isinstance(x, str) and (empty or len(x) > 0) and len(x.encode('utf-16-le')) // 2 <= 128   # 1..128 code units; "" only under TAP-13 §8 binding rule 1 (ok false)
+def f_id(x, empty=False): return isinstance(x, str) and (empty or len(x) > 0) and len(x.encode('utf-16-le')) // 2 <= 128   # 1..128 code units; "" only under TAP-13 §4 binding rule 1 (ok false)
 def agent_message_outcome(r, kind, agent):
     if not (f_obj(r) and r.get('v') == 1 and f_obj(r.get('service')) and f_addr(r['service'].get('container'))
             and r.get('ok') is True and f_obj(r.get('result'))):

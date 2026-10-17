@@ -525,7 +525,8 @@ test('FIXED AX-12: nothing in the example approves, signs a transaction, broadca
   assert.equal(/from '\.\.\/_lib\/(sendtx|store)\.mjs'/.test(src), false)
   // the runtime is not in the server package, and the SDK package does not ship the example or gain a command
   const pkg = JSON.parse(readFileSync(new URL('../../sdk/package.json', import.meta.url), 'utf8'))
-  assert.deepEqual(Object.keys(pkg.bin), ['tapeapi-doctor', 'tapeapi-mcp', 'tapeapi-verify'])
+  // `tapeapi` (the experimental command-line entry) is not this example's / tapeapi（实验性命令行入口）不属于本示例
+  assert.deepEqual(Object.keys(pkg.bin), ['tapeapi', 'tapeapi-doctor', 'tapeapi-mcp', 'tapeapi-verify'])
   assert.equal(pkg.files.some((f) => /example/.test(f)), false)
   assert.equal(readdirSync(new URL('../../server/src/', import.meta.url)).some((f) => /agent/i.test(f)), false)
 })

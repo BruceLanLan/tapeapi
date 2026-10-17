@@ -31,7 +31,7 @@ new-api:3000            渠道、令牌、额度、倍率、计费全部照旧
 
 还没准备好花钱？先在本机跑一遍本地试跑（不需要密钥、电路，也不花钱）：先在仓库根目录运行 `npm ci --no-audit --no-fund`，再运行
 `node examples/relay-trial/trial.mjs`。下面每一步做完都可以用 `tapeapi-doctor`（实验性）检查，它会说清缺什么、去哪做、下一条命令。
-它随 SDK 发布包提供，在任何目录都能运行：`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-doctor <你的名字或旁路地址>`；
+它随 SDK 发布包提供，在任何目录都能运行：`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-doctor <你的名字或旁路地址>`；
 在本目录（`examples/new-api-sidecar`）里也可以用检出自带的 `node ../../sdk/bin/tapeapi-doctor.js`。逐步清单见 [AI 服务方指南 · 从零到上线](../../docs/guides/zh-CN/ai-providers.md#从零到上线)。
 
 前提：一台装了 Docker 与 Docker Compose 2.17 或更高版本的服务器；一个域名和你已有的 HTTPS 反向代理（Nginx、Caddy、1Panel、宝塔都行）；
@@ -54,6 +54,19 @@ cp models.example.json models.json           # 改成你自己的模型与价格
 不是任何厂商的真实价格。回执按**上游报告的** model 精确匹配 `id` 或别名：如果你在 new-api 里设了“模型重定向”，上游报告的可能是
 重定向后的名字，把它也写进 `aliases`，否则那些回答的回执里 `prices` 为 `null`（旁路日志会提示一次）。
 表写错时旁路不会崩溃，而是进入设置模式，日志和 `/tapeapi/v1/health` 用一句话说明哪个文件的哪条规则不对。
+
+**`FORMATS`（请设置）**：在 `.env` 里写你的 new-api **真正提供**的 API 格式，逗号分隔：`openai-chat`、`openai-responses`、
+`anthropic-messages`、`openai-embeddings`，或 `all`（四种）。清单是链上的公开声明，只有这里选的格式写进清单、签发回执；渠道只兼容
+OpenAI Chat 的中转站写 `FORMATS=openai-chat`，清单就不会声明你并不提供的格式。`env.example` 里留空由你来选：未设时按 `all`
+（四种格式，与 2.0.0 发布的相同）运行，并在启动日志（`WARNING  FORMATS is not set, ...`）与 `/tapeapi/v1/health` 的 `warning` 里点名
+`FORMATS` 与可选值；写了不认识的名字，旁路停在设置模式并点名 `FORMATS`；价目表里某个模型的 `formats` 写了没启用的格式（示例价目表的 `text-embedding-3-small` 限定为
+`openai-embeddings`），也停在设置模式并指出是哪个模型。没启用的格式的计量路径（如 `/v1/messages`）不在清单里，旁路直接答
+HTTP 400（`bad_path`，带 `x-tapeapi-sidecar-error: 1`），消息点名该格式与 `FORMATS`，**不转发给 new-api**，也不会无回执地悄悄
+回答；`/v1/models`、`count_tokens` 等非计量路径照旧透传。
+
+**从 2.0.0 升级**：旧部署的 `.env` 里没有 `FORMATS`，升级后旁路照常服务，仍发布 2.0.0 的四种格式，只是日志与 health 多一条警告。
+请在 `.env` 里只写 new-api 真正提供的格式（只兼容 OpenAI Chat 的中转站写 `FORMATS=openai-chat`；确实四种都提供就写 `FORMATS=all`，
+警告随之消失），然后 `docker compose up -d` 重启。
 
 **2. 启动**
 
@@ -105,15 +118,18 @@ compose 文件，放在同一个网络里，`UPSTREAM_BASE_URL` 指向你的 new
 | 客户端 | 设置 |
 |---|---|
 | OpenAI SDK、各类 OpenAI 兼容工具 | `base_url = https://api.example.com/v1` |
-| Anthropic SDK、Claude Code | `ANTHROPIC_BASE_URL=https://api.example.com`（不带 `/v1`），`ANTHROPIC_AUTH_TOKEN=<new-api 令牌>` |
-| Codex | `OPENAI_BASE_URL=https://api.example.com/v1`，或 `config.toml` 里 `base_url = "https://api.example.com/v1"` 加 `wire_api = "responses"` |
+| Anthropic SDK、Claude Code（需要 `FORMATS` 含 `anthropic-messages`） | `ANTHROPIC_BASE_URL=https://api.example.com`（不带 `/v1`），`ANTHROPIC_AUTH_TOKEN=<new-api 令牌>` |
+| Codex（需要 `FORMATS` 含 `openai-responses`） | `OPENAI_BASE_URL=https://api.example.com/v1`，或 `config.toml` 里 `base_url = "https://api.example.com/v1"` 加 `wire_api = "responses"` |
 
-想自己核验每次调用的 Claude Code 或 Codex 用户，在本机运行核验代理 `tapeapi-verify`（需要清单已上链，见上面的现状说明），
-把客户端指向它。`tapeapi-verify` 会一直在前台运行，客户端要在第二个终端里启动：
+`FORMATS` 不含某个客户端用的格式时（例如 `FORMATS=openai-chat`），这个客户端的调用会被旁路以 HTTP 400 拒绝，不是"能用但没有
+回执"：不要把那一行告诉用户。
+
+想自己核验每次调用的用户（Claude Code、Codex 只限上面所需格式已启用时），在本机运行核验代理 `tapeapi-verify`（需要清单已上链，
+见上面的现状说明），把客户端指向它；它认得全部四种格式，清单没有声明的格式的调用会记为 FAIL（加 `--strict` 时直接回 400，不转发）。`tapeapi-verify` 会一直在前台运行，客户端要在第二个终端里启动：
 
 ```sh
 # 终端 1。42.1013.tape 是示例名：换成你的 TapeOut 名字（即 .env 里的 TAPE_NAME）
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -180,6 +196,38 @@ SSE 注释 `: tapeapi-receipt …`（官方 SDK、Claude Code、Codex 都忽略�
 - **旁路不保存提示词或回答**：内存里只有签过名的回执（里面是哈希、模型、token 数与金额，不是内容），日志里也没有提示词。
 - 旁路容器以非 root 用户、只读文件系统、去掉全部 capability 运行。
 
+### 从 new-api 的价目生成价目表（实验性）
+
+`pricing-convert.mjs`（`tapeapi-newapi-prices`，实验性，不属于 SDK 或 server 包，任何版本都可能改动）把 new-api 的公开价目
+`GET /api/pricing` 转成 `models.json`。它只读文件：先从**你自己的** new-api 存下 `/api/pricing` 和 `/api/status`。
+
+```sh
+# 匿名取（不带 cookie 或令牌）；若站点要求登录才看价目，用普通用户而不是管理员，并改写 --fetched-as user
+curl -s https://<你的 new-api>/api/pricing > pricing.json && curl -s https://<你的 new-api>/api/status > status.json
+node pricing-convert.mjs pricing.json --status status.json --usd-exchange-rate 7 --fetched-as anonymous --out models.json   # 汇率必须显式确认
+node pricing-convert.mjs --check pricing.json --models models.json --status status.json --fetched-as anonymous            # 之后定期检查：漂移则退出码 1
+```
+
+规则：每百万 token 美元价 = `model_ratio` × 1000000 / `quota_per_unit`（倍率 1 每 token 扣 1 额度，`quota_per_unit` 额度 = 1 美元）。
+`quota_per_unit` 是站点后台可改的选项，从 `--status`（`data.quota_per_unit`）读，没有状态文件时必须用 `--quota-per-unit` 显式给出，
+没有默认值；new-api 自己的默认值是 500000（即 × 2，读自源码、未实测），报告里写明本次用的值与来源。输出 = 输入 × `completion_ratio`，
+缓存读 = 输入 × `cache_ratio`，缓存写 = 输入 × `create_cache_ratio`。这是 new-api 自己的“额度美元”，`currency` 写 `USD`，**仅作展示**，
+不是用户实际支付的真实美元。有 `billing_mode` 的模型按 `billing_expr` 计价、`model_ratio` 只是占位：分档（`tiered_expr`）拒绝转换并说明
+各档。`model_ratio = 37.5` 且没有 `billing_mode`：可能是未设价的占位，也可能真价就是 37.5，`/api/pricing` 无法区分；new-api 默认倍率表
+里价格就是 37.5 的模型（`gpt-4.5-preview`、`gpt-4.5-preview-2025-02-27`）照常转换并标出，其它的拒绝（`ratio-37.5-ambiguous`），核实后用 `--accept-ratio-37.5 <模型>`
+放行；站点开启**自用模式**时，new-api 会提供这类未设价模型并按 37.5 计费，拒绝说明里会写明（给出 `--status` 才能知道）。视频模型
+（按名字判断，可用 `--video`、`--exclude` 补充）拒绝；`completion_ratio < 1` 标出“输出价低于输入价，请服务方确认”。
+`/api/pricing` 的内容取决于**谁取的**：登录后 `group_ratio` 变成该用户分组的倍率，且只列该用户可用的分组；转换器只计 `usable_group`
+里列出的分组，回答里看不到的分组标出待确认（不算缺失），`--fetched-as anonymous|user` 写进报告与来源记录。汇率读
+`usd_exchange_rate`，没有默认值，只用于报告里对照价目页的人民币数。模型 id 逐码元照抄接口原名。`--out` 同时写一份来源记录
+（`models.newapi-source.json`：价目内容的哈希、new-api 的构建标记、汇率、`quota_per_unit` 及来源、取价身份、每个模型的原始倍率与拒绝
+原因），`--check` 用它对照：价目内容变了（包括被拒绝或手工定价的模型、分组倍率）、某个模型的价格变了、`quota_per_unit` 或汇率变了，都退出码 1。
+范围信号（厂商名为 OpenAI、Anthropic 或 Google，或模型名含 claude、gpt、gemini）只打一行 NOTE、不影响退出码：转售这类模型的站点每天都有它，
+退出码 1 只留给变化。范围信号只看名字、从不看厂商 id：new-api 数据库里的厂商 id 是任意的，它的默认厂商用的是负数展示 id（Anthropic −1002、Google −1006、OpenAI −1012，读自 new-api 源码
+`model/pricing_default.go`），所以 id 说明不了是哪家。顶层 `pricing_version` 是 new-api 源码里的构建常量，不是价目版本：只有它变了（例如升级
+new-api）只打一行 NOTE，退出码 0。不给 `--status` 时，`--check` 查不出 `quota_per_unit` 与汇率的变化（只有价目内容与转换结果）；定期检查请像上面
+那样带上 `--status`。范围信号只是提示：是否可以转售某个模型由服务方自行确认。发布前逐条核对报告里的每一行。
+
 ### 不用 Docker 试一遍
 
 ```sh
@@ -191,6 +239,14 @@ node --test examples/new-api-sidecar/new-api-sidecar.test.mjs
 `smoke.mjs` 用仓库里的**模拟**上游（`examples/ai-proxy/fake-upstream.mjs`：没有真实模型、没有真实密钥）代替 new-api，
 用一次性身份（随机持有人签的真实 EIP-712 委托，但不在链上），并用 SDK 的 `ai.verifyUsageReceipt` 按确切的收发字节核验每一份回执。
 
+整条路径（假链）：`node examples/new-api-sidecar/chain-demo.mjs`，每一步都通过时退出码 0。它启动**模拟** new-api（`fake-new-api.mjs`，
+独立进程，提供 `/v1`、`/api/pricing`、`/api/status`），把它的价目存下来用 `pricing-convert.mjs` 转换（汇率显式确认），启动只声明
+`openai-chat` 的旁路（`FORMATS=openai-chat`），把清单写进进程内的**假链**（SDK 自己的 TAP-10 测试链）、挂在名字 `42.7.tape` 下，然后：`tapeapi-doctor` 按名字
+通过（TAP-10 / TAP-11 解析与 1.x 解析各一次）；SDK 按名字解析（核对委托）并核验普通与流式调用的回执（价格是转换出的 USD）；改动一个字节被拒绝；没启用的格式不出回执；
+`tapeapi-verify` 的结论行为 OK（它只从真实链读名字，所以这一步用 `--dev` 地址模式）；转换器的 `--check` 先无漂移，站点改价后退出码 1。
+它证明的是这些组件在本机接得上；不证明真实 new-api 的任何行为（鉴权、跨源、兑换、日志都要在真实实例上核实），不涉及真实链，
+回执也从不证明实际运行的是哪个模型。
+
 ### 文件
 
 | 文件 | 作用 |
@@ -200,7 +256,9 @@ node --test examples/new-api-sidecar/new-api-sidecar.test.mjs
 | `server.mjs` | 旁路入口：读环境变量、设置模式、价目表检查、Node HTTP 与旁路之间的流式桥接 |
 | `models.example.json` | 示例价目表 |
 | `env.example` | `.env` 模板，只有占位符（文件名不带前导点，是为了能随示例公开） |
-| `smoke.mjs`、`new-api-sidecar.test.mjs` | 不需要 Docker 的演练与测试 |
+| `smoke.mjs`、`new-api-sidecar.test.mjs`、`formats.test.mjs` | 不需要 Docker 的演练与测试（`formats.test.mjs`：`FORMATS` 开关） |
+| `pricing-convert.mjs`、`pricing-convert.test.mjs`、`fixtures/` | 实验性价目转换器、测试与夹具（夹具是 new-api 价目回答的结构副本，名字都是占位） |
+| `chain-demo.mjs`、`fake-new-api.mjs`、`chain-demo.test.mjs` | 假链上的整条路径演示、模拟 new-api 与测试 |
 
 镜像为什么从本仓库构建，而不是从发布包安装：GitHub 发布里只有 SDK 的安装包，没有 `@tapeapi/server` 的；从检出构建也保证镜像里
 运行的就是你读过的代码。npm 只下载 SDK 固定版本的三个 `@noble` 依赖。
@@ -237,7 +295,7 @@ Not ready to pay for anything yet? Run the local trial on your machine first (no
 `npm ci --no-audit --no-fund` at the repository root, then `node examples/relay-trial/trial.mjs`. After each step below,
 `tapeapi-doctor` (experimental) checks it and says what is missing, where to fix it and the next command. It ships in
 the SDK's release package and runs from any directory:
-`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-doctor <your name or sidecar URL>`; in this directory (`examples/new-api-sidecar`)
+`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-doctor <your name or sidecar URL>`; in this directory (`examples/new-api-sidecar`)
 the checkout's own is `node ../../sdk/bin/tapeapi-doctor.js`. The step-by-step checklist is [AI providers · From zero to live](../../docs/guides/ai-providers.md#from-zero-to-live).
 
 You need a server with Docker and Docker Compose 2.17 or later; a domain and your existing HTTPS reverse proxy (Nginx,
@@ -254,6 +312,22 @@ repository (the image is built from it): `git clone https://github.com/BruceLanL
    redirected one, so list it under `aliases` (otherwise those receipts carry `prices: null`, logged once). A wrong table
    does not crash the sidecar: it stays in setup mode and the log and `/tapeapi/v1/health` say, in one sentence, which
    rule of which file is broken.
+   **`FORMATS` (set it)**: in `.env`, the API formats your new-api **really** serves, comma-separated: `openai-chat`,
+   `openai-responses`, `anthropic-messages`, `openai-embeddings`, or `all` (the four). The manifest is a public statement
+   on chain: only the formats chosen here are published and get receipts. A relay whose channels are OpenAI Chat
+   compatible only sets `FORMATS=openai-chat`, so the manifest declares no format it does not serve. It is empty in
+   `env.example` for you to choose: unset, it runs as `all` (the four formats 2.0.0 published) and warns in the
+   startup log (`WARNING  FORMATS is not set, ...`) and in the `warning` of `/tapeapi/v1/health`, naming `FORMATS` and
+   its values; an unknown name keeps the sidecar in setup mode, naming `FORMATS`; a model whose
+   `formats` lists a format not enabled (the example table limits `text-embedding-3-small` to `openai-embeddings`) is
+   setup mode too, naming the model. A metered path of a format left out (such as `/v1/messages`) is not in the
+   manifest, and the sidecar answers it HTTP 400 itself (`bad_path`, with `x-tapeapi-sidecar-error: 1`), naming the
+   format and `FORMATS`: it is **not forwarded to new-api** and never answered silently without a receipt. Unmetered
+   paths (`/v1/models`, `count_tokens`, ...) pass through as before.
+   **Upgrading from 2.0.0**: a deployment's `.env` has no `FORMATS`, so after the upgrade the sidecar keeps serving
+   and publishing the four formats 2.0.0 published, with one warning in its log and health. Set only the formats your
+   new-api really serves in `.env` (`FORMATS=openai-chat` for an OpenAI Chat compatible relay; `FORMATS=all` if it
+   really serves all four, which also ends the warning), then restart with `docker compose up -d`.
 2. **Start.** `docker compose up -d`, then `docker compose logs -f tapeapi-sidecar` (the first start shows SETUP MODE
    and what is missing; that is expected). Both services listen on the host's loopback only: the sidecar on
    `127.0.0.1:8080`, new-api on `127.0.0.1:3000`. In your reverse proxy, point `PUBLIC_URL` (e.g. `api.example.com`) at
@@ -279,10 +353,16 @@ repository (the image is built from it): `git clone https://github.com/BruceLanL
    > published. You can paste or upload your `models.json` in step 5 first to preview it; see "Publish the price table
    > with the console" in the [AI provider guide](../../docs/guides/ai-providers.md).
 4. **Tell your users.** Same tokens (issued by new-api), new base URL: OpenAI SDKs and OpenAI-compatible tools use
-   `https://api.example.com/v1`; the Anthropic SDK and Claude Code use `ANTHROPIC_BASE_URL=https://api.example.com`
-   (no `/v1`) with `ANTHROPIC_AUTH_TOKEN=<new-api token>`; Codex uses `OPENAI_BASE_URL=https://api.example.com/v1`, or
-   `base_url = "https://api.example.com/v1"` with `wire_api = "responses"` in `config.toml`. Claude Code and Codex users who want every call checked run the local
-   verifying proxy `tapeapi-verify <your TapeOut name>` (it needs the manifest on chain, see the note above) and point
+   `https://api.example.com/v1`; the Anthropic SDK and Claude Code (with `anthropic-messages` in `FORMATS`) use
+   `ANTHROPIC_BASE_URL=https://api.example.com` (no `/v1`) with `ANTHROPIC_AUTH_TOKEN=<new-api token>`; Codex (with
+   `openai-responses` in `FORMATS`) uses `OPENAI_BASE_URL=https://api.example.com/v1`, or
+   `base_url = "https://api.example.com/v1"` with `wire_api = "responses"` in `config.toml`. When `FORMATS` leaves out
+   the format a client speaks (`FORMATS=openai-chat`, say), the sidecar refuses that client's calls with HTTP 400 (the
+   client gets an error, not answers without receipts), so do not hand out that line. Users who want every call
+   checked (Claude Code and Codex only when their format is enabled) run the local
+   verifying proxy `tapeapi-verify <your TapeOut name>` (it needs the manifest on chain, see the note above; it knows
+   all four formats and logs a call to a format the manifest does not declare as FAIL, or answers 400 without
+   forwarding it under `--strict`) and point
    their client at it from a second terminal, since `tapeapi-verify` keeps running in the foreground
    (`ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude`, or `OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex`; in Windows
    PowerShell `$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8790"; claude` and `$env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex`); set
@@ -346,6 +426,52 @@ evading an upstream provider's bans or regional restrictions.
   and amounts, not content), and its log carries no prompts.
 - The sidecar container runs as a non-root user, on a read-only file system, with every capability dropped.
 
+### A price table from new-api's price list (experimental)
+
+`pricing-convert.mjs` (`tapeapi-newapi-prices`, experimental, not part of the SDK or server packages, may change in any
+release) turns new-api's public price list, `GET /api/pricing`, into `models.json`. It reads files only: save
+`/api/pricing` and `/api/status` of **your own** new-api first.
+
+```sh
+# anonymously (no cookie, no token); if the site shows prices to logged-in users only, use an ordinary user, never an
+# administrator, and say --fetched-as user
+curl -s https://<your new-api>/api/pricing > pricing.json && curl -s https://<your new-api>/api/status > status.json
+node pricing-convert.mjs pricing.json --status status.json --usd-exchange-rate 7 --fetched-as anonymous --out models.json   # the rate is confirmed explicitly
+node pricing-convert.mjs --check pricing.json --models models.json --status status.json --fetched-as anonymous            # later, regularly: exit 1 on drift
+```
+
+The rules: USD per 1M tokens = `model_ratio` x 1000000 / `quota_per_unit` (ratio 1 costs one quota per token, and
+`quota_per_unit` quota = $1). `quota_per_unit` is a setting of the site: it is read from `--status`
+(`data.quota_per_unit`), or must be given with `--quota-per-unit` when there is no status file; there is no default
+(new-api's own default is 500000, which makes it x 2; read from its source, not measured), and the report says which
+value was used and where it came from. Output = input x `completion_ratio`; cacheRead = input x `cache_ratio`;
+cacheWrite = input x `create_cache_ratio`. These are new-api's own quota dollars, published as `USD` **for display only**, not the real dollars a
+user pays. A model with a `billing_mode` is priced by its `billing_expr` and its `model_ratio` is a placeholder: tiered
+prices (`tiered_expr`) are refused, each tier shown. `model_ratio = 37.5` without a `billing_mode` is either the
+placeholder of a model with no price set or a real price of 37.5, which `/api/pricing` cannot tell apart: a model whose
+price in new-api's default ratio table is 37.5 (`gpt-4.5-preview`, `gpt-4.5-preview-2025-02-27`) is converted and flagged, any other is refused
+(`ratio-37.5-ambiguous`) unless you check it and pass `--accept-ratio-37.5 <model>`; in **self-use mode** new-api serves
+such an unpriced model and bills it at 37.5, and the refusal says so (it knows with `--status`). Video models (by name;
+`--video` and `--exclude` add more) are refused; `completion_ratio < 1` is flagged for you to confirm (the output price
+below the input price). What `/api/pricing` holds depends on **who fetched it**: logged in, `group_ratio` is that
+user's group's and only the groups that user can use are listed; the converter counts only the groups `usable_group`
+lists, flags a group the answer does not show (not "missing"), and records `--fetched-as anonymous|user` in the report
+and the source record. The exchange rate is read from `usd_exchange_rate`, has no default, and only serves the report's
+CNY comparison with your pricing page. Model ids are the API's names, code unit for code unit. `--out` also writes a
+source record (`models.newapi-source.json`: a hash of the price content, new-api's build marker, the rate,
+`quota_per_unit` and where it came from, who fetched the list, each model's ratios and every refusal), which `--check`
+compares with: changed price content (a refused or hand-priced model, or a group ratio, included), a changed price, a
+changed `quota_per_unit` or rate exits 1. A scope signal (a model whose vendor is named OpenAI, Anthropic or Google, or
+whose own name says claude, gpt or gemini) is one NOTE line and does not change the exit status: a site that resells
+such models has it every day, and exit 1 is kept for changes. A scope signal goes by names, never by vendor id: new-api's vendor ids
+are arbitrary database ids, and its default vendors carry negative display ids (Anthropic -1002, Google -1006, OpenAI
+-1012, read from new-api's source, `model/pricing_default.go`), so an id does not say which vendor it is. The top-level `pricing_version` is a
+constant of new-api's source (a build marker), not a price version: when only it changes (after upgrading new-api), a
+NOTE line is printed and the exit status is 0. Without `--status`, `--check` cannot see a change of `quota_per_unit` or
+of the rate (only of the price content and the converted prices): pass `--status` for the regular check, as above. A
+scope signal is only a pointer: whether a model may be resold is the
+operator's own decision. Check every line of the report before publishing.
+
 ### Try it without Docker
 
 ```sh
@@ -359,6 +485,18 @@ node --test examples/new-api-sidecar/new-api-sidecar.test.mjs
 real EIP-712 delegation, but nothing is on chain), makes Chat, Responses, Anthropic Messages and Embeddings calls, and
 checks every receipt with the SDK's `ai.verifyUsageReceipt` over the exact bytes sent and received.
 
+The whole path, on a fake chain: `node examples/new-api-sidecar/chain-demo.mjs` exits 0 when every step passed. It starts
+a **fake** new-api (`fake-new-api.mjs`, its own process, serving `/v1`, `/api/pricing` and `/api/status`), saves its
+price list and converts it with `pricing-convert.mjs` (the rate confirmed explicitly), starts the sidecar declaring
+`openai-chat` only (`FORMATS=openai-chat`), writes the manifest to an in-process **fake chain** under the name
+`42.7.tape` (the SDK's own TAP-10 test chain), and then: `tapeapi-doctor` passes by name (once with the TAP-10 /
+TAP-11 resolution, once with the 1.x one); the SDK resolves the name (the delegation checked) and verifies
+the receipts of a plain and a streamed call (priced in the converted USD); one altered byte is refused; a format left out
+gets no receipt; `tapeapi-verify` prints an OK verdict (it reads names from the real chain only, so this step uses its
+`--dev` URL mode); and the converter's `--check` is clean, then exits 1 once the site changes a price. It shows that the
+parts fit together on one machine; it shows nothing about the real new-api (its auth, CORS, redemption and logs must be
+checked on a real instance), touches no real chain, and a receipt never proves which model ran.
+
 ### Files
 
 `docker-compose.yml` (new-api from the official image `calciumion/new-api:v1.0.0-rc.40`, and the sidecar; both published
@@ -366,7 +504,10 @@ on loopback only), `Dockerfile` and `.dockerignore` (the sidecar image: `node:22
 `@tapeapi/server` from this checkout through compose's named build contexts, installed as the repository's own npm
 workspace), `server.mjs` (the sidecar entry: environment, setup mode, price-table checks, the streaming bridge between
 Node's HTTP server and the sidecar), `models.example.json`, `env.example` (placeholders only; named without the leading
-dot so that it is published with the example), `smoke.mjs` and `new-api-sidecar.test.mjs`.
+dot so that it is published with the example), `smoke.mjs`, `new-api-sidecar.test.mjs` and `formats.test.mjs` (the
+`FORMATS` switch), and `pricing-convert.mjs` with `pricing-convert.test.mjs` and `fixtures/` (the experimental price
+converter; the fixture is a structural copy of a new-api pricing answer, with placeholder names), and `chain-demo.mjs`
+with `fake-new-api.mjs` and `chain-demo.test.mjs` (the whole path on a fake chain).
 
 Why the image is built from this repository rather than installed from a release: the GitHub release carries the SDK's
 package only, not `@tapeapi/server`'s; and building from the checkout means the image runs exactly the code you have

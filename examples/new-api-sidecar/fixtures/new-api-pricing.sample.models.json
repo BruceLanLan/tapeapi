@@ -1,0 +1,107 @@
+[
+  {
+    "id": "vendor-a-chat-3.2",
+    "prices": [
+      {
+        "currency": "USD",
+        "unit": "1M tokens",
+        "input": "0.11428",
+        "output": "0.14285",
+        "cacheRead": "0.028571"
+      }
+    ]
+  },
+  {
+    "id": "vendor-a-flash-4",
+    "prices": [
+      {
+        "currency": "USD",
+        "unit": "1M tokens",
+        "input": "0.28571",
+        "output": "0.14285",
+        "cacheRead": "0.0028571"
+      }
+    ]
+  },
+  {
+    "id": "vendor-b/model-b-max-3.7",
+    "prices": [
+      {
+        "currency": "USD",
+        "unit": "1M tokens",
+        "input": "5.14285",
+        "output": "1.71428"
+      }
+    ]
+  },
+  {
+    "id": "vendor-c/model-c-3",
+    "prices": [
+      {
+        "currency": "USD",
+        "unit": "1M tokens",
+        "input": "1.2",
+        "output": "0.3"
+      }
+    ]
+  },
+  {
+    "id": "Model-D-5.3",
+    "prices": [
+      {
+        "currency": "USD",
+        "unit": "1M tokens",
+        "input": "1.1428",
+        "output": "4",
+        "cacheRead": "0.2857"
+      }
+    ]
+  },
+  {
+    "id": "Model-E-K3",
+    "prices": [
+      {
+        "currency": "USD",
+        "unit": "1M tokens",
+        "input": "2.85714",
+        "output": "14.28571",
+        "cacheRead": "0.28571"
+      }
+    ]
+  },
+  {
+    "id": "model-c-2.5",
+    "prices": [
+      {
+        "currency": "USD",
+        "unit": "1M tokens",
+        "input": "1.2",
+        "output": "0.3"
+      }
+    ]
+  },
+  {
+    "id": "vendor-a-chat-3",
+    "prices": [
+      {
+        "currency": "USD",
+        "unit": "1M tokens",
+        "input": "0.114285",
+        "output": "0.22857",
+        "cacheRead": "0.028571"
+      }
+    ]
+  },
+  {
+    "id": "Model-D-5.2",
+    "prices": [
+      {
+        "currency": "USD",
+        "unit": "1M tokens",
+        "input": "1.1428",
+        "output": "4",
+        "cacheRead": "0.2857"
+      }
+    ]
+  }
+]

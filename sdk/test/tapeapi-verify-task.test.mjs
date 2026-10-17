@@ -67,7 +67,7 @@ test('FIXED TV-01: nothing outside `task` changed: the 1.6 output, stderr and ex
       // the 1.6 help, verbatim, then the new text and nothing else
       assert.ok(stdout.startsWith(put(c.stdout)), `${what}: the 1.6 help is the beginning, unchanged`)
       const extra = stdout.slice(put(c.stdout).length)
-      assert.match(extra, /^\ntapeapi-verify task \(experimental, 1\.7; not covered by the 1\.x compatibility promise\)/)
+      assert.match(extra, /^\ntapeapi-verify task \(experimental, 1\.7; not covered by the 2\.x compatibility promise\)/)
       assert.match(extra, /tapeapi-verify task（实验性，1\.7/)
       assert.equal(stderr, '')
       assert.ok(r.stdout.includes(NO_CONFORM_LINES), `${what}: 2.0: the help names --no-conform`)

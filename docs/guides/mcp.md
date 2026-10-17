@@ -118,7 +118,7 @@ preflight.
 it from the GitHub release, not from the npm registry:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 What it does differently from the remote server:
@@ -149,7 +149,7 @@ Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -169,7 +169,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -181,7 +181,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### Remote or local
@@ -235,7 +235,7 @@ Save the receipt (the `_meta["fun.tapeapi/receipt"]` object) as `receipt.json`. 
 release, or work inside a clone of the repository as in [Call a service](consume.md):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz
 ```
 
 ```js
@@ -400,7 +400,7 @@ isolate can be restarted at any time. With it, changed tools are refused after a
 
   ```bash
   # 42.1013.tape is an example name: put your service's TapeOut name here
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### What clients check

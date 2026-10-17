@@ -148,7 +148,7 @@ TAP-10 §4.3 says: `token()`, the factory's `isCPU`, the processor number, the c
 `ownerOf` for the holder.
 
 The draft TAP asks for the agent and the providers to be resolved as TAP-11 §2 says (one pinned block per resolution,
-`ownerOf` and EIP-1271 under strict agreement), which is what `createTapeAPI({ conform: 'tap10' })` does. Since 1.9 the
+`ownerOf` and EIP-1271 under strict agreement), which is what `createTapeAPI({ conform: 'tap10' })` does. Since 2.0.0 the
 kit does this by default: it makes a conformance-mode client from your client, with the same nodes, quorum, RPC timeout,
 `fetch` and other options, and resolves the agent and every provider through it. It never turns on `allChains` and never
 reads another chain, so it sends requests only to the nodes you configured. A client already in the conformance mode is
@@ -166,7 +166,7 @@ const kit = createAgentKit(api)
 kit.resolution                                   // 'tap10' on BNB Smart Chain, X Layer and Base
 ```
 
-Before 1.9 the default was the client's own `resolve`. To keep that behaviour, pass it:
+Before 2.0.0 the default was the client's own `resolve`. To keep that behaviour, pass it:
 `createAgentKit(api, { resolve: (container) => api.resolve(container) })`.
 
 ### Sign a mandate
@@ -288,7 +288,7 @@ that breaks them is `mandate-malformed` (a mandate) or `message-malformed` (any 
 - every member is present: a verdict without `reasonHash` is refused (write 32 zero bytes when there is no reason);
 - a hash-only receipt in a delivery's evidence needs a JSON boolean `ok` (a string `"true"` or a missing `ok` is
   `receipt-not-hash-only`, never read as `false`), both hashes in the `bytes32` form, `ts` in the time form, and an `id` of 1 to 128 code units (the empty `id` of TAP-13
-  §8 binding rule 1 is allowed only when `ok` is `false`).
+  §4 binding rule 1 is allowed only when `ok` is `false`).
 
 The builders are unchanged: `mandateTypedData`, `taskOfferTypedData`, the hash and `sign*` functions still take a number
 or a bigint for a `uint256` and write the decimal string, and still read a missing `reasonHash` as zero; only a
@@ -371,7 +371,7 @@ tapeapi-verify task thread.json --payment <agent container> <inbox index>
 tapeapi-verify task thread.json --rpc https://node-a.example,https://node-b.example
 ```
 
-Without installing anything, use `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-verify task thread.json`;
+Without installing anything, use `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-verify task thread.json`;
 in a checkout, `node sdk/bin/tapeapi-verify.js task thread.json`.
 
 - `--payment <recipient> <index>` also checks the TapeSend message at that index in the recipient's inbox. The recipient

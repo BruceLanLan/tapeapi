@@ -1,7 +1,7 @@
 // @experimental Evidence-backed reviews between containers: the record, its hashes and its signature, without the chain.
 // The format is the draft "Evidence-Backed Reviews between Containers" (TapeOutProtocol/TAPs pull request #54, tap TBD):
 // one EIP-712 type `Review` in the TAP-11 delegation domain, with the domain's chainId the reviewer's chain. Nothing here
-// reads the chain; verification is review-verify.js. Outside the 1.x compatibility promise: the draft may change.
+// reads the chain; verification is review-verify.js. Outside the 2.x compatibility promise: the draft may change.
 // 评价记录（实验性）：类型、哈希与签名，不读链。格式按 TAPs PR #54 草稿；核验在 review-verify.js。
 import { keccak_256 } from '@noble/hashes/sha3'
 import { TapeAPIError } from './errors.js'

@@ -17,7 +17,7 @@ import { fakeConfig } from './e2e.mjs'
 import { DEMO_KEY, createFakeUpstream } from '../ai-proxy/fake-upstream.mjs'
 
 const here = (name) => fileURLToPath(new URL(name, import.meta.url))
-const complete = (extra = {}) => ({ ...throwawayIdentity(), PUBLIC_URL: 'https://api.example.com', MODELS_FILE: EXAMPLE_MODELS, ...extra })
+const complete = (extra = {}) => ({ ...throwawayIdentity(), PUBLIC_URL: 'https://api.example.com', MODELS_FILE: EXAMPLE_MODELS, FORMATS: 'all', ...extra })
 const fmt = (formats, name) => formats.find((f) => f.name === name)
 
 let OpenAI = null, Anthropic = null
@@ -111,6 +111,10 @@ test('litellm-sidecar: compose pins LiteLLM by version and builds the sidecar fr
   assert.match(compose, /^\s*image: postgres:16\.\d+-alpine$/m)
   assert.match(compose, /^\s*newapi: \.\.\/new-api-sidecar$/m)
   assert.match(compose, /UPSTREAM_BASE_URL: http:\/\/litellm:4000\/v1/)
+  // FORMATS (optional, 2.1) reaches the sidecar from .env; env.example documents it, commented out (unset = all four).
+  // FORMATS（可选，2.1）从 .env 传给旁路；env.example 里有说明且默认注释掉（不设 = 四种）。
+  assert.match(compose, /^\s*FORMATS: \$\{FORMATS:-\}$/m)
+  assert.match(readFileSync(here('env.example'), 'utf8'), /^# FORMATS=openai-chat$/m)
   for (const m of compose.matchAll(/^\s*- "([^"]+:\d+)"$/gm)) assert.match(m[1], /^(127\.0\.0\.1|\$\{SIDECAR_BIND:-127\.0\.0\.1\}):/, m[1])
   const dockerfile = readFileSync(here('Dockerfile'), 'utf8')
   assert.match(dockerfile, /COPY --from=newapi server\.mjs \.\/examples\/new-api-sidecar\/server\.mjs/)

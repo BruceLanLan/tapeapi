@@ -1,0 +1,164 @@
+{
+  "tool": "tapeapi-newapi-prices",
+  "experimental": true,
+  "source": {
+    "newapi_build_marker": "0123456789abcdef0123456789abcdef",
+    "content_sha256": "be72154319b9c9c60aa786a230b0c46c6871dc2ddae5cf1bb5aafe7e471e4a11",
+    "sha256": "e5eabe26f3c3a79769020a9462c81aa3ac10163f87ee6aaecf922bff4007b7af",
+    "fetched_as": null,
+    "usable_group": [
+      "1x",
+      "vip"
+    ],
+    "auto_groups": [
+      "1x"
+    ]
+  },
+  "usd_exchange_rate": "7",
+  "quota_per_unit": "500000",
+  "quota_per_unit_from": "--quota-per-unit",
+  "rule": "USD per 1M tokens = model_ratio x 1000000 / quota_per_unit (500000: x 2) x group ratio; output = input x completion_ratio; cacheRead = input x cache_ratio; cacheWrite = input x create_cache_ratio; rounded half up to 8 decimals. Quota dollars, display only.",
+  "options": {
+    "exclude": [],
+    "video": [],
+    "accept_ratio_37_5": []
+  },
+  "converted": [
+    {
+      "id": "vendor-a-chat-3.2",
+      "model_ratio": 0.05714,
+      "completion_ratio": 1.25,
+      "cache_ratio": 0.250008750438,
+      "group_ratio": "1",
+      "vendor_id": 1
+    },
+    {
+      "id": "vendor-a-flash-4",
+      "model_ratio": 0.142855,
+      "completion_ratio": 0.499982499737,
+      "cache_ratio": 0.01,
+      "group_ratio": "1",
+      "vendor_id": 1
+    },
+    {
+      "id": "vendor-b/model-b-max-3.7",
+      "model_ratio": 2.571425,
+      "completion_ratio": 0.333332685184,
+      "cache_ratio": null,
+      "group_ratio": "1",
+      "vendor_id": 2
+    },
+    {
+      "id": "vendor-c/model-c-3",
+      "model_ratio": 0.6,
+      "completion_ratio": 0.25,
+      "cache_ratio": null,
+      "group_ratio": "1",
+      "vendor_id": null
+    },
+    {
+      "id": "Model-D-5.3",
+      "model_ratio": 0.5714,
+      "completion_ratio": 3.50017500875,
+      "cache_ratio": 0.25,
+      "group_ratio": "1",
+      "vendor_id": 6
+    },
+    {
+      "id": "Model-E-K3",
+      "model_ratio": 1.42857,
+      "completion_ratio": 5.000003500004,
+      "cache_ratio": 0.099998599999,
+      "group_ratio": "1",
+      "vendor_id": 8
+    },
+    {
+      "id": "model-c-2.5",
+      "model_ratio": 0.6,
+      "completion_ratio": 0.25,
+      "cache_ratio": null,
+      "group_ratio": "1",
+      "vendor_id": null
+    },
+    {
+      "id": "vendor-a-chat-3",
+      "model_ratio": 0.0571425,
+      "completion_ratio": 2,
+      "cache_ratio": 0.249997812486,
+      "group_ratio": "1",
+      "vendor_id": 1
+    },
+    {
+      "id": "Model-D-5.2",
+      "model_ratio": 0.5714,
+      "completion_ratio": 3.50017500875,
+      "cache_ratio": 0.25,
+      "group_ratio": "1",
+      "vendor_id": 6
+    }
+  ],
+  "refused": [
+    {
+      "id": "vendor-b/model-b-tiered-1",
+      "code": "tiered",
+      "en": "priced by its billing_expr in 3 tier(s) (base [len <= 32000]: p x 0.357143 + c x 1.428571; 第2档 [len <= 128000]: p x 0.571429 + c x 2.285714; 第3档 [otherwise]: p x 1 + c x 4); a tiered price is not one price per 1M tokens, and model_ratio 37.5 is a placeholder, not used"
+    },
+    {
+      "id": "vendor-b/model-b-tiered-2",
+      "code": "tiered",
+      "en": "priced by its billing_expr in 3 tier(s) (base [len <= 128000]: p x 0.114286 + c x 0.685714; 第2档 [len <= 256000]: p x 0.285714 + c x 1.714286; 第3档 [otherwise]: p x 0.571429 + c x 3.428571); a tiered price is not one price per 1M tokens, and model_ratio 37.5 is a placeholder, not used"
+    },
+    {
+      "id": "vendor-b/model-b-tiered-3",
+      "code": "tiered",
+      "en": "priced by its billing_expr in 2 tier(s) (base [len <= 256000]: p x 0.285714 + c x 1.714286; 第2档 [otherwise]: p x 1.142857 + c x 6.857143); a tiered price is not one price per 1M tokens, and model_ratio 37.5 is a placeholder, not used"
+    },
+    {
+      "id": "media-gen-2-0-480p",
+      "code": "video",
+      "en": "a video model by its name: TAPI-20 §3.9 prices text formats only, and the sidecar signs no receipt for these calls; confirm the list"
+    },
+    {
+      "id": "media-gen-2-0-720p",
+      "code": "video",
+      "en": "a video model by its name: TAPI-20 §3.9 prices text formats only, and the sidecar signs no receipt for these calls; confirm the list"
+    },
+    {
+      "id": "media-gen-2-0-1080p",
+      "code": "video",
+      "en": "a video model by its name: TAPI-20 §3.9 prices text formats only, and the sidecar signs no receipt for these calls; confirm the list"
+    }
+  ],
+  "review": [
+    {
+      "id": "vendor-a-flash-4",
+      "code": "output-below-input",
+      "en": "completion_ratio 0.499982499737 < 1: the output price is below the input price; the operator confirms it"
+    },
+    {
+      "id": "vendor-b/model-b-max-3.7",
+      "code": "output-below-input",
+      "en": "completion_ratio 0.333332685184 < 1: the output price is below the input price; the operator confirms it"
+    },
+    {
+      "id": "vendor-c/model-c-3",
+      "code": "output-below-input",
+      "en": "completion_ratio 0.25 < 1: the output price is below the input price; the operator confirms it"
+    },
+    {
+      "id": "vendor-c/model-c-3",
+      "code": "vendor-undeclared",
+      "en": "no vendor_id: the vendor is not declared"
+    },
+    {
+      "id": "model-c-2.5",
+      "code": "output-below-input",
+      "en": "completion_ratio 0.25 < 1: the output price is below the input price; the operator confirms it"
+    },
+    {
+      "id": "model-c-2.5",
+      "code": "vendor-undeclared",
+      "en": "no vendor_id: the vendor is not declared"
+    }
+  ]
+}

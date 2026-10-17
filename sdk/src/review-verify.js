@@ -1,6 +1,6 @@
 // @experimental Evidence-backed reviews between containers: verification (§6), withdrawal and correction (§7), the two
 // carriages (§8: the reviewer's site file and a public TapeSend message) and summaries (§9) of the draft "Evidence-Backed
-// Reviews between Containers" (TapeOutProtocol/TAPs pull request #54, tap TBD). Outside the 1.x compatibility promise.
+// Reviews between Containers" (TapeOutProtocol/TAPs pull request #54, tap TBD). Outside the 2.x compatibility promise.
 //
 // One set of rules, two sources of chain facts:
 //   - checkReview(record, facts): the facts (current holders, current TAP-11 signers, holders with code) are given, as the

@@ -339,7 +339,7 @@ export interface AgentKitOptions {
   revocationFloor?: { get(key: string): unknown; set(key: string, value: number): unknown }
   /** a Map, or a store whose setIfAbsent stores the value only when the key is absent and returns the previous value, in one step */
   nonces?: Map<string, string> | { setIfAbsent(key: string, value: string): string | undefined | Promise<string | undefined> }
-  /** resolves the agent and the providers. Default (1.9): as TAP-11 §2 says, by the conformance mode (conform: 'tap10')
+  /** resolves the agent and the providers. Default (2.0.0): as TAP-11 §2 says, by the conformance mode (conform: 'tap10')
    *  made from the kit's client (its nodes and options, never allChains; the client itself when it is in that mode), or
    *  the client's own resolve when its contracts are not the ones TAP-10 lists for its chain (AgentKit.resolution) */
   resolve?: (container: Address) => Promise<any>
@@ -375,7 +375,7 @@ export interface AgentKit {
   sessionLogs(opts: { escrow: Address; consumer: Address; fromBlock: number; toBlock: number }): Promise<Array<SessionEntry & { block: number }>>
   chainId: number
   hub: Address
-  /** how the agent and the providers are resolved (1.9): 'tap10' the conformance mode made from the client (TAP-11 §2),
+  /** how the agent and the providers are resolved (since 2.0.0): 'tap10' the conformance mode made from the client (TAP-11 §2),
    *  'client' the client's own resolve (its contracts are not the ones TAP-10 lists for its chain: a local or test
    *  deployment), 'caller' the `resolve` option */
   resolution: 'tap10' | 'client' | 'caller'

@@ -146,7 +146,10 @@ const claude = new Anthropic({ baseURL: base('anthropic-messages'), apiKey: '<�
 
 用 `wrangler.toml` 模板（Worker 名 `my-tapeapi-ai-proxy`，不设路由）部署 `worker.js`：
 `npx --yes wrangler@4.141.0 deploy -c examples/ai-proxy/wrangler.toml`。把 `UPSTREAM_BASE_URL` 改成你的接口，`MODELS_JSON` 改成你的价目表
-（格式同 `models.json`），给 Worker 加你自己的子域名并设为 `PUBLIC_URL`。身份（`CIRCUITS`、`TOKEN_ID`、`CONTAINER`、`DELEGATION_EXPIRES`、
+（格式同 `models.json`），把 `FORMATS` 设为上游**真正提供**的 API 格式（逗号分隔，或 `all`；只兼容 OpenAI 的上游写 `openai-chat`；
+只有所选格式写进清单、签发回执；没选的格式的计量路径答 HTTP 400 并点名 `FORMATS`，不转发；名字不认识时 Worker 停在设置模式并点名
+`FORMATS`；不设时按 `all`（2.0.0 的四种格式）运行，并在 `/tapeapi/v1/health` 的 `warning` 与日志里警告、点名 `FORMATS`，所以从 2.0.0
+升级的 Worker 照常服务），给 Worker 加你自己的子域名并设为 `PUBLIC_URL`。身份（`CIRCUITS`、`TOKEN_ID`、`CONTAINER`、`DELEGATION_EXPIRES`、
 `DELEGATION_SIG`，密钥 `SIGNER_KEY`）按持有人操作台 `https://tapeapi.fun/console/` 设置，与普通 TapeAPI 服务相同；变量设齐之前只回答健康检查。
 
 ### 合规说明
@@ -288,7 +291,13 @@ not have unless you paste them too.
 
 Deploy `worker.js` with the `wrangler.toml` template (Worker `my-tapeapi-ai-proxy`, no routes):
 `npx --yes wrangler@4.141.0 deploy -c examples/ai-proxy/wrangler.toml`. Set `UPSTREAM_BASE_URL` to your API and
-`MODELS_JSON` to your price table (shaped like `models.json`), add a hostname of yours and set it as `PUBLIC_URL`. The
+`MODELS_JSON` to your price table (shaped like `models.json`), set `FORMATS` to the API formats your upstream **really**
+serves (comma-separated, or `all`; an OpenAI-compatible-only upstream sets `openai-chat`; only the selected formats are
+published and get receipts; a metered path of a format left out is answered HTTP 400 naming `FORMATS` and is not
+forwarded; an unknown name keeps the Worker in setup mode, naming `FORMATS`; unset, it runs as `all`, the four formats
+of 2.0.0, and warns in the `warning` of `/tapeapi/v1/health` and in the log, naming `FORMATS`, so a Worker upgraded
+from 2.0.0 keeps serving), add a hostname
+of yours and set it as `PUBLIC_URL`. The
 identity (`CIRCUITS`, `TOKEN_ID`, `CONTAINER`, `DELEGATION_EXPIRES`, `DELEGATION_SIG`, secret `SIGNER_KEY`) is set as the
 holder console at `https://tapeapi.fun/console/` shows, as for any TapeAPI service; until it is complete only the health
 check answers.

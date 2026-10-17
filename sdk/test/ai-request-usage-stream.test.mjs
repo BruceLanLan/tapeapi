@@ -1,6 +1,6 @@
 // createVerifyingFetch({ requestUsage: true }) (1.6): the client asks for the usage of a stream OpenAI Chat request in its
 // bytes, the sidecar then injects and strips nothing, and the usage chunk is part of the signed stream the application
-// receives (DESIGN-1.6: no stripping on the client). What 1.5 left unverifiable by design (TAPI-21 §3.5 check 4: an
+// receives (since 1.6 the client strips nothing). What 1.5 left unverifiable by design (TAPI-21 §3.5 check 4: an
 // injected stream's usage) is compared like a whole answer's. Covered here: the A/B differential against 1.5's injection
 // under every cutting and line end, forged and moved usage chunks, a sidecar that strips anyway, an upstream that ignores
 // the member, look-alike chunks (nothing is ever taken out), the body forms, the gates in strict and not, requests the

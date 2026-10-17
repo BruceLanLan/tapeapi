@@ -1,8 +1,8 @@
 # 容器代理示例 / Container agent example (experimental)
 
-**实验性（1.7，阶段 0）。** 一个"容器 + 代理 = 容器代理"的最小可运行示例：一个代理运行时（`index.mjs` + `agent.mjs`）和委托方的雇佣脚本（`hire.mjs`）。基于 `@tapeapi/sdk/agent`，该子路径整体是实验性的，**不受 1.x 兼容承诺约束**；格式跟随公开讨论 TapeOutProtocol/TAPs#40（授权书）与 #41（任务协议），可能随之改变。示例不在 npm 包里，运行时也不在 `@tapeapi/server` 里。
+**实验性（1.7，阶段 0）。** 一个"容器 + 代理 = 容器代理"的最小可运行示例：一个代理运行时（`index.mjs` + `agent.mjs`）和委托方的雇佣脚本（`hire.mjs`）。基于 `@tapeapi/sdk/agent`，该子路径整体是实验性的，**不受 2.x 兼容承诺约束**；格式跟随公开讨论 TapeOutProtocol/TAPs#40（授权书）与 #41（任务协议），可能随之改变。示例不在 npm 包里，运行时也不在 `@tapeapi/server` 里。
 
-**Experimental (1.7, phase 0).** A minimal runnable example of "container + agent = container agent": an agent runtime (`index.mjs` + `agent.mjs`) and the principal's hiring script (`hire.mjs`). It is built on `@tapeapi/sdk/agent`, a subpath that is experimental as a whole and **outside the 1.x compatibility promise**; the formats follow the public discussions TapeOutProtocol/TAPs#40 (mandate) and #41 (task protocol) and may change with them. The example is not in the npm package, and the runtime is not part of `@tapeapi/server`.
+**Experimental (1.7, phase 0).** A minimal runnable example of "container + agent = container agent": an agent runtime (`index.mjs` + `agent.mjs`) and the principal's hiring script (`hire.mjs`). It is built on `@tapeapi/sdk/agent`, a subpath that is experimental as a whole and **outside the 2.x compatibility promise**; the formats follow the public discussions TapeOutProtocol/TAPs#40 (mandate) and #41 (task protocol) and may change with them. The example is not in the npm package, and the runtime is not part of `@tapeapi/server`.
 
 ## 先读这几句 / Read this first
 

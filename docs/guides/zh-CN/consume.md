@@ -18,7 +18,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz
 ```
 
 把下面的脚本保存为 `.mjs` 文件，放在能解析到 `@tapeapi/sdk` 的地方，然后用 `node <文件>.mjs` 运行：用克隆时，**放在 `tapeapi`
@@ -97,6 +97,10 @@ TapeOut 名称 `<#ID>.<processor>.tape` 同样从链上读取：处理器编号�
 4. 对照**当前**持有者，检查电路持有者对服务签名密钥的 EIP-712 委托。
 
 解析出的服务会被缓存；SDK 大约每小时重读一次，并在签名或价格不再匹配时立即重读。`api.refresh(svc)` 可强制重读。
+
+对 AI 服务还有一条命令做同样的解析并把结果展示出来：`tapeapi connect <名字>`（实验性，2.1 新增，不受 2.x 兼容承诺约束）打印服务卡片，
+并只为其清单声明的 API 格式给出客户端配置；它不索要任何密钥，也不付款。见
+[接入 AI 服务的“你的用户要做什么”](ai-providers.md#你的用户要做什么)。
 
 ## 3. 处理错误
 

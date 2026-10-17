@@ -14,15 +14,50 @@
 // default 10), RECEIPT_REQUIRE_HASH ("1": a receipt lookup must name requestSha256 too; for an upstream whose answer
 // ids are guessable, such as Ollama's), FORWARD_SESSION_HEADERS ("0": do not pass the clients' session headers
 // x-claude-code-session-id, session-id and thread-id upstream; default: pass them).
+// FORMATS (set it): the API formats your upstream really serves, comma-separated, among openai-chat, openai-responses,
+// anthropic-messages, openai-embeddings, or "all". Only these are published in the manifest (a public statement on
+// chain) and get receipts; an upstream that is OpenAI-compatible only sets FORMATS=openai-chat. Unset: all four, as
+// 2.0.0 published, with a "warning" in /tapeapi/v1/health and one console warning per isolate, naming FORMATS and its
+// values. An unknown name: setup mode, naming the variable. Same rule as examples/new-api-sidecar. A metered path of a
+// format left out is answered HTTP 400 naming FORMATS and is not forwarded.
 // 密钥：SIGNER_KEY（只有上游需要你自己的而不是调用方的密钥时，再加 UPSTREAM_AUTHORIZATION）。变量见上；RECEIPT_TTL_S 为回执
 // 可取回的秒数，RECEIPT_LOOKUPS_PER_MIN 为 receipt 方法每 IP 每分钟的次数，RECEIPT_REQUIRE_HASH 为 "1" 时取回执须同时给出
 // requestSha256（上游 id 可猜时用，例如 Ollama）；FORWARD_SESSION_HEADERS 为 "0" 时不把客户端的会话头转发给上游（默认转发）。
+// FORMATS（请设置）：上游真正提供的 API 格式，逗号分隔，或 "all"。只有这些格式写进清单（链上的公开声明）并签发回执；只兼容 OpenAI 的
+// 上游设 FORMATS=openai-chat。未设：四种都发布（与 2.0.0 相同），/tapeapi/v1/health 带 warning，每个隔离实例打一次控制台警告，点名该变量
+// 与可选值。名字不认识：设置模式，并点名该变量。规则与 examples/new-api-sidecar 相同。未启用格式的计量路径答 400 并点名 FORMATS，不转发。
 import { createAIProxy } from '@tapeapi/server/ai-proxy'
-import { sig } from '@tapeapi/sdk'
+import { sig, ai } from '@tapeapi/sdk'
 import { setupAnswer } from '../cloudflare-worker/worker.js'
 
 const REQUIRED = ['CIRCUITS', 'TOKEN_ID', 'CONTAINER', 'DELEGATION_EXPIRES', 'DELEGATION_SIG', 'PUBLIC_URL']
 const configured = (env) => REQUIRED.every((k) => env[k]) && !!env.SIGNER_KEY
+
+/**
+ * The adapters FORMATS selects, in ai.FORMATS order, or a sentence saying what is wrong (the same rule as
+ * examples/new-api-sidecar/server.mjs selectFormats, kept inline: that file needs node:http).
+ * FORMATS 选出的适配器（按 ai.FORMATS 顺序），或一句说明哪里不对的话（规则同 new-api-sidecar 的 selectFormats；那个文件依赖 node:http，故在此内联）。
+ */
+export function formatsOf(env) {
+  const names = ai.FORMATS.map((f) => f.name)
+  const choose = `choose among ${names.join(', ')} (comma-separated), or all; an upstream that is OpenAI-compatible only sets FORMATS=openai-chat`
+  // Unset: every format, as 2.0.0 published; formatsWarning(env) says so. / 未设：全部格式，与 2.0.0 相同；formatsWarning 说明。
+  if (!env.FORMATS) return [...ai.FORMATS]
+  const asked = String(env.FORMATS).split(/[\s,]+/).filter(Boolean)
+  if (!asked.length) return `FORMATS names no format: ${choose}`
+  if (asked.length === 1 && asked[0].toLowerCase() === 'all') return [...ai.FORMATS]
+  const unknown = asked.filter((n) => !names.includes(n))
+  if (unknown.length) return `FORMATS names ${unknown.length === 1 ? 'a format' : 'formats'} this sidecar does not know (${unknown.map((n) => JSON.stringify(n)).join(', ')}): ${choose}`
+  return ai.FORMATS.filter((f) => asked.includes(f.name))
+}
+
+/** The warning when FORMATS is not set (null when it is): the same sentence as examples/new-api-sidecar's.
+ *  未设 FORMATS 时的警告（设了为 null），与 new-api-sidecar 同一句话。 */
+export function formatsWarning(env) {
+  if (env.FORMATS) return null
+  const names = ai.FORMATS.map((f) => f.name).join(', ')
+  return `FORMATS is not set, so every format is published and signed (${names}), as 2.0.0 did; set FORMATS to the formats your upstream really serves, comma-separated among ${names}, or all (an upstream that is OpenAI-compatible only sets FORMATS=openai-chat)`
+}
 
 export function manifestBaseOf(env) {
   return {
@@ -38,9 +73,21 @@ export function manifestBaseOf(env) {
 
 export function build(env, extra = {}) {
   if (env.SIGNER_ADDRESS && env.SIGNER_ADDRESS.toLowerCase() !== sig.privateKeyToAddress(env.SIGNER_KEY).toLowerCase()) throw new Error(`SIGNER_ADDRESS ${env.SIGNER_ADDRESS} does not match SIGNER_KEY`)
+  const formats = formatsOf(env)
+  if (typeof formats === 'string') throw new Error(formats)
   let models
   try { models = JSON.parse(env.MODELS_JSON) } catch { throw new Error('MODELS_JSON must be the price table as JSON: [{ "id", "aliases"?, "formats"?, "prices": [{ "currency", "unit": "1M tokens", "input", "output", "cacheRead"?, "cacheWrite"?, "cacheWrite1h"?, "reasoning"? }] }]') }
+  // A model limited to a format FORMATS leaves out, in words. / 模型限定的格式被 FORMATS 排除：用一句话说清。
+  const enabled = new Set(formats.map((f) => f.name)), known = new Set(ai.FORMATS.map((f) => f.name))
+  for (const [i, m] of (Array.isArray(models) ? models : []).entries()) {
+    const off = Array.isArray(m?.formats) ? m.formats.filter((f) => typeof f === 'string' && known.has(f) && !enabled.has(f)) : []
+    if (off.length) throw new Error(`MODELS_JSON models[${i}] (${String(m.id).slice(0, 64)}) lists ${off.join(', ')} in "formats", which FORMATS does not enable (enabled: ${[...enabled].join(', ')}); remove ${off.length === 1 ? 'it' : 'them'} from the model's "formats" or add ${off.length === 1 ? 'it' : 'them'} to FORMATS`)
+  }
   return createAIProxy({
+    formats,
+    // A metered path of a format FORMATS leaves out: HTTP 400 naming FORMATS, never passed through without a receipt.
+    // FORMATS 未启用的格式的计量路径：答 400 并点名 FORMATS，绝不无回执透传。
+    refuseOtherFormats: { hint: `FORMATS does not enable it; if your upstream really serves it, add it to FORMATS (comma-separated among ${ai.FORMATS.map((f) => f.name).join(', ')}, or all)` },
     upstream: { baseUrl: env.UPSTREAM_BASE_URL, ...(env.UPSTREAM_AUTHORIZATION ? { headers: { authorization: env.UPSTREAM_AUTHORIZATION } } : {}) },
     manifestBase: manifestBaseOf(env),
     signerKey: env.SIGNER_KEY,
@@ -59,13 +106,22 @@ export function build(env, extra = {}) {
 }
 
 let proxy = null
+let warnedFormats = false
 export default {
   async fetch(request, env) {
     // Values pasted on a phone often carry a trailing space or newline. / 手机上粘贴的值常带尾随空白。
     env = Object.fromEntries(Object.entries(env || {}).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]))
     if (!configured(env)) return setupAnswer(env, request)
     if (!env.UPSTREAM_BASE_URL) return setupAnswer(env, request, 'UPSTREAM_BASE_URL (the /v1 base URL of your AI API) is not set')
+    const formats = formatsOf(env)
+    if (typeof formats === 'string') return setupAnswer(env, request, formats)
     if (!proxy) { try { proxy = build(env) } catch (e) { return setupAnswer(env, request, e.message) } }
-    return proxy.handleRequest(request, { clientIp: request.headers.get('cf-connecting-ip') || undefined })
+    const res = await proxy.handleRequest(request, { clientIp: request.headers.get('cf-connecting-ip') || undefined })
+    // FORMATS unset: every format, and a warning in health (and once in the log). / 未设 FORMATS：全部格式，health 带警告。
+    const warning = formatsWarning(env)
+    if (!warning) return res
+    if (!warnedFormats) { warnedFormats = true; console.warn(`[ai-proxy] WARNING ${warning}`) }
+    if (request.method !== 'GET' || new URL(request.url).pathname.replace(/\/+$/, '') !== '/tapeapi/v1/health') return res
+    try { return new Response(JSON.stringify({ ...(await res.clone().json()), warning }), { status: res.status, headers: res.headers }) } catch { return res }
   },
 }

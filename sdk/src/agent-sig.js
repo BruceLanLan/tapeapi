@@ -1,6 +1,6 @@
 // @experimental (1.7) Container agents, phase 0: the EIP-712 types a circuit's HOLDER signs (Mandate, TaskOffer,
 // TaskVerdict, MandateRevocation), their hashes, digests and wallet payloads. Pure: no chain reads, no network.
-// Designed in internal notes (container agents, phase 0). Nothing here is covered by the 1.x compatibility promise: the
+// Designed in internal notes (container agents, phase 0). Nothing here is covered by the 2.x compatibility promise: the
 // format follows the public Idea TapeOutProtocol/TAPs#40/#41 and may change with that discussion.
 //
 // Every type lives in the TAP-11 delegation domain (name "TapeAPI", version "1", chainId, verifyingContract = the DeWEB

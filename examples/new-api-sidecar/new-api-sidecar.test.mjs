@@ -14,13 +14,14 @@ import { throwawayIdentity, startStack, callAndVerify, CALLS, EXAMPLE_MODELS } f
 const tmp = mkdtempSync(join(tmpdir(), 'new-api-sidecar-'))
 test.after(() => rmSync(tmp, { recursive: true, force: true }))
 const file = (name, text) => { const p = join(tmp, name); writeFileSync(p, text); return p }
-const complete = (extra = {}) => ({ ...throwawayIdentity(), PUBLIC_URL: 'https://api.example.com', MODELS_FILE: EXAMPLE_MODELS, ...extra })
+const complete = (extra = {}) => ({ ...throwawayIdentity(), PUBLIC_URL: 'https://api.example.com', MODELS_FILE: EXAMPLE_MODELS, FORMATS: 'all', ...extra })
 
 test('new-api-sidecar: nothing set is setup mode, naming every missing variable and no problem', () => {
   const s = readConfig({})
   assert.equal(s.ok, false)
   assert.equal(s.problem, null)
   assert.equal(s.signer, null)
+  // FORMATS is not among them: unset, it runs as all with a warning (B-6). / FORMATS 不在其中：未设时按 all 运行并警告。
   assert.deepEqual(s.missing, ['SIGNER_KEY (secret)', ...REQUIRED])
 })
 

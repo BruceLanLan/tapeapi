@@ -11,7 +11,7 @@
 // Instant and later checks are one implementation: the payload and the hint come from eth_getLogs or, when the nodes do
 // not serve logs (as on bsc-dataseed), from eth_getBlockReceipts of the entry's block (TAP-10 §18.3), which public nodes
 // still answer months later; the cost is bandwidth (a block's receipts), so reads are cached per block.
-// Not covered by the 1.x compatibility promise. Designed in internal notes (container agents, phase 0).
+// Not covered by the 2.x compatibility promise. Designed in internal notes (container agents, phase 0).
 import { keccak_256 } from '@noble/hashes/sha3'
 import { TapeAPIError } from './errors.js'
 import { findDuplicateKey } from './canon.js'

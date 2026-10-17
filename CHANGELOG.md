@@ -7,6 +7,97 @@ interfaces.
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-10-17
+
+TapeAPI 2.1.0: `tapeapi connect`, one command that shows whether a service can be used, how to set up a client for it,
+and why not when it cannot. Two entries change a default. The example sidecars' `FORMATS` (under Changed): set, it
+limits the formats published and refuses the others; a deployed 2.0.0 new-api sidecar or Worker without it keeps serving
+its four formats, with a warning. The fix under Fixed: `ai.createVerifyingFetch` in strict mode, its default, refuses a
+call to a format the manifest does not declare (`strict: false` keeps the 2.0 pass-through). Everything else below is
+**experimental**: outside the 2.x compatibility promise, it may change or go away in any 2.x release, and the 2.0
+default resolution (TAP-10 / TAP-11 §2) is unchanged. Nothing below makes or takes a payment: `tapeapi connect` pays
+nothing, the price converter's prices are for display only, and the new-api local demo (`chain-demo.mjs`) runs on the
+SDK's fake chain only.
+
+### Changed
+
+- **Example sidecars: `FORMATS` in `examples/new-api-sidecar` and `examples/ai-proxy`: unset runs as `all` with a
+  warning; set explicitly, it limits the formats.** Set, only the API formats it names (`openai-chat`,
+  `openai-responses`, `anthropic-messages`, `openai-embeddings`, comma-separated, or `all`) are published in the
+  manifest and get receipts. A metered path of a format left out (`POST /v1/messages` without `anthropic-messages`, also
+  written loosely) is answered HTTP 400 `bad_path` with `x-tapeapi-sidecar-error: 1`, naming the format and `FORMATS`,
+  and is never forwarded: it can get no receipt, so it is never answered silently. Unmetered paths (`/v1/models`,
+  `count_tokens`) pass through as before. An unknown name keeps the sidecar (or the Worker) in setup mode, naming
+  `FORMATS`; so does a model whose `formats` lists a format not enabled. **Unset** (a deployed 2.0.0 sidecar's `.env`,
+  or the Worker's variables, after the upgrade), the sidecar runs as `all`, the four formats 2.0.0 published, and says
+  so: a `WARNING` line in the startup log (`FORMATS is not set, so every format is published and signed (...)`) and a
+  `warning` member in `/tapeapi/v1/health` (the Worker: in health, and once per isolate in its log), naming `FORMATS`
+  and its values. The setup guides and `env.example` still ask you to set it: only the formats the upstream really
+  serves (`FORMATS=openai-chat` for an OpenAI-compatible-only relay), or `FORMATS=all`. `examples/litellm-sidecar` gains
+  `FORMATS` as a new, optional variable (its 2.0.0 server does not read it): unset, every format is published, as in
+  2.0.0; set, only those are, and a metered path of a format left out is refused as above. Its README, `env.example` and
+  `docker-compose.yml` (which now passes `FORMATS` to the sidecar) say so.
+- **`@tapeapi/server/ai-proxy`: option `refuseOtherFormats`** (experimental, off by default): a metered path of a
+  built-in format that `formats` leaves out is answered HTTP 400 `bad_path` (with the sidecar-error header) and not
+  forwarded, instead of passing through without a receipt; `{ hint }` ends the message. The example sidecars set it.
+- **Wording fixes in documentation, comments, help text and vector descriptions** (no behaviour, hash, signature or
+  encoding changes). `docs/guides/container-agents.md` (en, zh-CN): the release whose kit resolves the 2.0 way by
+  default is 2.0.0, not 1.9 (never released). The TAP-13 binding rules are in §4 (Response envelope), not §8: the
+  citation is fixed in that guide, in `scripts/gen-vectors.mjs`, in `spec/vectors/verify.py` and in the public vector
+  file `spec/vectors/container-agent.json`, whose content (and SHA-256) therefore changes in two description strings
+  only; no input, expected value or check changes. The comments of `sdk/src/agent-*.js`, `review-*.js` and
+  `group-public.js`, `sdk/types/agent.d.ts` and the help of `tapeapi-verify task` say "2.x compatibility promise"
+  instead of "1.x", so `tapeapi-verify task --help` prints that line differently.
+
+### Fixed
+
+- **`ai.createVerifyingFetch` and `tapeapi-verify` recognise every built-in format** (a fix in the stable SDK that
+  changes a default): a metered path of a format the service's manifest declares no endpoint for, sent under one of its
+  endpoint roots, used to pass through with no report, even in strict mode. Strict, which is `createVerifyingFetch`'s
+  default (`strict: true`), now refuses it with `INVALID_ARGUMENT` before sending (`data: { format, declared }`), as it
+  refuses an endpoint mismatch: such a call can get no receipt, so passing it through silently contradicted strict.
+  **Code that relied on the old pass-through passes `strict: false`**: the call is then sent and `onReport` gets
+  `mismatch: true` and `not verified: format not declared`. `tapeapi-verify --strict` answers HTTP 400
+  `format_not_declared` without forwarding; without `--strict` (its default) it forwards the call and logs it as FAIL,
+  counted among the failed calls of its totals.
+
+### Added
+
+- **`tapeapi`, one command-line entry, and `tapeapi connect <name>` (experimental; outside the 2.x compatibility
+  promise).** New bin `tapeapi`: `tapeapi doctor|verify|mcp …` run `tapeapi-doctor`, `tapeapi-verify` and
+  `tapeapi-mcp` as child processes with the arguments as given, so their output and exit status are byte for byte the
+  same (tested); those three commands are unchanged and stay. `tapeapi connect <name>` resolves an AI service with
+  `conform: 'tap10'` (the 2.0 default), shows it (container, holder, signer, delegation, activation, formats, the price
+  table, USD for display only) and prints client settings only for the API formats its manifest declares
+  (`ai.endpoints[].format`): Claude Code only with `anthropic-messages`, Codex only with `openai-responses`. A service
+  that is `unpaid`, `not-opened` or `store-changed` is shown as unavailable with the reason (exit 1) and `--proxy`
+  starts nothing; for a usable service `--proxy` then runs `tapeapi-verify` as it is, which resolves the same way (the
+  2.0 default; `connect` never passes `--no-conform`); `--json`, `--lang en|zh|both`; exit status 0 / 1 / 2 / 3 as
+  `tapeapi-doctor` (2 also when `--tool` / `--format` names a format the manifest does not declare; 3 when the chain,
+  or the `--dev` manifest, cannot be read), and every exit other than 0 ends with the next command. It asks for no key
+  or password, uploads nothing and pays nothing. Its output shows as `***` the value of a secret-named environment
+  variable of this machine (`*KEY`, `*TOKEN`, `*SECRET`, `*SIG`, ...; not one that reads as ordinary text: under 8
+  characters, with a space, or a plain word under 16) and any key-shaped string (`sk-...`, `0x` and 64 hex digits, a
+  long hex run, the token after `Bearer`); the rest of the manifest is shown as it is. New experimental subpath
+  `@tapeapi/sdk/connect` (`snippetsFor`, `connectReport`, `renderConnect`). Documented in `sdk/README.md` and the AI
+  providers guide ("What your users do"). Boundaries: a receipt does not prove which model ran; the settings are not
+  tested against each tool's current release.
+- **`examples/new-api-sidecar`: a price converter and a local demo of the whole path.** `pricing-convert.mjs`
+  (`tapeapi-newapi-prices`; not part of either package) turns new-api's `GET /api/pricing` (saved to a file) into the
+  sidecar's `models.json`, with a source record and `--check` for drift; the exchange rate has no default and must be
+  confirmed. USD per 1M tokens = `model_ratio` x 1000000 / `quota_per_unit`, read from `/api/status` or given with
+  `--quota-per-unit` (no default; new-api's own is 500000); `create_cache_ratio` gives `cacheWrite`. The prices are
+  new-api's own quota dollars, published as `USD` for display only, not what a user really pays; tiered and video
+  models are refused with a reason, and `model_ratio` 37.5 without a billing mode (new-api's placeholder, or a real
+  price) is refused as ambiguous unless it is a default-table price or `--accept-ratio-37.5` names it; the refusal says
+  when self-use mode bills it. Only the groups the answer shows (`usable_group`) count, and who fetched the list
+  (`--fetched-as`) is recorded. `--check` compares a hash of the price content; new-api's `pricing_version` is a build
+  marker, so its change alone is a note, not drift.
+  `chain-demo.mjs` runs a fake new-api, the converter, a sidecar with `FORMATS=openai-chat` and a name on the SDK's
+  TAP-10 test chain, then `tapeapi-doctor` by name in both resolutions (`conform: 'tap10'`, the default, and
+  `conform: false`), the SDK's checked calls, a tamper check and the converter's drift check; it proves the pieces fit
+  on one machine, nothing about a real new-api, and no real chain.
+
 ## [2.0.0] — 2026-10-12
 
 TapeAPI 2.0.0: standards by default. With no options, `createTapeAPI()` resolves a service as TapeOut's official TAPs
@@ -1836,7 +1927,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.8.1...v2.0.0
 [1.8.1]: https://github.com/BruceLanLan/tapeapi/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.7.1...v1.8.0

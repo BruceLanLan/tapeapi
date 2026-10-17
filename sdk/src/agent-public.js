@@ -1,5 +1,5 @@
 // @tapeapi/sdk/agent — @experimental (1.7) container agents, phase 0 ("zero-contract loop"). Everything this subpath
-// exports is experimental and outside the 1.x compatibility promise: the formats follow the public Ideas
+// exports is experimental and outside the 2.x compatibility promise: the formats follow the public Ideas
 // TapeOutProtocol/TAPs#40 (mandate) and #41 (task protocol, agent listing) and may change with that discussion.
 // Phase 0 has no enforcement: a mandate is a holder's signed statement, every check says `enforcement: 'none'`, a
 // mandate naming any amount is refused, and payment is a plain transfer verified read-only (TAP-10 §19).

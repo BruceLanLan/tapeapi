@@ -225,6 +225,12 @@ function validFormat(f) {
  * @param {boolean} [o.allowHttp]  http endpoints (local testing)
  * @param {number} [o.upstreamTimeoutMs=600000]
  * @param {number} [o.streamIdleMs=300000]  a stream silent this long is ended (0: never) / 流静默这么久即结束（0：不限）
+ * @param {boolean|{ hint?: string }} [o.refuseOtherFormats=false]  @experimental a metered path of a built-in format
+ *        (ai.FORMATS) that `formats` leaves out is answered HTTP 400 bad_path (with the sidecar-error header), never
+ *        forwarded, instead of being passed through without a receipt; `hint` ends the message (for example the setting
+ *        that enables the format). Default false: passed through, as before.
+ *        / 实验性：`formats` 未包含的内置格式的计量路径答 400 bad_path（带旁路错误头），不转发，而不是无回执透传；hint 附在
+ *        消息末尾（例如启用该格式的设置）。默认 false：照旧透传。
  */
 export function createAIProxy(opts = {}) {
   const { upstream, manifestBase, signerKey, models, receiptTtlMs = RECEIPT_TTL_MS, maxReceipts = MAX_RECEIPTS, formats = ai.FORMATS, requireRequestHash = false, forwardSessionHeaders = true } = opts
@@ -255,6 +261,13 @@ export function createAIProxy(opts = {}) {
   if (receiptRl && (!Number.isInteger(receiptRl.ip) || receiptRl.ip < 0 || !Number.isInteger(receiptRl.windowMs) || receiptRl.windowMs <= 0)) throw new TapeAPIError('INVALID_ARGUMENT', 'receiptRateLimit must be false or { ip: a non-negative integer, windowMs: a positive integer }')
   if (!Array.isArray(formats) || !formats.length || !formats.every(validFormat)) throw new TapeAPIError('INVALID_ARGUMENT', 'formats must be a non-empty list of adapters (see sdk ai.js)')
   if (new Set(formats.map((f) => f.method)).size !== formats.length || new Set(formats.map((f) => f.name)).size !== formats.length) throw new TapeAPIError('INVALID_ARGUMENT', 'two formats share a name or a receipt method')
+  // The built-in formats this proxy does not serve, when their metered paths are refused (refuseOtherFormats).
+  // 不提供的内置格式（refuseOtherFormats 开启时拒绝其计量路径）。
+  const refuseOther = opts.refuseOtherFormats ?? false
+  if (typeof refuseOther !== 'boolean' && !(isObj(refuseOther) && (refuseOther.hint === undefined || typeof refuseOther.hint === 'string'))) throw new TapeAPIError('INVALID_ARGUMENT', 'refuseOtherFormats must be true, false or { hint?: string }')
+  const servedNames = formats.map((f) => f.name)
+  const otherFormats = refuseOther ? ai.FORMATS.filter((f) => !servedNames.includes(f.name)) : []
+  const otherHint = isObj(refuseOther) && refuseOther.hint ? `; ${refuseOther.hint}` : ''
   const listOf = (k) => formats.flatMap((f) => (Array.isArray(f[k]) ? f[k].map((h) => String(h).toLowerCase()) : []))
   const forward = [...new Set([...FORWARD_BASE, ...listOf('headers')])]
   const allowHeaders = forward.join(', ')
@@ -597,6 +610,10 @@ export function createAIProxy(opts = {}) {
     // if written exactly (the client's receipt check would not match its own URL). / 宽松写法的计量路径：拒绝，不转发、不签名。
     const loose = format ? null : ai.formatFor(verb, loosePath(path), formats)
     if (loose) return oaError(400, 'bad_path', `${verb} ${path} is a ${loose.name} path written loosely; write it exactly as ${loosePath(path)}, the only way it gets a signed receipt`)
+    // refuseOtherFormats: a metered path of a format this proxy does not serve, exact or loose, would reach an upstream
+    // that may serve it, with no receipt and no signal: refused the same way. / 不提供的格式的计量路径：同样拒绝，不转发。
+    const other = !format && otherFormats.length ? (ai.formatFor(verb, path, otherFormats) || ai.formatFor(verb, loosePath(path), otherFormats)) : null
+    if (other) return oaError(400, 'bad_path', `${verb} ${path} is a ${other.name} path, a format this sidecar does not serve (it serves ${servedNames.join(', ')}): refused, not forwarded, no receipt${otherHint}`)
     let body = null
     if (verb !== 'GET') {
       try { body = await readCappedBytes(request.body, REQUEST_LIMIT) } catch (e) {

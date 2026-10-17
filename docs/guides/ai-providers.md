@@ -23,7 +23,7 @@ The checks of steps 1 to 7 are `tapeapi-doctor` (experimental), which ships in t
 Every `tapeapi-doctor` in the table stands for this, run from any directory, with nothing to clone:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-doctor <your name>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-doctor <your name>
 ```
 
 In a checkout, `node sdk/bin/tapeapi-doctor.js <your name>` at its root does the same. Either way the report writes
@@ -113,8 +113,16 @@ you charge your own users.
 ```sh
 git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi/examples/new-api-sidecar
 cp env.example .env && cp models.example.json models.json     # fill in both
+# in .env, set FORMATS to the API formats your new-api really serves: openai-chat for an OpenAI-compatible relay
 docker compose up -d
 ```
+
+Set `FORMATS`: the formats it names (`openai-chat`, `openai-responses`, `anthropic-messages`, `openai-embeddings`,
+comma-separated, or `all`) are the only ones published in the manifest and signed; a metered path of a format left out
+is answered HTTP 400 naming `FORMATS`, never forwarded. Unset, the sidecar runs as `all` (the four formats 2.0.0
+published) and warns in its startup log and in the `warning` of `/tapeapi/v1/health`, naming `FORMATS` and its values.
+**Upgrading a 2.0.0 deployment:** its `.env` has no `FORMATS`, so it keeps serving the four formats with that warning;
+set only the formats your new-api serves (or `FORMATS=all` if it serves all four) and restart.
 
 From this directory the checkout's doctor is `node ../../sdk/bin/tapeapi-doctor.js`; the `npx` form of the table works
 from anywhere.
@@ -234,7 +242,7 @@ and point the client at it. `tapeapi-verify` keeps running in the foreground, so
 
 ```sh
 # Terminal 1. 42.1013.tape is an example name: put your service's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -253,7 +261,23 @@ With the example name as written it stops with "no file at /.well-known/tapeapi.
 `42.1013.tape`. No service of your own yet? Run the local trial first ([From zero to live](#from-zero-to-live), step 0):
 it runs this proxy against a local sidecar.
 
-It resolves your service on chain, passes the answers through unchanged, prints one verdict per call, and with
+**Before that, `tapeapi connect` (experimental, new in 2.1, outside the 2.x compatibility promise)** shows your
+users your service as the chain has it and prints client settings only for the formats your manifest declares (no
+Claude Code settings without `anthropic-messages`, no Codex settings without `openai-responses`):
+
+```sh
+# from a checkout (npm ci once at the root); with the SDK installed, the command is `tapeapi connect …`
+node sdk/bin/tapeapi.js connect 42.1013.tape            # the service card and the settings
+node sdk/bin/tapeapi.js connect 42.1013.tape --proxy    # then runs tapeapi-verify for it
+```
+
+It reads the chain and the manifest only: no transaction, no key or password asked for (the settings read the token
+from `API_KEY` in the user's own environment), nothing uploaded, nothing paid. An `unpaid`, `not-opened` or
+`store-changed` service is shown as unavailable (exit 1) and `--proxy` starts nothing; exit 2 is a usage mistake (also
+`--tool` naming a format the manifest does not declare), 3 means it could not be read. In code the same is
+`@tapeapi/sdk/connect` (`snippetsFor`, `connectReport`, `renderConnect`), experimental too.
+
+`tapeapi-verify` resolves your service on chain, passes the answers through unchanged, prints one verdict per call, and with
 `--strict` turns a failed receipt into an error the client sees. A single receipt can also be pasted into the
 [verification page](https://tapeapi.fun/verify/). All of these need your manifest on chain (console step 5, above).
 

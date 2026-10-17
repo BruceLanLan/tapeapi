@@ -132,7 +132,7 @@ hub 地址见[简介](introduction.md#链上地址)），假链也有自己固�
 问题。委托方按 TAP-10 §4.3 解析：`token()`、工厂的 `isCPU`、处理器号、容器开通器的 `accountOf`，最后用 `ownerOf` 读持有人。
 
 草稿 TAP 要求按 TAP-11 §2 解析代理与上游服务（每次解析一个钉块，`ownerOf` 与 EIP-1271 用严格共识），这正是
-`createTapeAPI({ conform: 'tap10' })` 的做法。1.9 起 kit 默认就这样做：它用你的客户端建一个一致模式的客户端（节点、法定数、RPC
+`createTapeAPI({ conform: 'tap10' })` 的做法。2.0.0 起 kit 默认就这样做：它用你的客户端建一个一致模式的客户端（节点、法定数、RPC
 超时、`fetch` 与其它选项都相同），代理与每个上游服务都经它解析。它绝不开启 `allChains`，也不读别的链，所以只向你配置的节点发请求。
 客户端本身已是一致模式时直接用它。传 `resolve` 选项就由你自己解析，你的函数原样使用。`kit.resolution` 说明用的是哪一种：
 
@@ -147,7 +147,7 @@ const kit = createAgentKit(api)
 kit.resolution                                   // 在 BNB Smart Chain、X Layer 与 Base 上为 'tap10'
 ```
 
-1.9 之前的默认是客户端自己的 `resolve`。要保留那种行为，就把它传进去：
+2.0.0 之前的默认是客户端自己的 `resolve`。要保留那种行为，就把它传进去：
 `createAgentKit(api, { resolve: (container) => api.resolve(container) })`。
 
 ### 签一份授权书
@@ -258,7 +258,7 @@ if (!v.ok) throw new Error(v.problems.map((p) => p.code).join(', '))
   `params`（出现时须是对象）、1 到 128 个码元的 `id` 和 65 字节的 `sig`；
 - 每个成员都必须出现：没有 `reasonHash` 的判决被拒绝（没有理由时写 32 个零字节）；
 - 交付证据里只含哈希的回执，`ok` 必须是 JSON 布尔值（字符串 `"true"` 或缺少 `ok` 报 `receipt-not-hash-only`，绝不当作
-  `false`），两个哈希为 `bytes32` 形式，`ts` 为时间形式，`id` 为 1 到 128 个码元（TAP-13 §8 规则 1 的空 `id` 只在 `ok` 为
+  `false`），两个哈希为 `bytes32` 形式，`ts` 为时间形式，`id` 为 1 到 128 个码元（TAP-13 §4 规则 1 的空 `id` 只在 `ok` 为
   `false` 时允许）。
 
 构造函数不变：`mandateTypedData`、`taskOfferTypedData`、哈希函数与 `sign*` 函数仍接受数字或 bigint 作 `uint256` 并写成十进制
@@ -333,7 +333,7 @@ tapeapi-verify task thread.json --payment <代理容器> <收件箱序号>
 tapeapi-verify task thread.json --rpc https://node-a.example,https://node-b.example
 ```
 
-不想安装，可以用 `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-verify task thread.json`；
+不想安装，可以用 `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-verify task thread.json`；
 在仓库里则是 `node sdk/bin/tapeapi-verify.js task thread.json`。
 
 - `--payment <收款容器> <序号>` 另外核验该收件箱里那个序号的 TapeSend 消息。收款容器必须是线程里的代理，发件方必须是

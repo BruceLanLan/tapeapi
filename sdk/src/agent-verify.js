@@ -5,16 +5,16 @@
 // Since 1.8 every read of one verification (verifyMandate, verifyTaskThread, verifyEvidence, readRevocations, identityOf)
 // is made at ONE TAP-10 pinned block (§5.3, draft TAP §4 and §6.2): the principal's identity and holder, the EIP-1271
 // calls, both implementation slots and the revocation file. Agents and providers are resolved as TAP-11 §2 says (their
-// own resolution, with its own pinned block): since 1.9, without a `resolve` option, by the conformance mode
+// own resolution, with its own pinned block): since 2.0.0, without a `resolve` option, by the conformance mode
 // (conform: 'tap10') made from the kit's client (kit.resolution, below).
 // 1.8 起一次核验的全部读取都钉在同一个 TAP-10 钉块上：委托方身份与持有人、EIP-1271、两个实现槽与撤销文件。代理与上游服务按
-// TAP-11 §2 解析（各自的解析、各自的钉块）：1.9 起不给 resolve 时，由 kit 的客户端建立的一致模式解析（见下面的 kit.resolution）。
+// TAP-11 §2 解析（各自的解析、各自的钉块）：2.0.0 起不给 resolve 时，由 kit 的客户端建立的一致模式解析（见下面的 kit.resolution）。
 // What phase 0 does NOT do, and every result says so with `enforcement: 'none'`: no contract enforces any amount, time or
 // counterparty. A mandate is a holder's signed statement that a counterparty can check; nothing more.
 // Phase 1 (experimental, local chains only; internal design notes, phase 1): with
 // { enforcement: 'escrow-channel' } a mandate that names funds is checked against the escrow channels that enforce it.
 // 阶段 1（实验，仅本地链）：带 { enforcement: 'escrow-channel' } 时，带金额的授权书对照强制执行它的托管通道核验。
-// Designed in internal notes (container agents, phase 0). Not covered by the 1.x compatibility promise.
+// Designed in internal notes (container agents, phase 0). Not covered by the 2.x compatibility promise.
 import { sha256 } from '@noble/hashes/sha256'
 import { TapeAPIError } from './errors.js'
 import { safeParseJSON } from './canon.js'
@@ -105,9 +105,9 @@ export function plainText(s, max = 200) {
 
 // ---- the forms of the two receipts (draft TAP §7.2, §8), checked without the chain / 两种回执的形式，不读链 ----
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
-// TAP-13 §3, §4: id a string of 1 to 128 UTF-16 code units (the empty id exists only under binding rule 1, TAP-13 §8, where
+// TAP-13 §3, §4: id a string of 1 to 128 UTF-16 code units (the empty id exists only under binding rule 1, TAP-13 §4, where
 // the call is refused: a hash-only receipt with ok false), the path segment, params an object when present, sig 65 bytes in
-// hex / TAP-13 的 id（1 到 128 个码元；空串只在 §8 规则 1 下出现，此时 ok 为 false）、路径段、params、sig 形式
+// hex / TAP-13 的 id（1 到 128 个码元；空串只在 §4 规则 1 下出现，此时 ok 为 false）、路径段、params、sig 形式
 const isId = (v, allowEmpty = false) => typeof v === 'string' && v.length <= 128 && (allowEmpty || v.length >= 1)
 const isSig65 = (v) => typeof v === 'string' && /^0x[0-9a-fA-F]{130}$/.test(v)
 const METHOD_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
@@ -152,11 +152,11 @@ export function hashOnlyReceiptProblem(r) {
  *   nonces            { get, set }: (chain, principal, nonce) -> the mandateHash first seen with it (default: this kit
  *                     only). Nonce reuse is detectable only by whoever keeps this store. / nonce 存储
  *   resolve           (container) => resolved service. Only the function can be replaced, never the signer it yields.
- *                     Default (1.9): as TAP-11 §2 says, by createTapeAPI({ conform: 'tap10' }) with the client's own options
+ *                     Default (2.0.0): as TAP-11 §2 says, by createTapeAPI({ conform: 'tap10' }) with the client's own options
  *                     and nodes (`api` itself when it is in that mode), never with allChains; a client whose contracts are
  *                     not the ones TAP-10 lists for its chain (a local or test deployment) resolves with api.resolve.
  *                     `kit.resolution` says which: 'tap10', 'client' or 'caller' (this option).
- *                     只能替换解析函数。默认（1.9）：按 TAP-11 §2，用客户端自己的选项与节点建立的一致模式解析（客户端本身已是
+ *                     只能替换解析函数。默认（2.0.0）：按 TAP-11 §2，用客户端自己的选项与节点建立的一致模式解析（客户端本身已是
  *                     一致模式就用它），绝不开 allChains；合约不是 TAP-10 为该链列出的那些（本地或测试部署）时用 api.resolve。
  *                     kit.resolution 说明是哪一种。
  */
@@ -1326,9 +1326,9 @@ export function agentKitInternals(kit) { return KIT_INTERNALS.get(kit) ?? null }
 // How the kit resolves the agent and the providers (TAP-11 §2): the caller's `resolve`, unchanged; else the client's
 // conformance sibling (conform-sibling.js; the client itself in that mode), made now, which sends nothing; else, when the
 // conformance mode cannot be made from the client's options (INVALID_ARGUMENT: contracts TAP-10 does not list for the
-// chain, as on a local or test deployment), the client's own resolve, as before 1.9, and `resolution` says so.
+// chain, as on a local or test deployment), the client's own resolve, as before 2.0.0, and `resolution` says so.
 // kit 如何解析代理与上游服务：调用方的 resolve 原样使用；否则用客户端的一致模式同胞（现在建立，不发请求）；客户端选项建立不了
-// 一致模式时（INVALID_ARGUMENT：合约不是 TAP-10 为该链列出的，如本地或测试部署）用客户端自己的 resolve（与 1.9 之前相同），并在
+// 一致模式时（INVALID_ARGUMENT：合约不是 TAP-10 为该链列出的，如本地或测试部署）用客户端自己的 resolve（与 2.0.0 之前相同），并在
 // resolution 里写明。
 function resolverOf(api, resolve) {
   if (resolve) return { resolution: 'caller', resolveSvc: resolve }

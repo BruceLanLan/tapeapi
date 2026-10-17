@@ -4,12 +4,12 @@ JavaScript SDK for [TapeAPI](https://tapeapi.fun): find a service on BNB Smart C
 answer whose signature is checked against the key the service's holder delegated on chain. Paid methods use
 EIP-712 vouchers against an escrow; nothing is signed or sent without you.
 
-> **2.0.0.** Semantic versioning: breaking changes come only in a new major version. By default the SDK now resolves as TapeOut's official TAPs say (TAP-10, TAP-11 §2); `conform: false` keeps the 1.x resolution (deprecated). See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md) and [Upgrading to 2.0](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/upgrade-2.0.md).
+> **2.1.0.** Semantic versioning: breaking changes come only in a new major version. By default the SDK now resolves as TapeOut's official TAPs say (TAP-10, TAP-11 §2); `conform: false` keeps the 1.x resolution (deprecated). See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md) and [Upgrading to 2.0](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/upgrade-2.0.md).
 
 ## Install
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz
 ```
 
 Not on the npm registry yet: each GitHub release carries the package file. Built from https://github.com/BruceLanLan/tapeapi
@@ -52,6 +52,7 @@ naming rules.
 | `@tapeapi/sdk/mcp` | the MCP server core behind `tapeapi-mcp` and `@tapeapi/server/mcp`: tools with signed results and receipts |
 | `@tapeapi/sdk/agent` (`@experimental`, 1.7) | container agents, phase 0: holder-signed mandates and task messages (`createAgentKit`, `createPaymentKit`, `forWallet`, `revocationFileBytes`); since 2.0 also bounded agents (phase 1), checked on local chains only, as the escrow is not audited or deployed; outside the 2.x compatibility promise ([guide](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/container-agents.md)) |
 | `@tapeapi/sdk/review` (`@experimental`, 2.0) | evidence-backed reviews between containers, the reference implementation of a TAP draft that is an open pull request (#54): `makeReview`, `signReview`, `createReviewKit`, `summarizeReviews`; outside the 2.x compatibility promise |
+| `@tapeapi/sdk/connect` (`@experimental`, 2.1) | what `tapeapi connect` prints, as data and text, for a command line or a web page: `snippetsFor` (client settings for the formats a manifest declares only), `connectReport`, `renderConnect`; outside the 2.x compatibility promise |
 | `@tapeapi/sdk/chains` | `CHAINS` (BNB Smart Chain, X Layer, Base: factory, opener, DeWebHub, SiteRegistry, area code), `parseTapeName`, `formatTapeName` |
 | `@tapeapi/sdk/rpc`, `/abi`, `/sig`, `/canon`, `/manifest` | the building blocks |
 
@@ -65,11 +66,11 @@ The package ships a command that exposes any TapeAPI service's free methods as M
 Cursor, any MCP client), and verifies every answer in your own process before the model sees it:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ```json
-{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
+{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
 ```
 
 - **Identity from the chain.** Each service (a TapeOut name like `11.1013.tape` or a container address) is resolved
@@ -102,7 +103,7 @@ Since 1.7 it also has a one-shot subcommand, `tapeapi-verify task <thread.json> 
 
 ```bash
 # Terminal 1. 42.1013.tape is an example name: put your AI provider's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash
@@ -126,7 +127,7 @@ with no key and no cost: in a checkout, run `npm ci` once at the root, then `nod
 Providers check their own AI service, step by step, from the name to a receipt that verifies:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-doctor <your TapeOut name or your sidecar's https URL>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-doctor <your TapeOut name or your sidecar's https URL>
 ```
 
 It runs 14 checks in order, among them that the name is activated on DomainBinding (TAP-10 §6.3; in the 2.0 default a failure,
@@ -137,6 +138,29 @@ and output may change in a 2.x release.
 With `--strict` a receipt that does not verify becomes an error to the client. `tapeapi-verify --help` lists every
 option. In your own code, `createVerifyingFetch` from `@tapeapi/sdk/ai` does the same without a proxy
 ([AI providers](https://tapeapi.fun/docs/en/ai-providers)).
+
+## Describe a service and set up a client: `tapeapi connect` (experimental)
+
+New in 2.1, outside the 2.x compatibility promise (its output, options and exit status may change in any 2.x release).
+The `tapeapi` command runs `tapeapi doctor|verify|mcp …` as the three commands above, byte for byte, and adds
+`connect`: it resolves an AI service by its TapeOut name (the 2.0 default, TAP-10 / TAP-11), shows it (container,
+holder, signer, delegation, activation, formats, the price table; USD for display only) and prints client settings
+only for the API formats its manifest declares: nothing for Claude Code without `anthropic-messages`, nothing for
+Codex without `openai-responses`.
+
+```bash
+# from a checkout (npm ci once at the root); with the SDK installed, the command is `tapeapi connect …`
+node sdk/bin/tapeapi.js connect 42.1013.tape                 # 42.1013.tape is an example name: put your provider's
+node sdk/bin/tapeapi.js connect 42.1013.tape --tool codex    # one tool; exit 2 if the manifest lacks openai-responses
+node sdk/bin/tapeapi.js connect 42.1013.tape --proxy         # then runs tapeapi-verify for it, as it is
+```
+
+It reads the chain and the manifest only: it sends no transaction, asks for no key or password (the settings read
+your token from `API_KEY` in your own environment), uploads nothing and pays nothing. A service that is `unpaid`,
+`not-opened` or `store-changed` is shown as unavailable with the reason and `--proxy` starts nothing. Exit status 0
+usable, 1 unavailable, 2 a usage mistake (also `--tool` / `--format` naming a format the manifest does not declare),
+3 could not be read (run it again); `tapeapi connect --help` lists every option. A receipt still does not prove which
+model ran.
 
 ## Docs
 

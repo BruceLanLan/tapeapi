@@ -21,6 +21,7 @@ import * as agentKit from '@tapeapi/sdk/agent'
 import { createAgentKit, createPaymentKit, paymentOrder, mandateTypedData, encodeContent, decodeContent, type Mandate, type ThreadCheck, type MandateCheck, type AttachmentCheck, type ThreadMessage } from '@tapeapi/sdk/agent'
 import * as reviews from '@tapeapi/sdk/review'
 import { createReviewKit, makeReview, signReview, summarizeReviews, type ReviewResult, type ReviewSummary, type ReviewRecord } from '@tapeapi/sdk/review'
+import { snippetsFor, connectReport, renderConnect, NOTES, SNIPPET_TOOLS, FORMAT_NAMES, type Snippet, type ConnectReport } from '@tapeapi/sdk/connect'
 import { voucherDigest } from '@tapeapi/sdk/sig'
 import { encodeCall } from '@tapeapi/sdk/abi'
 import { createRpc as createRpc2 } from '@tapeapi/sdk/rpc'
@@ -408,7 +409,7 @@ async function agent17() {
   const typed = mandateTypedData(56, MAINNET.hub, m, { task: { kind: 'x' } })
   const w: agentKit.WalletRequest = agentKit.forWallet(typed, { chainId: 56, hub: MAINNET.hub })
   const fileBytes: Uint8Array = agentKit.revocationFileBytes({ chainId: 56, revocation: { principal: m.principal, mandateHashes: [], revokedBefore: 0, issued: 1 }, sig: '0x' })
-  const resolution: 'tap10' | 'client' | 'caller' = kit.resolution   // 1.9: how the agent and providers are resolved
+  const resolution: 'tap10' | 'client' | 'caller' = kit.resolution   // since 2.0.0: how the agent and providers are resolved
   void [w, fileBytes, resolution]
   const checked: MandateCheck = await kit.verifyMandate({ mandate: m, sig: '0x' }, { agentKey: m.agentKey, readSite: true })
   const none: 'none' = checked.enforcement
@@ -588,3 +589,13 @@ async function reviews54() {
   void [id, typed.primaryType, s.level1.scores, bytes, content, level, wallet, reviews.REVIEW_PROBLEMS, reviews.REVIEWS_KEY]
 }
 void reviews54
+
+// @experimental: `tapeapi connect` as data and text (the card, client settings for the declared formats) / 实验性
+async function connectS1() {
+  const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: 'tap10' })
+  const report: ConnectReport = await connectReport('42.1013.tape', { api, tool: 'all', port: 8790 })
+  const text: string = renderConnect(report, { lang: 'zh', color: false, next: report.exitCode ? 'tapeapi doctor 42.1013.tape' : null })
+  const s: Snippet[] = snippetsFor(report.ok ? { ai: { endpoints: report.service?.endpoints ?? [] } } : null, { target: '42.1013.tape', tool: 'claude-code' })
+  void [text, s.map((x) => [x.via, x.verifies, x.title.zh]), NOTES.receipt.en, SNIPPET_TOOLS.codex, FORMAT_NAMES.length]
+}
+void connectS1

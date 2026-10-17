@@ -74,7 +74,7 @@ export async function startStack({ env = {}, quiet = true, upstreamBaseUrl = nul
   let sidecar
   try {
     sidecar = await start({
-      env: { ...throwawayIdentity(), UPSTREAM_BASE_URL: upstreamBaseUrl ?? fake.baseUrl, MODELS_FILE: EXAMPLE_MODELS, SERVICE_NAME: 'Smoke LiteLLM relay', ...env },
+      env: { ...throwawayIdentity(), UPSTREAM_BASE_URL: upstreamBaseUrl ?? fake.baseUrl, MODELS_FILE: EXAMPLE_MODELS, SERVICE_NAME: 'Smoke LiteLLM relay', FORMATS: 'all', ...env },
       port: 0, host: '127.0.0.1', quiet, localPublicUrl: true, log: () => {},
     })
   } catch (e) { await fake?.close(); throw e }

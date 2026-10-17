@@ -93,6 +93,8 @@ export declare function createAIProxy(o: {
   models: ModelPrice[]
   /** The API format adapters (default ai.FORMATS: OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, OpenAI Embeddings). */
   formats?: readonly AIFormat[]
+  /** @experimental A metered path of a built-in format (ai.FORMATS) that `formats` leaves out is answered HTTP 400 bad_path (with the sidecar-error header) and never forwarded, instead of passed through without a receipt; `hint` ends the message. Default false: passed through. */
+  refuseOtherFormats?: boolean | { hint?: string }
   fetch?: typeof fetch
   log?: (...args: unknown[]) => void
   /** Passed to createProvider; its `ip` budget (default free + paid) also bounds /v1/* per IP. false: off. */

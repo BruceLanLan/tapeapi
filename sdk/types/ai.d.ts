@@ -234,7 +234,12 @@ export declare function isSessionHeader(name: string): boolean
  * (strict: once verified) does not fail the call. A request to a metered path that
  * is not addressed to one of the manifest's `ai` endpoints (e.g. localhost for 127.0.0.1), or a metered path written
  * loosely ('//', a percent-encoded letter, a trailing '/'), is refused with INVALID_ARGUMENT before it is sent
- * (strict), or passed on with an onReport of `mismatch: true` (not strict).
+ * (strict), or passed on with an onReport of `mismatch: true` (not strict). So is a metered path of a format the
+ * manifest declares no endpoint for (every built-in format is recognised, and every format of `formats`), sent under one
+ * of its endpoint roots: it can get no receipt. Since 2.1 (a fix) strict, the default, refuses such a call with
+ * INVALID_ARGUMENT before sending (`data: { format, declared }`); up to 2.0 it was passed through with no report. Code
+ * that relies on the old pass-through passes `strict: false`: the call is then sent and onReport gets `mismatch: true`
+ * with `not verified: format not declared`.
  * Strict, a whole answer whose receipt fails: an HTTP 502 in the request format's error shape (code RECEIPT_INVALID) with
  * `x-should-retry: false` and `x-tapeapi-verify-error: RECEIPT_INVALID`, onReport as always; the official SDKs throw an
  * APIError and do not retry it, a caller of the fetch itself checks `res.ok`. Retrying a paid call after other 5xx
@@ -261,7 +266,7 @@ export declare function createVerifyingFetch(o: {
    * strict sends it as it is and reports usageRequestSkipped. It does not prove the upstream's own count.
    */
   requestUsage?: boolean
-  /** On a problem: an HTTP 502 RECEIPT_INVALID for a whole answer, an error for a stream, a throw before sending for an endpoint mismatch; default true. */
+  /** On a problem: an HTTP 502 RECEIPT_INVALID for a whole answer, an error for a stream, a throw before sending for an endpoint mismatch or (since 2.1) a format the manifest does not declare; default true. `strict: false` keeps the 2.0 pass-through of an undeclared format, reported through onReport. */
   strict?: boolean
   /** Default 300. */
   maxSkewS?: number

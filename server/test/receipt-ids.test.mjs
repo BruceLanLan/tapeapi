@@ -188,7 +188,7 @@ test('the receipt is unchanged: same members in the same order, verifies with th
 test('the Worker and the new-api sidecar pass the settings through (RECEIPT_TTL_S, RECEIPT_LOOKUPS_PER_MIN, RECEIPT_REQUIRE_HASH)', async () => {
   const env = {
     SIGNER_KEY: KEY, UPSTREAM_BASE_URL: 'https://up.example/v1', MODELS_JSON: JSON.stringify(MODELS), CIRCUITS, TOKEN_ID: '11', CONTAINER,
-    DELEGATION_EXPIRES: '1900000000', DELEGATION_SIG: '0x' + '11'.repeat(65), PUBLIC_URL: BASE,
+    DELEGATION_EXPIRES: '1900000000', DELEGATION_SIG: '0x' + '11'.repeat(65), PUBLIC_URL: BASE, FORMATS: 'all',
   }
   const quiet = { log: () => {} }
   assert.match((await build(env, quiet).ready).methods[0].description, /kept for 1 hour/)
@@ -198,7 +198,7 @@ test('the Worker and the new-api sidecar pass the settings through (RECEIPT_TTL_
   const statuses = []
   for (let i = 0; i < 4; i++) statuses.push((await lookup(w, { id: 'x' })).status)
   assert.deepEqual(statuses, [400, 400, 400, 429])
-  const complete = { ...throwawayIdentity(), PUBLIC_URL: 'https://api.example.com', MODELS_FILE: EXAMPLE_MODELS }
+  const complete = { ...throwawayIdentity(), PUBLIC_URL: 'https://api.example.com', MODELS_FILE: EXAMPLE_MODELS, FORMATS: 'all' }
   const c = readConfig({ ...complete, RECEIPT_TTL_S: '900', RECEIPT_REQUIRE_HASH: '1' })
   assert.equal(c.ok, true, c.problem); assert.equal(c.config.receiptTtlS, 900); assert.equal(c.config.requireRequestHash, true)
   assert.equal(readConfig(complete).config.requireRequestHash, false); assert.equal(readConfig(complete).config.receiptTtlS, 3600)

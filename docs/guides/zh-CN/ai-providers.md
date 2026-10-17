@@ -24,7 +24,7 @@ npm ci --no-audit --no-fund
 在任何目录都能运行，不需要克隆仓库：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-doctor <你的名字>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-doctor <你的名字>
 ```
 
 在检出的根目录里，`node sdk/bin/tapeapi-doctor.js <你的名字>` 效果相同。两种方式下，报告给出的下一条命令都按你的运行方式书写。
@@ -95,8 +95,14 @@ DNS：请重试）；`--json` 输出供 CI 使用的报告；`--lang en` 或 `--
 ```sh
 git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi/examples/new-api-sidecar
 cp env.example .env && cp models.example.json models.json     # 两个都要填
+# 在 .env 里把 FORMATS 设为你的 new-api 真正提供的 API 格式：只兼容 OpenAI 的中转站写 openai-chat
 docker compose up -d
 ```
+
+请设置 `FORMATS`：只有它点名的格式（`openai-chat`、`openai-responses`、`anthropic-messages`、`openai-embeddings`，逗号分隔，
+或 `all`）写进清单并签名；未启用格式的计量路径答 HTTP 400 并点名 `FORMATS`，绝不转发。不设时旁路按 `all`（2.0.0 发布的四种格式）运行，
+并在启动日志与 `/tapeapi/v1/health` 的 `warning` 里警告、点名 `FORMATS` 与可选值。**升级 2.0.0 的部署：** 它的 `.env` 里没有
+`FORMATS`，升级后照常发布四种格式并带这条警告；请只写你的 new-api 真正提供的格式（四种都提供就写 `FORMATS=all`），然后重启。
 
 在这个目录里，检出自带的诊断是 `node ../../sdk/bin/tapeapi-doctor.js`；表里的 `npx` 写法在任何目录都能用。
 
@@ -196,7 +202,7 @@ const client = new OpenAI({ baseURL, apiKey: process.env.API_KEY, fetch })  // �
 
 ```sh
 # 终端 1。42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.0.0/tapeapi-sdk-2.0.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -214,7 +220,20 @@ $env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex
 照原样用示例名运行会停在 “no file at /.well-known/tapeapi.json”：链上没有以 `42.1013.tape` 发布的服务。还没有自己的服务？
 先跑本地试跑（[从零到上线](#从零到上线)第 0 步）：它会让这个代理对着本地旁路跑一遍。
 
-它在链上解析你的服务，回答原样透传，每次调用打印一行结论；加 `--strict` 时，核验失败会变成客户端看得到的错误。单份回执也可以贴到
+**在那之前，可以先用 `tapeapi connect`（实验性，2.1 新增，不受 2.x 兼容承诺约束）**：它按链上的样子把你的服务展示给用户，并且只为你的
+清单声明了的格式给出客户端配置（没有 `anthropic-messages` 就不给 Claude Code 的配置，没有 `openai-responses` 就不给 Codex 的配置）：
+
+```sh
+# 在检出里（先在根目录 npm ci 一次）；装好 SDK 之后命令就是 `tapeapi connect …`
+node sdk/bin/tapeapi.js connect 42.1013.tape            # 服务卡片与配置
+node sdk/bin/tapeapi.js connect 42.1013.tape --proxy    # 然后为它运行 tapeapi-verify
+```
+
+它只读链与清单：不发交易、不索要任何密钥或密码（配置从用户自己环境里的 `API_KEY` 读令牌）、不上传、不付款。`unpaid`、`not-opened`、
+`store-changed` 的服务显示为不可用（退出码 1），`--proxy` 不启动任何东西；退出码 2 为用法错误（`--tool` 点名了清单未声明的格式也算），
+3 为读不到。代码里同样的功能是 `@tapeapi/sdk/connect`（`snippetsFor`、`connectReport`、`renderConnect`），同样是实验性。
+
+`tapeapi-verify` 在链上解析你的服务，回答原样透传，每次调用打印一行结论；加 `--strict` 时，核验失败会变成客户端看得到的错误。单份回执也可以贴到
 [核验页](https://tapeapi.fun/verify/)。这些都需要你的清单已经上链（操作台第 5 步，见上文）。
 
 **请求加盐（两者默认开启）。** 回执带 `requestSha256`，即确切请求字节的 SHA-256，而官方 SDK 每次都用同样的方式序列化请求。于是
