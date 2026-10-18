@@ -6,12 +6,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createAIProxy } from '../../server/src/ai-proxy.js'
 import { createProvider } from '../../server/src/index.js'
+import { createMcpProxy } from '../../server/src/mcp-proxy.js'
+import { TOOLS as DEMO_TOOLS, startDemoServer } from '../../examples/mcp-proxy/demo-server.mjs'
+import * as MCP from '../src/mcp.js'
 import { privateKeyToAddress } from '../src/sig.js'
 import { createFakeUpstream } from '../../examples/ai-proxy/fake-upstream.mjs'
 import { sig as SIG, MAINNET, createTapeAPI } from '../src/index.js'
@@ -190,7 +193,7 @@ function world({ formats = ['openai-chat'], name = 'Example relay', extraModels 
     manifestBase: { name, circuits: c.circuits, tokenId: '42', container: c.container, delegation: { expires, sig: delegationSig }, endpoints: { live: ['https://api.example.com/tapeapi/v1'], async: false } },
   })
   chain.writeFile(c.container, '.well-known/tapeapi.json', JSON.stringify(proxy.manifest()))
-  return { chain, c, now, apiOptions: { clock: () => now, quiet: true, onWarning: () => {}, fetch: (u, init) => chain.fetch(String(u), init) } }
+  return { chain, c, now, expires, apiOptions: { clock: () => now, quiet: true, onWarning: () => {}, fetch: (u, init) => chain.fetch(String(u), init) } }
 }
 /** runConnect in process; resolves to { code, out, err, child }. / 进程内运行 connect。 */
 async function connect(w, args, { env = {}, isTTY = false, runChild = null } = {}) {
@@ -519,6 +522,266 @@ test('tapeapi connect --dev --proxy (spawned): after the card, stderr is byte fo
   assert.match(card, new RegExp(`OPENAI_BASE_URL=http://127\\.0\\.0\\.1:${port}/v1`))
   assert.match(card, new RegExp(`tapeapi\\.js connect --dev ${url.replace(/[.]/g, '\\.')} --proxy --port ${port}\\n`))
   assert.match(card, new RegExp(`starting tapeapi-verify .*: tapeapi-verify --dev ${url.replace(/[.]/g, '\\.')} --port ${port} --log `))
+})
+
+// ════ tapeapi connect: MCP tool services (TAPI-20 §3.8, experimental) ═══════════════════════════════════════════════
+// The same TAP-10 test chain; the manifest is made by the signing MCP proxy (server/src/mcp-proxy.js) over the demo MCP
+// server's tools (examples/mcp-proxy/demo-server.mjs), in process. Its endpoint (https://api.example.com/mcp) is never
+// contacted: connect reads the chain and the manifest only. / 同一条 TAP-10 测试链；清单由签名 MCP 代理在演示 MCP 服务器的工具上生成；端点从不访问。
+async function mcpWorld({ name = 'Example tools', edit = null } = {}) {
+  const w = world()
+  const signerKey = SIG.randomPrivateKey(), holderKey = SIG.randomPrivateKey()
+  const chain = createConformChain()
+  chain.state.headTime = w.now
+  const c = chain.circuit(42, { holder: SIG.privateKeyToAddress(holderKey) })
+  chain.setAccount('42', c.container); chain.setCode(c.container)
+  // world()'s expiry: half a day past 90 days (review T-1), so the card's day count is the same for every run of a test.
+  // / 沿用 world() 的到期时间：90 天再加半天（审查 T-1），卡片上的天数在一个测试的各次运行中相同。
+  const expires = w.expires
+  const delegationSig = SIG.signDigest(SIG.delegationDigest(56, MAINNET.hub, { container: c.container, signer: SIG.privateKeyToAddress(signerKey), expires }), holderKey)
+  const core = MCP.createMcpServer({ info: { name: 'demo', version: '1' }, listTools: async () => DEMO_TOOLS, callTool: async () => ({ content: [] }) })
+  const proxy = createMcpProxy({ upstream: { call: (m) => core.handle(m) }, signerKey, log: () => {}, rateLimit: false,
+    manifestBase: { name, circuits: c.circuits, tokenId: '42', container: c.container, delegation: { expires, sig: delegationSig }, endpoints: { live: ['https://api.example.com/tapeapi/v1'], async: false } } })
+  const manifest = structuredClone(await proxy.ready)
+  if (edit) edit(manifest)
+  chain.writeFile(c.container, '.well-known/tapeapi.json', JSON.stringify(manifest))
+  return { chain, c, now: w.now, manifest, apiOptions: { clock: () => w.now, quiet: true, onWarning: () => {}, fetch: (u, init) => chain.fetch(String(u), init) } }
+}
+const MCP_BIN = '/x/tapeapi-mcp.js'
+async function connectMcp(w, args, o = {}) {
+  let out = '', err = ''
+  const calls = []
+  const r = await runConnect(args, { cmd: 'tapeapi', version: '0.0.0-test', verifyBin: '/x/tapeapi-verify.js', mcpBin: MCP_BIN, env: o.env ?? {}, isTTY: o.isTTY ?? false, apiOptions: w?.apiOptions ?? {}, stdout: (s) => { out += s }, stderr: (s) => { err += s }, runChild: async (file, a) => { calls.push([file, a]); return { code: 0, signal: null } } })
+  return { code: r.exitCode ?? r.child?.code, out, err, calls, child: r.child }
+}
+const PKG = '--package=https://github.com/BruceLanLan/tapeapi/releases/download/v0.0.0-test/tapeapi-sdk-0.0.0-test.tgz'
+// What an MCP card must never carry: an AI setting, a key placeholder, the AI proxy, the 1.x resolution. / MCP 卡片绝不出现的内容。
+const NOT_IN_MCP = /OPENAI_BASE_URL|ANTHROPIC_BASE_URL|ANTHROPIC_AUTH_TOKEN|API_KEY|wire_api|createVerifyingFetch|connect 42\.7\.tape --proxy|--no-conform|tapeapi-verify/
+
+test('connect, MCP tool service: a manifest with mcp and no ai gets a usable card (endpoint, tools, toolsSha256 prefix) and Claude Code / Claude Desktop settings from the manifest only', async () => {
+  const w = await mcpWorld()
+  const digest = MCP.toolsDigest(DEMO_TOOLS)
+  assert.equal(w.manifest.mcp.toolsSha256, digest)
+  const r = keep(await connectMcp(w, [NAME, ...RPC_ARGS]))
+  assert.equal(r.code, 0, r.out + r.err)
+  assert.equal(r.err, '')
+  for (const want of ['"Example tools"', NAME, w.c.container, 'usable: an MCP tool service (experimental) / 可用：MCP 工具服务（实验性）', 'https://api.example.com/mcp   (MCP Streamable HTTP, as the manifest declares',
+    `2 (the manifest's free methods / 清单里的免费方法)   toolsSha256 ${digest.slice(0, 8)}…`, 'add, shout', 'it does not prove which program produced the answer', '不证明回答由哪个程序产生', 'this command does not contact the endpoint',
+    `claude mcp add tapeapi-42-7 -- npx -y ${PKG} tapeapi-mcp 42.7.tape`, 'claude mcp add --transport http tapeapi-42-7 https://api.example.com/mcp', 'URL: https://api.example.com/mcp', 'asks for no key or password', 'resolution: TAP-10 / TAP-11']) {
+    assert.ok(r.out.includes(want), `missing ${want}\n${r.out}`)
+  }
+  assert.ok(!r.out.includes(digest), 'the card shows the prefix only (--json has it whole)')
+  assert.doesNotMatch(r.out, NOT_IN_MCP)
+  assert.doesNotMatch(r.out, /\*\*\*/)
+  // The two direct settings are marked as not checked; the two through tapeapi-mcp are not. / 两个直连配置标为不核验。
+  assert.equal(r.out.match(/^ {2}! /gm).length, 2)
+  // Review M-1, TAPs #16 §4.2: a direct answer is not a signed envelope; no title claims receipts or a verify link for it.
+  // 审查 M-1：直连的回答不是签名信封；任何标题都不声称直连带回执或核验链接。
+  for (const t of ['Claude Code, the declared endpoint direct (MCP Streamable HTTP): not checked here; a direct answer is not a signed envelope, do not treat it as signed or verified (only tapeapi-mcp, above, checks answers)',
+    'Claude Code，直连声明的端点（MCP Streamable HTTP）：这里不核验；直连的回答不是签名信封，不要当作已签名或已核验（只有经上面的 tapeapi-mcp 才核验回答）',
+    'Claude Desktop, the declared endpoint direct (Settings > Connectors > Add custom connector): not checked here; a direct answer is not a signed envelope, do not treat it as signed or verified',
+    'Claude Desktop，直连声明的端点（设置 > 连接器 > 添加自定义连接器）：这里不核验；直连的回答不是签名信封，不要当作已签名或已核验']) {
+    assert.ok(r.out.includes(t), `missing ${t}\n${r.out}`)
+  }
+  assert.doesNotMatch(r.out, /each result carries a receipt|每个结果带回执|verify link|核验链接/)
+  // --json: kind 'mcp' (added), the whole digest, the tool names, the four settings in order, the MCP notes.
+  const o = JSON.parse(keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--json', '--lang', 'en'])).out)
+  assert.equal(o.kind, 'mcp'); assert.equal(o.ok, true); assert.equal(o.exitCode, 0); assert.equal(o.status, 'ok')
+  assert.deepEqual(o.service.mcp, { endpoint: 'https://api.example.com/mcp', toolsSha256: digest })
+  assert.deepEqual(o.service.tools, ['add', 'shout'])
+  assert.deepEqual(o.formats, [])
+  assert.deepEqual(o.snippets.map((s) => [s.tool, s.format, s.via, s.verifies]), [['claude-code', 'mcp', 'stdio', true], ['claude-desktop', 'mcp', 'stdio', true], ['claude-code', 'mcp', 'direct', false], ['claude-desktop', 'mcp', 'direct', false]])
+  assert.deepEqual(Object.keys(o.notes), ['receipt', 'tools', 'boundary'])
+  // --json gives the title in the language asked for / --json 按所选语言给出标题
+  const oz = JSON.parse(keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--json', '--lang', 'zh'])).out)
+  for (const k of [2, 3]) {
+    assert.match(o.snippets[k].title, /not checked here; a direct answer is not a signed envelope, do not treat it as signed or verified/)
+    assert.match(oz.snippets[k].title, /这里不核验；直连的回答不是签名信封，不要当作已签名或已核验/)
+  }
+  // The Claude Desktop setting is valid JSON naming tapeapi-mcp and the service, with no key; the card prints the same
+  // text. / Claude Desktop 配置是合法 JSON，卡片里是同一段文本。
+  assert.deepEqual(JSON.parse(o.snippets[1].text), { mcpServers: { 'tapeapi-42-7': { command: 'npx', args: ['-y', PKG, 'tapeapi-mcp', NAME] } } })
+  assert.ok(r.out.includes(o.snippets[1].text.split('\n').map((l) => `    ${l}`).join('\n')))
+  assert.equal(o.next, null)
+  // An AI service's --json says kind 'ai'; the key comes last, the others are as they were. / AI 服务为 kind 'ai'，其余键不变。
+  const ai = JSON.parse(keep(await connect(world(), [NAME, ...RPC_ARGS, '--json'])).out)
+  assert.equal(ai.kind, 'ai'); assert.equal(Object.keys(ai).at(-1), 'kind')
+  assert.deepEqual(Object.keys(ai.notes), ['receipt', 'prices', 'boundary', 'token'])
+  // Languages. / 语言。
+  const en = keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--lang', 'en'])), zh = keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--lang', 'zh']))
+  assert.doesNotMatch(en.out, /[一-鿿]/)
+  assert.match(zh.out, /^状态 +可用：MCP 工具服务（实验性）$/m); assert.match(zh.out, /^工具 +2 \(清单里的免费方法\)/m); assert.match(zh.out, /配置你的 MCP 客户端/)
+  assert.doesNotMatch(zh.out, /^(status|tools|mcp) /m)
+  // Colors as for an AI card: stripped, the same text. / 颜色规则同 AI 卡片。
+  const tty = await connectMcp(w, [NAME, ...RPC_ARGS], { isTTY: true })
+  assert.match(tty.out, /\x1b\[/)
+  // eslint-disable-next-line no-control-regex
+  assert.equal(tty.out.replace(/\x1b\[[0-9;]*m/g, ''), r.out)
+  // Review R-3: a priced method is not counted or listed as a tool (tapeapi-mcp offers no priced method), in the card
+  // and in --json alike. / 审查 R-3：收费方法不计入、不列为工具（tapeapi-mcp 不提供收费方法），卡片与 --json 一致。
+  const priced = await mcpWorld({ edit: (m) => { m.methods.push({ name: 'premium', priceBEM: '0.0001', params: {}, returns: {} }); m.payment = { escrow: '0x' + '55'.repeat(20), unit: 'BEM', decimals: 8 } } })
+  const pr = keep(await connectMcp(priced, [NAME, ...RPC_ARGS, '--lang', 'en']))
+  assert.equal(pr.code, 0, pr.out + pr.err)
+  assert.ok(pr.out.includes(`2 (the manifest's free methods)   toolsSha256`), pr.out)
+  assert.ok(pr.out.includes('add, shout'), pr.out)
+  assert.doesNotMatch(pr.out, /premium/)
+  assert.deepEqual(JSON.parse(keep(await connectMcp(priced, [NAME, ...RPC_ARGS, '--json'])).out).service.tools, ['add', 'shout'])
+})
+
+test('connect, MCP tool service: settings appear only as declared (gating), --tool / --format narrow or refuse them, an invalid mcp field and a manifest with neither field are unavailable', async () => {
+  const w = await mcpWorld()
+  const desk = keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--tool', 'claude-desktop', '--json']))
+  assert.deepEqual(JSON.parse(desk.out).snippets.map((s) => [s.tool, s.via]), [['claude-desktop', 'stdio'], ['claude-desktop', 'direct']])
+  for (const [args, need] of [[['--tool', 'codex'], 'openai-responses'], [['--tool', 'openai-sdk'], 'openai-chat or openai-embeddings'], [['--format', 'openai-chat'], 'openai-chat']]) {
+    const r = keep(await connectMcp(w, [NAME, ...RPC_ARGS, ...args]))
+    assert.equal(r.code, 2, r.out)
+    assert.ok(r.out.includes(`does not declare ${need}, so no`), r.out)
+    assert.doesNotMatch(r.out, /configure your MCP client|claude mcp add/)
+    assert.equal(lastLine(r.out), 'next: / 下一条命令: tapeapi connect 42.7.tape')
+    assert.match(r.out, /every setting its mcp field allows/)
+  }
+  // An AI service asked for Claude Desktop: its manifest does not declare mcp (exit 2). / AI 服务点名 Claude Desktop：退出 2。
+  const aiDesk = keep(await connect(world(), [NAME, ...RPC_ARGS, '--tool', 'claude-desktop']))
+  assert.equal(aiDesk.code, 2)
+  assert.match(aiDesk.out, /does not declare mcp, so no Claude Desktop settings are generated/)
+  // An invalid mcp field: unavailable (mcp-invalid, exit 1), the detail says why, no settings. / mcp 字段无效：不可用。
+  for (const [edit, detail] of [
+    [(m) => { m.mcp.toolsSha256 = 'abc' }, 'mcp.toolsSha256 must be 64 lowercase hex characters'],
+    // 2.3: only lowercase, as TAPI-20 §3.8, TAPs #16 §2 and the holder console (the same digest in capitals is refused).
+    // 2.3：只收小写，与 TAPI-20 §3.8、TAPs #16 §2 和持有人操作台一致（同一摘要写成大写也拒绝）。
+    [(m) => { m.mcp.toolsSha256 = m.mcp.toolsSha256.toUpperCase() }, 'mcp.toolsSha256 must be 64 lowercase hex characters'],
+    [(m) => { m.mcp.endpoint = 'http://mcp.example.com/mcp' }, 'mcp.endpoint must be https'],
+    [(m) => { m.mcp.endpoint = 'https://mcp.example.com/mcp?x=1' }, 'mcp.endpoint must have no query or fragment'],
+    [(m) => { m.mcp.endpoint = 'https://mcp.example.com/mcp#tools' }, 'mcp.endpoint must have no query or fragment'],
+    [(m) => { m.mcp = 'https://mcp.example.com/mcp' }, 'mcp must be an object'],
+  ]) {
+    const r = keep(await connectMcp(await mcpWorld({ edit }), [NAME, ...RPC_ARGS, '--proxy']))
+    assert.equal(r.code, 1, r.out)
+    assert.ok(r.out.includes('UNAVAILABLE: mcp-invalid — its mcp field is invalid (see the detail)'), r.out)
+    assert.ok(r.out.includes(detail), r.out)
+    assert.doesNotMatch(r.out, /claude mcp add|mcpServers/)
+    assert.equal(r.calls.length, 0)
+  }
+  // Both fields: the AI card, as before; the mcp field is not used. / 两个字段都有：AI 卡片照旧，不用 mcp 字段。
+  const both = await mcpWorld({ edit: (m) => { m.ai = { endpoints: [{ format: 'openai-chat', baseUrl: 'https://api.example.com/v1' }], models: [{ id: 'chat-model', prices: [{ currency: 'USD', unit: '1M tokens', input: '1', output: '2' }] }] } } })
+  const bothR = keep(await connectMcp(both, [NAME, ...RPC_ARGS, '--json']))
+  assert.equal(JSON.parse(bothR.out).kind, 'ai', bothR.out)
+  assert.doesNotMatch(bothR.out, /tapeapi-mcp|claude-desktop/)
+  // Neither field: not-ai with the reason naming both, exit 1 (the one line that changed). / 两者都没有：not-ai，原因同时点名两者。
+  const plain = await mcpWorld({ edit: (m) => { delete m.mcp } })
+  for (const [lang, want] of [['en', 'UNAVAILABLE: not-ai — its manifest has no ai field and no MCP tool declaration (mcp, TAPI-20 §3.8): it is neither an AI service nor an MCP tool service'], ['zh', '不可用：not-ai —— 它的清单没有 ai 字段，也没有 MCP 工具声明（mcp，TAPI-20 §3.8）：既不是 AI 服务，也不是 MCP 工具服务']]) {
+    const r = keep(await connectMcp(plain, [NAME, ...RPC_ARGS, '--lang', lang, '--proxy']))
+    assert.equal(r.code, 1); assert.ok(r.out.includes(want), r.out); assert.equal(r.calls.length, 0)
+    assert.equal(lastLine(r.out), lang === 'en' ? 'next: tapeapi doctor 42.7.tape' : '下一条命令: tapeapi doctor 42.7.tape')
+  }
+  assert.equal(JSON.parse(keep(await connectMcp(plain, [NAME, ...RPC_ARGS, '--json'])).out).kind, null)
+  // The pure function: [] without a usable mcp field or with an ai field; --dev names the dev URL; never a key.
+  const { mcpSnippetsFor, MCP_SNIPPET_TOOLS } = await import('@tapeapi/sdk/connect')
+  assert.deepEqual(MCP_SNIPPET_TOOLS, ['claude-code', 'claude-desktop'])
+  assert.deepEqual(mcpSnippetsFor(null), [])
+  assert.deepEqual(mcpSnippetsFor({ mcp: { endpoint: 'https://x.example/mcp', toolsSha256: 'zz' } }), [])
+  assert.deepEqual(mcpSnippetsFor({ mcp: { endpoint: 'https://x.example/mcp', toolsSha256: 'A'.repeat(64) } }), [], 'uppercase hex is refused (2.3)')
+  assert.equal(mcpSnippetsFor({ mcp: { endpoint: 'https://x.example/mcp', toolsSha256: 'a'.repeat(64) } }).length > 0, true)
+  assert.deepEqual(mcpSnippetsFor({ ai: {}, mcp: w.manifest.mcp }), [])
+  const dev = mcpSnippetsFor({ mcp: { endpoint: 'http://127.0.0.1:9/mcp', toolsSha256: 'a'.repeat(64) } }, { dev: 'http://127.0.0.1:9', version: '2.1.0' })
+  assert.match(dev[0].text, /tapeapi-mcp --dev http:\/\/127\.0\.0\.1:9$/)
+  assert.deepEqual(mcpSnippetsFor({ mcp: { endpoint: 'http://127.0.0.1:9/mcp', toolsSha256: 'a'.repeat(64) } }), [], 'http://127.0.0.1 only with --dev')
+  for (const s of [...dev, ...mcpSnippetsFor(w.manifest, { target: NAME })]) assert.doesNotMatch(s.text, /sk-|Bearer|KEY|TOKEN|SECRET/)
+})
+
+test('connect, MCP tool service: unpaid, not-opened and store-changed are unavailable with the reason (exit 1, no settings), an RPC outage is exit 3, as for an AI service', async () => {
+  const cases = [
+    ['unpaid', (w) => w.chain.setUnactivated(), 1],
+    ['not-opened', (w) => w.chain.setOpened(w.c.circuits, 42, false), 1],
+    ['store-changed', (w) => w.chain.setImplementation(CHAINS[56].siteRegistry, '0x' + 'ab'.repeat(20)), 1],
+    ['unavailable', (w) => { w.apiOptions.fetch = async () => { throw Object.assign(new Error('fetch failed'), { cause: { code: 'ECONNREFUSED' } }) } }, 3],
+  ]
+  for (const [status, apply, code] of cases) {
+    const w = await mcpWorld()
+    apply(w)
+    const r = keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--proxy']))
+    assert.equal(r.code, code, `${status}\n${r.out}`)
+    assert.ok(r.out.includes(`${code === 3 ? 'COULD NOT BE READ' : 'UNAVAILABLE'}: ${status} — `), r.out)
+    assert.match(r.out, /not generated: the service cannot be used/)
+    assert.doesNotMatch(r.out, /claude mcp add|mcpServers|tapeapi-mcp|MCP tool service/)
+    assert.equal(r.calls.length, 0, 'tapeapi-mcp is not started')
+    const o = JSON.parse(keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--json'])).out)
+    assert.equal(o.status, status); assert.equal(o.kind, null); assert.deepEqual(o.snippets, [])
+  }
+})
+
+test('connect --proxy, MCP tool service: runs tapeapi-mcp with the nodes and the name (never --no-conform), the card on stderr and nothing on stdout; tapeapi-verify options are a usage mistake', async () => {
+  const w = await mcpWorld()
+  const r = keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--rpc-xlayer', 'http://x1,http://x2', '--proxy', '--lang', 'en']))
+  assert.equal(r.code, 0)
+  assert.equal(r.out, '', 'stdout is left to tapeapi-mcp\'s JSON-RPC')
+  assert.deepEqual(r.calls, [[MCP_BIN, ['--rpc', 'http://rpc1,http://rpc2,http://rpc3', '--rpc-xlayer', 'http://x1,http://x2', NAME]]])
+  assert.ok(!r.calls[0][1].includes('--no-conform'))
+  assert.match(r.err, /usable: an MCP tool service/)
+  assert.match(lastLine(r.err), /^starting tapeapi-mcp \(stdio; it waits for an MCP client on stdin; Ctrl-C stops it\): tapeapi-mcp --rpc /)
+  for (const extra of [['--port', '9'], ['--strict'], ['--log', '/tmp/r.jsonl'], ['--request-usage']]) {
+    const bad = keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--proxy', ...extra]))
+    assert.equal(bad.code, 2, extra.join(' ')); assert.equal(bad.out, ''); assert.equal(bad.calls.length, 0)
+    assert.match(bad.err, /tapeapi-verify's options; this is an MCP tool service/)
+    assert.equal(lastLine(bad.err), 'next: / 下一条命令: tapeapi connect 42.7.tape --proxy')
+  }
+  const failed = await connectMcp(w, [NAME, ...RPC_ARGS, '--proxy'])
+  assert.deepEqual(failed.child, { code: 0, signal: null })
+})
+
+test('tapeapi connect --dev --proxy for an MCP tool service (spawned): stdout is byte for byte tapeapi-mcp --dev\'s JSON-RPC over the demo MCP server; the card is on stderr', async () => {
+  // The demo MCP server (the fake upstream) behind the signing MCP proxy, on real ports. / 演示 MCP 服务器在签名代理之后，真实端口。
+  const demo = await startDemoServer({ port: 0, host: '127.0.0.1' })
+  closers.push(demo.close)
+  let proxy
+  const srv = http.createServer(async (req, res) => {
+    const parts = []
+    for await (const c of req) parts.push(c)
+    const r = await proxy.handleRequest(new Request(new URL(req.url, 'http://127.0.0.1'), { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(parts) }), { clientIp: '127.0.0.1' })
+    res.writeHead(r.status, Object.fromEntries(r.headers))
+    res.end(r.body ? Buffer.from(await r.arrayBuffer()) : undefined)
+  })
+  await new Promise((ok) => srv.listen(0, '127.0.0.1', ok))
+  closers.push(() => new Promise((ok) => { srv.closeAllConnections(); srv.close(ok) }))
+  const url = `http://127.0.0.1:${srv.address().port}`
+  proxy = createMcpProxy({ upstream: { url: demo.url }, signerKey: KEY, allowHttp: true, rateLimit: false, log: () => {},
+    manifestBase: { name: 'MCP CLI test', circuits: '0x' + '00'.repeat(20), tokenId: '0', container: '0x' + '00'.repeat(20), delegation: null, dev: true, endpoints: { live: [`${url}/tapeapi/v1`], async: false } } })
+  await proxy.ready
+  const input = [
+    JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } } }),
+    JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
+  ]
+  // tapeapi-mcp pins in ~/.tapeapi: each run gets its own empty home. / tapeapi-mcp 在 ~/.tapeapi 钉住：每次运行用自己的空 home。
+  const home = (n) => { const d = join(TMP, `home-${n}`); mkdirSync(d, { recursive: true }); return { ...process.env, HOME: d, USERPROFILE: d } }
+  const a = await run([BIN, 'connect', '--dev', url, '--proxy'], { input: [...input], env: home('a') })
+  const b = await run([binOf(ORIGINAL.mcp), '--dev', url], { input: [...input], env: home('b') })
+  assert.equal(a.code, b.code, a.stderr.toString())
+  assert.ok(a.stdout.equals(b.stdout), `stdout differs\n--- connect --proxy\n${a.stdout}\n--- tapeapi-mcp\n${b.stdout}`)
+  const lines = a.stdout.toString('utf8').split('\n').filter(Boolean)
+  assert.equal(lines.length, 2)
+  for (const l of lines) assert.equal(JSON.parse(l).jsonrpc, '2.0')
+  assert.deepEqual(JSON.parse(lines[1]).result.tools.map((t) => t.name).sort(), ['add', 'shout'])
+  const err = a.stderr.toString('utf8')
+  assert.match(err, /resolution: development \(--dev\): the identity is NOT checked on chain/)
+  assert.match(err, /usable: an MCP tool service/)
+  assert.ok(err.includes(`tapeapi-mcp --dev ${url}`), err)
+  assert.ok(err.includes(b.stderr.toString('utf8').split('\n')[0]), 'tapeapi-mcp\'s own log follows the card')
+})
+
+test('connect, MCP tool service: no secret-looking environment value and no key-shaped string in the manifest is printed (text and --json)', async () => {
+  const SENTINEL = 'sk-SENTINEL-0123456789abcdef', HEX = 'c0ffee'.repeat(5) + 'ab'
+  const w = await mcpWorld({ name: `${SENTINEL} ${HEX}` })
+  const env = { SIGNER_KEY: SENTINEL, PATH: '/usr/bin' }
+  for (const extra of [[], ['--json'], ['--lang', 'zh'], ['--proxy']]) {
+    const r = keep(await connectMcp(w, [NAME, ...RPC_ARGS, ...extra], { env }))
+    assert.equal(r.code, 0)
+    const all = r.out + r.err
+    assert.ok(!all.includes(SENTINEL) && !all.includes(HEX), 'redacted')
+    assert.ok(all.includes('***'))
+    assert.ok(all.includes(w.c.container), 'the container address is shown')
+    // The published digest (64 hex, which the key-shape rule would blank) is shown as it is in --json. / 发布的摘要原样显示。
+    if (extra[0] === '--json') assert.equal(JSON.parse(r.out).service.mcp.toolsSha256, w.manifest.mcp.toolsSha256)
+  }
 })
 
 test('wording: no connect output and no source line of the entry, connect or snippets says certified, partner, recommended or "supports Claude Code"', async () => {

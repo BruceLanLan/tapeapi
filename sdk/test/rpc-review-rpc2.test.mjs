@@ -152,7 +152,9 @@ function flaky(fault, times = 1) {
   }
   return { fetch, asked }
 }
-const xlayer = (fetch, o = {}) => createRpc({ urls: XLAYER, quorum: 2, fetch, quiet: true, disagreeRetryMs: 0, transportRetryMs: 1, ...o })
+// rpcRetries 0: these tests are about the per-request re-ask; the whole-read retry of 2.3 is tested in rpc-retry.test.mjs
+// rpcRetries 0：这些测试针对单个请求的重问；2.3 的整轮重试在 rpc-retry.test.mjs 里测
+const xlayer = (fetch, o = {}) => createRpc({ urls: XLAYER, quorum: 2, fetch, quiet: true, disagreeRetryMs: 0, transportRetryMs: 1, rpcRetries: 0, ...o })
 
 test('FIXED RPC2-4: a request whose connection broke is asked once more: one reset no longer stops an X Layer read', async () => {
   const broken = {

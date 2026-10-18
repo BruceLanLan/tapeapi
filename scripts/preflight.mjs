@@ -9,7 +9,11 @@
 // Env / flags (flags win / 命令行优先):
 //   DEPLOYER        the address that will sign the deploy (required) / 将要签名部署的地址（必填）
 //   HUB FACTORY DOMAIN_BINDING           ServiceDirectory constructor args
-//   BEM TREASURY                         TapeAPIEscrow constructor args (only with DEPLOY_ESCROW)
+//   TOKEN TREASURY                       TapeAPIEscrow constructor args (only with DEPLOY_ESCROW); TOKEN is the
+//                                        name Deploy.s.sol and the runbook use. BEM is its old name: still read,
+//                                        with a deprecation WARN; set together with TOKEN, the two must agree.
+//                                        托管构造参数；TOKEN 与 Deploy.s.sol、运行手册一致。BEM 是旧名，仍可用但会提示弃用；
+//                                        与 TOKEN 同时设置时两者必须一致。
 //   DEPLOY_ESCROW   "true" to also check the escrow / 同时检查托管合约
 //   RPC_URLS        comma-separated, >= 2 / 逗号分隔，至少两个
 //   QUORUM          how many RPCs must agree (default = number of RPCs) / 需一致的 RPC 数
@@ -42,6 +46,26 @@ const PROBE_CONTAINER = '0x86ddaef00401e3f10418398d67d7189fc458ea95'
 // breaks the container primary key AND the delegation signing domain, and it is immutable.
 // chain 56 上的规范 DeWebHub。hub 填错是这里代价最高的错误：同时破坏容器主键与委托签名域，且不可更改。
 const CANONICAL_HUB = '0xe61a9c7213a6aa616c246a2b569e555b417b25ee'
+
+// The escrow's token (TAPI-22 §3.5): no proxy slot may be set (item 1), 8 <= decimals <= 18 (item 4), and a token we
+// know is compared to its pinned code hash. The slots are the ones contracts/script/Deploy.s.sol reads.
+// 托管代币（TAPI-22 §3.5）：任何代理槽都不得非零（第 1 项），8 ≤ decimals ≤ 18（第 4 项），已知代币与钉死的代码哈希比对。
+// 代理槽与 contracts/script/Deploy.s.sol 读的相同。
+const PROXY_SLOTS = [
+  ['EIP-1967 implementation', '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc'],
+  ['EIP-1967 admin', '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103'],
+  ['EIP-1967 beacon', '0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50'],
+  ['EIP-1822 PROXIABLE', '0xc5f16f0fcc639fa48a6947836d9850f504798523bf8c9a3a87d5876cf622bcf7'],
+  ['legacy zOS implementation', '0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3'],
+]
+// keccak256(eth_getCode) of tokens we know, read on chain 56. BEM: identical from NodeReal, Alchemy (blastapi) and
+// 48Club on 2026-10-17 (2205 bytes). The USDT-peg pin is Deploy.s.sol's CANONICAL_TOKEN_CODEHASH.
+// 已知代币的 keccak256(eth_getCode)（链 56）。BEM：2026-10-17 由 NodeReal、Alchemy（blastapi）、48Club 读到的值相同（2205 字节）。
+// USDT 锚定币的值即 Deploy.s.sol 的 CANONICAL_TOKEN_CODEHASH。
+const KNOWN_TOKENS = {
+  '0x5ce033b2bfca3af30b3e8c8457deaf776a8b695a': { name: 'BEM', codehash: '0x982ba79538b51e54ee1382f57522098af0635b0f67f2574d393b29ed0958b344' },
+  '0x55d398326f99059ff775485246999027b3197955': { name: 'USDT-peg', codehash: '0x97a48aa4c129657440dafdacd4c836389734d28cc4a0ca7403e68da660a74a59' },
+}
 
 const DEFAULT_RPCS = [
   'https://bsc-dataseed.bnbchain.org',
@@ -143,6 +167,23 @@ async function quorumRead(urls, quorum, label, method, params) {
   return r.agreed
 }
 
+/// quorumRead for a single 32-byte word, compared as a number: RPCs may format the same word differently (leading
+/// zeros), which an exact string comparison would report as a disagreement.
+/// 单个 32 字节字的多数一致读，按数值比较：不同 RPC 对同一个字的格式（前导零）可能不同。
+async function quorumWord(urls, quorum, label, method, params) {
+  const r = await askAll(urls, method, params)
+  for (const s of r.settled) if (s.error) warn(`${label}: ${new URL(s.url).host} unreachable (${s.error})`)
+  let words
+  try { words = r.values.map((v) => ({ host: new URL(v.url).host, n: BigInt(v.value), bytes: (String(v.value).length - 2) / 2 })) }
+  catch { fail(`${label}: an RPC returned something that is not a hex word`); return undefined }
+  if (words.length < quorum) { fail(`${label}: only ${words.length} of ${urls.length} RPCs answered, quorum is ${quorum}`); return undefined }
+  if (new Set(words.map((w) => w.n)).size !== 1) {
+    fail(`${label}: RPCs DISAGREE -- ${words.map((w) => `${w.host}=0x${w.n.toString(16)}`).join(' | ')}`)
+    return undefined
+  }
+  return { n: words[0].n, bytes: words[0].bytes }
+}
+
 const ethCall = (to, data) => [{ to, data }, 'latest']
 
 // ------------------------------------------------------------- artifacts ----
@@ -235,7 +276,22 @@ async function main() {
   const hub = cfg('hub', 'HUB')
   const factory = cfg('factory', 'FACTORY')
   const domainBinding = cfg('domain-binding', 'DOMAIN_BINDING')
-  const bem = cfg('bem', 'BEM')
+  // TOKEN is what Deploy.s.sol reads. This script used to read BEM instead, so an environment set up for the deploy
+  // script failed here with "BEM is not set". BEM stays a deprecated alias, as --bem does in verify-bscscan.mjs.
+  // Deploy.s.sol 读的是 TOKEN。本脚本此前读 BEM，按部署脚本设好的环境在这里会报 "BEM is not set"。
+  // BEM 保留为弃用别名，与 verify-bscscan.mjs 的 --bem 一致。
+  const tokenNew = cfg('token', 'TOKEN')
+  const tokenOld = cfg('bem', 'BEM')
+  let token = tokenNew
+  if (tokenOld !== undefined && tokenOld !== '') {
+    if (tokenNew !== undefined && tokenNew !== '' && lower(tokenNew) !== lower(tokenOld)) {
+      // values not echoed: TOKEN is a generic name and may hold an unrelated secret / 不回显：TOKEN 是通用名，可能装着无关的密钥
+      fail('TOKEN and BEM are both set and disagree. BEM is the deprecated name of TOKEN (the escrow\'s one token); set only TOKEN.')
+    } else {
+      warn('--bem / BEM is deprecated: use --token / TOKEN (the same constructor argument, the escrow\'s token since v3; Deploy.s.sol reads TOKEN)')
+      token = tokenNew || tokenOld
+    }
+  }
   const treasury = cfg('treasury', 'TREASURY')
   const deployEscrow = String(cfg('deploy-escrow', 'DEPLOY_ESCROW') ?? 'false') === 'true'
   const urls = (cfg('rpc-urls', 'RPC_URLS') ?? DEFAULT_RPCS.join(',')).split(',').map((s) => s.trim()).filter(Boolean)
@@ -247,14 +303,16 @@ async function main() {
     ['HUB', hub, true],
     ['FACTORY', factory, true],
     ['DOMAIN_BINDING', domainBinding, true],
-    ['BEM', bem, deployEscrow],
+    ['TOKEN', token, deployEscrow],
     ['TREASURY', treasury, deployEscrow],
   ]) {
     if (v === undefined || v === '') {
       if (required) fail(`${label} is not set`)
       continue
     }
-    if (!isAddress(v)) { fail(`${label} is not a 20-byte address: ${v}`); continue }
+    // never echo a value that is not an address: an env fallback such as TOKEN may hold an unrelated secret
+    // 不回显非地址的值：TOKEN 这类环境变量里可能是无关的密钥
+    if (!isAddress(v)) { fail(`${label} is set, but not a 0x-prefixed 20-byte address`); continue }
     info(`${label.padEnd(15)} ${v}`)
   }
   info(`${'DEPLOY_ESCROW'.padEnd(15)} ${deployEscrow}`)
@@ -306,7 +364,7 @@ async function main() {
     ['HUB', hub, 'required'],
     ['FACTORY', factory, 'required'],
     ['DOMAIN_BINDING', domainBinding, 'zero-or-code'],
-    ...(deployEscrow ? [['BEM', bem, 'required'], ['TREASURY', treasury, 'may-be-eoa']] : []),
+    ...(deployEscrow ? [['TOKEN', token, 'required'], ['TREASURY', treasury, 'may-be-eoa']] : []),
   ]
   for (const [label, addr, kind] of argAddrs) {
     if (kind === 'zero-or-code' && lower(addr) === ZERO) {
@@ -342,6 +400,7 @@ async function main() {
     isCPU: '0x5f5a364f',           // isCPU(address)
     accountOf: '0x0c1905e5',       // accountOf(address,uint256)
     isContainerLive: '0xdcca979e', // isContainerLive(address)
+    decimals: '0x313ce567',        // decimals()
   }
   // Selectors are recomputed from the signatures at runtime so a typo above cannot pass silently.
   // 选择器在运行时由签名重算，避免手抄出错。
@@ -352,6 +411,7 @@ async function main() {
     SEL.isCPU = sel('isCPU(address)')
     SEL.accountOf = sel('accountOf(address,uint256)')
     SEL.isContainerLive = sel('isContainerLive(address)')
+    SEL.decimals = sel('decimals()')
   }
 
   let probeOk = false
@@ -413,6 +473,49 @@ async function main() {
     }
   }
 
+  // ---- 3b. the escrow's token ----
+  // Section 2 only asks that TOKEN has code and that the RPCs agree on it. The deploy script additionally refuses a
+  // proxy, pins one code hash and bounds decimals; this checks the same, read-only, before anything is simulated -- and
+  // it is stricter: ALLOW_OTHER_TOKEN, which in Deploy.s.sol also waives the proxy check, changes nothing here.
+  // 第 2 节只要求 TOKEN 有代码且各 RPC 一致。部署脚本另外拒绝代理、钉一个代码哈希、限定 decimals；这里在模拟之前只读地做同样的检查，
+  // 而且更严：Deploy.s.sol 里 ALLOW_OTHER_TOKEN 会连带放过代理检查，在这里不起作用。
+  if (deployEscrow && isAddress(token)) {
+    head('3b. Escrow token / 托管代币')
+    const known = KNOWN_TOKENS[lower(token)]
+    const code = await quorumRead(live, quorum, 'TOKEN code', 'eth_getCode', [token, 'latest'])
+    if (code !== undefined && code !== '0x') {
+      const bytes = (code.length - 2) / 2
+      if (!keccak256) {
+        if (known) fail(`TOKEN is ${known.name}, whose code hash is pinned, but @noble/hashes is unavailable so the hash cannot be computed -- run \`npm install\` and re-run`)
+        else warn(`TOKEN: @noble/hashes unavailable, code hash not computed (${bytes} bytes of code)`)
+      } else {
+        const hash = '0x' + Buffer.from(keccak256(Buffer.from(code.slice(2), 'hex'))).toString('hex')
+        info(`TOKEN code hash  ${hash}  (${bytes} bytes, identical on ${quorum}+ RPCs)`)
+        if (known) {
+          if (hash === known.codehash) ok(`TOKEN is ${known.name}; code hash matches the pin ${known.codehash}`)
+          else fail(`TOKEN is the ${known.name} address but its code hash ${hash} is NOT the pinned ${known.codehash} -- wrong chain, fork state or a changed contract; do not deploy`)
+        } else {
+          warn(`TOKEN ${token} is not a token this script knows (BEM, USDT-peg): no pinned code hash to compare. Record the hash above in the instance's TAPI-22 §3.5 evaluation.`)
+        }
+      }
+    }
+    // A proxy can change the token's code under an immutable escrow (TAPI-22 §3.5 item 1). / 代理可以在不可更改的托管之下换掉代币的代码。
+    let proxy = 0, read = 0
+    for (const [label, slot] of PROXY_SLOTS) {
+      const w = await quorumWord(live, quorum, `TOKEN slot ${label}`, 'eth_getStorageAt', [token, slot, 'latest'])
+      if (w === undefined) continue   // already a FAIL / 已记为 FAIL
+      read++
+      if (w.n !== 0n) { proxy++; fail(`TOKEN ${label} slot ${slot} = 0x${w.n.toString(16)} -- TOKEN is a proxy (upgradeable): not admissible (TAPI-22 §3.5 item 1)`) }
+    }
+    if (!proxy && read === PROXY_SLOTS.length) ok(`TOKEN proxy slots all zero: ${PROXY_SLOTS.map(([l]) => l).join(', ')}`)
+    const dec = await quorumWord(live, quorum, 'TOKEN.decimals()', 'eth_call', ethCall(token, SEL.decimals))
+    if (dec !== undefined) {
+      if (dec.bytes !== 32) fail(`TOKEN.decimals() returned ${dec.bytes} bytes, expected exactly 32 -- not an ERC-20, or the wrong address`)
+      else if (dec.n < 8n || dec.n > 18n) fail(`TOKEN.decimals() = ${dec.n}, outside [8, 18] (TAPI-22 §3.5 item 4)`)
+      else ok(`TOKEN.decimals() = ${dec.n} (within [8, 18])`)
+    }
+  }
+
   // ---- 4. artifacts ----
   head('4. Build artifacts / 构建产物')
   const names = ['ServiceDirectory', ...(deployEscrow ? ['TapeAPIEscrow'] : [])]
@@ -444,7 +547,7 @@ async function main() {
     if (!a) continue
     const args = n === 'ServiceDirectory'
       ? addrArg(hub) + addrArg(factory) + addrArg(domainBinding)
-      : addrArg(bem) + addrArg(hub) + addrArg(treasury)
+      : addrArg(token) + addrArg(hub) + addrArg(treasury)
     const initcode = a.creation + args
 
     // Real eth_estimateGas for a CREATE: `from` + `data`, no `to`.
@@ -453,9 +556,9 @@ async function main() {
     const good = est.values.map((v) => BigInt(v.value))
     if (good.length === 0) {
       // Some RPCs refuse to estimate when `from` has a zero balance; fall back to the anvil-fork
-      // measurement so the operator still gets a budget.
-      // 部分 RPC 在 from 余额为 0 时拒绝估算，退回到 anvil 分叉实测值。
-      const fallback = n === 'ServiceDirectory' ? 1_698_443n : 1_930_621n
+      // measurement so the operator still gets a budget (receipts on a BSC fork, 2026-10-17).
+      // 部分 RPC 在 from 余额为 0 时拒绝估算，退回到 anvil 分叉实测值（BSC 分叉收据，2026-10-17）。
+      const fallback = n === 'ServiceDirectory' ? 1_688_069n : 1_755_050n
       warn(`${n}: no RPC would eth_estimateGas (${est.settled.map((s) => s.error).filter(Boolean)[0]}); using the anvil-fork measurement ${fallback}`)
       totalGas += fallback
     } else {

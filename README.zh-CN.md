@@ -32,7 +32,7 @@ TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上�
 > 钥匙与订单记录加密保存。**边界如实说：**托管合约**未经审计、未部署**，所以今天在主网上不可用；只在本地链与测试中可以验证；
 > `@tapeapi/sdk/agent` 不受 2.x 兼容承诺约束。[有界代理](#有界代理实验性主网不可用)
 
-> **状态：正式版（2.2.0）。** 今天上线的一切都免费。遵循语义化版本：按 2.0 文档写的代码，在所有 2.x 版本里都能继续工作；
+> **状态：正式版（2.3.0）。** 今天上线的一切都免费。遵循语义化版本：按 2.0 文档写的代码，在所有 2.x 版本里都能继续工作；
 > 2.0.0 发布后 1.x 继续获得 6 个月的安全修复。付费调用（TAPI-22）是实验性的，没有部署。所有代码和合约都没有经过第三方审计。
 > **安全说明：**1.0.0 至 1.4.0 的流式 AI 回执核验，在特定分块下可能把被截断或被注入内容的流显示为“已核验”；1.5.0 已修复
 > （[更新说明](https://github.com/BruceLanLan/tapeapi/releases/tag/v1.5.0)）。
@@ -159,11 +159,11 @@ curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/
 curl 只显示签名信封，不做任何核对；核对交给 SDK。SDK 还没发到 npm，从 GitHub Release 安装（Node.js 20 或以上）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz
 ```
 
 服务端包（`@tapeapi/server`：服务提供方、AI 旁路、MCP 代理）依赖这个 SDK，而 SDK 也不在 npm 上，所以单独安装服务端包会报 404：
-请用一条命令同时安装两者，`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-server-2.2.0.tgz`。
+请用一条命令同时安装两者，`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-server-2.3.0.tgz`。
 
 ```js
 // try.mjs：node try.mjs
@@ -226,7 +226,7 @@ console.log(r.choices[0].message.content)
 
 ```bash
 # 终端 1（会一直运行）。42.1013.tape 是示例名：换成 AI 服务方的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash
@@ -313,8 +313,8 @@ flowchart LR
 - **链：** BNB Chain（chainId 56）什么都能做，将来的支付也只在这条链上。X Layer（196）和 Base（8453）只读：身份、解析、
   回执和 MCP 核验。X Layer 只有两家独立的 RPC 运营方，在 2.0 默认下每次严格读取两家都必须作答。
 - **没有经过第三方审计。** 测试：JavaScript 测试（`npm test`）、合约测试（`forge test`），另有一份独立的 Python 实现核对每一处
-  签名、哈希和编码（`python3 spec/vectors/verify.py`）；三者在每次推送时都由 CI 运行。在 2.2.0 的发布提交上，本仓库的 `npm test`
-  共 2,163 项 JavaScript 测试：2,160 项通过，3 项跳过，0 失败。
+  签名、哈希和编码（`python3 spec/vectors/verify.py`）；三者在每次推送时都由 CI 运行。在 2.3.0 的发布提交上，本仓库的 `npm test`
+  共 2,224 项 JavaScript 测试：2,221 项通过，3 项跳过，0 失败。
 
 ## 隐私，如实说
 

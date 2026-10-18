@@ -598,3 +598,28 @@ test('an oversized body gets an actual 413 from the node server, not a dropped c
 test('FIXED RC-14: a provider without rpcUrls says INVALID_ARGUMENT, and how to fix it, on its first chain read', async () => {
   await assert.rejects(mk().dueSettlements(), (e) => e.code === 'INVALID_ARGUMENT' && /rpcUrls/.test(e.message) && /rpcUrlsFor/.test(e.message))
 })
+
+// 2.3 (review E-3): the provider's chain reads retry as the SDK's do (createRpc's rpcRetries, default 2), and
+// createProvider passes rpcRetries through, so 0 turns it off. / 提供者的链读与 SDK 一样重试（默认 2）；createProvider 透传
+// rpcRetries，0 关闭。
+test('RPC-RETRY: createProvider takes rpcRetries (default: the SDK\'s, 2; 0 turns it off; a bad value is INVALID_ARGUMENT)', async () => {
+  const urls = ['http://rpc1', 'http://rpc2', 'http://rpc3']
+  const nodes = () => {
+    const asked = { 'http://rpc1': 0, 'http://rpc2': 0, 'http://rpc3': 0 }
+    const fetch = async (url, init) => {
+      asked[url]++
+      if (url === 'http://rpc2') return new Response('down', { status: 503 })
+      const b = JSON.parse(init.body)
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: b.id, result: '0x38' }), { headers: { 'content-type': 'application/json' } })
+    }
+    return { asked, fetch }
+  }
+  const strict = (p) => p.rpc.call('eth_chainId', [], { strict: true })
+  const on = nodes()
+  await assert.rejects(strict(mk({ rpcUrls: urls, fetch: on.fetch })), (e) => e.code === 'RPC_UNAVAILABLE')
+  assert.deepEqual(on.asked, { 'http://rpc1': 3, 'http://rpc2': 3, 'http://rpc3': 3 }, 'default: 1 + 2 rounds')
+  const off = nodes()
+  await assert.rejects(strict(mk({ rpcUrls: urls, fetch: off.fetch, rpcRetries: 0 })), (e) => e.code === 'RPC_UNAVAILABLE')
+  assert.deepEqual(off.asked, { 'http://rpc1': 1, 'http://rpc2': 1, 'http://rpc3': 1 }, 'rpcRetries 0: one round, as 2.2')
+  for (const bad of [-1, 6, 1.5, '2', null]) assert.throws(() => mk({ rpcUrls: urls, fetch: off.fetch, rpcRetries: bad }), (e) => e.code === 'INVALID_ARGUMENT', String(bad))
+})

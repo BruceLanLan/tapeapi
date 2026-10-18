@@ -24,7 +24,7 @@ npm ci --no-audit --no-fund
 在任何目录都能运行，不需要克隆仓库：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-doctor <你的名字>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-doctor <你的名字>
 ```
 
 在检出的根目录里，`node sdk/bin/tapeapi-doctor.js <你的名字>` 效果相同。两种方式下，报告给出的下一条命令都按你的运行方式书写。
@@ -40,6 +40,14 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0
 | 5 | 发布清单（含价目表） | 操作台第 5 步（一笔交易，gas 由你支付） | `tapeapi-doctor <你的名字>` | 全部通过：退出码 0 |
 | 6 | 告诉你的用户 | [你的用户要做什么](#你的用户要做什么) | 在用户机器上运行 `tapeapi-verify <你的名字>` | 每次调用一行 `OK` |
 | 7 | 每 90 天续期委托，并让激活保持有效 | 操作台第 4 步“续期”；按第 2b 步再次付费 | `tapeapi-doctor <你的名字>`，在你的 CI 里每天跑 | 到期前 30 天起 `delegation` 警告；名字不再有效时 `activation` 警告 |
+
+**同样的步骤也可以用向导走：`tapeapi init`（实验性，2.3 起，不受 2.x 兼容承诺约束）。** 在检出里运行
+`node sdk/bin/tapeapi.js init --dir <旁路 docker-compose.yml 所在的文件夹>`，一次一步：你做什么、在哪里做、谁付钱（每次都是你自己），
+然后只读地运行上表里这一步的检查，并给出下一条命令。它不索要任何密钥、密码或令牌，从不读你的 `.env`，不付款、不发交易。第 3 步起
+`--formats` 必填且没有默认值：写你的网关真正提供、且你实测过的格式；选四种要加 `--confirm-all-formats`，因为它们都会写进链上清单。
+没有终端提问时，第 3、4 步还要给 `--upstream new-api`（本版本只为它写配置，且不替你假定；LiteLLM 运营者请改按
+`examples/litellm-sidecar/README.md` 操作）。
+它只写出一次 `.env`：`FORMATS` 为你的选择，所有机密留空由你自己填。
 
 `tapeapi-doctor` 按顺序检查：名字能解析、电路存在、容器已开通、名字已激活（TAP-10 §6.3；只警告：站点文件仍可读，但按 TAP-11 的客户端会得到 `unpaid`、不解析这个服务）、链上有清单文件、清单格式、委托（及剩余天数）、`ai` 字段、价目表、
 端点、端点可访问（TLS、旁路已退出设置模式、它签名用的密钥）、CORS、真实请求拿到可核验的回执、按 id 取回执。那次请求不花钱：
@@ -137,6 +145,11 @@ docker compose up -d
 - 回执按上游**报告的**模型名，精确匹配每个 `id` 与别名。如果你的网关会改写模型名，把上游报告的名字写进 `aliases`，否则这些回执没有价格。
 - **价格只是公示，现在不结算。** 用户照旧按现在的方式付费给你；回执里的金额是一个可以核对的声明，不是一笔付款。
 
+从 new-api 的价目出发：`node sdk/bin/tapeapi.js prices convert` 与 `prices check`（实验性，2.3 起）以同样的参数、输出与退出码运行
+[new-api 一键包的转换器](https://github.com/BruceLanLan/tapeapi/tree/main/examples/new-api-sidecar)（只在检出里），`prices show --models models.json`
+显示价目表及其来源记录：取价身份、汇率与 `quota_per_unit`、哪些被拒绝或待确认。只读文件：`/api/pricing` 与 `/api/status` 由你自己从你自己的
+new-api 取下，不带 cookie 或令牌。
+
 ## 身份与发布清单
 
 身份的步骤与任何 TapeAPI 服务相同（见[运行服务](provide.md)），在持有人操作台 [tapeapi.fun/console](https://tapeapi.fun/console/)
@@ -209,7 +222,7 @@ const client = new OpenAI({ baseURL, apiKey: process.env.API_KEY, fetch })  // �
 
 ```sh
 # 终端 1。42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -231,23 +244,31 @@ $env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex
 清单声明了的格式给出客户端配置（没有 `anthropic-messages` 就不给 Claude Code 的配置，没有 `openai-responses` 就不给 Codex 的配置）：
 
 ```sh
-# 在检出里（先在根目录 npm ci 一次）；装好 SDK 之后命令就是 `tapeapi connect …`
-node sdk/bin/tapeapi.js connect 42.1013.tape            # 服务卡片与配置
-node sdk/bin/tapeapi.js connect 42.1013.tape --proxy    # 然后为它运行 tapeapi-verify
+# 任何目录都能运行，不需要克隆仓库；42.1013.tape 是示例名
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi connect 42.1013.tape            # 服务卡片与配置
+# 装好 SDK 之后命令就是 tapeapi connect …
+tapeapi connect 42.1013.tape --proxy    # 然后为它运行 tapeapi-verify
 ```
+
+在检出里（先在根目录 `npm ci` 一次），`node sdk/bin/tapeapi.js connect …` 效果相同。
 
 它只读链与清单：不发交易、不索要任何密钥或密码（配置从用户自己环境里的 `API_KEY` 读令牌）、不上传、不付款。`unpaid`、`not-opened`、
 `store-changed` 的服务显示为不可用（退出码 1），`--proxy` 不启动任何东西；退出码 2 为用法错误（`--tool` 点名了清单未声明的格式也算），
-3 为读不到。代码里同样的功能是 `@tapeapi/sdk/connect`（`snippetsFor`、`connectReport`、`renderConnect`），同样是实验性。
+3 为读不到。代码里同样的功能是 `@tapeapi/sdk/connect`（`snippetsFor`、`connectReport`、`renderConnect`），同样是实验性。没有 `ai`
+字段的清单不是 AI 服务：`connect` 显示为不可用（`not-ai`），除非它声明了 MCP 工具（`mcp`，见 [MCP](mcp.md#用-tapeapi-connect-查看服务)）。
 
 **之后，用户可以查看自己的回执，并与你的账单对账**：`tapeapi receipts` 与 `tapeapi reconcile`（实验性，2.2 起，不受 2.x 兼容承诺约束）。
 两者只读用户本机的文件：不联网、不需要密钥。
 
 ```sh
-node sdk/bin/tapeapi.js receipts tail --receipts ~/.tapeapi/receipts.jsonl              # tapeapi-verify --log 写下的内容
-node sdk/bin/tapeapi.js receipts show <id> --receipts ~/.tapeapi/receipts.jsonl         # 一张回执，离线重放核验
-node sdk/bin/tapeapi.js reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # 与账单文件对账
+# 任何目录都能运行，不需要克隆仓库
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi receipts tail --receipts ~/.tapeapi/receipts.jsonl   # tapeapi-verify --log 写下的内容
+# 装好 SDK 之后命令就是 tapeapi receipts … 与 tapeapi reconcile …
+tapeapi receipts show <id> --receipts ~/.tapeapi/receipts.jsonl         # 一张回执，离线重放核验
+tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # 与账单文件对账
 ```
+
+在检出里（先在根目录运行一次 `npm ci`），`node sdk/bin/tapeapi.js receipts …` 与 `node sdk/bin/tapeapi.js reconcile …` 效果相同。
 
 `show` 依据用户存在回执旁的你的清单（`manifest.json`）重放一张回执的核验（签名、容器、方法与路径、价目表；给出确切字节时也核对哈希；请求字节只在 `tapeapi-verify --no-salt` 运行时才有）；
 没有清单就不判定（退出码 3）。`reconcile` 列出匹配、只在一边出现的缺失行，以及与回执声称不一致的字段，每条都带两边的出处行；它不下结论。

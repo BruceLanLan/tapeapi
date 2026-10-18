@@ -265,6 +265,12 @@ const SHARED_RPC = Symbol('tapeapi.sharedRpc')
 //   rpcUrls, quorum (默认 2)：urls 或其不同运营方（operatorOf）少于 quorum 直接抛 RPC_UNAVAILABLE；只有 allowSingleNode: true
 //                        才允许下调（开发用，M-11）。quorum counts operators: URLs of one operator count once.
 //   quiet: true          silence the rpc "no spare" notice, here and on other chains unless chains[id].quiet / 不显示"没有余量"提示
+//   rpcRetries (默认 2), rpcRetryMaxMs (默认 2000), rpcRetryFastMs (默认 2000)：@experimental (2.3) a read whose round failed
+//                        fast (in less than rpcRetryFastMs) and only by network failures (a broken or refused connection,
+//                        DNS, an HTTP 5xx other than a gateway timeout; never a timeout) is asked again, every node, the same
+//                        agreement; 0 turns it off (rpc.js). Also per chain in chains[id]. / 某轮只因网络故障（连接断开或被拒、
+//                        DNS、网关超时以外的 HTTP 5xx；超时不算）且很快（少于 rpcRetryFastMs）失败的读取整轮重问，仍问全部节点、
+//                        同样的一致要求；0 关闭。
 //   dev: true            允许 resolve({ dev }) 与 http:// 端点；不改变链上来源清单的 holder 校验（M-06）
 //   allowHttp: true      非 dev 下也接受 http:// 端点（仅测试）/ accept http endpoints outside dev (tests only)
 //   maxSkewS (默认 300)  信封 ts 与本地时钟的最大偏差（TAPI-21 §3.2）/ envelope ts freshness window
@@ -438,7 +444,11 @@ export function createTapeAPI(opts = {}) {
   // SHARED_RPC (internal): the conformance sibling of a client shares that client's RPC client (conform-sibling.js)
   // SHARED_RPC（内部）：客户端的一致模式同胞共用该客户端的 RPC 客户端
   const rpc = opts[SHARED_RPC] ? opts[SHARED_RPC] : (opts.rpcUrls && opts.rpcUrls.length)
-    ? createRpc({ urls: opts.rpcUrls, quorum: opts.quorum ?? 2, timeoutMs: opts.rpcTimeoutMs, fetch: fetchImpl, allowSingleNode: opts.allowSingleNode === true, quiet: opts.quiet === true })
+    ? createRpc({ urls: opts.rpcUrls, quorum: opts.quorum ?? 2, timeoutMs: opts.rpcTimeoutMs, fetch: fetchImpl, allowSingleNode: opts.allowSingleNode === true, quiet: opts.quiet === true,
+      // 2.3 (@experimental): a read whose nodes failed only by network failures is asked again (rpc.js, call()); left out, createRpc's defaults
+      // 2.3（实验性）：节点只因网络故障失败的读取再问一次（rpc.js 的 call()）；不传则用 createRpc 的默认值
+      ...(opts.rpcRetries !== undefined ? { rpcRetries: opts.rpcRetries } : {}), ...(opts.rpcRetryMaxMs !== undefined ? { rpcRetryMaxMs: opts.rpcRetryMaxMs } : {}),
+      ...(opts.rpcRetryFastMs !== undefined ? { rpcRetryFastMs: opts.rpcRetryFastMs } : {}) })
     : null
   // Highest `issued` seen per container's channel record (arch B4). Pass a persistent Map-like { get, set } to keep it
   // across restarts. / 每个容器通道记录见过的最高 `issued`；传入持久化的 { get, set } 可跨重启保留。
@@ -1254,6 +1264,7 @@ export function createTapeAPI(opts = {}) {
       const conf = opts.chains?.[n] ?? {}
       sub = createTapeAPI({
         chainId: n, rpcUrls: conf.rpcUrls ?? rpcUrlsFor(n), quorum: conf.quorum ?? 2, rpcTimeoutMs: conf.rpcTimeoutMs ?? opts.rpcTimeoutMs,
+        rpcRetries: conf.rpcRetries ?? opts.rpcRetries, rpcRetryMaxMs: conf.rpcRetryMaxMs ?? opts.rpcRetryMaxMs, rpcRetryFastMs: conf.rpcRetryFastMs ?? opts.rpcRetryFastMs,
         allowSingleNode: conf.allowSingleNode === true, quiet: (conf.quiet ?? opts.quiet) === true, hub: conf.hub, factory: conf.factory, siteRegistry: conf.siteRegistry,
         fetch: opts.fetch, dev: opts.dev, allowHttp: opts.allowHttp, maxSkewS: opts.maxSkewS,
         identityCacheS: opts.identityCacheS, identityCacheSize: opts.identityCacheSize, channelRecordFloor: recordFloor, sealStatusStore, [ROUTER]: forChain,

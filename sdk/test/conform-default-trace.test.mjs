@@ -114,7 +114,9 @@ const SCENARIOS = {
   },
   'node faults: one node down, one node disagreeing': async () => {
     const out = []
-    { const w = world(); w.chain.setFault('http://rpc3', 'http500'); out.push(await step(w, () => def(w.fetch).resolve('4246.7.tape'))) }
+    // rpcRetries 0: the trace of 2.2, request by request; with the 2.3 default the same outcome after two more eth_chainId
+    // rounds (the test after the golden ones) / rpcRetries 0：2.2 的逐个请求；2.3 默认下多两轮 eth_chainId 后结果相同（见黄金测试之后的测试）
+    { const w = world(); w.chain.setFault('http://rpc3', 'http500'); out.push(await step(w, () => def(w.fetch, { rpcRetries: 0 }).resolve('4246.7.tape'))) }
     { const w = world(); w.chain.setFault('http://rpc2', 'rpcerror'); out.push(await step(w, () => def(w.fetch).resolve('4246.7.tape'))) }
     return out
   },
@@ -198,3 +200,20 @@ for (const name of Object.keys(SCENARIOS)) {
     })
   })
 }
+
+// 2.3 (@experimental rpcRetries): the node-down step of the golden trace under the default retries. The outcome is the
+// golden one byte for byte (code, message, data); the requests are the golden ones plus two more rounds of the strict
+// eth_chainId, each to every node (rpc3 still down), and nothing else: no other read is retried, none is left out.
+// 2.3：黄金轨迹里节点宕机这一步在默认重试下的样子。结果与黄金逐字节相同；请求是黄金的请求再加两轮严格 eth_chainId（每轮问全部节点，
+// rpc3 仍宕机），别无其它：没有别的读取被重试，也没有少问。
+test('RPC-RETRY golden: one node down under the 2.3 default: the golden outcome, after exactly two more eth_chainId rounds to every node', async () => {
+  const w = world(); w.chain.setFault('http://rpc3', 'http500')
+  const got = await step(w, () => def(w.fetch).resolve('4246.7.tape'))
+  const want = golden.scenarios['node faults: one node down, one node disagreeing'][0]
+  assert.deepEqual({ ...got, requests: undefined }, { ...want, requests: undefined })
+  const isChainId = (r) => r.calls.length === 1 && r.calls[0].method === 'eth_chainId'
+  assert.deepEqual(got.requests.filter((r) => !isChainId(r)), want.requests.filter((r) => !isChainId(r)))
+  const extra = got.requests.filter(isChainId).length - want.requests.filter(isChainId).length
+  assert.equal(extra, 2 * RPC.length)
+  assert.deepEqual(got.requests.filter(isChainId).slice(-2 * RPC.length).map((r) => r.url).sort(), [...RPC, ...RPC].sort())
+})

@@ -7,6 +7,157 @@ interfaces.
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-10-19
+
+TapeAPI 2.3.0: from nothing to live, step by step, and fewer checks lost to a node that failed for a moment. `tapeapi
+init` walks an operator through the steps to a live AI service, one step per run, and checks each step read-only;
+`tapeapi prices` runs the new-api price converter and shows a price table with its source record; `tapeapi connect` also
+shows an MCP tool service that a manifest declares; and a chain read whose nodes failed fast and by the network is asked
+again, at most twice, before it is `unavailable`. The new commands, the connect card and the retry are
+**experimental**: outside the 2.x compatibility promise, they may change or go away in any 2.x release. One default
+changes: the retry is on in the SDK, in the commands and in `createProvider` (`rpcRetries: 0` gives the previous
+behaviour request for request); a read answered in its first round is unchanged, and with the defaults the retries add
+less than 5.2 s to a read that fails. `tapeapi --help` is 12 lines longer, and `tapeapi-mcp` now refuses an `mcp`
+field that TAPI-20 §3.8 does not allow (capital hex digits, an endpoint with a query or fragment; no live manifest is
+known to carry one). Nothing below makes or takes a payment, and a receipt still shows what its signer says, not which
+model ran.
+
+### Added
+
+- **`tapeapi init` and `tapeapi prices convert|check|show`** (experimental: outside the 2.x compatibility promise,
+  they may change or go away in any 2.x release). `init` is the operator's wizard from nothing to live, steps 0 to 7
+  (local trial, circuit, container and activation, the sidecar, the console's service key and delegation, publishing,
+  users, the daily check and renewals), one step per run (`--step`, `--renew`): what the operator does, where and who
+  pays (the operator; every paying step says we do not advance it), then the step's check, read-only, through the
+  doctor's `diagnose()`, `connectReport()` and the price table files, and the next command. It asks for no key,
+  password or token, never reads `.env`, uploads nothing, pays nothing and sends no transaction; its first screen says
+  that a receipt proves only what its signer says. From step 3 on, `FORMATS` has no default: no `--formats` (or an
+  empty value, or only `--yes`) is exit 2 naming it; nor has the gateway: without a terminal, steps 3 and 4 without
+  `--upstream new-api` (or `"upstream"` in `--answers`, or a saved answer) are exit 2 naming it; all four formats need `--confirm-all-formats` (the output says
+  they all go into the manifest on chain, whose history cannot be deleted); on a terminal each format is asked one by
+  one, default No. The `.env` it writes once (mode 600; an existing one is never read) says `FORMATS=`
+  exactly the choice and leaves every secret empty; it is written again for a corrected `--sidecar-url` (or formats,
+  or name) only while it is exactly as the wizard wrote it (its inode, size, mtime and ctime as recorded in
+  `tapeapi-init.json`, so nothing was filled in), and otherwise the wizard says to correct `PUBLIC_URL` by hand; steps 4 and 5 compare the formats the manifest declares with the
+  choice. `prices convert` and `prices check` run `examples/new-api-sidecar/pricing-convert.mjs` with the arguments as
+  given (`--fetched-as`, `--quota-per-unit`, ...), its output and exit status unchanged, in a checkout only (outside
+  one they print the clone command); `prices show` prints a price table with its source record (who fetched the price
+  list, the rate, `quota_per_unit`, refusals and flags, what is not verified), files only. Exit status 0 / 1 / 2 / 3
+  as the doctor's (`prices convert|check`: the converter's 0 / 1 / 2); `--json`, `--lang en|zh|both`; output redacted
+  as `tapeapi connect`'s. Files: `sdk/src/init-cli.js`, `sdk/src/prices-cli.js` (no new export subpath; the `ai` face
+  is unchanged). `tapeapi verify|mcp`, `connect`, `receipts` and `reconcile` are unchanged; `tapeapi --help`
+  lists the two new commands.
+- **`tapeapi-doctor`: in setup mode the `manifest-format` check carries what is missing as a field** (experimental,
+  like the doctor itself). When the sidecar answers in setup mode, the check in `--json` (and in `diagnose()`'s report)
+  has `setup: { missing, problem, signer }`, taken from the sidecar's `/tapeapi/v1/health` as given (`missing` the names
+  it lists, `problem` the configuration error it names or `null`, `signer` its signing address or `null`); `tapeapi
+  init` reads it in steps 3 and 4 instead of the English `detail` (which it still reads from a doctor without the
+  field). Only that one key is added: the check's status, its `detail`, the text report and the exit codes are
+  unchanged (`setupFacts` in `sdk/src/doctor.js`).
+- **`tapeapi connect` for MCP tool services** (experimental, outside the 2.x compatibility promise). A manifest with no
+  `ai` field but a valid `mcp` field (TAPI-20 §3.8: `endpoint` and `toolsSha256`) is shown as usable: the endpoint,
+  the number and names of its tools (the manifest's free methods, the ones `tapeapi-mcp` can offer: it offers no priced
+  method), the first 8 hex digits of `toolsSha256`, the signer,
+  delegation and activation, and settings made from that field only: Claude Code and Claude Desktop through
+  `tapeapi-mcp` (stdio: every answer checked on the user's machine, the tools pinned) and the declared Streamable HTTP
+  endpoint direct (marked as not checked). No setting carries a key. Nothing is fetched from the endpoint. Unavailable
+  states and an invalid `mcp` field (`mcp-invalid`) are exit 1 with the reason and no settings; `--tool` also takes
+  `claude-desktop`; `--proxy` runs `tapeapi-mcp` (its JSON-RPC alone on stdout, the card on stderr); `--json` gains
+  `kind: 'ai' | 'mcp' | null` (added last, nothing else changes); `@tapeapi/sdk/connect` gains `mcpSnippetsFor`,
+  `MCP_NOTES` and `MCP_SNIPPET_TOOLS`. An AI service's card, settings and `--json` (apart from `kind`) and every
+  unavailable state's text are byte for byte as before. `tapeapi init` step 6 does not take an MCP tool service for
+  the AI service it sets up.
+- **A read whose nodes failed only by the network, and fast, is asked again before it is `unavailable`** (experimental:
+  client behaviour only, no TAP, wire format, status name or exit code changes; outside the 2.x compatibility promise).
+  `createRpc` and `createTapeAPI` take `rpcRetries` (default 2, 0 to 5), `rpcRetryMaxMs` (default 2000, 0 to 10000) and
+  `rpcRetryFastMs` (default 2000, 0 to 10000), also per chain in `chains[id]`; the commands built on them
+  (`tapeapi-doctor`, `tapeapi-verify`, `tapeapi-mcp`, `tapeapi connect`) use the defaults. The server retries too:
+  `createProvider` (`@tapeapi/server`) reads the chain through `createRpc` (the block number aside, which is not
+  retried: the escrow, channel and session reads of a paid call, the price feeds of USD pricing), and so does the
+  examples' chain reader (`examples/_lib/chain.mjs`, `createChainReader`, which the public service's Worker uses for
+  its methods); both now take `rpcRetries` with the same meaning, passed to every client they build (default the
+  SDK's, 2; `rpcRetries: 0` turns it off). A read is sent again to every
+  node, at most `rpcRetries` more times, when a round of it gets too few answers, every node that failed did so with no
+  answer and by the network (a broken or refused connection, a DNS failure, an HTTP 5xx without a JSON-RPC answer other
+  than the gateway timeouts 504, 522 and 524), the round took less than `rpcRetryFastMs` from its first request to its
+  last failure, and the nodes that answered agree; the waits before the extra rounds are about 0.2 to 0.4 s and 0.4 to
+  0.8 s (exponential with jitter) and add up to at most `rpcRetryMaxMs`. Each attempt needs the same agreement as the
+  first: a strict read (TAP-10 §5.2) still needs every configured node, never two of three. Never retried: a timeout or
+  an abort (a round in which any node timed out is not retried, so a node that keeps timing out costs a failing read one
+  request timeout, `rpcTimeoutMs`, 8 s by default, as before), a gateway timeout (HTTP 504, 522, 524), a round that took
+  `rpcRetryFastMs` or longer (a node that resets just before its timeout costs a failing read what it cost before), a
+  disagreement (the single re-ask after one, since 1.x, is unchanged and happens at most once per read), a JSON-RPC
+  error or revert, a refusal (rate limit, method not found, HTTP 4xx), an answer that is too large or not JSON. When
+  the last attempt fails, its error is the one a client without retries gives: the same code, message and `data`, so
+  `unavailable`, `RPC_UNAVAILABLE` and the doctor's exit code 3 read exactly as before. One difference in wording, not
+  in outcome: when every node is down, the read a resolution names in its message can be another one than before (a
+  read that is not retried, such as the pin's `eth_blockNumber`, fails first while the retried one waits); the status
+  and the exit code are the same. Time: the retries add to a failing read at most `rpcRetries` x `rpcRetryFastMs` plus
+  the waits, less than 5.2 s with the defaults, whatever `rpcTimeoutMs` is. The longest a read can take is therefore
+  what it could take before plus 5.2 s: with the default `rpcTimeoutMs` of 8 s, 38.0 s instead of 32.8 s (a read that
+  meets a disagreement, its re-ask and broken connections, each request ending just before its timeout), and in theory
+  54.0 s instead of 48.8 s for a batched `eth_call`; with the 25 s of the monitor (`scripts/monitor.mjs`), 106.0 s
+  instead of 100.8 s, and 156.0 s instead of 150.8 s. One read sends at most (2 + `rpcRetries`) rounds of one request
+  per node, each re-asked at most once after a broken connection as before: 24 requests with three nodes.
+  `rpcRetries: 0` (or `rpcRetryMaxMs: 0`, or `rpcRetryFastMs: 0`) gives the previous behaviour request for request.
+  `rpc.single()` clients (the ChannelBus reader, proofs) do not retry; they poll again on their own. On 2026-10-15 one
+  public BNB Chain node answered `fetch failed` and `tapeapi-doctor` said undecided (exit 3); the cause of that failure
+  was not recorded, so whether it was two failed connections in a row or a timeout cannot be told. 2.3 retries only
+  failures of the network kind that come back fast: a broken or refused connection like that no longer stops a check,
+  while a timeout (a connect timeout included) is still not retried and still reads undecided.
+- **`@tapeapi/server/mcp`: `toolsSha256` helpers and a signed `TOOLS_CHANGED` hold for `createMcpEndpoint`**
+  (experimental, outside the 2.x compatibility promise; additions only). `createMcpEndpoint()` also returns
+  `toolsSha256()`, the SHA-256 of its own `tools/list` answer exactly as clients compute it (the SDK's
+  `mcp.toolsDigest`; the vectors of the MCP tools draft, TAPs #16, agree on the SDK, the holder console and the
+  endpoint). New: `listedMcpTools(manifest)`, `mcpToolsSha256(manifest)` and
+  `holdToToolsSha256(methods, { manifest, published })`, which refuses every method that is a tool with a signed
+  `TOOLS_CHANGED` (HTTP 409, `error.data` exactly `{ published, current }`) while the tools no longer hash to the
+  published value, and passes every other method through; `published` is the value the holder published, never one
+  computed by the provider. A manifest `mcp` field (TAPI-20 §3.8) made with them is conformant only when the
+  provider's methods answer with MCP tool results (`{ content, ... }`): §3.8 and TAPs #16 are written for a signing
+  proxy in front of a real MCP server (`createMcpProxy`, which already computes and holds its `toolsSha256`), where
+  each method is a tool, while `createMcpEndpoint` generates its tools from methods that answer with their own JSON,
+  and `tapeapi-mcp` verifies such an answer and then does not show it as a tool result (tested). **For that reason the
+  public service `11.1013.tape` does not declare `mcp`**: its manifest is unchanged and `tapeapi connect` keeps
+  showing it as `not-ai` (see the MCP guide). The public Worker (`examples/public-api`) adds `mcp: { endpoint:
+  <PUBLIC_URL>/mcp, toolsSha256 }` to its manifest and holds its methods only when the new variable
+  `MCP_TOOLS_SHA256` is set (64 hex digits, taken lowercased, surrounding spaces ignored; any other value, such as one
+  with `0x`, keeps the whole service in setup mode, and its `problem` names `MCP_TOOLS_SHA256` and the form it needs);
+  the public service does not set it, and without it the manifest and every answer are byte for byte as before.
+
+### Changed
+
+- **`tapeapi connect`: the `not-ai` reason names both fields.** A manifest with neither `ai` nor `mcp` is still
+  unavailable with status `not-ai` and exit 1; the reason now reads "its manifest has no ai field and no MCP tool
+  declaration (mcp, TAPI-20 §3.8): it is neither an AI service nor an MCP tool service" (Chinese: "它的清单没有 ai
+  字段，也没有 MCP 工具声明……"). Scripts that matched the old sentence should match the status instead.
+
+### Fixed
+
+- **`tapeapi-mcp`: a manifest's `mcp` field is checked as TAPI-20 §3.8 requires** (a correction to conform to the
+  specification's MUST, in a stable command). §3.8 has required, since `tapeapi-mcp` began checking the field in 0.4.0,
+  that `mcp.toolsSha256` be 64 lowercase hex digits and that `mcp.endpoint` have no query or fragment; `tapeapi-mcp`
+  accepted capitals (and lowercased them) and did not look for a query or a fragment, which is looser than the
+  specification. It now refuses such a field as unusable, before anything is sent to the service, with the reason
+  "mcp.toolsSha256 must be 64 lowercase hex characters" (was "64 hex characters") or "mcp.endpoint must have no query or
+  fragment". The MCP tools draft (TAPs #16) writes the same rules (§2) and lists both checks as planned for this
+  implementation ("Reject upper case", "Add the missing checks"). Pin files already written are not affected:
+  `tapeapi-mcp` still pins the digest lowercased, so no pin hash changes. No published `mcp` manifest is known to be
+  refused by this: #16 records that no live service publishes an `mcp` member, the holder console and `createMcpProxy`
+  write the digest in lower case, and the public service does not declare `mcp` (see Added). `tapeapi connect`, whose
+  MCP card is new in this release, checks the field the same way from the start (`mcp-invalid`, exit 1).
+- **The escrow deployment scripts (`scripts/preflight.mjs`, `scripts/verify-bscscan.mjs`)**, found in a rehearsal on a
+  local fork of BNB Smart Chain; they matter only to whoever deploys the escrow contract, which is not audited and not
+  deployed. `preflight.mjs` read the escrow's token from `BEM` while `contracts/script/Deploy.s.sol` reads `TOKEN`, so
+  an environment set up for the deploy script failed with "BEM is not set": it now reads `--token` / `TOKEN`, keeps
+  `--bem` / `BEM` as a deprecated alias with a warning, fails when both are set and differ, and no longer echoes a
+  value that is not an address. With `DEPLOY_ESCROW=true` it also checks the token (a new section 3b, read by quorum):
+  it prints `keccak256` of the token's code and fails if a token it knows (BEM, or the one `Deploy.s.sol` pins) has
+  other code, fails if any of the five proxy slots `Deploy.s.sol` reads is not zero, and fails unless `decimals()`
+  is between 8 and 18. `verify-bscscan.mjs --dry-run` no longer asks Etherscan whether the address is verified (it
+  did, before looking at `--dry-run`): a dry run builds, recompiles, compares with the code from `RPC_URL` and stops;
+  `--check` is the way to ask.
+
 ## [2.2.0] — 2026-10-19
 
 TapeAPI 2.2.0: receipts put to use, against a bill and against the paid period. `tapeapi receipts` lists, replays and
@@ -2002,7 +2153,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.8.1...v2.0.0

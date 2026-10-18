@@ -7,7 +7,7 @@ const { voucherDigest, recoverAddress, signResponse, privateKeyToAddress, recove
 // would stop this runtime loading on Cloudflare Workers, Deno or a browser. A test asserts the two agree.
 // 写成字面量而不是读 package.json：`createRequire` 属于 node:module，在模块顶层导入会让这套运行时无法在
 // Cloudflare Workers、Deno 或浏览器里加载。有测试断言两者一致。
-export const VERSION = '2.2.0'
+export const VERSION = '2.3.0'
 const now = () => Math.floor(Date.now() / 1000)
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -78,6 +78,9 @@ export function memoryQuoteStore() {
 //                                  the required trio; `methods` needs one handler per manifest method
 //   rpcUrls, quorum, timeoutMs, fetch, allowSingleNode   链读（无 rpcUrls 则不读链，收费方法无法校验凭证）
 //                                  chain reads; without rpcUrls there are none, and vouchers cannot be checked
+//   rpcRetries                     @experimental (2.3) as createRpc's: extra rounds for a chain read whose round failed fast
+//                                  and only by the network (default: the SDK's, 2; 0 turns it off) / 与 createRpc 同义：
+//                                  某轮只因网络故障且很快失败的链读再问几轮（默认取 SDK 的 2；0 关闭）
 //   dev / allowHttp                接受 http:// 端点（仅开发）/ accept http:// endpoints (development only)
 //   escrow, chainId                覆盖清单里的托管合约与链 / override the manifest's escrow and chain
 //   store                          凭证存储，默认进程内存 / voucher store, in-process memory by default
@@ -149,7 +152,10 @@ export function createProvider(opts = {}) {
   if (anyPriced && !hasEscrow && !devMode) throw new TapeAPIError('MANIFEST_INVALID', 'priced methods need a real escrow (payment.escrow or opts.escrow), or createProvider({ dev: true }) for local testing')
   const container = checksumAddress(manifest.container)
   const store = opts.store || memoryStore()
-  const rpc = rpcUrls.length ? createRpc({ urls: rpcUrls, quorum, timeoutMs, fetch: fetchImpl, allowSingleNode: opts.allowSingleNode === true }) : null
+  // 2.3: rpcRetries passed only when given, so createRpc's default (retrying, 2) applies otherwise and its own check
+  // refuses a bad value. / 只在给出时传，否则用 createRpc 的默认值（重试，2）；非法值由它自己拒绝。
+  const rpc = rpcUrls.length ? createRpc({ urls: rpcUrls, quorum, timeoutMs, fetch: fetchImpl, allowSingleNode: opts.allowSingleNode === true,
+    ...(opts.rpcRetries !== undefined ? { rpcRetries: opts.rpcRetries } : {}) }) : null
   const bodyLimit = opts.bodyLimit ?? 64 * 1024
   const hardBodyCap = Math.max(bodyLimit * 64, 4 * 1024 * 1024)
   // TAPI-21 §3.2: providers MUST cap the response body at 1 MiB and SHOULD answer within 30 s.

@@ -3,7 +3,7 @@
 // tapeapi connect 命令行部分（实验性；仅 Node）：参数、客户端、颜色、脱敏、--json 与 --proxy（以子进程运行 tapeapi-verify，输出原样）。
 import { createTapeAPI, rpcUrlsFor, operatorOf, parseTapeName, CHAINS, chainByKey } from './index.js'
 import { redactSecret } from './doctor.js'
-import { connectReport, renderConnect, NOTES, SNIPPET_TOOLS, FORMAT_NAMES } from './connect.js'
+import { connectReport, renderConnect, NOTES, MCP_NOTES, SNIPPET_TOOLS, MCP_SNIPPET_TOOLS, FORMAT_NAMES } from './connect.js'
 
 const DEFAULT_PORT = 8790
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
@@ -12,20 +12,26 @@ const shellWord = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace
 // Environment variables whose values are never printed, whatever prints them (a gateway's echo, a manifest field).
 // 其值绝不出现在输出里的环境变量（无论来自网关回显还是清单字段）。
 const SECRET_NAME = /(KEY|TOKEN|SECRET|PASSWORD|PASSWD|SIG|SIGNATURE|MNEMONIC|SEED)$/i
+// --tool values: the AI tools, then Claude Desktop (MCP tool services only). / --tool 的取值：AI 工具，再加 Claude Desktop（仅 MCP 工具服务）。
+const TOOL_NAMES = [...Object.keys(SNIPPET_TOOLS), ...MCP_SNIPPET_TOOLS.filter((t) => !Object.hasOwn(SNIPPET_TOOLS, t))]
 
 export function connectUsage(cmd = 'tapeapi') {
   return `${cmd} connect (experimental / 实验性): resolve an AI service, show it, and print client settings for the API formats its manifest declares.
 解析一个 AI 服务并显示它，只为其清单声明的 API 格式给出客户端配置。
+An MCP tool service (no ai field, an mcp field: TAPI-20 §3.8; experimental) gets Claude Code and Claude Desktop MCP
+settings instead: through tapeapi-mcp, and its declared endpoint direct.
+MCP 工具服务（没有 ai 字段、有 mcp 字段：TAPI-20 §3.8；实验性）改为给出 Claude Code 与 Claude Desktop 的 MCP 配置：经 tapeapi-mcp，以及直连其声明的端点。
 
 Usage: ${cmd} connect <name> [options]
 
   <name>               the service's TapeOut name (42.1013.tape is an example name; 1.2.344.tape on X Layer) or its
                        container address. You get it from the provider; this command lists, ranks and picks no service
                        名字从服务方处取得；本命令不列出、不排序、不挑选任何服务
-  --tool <t>           only the settings for one tool: ${Object.keys(SNIPPET_TOOLS).join(', ')} or all (default); a tool whose
-                       format the manifest does not declare is a usage mistake (exit 2)
+  --tool <t>           only the settings for one tool: ${TOOL_NAMES.join(', ')}
+                       or all (default); a tool whose format the manifest does not declare is a usage mistake (exit 2)
   --format <f>         only one API format: ${FORMAT_NAMES.join(', ')}
-  --proxy              after the card, run tapeapi-verify for this service (its output as it is; Ctrl-C stops it)
+  --proxy              after the card, run tapeapi-verify for this service (its output as it is; Ctrl-C stops it);
+                       for an MCP tool service, tapeapi-mcp instead (stdio; the card goes to stderr, stdout is its JSON-RPC)
   --port <n>           with --proxy: the local port (default ${DEFAULT_PORT})
   --strict, --log <file>, --request-usage
                        with --proxy: passed to tapeapi-verify as they are
@@ -72,7 +78,7 @@ export function parseConnectArgs(argv) {
       case '--no-color': o.color = false; break
       case '--log': o.log = value(); break
       case '--dev': o.dev = value(); break
-      case '--tool': o.tool = value(); if (o.tool !== 'all' && !Object.hasOwn(SNIPPET_TOOLS, o.tool)) throw usage(`--tool must be one of ${Object.keys(SNIPPET_TOOLS).join(', ')} or all`, `--tool 只能是 ${Object.keys(SNIPPET_TOOLS).join('、')} 或 all`); break
+      case '--tool': o.tool = value(); if (o.tool !== 'all' && !TOOL_NAMES.includes(o.tool)) throw usage(`--tool must be one of ${TOOL_NAMES.join(', ')} or all`, `--tool 只能是 ${TOOL_NAMES.join('、')} 或 all`); break
       case '--format': o.format = value(); if (!FORMAT_NAMES.includes(o.format)) throw usage(`--format must be one of ${FORMAT_NAMES.join(', ')}`, `--format 只能是 ${FORMAT_NAMES.join('、')}`); break
       case '--port': o.port = Number(value()); if (!Number.isInteger(o.port) || o.port < 0 || o.port > 65535) throw usage('--port must be 0 to 65535', '--port 必须是 0 到 65535'); break
       case '--lang': o.lang = value(); if (!['en', 'zh', 'both'].includes(o.lang)) throw usage('--lang must be en, zh or both', '--lang 只能是 en、zh 或 both'); break
@@ -139,8 +145,17 @@ export function redactKeyShapes(text) {
   for (const [re, by] of KEY_SHAPES) out = out.replace(re, by)
   return out
 }
-/** What every line of output goes through: the environment's secret values, then key shapes. / 每段输出都经过：环境机密值，再按形状。 */
-export const redactOutput = (text, env = process.env) => redactKeyShapes(redactEnv(text, env))
+/**
+ * What every line of output goes through: the environment's secret values, then key shapes. `keep`: a public value the
+ * key-shape rule would blank and that is shown as it is (an MCP tool service's mcp.toolsSha256, 64 hex digits published
+ * on chain, as S3 keeps a receipt's hashes); the environment rule still applies to it.
+ * 每段输出都经过：环境机密值，再按形状。keep：按形状规则会被替换、但原样显示的公开值（MCP 工具服务链上发布的 mcp.toolsSha256，
+ * 同 S3 保留回执哈希）；环境机密值规则对它照样适用。
+ */
+export const redactOutput = (text, env = process.env, keep = null) => {
+  const t = redactEnv(text, env)
+  return keep ? t.split(keep).map(redactKeyShapes).join(keep) : redactKeyShapes(t)
+}
 
 /**
  * Run `tapeapi connect` with `argv`. Returns { exitCode } or, with --proxy, { child } (the tapeapi-verify run's exit).
@@ -149,11 +164,12 @@ export const redactOutput = (text, env = process.env) => redactKeyShapes(redactE
  * 运行 tapeapi connect。io 注入打印用的命令写法、版本、verify 路径、子进程运行器、输出、环境与 createTapeAPI 的附加选项（测试用假链）。
  */
 export async function runConnect(argv, io = {}) {
-  const { cmd = 'tapeapi', version = '', verifyBin, runChild, env = process.env, apiOptions = {} } = io
+  const { cmd = 'tapeapi', version = '', verifyBin, mcpBin, runChild, env = process.env, apiOptions = {} } = io
   const stdout = io.stdout ?? ((s) => process.stdout.write(s))
   const stderr = io.stderr ?? ((s) => process.stderr.write(s))
   const isTTY = io.isTTY ?? process.stdout.isTTY === true
-  const say = (write, text) => write(redactOutput(text, env))
+  let keep = null
+  const say = (write, text) => write(redactOutput(text, env, keep))
   let o
   try { o = parseConnectArgs(argv) } catch (e) {
     say(stderr, `tapeapi connect: ${e.message}\ntapeapi connect: ${e.zh ?? e.message}\n\n${connectUsage(cmd)}\nnext: / 下一条命令: ${cmd} connect --help\n`)
@@ -165,26 +181,44 @@ export async function runConnect(argv, io = {}) {
   const proxyCommand = `${cmd} connect ${o.dev ? `--dev ${shellWord(o.dev)}` : shellWord(o.target)} --proxy${o.port !== null && o.port !== DEFAULT_PORT ? ` --port ${o.port}` : ''}`
   const chains = Object.fromEntries(Object.entries(o.chainRpc).map(([id, urls]) => [id, { rpcUrls: urls }]))
   const api = o.dev ? createTapeAPI({ dev: true, ...apiOptions }) : createTapeAPI({ rpcUrls: o.rpc ?? rpcUrlsFor(56), quorum: 2, chains, conform: 'tap10', ...apiOptions })
-  const r = await connectReport(o.target, { api, dev: o.dev, tool: o.tool, format: o.format, port, proxyCommand })
+  const r = await connectReport(o.target, { api, dev: o.dev, tool: o.tool, format: o.format, port, proxyCommand, version: version || undefined })
+  if (r.kind === 'mcp') keep = r.service.mcp.toolsSha256
+  // --port, --strict, --log and --request-usage are tapeapi-verify's: with an MCP tool service they are a usage mistake.
+  // --port、--strict、--log、--request-usage 属于 tapeapi-verify：用于 MCP 工具服务即为用法错误。
+  const verifyOnly = [['--port', o.port !== null], ['--strict', o.strict], ['--log', o.log !== null], ['--request-usage', o.requestUsage]].filter(([, on]) => on).map(([f]) => f)
+  if (r.kind === 'mcp' && verifyOnly.length) {
+    say(stderr, `tapeapi connect: ${verifyOnly.join(', ')}: tapeapi-verify's options; this is an MCP tool service, whose --proxy runs tapeapi-mcp\ntapeapi connect: ${verifyOnly.join('、')} 是 tapeapi-verify 的选项；这是 MCP 工具服务，其 --proxy 运行 tapeapi-mcp\nnext: / 下一条命令: ${cmd} connect ${o.dev ? `--dev ${shellWord(o.dev)}` : shellWord(o.target)} --proxy\n`)
+    return { exitCode: 2 }
+  }
   // The command for the last line of a non-zero exit, pasteable as it is. / 非 0 退出最后一行的命令，可直接粘贴。
   const target = o.dev ?? o.target
   const again = `${cmd} connect ${argv.map(shellWord).join(' ')}`
   const [next, nextHint] = r.exitCode === 0 ? [null, null]
     : r.exitCode === 3 ? [again, { en: 'Nothing was decided; run it again (other nodes: --rpc):', zh: '无法判定；请重试（换节点：--rpc）：' }]
       : r.exitCode === 2 && r.status !== 'not-declared' ? [`${cmd} connect --help`, { en: 'Check the name and the options (--rpc: nodes of this chain):', zh: '检查名字与选项（--rpc：这条链的节点）：' }]
-      : r.exitCode === 2 ? [`${cmd} connect ${o.dev ? `--dev ${shellWord(o.dev)}` : shellWord(o.target)}`, { en: 'Without --tool / --format, every format the manifest declares:', zh: '不带 --tool / --format，列出清单声明的全部格式：' }]
+      : r.exitCode === 2 ? [`${cmd} connect ${o.dev ? `--dev ${shellWord(o.dev)}` : shellWord(o.target)}`, r.kind === 'mcp' ? { en: 'Without --tool / --format, every setting its mcp field allows:', zh: '不带 --tool / --format，列出其 mcp 字段允许的全部配置：' } : { en: 'Without --tool / --format, every format the manifest declares:', zh: '不带 --tool / --format，列出清单声明的全部格式：' }]
         : [`${cmd} doctor ${o.dev ? `--offline ${shellWord(o.dev)}` : shellWord(o.target)}`, { en: 'Your own service? The doctor checks it step by step and says what is missing:', zh: '是你自己的服务？doctor 逐项检查并说明缺什么：' }]
   if (o.json) {
     const L = (t) => (o.lang === 'en' ? t?.en : o.lang === 'zh' ? t?.zh : t) ?? null
     say(stdout, JSON.stringify({
       tool: 'tapeapi', command: 'connect', version, experimental: true, target, resolution: r.resolution, ok: r.ok, exitCode: r.exitCode, status: r.status,
       reason: L(r.reason), detail: r.detail, service: r.service, formats: r.formats, snippets: r.snippets.map((s) => ({ ...s, title: L(s.title) })),
-      notes: Object.fromEntries(Object.entries(NOTES).map(([k, t]) => [k, L(t)])), next,
+      notes: Object.fromEntries(Object.entries(r.kind === 'mcp' ? MCP_NOTES : NOTES).map(([k, t]) => [k, L(t)])), next, kind: r.kind,
     }, null, 2) + '\n')
     return { exitCode: r.exitCode }
   }
-  say(stdout, renderConnect(r, { lang: o.lang, color, version, next, nextHint }) + '\n')
+  // An MCP tool service's --proxy: tapeapi-mcp speaks JSON-RPC on stdout, so the card and the start line go to stderr
+  // (where tapeapi-mcp logs) and stdout carries its protocol only. / MCP 工具服务的 --proxy：tapeapi-mcp 在 stdout 上说 JSON-RPC，
+  // 所以卡片与启动行写到 stderr（tapeapi-mcp 也在那里记日志），stdout 只有它的协议。
+  const mcpProxy = o.proxy && r.kind === 'mcp' && r.exitCode === 0
+  say(mcpProxy ? stderr : stdout, renderConnect(r, { lang: o.lang, color, version, next, nextHint }) + '\n')
   if (!o.proxy || r.exitCode !== 0) return { exitCode: r.exitCode }
+  if (mcpProxy) {
+    const margs = [...(o.rpc ? ['--rpc', o.rpc.join(',')] : []), ...Object.entries(o.chainRpc).flatMap(([id, urls]) => [`--rpc-${CHAINS[id].key}`, urls.join(',')]), ...(o.dev ? ['--dev', o.dev] : [o.target])]
+    const start = o.lang === 'en' ? 'starting tapeapi-mcp (stdio; it waits for an MCP client on stdin; Ctrl-C stops it):' : o.lang === 'zh' ? '启动 tapeapi-mcp（stdio；在标准输入上等待 MCP 客户端；Ctrl-C 停止）：' : 'starting tapeapi-mcp (stdio; it waits for an MCP client on stdin; Ctrl-C stops it) / 启动 tapeapi-mcp（stdio；在标准输入上等待 MCP 客户端；Ctrl-C 停止）:'
+    say(stderr, `\n${start} tapeapi-mcp ${margs.map(shellWord).join(' ')}\n`)
+    return { child: await runChild(mcpBin, margs) }
+  }
   // --proxy: tapeapi-verify as it is (the options given, in a fixed order); nothing is written to stderr before it.
   // --proxy：原样运行 tapeapi-verify（按固定顺序传入给出的选项）；在它之前不向 stderr 写任何字节。
   const args = [...(o.dev ? ['--dev', o.dev] : [o.target]), ...(o.port !== null ? ['--port', String(o.port)] : []), ...(o.strict ? ['--strict'] : []), ...(o.log !== null ? ['--log', o.log] : []), ...(o.requestUsage ? ['--request-usage'] : []),

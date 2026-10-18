@@ -88,6 +88,10 @@ export interface CreateProviderOptions {
   quorum?: number
   /** Timeout of one RPC request in ms. Renamed from `timeoutMs` in 1.0: passing `timeoutMs` throws INVALID_ARGUMENT. */
   rpcTimeoutMs?: number
+  /** @experimental (2.3) As createRpc's `rpcRetries` (@tapeapi/sdk): extra rounds, at most this many (0 to 5), for a chain
+   *  read whose round failed fast and only by the network (a broken or refused connection, DNS, an HTTP 5xx other than a
+   *  gateway timeout; never a timeout), each needing the same agreement. Default: the SDK's, 2; 0 turns it off. */
+  rpcRetries?: number
   fetch?: FetchLike
   allowSingleNode?: boolean
   /** Development only: allows http:// endpoints, and priced methods whose payment.escrow is the zero address (paid calls are then refused) and

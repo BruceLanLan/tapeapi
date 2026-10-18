@@ -133,7 +133,7 @@ not the params or result.)
 不经过 npm 注册表：
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 它和远程服务器的不同之处：
@@ -162,7 +162,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -182,7 +182,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -194,7 +194,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### 远程还是本地
@@ -243,7 +243,7 @@ claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeap
 [调用服务](consume.md)里那样在仓库的克隆目录里操作：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz
 ```
 
 ```js
@@ -307,7 +307,17 @@ export default {
 
 - 清单里每个免费方法都会成为一个工具。收费方法不会暴露。
 - 每次工具调用都像普通调用一样经过 `provider.handleRequest`，所以结果是同样签名的信封，受同样的限流，并附带回执和核验链接。
-- `/mcp` 是你服务器上的一条路由，不属于清单，所以加上它不改变链上任何东西，也不需要重新发布清单。
+- `/mcp` 是你服务器上的一条路由。加上它不需要改清单，也不改变链上任何东西。
+- **公共服务不在清单里声明这条路由**（没有 `mcp` 字段），这是决定，不是还没做。清单的 `mcp` 字段（[TAPI-20 §3.8](../../../spec/TAPI-20.md)，
+  以及 MCP 工具草案 TAPs #16）是为另一个方向写的：签名代理在前、真正的 MCP 服务器在后（见下文“Tape out 你自己的 MCP 服务器”），
+  每个方法就是一个 MCP 工具，它的签名结果就是该工具的 MCP 结果（`{ content, ... }`）。`createMcpEndpoint` 方向相反：工具由方法生成，
+  每个方法回答的是它自己的 JSON。若 `11.1013.tape` 声明了 `mcp`，`tapeapi connect` 会把它显示为 MCP 工具服务并给出 `tapeapi-mcp`
+  的配置，而 `tapeapi-mcp` 会核验每个回答、然后拒绝把它当作工具结果展示，比现在更糟。所以 `tapeapi connect 11.1013.tape` 继续显示
+  `not-ai`，接入它请用本指南开头的配置。
+- `@tapeapi/server/mcp` 为本端点的摘要提供实验性辅助函数：`await mcp.toolsSha256()`（客户端对其 `tools/list` 算出的摘要）、
+  `listedMcpTools(manifest)`、`mcpToolsSha256(manifest)`，以及 `holdToToolsSha256(methods, { manifest, published })`——工具与已发布的
+  摘要不再相符时，以签名的 `TOOLS_CHANGED` 拒绝这些工具对应的方法。用它们做出的声明，只有在你的方法本身回答 MCP 工具结果时才符合
+  §3.8。如果你运行的是真正的 MCP 服务器，请改用下文的签名代理：`createMcpProxy` 自己算出你要发布的 `toolsSha256`，并自己让调用受它约束。
 - `name` 是结果和回执里显示的 TapeOut 名称。
 - 核验链接只带哈希；`linkContent: true` 让链接带上明文参数与结果。
 
@@ -391,8 +401,23 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
 
   ```bash
   # 42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-mcp 42.1013.tape
   ```
+
+### 用 `tapeapi connect` 查看服务
+
+`tapeapi connect <名字>`（实验性，对 MCP 工具服务 2.3 起，不受 2.x 兼容承诺约束）按链上的样子展示已 tape out 的 MCP 服务器。清单有 `mcp` 字段、
+没有 `ai` 字段时，卡片写明“MCP 工具服务”，显示端点、工具（清单里的免费方法：`tapeapi-mcp` 不提供收费方法）与 `toolsSha256` 的前 8 位，再给出 Claude Code 与
+Claude Desktop 的配置：经 `tapeapi-mcp`（每个回答在你的机器上核验），以及标明不核验的、直连声明端点的写法（直连的回答不是签名信封，不要当作已签名或已核验）。它只读链与清单：不访问端点，
+任何配置都不含密钥。`--proxy` 为该服务运行 `tapeapi-mcp`（stdout 上是它的 JSON-RPC，卡片写到 stderr）。
+
+```bash
+# 在检出里（先在根目录 npm ci 一次）；42.1013.tape 是示例名
+node sdk/bin/tapeapi.js connect 42.1013.tape
+```
+
+没有 `mcp` 字段的清单显示为不可用（`not-ai`）。公共服务 `11.1013.tape` 就是这样：它不声明自己的 `/mcp` 路由（原因见上文
+“把你自己的 TapeAPI 服务变成 MCP 服务器”），请用本指南开头的配置接入它。
 
 ### 客户端核对什么
 

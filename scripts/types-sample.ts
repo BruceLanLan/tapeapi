@@ -21,7 +21,7 @@ import * as agentKit from '@tapeapi/sdk/agent'
 import { createAgentKit, createPaymentKit, paymentOrder, mandateTypedData, encodeContent, decodeContent, type Mandate, type ThreadCheck, type MandateCheck, type AttachmentCheck, type ThreadMessage } from '@tapeapi/sdk/agent'
 import * as reviews from '@tapeapi/sdk/review'
 import { createReviewKit, makeReview, signReview, summarizeReviews, type ReviewResult, type ReviewSummary, type ReviewRecord } from '@tapeapi/sdk/review'
-import { snippetsFor, connectReport, renderConnect, NOTES, SNIPPET_TOOLS, FORMAT_NAMES, type Snippet, type ConnectReport } from '@tapeapi/sdk/connect'
+import { snippetsFor, mcpSnippetsFor, connectReport, renderConnect, NOTES, MCP_NOTES, SNIPPET_TOOLS, MCP_SNIPPET_TOOLS, FORMAT_NAMES, type Snippet, type ConnectReport } from '@tapeapi/sdk/connect'
 import { voucherDigest } from '@tapeapi/sdk/sig'
 import { encodeCall } from '@tapeapi/sdk/abi'
 import { createRpc as createRpc2 } from '@tapeapi/sdk/rpc'
@@ -31,7 +31,7 @@ import { createVerifyingFetch, verifyUsageReceipt, FORMATS, type AIFormat, type 
 import { createAIProxy, type AIProxy } from '@tapeapi/server/ai-proxy'
 import { createMcpServer, receiptOf, hashReceipt, verifyLink, toolResultOf, toolsDigest, invisibleProblems, quoteProvenance, RECEIPT_META_KEY, type Receipt, type HashedReceipt, type McpTool, type CallToolResult } from '@tapeapi/sdk/mcp'
 import { CHAINS as CHAINS2, chainById, parseTapeName, formatTapeName, isNameShaped, type TapeOutChain, type ParsedTapeName } from '@tapeapi/sdk/chains'
-import { createMcpEndpoint, MCP_PATH } from '@tapeapi/server/mcp'
+import { createMcpEndpoint, listedMcpTools, mcpToolsSha256, holdToToolsSha256, MCP_PATH } from '@tapeapi/server/mcp'
 import { createMcpProxy, MCP_UPSTREAM_TIMEOUT_MS, type McpProxy, type McpProxyStats } from '@tapeapi/server/mcp-proxy'
 import { AI_UPSTREAM_TIMEOUT_MS } from '@tapeapi/server/ai-proxy'
 import type { ManifestBase } from '@tapeapi/server'
@@ -78,6 +78,10 @@ async function consumer(): Promise<void> {
   const keys = await api.chain.channelKeys(container)
   const bus = createRpc({ urls: [...BUS_RPC_URLS], quorum: 2, rpcTimeoutMs: 15000 })   // timeoutMs, the older name, below
   const rpc2 = createRpc2({ urls: ['http://a', 'http://b'] })
+  // 2.3 (@experimental): whole-read retries after network failures, and their switch / 网络故障后的整轮重试及其开关
+  const noRetry = createRpc({ urls: ['http://a', 'http://b'], quorum: 2, rpcRetries: 0, rpcRetryMaxMs: 0, rpcRetryFastMs: 0 })
+  void noRetry
+  void createTapeAPI({ rpcUrls: ['http://a', 'http://b'], rpcRetries: 1, rpcRetryMaxMs: 1500, rpcRetryFastMs: 1000, chains: { 196: { rpcRetries: 0, rpcRetryFastMs: 500 } } })
   const reader = busPrivacyReader({ rpc: bus, bus: MAINNET.channelBus, rooms: [channel.inboxRoom(container)], cover: { k: 8, store: new Map() }, contract: { onExceed: 'cover' } })
   reader.add('00'.repeat(32), (wire, { room }) => { void wire.length; void room.length })
   const privacy: BusPrivacyStats = reader.stats().privacy
@@ -115,6 +119,7 @@ async function provider(): Promise<void> {
     signerKey: '0x' + '11'.repeat(32),
     methods: { bnbUsd: async (_params, ctx) => ({ block: ctx.block, free: ctx.price === 0n }) },
     rpcUrls: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-mainnet.public.blastapi.io'],
+    rpcRetries: 0,
     store: memoryStore(),
   })
   const server = await p.listen(8787)
@@ -201,6 +206,10 @@ async function mcpAll(): Promise<void> {
   const provider = createProvider({ manifest: {}, signerKey: '0x', methods: {} })
   const ep = createMcpEndpoint({ provider, manifest: provider.manifest, name: '11.1013.tape', linkContent: false, onMessage: (m) => void m.method })
   const res: Response = await ep.handleRequest(new Request('https://x.example' + MCP_PATH), { clientIp: '1.2.3.4' })
+  const pinned: string = await ep.toolsSha256()
+  const listed: McpTool[] = await listedMcpTools(provider.manifest)
+  const held = holdToToolsSha256({ m: async (p: { a?: number }) => ({ b: p.a }) }, { manifest: provider.manifest, published: await mcpToolsSha256(provider.manifest) })
+  void [pinned, listed.length, held.m]
   const base: ManifestBase = { circuits: '0x', tokenId: '1', container: '0x', endpoints: { live: ['https://m.example/tapeapi/v1'], async: false } }
   const px: McpProxy = createMcpProxy({ upstream: { url: 'https://up.example/mcp' }, manifestBase: base, signerKey: '0x', name: '11.1013.tape', upstreamTimeoutMs: MCP_UPSTREAM_TIMEOUT_MS })
   const st: McpProxyStats = px.stats()
@@ -599,3 +608,14 @@ async function connectS1() {
   void [text, s.map((x) => [x.via, x.verifies, x.title.zh]), NOTES.receipt.en, SNIPPET_TOOLS.codex, FORMAT_NAMES.length]
 }
 void connectS1
+
+// @experimental: `tapeapi connect` for an MCP tool service (TAPI-20 §3.8) / 实验性：MCP 工具服务
+async function connectMcp() {
+  const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: 'tap10' })
+  const report: ConnectReport = await connectReport('42.1013.tape', { api, tool: 'claude-desktop', version: '2.1.0' })
+  const kind: 'ai' | 'mcp' | null = report.kind
+  const m = report.service?.mcp
+  const s: Snippet[] = m ? mcpSnippetsFor({ mcp: m }, { target: '42.1013.tape', version: '2.1.0', tool: 'claude-code' }) : []
+  void [kind, report.service?.tools?.length, s.map((x) => [x.via === 'stdio', x.format]), MCP_NOTES.tools.zh, MCP_SNIPPET_TOOLS.length]
+}
+void connectMcp

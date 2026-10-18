@@ -6,11 +6,26 @@ import type { TapeAPI } from './index.js'
 /** @experimental Text in English and Chinese. */
 export interface Bilingual { en: string; zh: string }
 /** @experimental A tool a settings snippet is written for. */
-export type SnippetTool = 'openai-sdk' | 'curl' | 'codex' | 'claude-code'
-/** @experimental One client setting: `via` 'sdk' (createVerifyingFetch in the caller's process), 'proxy' (through tapeapi-verify) or 'direct' (not checked); `verifies` is false for 'direct'. */
-export interface Snippet { tool: SnippetTool; format: string; via: 'sdk' | 'proxy' | 'direct'; verifies: boolean; title: Bilingual; text: string }
-/** @experimental Each tool and the API formats it needs; a tool gets a snippet only for a format the manifest declares. */
-export declare const SNIPPET_TOOLS: Readonly<Record<SnippetTool, readonly string[]>>
+export type SnippetTool = 'openai-sdk' | 'curl' | 'codex' | 'claude-code' | 'claude-desktop'
+/** @experimental One client setting: `via` 'sdk' (createVerifyingFetch in the caller's process), 'proxy' (through tapeapi-verify), 'stdio' (an MCP tool service through tapeapi-mcp) or 'direct' (not checked); `verifies` is false for 'direct'. An MCP setting has `format` 'mcp'. */
+export interface Snippet { tool: SnippetTool; format: string; via: 'sdk' | 'proxy' | 'stdio' | 'direct'; verifies: boolean; title: Bilingual; text: string }
+/** @experimental Each AI tool and the API formats it needs; a tool gets a snippet only for a format the manifest declares. */
+export declare const SNIPPET_TOOLS: Readonly<Record<Exclude<SnippetTool, 'claude-desktop'>, readonly string[]>>
+/** @experimental The tools an MCP tool service's settings are written for. */
+export declare const MCP_SNIPPET_TOOLS: readonly ('claude-code' | 'claude-desktop')[]
+/** @experimental The fixed sentences of an MCP tool service's card. */
+export declare const MCP_NOTES: Readonly<{ receipt: Bilingual; tools: Bilingual; boundary: Bilingual }>
+/**
+ * @experimental MCP client settings for an MCP tool service (no `ai` field, a valid `mcp` field, TAPI-20 §3.8): Claude
+ * Code and Claude Desktop through tapeapi-mcp, then the declared endpoint direct. [] otherwise. No key is written. Pure.
+ */
+export declare function mcpSnippetsFor(manifest: { ai?: unknown; mcp?: { endpoint: string; toolsSha256: string } } | null | undefined, o?: {
+  target?: string
+  dev?: string | null
+  /** the SDK release whose package npx runs */
+  version?: string
+  tool?: 'claude-code' | 'claude-desktop' | 'all'
+}): Snippet[]
 /** @experimental The format names this SDK knows. */
 export declare const FORMAT_NAMES: readonly string[]
 /** @experimental The fixed sentences of every card: what a receipt proves, what a price is, the command's boundary, the token. */
@@ -37,8 +52,10 @@ export interface ConnectReport {
   resolution: 'tap10' | 'dev'
   ok: boolean
   exitCode: 0 | 1 | 2 | 3
-  /** 'ok', a TAP status ('unpaid', 'not-opened', 'store-changed', 'no-manifest', 'delegation-invalid', 'unavailable', ...), 'not-ai', 'ai-invalid' or 'not-declared' */
+  /** 'ok', a TAP status ('unpaid', 'not-opened', 'store-changed', 'no-manifest', 'delegation-invalid', 'unavailable', ...), 'not-ai', 'ai-invalid', 'mcp-invalid' or 'not-declared' */
   status: string | null
+  /** what the service is once its manifest says so: 'ai' (an ai field), 'mcp' (no ai field, a valid mcp field); null otherwise */
+  kind: 'ai' | 'mcp' | null
   reason: Bilingual | null
   detail: string | null
   service: {
@@ -53,6 +70,11 @@ export interface ConnectReport {
     activation?: { live: boolean; isLive: boolean | null; isContainerLive: boolean } | null
     endpoints?: { format: string; baseUrl: string }[]
     models?: { id: string; aliases?: string[]; formats?: string[]; prices: Record<string, string>[] }[]
+    /** an MCP tool service only: its declared endpoint and digest, and its tools: the names of the manifest's free methods,
+     *  the ones tapeapi-mcp can offer (it offers no priced method; each must also be a tool of the endpoint, which
+     *  tapeapi-mcp checks) */
+    mcp?: { endpoint: string; toolsSha256: string }
+    tools?: string[]
   } | null
   formats: string[]
   snippets: Snippet[]
@@ -61,6 +83,6 @@ export interface ConnectReport {
  * @experimental Resolve `target` with `api` (a client built with conform: 'tap10' shows unpaid, not-opened and
  * store-changed as such) and describe it; never throws for a service that cannot be used.
  */
-export declare function connectReport(target: string | null, o: { api: Pick<TapeAPI, 'resolve'>; dev?: string | null; tool?: SnippetTool | 'all'; format?: string; port?: number; proxyCommand?: string }): Promise<ConnectReport>
+export declare function connectReport(target: string | null, o: { api: Pick<TapeAPI, 'resolve'>; dev?: string | null; tool?: SnippetTool | 'all'; format?: string; port?: number; proxyCommand?: string; version?: string }): Promise<ConnectReport>
 /** @experimental The card as terminal text; colors only on the status words and headings; `next` ends any exit other than 0. */
 export declare function renderConnect(report: ConnectReport, o?: { lang?: 'en' | 'zh' | 'both'; color?: boolean; version?: string; now?: number; next?: string | null; nextHint?: Bilingual | null }): string

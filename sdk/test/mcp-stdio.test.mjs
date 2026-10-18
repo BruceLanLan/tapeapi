@@ -568,10 +568,15 @@ test('a signed TOOLS_CHANGED refusal says the service\'s tools changed and await
   } finally { M.state.toolsChanged = false }
 })
 
-test('an unusable mcp field (bad digest, non-https endpoint) refuses the service', async () => {
+test('an unusable mcp field (bad or uppercase digest, non-https endpoint, query or fragment) refuses the service', async () => {
   const good = { ...M.manifest.mcp }
   const cases = [
-    [{ ...good, toolsSha256: 'xyz' }, /unusable "mcp" field: mcp\.toolsSha256 must be 64 hex characters/],
+    [{ ...good, toolsSha256: 'xyz' }, /unusable "mcp" field: mcp\.toolsSha256 must be 64 lowercase hex characters/],
+    // 2.3, as tapeapi connect and TAPs #16 §2: the same digest in capitals, and an endpoint with a query or a fragment.
+    // 2.3，与 tapeapi connect 和 TAPs #16 §2 一致：同一摘要写成大写，以及带 query 或 fragment 的端点。
+    [{ ...good, toolsSha256: good.toolsSha256.toUpperCase() }, /unusable "mcp" field: mcp\.toolsSha256 must be 64 lowercase hex characters/],
+    [{ ...good, endpoint: good.endpoint + '?x=1' }, /unusable "mcp" field: mcp\.endpoint must have no query or fragment/],
+    [{ ...good, endpoint: good.endpoint + '#tools' }, /unusable "mcp" field: mcp\.endpoint must have no query or fragment/],
     [{ ...good, endpoint: 'http://example.com/mcp' }, /unusable "mcp" field: mcp\.endpoint must be https/],
     [{ ...good, endpoint: 'https://user:pw@example.com/mcp' }, /must not carry credentials/],
     ['https://example.com/mcp', /mcp must be an object/],

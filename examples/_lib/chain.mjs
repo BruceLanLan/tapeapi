@@ -41,17 +41,23 @@ export const blockPinnedOf = (pinned, blockRef) => ({ blockNumber: pinned.blockN
  *                   node lacks the `finalized` tag and for `block: 'latest'`
  *   allowSingleNode 开发用：URL 少于 quorum 时把 quorum 下调到 URL 数 / dev only: clamp quorum to the url count
  *   rpc, singles    直接注入（测试用）；给了就不再自己建 / injected (tests); when given, nothing is constructed
+ *   rpcRetries      与 createRpc 同义（2.3，实验性）：某轮只因网络故障且很快失败的读取再问几轮；不传用 SDK 默认（2），0 关闭。
+ *                   用于共识客户端与每个节点各自的客户端 / as createRpc's (2.3, experimental): extra rounds for a read whose
+ *                   round failed fast and only by the network; left out, the SDK's default (2); 0 turns it off. Used for
+ *                   the quorum client and for each node's own client.
  *
  * A chain reader. `quorum` below always means `rpc.quorum`, i.e. the value `createRpc` actually settled on
  * after `allowSingleNode`, so a one-node dev setup behaves the same on every chain.
  */
-export function createChainReader({ name = 'chain', urls = [], quorum = 2, lag = 1, allowSingleNode = false, rpc, singles, timeoutMs } = {}) {
+export function createChainReader({ name = 'chain', urls = [], quorum = 2, lag = 1, allowSingleNode = false, rpc, singles, timeoutMs, rpcRetries } = {}) {
   // timeoutMs bounds each node's answer: every read waits for all nodes (never a majority), so a hung node costs the
   // whole timeout on every round. / 每个节点的应答时限：每次读取都要等所有节点，挂住的节点每一轮都要耗满时限。
-  const multi = rpc || createRpc({ urls, quorum, allowSingleNode, timeoutMs })
+  // rpcRetries (2.3): passed only when given, so the SDK's default applies otherwise. / 只在给出时传，否则用 SDK 的默认值。
+  const retry = rpcRetries !== undefined ? { rpcRetries } : {}
+  const multi = rpc || createRpc({ urls, quorum, allowSingleNode, timeoutMs, ...retry })
   // 每个节点再单独建一个 quorum 1 的 client：钉块要知道**每个节点各自**报了什么，不能只要一个共识答案。
   // One quorum-1 client per node: pinning needs each node's own answer, not a single agreed one.
-  const nodes = singles || urls.map((u) => createRpc({ urls: [u], quorum: 1, timeoutMs }))
+  const nodes = singles || urls.map((u) => createRpc({ urls: [u], quorum: 1, timeoutMs, ...retry }))
   const need = multi.quorum
   const lagBlocks = Number(lag)
   // Who runs each node: answers are counted by OPERATOR, as createRpc counts them, so two URLs of one operator (every

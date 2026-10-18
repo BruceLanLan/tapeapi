@@ -102,6 +102,14 @@ export interface CreateTapeAPIOptions {
   /** Timeout of one RPC request in ms (default 8000). Renamed from `timeoutMs` in 1.0: passing `timeoutMs` throws
    *  INVALID_ARGUMENT (api.call keeps its own per-call `timeoutMs`). */
   rpcTimeoutMs?: number
+  /** @experimental (2.3) Extra rounds for a read whose round failed fast and only by network failures (default 2; 0 turns it off).
+   *  Every node is asked again and the same agreement is needed; see RpcOptions.rpcRetries. */
+  rpcRetries?: number
+  /** @experimental (2.3) The most the waits before those rounds add up to, in ms (default 2000). */
+  rpcRetryMaxMs?: number
+  /** @experimental (2.3) Only a round that failed in less than this many ms is retried (default 2000); see
+   *  RpcOptions.rpcRetryFastMs. */
+  rpcRetryFastMs?: number
   fetch?: FetchLike
   /** Allow resolve({ dev }) and http:// endpoints. Does not relax checks on chain-sourced manifests. Since 2.0 it also
    *  means `conform: false` unless `conform: 'tap10'` is passed (no deprecation warning). */
@@ -122,7 +130,7 @@ export interface CreateTapeAPIOptions {
   chainId?: number
   /** Nodes for the other TapeOut chains, used when a target names one (a name with an area code, or { chainId }).
    *  Without an entry, that chain's SDK defaults (rpcUrlsFor) are used. */
-  chains?: Record<number, { rpcUrls?: string[]; quorum?: number; rpcTimeoutMs?: number; allowSingleNode?: boolean; quiet?: boolean; hub?: Address; factory?: Address; siteRegistry?: Address; opener?: Address; binding?: Address; pin?: CreateTapeAPIOptions['pin'] }>
+  chains?: Record<number, { rpcUrls?: string[]; quorum?: number; rpcTimeoutMs?: number; rpcRetries?: number; rpcRetryMaxMs?: number; rpcRetryFastMs?: number; allowSingleNode?: boolean; quiet?: boolean; hub?: Address; factory?: Address; siteRegistry?: Address; opener?: Address; binding?: Address; pin?: CreateTapeAPIOptions['pin'] }>
   hub?: Address
   siteRegistry?: Address
   /** TapeOut processor factory; required with hub and siteRegistry on a chain not in CHAINS. */

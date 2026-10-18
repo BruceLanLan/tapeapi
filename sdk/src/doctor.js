@@ -167,6 +167,26 @@ export function activationFacts(a) {
   }
 }
 
+/**
+ * @experimental (2.3) The structured facts the `manifest-format` check carries when the sidecar answers in setup mode
+ * (tapeapi-doctor --json, `setup`), so a script (tapeapi init) reads what is missing without a regular expression on
+ * `detail`. Taken from the sidecar's /tapeapi/v1/health as given; facts only, nothing here is a verdict.
+ *   missing  the names health lists in `missing`, as written there (e.g. 'SIGNER_KEY (secret)'); [] when none
+ *   problem  health's `problem` (a configuration error it names), or null
+ *   signer   the signing address health reports, or null
+ * @experimental（2.3）旁路处于设置模式时 manifest-format 检查携带的结构化事实（--json 的 setup），脚本（tapeapi init）无需对 detail
+ * 用正则即可读到缺项。原样取自旁路的 /tapeapi/v1/health；只给事实，不给结论。missing：health 列出的名字（原文）；problem：health 指出
+ * 的配置错误或 null；signer：health 报告的签名地址或 null。
+ * @param {object} h  the parsed health answer / 解析后的 health 回答
+ */
+export function setupFacts(h) {
+  return {
+    missing: Array.isArray(h?.missing) ? h.missing.filter((m) => typeof m === 'string') : [],
+    problem: typeof h?.problem === 'string' && h.problem ? h.problem : null,
+    signer: typeof h?.signer === 'string' ? h.signer : null,
+  }
+}
+
 // Price hints (the holder console's, per 1M tokens): they warn, never refuse. / 价目表提示（与持有人操作台一致）：只警告不拒绝。
 const HUGE = { USDT: '1000', USDC: '1000', USD1: '1000', USD: '1000', BNB: '2', ETH: '0.5', BEM: '100000' }
 const units = (s) => { const [i, f = ''] = String(s).split('.'); return BigInt(i + (f + '00000000').slice(0, 8)) }
@@ -555,7 +575,8 @@ async function diagnoseChecks(input, o) {
       if (h?.setup) {
         const what = h.problem || `missing ${(h.missing || []).join(', ')}`, whatZh = h.problem || `缺少 ${(h.missing || []).join('、')}`
         fail('manifest-format', T(`the sidecar is in SETUP MODE: ${what}${h.signer ? `; its signing address is ${h.signer}` : ''}`, `旁路处于设置模式：${whatZh}${h.signer ? `；它的签名地址是 ${h.signer}` : ''}`),
-          T(`Normal before the identity is complete. Set what is missing in .env (the holder console ${cmd.console} gives the values: step 3 the service key, step 4 the delegation, which reads the signing address from this sidecar), then restart the sidecar.`, `身份补齐之前这是正常的。在 .env 里补上缺的变量（持有人操作台 ${cmd.console} 给出这些值：第 3 步服务密钥，第 4 步委托，它从这个旁路读取签名地址），然后重启旁路。`), cmd.doctor(input))
+          T(`Normal before the identity is complete. Set what is missing in .env (the holder console ${cmd.console} gives the values: step 3 the service key, step 4 the delegation, which reads the signing address from this sidecar), then restart the sidecar.`, `身份补齐之前这是正常的。在 .env 里补上缺的变量（持有人操作台 ${cmd.console} 给出这些值：第 3 步服务密钥，第 4 步委托，它从这个旁路读取签名地址），然后重启旁路。`), cmd.doctor(input),
+          { setup: setupFacts(h) })
         return stop()
       }
       if (res.status >= 300 && res.status < 400) {

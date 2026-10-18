@@ -33,7 +33,9 @@ BNB Smart Chain（chainId 56），也就是 TapeOut 所在的链。
 **`DELEGATION_INVALID`**：委托已过期，或者电路在委托签署之后易主。提供者必须签署一份新的委托，并重新发布清单（[续期](provide.md#4-续期)）。
 
 **`RPC_UNAVAILABLE: only 1/2 nodes answered`**：至少使用三个 RPC URL 并设置 `quorum: 2`，这样一个节点宕机时仍能凑够
-法定人数。`allowSingleNode: true` 仅用于本地开发。
+法定人数。`allowSingleNode: true` 仅用于本地开发。节点只因网络故障（连接断开或被拒、DNS 失败、网关超时 504、522、524 以外的 HTTP 5xx）失败、
+且这一轮用时不到 2 秒的读取，在你看到这条错误之前已经重问过至多两次（实验性；`rpcRetries: 0` 关闭），一次失败的读取因此多花不到
+5.2 秒。超时、网关超时、更慢的失败、分歧和拒绝从不重试。
 
 **`RPC_DISAGREE`**：节点对同一次读取返回了不同的字节。SDK 会重试一次；若持续出现，说明某个节点落后或行为异常。
 

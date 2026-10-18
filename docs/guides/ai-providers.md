@@ -23,7 +23,7 @@ The checks of steps 1 to 7 are `tapeapi-doctor` (experimental), which ships in t
 Every `tapeapi-doctor` in the table stands for this, run from any directory, with nothing to clone:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-doctor <your name>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-doctor <your name>
 ```
 
 In a checkout, `node sdk/bin/tapeapi-doctor.js <your name>` at its root does the same. Either way the report writes
@@ -40,6 +40,16 @@ the next command the way you ran it.
 | 5 | Publish the manifest, price table included | console step 5 (one transaction, your gas) | `tapeapi-doctor <your name>` | every check passes: exit status 0 |
 | 6 | Tell your users | [What your users do](#what-your-users-do) | `tapeapi-verify <your name>` on a user's machine | one `OK` line per call |
 | 7 | Renew the delegation every 90 days, and keep the activation paid | console step 4, "Renew"; pay again as in step 2b | `tapeapi-doctor <your name>`, daily in your CI | `delegation` warns from 30 days before expiry; `activation` warns once the name is no longer paid |
+
+**The same steps as a wizard: `tapeapi init` (experimental, since 2.3, outside the 2.x compatibility promise).**
+From a checkout, `node sdk/bin/tapeapi.js init --dir <the folder of your sidecar's docker-compose.yml>` runs one step
+at a time: what you do, where, who pays (you, every time), then the step's check from the table above, read-only, and
+the next command. It asks for no key, password or token, never reads your `.env`, pays nothing and sends no
+transaction. From step 3 on, `--formats` is required and has no default: the formats your gateway really serves and
+you have tested; all four need `--confirm-all-formats`, because they all go into the manifest on chain. Steps 3 and 4
+also need `--upstream new-api` when no terminal asks (it is the only gateway this version writes for, and it is not
+assumed: a LiteLLM operator follows `examples/litellm-sidecar/README.md` instead). It writes a
+`.env` once, with `FORMATS` set to that choice and every secret left empty for you.
 
 `tapeapi-doctor` checks, in order: the name resolves, the circuit exists, the container is opened, the name is activated
 (TAP-10 §6.3; a warning only: the site files stay readable, but a TAP-11 client answers `unpaid` and does not resolve the
@@ -167,6 +177,12 @@ The table is a JSON array; the sidecar publishes it in the manifest and prices e
 - **Prices are published, not settled.** Your users pay you as they do today; the amount in a receipt is a checkable
   claim, not a payment.
 
+From new-api's price list, `node sdk/bin/tapeapi.js prices convert` and `prices check` (experimental, since 2.3)
+run the [new-api package's converter](https://github.com/BruceLanLan/tapeapi/tree/main/examples/new-api-sidecar) with
+the same arguments, output and exit status (a checkout only), and `prices show --models models.json` prints the table
+with its source record: who fetched the price list, the rate and `quota_per_unit`, what was refused or flagged. Files
+only: save `/api/pricing` and `/api/status` of your own new-api yourself, without a cookie or a token.
+
 ## Identity and publishing the manifest
 
 The identity steps are those of any TapeAPI service (see [Run a service](provide.md)), done in the holder console at
@@ -254,7 +270,7 @@ and point the client at it. `tapeapi-verify` keeps running in the foreground, so
 
 ```sh
 # Terminal 1. 42.1013.tape is an example name: put your service's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -278,26 +294,36 @@ users your service as the chain has it and prints client settings only for the f
 Claude Code settings without `anthropic-messages`, no Codex settings without `openai-responses`):
 
 ```sh
-# from a checkout (npm ci once at the root); with the SDK installed, the command is `tapeapi connect …`
-node sdk/bin/tapeapi.js connect 42.1013.tape            # the service card and the settings
-node sdk/bin/tapeapi.js connect 42.1013.tape --proxy    # then runs tapeapi-verify for it
+# any directory, no clone needed; 42.1013.tape is an example name
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi connect 42.1013.tape            # the service card and the settings
+# with the SDK installed, the command is tapeapi connect …
+tapeapi connect 42.1013.tape --proxy    # then runs tapeapi-verify for it
 ```
+
+In a checkout (`npm ci` once at the root), `node sdk/bin/tapeapi.js connect …` does the same.
 
 It reads the chain and the manifest only: no transaction, no key or password asked for (the settings read the token
 from `API_KEY` in the user's own environment), nothing uploaded, nothing paid. An `unpaid`, `not-opened` or
 `store-changed` service is shown as unavailable (exit 1) and `--proxy` starts nothing; exit 2 is a usage mistake (also
 `--tool` naming a format the manifest does not declare), 3 means it could not be read. In code the same is
-`@tapeapi/sdk/connect` (`snippetsFor`, `connectReport`, `renderConnect`), experimental too.
+`@tapeapi/sdk/connect` (`snippetsFor`, `connectReport`, `renderConnect`), experimental too. A manifest with no `ai`
+field is not an AI service: `connect` shows it as unavailable (`not-ai`), unless it declares MCP tools (`mcp`, see
+[MCP](mcp.md#see-a-service-with-tapeapi-connect)).
 
 **Afterwards, your users can look at their receipts and set them against your bill** with `tapeapi receipts` and
 `tapeapi reconcile` (experimental, since 2.2, outside the 2.x compatibility promise). Both read files on the
 user's machine only: no network, no key.
 
 ```sh
-node sdk/bin/tapeapi.js receipts tail --receipts ~/.tapeapi/receipts.jsonl              # what tapeapi-verify --log wrote
-node sdk/bin/tapeapi.js receipts show <id> --receipts ~/.tapeapi/receipts.jsonl         # one receipt, its checks replayed offline
-node sdk/bin/tapeapi.js reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # set against a bill file
+# any directory, no clone needed
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi receipts tail --receipts ~/.tapeapi/receipts.jsonl   # what tapeapi-verify --log wrote
+# with the SDK installed, the commands are tapeapi receipts … and tapeapi reconcile …
+tapeapi receipts show <id> --receipts ~/.tapeapi/receipts.jsonl         # one receipt, its checks replayed offline
+tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # set against a bill file
 ```
+
+In a checkout (`npm ci` once at the root), `node sdk/bin/tapeapi.js receipts …` and `node sdk/bin/tapeapi.js reconcile …`
+do the same.
 
 `show` replays a receipt's checks (signature, container, method and path, price table; the hashes too with the exact
 bytes, request bytes only from a `tapeapi-verify --no-salt` run) against your manifest as the user saved it next to the receipts (`manifest.json`); without it, nothing is

@@ -6,11 +6,13 @@
 //   node scripts/verify-bscscan.mjs --escrow 0x... --token 0x... --hub 0x... --treasury 0x...
 //   (--token was --bem before escrow v3: same constructor slot; --bem / BEM still work, with a deprecation notice)
 //   node scripts/verify-bscscan.mjs --check 0x...        # just ask whether an address is verified
-//   node scripts/verify-bscscan.mjs --dry-run ...        # build + self-check, submit nothing
+//   node scripts/verify-bscscan.mjs --dry-run ...        # build + self-check, submit nothing, ask Etherscan nothing
 //
-// ETHERSCAN_API_KEY must be set for anything that submits. `--dry-run` and `--check` of an
-// already-verified contract need no key for the local parts.
-// 提交需要 ETHERSCAN_API_KEY；--dry-run 的本地部分不需要。
+// ETHERSCAN_API_KEY must be set for anything that submits. `--dry-run` needs no key and makes no
+// request to Etherscan at all: it builds, recompiles and compares to eth_getCode from RPC_URL, then
+// stops (so it does not say whether the address is already verified; `--check` does).
+// 提交需要 ETHERSCAN_API_KEY。--dry-run 不需要 key，也完全不请求 Etherscan：只构建、本地重编译、
+// 与 RPC_URL 的 eth_getCode 比对，然后停止（因此不会告诉你该地址是否已验证；那是 --check 的事）。
 //
 // WHY THIS IS NOT JUST "POST THE SOURCE":
 // Verification only succeeds if the compiler input we submit reproduces the deployed bytes exactly.
@@ -412,10 +414,12 @@ async function verifyOne(which, address) {
     return false
   }
 
+  // --dry-run stops before the first Etherscan request: it is the mode for checking without talking to anyone but the
+  // RPC (a fork rehearsal, an offline review). / --dry-run 在第一次请求 Etherscan 之前停止：只和 RPC 通信。
+  if (DRY) { info('--dry-run: every local check done, nothing submitted, Etherscan not contacted (use --check <address> to ask whether it is verified)'); return true }
+
   const already = await checkVerified(address)
   if (already) { info('already verified; nothing to do'); return true }
-
-  if (DRY) { info('--dry-run: everything checked, nothing submitted'); return true }
   head('  Submitting / 提交')
   return submit(built, spec, address, ctorArgs)
 }

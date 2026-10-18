@@ -160,20 +160,27 @@ function parseArgs(argv) {
 function pinMaterial(m) {
   const methods = [...m.methods].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
   const mat = { signer: String(m.signer).toLowerCase(), name: typeof m.name === 'string' ? m.name : null, methods }
-  if (m.mcp !== undefined) mat.toolsSha256 = isObj(m.mcp) && SHA256_RE.test(m.mcp.toolsSha256) ? m.mcp.toolsSha256.toLowerCase() : null
+  // Any case here, as before 2.3, so no pin hash changes; mcpFieldProblem refuses a digest that is not lowercase.
+  // 这里仍不分大小写（与 2.3 之前相同），钉子的哈希因此不变；不是小写的摘要由 mcpFieldProblem 拒绝。
+  if (m.mcp !== undefined) mat.toolsSha256 = isObj(m.mcp) && PIN_SHA256_RE.test(m.mcp.toolsSha256) ? m.mcp.toolsSha256.toLowerCase() : null
   return mat
 }
-const SHA256_RE = /^[0-9a-fA-F]{64}$/
+const PIN_SHA256_RE = /^[0-9a-fA-F]{64}$/
+// 64 lowercase hex digits, as TAPI-20 §3.8, the MCP tools draft (TAPs #16 §2) and the holder console write it (2.3).
+// 64 位小写十六进制，与 TAPI-20 §3.8、MCP 工具草案（TAPs #16 §2）和持有人操作台一致（2.3）。
+const SHA256_RE = /^[0-9a-f]{64}$/
 
 // Why a manifest's `mcp` field cannot be used (null when it can). Extra keys are ignored, as TAPI-20 asks of clients.
 // 清单的 `mcp` 字段为何不能用（能用则为 null）。多余的键按 TAPI-20 对客户端的要求忽略。
 function mcpFieldProblem(mcp, dev) {
   if (!isObj(mcp)) return 'mcp must be an object { endpoint, toolsSha256 }'
-  if (typeof mcp.toolsSha256 !== 'string' || !SHA256_RE.test(mcp.toolsSha256)) return 'mcp.toolsSha256 must be 64 hex characters'
+  if (typeof mcp.toolsSha256 !== 'string' || !SHA256_RE.test(mcp.toolsSha256)) return 'mcp.toolsSha256 must be 64 lowercase hex characters'
   if (typeof mcp.endpoint !== 'string' || mcp.endpoint.length > 2048) return 'mcp.endpoint must be a URL'
   let u
   try { u = new URL(mcp.endpoint) } catch { return 'mcp.endpoint must be a URL' }
   if (u.username || u.password) return 'mcp.endpoint must not carry credentials'
+  // TAPI-20 §3.8: no query or fragment (2.3, as tapeapi connect). / 不含 query 与 fragment（2.3，与 tapeapi connect 一致）。
+  if (u.search || u.hash) return 'mcp.endpoint must have no query or fragment'
   if (u.protocol === 'https:') return null
   if (u.protocol === 'http:' && u.hostname === '127.0.0.1') return dev ? null : 'mcp.endpoint must be https (http://127.0.0.1 only with --dev)'
   return 'mcp.endpoint must be https'

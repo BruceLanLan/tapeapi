@@ -146,7 +146,7 @@ Checked against the specification on 2026-10-14, when 2026-07-28 was its latest 
 it from the GitHub release, not from the npm registry:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 What it does differently from the remote server:
@@ -177,7 +177,7 @@ Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -197,7 +197,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -209,7 +209,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### Remote or local
@@ -263,7 +263,7 @@ Save the receipt (the `_meta["fun.tapeapi/receipt"]` object) as `receipt.json`. 
 release, or work inside a clone of the repository as in [Call a service](consume.md):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz
 ```
 
 ```js
@@ -333,8 +333,22 @@ export default {
 - Each free method in the manifest becomes a tool. Priced methods are not exposed.
 - Every tool call goes through `provider.handleRequest` like any other call, so the result is the same signed
   envelope, under the same rate limits, with a receipt and a verification link.
-- `/mcp` is a route on your server, not part of the manifest, so adding it changes nothing on chain and needs no
-  republish.
+- `/mcp` is a route on your server. Adding it needs no manifest change and changes nothing on chain.
+- **The public service does not declare this route in its manifest** (no `mcp` field), and that is a decision, not a
+  delay. The manifest's `mcp` field ([TAPI-20 §3.8](../../spec/TAPI-20.md), and the MCP tools draft, TAPs #16) is
+  written for the other direction: a signing proxy in front and a real MCP server behind it
+  ([Tape out your own MCP server](#tape-out-your-own-mcp-server) below), where each method is an MCP tool and its
+  signed result is that tool's MCP result (`{ content, ... }`). `createMcpEndpoint` goes the opposite way: the tools
+  are generated from the methods, and each method answers with its own JSON. Declared, `11.1013.tape` would be shown by
+  `tapeapi connect` as an MCP tool service with `tapeapi-mcp` settings, and `tapeapi-mcp` would verify every answer
+  and then refuse to show it as a tool result, which is worse than today. So `tapeapi connect 11.1013.tape` keeps
+  saying `not-ai`, and the settings at the top of this guide are the way to use it.
+- `@tapeapi/server/mcp` has experimental helpers for this endpoint's digest: `await mcp.toolsSha256()` (what clients
+  compute over its `tools/list`), `listedMcpTools(manifest)`, `mcpToolsSha256(manifest)`, and
+  `holdToToolsSha256(methods, { manifest, published })`, which refuses the tool methods with a signed `TOOLS_CHANGED`
+  once the tools no longer match the published digest. A declaration made with them follows §3.8 only if your methods
+  themselves answer with MCP tool results. If you run a real MCP server, use the signing proxy below instead:
+  `createMcpProxy` computes the `toolsSha256` you publish and holds its calls to it by itself.
 - `name` is the TapeOut name shown in results and receipts.
 - Verification links carry hashes only; `linkContent: true` puts the params and results in them, in clear.
 
@@ -428,8 +442,28 @@ isolate can be restarted at any time. With it, changed tools are refused after a
 
   ```bash
   # 42.1013.tape is an example name: put your service's TapeOut name here
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-mcp 42.1013.tape
   ```
+
+### See a service with `tapeapi connect`
+
+`tapeapi connect <name>` (experimental, since 2.3 for MCP tool services, outside the 2.x compatibility promise) shows a taped-out MCP
+server as the chain has it. When the manifest has an `mcp` field and no `ai` field, the card says "MCP tool service"
+and shows the endpoint, the tools (the manifest's free methods: `tapeapi-mcp` offers no priced method) and the first 8
+hex digits of `toolsSha256`, then Claude
+Code and Claude Desktop settings: through `tapeapi-mcp` (every answer checked on your machine) and, marked as not
+checked, the declared endpoint direct (a direct answer is not a signed envelope: do not treat it as signed or verified).
+It reads the chain and the manifest only: it does not contact the endpoint, and
+no setting carries a key. `--proxy` runs `tapeapi-mcp` for the service (its JSON-RPC on stdout, the card on stderr).
+
+```bash
+# from a checkout (npm ci once at the root); 42.1013.tape is an example name
+node sdk/bin/tapeapi.js connect 42.1013.tape
+```
+
+A manifest without `mcp` is shown as unavailable (`not-ai`). The public service `11.1013.tape` is one: it does not
+declare its `/mcp` route (why: "Run your own TapeAPI service as an MCP server" above), so use the settings at the top
+of this guide for it.
 
 ### What clients check
 

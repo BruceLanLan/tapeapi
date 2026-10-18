@@ -118,14 +118,71 @@ function brokenConnection(e) {
   return e instanceof TypeError && /fetch failed|failed to fetch|networkerror|load failed/i.test(String(e.message))
 }
 
+// A node failure of the network kind (2.3, @experimental): the read may be asked again as a whole (rpcRetries below).
+// Only failures with no answer from the node: a broken connection (reset, "socket hang up"), a fetch that could not
+// connect (refused, DNS, unreachable), or an HTTP 5xx with no JSON-RPC answer in it. Not a timeout or an abort, of our
+// own timer or anyone's (any error, or its causes, naming an abort or a timeout, e.g. UND_ERR_CONNECT_TIMEOUT, ETIMEDOUT):
+// a node that keeps timing out would make every failing read wait rpcTimeoutMs again per extra round (decided
+// 2026-10-16). Nor a gateway timeout: HTTP 504, and Cloudflare's 522 (connection timed out) and 524 (a timeout occurred,
+// after about 100 s) are timeouts reported by a gateway in front of the node. Never what a node answered: a refusal (rate
+// limit, method not found, an HTTP error carrying a JSON-RPC error), an answer too large or not JSON (TapeAPIError), an
+// id mismatch, a JSON-RPC error. A TapeAPIError thrown by fetch itself (a metered fetch whose budget is spent) is not one
+// either. The kind alone does not make a failure fast: round() also checks the time (rpcRetryFastMs).
+// 网络类节点故障（2.3，实验性）：整次读取可以再问一次（见下面的 rpcRetries）。只限节点没有作答的失败：连接断开（重置、
+// "socket hang up"）、连不上（拒绝、DNS、不可达）、不带 JSON-RPC 回答的 HTTP 5xx。超时与中止不算，无论是本客户端的计时器还是别处
+// （错误本身或其 cause 提到 abort 或 timeout 的，如 UND_ERR_CONNECT_TIMEOUT、ETIMEDOUT）：否则一个一直超时的节点会让每次失败的读取
+// 每多一轮就再等一个 rpcTimeoutMs（2026-10-16 决定）。网关超时也不算：HTTP 504，以及 Cloudflare 的 522（连接超时）与 524（约 100 秒
+// 后的超时），都是节点前面的网关报告的超时。绝不是节点的回答：拒绝（限流、方法不存在、带 JSON-RPC 错误的 HTTP 错误）、
+// 过大或不是 JSON 的回答（TapeAPIError）、id 不符、JSON-RPC 错误。fetch 自己抛出的 TapeAPIError（计数 fetch 预算用完）也不是。
+// 只看种类并不说明失败得快：round() 还要看时间（rpcRetryFastMs）。
+const NET_CODES = new Set(['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET', 'UND_ERR_CLOSED', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH',
+  'ENETUNREACH', 'ENETDOWN'])
+const GATEWAY_TIMEOUT = /^http (?:504|522|524)$/
+export function networkFailure(e) {
+  if (!e || typeof e !== 'object' || e instanceof TapeAPIError || e.refusal || e.data?.tooLarge) return false
+  if (e.timedOut || e.name === 'AbortError' || e.name === 'TimeoutError') return false
+  const causes = [e, e.cause, e.cause?.cause].filter((x) => x && typeof x === 'object')
+  if (causes.some((x) => /abort|timeout|timed ?out/i.test(`${x.name ?? ''} ${x.code ?? ''} ${x.message ?? ''}`))) return false
+  if (GATEWAY_TIMEOUT.test(String(e.message))) return false
+  if (/^http 5\d\d$/.test(String(e.message))) return true
+  if (brokenConnection(e)) return true
+  if (causes.some((x) => NET_CODES.has(String(x.code ?? '')))) return true
+  return e instanceof TypeError && /fetch failed|failed to fetch|networkerror|load failed/i.test(String(e.message))
+}
+// Set (non-enumerable, never serialized) on an RPC_UNAVAILABLE from round() when every node that failed failed by
+// networkFailure and the whole round took less than rpcRetryFastMs. / round() 的 RPC_UNAVAILABLE 中，每个失败节点都属网络类故障、
+// 且整轮用时少于 rpcRetryFastMs 时设置（不可枚举，绝不序列化）。
+const TRANSIENT = Symbol('tapeapi.rpc.transient')
+// The waits before each extra attempt (2.3, @experimental): exponential from `baseMs` (400, 800, ...) with equal jitter
+// (each wait is between half of its step and the whole step), and their sum never above `maxMs`: a wait that would pass
+// it is cut to what is left, and once nothing is left there is no further attempt (so maxMs 0 also means none). One
+// extra attempt per wait returned. `retries` <= 0 or not a whole number: none.
+// 每次额外尝试之前的等待（2.3，实验性）：从 baseMs 起指数增长（400、800……），加等分抖动（每次等待在该步的一半到整步之间），
+// 总和绝不超过 maxMs：会超过的那次等待截到剩余的量，余量用完就不再尝试（所以 maxMs 为 0 也表示不重试）。返回几个等待就有几次额外尝试。
+// retries <= 0 或不是整数：没有。
+export function retryDelays({ retries, maxMs, baseMs = 400, random = Math.random } = {}) {
+  const n = Number.isInteger(retries) && retries > 0 ? retries : 0
+  let left = Number.isFinite(maxMs) && maxMs > 0 ? maxMs : 0
+  const out = []
+  for (let k = 0; k < n && left > 0; k++) {
+    const step = baseMs * 2 ** k
+    const d = Math.min(left, Math.round(step / 2 + random() * step / 2))
+    out.push(d); left -= d
+  }
+  return out
+}
+
 // `rpcTimeoutMs` is the same option under the name createTapeAPI and createProvider use; `timeoutMs` stays. Both
 // given with different values is an error. / `rpcTimeoutMs` 与 createTapeAPI、createProvider 同名；`timeoutMs` 保留；两者不同则报错。
-export function createRpc({ urls, quorum = 2, timeoutMs: timeoutMsOld, rpcTimeoutMs, fetch: fetchImpl, allowSingleNode = false, bodyLimit = RPC_BODY_LIMIT, disagreeRetryMs = 300, maxHeadSpread = 64, quiet = false, warn, transportRetryMs = 250 } = {}) {
+export function createRpc({ urls, quorum = 2, timeoutMs: timeoutMsOld, rpcTimeoutMs, fetch: fetchImpl, allowSingleNode = false, bodyLimit = RPC_BODY_LIMIT, disagreeRetryMs = 300, maxHeadSpread = 64, quiet = false, warn, transportRetryMs = 250, rpcRetries = 2, rpcRetryMaxMs = 2000, rpcRetryFastMs = 2000 } = {}) {
   if (rpcTimeoutMs !== undefined && timeoutMsOld !== undefined && rpcTimeoutMs !== timeoutMsOld) throw new TapeAPIError('INVALID_ARGUMENT', `createRpc: rpcTimeoutMs (${rpcTimeoutMs}) and timeoutMs (${timeoutMsOld}) name the same timeout; pass one`)
   const timeoutMs = rpcTimeoutMs !== undefined ? rpcTimeoutMs : timeoutMsOld !== undefined ? timeoutMsOld : 8000
   if (!Array.isArray(urls) || urls.length === 0) throw new TapeAPIError('INVALID_ARGUMENT', 'no rpc urls')
   urls = [...new Set(urls.map(String))]
   if (!Number.isInteger(quorum) || quorum < 1) throw new TapeAPIError('INVALID_ARGUMENT', 'quorum must be a positive integer')
+  if (!Number.isInteger(rpcRetries) || rpcRetries < 0 || rpcRetries > 5) throw new TapeAPIError('INVALID_ARGUMENT', `rpcRetries must be a whole number from 0 to 5, got ${String(rpcRetries).slice(0, 32)}`)
+  if (typeof rpcRetryMaxMs !== 'number' || !Number.isFinite(rpcRetryMaxMs) || rpcRetryMaxMs < 0 || rpcRetryMaxMs > 10_000) throw new TapeAPIError('INVALID_ARGUMENT', `rpcRetryMaxMs must be a number of ms from 0 to 10000, got ${String(rpcRetryMaxMs).slice(0, 32)}`)
+  if (typeof rpcRetryFastMs !== 'number' || !Number.isFinite(rpcRetryFastMs) || rpcRetryFastMs < 0 || rpcRetryFastMs > 10_000) throw new TapeAPIError('INVALID_ARGUMENT', `rpcRetryFastMs must be a number of ms from 0 to 10000, got ${String(rpcRetryFastMs).slice(0, 32)}`)
   const f = fetchImpl || globalThis.fetch
   if (typeof f !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'no fetch implementation')
   // opOf[i]: who runs urls[i] / urls[i] 的运营方
@@ -363,27 +420,32 @@ export function createRpc({ urls, quorum = 2, timeoutMs: timeoutMsOld, rpcTimeou
   // 一样算节点故障。`opts.strict`（TAP-10 §5.2 严格共识）：一致的回答须来自至少 max(2, min(3, 运营方数)) 家运营方（不少于法定数；
   // allowSingleNode 降级的节点组合保持自己的数目）。1.x 的默认读取都不设这两项。
   async function round(method, params, project, opts = null) {
+    // Date.now is the one clock sdk/src reads (test/helpers/clock.mjs) / Date.now 是 sdk/src 读取的唯一时钟
+    const started = Date.now()
     const settled = await Promise.allSettled(urls.map(u => ask(u, method, params)))
+    const took = Date.now() - started
     const buckets = new Map(); const failures = []; const refusals = []; const answeredIdx = []; let tooLarge = 0
+    // every failure so far is of the network kind (networkFailure) / 到目前为止的每个失败都属网络类
+    let transient = true
     const pinned = pinnedRead(method, params)
     const tap10Answers = opts?.answers === 'tap10'
     const needHere = opts?.strict ? strictNeed : need
     settled.forEach((s, i) => {
-      if (s.status === 'rejected') { failures.push(`${describeUrl(urls[i], i)}: ${s.reason?.message || s.reason}`); if (s.reason?.refusal) refusals.push(s.reason.refusal); if (s.reason?.data?.tooLarge) tooLarge++; return }
-      if (tap10Answers && s.value.kind === 'error' && !revertShaped(s.value.value)) { failures.push(`${describeUrl(urls[i], i)}: not an answer (${s.value.value.code}: ${s.value.value.message.slice(0, 80)})`); return }
+      if (s.status === 'rejected') { if (!networkFailure(s.reason)) transient = false; failures.push(`${describeUrl(urls[i], i)}: ${s.reason?.message || s.reason}`); if (s.reason?.refusal) refusals.push(s.reason.refusal); if (s.reason?.data?.tooLarge) tooLarge++; return }
+      if (tap10Answers && s.value.kind === 'error' && !revertShaped(s.value.value)) { transient = false; failures.push(`${describeUrl(urls[i], i)}: not an answer (${s.value.value.code}: ${s.value.value.message.slice(0, 80)})`); return }
       // A pinned read that a node answers with "no such block" (it has not reached the pinned block yet): that node did
       // not answer, as a timeout would not (FIXED SECR-3). Nodes that have the block still all have to agree, and at least
       // `need` operators still have to answer. Not a refusal: channel.js reads `refusals` as what a node will not do.
       // 钉块读取中节点答"没有该区块"（尚未到达所钉区块）：该节点没有作答，与超时相同（FIXED SECR-3）。持有该块的节点仍须全体一致，
       // 作答的运营方仍须 ≥ need。不记为 refusal：channel.js 把 `refusals` 读作节点不肯做的事。
-      if (pinned && s.value.kind === 'error' && blockMissing(s.value.value)) { failures.push(`${describeUrl(urls[i], i)}: does not have the pinned block (${s.value.value.code}: ${s.value.value.message.slice(0, 80)})`); return }
+      if (pinned && s.value.kind === 'error' && blockMissing(s.value.value)) { transient = false; failures.push(`${describeUrl(urls[i], i)}: does not have the pinned block (${s.value.value.code}: ${s.value.value.message.slice(0, 80)})`); return }
       // 错误按 code 与是否回滚形态分桶，不按原文（各实现 revert 文本不同，M-12；R3-4）/ errors bucket by code and revert
       // shape, never by text: revert texts differ per client (review M-12, R3-4)
       // `project` keeps only the fields that are facts about the chain: nodes decorate some answers differently
       // (a log object may or may not carry blockTimestamp), and decoration is not disagreement.
       // `project` 只保留关于链的事实字段：各节点对某些回答的附加字段不同（日志对象可能带或不带 blockTimestamp），附加字段不算分歧。
       if (s.value.kind === 'ok' && project) {
-        try { s.value.value = project(s.value.value, i) } catch (e) { failures.push(`${describeUrl(urls[i], i)}: malformed answer (${e.message})`); return }
+        try { s.value.value = project(s.value.value, i) } catch (e) { transient = false; failures.push(`${describeUrl(urls[i], i)}: malformed answer (${e.message})`); return }
       }
       // ...and by whether it is revert-shaped (code 3, or a message saying "revert"): "execution reverted" on one node and
       // "header not found" on another share -32000, yet only one is an answer about the chain (review R3-4).
@@ -403,7 +465,19 @@ export function createRpc({ urls, quorum = 2, timeoutMs: timeoutMsOld, rpcTimeou
     // 严格读取说明为何需要这么多家；默认读取的信息不变
     const strictWhy = !opts?.strict ? '' : degraded ? `; strict agreement on this allowSingleNode set needs ${needHere}`
       : `; strict agreement (TAP-10 §5.2) needs every configured node to agree, from max(2, min(3, ${operators.length} operators), quorum ${need}) = ${needHere} operators`
-    if (answered < needHere) throw new TapeAPIError('RPC_UNAVAILABLE', `${method}: only ${answered}/${needHere} ${answeredIdx.length > answered ? 'operators' : 'nodes'} answered (${failures.join('; ')})${strictWhy}`, { ...(refusals.length && refusals.length === failures.length ? { refusals } : {}), ...(tooLarge && tooLarge === failures.length ? { tooLarge: true } : {}) })
+    if (answered < needHere) {
+      const err = new TapeAPIError('RPC_UNAVAILABLE', `${method}: only ${answered}/${needHere} ${answeredIdx.length > answered ? 'operators' : 'nodes'} answered (${failures.join('; ')})${strictWhy}`, { ...(refusals.length && refusals.length === failures.length ? { refusals } : {}), ...(tooLarge && tooLarge === failures.length ? { tooLarge: true } : {}) })
+      // ...and only when the nodes that did answer agree: a round that also saw a disagreement is not retried; and only
+      // when the round failed fast: from the first request sent to the last failure, less than rpcRetryFastMs (2.3,
+      // decided 2026-10-17). Every request of the round is sent and fails inside that time, so each failing request also
+      // took less than rpcRetryFastMs; a round whose nodes were slow to fail, or slow to answer, is not retried, whatever
+      // the kind of failure. So each retried round adds less than rpcRetryFastMs, whatever rpcTimeoutMs is.
+      // ……且只在作答的节点彼此一致时：同时出现分歧的一轮不重试；且只在这一轮失败得快时：从发出第一个请求到最后一个失败，少于
+      // rpcRetryFastMs（2.3，2026-10-17 决定）。这一轮的每个请求都在这段时间内发出并失败，所以每个失败的请求也少于 rpcRetryFastMs；
+      // 节点失败得慢、或作答得慢的一轮，不论失败种类都不重试。因此每个重试轮增加的时间少于 rpcRetryFastMs，与 rpcTimeoutMs 无关。
+      if (transient && failures.length && buckets.size <= 1 && took < rpcRetryFastMs) Object.defineProperty(err, TRANSIENT, { value: true })
+      throw err
+    }
     if (buckets.size > 1) throw new TapeAPIError('RPC_DISAGREE', `${method}: ${answeredIdx.length} nodes answered with ${buckets.size} different results`)
     const [b] = buckets.values()
     if (b.r.kind === 'error') {
@@ -416,13 +490,38 @@ export function createRpc({ urls, quorum = 2, timeoutMs: timeoutMsOld, rpcTimeou
     return b.r.value
   }
 
+  // One read: a round, the one re-ask after a disagreement (disagreeRetryMs, as since 1.x), and (2.3, @experimental) up to
+  // `rpcRetries` (default 2) more rounds when a round found too few answers, every node that failed failed by
+  // networkFailure, and the round took less than `rpcRetryFastMs` (default 2000), after the waits of retryDelays (their
+  // sum at most `rpcRetryMaxMs`, default 2000). Each extra round asks
+  // every node again and is judged exactly as the first: the same `need` (strict: every configured node), never a smaller
+  // number. A disagreement, a JSON-RPC error and a refusal are never retried; the re-ask after a disagreement happens at most
+  // once per read. So one read is at most 2 + rpcRetries rounds. When the last round fails, its error is thrown as it is:
+  // the code, message and data are those of a client without retries. rpcRetries: 0 is the client of 2.2 exactly. Time:
+  // the retries add to what the read takes without them at most rpcRetries x rpcRetryFastMs plus the waits; with the
+  // defaults, less than 2 x 2 s + 1.2 s = 5.2 s, whatever rpcTimeoutMs is.
+  // 一次读取：一轮、分歧后的一次重问（disagreeRetryMs，1.x 起就有），以及（2.3，实验性）某轮作答太少、每个失败节点都属网络类故障、
+  // 且该轮用时少于 rpcRetryFastMs（默认 2000）时，按 retryDelays 等待（总和至多 rpcRetryMaxMs，默认 2000）后最多再来 rpcRetries（默认 2）轮。每一轮都重新问全部节点，判定与第一轮
+  // 完全相同：同一个 need（严格共识：每个配置节点），绝不降低。分歧、JSON-RPC 错误与拒绝绝不重试；分歧后的重问每次读取至多一次。
+  // 因此一次读取至多 2 + rpcRetries 轮。最后一轮失败时原样抛出其错误：错误码、信息与 data 与不重试的客户端相同。rpcRetries: 0 即 2.2 的客户端。
+  // 时间：重试在不重试所需的时间之上至多增加 rpcRetries × rpcRetryFastMs 加上等待；默认少于 2 × 2 秒 + 1.2 秒 = 5.2 秒，与 rpcTimeoutMs 无关。
   async function call(method, params = [], { project, answers, strict } = {}) {
     const opts = answers || strict ? { answers, strict: strict === true } : null
-    try { return await round(method, params, project, opts) }
-    catch (e) {
-      if (e.code !== 'RPC_DISAGREE' || disagreeRetryMs < 0) throw e
-      await new Promise((r) => setTimeout(r, disagreeRetryMs))
-      return round(method, params, project, opts)
+    let reasked = false, retried = 0, delays = null
+    for (;;) {
+      try { return await round(method, params, project, opts) }
+      catch (e) {
+        if (e.code === 'RPC_DISAGREE' && !reasked && disagreeRetryMs >= 0) {
+          reasked = true
+          await new Promise((r) => setTimeout(r, disagreeRetryMs))
+          continue
+        }
+        if (!e[TRANSIENT]) throw e
+        delays ??= retryDelays({ retries: rpcRetries, maxMs: rpcRetryMaxMs })
+        if (retried >= delays.length) throw e
+        await new Promise((r) => setTimeout(r, delays[retried]))
+        retried++
+      }
     }
   }
 
@@ -612,7 +711,9 @@ export function createRpc({ urls, quorum = 2, timeoutMs: timeoutMsOld, rpcTimeou
   // `o.bodyLimit` raises the answer size for one kind of read (a whole block's receipts, TAPI-26 §3.7) / 为某类读取放宽回答大小
   const single = (url, o = {}) => {
     if (!urls.includes(url)) throw new TapeAPIError('INVALID_ARGUMENT', `${describeUrl(url, 0)} is not one of this client's nodes`)
-    return createRpc({ urls: [url], quorum: 1, timeoutMs, fetch: fetchImpl, bodyLimit: o.bodyLimit ?? bodyLimit, disagreeRetryMs, maxHeadSpread, transportRetryMs })
+    // rpcRetries 0: the readers that use single() (the bus poller, proofs) have their own next-poll retry (2.3)
+    // rpcRetries 0：用 single() 的读取方（总线轮询、证明）有自己的下一轮重试（2.3）
+    return createRpc({ urls: [url], quorum: 1, timeoutMs, fetch: fetchImpl, bodyLimit: o.bodyLimit ?? bodyLimit, disagreeRetryMs, maxHeadSpread, transportRetryMs, rpcRetries: 0 })
   }
   // `operators`: the distinct operators behind `urls`, in first-seen order / `urls` 背后的不同运营方
   return { call, ethCall, blockNumber, confirmedBlock, tap10Block, chainId, urls, operators, quorum: need, degraded, single, bodyLimit }

@@ -38,7 +38,11 @@ there is no manifest. The service is not correctly published.
 to sign a new one and publish the manifest again ([Renew](provide.md#4-renew)).
 
 **`RPC_UNAVAILABLE: only 1/2 nodes answered`** — use at least three RPC URLs with `quorum: 2`, so one node down still
-leaves a quorum. `allowSingleNode: true` exists for local development only.
+leaves a quorum. `allowSingleNode: true` exists for local development only. A read whose nodes failed only by the
+network (a broken or refused connection, a DNS failure, an HTTP 5xx other than a gateway timeout 504, 522 or 524), in a
+round that took less than 2 s, has already been asked again, up to twice, before you see this (experimental;
+`rpcRetries: 0` turns it off); that adds less than 5.2 s to a failing read. A timeout, a gateway timeout, a slower
+failure, a disagreement or a refusal is never retried.
 
 **`RPC_DISAGREE`** — nodes returned different bytes for the same read. The SDK retries once; if it persists, one node
 is behind or misbehaving.

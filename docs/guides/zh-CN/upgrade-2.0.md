@@ -73,7 +73,7 @@ const api = createTapeAPI({ rpcUrls, conform: false })
 | `not-opened` | `SITE_STATUS` | 名字存在，但它的容器从未开通（TAP-10 §6.2） | 只有持有人能改变：开通容器。不要重试。 |
 | `unpaid` | `SITE_STATUS` | 名字未激活，或付费已到期（TAP-10 §6.3） | 只有持有人能改变：用 `DomainBinding.bind` 激活并付费。不要重试。 |
 | `store-changed` | `CONTRACT_UNKNOWN` | SiteRegistry 或 DomainBinding 运行着本 SDK 没有收录的实现。失败关闭。 | 升级 `@tapeapi/sdk`。补丁版发布之前，`conform: false` 是临时办法。 |
-| `unavailable` | `RPC_UNAVAILABLE`（1.x 的 `RPC_DISAGREE` 也变成它） | 严格读取没有得到每家运营方的回答，或两家的回答不同。BNB Smart Chain 的默认节点是三家运营方，三家都要作答。 | 重试；反复出现就在 `rpcUrls` 里加一家你自己的运营方。 |
+| `unavailable` | `RPC_UNAVAILABLE`（1.x 的 `RPC_DISAGREE` 也变成它） | 严格读取没有得到每家运营方的回答，或两家的回答不同。BNB Smart Chain 的默认节点是三家运营方，三家都要作答。报出之前，若失败的节点都只是网络故障（连接断开或被拒、DNS 失败、网关超时 504、522、524 以外的 HTTP 5xx；超时不算）、且这一轮用时不到 2 秒，SDK 会把全部节点再问至多两次，每次规则相同，多花不到 5.2 秒（实验性，`rpcRetries: 0` 关闭）。 | 重试；反复出现就在 `rpcUrls` 里加一家你自己的运营方。 |
 | `manifest-invalid` | `MANIFEST_INVALID` | 链上清单以 UTF-8 字节序标记（BOM）开头，或不是合法的 UTF-8（TAP-11 §3.1、TAP-10 §16）。1.x 会照常解析这样的清单。 | 请持有人重新发布一份合法 UTF-8、不带字节序标记的清单。在那之前，`conform: false` 是临时办法。 |
 | `unsupported` | `INVALID_ARGUMENT` | `allChains` 关闭，且输入没有指明链："处理器合约#ID"字符串（一律如此），或不是本客户端链上容器的容器地址字符串（它可能在别的链上，所以报 `unsupported` 而不是 `not-tapeout`）。本客户端链上的容器地址照常解析，约 75 次请求（1.x 约 21 次）。 | 指明链（`{ chainId, container }`，或带区号的名字），或设 `allChains: true`（要知道这会把读取发给其它链的公共节点）。这是与 TAP-11 §2.1 的已知例外，见下文。 |
 

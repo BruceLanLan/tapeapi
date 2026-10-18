@@ -176,3 +176,32 @@ test('createChainReaders: an explicit lag overrides every chain (the README QUOR
   const chains = createChainReaders(cfg, { env: {}, lag: 30, allowSingleNode: true })
   assert.deepEqual([...chains.values()].map((c) => c.lag), [30, 30])
 })
+
+// 2.3 (review E-3): the reader's clients retry as the SDK's do (rpcRetries, default 2); createChainReader passes
+// rpcRetries to the quorum client and to each node's own client, so 0 turns it off everywhere.
+// 2.3（审查 E-3）：读取器的客户端与 SDK 一样重试（默认 2）；createChainReader 把 rpcRetries 传给共识客户端与每个节点的客户端，0 全部关闭。
+test('RPC-RETRY: createChainReader passes rpcRetries to the quorum client and to every node client', async () => {
+  const urls = ['http://rpc1', 'http://rpc2', 'http://rpc3']
+  const asked = {}
+  const real = globalThis.fetch
+  // createRpc takes globalThis.fetch when it is built / createRpc 在创建时取 globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    asked[url] = (asked[url] ?? 0) + 1
+    if (url === 'http://rpc2') return new Response('down', { status: 503 })
+    const b = JSON.parse(init.body)
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id: b.id, result: '0x38' }), { headers: { 'content-type': 'application/json' } })
+  }
+  try {
+    const run = async (o) => {
+      for (const k of Object.keys(asked)) delete asked[k]
+      const r = createChainReader({ name: 'bsc', urls, quorum: 2, ...o })
+      await assert.rejects(r.rpc.call('eth_chainId', [], { strict: true }), (e) => e.code === 'RPC_UNAVAILABLE')
+      const quorumAsked = { ...asked }
+      for (const k of Object.keys(asked)) delete asked[k]
+      await assert.rejects(r.nodes[1].call('eth_chainId', []), (e) => e.code === 'RPC_UNAVAILABLE')
+      return { quorumAsked, nodeAsked: asked['http://rpc2'] }
+    }
+    assert.deepEqual(await run({}), { quorumAsked: { 'http://rpc1': 3, 'http://rpc2': 3, 'http://rpc3': 3 }, nodeAsked: 3 }, 'default: the SDK\'s, 1 + 2 rounds')
+    assert.deepEqual(await run({ rpcRetries: 0 }), { quorumAsked: { 'http://rpc1': 1, 'http://rpc2': 1, 'http://rpc3': 1 }, nodeAsked: 1 }, 'rpcRetries 0: one round')
+  } finally { globalThis.fetch = real }
+})

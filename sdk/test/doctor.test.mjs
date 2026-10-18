@@ -290,6 +290,15 @@ test('URL mode: a freshly started new-api sidecar in setup mode is reported as s
     assert.equal(c.status, 'fail')
     assert.match(c.detail, new RegExp(`SETUP MODE: missing .*DELEGATION_SIG.*signing address is ${signer}`))
     assert.match(c.fix.zh, /身份补齐之前这是正常的/)
+    // 2.3 (review C-1): the same facts as a field, for scripts; the text report is byte for byte what it was without it.
+    // 2.3（审查 C-1）：同样的事实作为字段给脚本读；文字报告与没有该字段时逐字节相同。
+    assert.deepEqual(Object.keys(c.setup), ['missing', 'problem', 'signer'])
+    assert.ok(c.setup.missing.includes('DELEGATION_SIG') && c.setup.missing.includes('CONTAINER'), JSON.stringify(c.setup))
+    assert.equal(c.setup.problem, null); assert.equal(c.setup.signer, signer)
+    assert.equal(c.detail, `the sidecar is in SETUP MODE: missing ${c.setup.missing.join(', ')}; its signing address is ${signer}`)
+    const without = { ...rep, checks: rep.checks.map(({ setup, ...rest }) => rest) }
+    for (const lang of ['en', 'zh', 'both']) assert.equal(formatReport(rep, { lang }), formatReport(without, { lang }), lang)
+    assert.equal(rep.checks.filter((x) => 'setup' in x).length, 1, 'only manifest-format carries it')
   } finally { await sc.close() }
 })
 

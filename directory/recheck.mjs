@@ -39,6 +39,10 @@ export const STALE_AFTER = 7
  * （3 个节点，含 1013 号处理器可由随附处理器表省掉的 cpuAt 扫描），BNB Chain 上两者合计约 56/60，未实测；不够时只有 defaultMode 记
  * rpc-budget，标记不受影响。
  */
+// 2.3: both clients below pass rpcRetries: 0 (the SDK's whole-read retry after network failures, default 2 since 2.3), so
+// the figures above stay what was measured: a name the nodes fail for is `undecided` today and checked again tomorrow, which
+// is what a retry would buy, without spending the cap on it. / 2.3：下面两个客户端都传 rpcRetries: 0（SDK 自 2.3 起默认在网络
+// 故障后整轮重试 2 次），所以上面的数字仍是实测值：节点出故障的名字今天记 undecided、明天再查，这正是重试能换来的，而不必花上限。
 export const RPC_BUDGET_PER_NAME = 60
 const DOCTOR_VERSION = JSON.parse(readFileSync(new URL('../sdk/package.json', import.meta.url), 'utf8')).version
 
@@ -207,7 +211,7 @@ export async function defaultModeStatus(name, api, meter, before = meter.used) {
  * 结论另记在标记旁边的 `defaultMode` 里（directoryDefaultApi、defaultModeStatus）。
  */
 export function directoryApi(fetch, { onWarning } = {}) {
-  return createTapeAPI({ rpcUrls: rpcUrlsFor(56), quorum: 2, fetch, conform: false, ...(onWarning ? { onWarning } : {}) })
+  return createTapeAPI({ rpcUrls: rpcUrlsFor(56), quorum: 2, fetch, conform: false, rpcRetries: 0, ...(onWarning ? { onWarning } : {}) })
 }
 
 /**
@@ -217,7 +221,7 @@ export function directoryApi(fetch, { onWarning } = {}) {
  * 计数的 fetch 与 directoryApi 相同。
  */
 export function directoryDefaultApi(fetch) {
-  return createTapeAPI({ rpcUrls: rpcUrlsFor(56), quorum: 2, fetch })
+  return createTapeAPI({ rpcUrls: rpcUrlsFor(56), quorum: 2, fetch, rpcRetries: 0 })
 }
 
 /** Entries that stopped passing today (the job fails so a maintainer sees them). / 今天新近不再通过的条目。 */

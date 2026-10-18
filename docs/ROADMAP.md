@@ -8,7 +8,7 @@ the [changelog](../CHANGELOG.md).
 
 ## 1. Now (live)
 
-The current release is **2.2.0** (2026-10-19), which adds the experimental `tapeapi receipts` and `tapeapi reconcile`; 2.1.0 (2026-10-17) added the experimental `tapeapi connect`, and 2.0.0 (2026-10-12) made standards the default. What each release added is in the
+The current release is **2.3.0** (2026-10-19), which adds the experimental `tapeapi init` and `tapeapi prices`, `tapeapi connect` for MCP tool services and a bounded retry of chain reads; 2.2.0 (2026-10-19) added the experimental `tapeapi receipts` and `tapeapi reconcile`, 2.1.0 (2026-10-17) the experimental `tapeapi connect`, and 2.0.0 (2026-10-12) made standards the default. What each release added is in the
 [changelog](../CHANGELOG.md); in short:
 
 - **Standards by default** (2.0). With no options, `createTapeAPI()` resolves a service the way TapeOut's official TAPs
@@ -133,7 +133,7 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
 
 ## 1. 现在（已上线）
 
-当前版本是 **2.2.0**（2026-10-19），新增实验性的 `tapeapi receipts` 与 `tapeapi reconcile`；2.1.0（2026-10-17）新增实验性的 `tapeapi connect`，2.0.0（2026-10-12）起标准即默认。每一版加了什么见[更新日志](../CHANGELOG.md)；简要如下：
+当前版本是 **2.3.0**（2026-10-19），新增实验性的 `tapeapi init` 与 `tapeapi prices`、`tapeapi connect` 对 MCP 工具服务的支持，以及有上限的链上读取重试；2.2.0（2026-10-19）新增实验性的 `tapeapi receipts` 与 `tapeapi reconcile`，2.1.0（2026-10-17）新增实验性的 `tapeapi connect`，2.0.0（2026-10-12）起标准即默认。每一版加了什么见[更新日志](../CHANGELOG.md)；简要如下：
 
 - **标准即默认**（2.0）。不传任何选项，`createTapeAPI()` 就按 TapeOut 官方 TAP（TAP-10 v1.1 §3 至 §7 与 TAP-11 §2）解析服务：
   每次解析钉一个区块，链 ID 与持有人要所有节点一致；名字从未开通（`not-opened`）、未激活或付费到期（`unpaid`）、站点存储或付费

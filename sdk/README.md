@@ -4,12 +4,12 @@ JavaScript SDK for [TapeAPI](https://tapeapi.fun): find a service on BNB Smart C
 answer whose signature is checked against the key the service's holder delegated on chain. Paid methods use
 EIP-712 vouchers against an escrow; nothing is signed or sent without you.
 
-> **2.2.0.** Semantic versioning: breaking changes come only in a new major version. By default the SDK now resolves as TapeOut's official TAPs say (TAP-10, TAP-11 §2); `conform: false` keeps the 1.x resolution (deprecated). See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md) and [Upgrading to 2.0](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/upgrade-2.0.md).
+> **2.3.0.** Semantic versioning: breaking changes come only in a new major version. By default the SDK now resolves as TapeOut's official TAPs say (TAP-10, TAP-11 §2); `conform: false` keeps the 1.x resolution (deprecated). See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md) and [Upgrading to 2.0](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/upgrade-2.0.md).
 
 ## Install
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz
 ```
 
 Not on the npm registry yet: each GitHub release carries the package file. Built from https://github.com/BruceLanLan/tapeapi
@@ -52,7 +52,7 @@ naming rules.
 | `@tapeapi/sdk/mcp` | the MCP server core behind `tapeapi-mcp` and `@tapeapi/server/mcp`: tools with signed results and receipts |
 | `@tapeapi/sdk/agent` (`@experimental`, 1.7) | container agents, phase 0: holder-signed mandates and task messages (`createAgentKit`, `createPaymentKit`, `forWallet`, `revocationFileBytes`); since 2.0 also bounded agents (phase 1), checked on local chains only, as the escrow is not audited or deployed; outside the 2.x compatibility promise ([guide](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/container-agents.md)) |
 | `@tapeapi/sdk/review` (`@experimental`, 2.0) | evidence-backed reviews between containers, the reference implementation of a TAP draft that is an open pull request (#54): `makeReview`, `signReview`, `createReviewKit`, `summarizeReviews`; outside the 2.x compatibility promise |
-| `@tapeapi/sdk/connect` (`@experimental`, 2.1) | what `tapeapi connect` prints, as data and text, for a command line or a web page: `snippetsFor` (client settings for the formats a manifest declares only), `connectReport`, `renderConnect`; outside the 2.x compatibility promise |
+| `@tapeapi/sdk/connect` (`@experimental`, 2.1) | what `tapeapi connect` prints, as data and text, for a command line or a web page: `snippetsFor` (client settings for the formats a manifest declares only), `mcpSnippetsFor` (an MCP tool service's settings, since 2.3), `connectReport`, `renderConnect`; outside the 2.x compatibility promise |
 | `@tapeapi/sdk/chains` | `CHAINS` (BNB Smart Chain, X Layer, Base: factory, opener, DeWebHub, SiteRegistry, area code), `parseTapeName`, `formatTapeName` |
 | `@tapeapi/sdk/rpc`, `/abi`, `/sig`, `/canon`, `/manifest` | the building blocks |
 
@@ -66,11 +66,11 @@ The package ships a command that exposes any TapeAPI service's free methods as M
 Cursor, any MCP client), and verifies every answer in your own process before the model sees it:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ```json
-{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
+{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
 ```
 
 - **Identity from the chain.** Each service (a TapeOut name like `11.1013.tape` or a container address) is resolved
@@ -103,7 +103,7 @@ Since 1.7 it also has a one-shot subcommand, `tapeapi-verify task <thread.json> 
 
 ```bash
 # Terminal 1. 42.1013.tape is an example name: put your AI provider's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash
@@ -127,7 +127,7 @@ with no key and no cost: in a checkout, run `npm ci` once at the root, then `nod
 Providers check their own AI service, step by step, from the name to a receipt that verifies:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-doctor <your TapeOut name or your sidecar's https URL>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-doctor <your TapeOut name or your sidecar's https URL>
 ```
 
 It runs 14 checks in order, among them that the name is activated on DomainBinding (TAP-10 §6.3; in the 2.0 default a failure,
@@ -150,14 +150,19 @@ The `tapeapi` command runs `tapeapi doctor|verify|mcp …` as the three commands
 `connect`: it resolves an AI service by its TapeOut name (the 2.0 default, TAP-10 / TAP-11), shows it (container,
 holder, signer, delegation, activation, formats, the price table; USD for display only) and prints client settings
 only for the API formats its manifest declares: nothing for Claude Code without `anthropic-messages`, nothing for
-Codex without `openai-responses`.
+Codex without `openai-responses`. An MCP tool service (no `ai` field, an `mcp` field: TAPI-20 §3.8; since 2.3,
+experimental) gets Claude Code and Claude Desktop settings through `tapeapi-mcp` and for its declared endpoint, from
+that field only, and `--proxy` runs `tapeapi-mcp`; a manifest with neither field is unavailable (`not-ai`).
 
 ```bash
-# from a checkout (npm ci once at the root); with the SDK installed, the command is `tapeapi connect …`
-node sdk/bin/tapeapi.js connect 42.1013.tape                 # 42.1013.tape is an example name: put your provider's
-node sdk/bin/tapeapi.js connect 42.1013.tape --tool codex    # one tool; exit 2 if the manifest lacks openai-responses
-node sdk/bin/tapeapi.js connect 42.1013.tape --proxy         # then runs tapeapi-verify for it, as it is
+# any directory, no clone needed; 42.1013.tape is an example name: put your provider's TapeOut name here
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi connect 42.1013.tape
+# with the SDK installed, the command is tapeapi connect …
+tapeapi connect 42.1013.tape --tool codex    # one tool; exit 2 if the manifest lacks openai-responses
+tapeapi connect 42.1013.tape --proxy         # then runs tapeapi-verify for it, as it is
 ```
+
+In a checkout (`npm ci` once at the root), `node sdk/bin/tapeapi.js connect …` does the same.
 
 It reads the chain and the manifest only: it sends no transaction, asks for no key or password (the settings read
 your token from `API_KEY` in your own environment), uploads nothing and pays nothing. A service that is `unpaid`,
@@ -173,11 +178,17 @@ Since 2.2, outside the 2.x compatibility promise. Both read files on your machin
 file from the provider.
 
 ```bash
-node sdk/bin/tapeapi.js receipts tail   --receipts ~/.tapeapi/receipts.jsonl --model deepseek-v3 --since 2026-10-01
-node sdk/bin/tapeapi.js receipts show   <id> --receipts ~/.tapeapi/receipts.jsonl   # replays its checks offline
-node sdk/bin/tapeapi.js receipts export --receipts ~/.tapeapi/ --format csv > receipts.csv
-node sdk/bin/tapeapi.js reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv --amount-scale 500000
+# any directory, no clone needed
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi receipts tail --receipts ~/.tapeapi/receipts.jsonl
+# with the SDK installed, the commands are tapeapi receipts … and tapeapi reconcile …
+tapeapi receipts tail   --receipts ~/.tapeapi/receipts.jsonl --model deepseek-v3 --since 2026-10-01
+tapeapi receipts show   <id> --receipts ~/.tapeapi/receipts.jsonl   # replays its checks offline
+tapeapi receipts export --receipts ~/.tapeapi/ --format csv > receipts.csv
+tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv --amount-scale 500000
 ```
+
+In a checkout (`npm ci` once at the root), `node sdk/bin/tapeapi.js receipts …` and `node sdk/bin/tapeapi.js reconcile …`
+do the same.
 
 `show` checks the signature, the container, the method and path and the price table against a manifest snapshot: the
 manifest the service publishes, saved next to the receipts as `manifest.json` (or given with `--manifest`); with the
@@ -189,6 +200,27 @@ decides nothing. `--preset new-api` is the field names of the JSON new-api's `GE
 read in new-api's source code, not yet checked against a real instance); new-api's web CSV export has other headers
 (localized; `Cost` formatted, not a comparable amount; `request_id`), so it and other bills use `--map`. Exit status 0 all checks pass / all rows match, 1 a check fails / something is
 missing or differs, 2 a usage mistake, 3 nothing could be decided.
+
+## For operators: `tapeapi init`, `tapeapi prices` (experimental)
+
+Since 2.3, outside the 2.x compatibility promise. `tapeapi init` walks an operator through the steps from nothing to
+live, one step per run: what you do, where, who pays (you), and a read-only check of it (the doctor, `connect`, the
+price table files), ending with the next command. It asks for no key, never reads `.env`, pays nothing and sends no
+transaction. From step 3 on `--formats` is required, with no default (all four need `--confirm-all-formats`); steps 3
+and 4 also need `--upstream new-api` without a terminal (the only gateway this version writes a configuration for; it
+is not assumed).
+`tapeapi prices convert|check` runs the new-api package's converter (in a checkout) with its arguments, output and exit
+status unchanged (say who fetched the price list with its `--fetched-as`); `prices show` prints a price table with its
+source record (who fetched the price list, what is not verified).
+
+```bash
+node sdk/bin/tapeapi.js init --dir relay --step 3 --upstream new-api --sidecar-url https://api.example.com --formats openai-chat
+node sdk/bin/tapeapi.js prices convert pricing.json --status status.json --usd-exchange-rate 7 --out relay/models.json
+node sdk/bin/tapeapi.js prices show --models relay/models.json
+```
+
+Exit status of `init`: 0 the step is done or waits for you, 1 its check failed, 2 a usage mistake or a missing answer
+(`FORMATS` or `--upstream` not given among them), 3 could not be read.
 
 ## Docs
 

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { validateDirectory, nextStatus, recheck, rpcMeter, newlyFailing, directoryApi, directoryDefaultApi, defaultModeStatus, SITE_STATUSES, STALE_AFTER, PROVIDERS_FILE, STATUS_FILE, RPC_BUDGET_PER_NAME, FLAGS } from './recheck.mjs'
-import { createTapeAPI, sig, CHAINS, TapeAPIError } from '../sdk/src/index.js'
+import { createTapeAPI, sig, CHAINS, TapeAPIError, rpcUrlsFor } from '../sdk/src/index.js'
 import { CONFORM_MODE } from '../sdk/src/conform-sibling.js'
 import { createConformChain } from '../sdk/test/helpers/conform-chain.mjs'
 
@@ -289,4 +289,24 @@ test('E20: the default-mode client is the SDK default (conformance mode, no DEPR
   const m = rpcMeter(3, async () => new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: '0x38' })))
   await directoryDefaultApi(m.fetch).rpc.call('eth_chainId', []).catch(() => {})
   assert.ok(m.used >= 1, 'the client sent its requests through the meter')
+})
+
+// 2.3: the SDK retries a whole read after network failures by default (rpcRetries 2). Both recheck clients turn it off, so
+// RPC_BUDGET_PER_NAME keeps its measured meaning: a node failing with HTTP 503 costs one request per node, not three.
+// 2.3：SDK 默认在网络故障后整轮重试（rpcRetries 2）。两个复核客户端都关掉它，所以 RPC_BUDGET_PER_NAME 仍是实测的含义：节点以 HTTP
+// 503 失败时每个节点只花一次请求，而不是三次。
+test('RPC-RETRY: the recheck clients do not retry a read after network failures (rpcRetries: 0), so the budget of 60 means what was measured', async () => {
+  for (const make of [(f) => directoryApi(f, { onWarning: () => {} }), (f) => directoryDefaultApi(f)]) {
+    const m = rpcMeter(RPC_BUDGET_PER_NAME, async () => new Response('down', { status: 503 }))
+    const api = make(m.fetch)
+    await assert.rejects(api.rpc.call('eth_chainId', [], { strict: true }), (e) => e.code === 'RPC_UNAVAILABLE')
+    // One round, so no retry and no wait before one: counted in requests, not timed on a busy machine (review T-1).
+    // 一轮，所以没有重试、也没有重试前的等待：按请求数而不是在繁忙机器上计时（审查 T-1）。
+    assert.equal(m.used, api.rpc.urls.length, 'one round: one request per node')
+  }
+  // the SDK default, for contrast: three rounds / 对照：SDK 默认三轮
+  const m = rpcMeter(RPC_BUDGET_PER_NAME, async () => new Response('down', { status: 503 }))
+  const plain = createTapeAPI({ rpcUrls: rpcUrlsFor(56), quorum: 2, fetch: m.fetch, rpcRetryMaxMs: 10 })
+  await assert.rejects(plain.rpc.call('eth_chainId', [], { strict: true }), (e) => e.code === 'RPC_UNAVAILABLE')
+  assert.equal(m.used, 2 * plain.rpc.urls.length, 'rpcRetryMaxMs 10 leaves room for one extra round')
 })

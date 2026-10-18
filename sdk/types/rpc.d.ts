@@ -23,6 +23,19 @@ export interface RpcOptions {
   warn?: (...args: unknown[]) => void
   /** Ms before a request whose connection broke (not a timeout) is sent once more (default 250; <= 0: never). */
   transportRetryMs?: number
+  /** @experimental (2.3) Extra rounds for a read whose round found too few answers, whose failing nodes all failed by a
+   *  network failure (a broken or refused connection, a DNS failure, an HTTP 5xx without a JSON-RPC answer other than a
+   *  gateway timeout 504, 522 or 524; never a timeout or an abort), and which took less than `rpcRetryFastMs`: every node
+   *  is asked again and the same agreement is needed. A timeout, a slow round, a disagreement, a JSON-RPC error or a
+   *  refusal is never retried. 0 to 5 (default 2); 0 turns it off. */
+  rpcRetries?: number
+  /** @experimental (2.3) The most the waits before those rounds add up to, in ms (exponential from 400 ms with jitter;
+   *  0 to 10000, default 2000; 0 turns retrying off). */
+  rpcRetryMaxMs?: number
+  /** @experimental (2.3) A round is retried only if it took less than this, in ms, from its first request to its last
+   *  failure (0 to 10000, default 2000; 0 turns retrying off). So the retries add at most rpcRetries x rpcRetryFastMs plus
+   *  the waits to a failing read (5.2 s with the defaults), whatever the request timeout is. */
+  rpcRetryFastMs?: number
 }
 
 /** A quorum JSON-RPC client: every answer is agreed by nodes of `quorum` distinct operators or the call throws. */

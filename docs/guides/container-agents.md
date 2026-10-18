@@ -371,7 +371,7 @@ tapeapi-verify task thread.json --payment <agent container> <inbox index>
 tapeapi-verify task thread.json --rpc https://node-a.example,https://node-b.example
 ```
 
-Without installing anything, use `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-verify task thread.json`;
+Without installing anything, use `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-verify task thread.json`;
 in a checkout, `node sdk/bin/tapeapi-verify.js task thread.json`.
 
 - `--payment <recipient> <index>` also checks the TapeSend message at that index in the recipient's inbox. The recipient

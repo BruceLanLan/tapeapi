@@ -44,7 +44,7 @@ trust with a signature anyone can check:
 
 ## Status
 
-Released, version 2.2.0. TapeAPI follows semantic versioning: code written against the 2.0 docs keeps working in every
+Released, version 2.3.0. TapeAPI follows semantic versioning: code written against the 2.0 docs keeps working in every
 2.x release, and breaking changes come only in a new major version. By default 2.0 resolves a service as TapeOut's
 official TAPs say (TAP-10, TAP-11 §2), with one known exception; 1.x receives security fixes for 6 months after 2.0.0
 ([Upgrading to 2.0](upgrade-2.0.md); [what 1.0 promises](upgrade-1.0.md)). The free

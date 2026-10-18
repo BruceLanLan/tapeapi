@@ -1667,9 +1667,14 @@ test('FIXED R4 (restructure): _busMerge, property-style: never past a block nobo
 test('FIXED R5-7: a non-JSON error body (a Cloudflare 520 page) is cancelled, not left holding the connection', async () => {
   let cancelled = 0
   const f = async () => new Response(new ReadableStream({ pull(c) { c.enqueue(new TextEncoder().encode('<html>520</html>')) }, cancel() { cancelled++ } }), { status: 520, headers: { 'content-type': 'text/html' } })
-  const rpc = createRpc({ urls: ['http://rpc1', 'http://rpc2'], quorum: 2, fetch: f, quiet: true })
+  // rpcRetries 0: one round, two bodies; with the 2.3 default each extra round's bodies are cancelled too (3 rounds, 6)
+  // rpcRetries 0：一轮两个响应体；2.3 的默认下每个额外轮次的响应体同样被取消（3 轮 6 个）
+  const rpc = createRpc({ urls: ['http://rpc1', 'http://rpc2'], quorum: 2, fetch: f, quiet: true, rpcRetries: 0 })
   await assert.rejects(rpc.call('eth_blockNumber', []), (e) => e.code === 'RPC_UNAVAILABLE' && /http 520/.test(e.message))
   assert.equal(cancelled, 2, 'both bodies cancelled')
+  cancelled = 0
+  await assert.rejects(createRpc({ urls: ['http://rpc1', 'http://rpc2'], quorum: 2, fetch: f, quiet: true }).call('eth_blockNumber', []), (e) => e.code === 'RPC_UNAVAILABLE' && /http 520/.test(e.message))
+  assert.equal(cancelled, 6, 'every body of every round cancelled')
 })
 
 test('FIXED R5-8: _busMerge itself holds when every node serves no logs (there is no reader, not a gap)', () => {
