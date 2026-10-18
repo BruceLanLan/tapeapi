@@ -25,6 +25,11 @@ function manifestFor(chainId, container, { tokenId = '4246' } = {}) {
   }
 }
 function service(chain = createFakeChain(), { chainId = 56, container = ADDR.container } = {}) {
+  // Root cause of the flaky RPC_DISAGREE "two timestamps" (review T-2): without headTime the fake chain dates its blocks
+  // from Date.now() at each answer, so three nodes answering the same block either side of a second boundary disagree by
+  // one. One fixed head time for every node, as the other pinning tests do. / 偶发根因：不设 headTime 时假链按每次应答时的
+  // Date.now() 给区块定时间，三个节点跨整秒应答同一块会差 1 秒；与其它钉块测试一样，所有节点用同一个固定的头时间。
+  chain.state.headTime ??= nowS()
   chain.setOwner(4246, holder); chain.setAccount(4246, container)
   chain.writeFile(container, MANIFEST_KEY, JSON.stringify(manifestFor(chainId, container)))
   return chain

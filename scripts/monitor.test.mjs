@@ -2,9 +2,9 @@
 // 监控评估逻辑的离线测试：不联网，结果手工构造。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { monitorClient, defaultModeLine, evaluate, report, daysUntil, effectiveExpiry, retry, SERVICES, PAGES, WARN_DAYS, ACTIVATION_FAIL_DAYS, checkActivation, activationFindings, ASYNC_WAIT_S, asyncWaitMs, testFrame, judgeAsync, isNetworkError, checkRelayAsync, randomRoom, chainFailure, slotFindings, checkSlots, checkChainAndCall, retryableResolve } from './monitor.mjs'
+import { monitorClient, defaultModeLine, evaluate, report, daysUntil, effectiveExpiry, retry, SERVICES, PAGES, WARN_DAYS, ACTIVATION_FAIL_DAYS, checkActivation, activationFindings, feeNotes, ASYNC_WAIT_S, asyncWaitMs, testFrame, judgeAsync, isNetworkError, checkRelayAsync, randomRoom, chainFailure, slotFindings, checkSlots, checkChainAndCall, retryableResolve } from './monitor.mjs'
 import { encodeCall } from '../sdk/src/abi.js'
-import { TapeAPIError, sig, MANIFEST_KEY, MAINNET } from '../sdk/src/index.js'
+import { TapeAPIError, sig, MANIFEST_KEY, MAINNET, CHAINS } from '../sdk/src/index.js'
 import { CONFORM_MODE } from '../sdk/src/conform-sibling.js'
 import { createConformChain } from '../sdk/test/helpers/conform-chain.mjs'
 import { createRelayCore, relayMethods } from '../examples/relay-service/relay-core.mjs'
@@ -426,11 +426,13 @@ test('MON-ACT-7: checkActivation on a stand-in chain: unactivated reads isLive, 
   assert.equal(evaluate(results(svc('api', { activation: a })), NOW).warnings.length, 1)
 })
 
-test('MON-ACT-8: checkActivation: activated reads containerPaidUntil (3 eth_calls); isContainerLive reverting counts as false; a read failure never throws', async () => {
-  let chain = fakeChain({ isLive: word(1), isContainerLive: word(1), containerPaidUntil: word(NOW + 9 * DAY) })
+test('MON-ACT-8: checkActivation: activated reads containerPaidUntil, then monthlyFee (4 eth_calls since 2.2); isContainerLive reverting counts as false; a read failure never throws', async () => {
+  // 2.2: the monitor asks activationStatus for the fee of an activated name too (feeWhenLive), so a 4th read; at 0, as on
+  // mainnet, nothing else changes. / 2.2：已激活也读月费（feeWhenLive），多第 4 次读取；为 0（与主网一致）时其余不变。
+  let chain = fakeChain({ isLive: word(1), isContainerLive: word(1), containerPaidUntil: word(NOW + 9 * DAY), monthlyFee: word(0) })
   let a = await checkActivation(chain, { name: '11.1013.tape', container: CONTAINER }, { pauseMs: 0 })
-  assert.deepEqual(chain.calls, ['isLive', 'isContainerLive', 'containerPaidUntil'])
-  assert.deepEqual([a.live, a.paidUntil, a.feeText], [true, NOW + 9 * DAY, null])
+  assert.deepEqual(chain.calls, ['isLive', 'isContainerLive', 'containerPaidUntil', 'monthlyFee'])
+  assert.deepEqual([a.live, a.paidUntil, a.feeWei, a.feeText], [true, NOW + 9 * DAY, '0', '0 BNB'])
   assert.match(evaluate(results(svc('api', { activation: a })), NOW).warnings[0], /activation expires in 9 days/)
   chain = fakeChain({ isLive: word(1), isContainerLive: reverted(), containerPaidUntil: word(NOW + 40 * DAY) })
   a = await checkActivation(chain, { name: '11.1013.tape', container: CONTAINER }, { pauseMs: 0 })
@@ -614,7 +616,9 @@ test('MON-2.0-10: a resolved service with accepted slots goes through checkChain
   const target = { circuits: '0xe02c26c7432A7121168AA9B610DE24eCf9a1a414', tokenId: 11 }
   const base = { name: 'api', label: '11.1013.tape', ...target, probe: SERVICES[0].probe }
   const resolved = { container: CONTAINER, manifest: { signer: SIGNER, delegation: { expires: NOW + 60 * DAY }, endpoints: { live: ['https://api.tapeapi.fun'] } } }
-  const chain = fakeChain({ isLive: word(1), isContainerLive: word(1), containerPaidUntil: word(NOW + 25 * DAY) })
+  // 2.2: the stand-in chain answers monthlyFee() too (0, as on mainnet), which the monitor now reads for an activated name
+  // 2.2：替身链也回答 monthlyFee()（0，与主网一致）：监控现在对已激活的名字也读它
+  const chain = fakeChain({ isLive: word(1), isContainerLive: word(1), containerPaidUntil: word(NOW + 25 * DAY), monthlyFee: word(0) })
   const api = { ...chain, resolve: async () => resolved, call: async () => ({ verified: true, result: { blockNumber: 7 } }), siteStatus: async () => ({ status: 'ok', implementations: IMPL_OK }) }
   const r = await checkChainAndCall(api, base, { pauseMs: 0 })
   assert.equal(r.chain.status, undefined)
@@ -727,4 +731,179 @@ test('MON-2.0-14: a resolve the default mode refuses (unpaid, store-changed, not
   }
   assert.equal(defaultModeLine(results(svc('api'), svc('relay'))), null, 'a result from before 2.0 adds no line')
   assert.ok(!/Default-mode resolution/.test(report(results(svc('api'), svc('relay')), { healthy: true, problems: [], warnings: [] }, NOW)))
+})
+
+// ---------------------------------------------------------------- 2.2: the implementation-slot check on the real SDK / 2.2：真实 SDK 上的实现槽检查
+// MON-2.0-6..10 judge hand-built slot results or a mocked siteStatus; these drive the monitor's own client (the real 2.0
+// default resolve and api.siteStatus) over the conform fake chain with a proxy's ERC-1967 slot changed, the exact case the
+// check exists for. The exit code is `evaluation.healthy ? 0 : 1` (main), so `healthy` is what is asserted.
+// MON-2.0-6..10 判断手工构造的槽结果或模拟的 siteStatus；这里让监控自己的客户端（真实的 2.0 默认解析与 api.siteStatus）在 conform 假链上
+// 跑，并改掉某个代理的 ERC-1967 槽：这正是该检查存在的场景。退出码是 main 里的 `healthy ? 0 : 1`，所以断言 `healthy`。
+const slotUrls = ['http://rpc1', 'http://rpc2', 'http://rpc3']
+const UNLISTED_IMPL = '0x000000000000000000000000000000000000dEaD'
+
+test('MON-2.2-1: SiteRegistry or DomainBinding upgraded to an unlisted implementation: STORE-CHANGED ALERT for every service, healthy=false (exit 1)', async () => {
+  for (const [role, proxy] of [['siteRegistry', CHAINS[56].siteRegistry], ['binding', CHAINS[56].binding]]) {
+    const { now, results: res } = await onConformChain({ set: (chain) => chain.setImplementation(proxy, UNLISTED_IMPL) })
+    for (const s of res.services) {
+      // the resolve refuses (the default client fails closed) and the slot check, read apart from it, names the same thing
+      assert.equal(s.chain.status, 'store-changed', role)
+      assert.equal(s.slots.status, 'store-changed', role)
+      const bad = s.slots.implementations.filter((i) => i.accepted === false)
+      assert.deepEqual(bad.map((i) => [i.role, i.proxy.toLowerCase(), i.implementation.toLowerCase()]), [[role, proxy.toLowerCase(), UNLISTED_IMPL.toLowerCase()]], role)
+    }
+    const ev = evaluate(res, now)
+    assert.equal(ev.healthy, false, role)
+    assert.equal(ev.alerts.length, 2, 'one alert per service, not two per service')
+    for (const [i, n] of ['api', 'relay'].entries()) {
+      assert.match(ev.alerts[i], new RegExp(`^${n}: STORE-CHANGED: `))
+      assert.ok(ev.alerts[i].includes(role) && ev.alerts[i].toLowerCase().includes(UNLISTED_IMPL.toLowerCase()), ev.alerts[i])
+    }
+    assert.deepEqual(ev.counts, { storeChanged: 2 })
+    const md = report(res, ev, now)
+    assert.match(md, /\*\*ALERT\*\*/)
+    assert.match(md, new RegExp(`CHANGED ${role} 0x0000…dead`, 'i'))
+    assert.equal(defaultModeLine(res), 'Default-mode resolution (TAP-10): api store-changed, relay store-changed.')
+  }
+})
+
+test('MON-2.2-2: the slot check alone raises the alert when the resolve did not refuse (an unlisted slot read apart from a resolve that worked)', async () => {
+  // The two reads are made at different moments in a run; a slot that changes between them shows in the slot check only.
+  // 一次运行里两个读取不在同一时刻；两者之间变化的槽只会出现在槽检查里。
+  const { now, results: res } = await onConformChain()
+  assert.ok(res.services.every((s) => s.chain.conform === 'resolved' && s.slots.status === 'ok'))
+  const s = res.services[0]
+  s.slots = { status: 'ok', implementations: s.slots.implementations.map((i, k) => (k === 0 ? { ...i, implementation: UNLISTED_IMPL, accepted: false } : i)) }
+  const ev = evaluate(res, now)
+  assert.equal(ev.healthy, false)
+  assert.equal(ev.alerts.length, 1)
+  assert.match(ev.alerts[0], /^api: STORE-CHANGED: siteRegistry /)
+  assert.deepEqual(ev.counts, { storeChanged: 1 })
+})
+
+test('MON-2.2-3: the older DomainBinding implementation chains.js still lists (an owner rollback) is accepted: no alert, healthy', async () => {
+  const [, older] = CHAINS[56].expectedImpl[CHAINS[56].binding.toLowerCase()]
+  assert.ok(/^0x[0-9a-f]{40}$/.test(older))
+  const { now, results: res } = await onConformChain({ set: (chain) => chain.setImplementation(CHAINS[56].binding, older) })
+  for (const s of res.services) {
+    assert.equal(s.chain.conform, 'resolved')
+    assert.equal(s.slots.status, 'ok')
+    const b = s.slots.implementations.find((i) => i.role === 'binding')
+    assert.equal(b.implementation.toLowerCase(), older)
+    assert.equal(b.accepted, true)
+  }
+  const ev = evaluate(res, now)
+  assert.equal(ev.alerts, undefined)
+  assert.equal(ev.counts, undefined)
+  assert.deepEqual(notCall(ev.problems), [])
+})
+
+test('MON-2.2-4: slots that cannot be read are undetermined, not an alert: a warning only, the resolve reports the node outage on its own line', async () => {
+  const { now, results: res } = await onConformChain({
+    set: (chain) => { for (const u of slotUrls) chain.setCallFault(u, 'eth_getStorageAt', 'http500') },
+  })
+  for (const s of res.services) {
+    assert.equal(s.chain.status, 'unavailable')
+    assert.equal(s.slots.status, 'unavailable')
+    assert.match(s.slots.error, /./)
+    assert.equal(s.slots.implementations, undefined)
+  }
+  const ev = evaluate(res, now)
+  assert.equal(ev.alerts, undefined, 'unreadable is never a STORE-CHANGED alert')
+  assert.equal(slotFindings(res.services[0]).problems.length, 0)
+  assert.equal(ev.warnings.filter((w) => /implementation slots of the site store and payment contract could not be read/.test(w) && /undetermined/.test(w)).length, 2)
+  assert.deepEqual(ev.counts, { unavailable: 2 })
+  // what turns the run red is the resolve's own outage line (the nodes, TAP-10 `unavailable`), once per service
+  assert.deepEqual(notCall(ev.problems).map((p) => p.replace(/\(.*$/, '').trim()), ['api: chain nodes unavailable: the on-chain resolve got no answer it could adopt after the retry', 'relay: chain nodes unavailable: the on-chain resolve got no answer it could adopt after the retry'])
+  assert.match(report(res, ev, now), /unreadable \(/)
+  // the same slot results without the resolve outage: a warning, exit code unchanged (healthy)
+  const only = { services: [{ ...svc('api'), slots: res.services[0].slots }, svc('relay')], pages: pages() }
+  const e2 = evaluate(only, NOW)
+  assert.equal(e2.healthy, true)
+  assert.deepEqual(e2.problems, [])
+  assert.equal(e2.warnings.length, 1)
+})
+
+// ---------------------------------------------------------------- 2.2: monthlyFee() of an activated name / 2.2：已激活名字的月费
+// The monitor turns on activationStatus's feeWhenLive: one more read-only eth_call per activated service (2 per run). A fee that
+// is not 0 is a note under "Notes" with its value in wei; never an ALERT, never a problem, never the exit code.
+// 监控打开 activationStatus 的 feeWhenLive：每个已激活服务多一次只读 eth_call（每次运行 2 次）。月费不为 0 是 Notes 下带 wei 值的提示；
+// 绝不是 ALERT、不算问题、不影响退出码。
+const ACT_LIVE = { isLive: word(1), isContainerLive: word(0), containerPaidUntil: word(NOW + 25 * DAY) }
+const feeRun = async (monthlyFee, base = ACT_LIVE) => {
+  const chain = fakeChain({ ...base, monthlyFee })
+  const a = await checkActivation(chain, { name: '11.1013.tape', container: CONTAINER }, { pauseMs: 0 })
+  return { chain, a }
+}
+// What the same chain gave before 2.2: no fee read for an activated name. / 2.2 之前同一条链的结果：已激活不读月费。
+const before22 = (a) => { const { feeUnread, ...rest } = a; return { ...rest, feeWei: null, feeText: null } }
+
+test('MON-2.2-5: monthlyFee() 0 (as on mainnet): read (4 eth_calls), no note, and the evaluation and the report are byte for byte what they were', async () => {
+  const { chain, a } = await feeRun(word(0))
+  assert.deepEqual(chain.calls, ['isLive', 'isContainerLive', 'containerPaidUntil', 'monthlyFee'])
+  assert.deepEqual([a.live, a.feeWei, a.feeText, 'feeUnread' in a, 'error' in a], [true, '0', '0 BNB', false, false])
+  assert.deepEqual(feeNotes(svc('api', { activation: a })), [])
+  const now = results(svc('api', { activation: a }), svc('relay', { activation: a }))
+  const old = results(svc('api', { activation: before22(a) }), svc('relay', { activation: before22(a) }))
+  assert.deepEqual(evaluate(now, NOW), { healthy: true, problems: [], warnings: [] })
+  assert.deepEqual(evaluate(now, NOW), evaluate(old, NOW))
+  assert.equal(report(now, evaluate(now, NOW), NOW), report(old, evaluate(old, NOW), NOW))
+  // with fewer than 14 days left, the expiry warning alone, as before / 不足 14 天：只有到期警告，与以前相同
+  const soon = { ...a, paidUntil: NOW + 10 * DAY }
+  assert.deepEqual(evaluate(results(svc('api', { activation: soon })), NOW), evaluate(results(svc('api', { activation: before22(soon) })), NOW))
+})
+
+test('MON-2.2-6: monthlyFee() not 0: one note in Notes with monthlyFeeWei, after the expiry warning; healthy, problems, alerts and the exit code unchanged', async () => {
+  const { chain, a } = await feeRun(word(10n ** 16n))
+  assert.equal(chain.calls.length, 4)
+  assert.deepEqual([a.feeWei, a.feeText], ['10000000000000000', '0.01 BNB'])
+  const r = results(svc('api', { activation: a }), svc('relay'))
+  const ev = evaluate(r, NOW)
+  assert.equal(ev.healthy, true)
+  assert.deepEqual(ev.problems, [])
+  assert.equal('alerts' in ev, false, 'never an ALERT')
+  assert.equal('counts' in ev, false)
+  assert.equal(ev.warnings.length, 1)
+  assert.match(ev.warnings[0], /^api: monthlyFee\(\) is no longer 0: monthlyFeeWei 10000000000000000 \(0\.01 BNB per 30 days\), read from DomainBinding just now/)
+  assert.match(ev.warnings[0], /costs months x this fee, plus gas\. A note only: the activation and the exit code are unchanged$/)
+  assert.equal(ev.healthy ? 0 : 1, 0, 'the exit code main() derives')
+  const md = report(r, ev, NOW)
+  assert.match(md, /^## TapeAPI monitor: all healthy/)
+  assert.doesNotMatch(md, /ALERT|\*\*Problems\*\*/)
+  assert.match(md, /\nNotes\n\n- api: monthlyFee\(\) is no longer 0: monthlyFeeWei 10000000000000000 /)
+  // the services table is unchanged: the activation cell does not carry the fee / 服务表不变：激活一栏不写月费
+  const table = (m) => m.split('\n').filter((l) => l.startsWith('| api '))
+  assert.deepEqual(table(md), table(report(results(svc('api', { activation: before22(a) }), svc('relay')), evaluate(results(svc('api', { activation: before22(a) }), svc('relay')), NOW), NOW)))
+  // with fewer than 14 days left, the expiry warning first, then the note; fewer than 3 days, the problem stays the only problem
+  // 不足 14 天：先到期警告，再提示；不足 3 天：问题仍只有那一个
+  const ev10 = evaluate(results(svc('api', { activation: { ...a, paidUntil: NOW + 10 * DAY } })), NOW)
+  assert.equal(ev10.warnings.length, 2)
+  assert.match(ev10.warnings[0], /^api: activation expires in 10 days/)
+  assert.match(ev10.warnings[1], /^api: monthlyFee\(\) is no longer 0/)
+  const ev2 = evaluate(results(svc('api', { activation: { ...a, paidUntil: NOW + 2 * DAY } })), NOW)
+  assert.deepEqual([ev2.healthy, ev2.problems.length, ev2.warnings.length], [false, 1, 1])
+  assert.match(ev2.problems[0], /^api: activation expires in 2 days/)
+  // a name that is not activated keeps its own line (the fee in the warning, as before), and gets no note
+  // 未激活的名字仍是原来那一行（月费写在警告里，与以前相同），没有提示
+  assert.deepEqual(feeNotes(svc('api', { activation: UNACTIVATED })), [])
+})
+
+test('MON-2.2-7: monthlyFee() unreadable: no retry, no error, the check still counts the days; one note that says undetermined; an unactivated result keeps its keys', async () => {
+  const { chain, a } = await feeRun(down())
+  assert.deepEqual(chain.calls, ['isLive', 'isContainerLive', 'containerPaidUntil', 'monthlyFee'], 'a fee read that fails is not retried')
+  assert.equal('error' in a, false)
+  assert.deepEqual([a.live, a.paidUntil, a.feeWei, a.feeText], [true, NOW + 25 * DAY, null, null])
+  assert.match(a.feeUnread, /^monthlyFee\(\) could not be read: RPC_UNAVAILABLE: quorum not reached/)
+  assert.doesNotThrow(() => JSON.stringify(a))
+  const ev = evaluate(results(svc('api', { activation: a }), svc('relay')), NOW)
+  assert.deepEqual([ev.healthy, ev.problems, 'alerts' in ev], [true, [], false])
+  assert.equal(ev.warnings.length, 1)
+  assert.match(ev.warnings[0], /^api: monthlyFee\(\) could not be read: RPC_UNAVAILABLE: quorum not reached.*; whether monthlyFee\(\) is still 0 is undetermined \(a note only\)$/)
+  assert.match(report(results(svc('api', { activation: a })), ev, NOW), /active until \d{4}-\d\d-\d\d \(25 d\)/)
+  // not activated and the fee unreadable: the same keys as before 2.2 (no feeUnread) / 未激活且月费读不到：键与 2.2 之前相同
+  const un = await feeRun(down(), { isLive: word(0), isContainerLive: word(0) })
+  assert.deepEqual(un.chain.calls, ['isLive', 'isContainerLive', 'monthlyFee'])
+  assert.deepEqual(Object.keys(un.a), ['live', 'isLive', 'isContainerLive', 'isLiveReverted', 'paidUntil', 'feeWei', 'feeText', 'binding'])
+  // a reverting monthlyFee() is unreadable too / monthlyFee() revert 也算读不到
+  assert.match((await feeRun(reverted())).a.feeUnread, /^monthlyFee\(\) could not be read: /)
 })

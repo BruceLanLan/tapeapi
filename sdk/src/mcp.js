@@ -26,6 +26,27 @@ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
 const rpcError = (id, code, message, data) => ({ jsonrpc: '2.0', id: id ?? null, error: data === undefined ? { code, message } : { code, message, data } })
 const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result })
 
+// MCP revision 2026-07-28 (checked against https://modelcontextprotocol.io/specification/2026-07-28 on 2026-10-14):
+// every result carries `resultType` (basic/index), and the results of tools/list, resources/list,
+// resources/templates/list and prompts/list carry `ttlMs` and `cacheScope` (server/utilities/caching). They are added
+// only to the answer to a request that itself declares that revision or a later one in
+// `_meta['io.modelcontextprotocol/protocolVersion']`, a key no earlier revision defines: a client of an earlier revision
+// gets exactly what it got before. The server does not otherwise speak 2026-07-28 (no server/discover, no header
+// checks). The fields sit beside a result, never inside a receipt or a tool, so no signature and no toolsSha256 changes.
+// ttlMs 0 keeps today's behaviour (a client re-reads the list each time, so a changed tool is seen at once); the lists
+// are the same for every caller, hence `public`.
+// MCP 2026-07-28 版：每个结果带 resultType；tools/list 等列表结果带 ttlMs 与 cacheScope。只加在“请求自己在 _meta 里声明了
+// 该版本或更新版本”的回答上（更早的版本没有这个键）：更早版本的客户端收到的与以前完全相同。服务器在别的方面仍不说 2026-07-28
+// （没有 server/discover，不校验请求头）。这些字段在结果旁边，不在回执或工具定义里，签名与 toolsSha256 都不变。ttlMs 为 0
+// 保持现状（客户端每次重读列表，工具一变立刻看到）；列表对所有调用方相同，所以是 public。
+const PROTOCOL_VERSION_META = 'io.modelcontextprotocol/protocolVersion'
+const RESULT_TYPE_SINCE = '2026-07-28'
+const LIST_CACHE_HINTS = Object.freeze({ ttlMs: 0, cacheScope: 'public' })
+const declaresResultType = (params) => {
+  const v = isObj(params._meta) ? params._meta[PROTOCOL_VERSION_META] : undefined
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && v >= RESULT_TYPE_SINCE
+}
+
 /**
  * @param {object} o
  * @param {{ name: string, version: string, title?: string }} o.info  serverInfo / 服务器信息
@@ -48,6 +69,10 @@ export function createMcpServer({ info, instructions, listTools, callTool }) {
     if (id === undefined) return null
     if (typeof id !== 'string' && typeof id !== 'number') return rpcError(null, JSONRPC.INVALID_REQUEST, 'id must be a string or a number')
     if (!isObj(params)) return rpcError(id, JSONRPC.INVALID_PARAMS, 'params must be an object')
+    // A request of revision 2026-07-28 or later gets resultType (and, for a list, the cache hints); any other request,
+    // the result unchanged. / 2026-07-28 及以后版本的请求得到 resultType（列表还有缓存提示）；其余请求的结果不变。
+    const modern = declaresResultType(params)
+    const done = (result, list = false) => rpcResult(id, modern ? { ...result, resultType: 'complete', ...(list ? LIST_CACHE_HINTS : {}) } : result)
     try {
       switch (method) {
         case 'initialize': {
@@ -57,13 +82,13 @@ export function createMcpServer({ info, instructions, listTools, callTool }) {
           if (instructions) result.instructions = instructions
           return rpcResult(id, result)
         }
-        case 'ping': return rpcResult(id, {})
-        case 'tools/list': return rpcResult(id, { tools: (await listTools()).map(publicTool) })
+        case 'ping': return done({})
+        case 'tools/list': return done({ tools: (await listTools()).map(publicTool) }, true)
         case 'tools/call': {
           if (typeof params.name !== 'string') return rpcError(id, JSONRPC.INVALID_PARAMS, 'params.name must be the tool name')
           const args = params.arguments === undefined ? {} : params.arguments
           if (!isObj(args)) return rpcError(id, JSONRPC.INVALID_PARAMS, 'params.arguments must be an object')
-          try { return rpcResult(id, await callTool(params.name, args)) } catch (e) {
+          try { return done(await callTool(params.name, args)) } catch (e) {
             // An unknown tool or malformed arguments is a protocol error; anything the service answered is a tool
             // result with isError (callTool builds those itself). / 未知工具或参数格式错误是协议错误；服务的回答都是工具结果。
             if (e instanceof TapeAPIError && (e.code === 'METHOD_NOT_FOUND' || e.code === 'BAD_REQUEST')) return rpcError(id, JSONRPC.INVALID_PARAMS, e.message)
@@ -71,9 +96,9 @@ export function createMcpServer({ info, instructions, listTools, callTool }) {
           }
         }
         // Capabilities we do not declare, answered politely so generic clients do not fail. / 未声明的能力，礼貌应答。
-        case 'resources/list': return rpcResult(id, { resources: [] })
-        case 'resources/templates/list': return rpcResult(id, { resourceTemplates: [] })
-        case 'prompts/list': return rpcResult(id, { prompts: [] })
+        case 'resources/list': return done({ resources: [] }, true)
+        case 'resources/templates/list': return done({ resourceTemplates: [] }, true)
+        case 'prompts/list': return done({ prompts: [] }, true)
         default: return rpcError(id, JSONRPC.METHOD_NOT_FOUND, `method ${String(method).slice(0, 64)} is not supported`)
       }
     } catch (e) {

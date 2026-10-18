@@ -112,13 +112,41 @@ This follows what the newer revision says about older servers. We have not tried
 the `Mcp-Method` and `Mcp-Name` request headers that revision adds, so a browser client is not stopped at the CORS
 preflight.
 
+Two fields of revision 2026-07-28 are added to answers, and only to a request that itself declares that revision or a
+later one (in `params._meta`, key `io.modelcontextprotocol/protocolVersion`, which no earlier revision has):
+
+- every result except the answer to `initialize` carries `resultType: "complete"`;
+- the result of `tools/list` (and of the empty resource and prompt lists) also carries `ttlMs: 0` and
+  `cacheScope: "public"`. `ttlMs: 0` asks the client to read the list again each time it needs it, as such a client
+  already did when the field was missing, so a changed tool is noticed at once. `public`: the list is the same for every
+  caller.
+
+A request without that key, which is every request of the three revisions above, gets exactly the answer it got
+before. The fields sit beside the result, not in the receipt or in a tool, so signatures and `toolsSha256` do not
+change. The signing proxy and the local command answer the same way. This does not make the endpoint a 2026-07-28
+server: it still has no `server/discover` and does not check the new headers. The newer revision says nothing about
+CORS, and the `Mcp-Param-*` headers it adds for tool arguments cannot all be named in a preflight answer: the tools of
+a TapeAPI service do not use them, but the tools of a proxied MCP server might.
+
+Two choices here are deliberate. `cacheScope` is always `"public"` and cannot be set: that is true because none of the
+three entry points (the endpoint, the signing proxy, the local command) answers `tools/list` differently for different
+callers; code built on `createMcpServer` that filtered its list by caller would need `"private"`, which this version
+does not offer. And the answer to `initialize` carries no `resultType`, even for a request that declares 2026-07-28: the
+server answers `initialize` with one of the earlier revisions it implements, and the client then speaks that one.
+
+Checked against the specification on 2026-10-14, when 2026-07-28 was its latest revision:
+[results and `resultType`](https://modelcontextprotocol.io/specification/2026-07-28/basic/index),
+[caching](https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching),
+[versions and older servers](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning),
+[Streamable HTTP and older servers](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http).
+
 ## The local verifying command
 
 `tapeapi-mcp` is a local MCP server (stdio) in the SDK's release package. It needs Node.js 20 or later. `npx` fetches
 it from the GitHub release, not from the npm registry:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 What it does differently from the remote server:
@@ -149,7 +177,7 @@ Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -169,7 +197,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -181,7 +209,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### Remote or local
@@ -235,7 +263,7 @@ Save the receipt (the `_meta["fun.tapeapi/receipt"]` object) as `receipt.json`. 
 release, or work inside a clone of the repository as in [Call a service](consume.md):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz
 ```
 
 ```js
@@ -400,7 +428,7 @@ isolate can be restarted at any time. With it, changed tools are refused after a
 
   ```bash
   # 42.1013.tape is an example name: put your service's TapeOut name here
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### What clients check

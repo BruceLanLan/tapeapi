@@ -8,7 +8,7 @@ the [changelog](../CHANGELOG.md).
 
 ## 1. Now (live)
 
-The current release is **2.1.0** (2026-10-17), which adds the experimental `tapeapi connect`; 2.0.0 (2026-10-12) made standards the default. What each release added is in the
+The current release is **2.2.0** (2026-10-19), which adds the experimental `tapeapi receipts` and `tapeapi reconcile`; 2.1.0 (2026-10-17) added the experimental `tapeapi connect`, and 2.0.0 (2026-10-12) made standards the default. What each release added is in the
 [changelog](../CHANGELOG.md); in short:
 
 - **Standards by default** (2.0). With no options, `createTapeAPI()` resolves a service the way TapeOut's official TAPs
@@ -64,7 +64,7 @@ The current release is **2.1.0** (2026-10-17), which adds the experimental `tape
 
 ## 2. Next
 
-- **The official TAP review.** We submitted fourteen TAP drafts to TapeOut's TAP process
+- **The official TAP review.** We submitted fourteen TAP drafts for parts of TapeAPI's specs to TapeOut's TAP process
   ([TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), TAP-01), all written against TAP-10: eight on
   2026-09-30 and 2026-10-01, two on the container-agent formats on 2026-10-04 and 2026-10-05, two on 2026-10-08, and two
   on 2026-10-13.
@@ -133,7 +133,7 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
 
 ## 1. 现在（已上线）
 
-当前版本是 **2.1.0**（2026-10-17），新增实验性的 `tapeapi connect`；2.0.0（2026-10-12）起标准即默认。每一版加了什么见[更新日志](../CHANGELOG.md)；简要如下：
+当前版本是 **2.2.0**（2026-10-19），新增实验性的 `tapeapi receipts` 与 `tapeapi reconcile`；2.1.0（2026-10-17）新增实验性的 `tapeapi connect`，2.0.0（2026-10-12）起标准即默认。每一版加了什么见[更新日志](../CHANGELOG.md)；简要如下：
 
 - **标准即默认**（2.0）。不传任何选项，`createTapeAPI()` 就按 TapeOut 官方 TAP（TAP-10 v1.1 §3 至 §7 与 TAP-11 §2）解析服务：
   每次解析钉一个区块，链 ID 与持有人要所有节点一致；名字从未开通（`not-opened`）、未激活或付费到期（`unpaid`）、站点存储或付费
@@ -176,7 +176,7 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
 
 ## 2. 接下来
 
-- **官方 TAP 评审。** 我们向 TapeOut 的 TAP 流程（[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)，TAP-01）
+- **官方 TAP 评审。** 我们就 TapeAPI 规范的部分内容向 TapeOut 的 TAP 流程（[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)，TAP-01）
   提交了 14 份草稿，一律按 TAP-10 写：8 份在 2026-09-30 至 10-01，2 份关于容器代理格式在 2026-10-04 与 10-05，2 份在 2026-10-08，
   2 份在 2026-10-13。
   服务身份与清单已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)，2026-10-01），

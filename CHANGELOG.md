@@ -7,6 +7,81 @@ interfaces.
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-10-19
+
+TapeAPI 2.2.0: receipts put to use, against a bill and against the paid period. `tapeapi receipts` lists, replays and
+exports the receipts `tapeapi-verify --log` saved, `tapeapi reconcile` sets them against a provider's bill row by row,
+and the doctor's `activation` check carries the paid period (`paidUntil`) and the monthly fee as fields. The command-line
+additions and the doctor's fields are **experimental**: outside the 2.x compatibility promise, they may change or go away
+in any 2.x release. Nothing here changes a default: `tapeapi --help` is 12 lines longer and the doctor's `--json` has
+more keys, but with `monthlyFee()` at 0, as on mainnet today, the doctor's text report is byte for byte what it was and
+the monitor's report gains no fee line, and an MCP request that does not name revision 2026-07-28 gets exactly the
+answer it got before. Nothing below makes or takes a payment, and a receipt still shows what its signer says, not which
+model ran.
+
+### Added
+
+- **`tapeapi receipts tail|show|export` and `tapeapi reconcile`** (experimental: outside the 2.x compatibility
+  promise, they may change or go away in any 2.x release). Both read files on this machine only: no network, no key,
+  nothing uploaded. `receipts` reads the JSON lines `tapeapi-verify --log` writes (or bare receipt envelopes): `tail`
+  lists the last calls with model, tokens, price and the logged verdict, filtered by service (container address, or
+  the name in a manifest snapshot), model and time; `show <id>` prints one receipt and replays its checks offline
+  (signature and signer, container, method and path, price table; the two hashes when `--request` / `--response`
+  give the exact bytes) against a manifest snapshot saved next to the receipts (`manifest.json`, `*.manifest.json`)
+  or given with `--manifest`, taken as given: the line under the verdict says its signer was not checked on chain
+  there, and `--json`'s `replay` has `signerCheckedOnChain: false`; without one it decides nothing (exit 3) and fetches
+  nothing; `export` writes CSV or
+  JSON with stable columns. `reconcile --receipts <file|dir> --bill <file>` sets the usage and prices the receipts
+  claim against a bill file row by row and lists three kinds of fact, each with its receipt line and bill line:
+  match, missing (on one side only) and mismatch (a field that differs from what the receipt claims); it decides
+  nothing. Rows join by an id column, else by time, model and token counts. `--preset new-api` names the fields of the
+  JSON new-api's `GET /api/log/self` returns (`data.items`: `upstream_request_id`, `model_name`, `prompt_tokens`,
+  `completion_tokens`, `quota`, `created_at`), taken from new-api's source code, not yet checked against a real
+  instance; new-api's web CSV export is not that file (localized headers, a formatted `Cost` that is not a comparable
+  amount, `request_id`), does not match the preset (exit 2) and, like other bills, names its columns with `--map`;
+  amounts are compared only with `--amount-scale` (new-api: its `quota_per_unit`). Exit status 0 / 1 / 2 / 3 as the
+  doctor's; every non-zero exit ends with the next command; `--json`, `--lang en|zh|both`; output redacted as
+  `tapeapi connect`'s, except the hashes, ids and addresses a receipt carries. Files: `sdk/src/receipts-cli.js`,
+  `sdk/src/reconcile-cli.js` (no new export subpath; the `ai` face is unchanged). `tapeapi --help` lists the two
+  commands and their exit status (12 more lines); `tapeapi doctor|verify|mcp` and `tapeapi connect` are unchanged.
+- **`tapeapi-doctor`: the `activation` check carries the paid period and the fee as fields** (experimental, like the
+  doctor itself: outside the 2.x compatibility promise, they may change or go away in any 2.x release). In `--json`
+  (and in `diagnose()`'s report) the check has `paidUntil` (ISO 8601, UTC), `paidUntilSeconds`
+  (`DomainBinding.containerPaidUntil(container)` as read, Unix seconds, compared on chain with the block time) and
+  `monthlyFeeWei` (`monthlyFee()` in wei, a decimal string), each `null` when not read, with the reason in `unread` (absent when the check is skipped or undecided); a
+  script no longer needs to parse the date out of `detail`. `null` does not mean expired: a script reads the check's
+  `status` first and excludes `null` before comparing a date (`new Date(null) < now` is true in JavaScript). The doctor now reads `monthlyFee()` for an activated name too
+  (one more `eth_call`); when it is not 0, the text report prints one `note:` / `提示:` line under the check. The
+  check's status, its `detail`, the status names and the exit codes are unchanged; with `monthlyFee()` at 0, as on
+  mainnet today, the text report is byte for byte what it was. `api.siteStatus()` and `tapeapi connect` read nothing more.
+- **MCP: `resultType`, and `ttlMs` / `cacheScope` on list results, for a request of MCP revision 2026-07-28.**
+  `createMcpServer` in `@tapeapi/sdk/mcp`, and so `createMcpEndpoint`, `createMcpProxy` and `tapeapi-mcp`: a request
+  whose `params._meta['io.modelcontextprotocol/protocolVersion']` names revision 2026-07-28 or a later one gets
+  `resultType: "complete"` on its result, and the result of `tools/list`, `resources/list`, `resources/templates/list`
+  and `prompts/list` also gets `ttlMs: 0` and `cacheScope: "public"`. A request without that key (every request of
+  revisions 2025-11-25, 2025-06-18 and 2025-03-26) gets exactly the answer it got before; `initialize` and error
+  answers never change. Nothing signed changes: the fields sit beside the result, so receipts, signed envelopes and
+  `toolsSha256` are the same in both revisions, and the proxy talks to its upstream as before. The endpoint does not
+  otherwise speak 2026-07-28 (no `server/discover`, no header checks). The CORS preflight already allows `Mcp-Method`
+  and `Mcp-Name` (2.0.0). Checked against the official specification on 2026-10-14, when 2026-07-28 was its latest
+  revision: https://modelcontextprotocol.io/specification/2026-07-28/basic/index (results and `resultType`) and
+  https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching (`ttlMs`, `cacheScope`).
+- **The monitor (`scripts/monitor.mjs`): its implementation-slot check is described in `docs/OPERATING.md` and tested
+  end to end on the SDK's fake chain, and it notes a `monthlyFee()` that is not 0.** The slot check is not new: since
+  2.0.0 the monitor reads the ERC-1967 implementation slot of the SiteRegistry and DomainBinding proxies through
+  `api.siteStatus` and compares it with the `expectedImpl` list in
+  `sdk/src/chains.js`; an unlisted implementation is a `STORE-CHANGED` ALERT and exit code 1, and slots that cannot be
+  read are a warning only. New: `docs/OPERATING.md` says so; four tests (`MON-2.2-1` to `MON-2.2-4`) run the monitor's own
+  default client over the TAP-10 fake chain with a proxy's implementation swapped (alert, exit 1), with the older listed
+  DomainBinding implementation (quiet), and with `eth_getStorageAt` failing on every node (warning, never an alert); and
+  the warning for unreadable slots now ends "whether either was changed is undetermined". For an activated service the
+  monitor now also reads `monthlyFee()` (the doctor's `feeWhenLive`: 2 more read-only `eth_call`s per run, one per
+  activated service): a fee that is not 0 (it is 0 on mainnet today; the monitor keeps no state between runs, so "no
+  longer 0" is judged against 0) adds one line under Notes with its `monthlyFeeWei`, and a fee that cannot be read adds
+  one that says it is undetermined; at 0 the report is byte for byte what it was. In `--json` an activated service's
+  `activation.feeWei` and `feeText` now carry the fee (they were `null`), and `feeUnread` appears when its read failed.
+  The status names, the alerts and the exit code are unchanged: the fee line is a note, never an ALERT or a problem.
+
 ## [2.1.0] — 2026-10-17
 
 TapeAPI 2.1.0: `tapeapi connect`, one command that shows whether a service can be used, how to set up a client for it,
@@ -1927,7 +2002,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/BruceLanLan/tapeapi/compare/v1.8.1...v2.0.0
 [1.8.1]: https://github.com/BruceLanLan/tapeapi/compare/v1.8.0...v1.8.1

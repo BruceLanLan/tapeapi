@@ -24,7 +24,7 @@ npm ci --no-audit --no-fund
 在任何目录都能运行，不需要克隆仓库：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-doctor <你的名字>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-doctor <你的名字>
 ```
 
 在检出的根目录里，`node sdk/bin/tapeapi-doctor.js <你的名字>` 效果相同。两种方式下，报告给出的下一条命令都按你的运行方式书写。
@@ -52,6 +52,13 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0
 DNS：请重试）；`--json` 输出供 CI 使用的报告；`--lang en` 或 `--lang zh` 只输出一种语言。它只读：不签任何东西、不发交易。
 给它旁路地址时，它探测的就是这个地址，而不是旁路提供的清单里发布的地址；两者不同时会警告。它是实验性的：检查项与输出在 1.x
 版本里仍可能变化。
+
+在 CI 里做每日检查时，读 `--json` 里 `activation` 检查的字段，而不是它的文字（实验性，2.2 起）：`paidUntil` 是容器付费期的结束时间
+（ISO 8601，UTC），`paidUntilSeconds` 是同一个值的原样读数，来自 `DomainBinding.containerPaidUntil(容器)`（Unix 秒；付费合约拿它与
+链上的区块时间比较，而不是与你的时钟比较），`monthlyFeeWei` 是 `monthlyFee()` 的 wei 数（字符串）。读不到或没有读的值（名字未激活时
+的 `paidUntil`，或只按名字付费、容器级的值为 0 时）为 `null`，原因写在 `unread` 里。`null` 不表示已过期：脚本先看这项检查的 `status`，
+比较日期之前先排除 `null`（JavaScript 里 `new Date(null) < now` 与 `null < now` 都为真）。检查读到了链（通过、警告或失败）时才有这些字段，跳过或无法判定时没有。这些值来自本次运行中对节点最新区块的普通读取，
+不是钉块读取，所以不附区块号。`monthlyFee()` 不为 0 时，文字报告在这项检查下多一行 `提示:`（双语输出时另有英文的 `note:` 一行）；检查照样通过，退出码不变。
 
 全部检查通过后，你可以自己提一个拉取请求，把服务的名字加进 `site/directory/providers.json`，登记到[服务方目录](https://tapeapi.fun/directory/)
 （步骤见 [`directory/`](https://github.com/BruceLanLan/tapeapi/tree/main/directory)）。目录每天对每一条重新运行诊断并显示结果。
@@ -202,7 +209,7 @@ const client = new OpenAI({ baseURL, apiKey: process.env.API_KEY, fetch })  // �
 
 ```sh
 # 终端 1。42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -232,6 +239,21 @@ node sdk/bin/tapeapi.js connect 42.1013.tape --proxy    # 然后为它运行 tap
 它只读链与清单：不发交易、不索要任何密钥或密码（配置从用户自己环境里的 `API_KEY` 读令牌）、不上传、不付款。`unpaid`、`not-opened`、
 `store-changed` 的服务显示为不可用（退出码 1），`--proxy` 不启动任何东西；退出码 2 为用法错误（`--tool` 点名了清单未声明的格式也算），
 3 为读不到。代码里同样的功能是 `@tapeapi/sdk/connect`（`snippetsFor`、`connectReport`、`renderConnect`），同样是实验性。
+
+**之后，用户可以查看自己的回执，并与你的账单对账**：`tapeapi receipts` 与 `tapeapi reconcile`（实验性，2.2 起，不受 2.x 兼容承诺约束）。
+两者只读用户本机的文件：不联网、不需要密钥。
+
+```sh
+node sdk/bin/tapeapi.js receipts tail --receipts ~/.tapeapi/receipts.jsonl              # tapeapi-verify --log 写下的内容
+node sdk/bin/tapeapi.js receipts show <id> --receipts ~/.tapeapi/receipts.jsonl         # 一张回执，离线重放核验
+node sdk/bin/tapeapi.js reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # 与账单文件对账
+```
+
+`show` 依据用户存在回执旁的你的清单（`manifest.json`）重放一张回执的核验（签名、容器、方法与路径、价目表；给出确切字节时也核对哈希；请求字节只在 `tapeapi-verify --no-salt` 运行时才有）；
+没有清单就不判定（退出码 3）。`reconcile` 列出匹配、只在一边出现的缺失行，以及与回执声称不一致的字段，每条都带两边的出处行；它不下结论。
+`--preset new-api` 对应 new-api 的 `GET /api/log/self` 返回的 JSON（`data.items`）里的字段名（取自 new-api 源码，尚未用真实实例核对）。
+它不是 new-api 网页端导出的 CSV：那份文件的表头是本地化的显示标题，`Cost` 是格式化后的字符串、不是可比较的数，id 列是 `request_id`
+而不是 `upstream_request_id`，所以预设对它匹配不上（退出码 2）；和其它账单一样，用 `--map` 指定它的列。
 
 `tapeapi-verify` 在链上解析你的服务，回答原样透传，每次调用打印一行结论；加 `--strict` 时，核验失败会变成客户端看得到的错误。单份回执也可以贴到
 [核验页](https://tapeapi.fun/verify/)。这些都需要你的清单已经上链（操作台第 5 步，见上文）。

@@ -9,7 +9,8 @@
 // isContainerLive(container)), else a TAP-11 client gets "unpaid" and does not resolve it. The monitor reports it per service:
 // not activated = a WARNING only (the service still answers and its site files stay readable, so it must not turn the
 // scheduled run red); activated = the paid-until date and the days left (containerPaidUntil): under 14 days a warning,
-// under 3 days (or past) a problem; unreadable = a warning.
+// under 3 days (or past) a problem; unreadable = a warning. For an activated name it also reads monthlyFee() (2.2): a fee
+// that is not 0 (it is 0 on BSC mainnet today) is a note under "Notes" with its value in wei, never an ALERT or a problem.
 // Exit 0 when everything is healthy, 1 when anything is down, a delegation expires in fewer than 14 days, or an activation
 // that exists expires in fewer than 3 days. Warnings (listed under "Notes") never change the exit code.
 // 2.0: the client is the SDK's default, the TAP-10 conformance mode, so a failed resolve names what is wrong in e.data.status and the
@@ -30,7 +31,8 @@
 // 中继异步投递：往随机房间发一帧测试帧，让中继闲置 ASYNC_WAIT_S（60 秒），再用全新的客户端读回——能抓住 RELAY-1 的那项检查。
 // 激活（TAP-10 §6.3、TAP-11）：服务的名字必须在链上激活（DomainBinding 的 isLive(名字, 容器) 或 isContainerLive(容器)），否则按 TAP-11
 // 的客户端得到 unpaid、不解析它。监控对每个服务报告：未激活只是警告（服务照常应答、站点文件仍可读取，不能让定时任务变红）；
-// 已激活则给出到期日与剩余天数（containerPaidUntil）：不足 14 天警告，不足 3 天（或已过期）算问题；读不到则警告。
+// 已激活则给出到期日与剩余天数（containerPaidUntil）：不足 14 天警告，不足 3 天（或已过期）算问题；读不到则警告。已激活时也读 monthlyFee()
+// （2.2）：不为 0（今天 BSC 主网上为 0）就在 Notes 下给一条带 wei 值的提示，绝不是 ALERT，也不算问题。
 // 全部健康退出码 0；任何服务不可用、委托不足 14 天到期、或已有的激活不足 3 天到期，退出码 1。警告（列在 Notes 下）不改变退出码。
 // 2.0：客户端用 SDK 的默认（TAP-10 一致模式），解析失败时 e.data.status 说明原因，监控按它分类而不是一律同样处理：not-opened（容器从未
 // 开通）、unpaid（付费到期：任何默认客户端都不再解析该服务）、store-changed（站点存储或付费合约运行着 SDK 未列出的实现）都算问题，
@@ -119,12 +121,34 @@ export function activationFindings(s, now, warnDays = WARN_DAYS) {
     out.warnings.push(`${n}: ${s.label ?? n} is not activated (isLive and isContainerLive are false): under TAP-11 a client gets "unpaid" and does not resolve this service; the service still answers and its site files stay readable (TAP-10 §6.3).${a.feeText ? ` monthlyFee() now: ${a.feeText} per 30 days.` : ''}`)
     return out
   }
-  if (!Number.isFinite(a.paidUntil)) return out    // activated, expiry not readable: nothing to count / 已激活，到期时间读不到：无从计算
-  const days = daysUntil(a.paidUntil, now)
-  if (a.paidUntil <= now) out.problems.push(`${n}: activation EXPIRED ${dateOf(a.paidUntil)}; TAP-11 clients get "unpaid" until it is paid again`)
-  else if (days < ACTIVATION_FAIL_DAYS) out.problems.push(`${n}: activation expires in ${days} days (${dateOf(a.paidUntil)}); pay it now or TAP-11 clients get "unpaid"`)
-  else if (days < warnDays) out.warnings.push(`${n}: activation expires in ${days} days (${dateOf(a.paidUntil)}); pay the next month soon`)
+  if (Number.isFinite(a.paidUntil)) {    // activated, expiry not readable: nothing to count / 已激活，到期时间读不到：无从计算
+    const days = daysUntil(a.paidUntil, now)
+    if (a.paidUntil <= now) out.problems.push(`${n}: activation EXPIRED ${dateOf(a.paidUntil)}; TAP-11 clients get "unpaid" until it is paid again`)
+    else if (days < ACTIVATION_FAIL_DAYS) out.problems.push(`${n}: activation expires in ${days} days (${dateOf(a.paidUntil)}); pay it now or TAP-11 clients get "unpaid"`)
+    else if (days < warnDays) out.warnings.push(`${n}: activation expires in ${days} days (${dateOf(a.paidUntil)}); pay the next month soon`)
+  }
+  out.warnings.push(...feeNotes(s))
   return out
+}
+
+/**
+ * @experimental (2.2) The fee of an activated name, as notes (rendered under "Notes"): never a problem, never an ALERT, never
+ * the exit code. The monitor keeps no state between runs, so "no longer 0" is judged against 0, the value on BSC mainnet
+ * when this was written: a fee that is not 0 is one note with its value in wei; a fee that could not be read is one note
+ * that says so (undetermined); a fee of 0, or a result from before 2.2 (feeWei null, no feeUnread), says nothing.
+ * @experimental（2.2）已激活名字的月费，作为提示（列在 Notes 下）：绝不算问题、绝不是 ALERT、不影响退出码。监控在两次运行之间不保存任何状态，
+ * 所以"不再为 0"是与 0（写这段时 BSC 主网上的值）比较：不为 0 给一条带 wei 值的提示；读不到给一条"无法判定"的提示；为 0 或 2.2 之前的结果不说话。
+ */
+export function feeNotes(s) {
+  const a = s?.activation
+  if (!a || !a.live) return []
+  const n = s.name
+  if (typeof a.feeWei === 'string' && /^\d+$/.test(a.feeWei) && BigInt(a.feeWei) > 0n) {
+    return [`${n}: monthlyFee() is no longer 0: monthlyFeeWei ${a.feeWei}${a.feeText ? ` (${a.feeText} per 30 days)` : ''}, read from DomainBinding just now (it was 0 on BSC mainnet when this note was added; the owner of DomainBinding can change it at any time): paying the activation of ${s.label ?? n} again costs months x this fee, plus gas. A note only: the activation and the exit code are unchanged`]
+  }
+  // feeUnread is activationStatus's own reason ("monthlyFee() could not be read: <error>") / feeUnread 是 activationStatus 自己的原因
+  if (a.feeUnread) return [`${n}: ${a.feeUnread}; whether monthlyFee() is still 0 is undetermined (a note only)`]
+  return []
 }
 
 /** The activation cell of the services table. / 服务表里的激活一栏。 */
@@ -173,15 +197,15 @@ export function chainFailure(s) {
 /**
  * The implementation-slot check of one service result (s.slots, from checkSlots): { problems[], alerts[], warnings[], unavailable }.
  * An unaccepted implementation is store-changed whatever the resolve said; when the resolve already said store-changed it is not
- * said twice. A slot read that failed is a warning (the resolve line carries the outage itself).
- * 一个服务结果的实现槽检查（s.slots，来自 checkSlots）。不被接受的实现无论解析怎么说都是 store-changed；解析已经说过就不重复。读不到只是警告。
+ * said twice. A slot read that failed is a warning that says the change is undetermined (the resolve line carries the outage itself).
+ * 一个服务结果的实现槽检查（s.slots，来自 checkSlots）。不被接受的实现无论解析怎么说都是 store-changed；解析已经说过就不重复。读不到只是警告，并写明无法判定。
  */
 export function slotFindings(s) {
   const out = { problems: [], alerts: [], warnings: [], unavailable: false }
   const k = s?.slots
   if (!k) return out
   const n = s.name
-  if (k.error) { out.warnings.push(`${n}: implementation slots of the site store and payment contract could not be read (${k.error})`); out.unavailable = k.status === 'unavailable'; return out }
+  if (k.error) { out.warnings.push(`${n}: implementation slots of the site store and payment contract could not be read (${k.error}); whether either was changed is undetermined`); out.unavailable = k.status === 'unavailable'; return out }
   const bad = Array.isArray(k.implementations) ? k.implementations.filter((i) => i && i.accepted === false) : []
   if (bad.length && s.chain?.status !== 'store-changed') {
     const line = `${n}: STORE-CHANGED: ${bad.map((i) => `${i.role} ${i.proxy} runs implementation ${i.implementation}`).join('; ')}, which this SDK does not list: SDK clients refuse to read ${s.label ?? n} until the SDK lists it (TAP-10 §6.1)`
@@ -193,7 +217,7 @@ export function slotFindings(s) {
 /**
  * results: { services: [{ name, label, health: { status, ok, signer, delegationExpires, latencyMs, error },
  *                         chain: { signer, expires, conform?, error, status? }, call: { method, ok, skipped, error },
- *                         activation?: { live, paidUntil, feeText, error, skipped },
+ *                         activation?: { live, paidUntil, feeWei, feeText, feeUnread?, error, skipped },
  *                         slots?: { status, implementations: [{ role, proxy, implementation, accepted }], error } }],
  *            pages: [{ name, url, status, error }] }
  * now: unix seconds.  Returns { healthy, problems[], warnings[] }, plus `alerts[]` (the problems to put first: unpaid, store-changed)
@@ -201,7 +225,9 @@ export function slotFindings(s) {
  * chain.status (the SDK's e.data.status) sorts a failed resolve, see chainFailure(); chain.error without it is the plain line.
  * `activation` is judged by activationFindings(): only an activation that expires in fewer than 3 days is a problem; every other
  * finding (not activated, fewer than 14 days, unreadable) is a warning, and a missing or skipped one says nothing.
+ * 2.2: an activated name whose monthlyFee() is not 0, or could not be read, adds one note to the warnings (feeNotes()).
  * activation 由 activationFindings() 判断：只有已激活且不足 3 天到期才算问题，其余（未激活、不足 14 天、读不到）都是警告；缺失或跳过则不说话。
+ * 2.2：已激活名字的 monthlyFee() 不为 0 或读不到时，在警告里加一条提示（feeNotes()）。
  */
 export function evaluate(results, now = Math.floor(Date.now() / 1000), { warnDays = WARN_DAYS } = {}) {
   const problems = []
@@ -427,25 +453,34 @@ async function checkHealth(svc) {
  * Is `name` (the on-chain name, with `.tape`) activated for `container`? Reuses the doctor's activationStatus (sdk/src/doctor.js).
  * Never throws: a chain that cannot be read gives { error }, which evaluate() turns into a warning, so it cannot sink the other checks.
  * Cost: activationStatus reads in sequence isLive(name, container), isContainerLive(container), then containerPaidUntil(container)
- * when activated or monthlyFee() when not: 3 eth_calls per service, 6 per run (2 services), each one quorum round over the SDK's 3
- * nodes. They are awaited one after the other, so rpc.js does not batch them: at most 6 extra requests per node per run, and 2 x 48
- * runs a day = about 288 per node per day, a few percent of what a public node allows; the whole check is retried once on a failure
- * (worst case 12 per node per run). Nothing is cached: the answer must be the chain's current one.
+ * and (since 2.2, feeWhenLive) monthlyFee() when activated, or monthlyFee() alone when not: 4 eth_calls per activated service and 3
+ * per unactivated one, so at most 8 per run (2 services; 6 before 2.2: the fee read of the 2 activated services is the only
+ * addition, 2 more read-only eth_calls per run), each one quorum round over the SDK's 3 nodes. They are awaited one after the
+ * other, so rpc.js does not batch them: at most 8 extra requests per node per run, and 48 runs a day = about 384 per node per
+ * day (288 before 2.2), a few percent of what a public node allows; the whole check is retried once on a failure (worst case 16
+ * per node per run). A failed fee read is not retried and fails nothing: activationStatus records it in unread.fee. Nothing is
+ * cached: the answer must be the chain's current one.
  * 激活检查：复用 doctor 的 activationStatus。从不抛错：读不到链就返回 { error }，由 evaluate() 记为警告，拖不垮其它检查。
- * 成本：依次读 isLive(名字, 容器)、isContainerLive(容器)，再按结果读 containerPaidUntil(已激活) 或 monthlyFee()(未激活)：每服务 3 次
- * eth_call，每次运行 6 次（2 个服务），每次都在 SDK 的 3 个节点上过一轮法定数；它们依次 await，所以 rpc.js 不会合并批量：
- * 每个节点每次运行最多多 6 个请求，每天 48 次运行约 288 个/节点，只占公共节点配额的很小一部分；失败时整项重试一次（最坏每次 12 个）。不缓存。
+ * 成本：依次读 isLive(名字, 容器)、isContainerLive(容器)，已激活时再读 containerPaidUntil(容器) 与（2.2 起，feeWhenLive）monthlyFee()，
+ * 未激活时只读 monthlyFee()：已激活每服务 4 次 eth_call、未激活 3 次，每次运行最多 8 次（2 个服务；2.2 之前 6 次：唯一新增的是 2 个已激活
+ * 服务的月费读取，即每次运行多 2 次只读 eth_call），每次都在 SDK 的 3 个节点上过一轮法定数；它们依次 await，所以 rpc.js 不会合并批量：
+ * 每个节点每次运行最多多 8 个请求，每天 48 次运行约 384 个/节点（2.2 之前 288 个），只占公共节点配额的很小一部分；失败时整项重试一次
+ * （最坏每次 16 个）。月费读取失败不重试、也不让检查失败：activationStatus 把它记在 unread.fee。不缓存。
  * `name` must be the canonical name: SERVICES[].label is (11.1013.tape), and the tests lock the labels. / label 就是规范名，测试锁定了它。
  */
 export async function checkActivation(api, { name, container }, { pauseMs = 2000 } = {}) {
   try {
     const [{ activationStatus, formatNative }, { CHAINS }] = await Promise.all([import('../sdk/src/doctor.js'), import('../sdk/src/index.js')])
-    const a = await retry(() => activationStatus(api, api.chainId, { name, container }), { pauseMs })
+    const a = await retry(() => activationStatus(api, api.chainId, { name, container, feeWhenLive: true }), { pauseMs })
     // No bigint in the results: --json prints them with JSON.stringify. / 结果里不留 bigint：--json 用 JSON.stringify 输出。
+    // feeWei is the doctor's monthlyFeeWei (monthlyFee() in wei, a decimal string). feeUnread (2.2) is there only for an activated
+    // name whose fee read failed, so an unactivated result has exactly the keys it had before.
+    // feeWei 即诊断的 monthlyFeeWei。feeUnread（2.2）只在已激活且月费读取失败时出现，未激活的结果键与以前完全相同。
     return {
       live: a.live, isLive: a.isLive, isContainerLive: a.isContainerLive, isLiveReverted: a.isLiveReverted,
       paidUntil: a.paidUntil, feeWei: a.fee === null ? null : String(a.fee),
       feeText: a.fee === null ? null : formatNative(a.fee, CHAINS[api.chainId]?.currency ?? ''), binding: a.binding,
+      ...(a.live && a.unread?.fee ? { feeUnread: msg(a.unread.fee) } : {}),
     }
   } catch (e) { return { error: msg(e) } }
 }

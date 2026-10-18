@@ -174,7 +174,11 @@ const ALL_MODELS = [
 ]
 function world({ formats = ['openai-chat'], name = 'Example relay', extraModels = [] } = {}) {
   const holderKey = SIG.randomPrivateKey(), signerKey = SIG.randomPrivateKey()
-  const now = Math.floor(Date.now() / 1000), expires = now + 90 * 86_400
+  // Root cause of the flaky "89 days vs 90 days" (review T-1): renderConnect reads Date.now() itself, so with expires a
+  // whole number of days ahead, two runs a second apart could floor to different day counts. Half a day more keeps the
+  // count at 90 for any run inside the next 12 hours. / 偶发根因：renderConnect 自己读 Date.now()，expires 恰好整天时，
+  // 相隔一秒的两次运行会向下取整到不同天数；多加半天，12 小时内任何一次运行都是 90 天。
+  const now = Math.floor(Date.now() / 1000), expires = now + 90 * 86_400 + 43_200
   const chain = createConformChain()
   chain.state.headTime = now
   const c = chain.circuit(42, { holder: SIG.privateKeyToAddress(holderKey) })

@@ -23,7 +23,7 @@ The checks of steps 1 to 7 are `tapeapi-doctor` (experimental), which ships in t
 Every `tapeapi-doctor` in the table stands for this, run from any directory, with nothing to clone:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-doctor <your name>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-doctor <your name>
 ```
 
 In a checkout, `node sdk/bin/tapeapi-doctor.js <your name>` at its root does the same. Either way the report writes
@@ -59,6 +59,18 @@ connection, DNS: run it again); `--json` prints the report for CI; `--lang en` o
 reads only: it signs nothing and sends no transaction. Given a sidecar's URL, it probes that address, not the one the
 served manifest publishes, and warns when the two differ. It is experimental: its checks and its output may still change
 in a 1.x release.
+
+For a daily check in your CI, read the `activation` check of `--json` rather than its text (experimental, since 2.2):
+`paidUntil` is the end of the container's paid period in ISO 8601 UTC, `paidUntilSeconds` the same as read from
+`DomainBinding.containerPaidUntil(container)` (Unix seconds; the payment contract compares it with the chain's block
+time, not your clock), and `monthlyFeeWei` is `monthlyFee()` in wei, as a string. A value that could not be read, or was
+not read (`paidUntil` while the name is not activated, or when only the name was paid and the container-level value is
+0), is `null`, and `unread` says why. `null` does not mean expired: a script checks the check's `status` first and
+excludes `null` before comparing a date (in JavaScript `new Date(null) < now` and `null < now` are both true). The
+fields are there when the check reached the chain (pass, warn or fail) and
+absent when it was skipped or undecided. They come from plain reads at the nodes' latest block during that run, not from a
+pinned block, so no block number comes with them. When `monthlyFee()` is not 0, the text report adds a `note:` line (and
+its Chinese `提示:` line) under the check; the check still passes and the exit status is the same.
 
 Once every check passes, you may list your service in the [provider directory](https://tapeapi.fun/directory/) with a
 pull request of your own that adds its name to `site/directory/providers.json` (the steps are in
@@ -242,7 +254,7 @@ and point the client at it. `tapeapi-verify` keeps running in the foreground, so
 
 ```sh
 # Terminal 1. 42.1013.tape is an example name: put your service's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -276,6 +288,25 @@ from `API_KEY` in the user's own environment), nothing uploaded, nothing paid. A
 `store-changed` service is shown as unavailable (exit 1) and `--proxy` starts nothing; exit 2 is a usage mistake (also
 `--tool` naming a format the manifest does not declare), 3 means it could not be read. In code the same is
 `@tapeapi/sdk/connect` (`snippetsFor`, `connectReport`, `renderConnect`), experimental too.
+
+**Afterwards, your users can look at their receipts and set them against your bill** with `tapeapi receipts` and
+`tapeapi reconcile` (experimental, since 2.2, outside the 2.x compatibility promise). Both read files on the
+user's machine only: no network, no key.
+
+```sh
+node sdk/bin/tapeapi.js receipts tail --receipts ~/.tapeapi/receipts.jsonl              # what tapeapi-verify --log wrote
+node sdk/bin/tapeapi.js receipts show <id> --receipts ~/.tapeapi/receipts.jsonl         # one receipt, its checks replayed offline
+node sdk/bin/tapeapi.js reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # set against a bill file
+```
+
+`show` replays a receipt's checks (signature, container, method and path, price table; the hashes too with the exact
+bytes, request bytes only from a `tapeapi-verify --no-salt` run) against your manifest as the user saved it next to the receipts (`manifest.json`); without it, nothing is
+decided (exit 3). `reconcile` lists matches, rows missing on one side, and fields that differ from what the receipt
+claims, each with its two lines; it decides nothing. `--preset new-api` names the fields of the JSON new-api's
+`GET /api/log/self` returns (`data.items`; read in new-api's source code, not yet checked against a real instance). It
+is not new-api's web CSV export: that file has localized headers, a formatted `Cost` that is not a comparable amount and
+`request_id` rather than `upstream_request_id`, so the preset does not match it (exit 2); name its columns with `--map`,
+as for any other bill.
 
 `tapeapi-verify` resolves your service on chain, passes the answers through unchanged, prints one verdict per call, and with
 `--strict` turns a failed receipt into an error the client sees. A single receipt can also be pasted into the

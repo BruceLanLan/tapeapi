@@ -104,13 +104,36 @@ not the params or result.)
 以上依据较新版本对旧服务器的规定。我们没有逐个试过各种客户端。端点也放行了该版本新增的 `Mcp-Method` 和 `Mcp-Name`
 请求头，所以浏览器里的客户端不会在 CORS 预检这一步被拦下。
 
+回答里会加上 2026-07-28 版本的两个字段，而且只加给自己声明了该版本或更新版本的请求（在 `params._meta` 里，键为
+`io.modelcontextprotocol/protocolVersion`，更早的版本都没有这个键）：
+
+- 除 `initialize` 的回答外，每个结果带 `resultType: "complete"`；
+- `tools/list` 的结果（以及空的资源列表和提示词列表）另带 `ttlMs: 0` 和 `cacheScope: "public"`。`ttlMs: 0` 让客户端
+  每次需要时都重新读取列表，这本来就是这类客户端在缺少该字段时的做法，所以工具一变就能马上发现。`public`：列表对每个
+  调用方都一样。
+
+不带这个键的请求，也就是上面三个版本的全部请求，得到的回答与以前完全相同。这些字段在结果旁边，不在回执里，也不在工具
+定义里，所以签名和 `toolsSha256` 都不变。签名代理和本地命令的回答方式相同。这并不让端点成为 2026-07-28 版本的服务器：
+它仍然没有 `server/discover`，也不校验新增的请求头。较新版本没有提到 CORS；它为工具参数新增的 `Mcp-Param-*` 请求头
+无法在预检回答里逐个列出：TapeAPI 服务的工具不用它们，但被代理的 MCP 服务器的工具可能会用。
+
+这里有两处是有意为之。`cacheScope` 固定为 `"public"`，不能设置：之所以成立，是因为三个入口（端点、签名代理、本地命令）都不会
+按调用方给出不同的 `tools/list`；基于 `createMcpServer` 写的代码若按调用方过滤列表，就需要 `"private"`，这一版不提供。另外，
+`initialize` 的回答不带 `resultType`，即使请求声明了 2026-07-28：服务器用它实现的某个较早版本回答 `initialize`，客户端随后就按那个版本通信。
+
+2026-10-14 对照规范核对过，当时 2026-07-28 是最新版本：
+[结果与 `resultType`](https://modelcontextprotocol.io/specification/2026-07-28/basic/index)、
+[缓存](https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching)、
+[版本与旧服务器](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning)、
+[Streamable HTTP 与旧服务器](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http)。
+
 ## 本地核验命令
 
 `tapeapi-mcp` 是 SDK 发布包里的一个本地 MCP 服务器（stdio），需要 Node.js 20 或以上。`npx` 从 GitHub Release 取得它，
 不经过 npm 注册表：
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 它和远程服务器的不同之处：
@@ -139,7 +162,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -159,7 +182,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -171,7 +194,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### 远程还是本地
@@ -220,7 +243,7 @@ claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeap
 [调用服务](consume.md)里那样在仓库的克隆目录里操作：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz
 ```
 
 ```js
@@ -368,7 +391,7 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
 
   ```bash
   # 42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### 客户端核对什么

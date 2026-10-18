@@ -70,7 +70,12 @@ export async function createDemoWorld({ sameHolder = false, agentOptions = {}, r
   // with spend, a provider reads the fake chain to check vouchers, as every priced provider does (L0, nothing added)
   // 带 spend 时服务端读假链核对凭证，与任何收费服务相同（L0，不加任何东西）
   const chainOpts = spend ? { rpcUrls: RPC, quorum: 2, fetch: x.fetch, chainId: 56, escrowCacheMs: 0, sessionCacheMs: 0, allowMemoryStore: true } : {}
-  const provider = (m, key, methods) => createProvider({ manifest: m, signerKey: key, dev: true, methods, rateLimit: false, log: () => {}, ...(m.payment ? chainOpts : {}) })
+  // What the in-process providers log is kept here, never printed (a provider answers an unexpected error as a bare
+  // "internal error"; a test that fails on one can show the cause). / 进程内服务端的日志存于此、从不打印；服务端对意外错误只答
+  // "internal error"，测试失败时可以把原因带出来。
+  const providerLog = []
+  const logLine = (...a) => { providerLog.push(a.map((x) => (x instanceof Error ? x.stack ?? String(x) : typeof x === 'string' ? x : JSON.stringify(x))).join(' ')) }
+  const provider = (m, key, methods) => createProvider({ manifest: m, signerKey: key, dev: true, methods, rateLimit: false, log: logLine, ...(m.payment ? chainOpts : {}) })
   const tracked = (host, fn) => async (params, ctx) => { (rows[host] ??= { calls: [] }).calls.push({ params }); return fn(params, ctx) }
   hosts.set('https://provider-1.example', provider(mS, KEYS.providerSigner, { [readMethod]: tracked('provider-1', async () => ({ blockNumber: head++ })) }))
   hosts.set('https://provider-2.example', provider(mS2, KEYS.providerSigner, { [readMethod]: tracked('provider-2', async () => ({ blockNumber: head++ })) }))
@@ -127,7 +132,7 @@ export async function createDemoWorld({ sameHolder = false, agentOptions = {}, r
   }
   const world = {
     x, keys: KEYS, clock, advance: (seconds) => { clockS += seconds }, close: restoreTime, fetch, requests, rows, service, hosts, wallet, principalApi, principalKit, agentApi, kit: service.kit,
-    containers: { principal: P, agent: AG, provider: S, other: S2 }, token: TOKEN, readMethod, escrow,
+    containers: { principal: P, agent: AG, provider: S, other: S2 }, token: TOKEN, readMethod, escrow, providerLog,
     /** the provider serving a host, e.g. 'https://provider-1.example' (its pendingSettlements and settleTx) / 某主机上的服务端 */
     providerAt: (origin) => hosts.get(origin),
     /** who the agent called: how many method calls each provider host answered / 代理调用了谁 */

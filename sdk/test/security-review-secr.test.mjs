@@ -25,6 +25,11 @@ function manifestFor({ expires = nowS() + 30 * 86400, signerAddr = signer, holde
 }
 function fakeService(manifest = manifestFor()) {
   const chain = createFakeChain()
+  // Root cause of a latent RPC_DISAGREE "two timestamps" (review T-2, as in resolve-rounds): without headTime the fake chain
+  // dates its blocks from Date.now() at each answer, so pinning nodes that answer either side of a second boundary
+  // disagree by one. One fixed head time for every node. / 潜在偶发根因同 resolve-rounds：不设 headTime 时假链按每次应答的
+  // Date.now() 定区块时间，跨整秒的钉块应答会差 1 秒；所有节点用同一个固定头时间。
+  chain.state.headTime = Math.floor(Date.now() / 1000)
   chain.setOwner(4246, holder); chain.setAccount(4246, ADDR.container)
   chain.writeFile(ADDR.container, MANIFEST_KEY, JSON.stringify(manifest))
   return chain

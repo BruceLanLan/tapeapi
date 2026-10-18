@@ -44,12 +44,12 @@ trust with a signature anyone can check:
 
 ## Status
 
-Released, version 2.1.0. TapeAPI follows semantic versioning: code written against the 2.0 docs keeps working in every
+Released, version 2.2.0. TapeAPI follows semantic versioning: code written against the 2.0 docs keeps working in every
 2.x release, and breaking changes come only in a new major version. By default 2.0 resolves a service as TapeOut's
 official TAPs say (TAP-10, TAP-11 §2), with one known exception; 1.x receives security fixes for 6 months after 2.0.0
 ([Upgrading to 2.0](upgrade-2.0.md); [what 1.0 promises](upgrade-1.0.md)). The free
 tier runs on TapeOut's deployed contracts. Our own contracts have no third-party audit; the paid-call escrow is not
-deployed yet. TAPI-20 to TAPI-27 are TapeAPI's own specs, not TAPs: TAPs are numbered by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), where the service manifest (TAP-11) and signed responses (TAP-13) were merged as Drafts (a merge is not adoption) and twelve more drafts are open pull requests without a number (three of them, #54, #59 and #60, are draft PRs for now, so they don't take the editors' queue).
+deployed yet. TAPI-20 to TAPI-27 are TapeAPI's own specs, not TAPs: TAPs are numbered by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), where the service manifest (TAP-11) and signed responses (TAP-13) were merged as Drafts (a merge is not adoption) and twelve more drafts for parts of TapeAPI's specs are open pull requests without a number (three of them, #54, #59 and #60, are draft PRs for now, so they don't take the editors' queue).
 
 ## On-chain addresses
 

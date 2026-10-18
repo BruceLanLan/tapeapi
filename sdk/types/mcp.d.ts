@@ -22,7 +22,11 @@ export interface CallToolResult {
   _meta?: Record<string, unknown>
 }
 export interface McpServer {
-  /** One JSON-RPC message in; the response, or null for a notification. */
+  /**
+   * One JSON-RPC message in; the response, or null for a notification. A request that declares MCP revision 2026-07-28
+   * or later in `params._meta['io.modelcontextprotocol/protocolVersion']` gets `resultType: 'complete'` on its result,
+   * and a list result also `ttlMs: 0` and `cacheScope: 'public'`; any other request gets the result unchanged.
+   */
   handle(message: unknown): Promise<Record<string, unknown> | null>
 }
 export declare function createMcpServer(o: {

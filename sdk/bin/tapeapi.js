@@ -6,12 +6,15 @@
 //                                   nothing itself, so tapeapi mcp's stdout stays JSON-RPC only). Those commands stay.
 //   tapeapi connect <name>          resolve an AI service, show it, and print client settings for the API formats its
 //                                   manifest declares (sdk/src/connect-cli.js); --proxy then runs tapeapi-verify.
+//   tapeapi receipts tail|show|export   the receipts saved on this machine (sdk/src/receipts-cli.js); files only
+//   tapeapi reconcile                   those receipts against a bill file (sdk/src/reconcile-cli.js); files only
 // tapeapi（实验性）：TapeAPI 命令行的统一入口，不受兼容承诺约束。doctor|verify|mcp 以子进程原样运行现有命令（参数、输出、退出码、
 // 标准输入都不变；分发器自己不写任何字节），原命令名保留。connect 解析一个 AI 服务、显示它，并只为其清单声明的格式给出客户端配置。
+// receipts 列出、查看（离线重放核验）与导出本机回执；reconcile 把回执与账单文件逐行对账。两者只读本机文件、不联网。
 //
 //   node sdk/bin/tapeapi.js connect 42.1013.tape          (from a checkout / 从检出运行; 42.1013.tape is an example name)
 import { spawn } from 'node:child_process'
-import { readFileSync, realpathSync, existsSync } from 'node:fs'
+import { readFileSync, realpathSync, existsSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -50,11 +53,23 @@ Usage: tapeapi <command> [arguments]
   connect <name>       resolve an AI service, show it, and print client settings for the formats its manifest declares;
                        --proxy then starts tapeapi-verify for it. tapeapi connect --help for its options
                        解析一个 AI 服务并显示它，只为其清单声明的格式给出客户端配置；--proxy 随后为它启动 tapeapi-verify
+  receipts tail|show|export
+                       the receipts saved on this machine: list them, show one and replay its checks offline (against
+                       a manifest snapshot), export them as CSV or JSON. tapeapi receipts --help for the options
+                       本机保存的回执：列出、查看一张并离线重放核验（依据清单快照）、导出为 CSV 或 JSON
+  reconcile            the usage and prices your receipts claim, set row by row against a bill file: match, missing,
+                       mismatch, each with its lines. tapeapi reconcile --help for the options
+                       把回执声称的用量与价格与账单文件逐行对账：匹配、缺失、不一致，各带出处行
+                       receipts and reconcile read files only: no network, no key
+                       receipts 与 reconcile 只读本机文件：不联网、不需要密钥
   --version, --help
 
 Exit status of connect / connect 的退出码: 0 done; 1 the service is unavailable or cannot be used (the reason is shown);
 2 a usage mistake; 3 the chain or the network could not be read, nothing was decided: run it again.
 0 完成；1 服务不可用或无法使用（会写明原因）；2 用法错误；3 链或网络读不到、无法判定：请重试。
+receipts / reconcile: 0 done (all checks passed, all rows match); 1 a check failed, or something is missing or differs;
+2 a usage mistake; 3 nothing could be decided (no manifest snapshot, nothing to compare).
+0 完成（核验通过、全部匹配）；1 核验未通过，或有缺失、不一致；2 用法错误；3 无法判定（没有清单快照、没有可比较的内容）。
 `
 
 /**
@@ -91,6 +106,15 @@ async function main(argv) {
     const r = await runConnect(rest, { cmd, version: VERSION, verifyBin: join(BIN_DIR, ALIASES.verify), runChild })
     if (r.child) return exitLike(r.child)
     // stdout may be a pipe written asynchronously: let the card reach it before leaving. / stdout 可能是异步写的管道：先让卡片写完再退出。
+    await new Promise((ok) => process.stdout.write('', ok))
+    return process.exit(r.exitCode)
+  }
+  if (sub === 'receipts' || sub === 'reconcile') {
+    // The file functions the two modules use (src/ imports nothing Node-only). / 两个模块用到的文件函数。
+    const host = { readFileSync, readdirSync, statSync, writeFileSync, join, dirname, relative, isAbsolute }
+    const r = sub === 'receipts'
+      ? await (await import('../src/receipts-cli.js')).runReceipts(rest, { cmd, version: VERSION, host })
+      : await (await import('../src/reconcile-cli.js')).runReconcile(rest, { cmd, version: VERSION, host })
     await new Promise((ok) => process.stdout.write('', ok))
     return process.exit(r.exitCode)
   }

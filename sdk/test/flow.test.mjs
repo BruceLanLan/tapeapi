@@ -392,9 +392,15 @@ test('H-01: sessionExpiry is still honoured for a session that has already lapse
   await assert.rejects(() => lapsed.voucherFor(svc, PRICE), (e) => e.code === 'BAD_VOUCHER' && /session key expired/.test(e.message))
   await assert.rejects(() => lapsed.reserve(svc, PRICE), (e) => e.code === 'BAD_VOUCHER')
   // 边界：恰好等于当前秒仍然可用（会话此刻仍然有效）/ boundary: exactly now is still usable (the session is live this second)
-  const edge = api.payer({ consumer, sessionKey: SESSION_KEY, ttl: 300, sessionExpiry: nowS() })
-  const v = await edge.voucherFor(svc, PRICE)
-  assert.ok(v.expires > nowS(), 'a session that is live this second still issues a full-ttl voucher')
+  // Root cause of the flaky "session key expired" (review T-5): sessionExpiry came from the test's nowS() and the SDK
+  // compared it with its own later read of the clock; across a second boundary the session had lapsed. One clock source:
+  // the client is given the same fixed second the session ends at. / 偶发根因：sessionExpiry 取自测试的 nowS()，SDK 用自己稍后
+  // 读的时钟比较，跨整秒即判过期。同一时钟源：客户端拿到的时钟就是会话结束的那一秒。
+  const T = nowS()
+  const edgeApi = client({ clock: () => T })
+  const edge = edgeApi.payer({ consumer, sessionKey: SESSION_KEY, ttl: 300, sessionExpiry: T })
+  const v = await edge.voucherFor(await edgeApi.resolve('reader'), PRICE)
+  assert.equal(v.expires, T + 300, 'a session that is live this second still issues a full-ttl voucher')
   // sessionExpiry 只在使用 session key 时有意义；钱包签名路径忽略它 / it only applies to session keys
   const { voucherDigest: vd2 } = await import('../src/sig.js')
   const wallet = api.payer({ consumer, sessionExpiry: nowS() - 1, ttl: 300,

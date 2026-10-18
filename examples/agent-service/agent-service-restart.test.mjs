@@ -61,7 +61,15 @@ async function restartWorld({ cap = 5n * PRICE, n = 5, freezeAt = 3, vault = spy
   const store = wrap(createFileStore(dir))
   const w = await createDemoWorld({ spend: { escrow: E1, holderBalance: 10n ** 12n }, agentOptions: { tasks: tasks ?? { calls: callsTask(n, { freezeAt, frozen }) }, spend: { store, vault, maxCallPrice: PRICE.toString() } } })
   const svc = await w.principalApi.resolve(AG)
-  const call = async (method, params) => w.principalApi.call(await w.principalApi.resolve(AG), method, params)
+  // Root cause hunt for the flaky P1RS-E06 (review T-4): hire() got a signed INTERNAL "internal error" and the cause was
+  // in the provider log, which the world discarded. A failed call now carries that log. / 追查 P1RS-E06 偶发：hire() 得到签名的
+  // INTERNAL，原因在服务端日志里，而世界把日志丢了。失败的调用现在带上那段日志。
+  const call = async (method, params) => {
+    try { return await w.principalApi.call(await w.principalApi.resolve(AG), method, params) } catch (e) {
+      if (w.providerLog.length) e.message += `\nprovider log (${method}):\n${w.providerLog.slice(-20).join('\n')}`
+      throw e
+    }
+  }
   return { w, call, svc, cap, n, dir, store, vault, isFrozen, expires: nowS() + 86400 }
 }
 // offer, plan, mandate: the work starts; resolves once the first process froze (or finished) / 报价、计划、授权书：开工

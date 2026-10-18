@@ -663,7 +663,9 @@ test('ACT-1: isLive(name, container) true, isContainerLive false: activated (pas
   const live = chain.activation.calls.find((c) => c.fn === 'isLive')
   assert.deepEqual(live.args, [NAME, ADDR.container], 'isLive gets the canonical on-chain name (with .tape) and the container derived from it')
   assert.equal(live.url.startsWith('http://rpc'), true)
-  assert.ok(!chain.activation.calls.some((c) => c.fn === 'monthlyFee'), 'no fee is read for an activated name')
+  // 2.2: the fee is read for an activated name too (the structured monthlyFeeWei); the detail above is unchanged
+  // 2.2：已激活的名字也读月费（结构化的 monthlyFeeWei）；上面的说明不变
+  assert.ok(chain.activation.calls.some((c) => c.fn === 'monthlyFee'), 'the fee is read for an activated name (2.2)')
 })
 
 test('ACT-2: only isContainerLive true (one payment per container): activated, with the date it is paid until', async () => {
@@ -795,7 +797,7 @@ test('ACT-8: 14 checks, activation between container and manifest-file, in the h
   assert.match(doc('sdk/README.md'), /14 checks/)
 })
 
-test('ACT-9: the activation read is read-only eth_call to the chain\'s DomainBinding, in a fixed order, and costs at most 3 reads', async () => {
+test('ACT-9: the activation read is read-only eth_call to the chain\'s DomainBinding, in a fixed order, and costs at most 4 reads (3 before 2.2)', async () => {
   const { api, chain } = actWorld((c) => c.setUnactivated())
   await run(api)
   const fns = [...new Set(chain.activation.calls.map((c) => c.fn))]
@@ -803,7 +805,8 @@ test('ACT-9: the activation read is read-only eth_call to the chain\'s DomainBin
   assert.deepEqual(chain.activation.calls.filter((c) => c.url === 'http://rpc1').map((c) => c.fn), ['isLive', 'isContainerLive', 'monthlyFee'])
   const live = await actWorld()
   await run(live.api)
-  assert.deepEqual(live.chain.activation.calls.filter((c) => c.url === 'http://rpc1').map((c) => c.fn), ['isLive', 'isContainerLive', 'containerPaidUntil'])
+  // 2.2: monthlyFee() is read last when activated as well / 2.2：已激活时最后也读 monthlyFee()
+  assert.deepEqual(live.chain.activation.calls.filter((c) => c.url === 'http://rpc1').map((c) => c.fn), ['isLive', 'isContainerLive', 'containerPaidUntil', 'monthlyFee'])
 })
 
 test('escrows (experimental): a contribution that differs across escrow instances is a note, never a check or a failure', async () => {
@@ -1015,4 +1018,119 @@ test('2.0 CLI: a URL (dev: true) is the 1.x resolution either way: --no-conform 
     assert.equal(JSON.parse(r.out).resolution, null)
     assert.ok(!/resolution:/.test((await cli(['--offline', '--lang', 'en', ...extra, sidecarUrl])).out))
   }
+})
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 2.2 (experimental): the activation check carries paidUntil / paidUntilSeconds / monthlyFeeWei (and unread, why a value is
+// null), and a monthlyFee() that is not 0 is a `notice` beside an unchanged detail. Status names, exit codes and the
+// detail texts stay what they were. / 2.2（实验性）：激活检查带结构化字段；月费不为 0 时在不变的说明旁加 notice。状态、退出码与说明不变。
+// ---------------------------------------------------------------------------------------------------------------------
+const FACT_KEYS = ['paidUntil', 'paidUntilSeconds', 'monthlyFeeWei']
+const noticeLines = (text) => text.split('\n').filter((l) => /^ {9}(note|提示): monthlyFee\(\)/.test(l))
+
+test('PAID-1: not activated: paidUntil null (not read, and why), monthlyFeeWei the fee as a string; no notice; detail and exit code unchanged', async () => {
+  const { api, chain } = actWorld((c) => c.setUnactivated({ fee: 12_500_000_000_000_000n }))
+  const rep = await run(api)
+  const a = byId(rep, 'activation')
+  assert.equal(a.status, 'warn')
+  assert.deepEqual(FACT_KEYS.map((k) => a[k]), [null, null, '12500000000000000'])
+  assert.match(a.unread.paidUntil, /read only when the name is activated/)
+  assert.equal(a.unread.monthlyFeeWei, undefined)
+  assert.equal(a.notice, undefined, 'the fee of an unactivated name is already in the detail: no notice')
+  assert.match(a.detail, /The fee now: 0\.0125 BNB per 30 days/)
+  assert.ok(!chain.activation.calls.some((c) => c.fn === 'containerPaidUntil'), 'containerPaidUntil is not read for an unactivated name (as before)')
+  assert.equal(rep.exitCode, 0)
+  assert.deepEqual(noticeLines(formatReport(rep)), [])
+})
+
+test('PAID-2: activated, monthlyFee() 0 (the mainnet value today): the fields, no unread, no notice, and the text report has no extra line', async () => {
+  const until = nowS() + 40 * 86_400
+  const { api } = actWorld((c) => c.setActivation({ names: [], containerLive: true, paidUntil: until, fee: 0n }))
+  const rep = await run(api)
+  const a = byId(rep, 'activation')
+  assert.equal(a.status, 'pass')
+  assert.deepEqual(FACT_KEYS.map((k) => a[k]), [new Date(until * 1000).toISOString(), until, '0'])
+  assert.equal(a.unread, undefined); assert.equal(a.notice, undefined)
+  // the detail is exactly the 2.1 one (ACT-2) / 说明与 2.1 完全相同
+  assert.match(a.detail, new RegExp(`^activated: isContainerLive\\(container\\) is true; paid until ${new Date(until * 1000).toISOString().slice(0, 10)} \\(containerPaidUntil\\)$`))
+  assert.equal(rep.exitCode, 0)
+  for (const lang of ['both', 'en', 'zh']) assert.deepEqual(noticeLines(formatReport(rep, { lang })), [], lang)
+  assert.doesNotThrow(() => JSON.stringify(rep), 'no bigint in the report: --json prints it')
+})
+
+test('PAID-3: activated, monthlyFee() not 0: still a pass with exit 0; a notice in both languages beside the unchanged detail', async () => {
+  const until = nowS() + 40 * 86_400
+  const { api } = actWorld((c) => c.setActivation({ names: [], containerLive: true, paidUntil: until, fee: 80_000_000_000_000_000n }))
+  const rep = await run(api)
+  const a = byId(rep, 'activation')
+  assert.equal(a.status, 'pass'); assert.equal(rep.exitCode, 0); assert.equal(rep.counts.warn, 0); assert.equal(rep.counts.fail, 0)
+  assert.equal(a.monthlyFeeWei, '80000000000000000')
+  assert.equal(a.paidUntilSeconds, until)
+  assert.match(a.detail, /^activated: isContainerLive\(container\) is true; paid until \d{4}-\d{2}-\d{2} \(containerPaidUntil\)$/)
+  assert.match(a.notice.en, /^monthlyFee\(\) is 0\.08 BNB per 30 days now, not 0 \(read from the chain just now; the owner of DomainBinding can change it at any time\)/)
+  assert.match(a.notice.zh, /^monthlyFee\(\) 当前为每 30 天 0\.08 BNB，不是 0（刚从链上读取/)
+  assert.deepEqual(noticeLines(formatReport(rep, { lang: 'en' })), [`         note: ${a.notice.en}`])
+  assert.deepEqual(noticeLines(formatReport(rep, { lang: 'zh' })), [`         提示: ${a.notice.zh}`])
+  assert.deepEqual(noticeLines(formatReport(rep)), [`         note: ${a.notice.en}`, `         提示: ${a.notice.zh}`])
+  // the same chain with the fee at 0: the text report differs by exactly those two lines / 月费为 0 时文本报告只差这两行
+  const zero = await run(actWorld((c) => c.setActivation({ names: [], containerLive: true, paidUntil: until, fee: 0n })).api)
+  // (the delegation's days and the receipt ids differ between two runs: masked) / （两次运行的委托天数与回执 id 不同：屏蔽）
+  const mask = (t) => t.replace(/\d+ days left, until [\d-]+/g, '').replace(/还剩 \d+ 天，到 [\d-]+/g, '').replace(/tapeapi-[0-9a-f]{8,}/g, 'tapeapi-*')
+  const drop = (t) => t.split('\n').filter((l) => !noticeLines(l).length).join('\n')
+  assert.equal(mask(drop(formatReport(rep))), mask(formatReport(zero)))
+})
+
+test('PAID-4: reads that give no value: null with a readable reason, never an error, never a throw; the check and exit code are as before', async () => {
+  // the fee read fails while activated / 已激活时月费读不到
+  let rep = await run(actWorld((c) => c.setActivation({ names: [], containerLive: true, fee: null })).api)
+  let a = byId(rep, 'activation')
+  assert.equal(a.status, 'pass'); assert.equal(rep.counts.error, 0); assert.equal(rep.exitCode, 0)
+  assert.equal(a.monthlyFeeWei, null); assert.match(a.unread.monthlyFeeWei, /^monthlyFee\(\) could not be read: RPC_ERROR: .*revert/)
+  assert.equal(typeof a.paidUntil, 'string'); assert.equal(a.notice, undefined)
+  // activated by the name only: containerPaidUntil is 0 / 只按名字激活：containerPaidUntil 为 0
+  rep = await run(actWorld((c) => c.setActivation({ names: [[NAME, ADDR.container]], containerLive: false, paidUntil: 0, fee: 0n })).api)
+  a = byId(rep, 'activation')
+  assert.equal(a.status, 'pass'); assert.match(a.detail, /^activated: isLive\(name, container\) is true$/)
+  assert.deepEqual([a.paidUntil, a.paidUntilSeconds], [null, null])
+  assert.match(a.unread.paidUntil, /^containerPaidUntil\(container\) is 0: .*paidUntil\(nameHash, container\) is not read/)
+  // not activated and the fee unreadable: both null, both said / 未激活且月费读不到：两者皆 null，各有原因
+  rep = await run(actWorld((c) => c.setUnactivated({ fee: null })).api)
+  a = byId(rep, 'activation')
+  assert.equal(a.status, 'warn'); assert.equal(rep.exitCode, 0)
+  assert.deepEqual(FACT_KEYS.map((k) => a[k]), [null, null, null])
+  assert.deepEqual(Object.keys(a.unread).sort(), ['monthlyFeeWei', 'paidUntil'])
+  // the nodes fail on every DomainBinding read: "error" as before, and no facts are claimed / 节点全部失败：照旧 error，不给任何字段
+  rep = await run(actWorld((c) => c.setActivation({ failure: 'rpcerror' })).api)
+  a = byId(rep, 'activation')
+  assert.equal(a.status, 'error'); assert.equal(rep.exitCode, 3)
+  for (const k of [...FACT_KEYS, 'unread', 'notice']) assert.equal(a[k], undefined, k)
+})
+
+test('PAID-5: the TAP-10 chain (createConformChain) under the default resolution: fee 0 and fee 0.08 both pass all 14 checks, exit 0; only the notice differs', async () => {
+  const until = T0() + 400 * 86_400
+  const paid = (fee) => (chain, c) => { chain.conform.paidUntil.set(c.container.toLowerCase(), BigInt(until)); chain.conform.fee = fee }
+  const zero = await run(confWorld(paid(0n)).api)
+  const nominal = await run(confWorld(paid(80_000_000_000_000_000n)).api)
+  for (const rep of [zero, nominal]) {
+    assert.equal(rep.exitCode, 0, formatReport(rep, { lang: 'en' })); assert.equal(rep.resolution, 'tap10')
+    assert.deepEqual(rep.checks.filter((x) => x.status !== 'pass').map((x) => x.id), [])
+    assert.equal(byId(rep, 'activation').paidUntil, new Date(until * 1000).toISOString())
+  }
+  assert.equal(byId(zero, 'activation').monthlyFeeWei, '0'); assert.equal(byId(zero, 'activation').notice, undefined)
+  assert.equal(byId(nominal, 'activation').monthlyFeeWei, '80000000000000000'); assert.match(byId(nominal, 'activation').notice.en, /0\.08 BNB per 30 days now, not 0/)
+  assert.equal(byId(zero, 'activation').detail, byId(nominal, 'activation').detail)
+  reset()
+})
+
+test('PAID-6: tapeapi-doctor --json carries the fields on the activation check (the CLI prints report.checks as they are)', async () => {
+  const until = T0() + 400 * 86_400
+  const w = confWorld((chain, c) => { chain.conform.paidUntil.set(c.container.toLowerCase(), BigInt(until)); chain.conform.fee = 80_000_000_000_000_000n })
+  const node = await rpcServer(w.chain)
+  try {
+    const r = await cli(['--rpc', node.rpc, '--json', NAME])
+    const a = JSON.parse(r.out).checks.find((c) => c.id === 'activation')
+    assert.equal(a.status, 'pass', r.out + r.err)
+    assert.deepEqual(FACT_KEYS.map((k) => a[k]), [new Date(until * 1000).toISOString(), until, '80000000000000000'])
+    assert.deepEqual(Object.keys(a.notice), ['en', 'zh'])
+  } finally { await node.close(); reset() }
 })

@@ -129,14 +129,25 @@ test('reference relay, priced relaySend: handshake still free, paid checks skipp
   for (const id of ['tapi26.relay.index.increasing', 'tapi26.relay.recv.order', 'tapi26.relay.epoch.mismatch-resets', 'tapi26.relay.longpoll.wakes', 'tapi26.relay.longpoll.full-length']) assert.ok(passed(results, id), id)
 })
 
-test('reference relay behind a rate limit: the suite waits out each 429, checks it, and still passes', async () => {
-  // The concurrent burst (checkRateLimit) makes the 429 certain; relying on the suite's own pace flaked under load. The
-  // window is 4 s, not 1 s: on a slow CI runner the 155-call burst spanned a 1 s window boundary and never saw a 429.
-  // 用并发突发（checkRateLimit）确保出现 429。窗口用 4 秒而非 1 秒：CI 机器较慢时，155 次突发会跨过 1 秒窗口边界，从而看不到 429。
-  const { results } = await runRelaySuite({ slackMs: SLACK, url: await serveNative(mkRelay({ provider: { rateLimit: { free: 150, windowMs: 4000 } } })), checkRateLimit: 150 })
+// The suite makes this many free calls before its burst (measured on 2026-10-15: 420, the same in every run, alone or eight
+// at once). / 突发之前套件发出的免费调用数（2026-10-15 实测 420，单跑与八个并行都一样）。
+const SUITE_FREE_CALLS_MAX = 500
+test('reference relay behind a rate limit: the 429s of the burst are checked, and the suite still passes', async () => {
+  // Root cause of the flaky "no 429 seen" (review T-3): the limit was a 4 s wall-clock window (createProvider takes no
+  // clock), so whether the 155-call burst met a 429 depended on where the window boundary fell and on the machine's
+  // load. Now no window ends during the test (1 h), and the budget is counted, not timed: the suite's own calls fit in
+  // it and the burst does not (420 + 155 > 500), so the 429s are certain and none falls before the burst.
+  // 偶发根因：限流是 4 秒的墙钟窗口（createProvider 不能注入时钟），155 次突发能否碰上 429 取决于窗口边界落在哪里与机器负载。
+  // 现在测试期间没有窗口结束（1 小时），预算按次数而非时间：套件自身的调用装得下、加上突发装不下（420 + 155 > 500），429 必然出现，且不会早于突发。
+  const provider = mkRelay({ provider: { rateLimit: { free: SUITE_FREE_CALLS_MAX, windowMs: 3_600_000 } } })
+  const { results } = await runRelaySuite({ slackMs: SLACK, url: await serveNative(provider), checkRateLimit: 150 })
+  // every free call is either served (stats.free) or refused (stats.rateLimited); the burst is the last 155 of them
+  const st = provider.stats(), beforeBurst = st.free + st.rateLimited - 155
+  assert.ok(beforeBurst <= SUITE_FREE_CALLS_MAX, `the suite made ${beforeBurst} or more free calls before its burst (a 429 came before it): raise SUITE_FREE_CALLS_MAX above the count`)
   assert.deepEqual(mustFails(results), [], show(results))
   for (const id of ['tapi21.ratelimit.unsigned', 'tapi21.ratelimit.retry-after', 'tapi21.ratelimit.code', 'tapi21.ratelimit.retryAfterS']) assert.ok(passed(results, id), `${id}:\n${show(results)}`)
   assert.ok(passed(results, 'tapi26.relay.kept.survives-flood'))
+  assert.ok(st.rateLimited >= 1, 'the burst met the limit')
 })
 
 // ---- deliberately broken relays / 故意做坏的中继 ----

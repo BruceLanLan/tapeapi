@@ -4,12 +4,12 @@ JavaScript SDK for [TapeAPI](https://tapeapi.fun): find a service on BNB Smart C
 answer whose signature is checked against the key the service's holder delegated on chain. Paid methods use
 EIP-712 vouchers against an escrow; nothing is signed or sent without you.
 
-> **2.1.0.** Semantic versioning: breaking changes come only in a new major version. By default the SDK now resolves as TapeOut's official TAPs say (TAP-10, TAP-11 §2); `conform: false` keeps the 1.x resolution (deprecated). See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md) and [Upgrading to 2.0](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/upgrade-2.0.md).
+> **2.2.0.** Semantic versioning: breaking changes come only in a new major version. By default the SDK now resolves as TapeOut's official TAPs say (TAP-10, TAP-11 §2); `conform: false` keeps the 1.x resolution (deprecated). See the [changelog](https://github.com/BruceLanLan/tapeapi/blob/main/CHANGELOG.md) and [Upgrading to 2.0](https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/upgrade-2.0.md).
 
 ## Install
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz
 ```
 
 Not on the npm registry yet: each GitHub release carries the package file. Built from https://github.com/BruceLanLan/tapeapi
@@ -66,11 +66,11 @@ The package ships a command that exposes any TapeAPI service's free methods as M
 Cursor, any MCP client), and verifies every answer in your own process before the model sees it:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ```json
-{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
+{ "mcpServers": { "tapeapi": { "command": "npx", "args": ["-y", "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz", "tapeapi-mcp", "11.1013.tape"] } } }
 ```
 
 - **Identity from the chain.** Each service (a TapeOut name like `11.1013.tape` or a container address) is resolved
@@ -103,7 +103,7 @@ Since 1.7 it also has a one-shot subcommand, `tapeapi-verify task <thread.json> 
 
 ```bash
 # Terminal 1. 42.1013.tape is an example name: put your AI provider's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash
@@ -127,13 +127,17 @@ with no key and no cost: in a checkout, run `npm ci` once at the root, then `nod
 Providers check their own AI service, step by step, from the name to a receipt that verifies:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.1.0/tapeapi-sdk-2.1.0.tgz tapeapi-doctor <your TapeOut name or your sidecar's https URL>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.2.0/tapeapi-sdk-2.2.0.tgz tapeapi-doctor <your TapeOut name or your sidecar's https URL>
 ```
 
 It runs 14 checks in order, among them that the name is activated on DomainBinding (TAP-10 §6.3; in the 2.0 default a failure,
 because a default client cannot resolve an unpaid name; a warning with `--no-conform`). Every failed check says what is missing, where to fix it and the next command, in English and Chinese. Exit status 0
 passed, 1 failed, 2 a usage mistake, 3 undecided (run it again); `--help` lists every option. Experimental: its checks
-and output may change in a 2.x release.
+and output may change in a 2.x release. Since 2.2, in `--json`, the `activation` check carries `paidUntil` (ISO 8601),
+`paidUntilSeconds` (`containerPaidUntil`) and `monthlyFeeWei` (`monthlyFee()`), `null` with a reason in `unread` when
+not read, so a daily check needs no text parsing ([AI providers](https://tapeapi.fun/docs/en/ai-providers)). `null`
+does not mean expired: check the check's `status` first and exclude `null` before comparing a date
+(`new Date(null) < now` is true).
 
 With `--strict` a receipt that does not verify becomes an error to the client. `tapeapi-verify --help` lists every
 option. In your own code, `createVerifyingFetch` from `@tapeapi/sdk/ai` does the same without a proxy
@@ -161,6 +165,30 @@ your token from `API_KEY` in your own environment), uploads nothing and pays not
 usable, 1 unavailable, 2 a usage mistake (also `--tool` / `--format` naming a format the manifest does not declare),
 3 could not be read (run it again); `tapeapi connect --help` lists every option. A receipt still does not prove which
 model ran.
+
+## Your receipts and a bill: `tapeapi receipts`, `tapeapi reconcile` (experimental)
+
+Since 2.2, outside the 2.x compatibility promise. Both read files on your machine only: no network, no key.
+`tapeapi receipts` reads what `tapeapi-verify --log` wrote; `reconcile` sets those receipts against a bill or usage
+file from the provider.
+
+```bash
+node sdk/bin/tapeapi.js receipts tail   --receipts ~/.tapeapi/receipts.jsonl --model deepseek-v3 --since 2026-10-01
+node sdk/bin/tapeapi.js receipts show   <id> --receipts ~/.tapeapi/receipts.jsonl   # replays its checks offline
+node sdk/bin/tapeapi.js receipts export --receipts ~/.tapeapi/ --format csv > receipts.csv
+node sdk/bin/tapeapi.js reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv --amount-scale 500000
+```
+
+`show` checks the signature, the container, the method and path and the price table against a manifest snapshot: the
+manifest the service publishes, saved next to the receipts as `manifest.json` (or given with `--manifest`); with the
+exact request and response bytes (`--request`, `--response`; request bytes exist only from a `tapeapi-verify
+--no-salt` run, since it salts requests by default) it checks the two hashes too. Without a snapshot it
+decides nothing (exit 3) and fetches nothing. `reconcile` lists three kinds of fact, each with its receipt line and
+bill line: match, missing (on one side only), and mismatch (a field that differs from what the receipt claims); it
+decides nothing. `--preset new-api` is the field names of the JSON new-api's `GET /api/log/self` returns (`data.items`;
+read in new-api's source code, not yet checked against a real instance); new-api's web CSV export has other headers
+(localized; `Cost` formatted, not a comparable amount; `request_id`), so it and other bills use `--map`. Exit status 0 all checks pass / all rows match, 1 a check fails / something is
+missing or differs, 2 a usage mistake, 3 nothing could be decided.
 
 ## Docs
 

@@ -27,7 +27,7 @@
 <h2 id="20-新增"><a class="anchor" href="#20-新增" aria-hidden="true">#</a>2.0 新增</h2>
 <p><strong>DEFAULT SINCE 2.0</strong> · TAP-10 v1.1 §3–§7 · TAP-11 §2（Draft）· <code>conform: false</code> 弃用，2.x 内保留</p>
 <p>2.0 只有一个主题：我们向 TapeOut 官方 TAP 流程提交的规则，以及 TapeOut 自己规定的规则，就是你什么都不传时 SDK 的行为。1.4 起这些规则以可选的 <code>conform: 'tap10'</code> 提供；2.0 把它变成默认。<strong>线上格式一个字节都不变：</strong>2.0 的客户端照样核验所有 1.x 的清单、委托、签名回答和回执。TAP-10 与 TAP-11 还是 Draft，默认按一条规则跟随它们的文本：放宽与新增状态名在 2.x 次版本里生效，收紧先作为可选 profile、默认到 3.0 才切。<strong>一个已知例外：</strong>不开 <code>allChains</code> 时，形如 <code>0x…#4246</code> 的&quot;处理器合约#ID&quot;会被拒绝（<code>data.status: 'unsupported'</code>，这是 TapeAPI 自己的名字），而 TAP-11 §2.1 要求接受它；传 <code>allChains: true</code> 即按 TAP-10 §4.1 读遍所有链解析（会同时访问 Base 与 X Layer 的节点）。</p>
-<p>TAP-11（服务清单与持有人委托）和 TAP-13（签名响应）是我们起草、提交的草稿，编辑已把两份合并进官方仓库，状态是 Draft；合并为 Draft 不等于被采纳。另有 12 份草稿是尚未合并的拉取请求，其中 #54、#59、#60 目前转为 draft PR，暂不占用编辑的评审队列。要 1.x 的行为，传 <code>conform: false</code>（已弃用，整个 2.x 保留）。</p>
+<p>TAP-11（服务清单与持有人委托）和 TAP-13（签名响应）是我们起草、提交的草稿，编辑已把两份合并进官方仓库，状态是 Draft；合并为 Draft 不等于被采纳。另有 12 份针对 TapeAPI 规范部分内容的草稿是尚未合并的拉取请求，其中 #54、#59、#60 目前转为 draft PR，暂不占用编辑的评审队列。要 1.x 的行为，传 <code>conform: false</code>（已弃用，整个 2.x 保留）。</p>
 <div class="code"><pre data-lang="js"><code>const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })                  // 2.0：TAP-10 / TAP-11 §2
 const old = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: false }) // 1.x 方式，已弃用
 const dev = createTapeAPI({ dev: true })                           // = conform: false，无提示</code></pre></div>

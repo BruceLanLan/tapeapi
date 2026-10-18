@@ -87,9 +87,9 @@ const undecided = (e) => !(e instanceof TapeAPIError) || ['RPC_UNAVAILABLE', 'RP
 // ── Activation (TAP-10 §6.3) / 激活 ─────────────────────────────────────────────────────────────────────────────
 // A name is activated when DomainBinding.isLive(on-chain name, container) or DomainBinding.isContainerLive(container) is true.
 // isContainerLive reverts on payment contracts that lack it: a client treats that as false (§6.3). Read-only eth_call, in
-// sequence: the fee and the expiry only to describe the result, and a failure there only leaves them out.
+// sequence: the fee and the expiry only to describe the result, and a failure there only leaves them out (and says why).
 // 名字已激活 = isLive(链上名字, 容器) 或 isContainerLive(容器) 为真。isContainerLive 在不支持的实现上会 revert，按 false 处理（§6.3）。
-// 只读 eth_call，依次发出；费用与到期时间只用来描述结果，读不到就不显示。
+// 只读 eth_call，依次发出；费用与到期时间只用来描述结果，读不到就不显示（并说明原因）。
 const readBinding = (capi, binding, fn, args) => capi.rpc.ethCall(binding, encodeCall(fn, args)).then((raw) => decodeReturn(fn, raw))
 /** wei as a decimal amount of the chain's coin, trailing zeros trimmed. / 把 wei 写成该链币的十进制数。 */
 export function formatNative(wei, symbol = '') {
@@ -100,10 +100,17 @@ export function formatNative(wei, symbol = '') {
 /**
  * Is `name` (the on-chain name, TAP-10 §3.1, with `.tape`; null when only the container is known) activated for `container`?
  * 名字（链上名字，带 `.tape`；只知道容器时为 null）对该容器是否已激活？
- * @returns {Promise<{ live: boolean, isLive: boolean|null, isContainerLive: boolean, isLiveReverted: boolean, paidUntil: number|null, fee: bigint|null, binding: string }>}
+ * @param {{ name?: string|null, container: string, feeWhenLive?: boolean }} o
+ *   feeWhenLive (@experimental, 2.2): also read monthlyFee() when activated (one more eth_call, after containerPaidUntil).
+ *   Off by default, so a caller that does not ask reads exactly what it read before; the doctor asks.
+ *   feeWhenLive（@experimental，2.2）：已激活时也读 monthlyFee()（在 containerPaidUntil 之后多一次 eth_call）。默认关闭，
+ *   不要求的调用方读取不变；诊断会要求。
+ * @returns {Promise<{ live: boolean, isLive: boolean|null, isContainerLive: boolean, isLiveReverted: boolean, paidUntil: number|null, fee: bigint|null, binding: string, unread?: { paidUntil?: string, fee?: string } }>}
  *   isLive is null when no name was given; paidUntil (containerPaidUntil, seconds) and fee (monthlyFee, wei) are null when not read.
+ *   unread (@experimental, 2.2): for a read that was made and gave no value, why (a failed read, or containerPaidUntil 0);
+ *   absent when every read made gave a value. / 发出了却没有得到值的读取及原因；全部有值时不出现。
  */
-export async function activationStatus(capi, chainId, { name = null, container }) {
+export async function activationStatus(capi, chainId, { name = null, container, feeWhenLive = false }) {
   const binding = CHAINS[chainId]?.binding
   if (!binding) throw new TapeAPIError('INVALID_ARGUMENT', `no DomainBinding is known on chain ${chainId}`)
   let isLive = null, isLiveReverted = false, isContainerLive = false
@@ -113,9 +120,51 @@ export async function activationStatus(capi, chainId, { name = null, container }
   try { isContainerLive = await readBinding(capi, binding, 'isContainerLive', [container]) } catch (e) { if (!isRevert(e)) throw e; isContainerLive = false }
   const live = isLive === true || isContainerLive === true
   let paidUntil = null, fee = null
-  if (live) { try { const t = Number(await readBinding(capi, binding, 'containerPaidUntil', [container])); if (t > 0) paidUntil = t } catch { /* left out */ } }
-  else { try { fee = await readBinding(capi, binding, 'monthlyFee', []) } catch { /* left out */ } }
-  return { live, isLive, isContainerLive, isLiveReverted, paidUntil, fee, binding }
+  const unread = {}
+  const why = (e) => `${e?.code ? `${e.code}: ` : ''}${e?.message ?? e}`
+  const readFee = async () => { try { fee = await readBinding(capi, binding, 'monthlyFee', []) } catch (e) { unread.fee = `monthlyFee() could not be read: ${why(e)}` } }
+  if (live) {
+    try {
+      const t = Number(await readBinding(capi, binding, 'containerPaidUntil', [container]))
+      if (t > 0) paidUntil = t
+      else unread.paidUntil = 'containerPaidUntil(container) is 0: no container-level paid period is recorded (the name-level paidUntil(nameHash, container) is not read)'
+    } catch (e) { unread.paidUntil = `containerPaidUntil(container) could not be read: ${why(e)}` }
+    if (feeWhenLive) await readFee()
+  } else await readFee()
+  return { live, isLive, isContainerLive, isLiveReverted, paidUntil, fee, binding, ...(Object.keys(unread).length ? { unread } : {}) }
+}
+
+/**
+ * @experimental (2.2) The structured facts the `activation` check carries (tapeapi-doctor --json), so a script reads the
+ * end of the paid period and the fee without a regular expression on `detail`. Facts only: nothing here is a verdict.
+ *   paidUntil         ISO 8601 in UTC (Date#toISOString) of paidUntilSeconds; null when not read or 0
+ *   paidUntilSeconds  DomainBinding.containerPaidUntil(container) as returned (uint40, Unix seconds): the container-level paid
+ *                     period, which the payment contract compares with the chain's block time (block.timestamp), not with
+ *                     this machine's clock. Read only when the name is activated. A name-level payment (isLive true while
+ *                     containerPaidUntil is 0) leaves it null: the name-level paidUntil(nameHash, container) is not read.
+ *   monthlyFeeWei     DomainBinding.monthlyFee() in wei, as a decimal string (no bigint in JSON); read activated or not
+ *   unread            { paidUntil?, monthlyFeeWei? }: why a field is null, in English; absent when none is
+ * Every value comes from a plain eth_call at the nodes' "latest" block, under the client's agreement rule, during this run:
+ * not at a pinned block (siteStatus pins one; these reads do not), so no block number is recorded, and the reads are
+ * separate calls that may land on different blocks.
+ * @experimental（2.2）activation 检查携带的结构化事实（tapeapi-doctor --json），脚本无需对 detail 用正则即可读到付费期末与月费。
+ * 只给事实，不给结论。paidUntil：paidUntilSeconds 的 UTC ISO 8601；paidUntilSeconds：containerPaidUntil(容器) 原值（uint40，Unix 秒，
+ * 容器级付费期，付费合约拿它与链上区块时间 block.timestamp 比较，而不是与本机时钟比较；只在已激活时读取；只按名字付费时
+ * 〔isLive 为真而 containerPaidUntil 为 0〕为 null，名字级的 paidUntil(nameHash, 容器) 不读）；monthlyFeeWei：monthlyFee() 的 wei，
+ * 十进制字符串；unread：某字段为 null 的原因（英文），都有值时不出现。全部取自本次运行中对节点 latest 区块的普通 eth_call（按客户端的
+ * 共识规则），不是钉块读取（siteStatus 钉块，这里不钉），所以不记录区块号，且各次读取可能落在不同区块。
+ * @param {Awaited<ReturnType<typeof activationStatus>>} a
+ */
+export function activationFacts(a) {
+  const unread = {}
+  if (a.paidUntil === null) unread.paidUntil = a.unread?.paidUntil ?? 'containerPaidUntil(container) is read only when the name is activated'
+  if (a.fee === null) unread.monthlyFeeWei = a.unread?.fee ?? 'monthlyFee() was not read'
+  return {
+    paidUntil: a.paidUntil === null ? null : new Date(a.paidUntil * 1000).toISOString(),
+    paidUntilSeconds: a.paidUntil,
+    monthlyFeeWei: a.fee === null ? null : String(a.fee),
+    ...(Object.keys(unread).length ? { unread } : {}),
+  }
 }
 
 // Price hints (the holder console's, per 1M tokens): they warn, never refuse. / 价目表提示（与持有人操作台一致）：只警告不拒绝。
@@ -333,12 +382,20 @@ async function diagnoseChecks(input, o) {
   // 2.0：默认客户端（一致模式）下是失败，因为它本身就是这样的客户端，不解析此服务。之后读链的检查照常进行。
   async function chainActivation({ name, container }) {
     let a
-    try { a = await activationStatus(capi, chainId, { name, container }) } catch (e) { error('activation', e); return false }
+    try { a = await activationStatus(capi, chainId, { name, container, feeWhenLive: true }) } catch (e) { error('activation', e); return false }
     const chain = CHAINS[chainId], coin = chain?.currency ?? ''
+    const facts = activationFacts(a)
     if (a.live) {
       const via = a.isLive && a.isContainerLive ? T('isLive and isContainerLive are true', 'isLive 与 isContainerLive 为真') : a.isLive ? T('isLive(name, container) is true', 'isLive(名字, 容器) 为真') : T('isContainerLive(container) is true', 'isContainerLive(容器) 为真')
       const until = a.paidUntil ? new Date(a.paidUntil * 1000).toISOString().slice(0, 10) : null
-      pass('activation', T(`activated: ${via.en}${until ? `; paid until ${until} (containerPaidUntil)` : ''}`, `已激活：${via.zh}${until ? `；已付费至 ${until}（containerPaidUntil）` : ''}`))
+      // A fee that is not 0 is said once more, beside the detail (which stays as it was): today it is 0 on chain, and the
+      // spec's nominal price differs. A note only: the status and the exit code do not change.
+      // 月费不为 0 时在说明旁另起一行（说明本身不变）：今天链上为 0，规范名义价不同。只是提示：状态与退出码不变。
+      const notice = a.fee !== null && a.fee > 0n
+        ? T(`monthlyFee() is ${formatNative(a.fee, coin)} per 30 days now, not 0 (read from the chain just now; the owner of DomainBinding can change it at any time): paying the activation again costs months x this fee, plus gas.`,
+          `monthlyFee() 当前为每 30 天 ${formatNative(a.fee, coin)}，不是 0（刚从链上读取；DomainBinding 的 owner 随时可以修改）：再次付费激活需 月数 × 该费用，另加 gas。`)
+        : null
+      pass('activation', T(`activated: ${via.en}${until ? `; paid until ${until} (containerPaidUntil)` : ''}`, `已激活：${via.zh}${until ? `；已付费至 ${until}（containerPaidUntil）` : ''}`), { ...facts, ...(notice ? { notice } : {}) })
       return true
     }
     const what = name ?? container
@@ -349,11 +406,12 @@ async function diagnoseChecks(input, o) {
     const mode = strictMode
       ? T(' Since 2.0 this is a failure: the default client (conform: \'tap10\', the resolution this check used) is such a client; --no-conform checks the rest the 1.x way and only warns here.', '自 2.0 起这是失败：默认客户端（conform: \'tap10\'，本次检查所用的解析）就是这样的客户端；--no-conform 按 1.x 的方式检查其余各项，这里只警告。')
       : T('', '')
-    ;(strictMode ? fail : warn)('activation',
-      T(`${what} is not activated: ${name ? 'isLive and isContainerLive are both false' : 'isContainerLive is false'}. Under TAP-11 a client gets "unpaid" and does not resolve this service; the site files stay readable (TAP-10 §6.3).${revert.en}${caveat.en}${fee.en}${mode.en}`,
-        `${what} 尚未激活：${name ? 'isLive 与 isContainerLive 都为假' : 'isContainerLive 为假'}。按 TAP-11，客户端会得到 unpaid、不解析此服务；站点文件仍可读取（TAP-10 §6.3）。${revert.zh}${caveat.zh}${fee.zh}${mode.zh}`),
-      T(`Activate it on DomainBinding (${a.binding}): the holder calls bind("${name ?? '<on-chain name>'}", ${container}, months) from the wallet that holds the circuit and pays months x monthlyFee() in ${coin || 'the chain coin'} (you pay it, plus gas; read monthlyFee() on chain when you pay, never trust a number written down). Then run: ${cmd.doctor(input)}`,
-        `到 DomainBinding（${a.binding}）激活：持有人用持有该电路的钱包调用 bind("${name ?? '<链上名字>'}", ${container}, 月数)，付 月数 × monthlyFee()（${coin || '该链原生币'}；费用与 gas 由你自己承担，付款时从链上读取 monthlyFee()，不要照抄写下来的数字）。然后运行：${cmd.doctor(input)}`))
+    const detail = T(`${what} is not activated: ${name ? 'isLive and isContainerLive are both false' : 'isContainerLive is false'}. Under TAP-11 a client gets "unpaid" and does not resolve this service; the site files stay readable (TAP-10 §6.3).${revert.en}${caveat.en}${fee.en}${mode.en}`,
+      `${what} 尚未激活：${name ? 'isLive 与 isContainerLive 都为假' : 'isContainerLive 为假'}。按 TAP-11，客户端会得到 unpaid、不解析此服务；站点文件仍可读取（TAP-10 §6.3）。${revert.zh}${caveat.zh}${fee.zh}${mode.zh}`)
+    const fix = T(`Activate it on DomainBinding (${a.binding}): the holder calls bind("${name ?? '<on-chain name>'}", ${container}, months) from the wallet that holds the circuit and pays months x monthlyFee() in ${coin || 'the chain coin'} (you pay it, plus gas; read monthlyFee() on chain when you pay, never trust a number written down). Then run: ${cmd.doctor(input)}`,
+      `到 DomainBinding（${a.binding}）激活：持有人用持有该电路的钱包调用 bind("${name ?? '<链上名字>'}", ${container}, 月数)，付 月数 × monthlyFee()（${coin || '该链原生币'}；费用与 gas 由你自己承担，付款时从链上读取 monthlyFee()，不要照抄写下来的数字）。然后运行：${cmd.doctor(input)}`)
+    if (strictMode) fail('activation', detail, fix, undefined, facts)
+    else warn('activation', detail, fix, facts)
     return true
   }
 
@@ -792,6 +850,12 @@ export function formatReport(report, { lang = 'both', version = '' } = {}) {
       if (dz === c.detail) lines.push(`         ${c.detail}`)
       else if (c.status === 'skip') lines.push(`         ${c.detail} / ${dz}`)
       else lines.push(`         ${c.detail}`, `         ${dz}`)
+    }
+    // @experimental (2.2) a fact beside the detail, whatever the status (today: a monthlyFee() that is not 0)
+    // 说明旁的一条事实，与状态无关（目前：不为 0 的 monthlyFee()）
+    if (c.notice) {
+      if (lang !== 'zh') lines.push(`         note: ${c.notice.en}`)
+      if (lang !== 'en') lines.push(`         提示: ${c.notice.zh}`)
     }
     if (c.fix && c.status !== 'pass') {
       if (lang !== 'zh') lines.push(`         fix:  ${c.fix.en}`)

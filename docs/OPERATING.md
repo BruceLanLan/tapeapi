@@ -31,6 +31,12 @@
 
 结算循环（`createSettler(...).stats()`）：`settled`、`failed`、`lastRun`。**`lastRun` 超过两个周期没更新，或 `failed` 连续增长，就要看日志。** 另外单独监控结算者钱包的 BNB 余额：余额不够付 gas 时，消费者的提现请求到期前没结算的收入就收不回来了（TAPI-22 §3.3.1 的 48 小时窗口）。
 
+只读监控 `scripts/monitor.mjs`（`npm run monitor`；仓库的 GitHub 工作流约每 30 分钟跑一次，不发交易、不持有密钥）另外读站点存储（SiteRegistry）与付费合约（DomainBinding）两个代理的 ERC-1967 实现槽，与 `sdk/src/chains.js` 的 `expectedImpl` 接受列表比较：出现未列出的实现，报告顶部给出 `STORE-CHANGED` ALERT、退出码 1（2.x 默认客户端此时对该链失败关闭，要出补丁版收录新实现）；槽读不到只记为警告"无法判定"，退出码不变。
+The same read-only monitor reads the ERC-1967 implementation slot of the SiteRegistry and DomainBinding proxies and compares it with the accepted list in `sdk/src/chains.js` (`expectedImpl`): an implementation that is not listed is a `STORE-CHANGED` ALERT at the top of the report and exit code 1 (default 2.x clients fail closed for that chain until a patch release lists it); a slot that cannot be read is only a warning ("undetermined") and leaves the exit code alone.
+
+2.2 起，监控对已激活的服务也读 DomainBinding 的 `monthlyFee()`（每次运行多 2 次只读 `eth_call`）：月费不为 0（今天主网上为 0），就在报告的 Notes 下给一条提示，写明 `monthlyFeeWei` 的值；读不到则提示"无法判定"。这只是提示：不是 ALERT，不算问题，退出码与状态名都不变。监控不保存上一次运行的结果，所以"不再为 0"是与 0 比较。
+Since 2.2 the monitor also reads DomainBinding's `monthlyFee()` for an activated service (2 more read-only `eth_call`s per run): a fee that is not 0 (it is 0 on mainnet today) adds one note under the report's Notes with the `monthlyFeeWei` value, and a fee that cannot be read adds one that says "undetermined". A note only: not an ALERT, not a problem, and the exit code and the status names are unchanged. The monitor keeps nothing from the previous run, so "no longer 0" is judged against 0.
+
 ## 3. 计量存储与多实例 / The meter
 
 - **内存计量**（默认）：进程一停，未结算凭证全部丢失；多实例各记各的，会重复服务同一张凭证。收费服务用它会在启动时警告。
