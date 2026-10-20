@@ -3,9 +3,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { abi, MAINNET, validateManifest } from '@tapeapi/sdk'
-import { publicMethods, MANIFEST_METHODS, WBNB, USDT, WBNB_USDT_V2 } from './methods.js'
+import { publicMethods, MANIFEST_METHODS, TOOL_MANIFEST_METHODS, TOOL_OF, toolMethods, WBNB, USDT, WBNB_USDT_V2 } from './methods.js'
 import worker, { manifestOf } from './worker.js'
 import * as C from '../../site/console/lib.js'
+import { bad } from '../_lib/chain.mjs'
 import { privateKeyToAddress, signDigest, delegationDigest } from '../../sdk/src/sig.js'
 
 const { selector, encodeParams, toHex, encodeReturn, checksumAddress } = abi
@@ -176,4 +177,20 @@ test('/mcp: the Worker\'s CORS preflight allows Mcp-Method and Mcp-Name, and sti
   assert.equal(o.status, 204)
   const allowed = o.headers.get('access-control-allow-headers').split(/\s*,\s*/)
   for (const h of ['content-type', 'accept', 'authorization', 'mcp-protocol-version', 'mcp-session-id', 'last-event-id', 'mcp-method', 'mcp-name']) assert.ok(allowed.includes(h), `${h} is allowed`)
+})
+
+test('tool methods (2.4): each calls its REST twin with the same params and answers exactly { content: [one text item, the JSON], structuredContent }; errors pass through', async () => {
+  const seen = []
+  const rest = Object.fromEntries(Object.values(TOOL_OF).map((n) => [n, async (params, ctx) => { seen.push([n, params, ctx]); if (params.fail) bad('no'); return { from: n, at: 7 } }]))
+  const tools = toolMethods(rest)
+  assert.deepEqual(Object.keys(tools), TOOL_MANIFEST_METHODS.map((m) => m.name))
+  for (const [name, of] of Object.entries(TOOL_OF)) {
+    const r = await tools[name]({ a: 1 }, { block: 9 })
+    assert.deepEqual(r, { content: [{ type: 'text', text: JSON.stringify({ from: of, at: 7 }) }], structuredContent: { from: of, at: 7 } })
+    assert.deepEqual(seen.at(-1), [of, { a: 1 }, { block: 9 }])
+    const m = TOOL_MANIFEST_METHODS.find((x) => x.name === name)
+    assert.deepEqual(m.params, MANIFEST_METHODS.find((x) => x.name === of).params, 'the same params as the REST method')
+    assert.ok([...m.description].length <= 256 && /^[\x20-\x7e]+$/.test(m.description), name)
+  }
+  await assert.rejects(tools.tool_balance({ fail: true }), { code: 'BAD_REQUEST' })
 })

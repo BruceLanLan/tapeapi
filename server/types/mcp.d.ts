@@ -11,6 +11,9 @@ export declare function createMcpEndpoint(o: {
   name?: string
   /** Verify links carry the params and result in clear; default false: hashes only. */
   linkContent?: boolean
+  /** @experimental (2.4) The methods' signed results are MCP tool results ({ content, structuredContent?, isError? },
+   *  TAPI-20 §3.8): each is passed on as that tool result after the provenance line, not as JSON text. Default false. */
+  mcpResults?: boolean
   version?: string
   /** Called once per JSON-RPC message handled (not for refused requests; usage counting); method and tool are cut to 64 characters; errors in it are ignored. */
   onMessage?: (m: { method: string; tool?: string; clientIp?: string }) => void

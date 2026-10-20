@@ -146,7 +146,7 @@ Checked against the specification on 2026-10-14, when 2026-07-28 was its latest 
 it from the GitHub release, not from the npm registry:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 What it does differently from the remote server:
@@ -177,7 +177,7 @@ Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -197,7 +197,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -209,7 +209,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### Remote or local
@@ -263,7 +263,7 @@ Save the receipt (the `_meta["fun.tapeapi/receipt"]` object) as `receipt.json`. 
 release, or work inside a clone of the repository as in [Call a service](consume.md):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz
 ```
 
 ```js
@@ -341,8 +341,20 @@ export default {
   signed result is that tool's MCP result (`{ content, ... }`). `createMcpEndpoint` goes the opposite way: the tools
   are generated from the methods, and each method answers with its own JSON. Declared, `11.1013.tape` would be shown by
   `tapeapi connect` as an MCP tool service with `tapeapi-mcp` settings, and `tapeapi-mcp` would verify every answer
-  and then refuse to show it as a tool result, which is worse than today. So `tapeapi connect 11.1013.tape` keeps
-  saying `not-ai`, and the settings at the top of this guide are the way to use it.
+  and then refuse to show it as a tool result. So `/mcp` stays undeclared.
+- **From 2.4 the public Worker's code has tool methods that follow §3.8** (experimental). Eight more free methods,
+  `tool_block_number`, `tool_balance`, `tool_token_info`, `tool_token_balance`, `tool_nft_owner`, `tool_pair_price`,
+  `tool_bnb_usd` and `tool_tape_name`, make the same reads and answer, signed, exactly an MCP tool result
+  (`{ content: [{ type: "text", text }], structuredContent }`). They are the only tools of a second endpoint,
+  `/mcp/pinned`, which is what the manifest would declare: `mcp: { endpoint: ".../mcp/pinned", toolsSha256 }`. Only
+  they are held to that digest; the REST methods and `/mcp` answer as they do without it. `tapeapi-mcp` then shows these
+  eight tools and their answers. Both appear only while the Worker's `MCP_TOOLS_SHA256` variable is set, with
+  `createMcpEndpoint({ ..., mcpResults: true })` serving `/mcp/pinned` (see
+  [`examples/public-api/worker.js`](../../examples/public-api/worker.js)). **The code is live, the tools are off**:
+  `api.tapeapi.fun` is redeployed from this repository's `main`, so it runs this code from 2.4 on, but the variable is
+  not set there, so it serves neither the tool methods nor `/mcp/pinned` (and answers as 2.3 did, apart from the version)
+  until it is set by hand. Until the holder then publishes that manifest, `11.1013.tape` declares nothing:
+  `tapeapi connect 11.1013.tape` says `not-ai`, and the settings at the top of this guide are the way to use it.
 - `@tapeapi/server/mcp` has experimental helpers for this endpoint's digest: `await mcp.toolsSha256()` (what clients
   compute over its `tools/list`), `listedMcpTools(manifest)`, `mcpToolsSha256(manifest)`, and
   `holdToToolsSha256(methods, { manifest, published })`, which refuses the tool methods with a signed `TOOLS_CHANGED`
@@ -351,6 +363,10 @@ export default {
   `createMcpProxy` computes the `toolsSha256` you publish and holds its calls to it by itself.
 - `name` is the TapeOut name shown in results and receipts.
 - Verification links carry hashes only; `linkContent: true` puts the params and results in them, in clear.
+- `mcpResults: true` (experimental, 2.4) is for methods whose signed results are already MCP tool results
+  (`{ content, structuredContent?, isError? }`): each is passed on as that tool result after the provenance line, with
+  any imitation of that line labelled as the tool's own output, instead of as JSON text. Default false: every result
+  is data, shown as JSON text.
 
 ## Tape out your own MCP server
 
@@ -442,15 +458,15 @@ isolate can be restarted at any time. With it, changed tools are refused after a
 
   ```bash
   # 42.1013.tape is an example name: put your service's TapeOut name here
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### See a service with `tapeapi connect`
 
 `tapeapi connect <name>` (experimental, since 2.3 for MCP tool services, outside the 2.x compatibility promise) shows a taped-out MCP
 server as the chain has it. When the manifest has an `mcp` field and no `ai` field, the card says "MCP tool service"
-and shows the endpoint, the tools (the manifest's free methods: `tapeapi-mcp` offers no priced method) and the first 8
-hex digits of `toolsSha256`, then Claude
+and shows the endpoint, the manifest's free methods (`tapeapi-mcp` offers no priced method; which of them are tools is
+for the endpoint's `tools/list` to say) and the first 8 hex digits of `toolsSha256`, then Claude
 Code and Claude Desktop settings: through `tapeapi-mcp` (every answer checked on your machine) and, marked as not
 checked, the declared endpoint direct (a direct answer is not a signed envelope: do not treat it as signed or verified).
 It reads the chain and the manifest only: it does not contact the endpoint, and
@@ -461,9 +477,12 @@ no setting carries a key. `--proxy` runs `tapeapi-mcp` for the service (its JSON
 node sdk/bin/tapeapi.js connect 42.1013.tape
 ```
 
-A manifest without `mcp` is shown as unavailable (`not-ai`). The public service `11.1013.tape` is one: it does not
-declare its `/mcp` route (why: "Run your own TapeAPI service as an MCP server" above), so use the settings at the top
-of this guide for it.
+A manifest without `mcp` is shown as unavailable (`not-ai`). The public service `11.1013.tape` is one until its holder
+publishes a manifest that declares `/mcp/pinned` (see "Run your own TapeAPI service as an MCP server" above), so use
+the settings at the top of this guide for it. Since this command does not contact the endpoint, its row lists the
+manifest's free methods as methods, not tools (for that manifest all 16: the tool methods are free too), and does not
+say how many are tools: the tools are the methods that `tools/list` at the endpoint names (eight there), and
+`tapeapi-mcp`, which reads that list, offers only those (2.4; in 2.3 the row was labelled "tools").
 
 ### What clients check
 

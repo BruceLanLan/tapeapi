@@ -23,7 +23,7 @@ The checks of steps 1 to 7 are `tapeapi-doctor` (experimental), which ships in t
 Every `tapeapi-doctor` in the table stands for this, run from any directory, with nothing to clone:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-doctor <your name>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-doctor <your name>
 ```
 
 In a checkout, `node sdk/bin/tapeapi-doctor.js <your name>` at its root does the same. Either way the report writes
@@ -270,7 +270,7 @@ and point the client at it. `tapeapi-verify` keeps running in the foreground, so
 
 ```sh
 # Terminal 1. 42.1013.tape is an example name: put your service's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -295,7 +295,7 @@ Claude Code settings without `anthropic-messages`, no Codex settings without `op
 
 ```sh
 # any directory, no clone needed; 42.1013.tape is an example name
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi connect 42.1013.tape            # the service card and the settings
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi connect 42.1013.tape            # the service card and the settings
 # with the SDK installed, the command is tapeapi connect …
 tapeapi connect 42.1013.tape --proxy    # then runs tapeapi-verify for it
 ```
@@ -316,7 +316,7 @@ user's machine only: no network, no key.
 
 ```sh
 # any directory, no clone needed
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi receipts tail --receipts ~/.tapeapi/receipts.jsonl   # what tapeapi-verify --log wrote
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi receipts tail --receipts ~/.tapeapi/receipts.jsonl   # what tapeapi-verify --log wrote
 # with the SDK installed, the commands are tapeapi receipts … and tapeapi reconcile …
 tapeapi receipts show <id> --receipts ~/.tapeapi/receipts.jsonl         # one receipt, its checks replayed offline
 tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # set against a bill file

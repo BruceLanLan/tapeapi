@@ -24,7 +24,7 @@ npm ci --no-audit --no-fund
 在任何目录都能运行，不需要克隆仓库：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-doctor <你的名字>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-doctor <你的名字>
 ```
 
 在检出的根目录里，`node sdk/bin/tapeapi-doctor.js <你的名字>` 效果相同。两种方式下，报告给出的下一条命令都按你的运行方式书写。
@@ -222,7 +222,7 @@ const client = new OpenAI({ baseURL, apiKey: process.env.API_KEY, fetch })  // �
 
 ```sh
 # 终端 1。42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -245,7 +245,7 @@ $env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex
 
 ```sh
 # 任何目录都能运行，不需要克隆仓库；42.1013.tape 是示例名
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi connect 42.1013.tape            # 服务卡片与配置
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi connect 42.1013.tape            # 服务卡片与配置
 # 装好 SDK 之后命令就是 tapeapi connect …
 tapeapi connect 42.1013.tape --proxy    # 然后为它运行 tapeapi-verify
 ```
@@ -262,7 +262,7 @@ tapeapi connect 42.1013.tape --proxy    # 然后为它运行 tapeapi-verify
 
 ```sh
 # 任何目录都能运行，不需要克隆仓库
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi receipts tail --receipts ~/.tapeapi/receipts.jsonl   # tapeapi-verify --log 写下的内容
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi receipts tail --receipts ~/.tapeapi/receipts.jsonl   # tapeapi-verify --log 写下的内容
 # 装好 SDK 之后命令就是 tapeapi receipts … 与 tapeapi reconcile …
 tapeapi receipts show <id> --receipts ~/.tapeapi/receipts.jsonl         # 一张回执，离线重放核验
 tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # 与账单文件对账

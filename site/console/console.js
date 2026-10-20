@@ -3,7 +3,7 @@
 // "Advanced" (A deploy, B verify) is only for someone deploying their own ChannelBus.
 // 持有人操作台的页面脚本（模块，从 index.html 加载，使页面能在 script-src 'self' 下运行）。
 // 步骤：1 连接、2 读电路、3 服务密钥与变量、4 签委托、5 发布清单；“高级”（A 部署、B 核对）只给自己部署 ChannelBus 的人。
-import * as C from './lib.js?v=15e0674daf'
+import * as C from './lib.js?v=f805b7a80e'
 
 const $ = (id) => document.getElementById(id)
 // ChannelBus (Advanced) runs on BNB Chain only (TapeAPI does not follow it to L2s). / ChannelBus（高级）只在 BNB Chain。
@@ -523,6 +523,13 @@ $('btn-publish').onclick = async () => {
     const size = new TextEncoder().encode(text).length, names = sm.methods.map((x) => x.name)
     note(out, true, bi(`✓ 清单核对通过（${size} 字节）。服务名「${sm.name}」，${names.length} 个免费方法：${names.join('、')}。将写上链的完整内容：`, `✓ The manifest checks out (${size} bytes). Service name "${sm.name}", ${names.length} free methods: ${names.join(', ')}. The full content to be written on chain:`))
     if (tools) showTools(out, sm.mcp, tools)
+    if (tools) {
+      // Methods that are not tools stay plain methods (TAPs #16 §4.1): say which, so the holder knows what a model is shown.
+      // 不是工具的方法仍是普通方法：写明是哪些，持有人才知道模型会看到什么。
+      const bound = new Set(C.boundMethods({ methods: sm.methods, tools })), plain = names.filter((n) => !bound.has(n))
+      if (plain.length) note(out, null, bi(`${bound.size} 个方法是上面的 MCP 工具（${[...bound].join('、')}）；另外 ${plain.length} 个是普通方法，不是这个端点的工具，MCP 客户端不会把它们交给模型：${plain.join('、')}。`,
+        `${bound.size} methods are the MCP tools above (${[...bound].join(', ')}); the other ${plain.length} are plain methods, not tools of this endpoint, and MCP clients do not show them to a model: ${plain.join(', ')}.`))
+    }
     if (aiField) { note(out, null, bi('这是一个 AI 服务，清单带下面这份价目表：', 'This is an AI service; the manifest carries this price table:')); showPriceTable(out, aiField) }
     const pre = document.createElement('pre'); pre.className = 'mono'; pre.textContent = JSON.stringify(JSON.parse(text), null, 2); out.append(pre)
     const sha = '0x' + Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))).map((b) => b.toString(16).padStart(2, '0')).join('')

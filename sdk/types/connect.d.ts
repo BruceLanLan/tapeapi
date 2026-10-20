@@ -70,9 +70,10 @@ export interface ConnectReport {
     activation?: { live: boolean; isLive: boolean | null; isContainerLive: boolean } | null
     endpoints?: { format: string; baseUrl: string }[]
     models?: { id: string; aliases?: string[]; formats?: string[]; prices: Record<string, string>[] }[]
-    /** an MCP tool service only: its declared endpoint and digest, and its tools: the names of the manifest's free methods,
-     *  the ones tapeapi-mcp can offer (it offers no priced method; each must also be a tool of the endpoint, which
-     *  tapeapi-mcp checks) */
+    /** an MCP tool service only: its declared endpoint and digest, and `tools`: the names of the manifest's free methods,
+     *  the ones tapeapi-mcp can offer (it offers no priced method). They are candidates, not necessarily tools: a method
+     *  is a tool only if the endpoint's tools/list has a tool of its name, which tapeapi-mcp checks and connect does not
+     *  (a manifest may bind only some of its methods, TAPs #16 §4.1); the card calls them methods (2.4) */
     mcp?: { endpoint: string; toolsSha256: string }
     tools?: string[]
   } | null

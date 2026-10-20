@@ -566,7 +566,7 @@ test('connect, MCP tool service: a manifest with mcp and no ai gets a usable car
   assert.equal(r.code, 0, r.out + r.err)
   assert.equal(r.err, '')
   for (const want of ['"Example tools"', NAME, w.c.container, 'usable: an MCP tool service (experimental) / 可用：MCP 工具服务（实验性）', 'https://api.example.com/mcp   (MCP Streamable HTTP, as the manifest declares',
-    `2 (the manifest's free methods / 清单里的免费方法)   toolsSha256 ${digest.slice(0, 8)}…`, 'add, shout', 'it does not prove which program produced the answer', '不证明回答由哪个程序产生', 'this command does not contact the endpoint',
+    `2 (the manifest's free methods; the tools are the ones tools/list names / 清单里的免费方法；工具是其中 tools/list 列出的)   toolsSha256 ${digest.slice(0, 8)}…`, 'add, shout', 'it does not prove which program produced the answer', '不证明回答由哪个程序产生', 'this command does not contact the endpoint',
     `claude mcp add tapeapi-42-7 -- npx -y ${PKG} tapeapi-mcp 42.7.tape`, 'claude mcp add --transport http tapeapi-42-7 https://api.example.com/mcp', 'URL: https://api.example.com/mcp', 'asks for no key or password', 'resolution: TAP-10 / TAP-11']) {
     assert.ok(r.out.includes(want), `missing ${want}\n${r.out}`)
   }
@@ -610,8 +610,9 @@ test('connect, MCP tool service: a manifest with mcp and no ai gets a usable car
   // Languages. / 语言。
   const en = keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--lang', 'en'])), zh = keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--lang', 'zh']))
   assert.doesNotMatch(en.out, /[一-鿿]/)
-  assert.match(zh.out, /^状态 +可用：MCP 工具服务（实验性）$/m); assert.match(zh.out, /^工具 +2 \(清单里的免费方法\)/m); assert.match(zh.out, /配置你的 MCP 客户端/)
-  assert.doesNotMatch(zh.out, /^(status|tools|mcp) /m)
+  assert.match(zh.out, /^状态 +可用：MCP 工具服务（实验性）$/m); assert.match(zh.out, /^方法 +2 \(清单里的免费方法；工具是其中 tools\/list 列出的\)/m); assert.match(zh.out, /配置你的 MCP 客户端/)
+  assert.doesNotMatch(zh.out, /^(status|tools|methods|mcp) /m)
+  assert.match(en.out, /^methods +2 \(the manifest's free methods; the tools are the ones tools\/list names\)/m)
   // Colors as for an AI card: stripped, the same text. / 颜色规则同 AI 卡片。
   const tty = await connectMcp(w, [NAME, ...RPC_ARGS], { isTTY: true })
   assert.match(tty.out, /\x1b\[/)
@@ -622,10 +623,30 @@ test('connect, MCP tool service: a manifest with mcp and no ai gets a usable car
   const priced = await mcpWorld({ edit: (m) => { m.methods.push({ name: 'premium', priceBEM: '0.0001', params: {}, returns: {} }); m.payment = { escrow: '0x' + '55'.repeat(20), unit: 'BEM', decimals: 8 } } })
   const pr = keep(await connectMcp(priced, [NAME, ...RPC_ARGS, '--lang', 'en']))
   assert.equal(pr.code, 0, pr.out + pr.err)
-  assert.ok(pr.out.includes(`2 (the manifest's free methods)   toolsSha256`), pr.out)
+  assert.ok(pr.out.includes(`2 (the manifest's free methods; the tools are the ones tools/list names)   toolsSha256`), pr.out)
   assert.ok(pr.out.includes('add, shout'), pr.out)
   assert.doesNotMatch(pr.out, /premium/)
   assert.deepEqual(JSON.parse(keep(await connectMcp(priced, [NAME, ...RPC_ARGS, '--json'])).out).service.tools, ['add', 'shout'])
+})
+
+test('connect, MCP tool service (2.4): a manifest that binds only some of its methods (TAPs #16 §4.1) gets a card that lists the free methods as methods and never states a tool count it cannot know', async () => {
+  // A free method that is not a tool of the endpoint (its tools/list has add and shout only): the card cannot tell, since
+  // it does not contact the endpoint, so the row says methods, not tools; --json keeps service.tools (2.3) as the same
+  // candidate list. / 一个不是端点工具的免费方法：卡片不访问端点、分不出来，所以那一行写“方法”而不是“工具”；--json 仍是 service.tools。
+  const w = await mcpWorld({ edit: (m) => { m.methods.push({ name: 'plain', priceBEM: '0', params: {}, returns: {} }) } })
+  for (const lang of ['en', 'zh', 'both']) {
+    const r = keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--lang', lang]))
+    assert.equal(r.code, 0, r.out + r.err)
+    assert.match(r.out, lang === 'zh' ? /^方法 +3 \(清单里的免费方法；工具是其中 tools\/list 列出的\)/m : /^methods(?: \/ 方法)? +3 \(the manifest's free methods; the tools are the ones tools\/list names/m)
+    assert.doesNotMatch(r.out, /^(tools|工具)( \/ 工具)? +\d/m, 'no row counts tools')
+    assert.doesNotMatch(r.out, /\b3 tools\b|3 个工具/)
+    assert.ok(r.out.includes('add, shout, plain'), r.out)
+    if (lang !== 'zh') assert.ok(r.out.includes('so it does not say which or how many'), r.out)
+    if (lang !== 'en') assert.ok(r.out.includes('所以不说是哪些、有几个'), r.out)
+  }
+  const o = JSON.parse(keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--json'])).out)
+  assert.deepEqual(o.service.tools, ['add', 'shout', 'plain'])
+  assert.match(o.notes.tools.en, /^The methods shown are the manifest's free methods/)
 })
 
 test('connect, MCP tool service: settings appear only as declared (gating), --tool / --format narrow or refuse them, an invalid mcp field and a manifest with neither field are unavailable', async () => {

@@ -3,15 +3,16 @@
 // 公共 TapeAPI 服务（api.tapeapi.fun）的 Cloudflare Worker：身份与设置模式同 examples/cloudflare-worker，方法见 methods.js。
 //
 // Secret: SIGNER_KEY. Variables: CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES, DELEGATION_SIG, PUBLIC_URL,
-// RPC_URLS (kept across deploys by keep_vars), and, experimental, MCP_TOOLS_SHA256 (TAPI-20 §3.8, see manifestOf). An
-// MCP_TOOLS_SHA256 that is not 64 hex digits keeps the whole service in setup mode, with a problem naming it.
+// RPC_URLS (kept across deploys by keep_vars), and, experimental, MCP_TOOLS_SHA256 (TAPI-20 §3.8, see manifestOf):
+// set, the manifest adds the tool methods and declares /mcp/pinned, whose tools they are. An MCP_TOOLS_SHA256 that is
+// not 64 hex digits keeps the whole service in setup mode, with a problem naming it.
 // Adding or changing a method changes the manifest: republish it on chain with the holder console, step 7.
-// 密钥 SIGNER_KEY；变量同上（实验性的 MCP_TOOLS_SHA256 见 manifestOf；不是 64 位十六进制时整个服务停在设置模式，problem 点名该变量）。增改方法会改变清单：用持有人操作台第 7 步重新上链。
+// 密钥 SIGNER_KEY；变量同上（实验性的 MCP_TOOLS_SHA256 见 manifestOf：设置后清单加上工具方法并声明 /mcp/pinned；不是 64 位十六进制时整个服务停在设置模式，problem 点名该变量）。增改方法会改变清单：用持有人操作台第 7 步重新上链。
 import { createProvider } from '@tapeapi/server'
 import { sig, rpcUrlsFor } from '@tapeapi/sdk'
 import { setupAnswer } from '../cloudflare-worker/worker.js'
 import { createChainReader } from '../_lib/chain.mjs'
-import { MANIFEST_METHODS, publicMethods } from './methods.js'
+import { MANIFEST_METHODS, TOOL_MANIFEST_METHODS, publicMethods, toolMethods } from './methods.js'
 import { createMcpEndpoint, holdToToolsSha256, MCP_PATH } from '@tapeapi/server/mcp'
 import { VERSION } from '@tapeapi/server'
 
@@ -20,6 +21,12 @@ const REQUIRED = ['CIRCUITS', 'TOKEN_ID', 'CONTAINER', 'DELEGATION_EXPIRES', 'DE
 // SDK 默认节点：三家不同运营方。实际部署用 wrangler.toml 的 RPC_URLS。
 const DEFAULT_RPC_URLS = rpcUrlsFor(56).join(',')
 const configured = (env) => REQUIRED.every((k) => env[k]) && !!env.SIGNER_KEY
+// The MCP endpoint the manifest declares (2.4, experimental): only the tool methods, whose signed results are MCP tool
+// results (TAPI-20 §3.8, TAPs #16 §4.2). /mcp stays the eight REST methods as tools, as before, and is not declared.
+// 清单声明的 MCP 端点（2.4，实验性）：只列工具方法，它们的签名结果就是 MCP 工具结果。/mcp 仍是八个 REST 方法的工具外观，不声明。
+export const MCP_PINNED_PATH = '/mcp/pinned'
+const TOOL_NAMES = new Set(TOOL_MANIFEST_METHODS.map((m) => m.name))
+const baseUrl = (env) => env.PUBLIC_URL.replace(/\/+$/, '')
 
 // MCP_TOOLS_SHA256 as the holder published it: 64 hex digits, lowercased here (TAPI-20 §3.8 writes lowercase; a value
 // copied in capitals is the same digest). Unset or empty: null. Anything else (a 0x prefix, a wrong length, other
@@ -46,13 +53,32 @@ export function manifestOf(env) {
     container: env.CONTAINER,
     signer: sig.privateKeyToAddress(env.SIGNER_KEY),
     delegation: { expires: Number(env.DELEGATION_EXPIRES), sig: env.DELEGATION_SIG },
-    endpoints: { live: [`${env.PUBLIC_URL.replace(/\/+$/, '')}/tapeapi/v1`], async: false },
-    methods: MANIFEST_METHODS,
-    // TAPI-20 §3.8 (2.3, experimental): only once MCP_TOOLS_SHA256 is set, to the toolsSha256 the holder publishes (the
-    // console computes it from /mcp; mcpToolsSha256 of @tapeapi/server/mcp gives the same). Without it the manifest is
-    // exactly what it was. / 只有设置了 MCP_TOOLS_SHA256（持有人发布的 toolsSha256）才加；不设置时清单与以前完全相同。
-    ...(toolsSha256 ? { mcp: { endpoint: `${env.PUBLIC_URL.replace(/\/+$/, '')}${MCP_PATH}`, toolsSha256 } } : {}),
+    endpoints: { live: [`${baseUrl(env)}/tapeapi/v1`], async: false },
+    // TAPI-20 §3.8 (2.4, experimental): only once MCP_TOOLS_SHA256 is set, to the toolsSha256 the holder publishes (taken
+    // lowercased, see mcpToolsSha256Of), the tool methods follow the REST ones and `mcp` names /mcp/pinned (the console
+    // computes the digest from it; mcpToolsSha256(mcpToolsManifestOf(env)) gives the same). Without it the manifest is
+    // exactly what it was.
+    // 只有设置了 MCP_TOOLS_SHA256（持有人发布的 toolsSha256，按 mcpToolsSha256Of 转小写）才在 REST 方法之后加上工具方法，并以
+    // `mcp` 声明 /mcp/pinned（控制台从该端点算摘要；mcpToolsSha256(mcpToolsManifestOf(env)) 结果相同）。不设置时清单与以前完全相同。
+    methods: toolsSha256 ? [...MANIFEST_METHODS, ...TOOL_MANIFEST_METHODS] : MANIFEST_METHODS,
+    ...(toolsSha256 ? { mcp: { endpoint: `${baseUrl(env)}${MCP_PINNED_PATH}`, toolsSha256 } } : {}),
   }
+}
+
+// The manifest as each MCP endpoint sees it: tools come from a manifest's name, container and methods only
+// (createMcpEndpoint), so a view with the REST methods gives /mcp exactly its 2.3 tools, and one with the tool methods
+// gives /mcp/pinned's. / 每个 MCP 端点看到的清单：工具只由清单的 name、container 与 methods 生成，所以只含 REST 方法的视图给出
+// /mcp 在 2.3 的工具，只含工具方法的视图给出 /mcp/pinned 的工具。
+const restView = (m) => ({ ...m, methods: m.methods.filter((x) => !TOOL_NAMES.has(x.name)) })
+const toolView = (m) => ({ ...m, methods: m.methods.filter((x) => TOOL_NAMES.has(x.name)) })
+/**
+ * @experimental (2.4) The manifest view whose tools /mcp/pinned serves: its mcpToolsSha256 (@tapeapi/server/mcp) is
+ * the toolsSha256 to publish. It does not depend on MCP_TOOLS_SHA256 itself. / /mcp/pinned 所提供工具对应的清单视图：
+ * 它的 mcpToolsSha256 就是要发布的 toolsSha256，与 MCP_TOOLS_SHA256 本身无关（不自指）。
+ */
+export function mcpToolsManifestOf(env) {
+  const { mcp, ...m } = manifestOf({ ...env, MCP_TOOLS_SHA256: '' })
+  return { ...m, methods: TOOL_MANIFEST_METHODS }
 }
 
 export function build(env) {
@@ -70,13 +96,19 @@ export function build(env) {
   const timeoutMs = Number(env.RPC_TIMEOUT_MS || 3000)
   const chain = createChainReader({ name: 'bsc', urls: rpcUrls, quorum: 2, lag: 1, timeoutMs })
   const manifest = manifestOf(env)
-  // With MCP_TOOLS_SHA256 set, every method that is a tool of /mcp is held to it (TAPI-20 §3.8): if a deploy changes the
-  // tool text (a method description, SERVICE_NAME, the wording of @tapeapi/server or the SDK), those methods answer a
-  // signed TOOLS_CHANGED (409), on /tapeapi/v1 and /mcp alike, until the holder publishes the new digest.
-  // 设置了 MCP_TOOLS_SHA256 时，凡是 /mcp 工具的方法都受它约束：部署改动了工具文本（方法说明、SERVICE_NAME、@tapeapi/server 或
-  // SDK 的措辞）后，这些方法在 /tapeapi/v1 与 /mcp 上一律回答签名的 TOOLS_CHANGED（409），直到持有人发布新的摘要。
+  // With MCP_TOOLS_SHA256 set, the tool methods are added and held to it (TAPI-20 §3.8; TAPs #16 §5.1): if a deploy
+  // changes their tool text (a tool method description, SERVICE_NAME, the case of CONTAINER, the wording of
+  // @tapeapi/server or the SDK), they answer a signed TOOLS_CHANGED (409), on /tapeapi/v1 and /mcp/pinned alike, until
+  // the holder publishes the new digest; while their tool list cannot be built, they answer TOOLS_CHANGED with current
+  // null and the next call reads it again (holdToToolsSha256). Only the tool methods are handed to holdToToolsSha256:
+  // the REST methods are not tools of /mcp/pinned and are never held, not even while that list cannot be built.
+  // 设置了 MCP_TOOLS_SHA256 时加上工具方法，并让它们受该值约束：部署改动了它们的工具文本（工具方法说明、SERVICE_NAME、CONTAINER
+  // 的大小写、@tapeapi/server 或 SDK 的措辞）后，它们在 /tapeapi/v1 与 /mcp/pinned 上一律回答签名的 TOOLS_CHANGED（409），直到
+  // 持有人发布新的摘要；工具列表建不出来时，它们回答 TOOLS_CHANGED（current 为 null），下一次调用重新读取。只把工具方法交给
+  // holdToToolsSha256：REST 方法不是 /mcp/pinned 的工具，从不受约束，列表建不出来时也一样。
   const published = mcpToolsSha256Of(env)
-  const methods = published ? holdToToolsSha256(publicMethods(chain), { manifest, published }) : publicMethods(chain)
+  const rest = publicMethods(chain)
+  const methods = published ? { ...rest, ...holdToToolsSha256(toolMethods(rest), { manifest: toolView(manifest), published }) } : rest
   return createProvider({
     manifest,
     signerKey: env.SIGNER_KEY,
@@ -115,7 +147,7 @@ function logMcp({ method, tool, clientIp }, env) {
   callerTag(clientIp, env?.SIGNER_KEY).then((caller) => console.log(JSON.stringify({ evt: 'mcp', method, tool, caller })), () => {})
 }
 
-let provider = null, mcpEndpoint = null
+let provider = null, mcpEndpoint = null, pinnedEndpoint = null
 export default {
   async fetch(request, env) {
     // Values pasted on a phone often carry a trailing space or newline. / 手机上粘贴的值常带尾随空白。
@@ -123,13 +155,18 @@ export default {
     if (!configured(env)) return setupAnswer(env, request)
     try { provider ??= build(env) } catch (e) { return setupAnswer(env, request, e.message) }
     const clientIp = request.headers.get('cf-connecting-ip') || undefined
-    // /mcp: the same methods as MCP tools (remote MCP, Streamable HTTP). Declared in the manifest only once
-    // MCP_TOOLS_SHA256 is set and the holder publishes it (TAPI-20 §3.8); until then it is not in the manifest on chain.
-    // /mcp：同样的方法作为 MCP 工具（远程 MCP）。只有设置了 MCP_TOOLS_SHA256 且持有人发布后才在清单里声明（TAPI-20 §3.8）；
-    // 在那之前链上清单里没有它。
-    if (new URL(request.url).pathname.replace(/\/+$/, '') === MCP_PATH) {
-      mcpEndpoint ??= createMcpEndpoint({ provider, manifest: provider.manifest ?? manifestOf(env), name: env.TAPE_NAME || undefined, version: VERSION, onMessage: (m) => logMcp(m, env) })
+    const path = new URL(request.url).pathname.replace(/\/+$/, '')
+    // /mcp: the REST methods as MCP tools (remote MCP, Streamable HTTP), exactly as before; never declared in the manifest.
+    // /mcp：REST 方法作为 MCP 工具（远程 MCP），与以前完全相同；从不在清单里声明。
+    if (path === MCP_PATH) {
+      mcpEndpoint ??= createMcpEndpoint({ provider, manifest: restView(provider.manifest ?? manifestOf(env)), name: env.TAPE_NAME || undefined, version: VERSION, onMessage: (m) => logMcp(m, env) })
       return mcpEndpoint.handleRequest(request, { clientIp })
+    }
+    // /mcp/pinned (2.4, experimental): the tool methods, only while MCP_TOOLS_SHA256 is set; the manifest declares it.
+    // /mcp/pinned（2.4，实验性）：工具方法，只在设置了 MCP_TOOLS_SHA256 时提供；清单声明的就是它。
+    if (path === MCP_PINNED_PATH && mcpToolsSha256Of(env)) {
+      pinnedEndpoint ??= createMcpEndpoint({ provider, manifest: toolView(provider.manifest ?? manifestOf(env)), name: env.TAPE_NAME || undefined, version: VERSION, mcpResults: true, onMessage: (m) => logMcp(m, env) })
+      return pinnedEndpoint.handleRequest(request, { clientIp })
     }
     return provider.handleRequest(request, { clientIp })
   },

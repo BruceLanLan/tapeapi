@@ -7,6 +7,69 @@ interfaces.
 
 ## [Unreleased]
 
+## [2.4.0] — 2026-10-21
+
+TapeAPI 2.4.0: MCP tool results that the public service's Worker can sign and declare. The public Worker's code
+(`examples/public-api`) has eight `tool_*` methods whose signed results are MCP tool results, and a second MCP
+endpoint, `/mcp/pinned`, whose only tools they are; `createMcpEndpoint` takes `mcpResults` to serve such methods; and
+the holder console accepts an `mcp` field that binds some of the methods, not all. All of this is **experimental**:
+outside the 2.x compatibility promise, it may change or go away in any 2.x release. The public service
+(`api.tapeapi.fun`), the relay (`relay.tapeapi.fun`) and the website are redeployed from this repository's `main`, so
+they run 2.4 once it is pushed: the console's rule changes then. The rest stays off: the tool methods and `/mcp/pinned`
+exist only while `MCP_TOOLS_SHA256` is set on the Worker, which a deploy neither sets nor clears and which is not set
+on the public service, and without it a 2.4 Worker answers as a 2.3 one, apart from the version; `11.1013.tape`
+declares them only once its holder publishes a new manifest on chain. Until then its manifest and
+`tapeapi connect 11.1013.tape` (`not-ai`) are as they were. The variable's meaning changes for anyone who set it under
+2.3 (see Changed). In the SDK only the card `tapeapi connect` shows for an MCP tool service changes (see Changed); the
+rest of the SDK's code and the command line tools are unchanged apart from the version. Nothing below makes or takes a
+payment, and a receipt still shows what its signer says, not which model ran.
+
+### Added
+
+- **The public service's tool methods and `/mcp/pinned`** (experimental, outside the 2.x compatibility promise). The
+  public Worker's code (`examples/public-api`) has eight more free, read-only methods, `tool_block_number`, `tool_balance`,
+  `tool_token_info`, `tool_token_balance`, `tool_nft_owner`, `tool_pair_price`, `tool_bnb_usd` and `tool_tape_name`:
+  each makes the same read as its REST twin and answers, signed, exactly an MCP tool result `{ content: [{ type:
+  'text', text: <the answer as JSON> }], structuredContent: <the answer> }`, which is what TAPI-20 §3.8 and TAPs #16
+  §4.2 require of a method bound to a tool; a bad argument is a signed `BAD_REQUEST` as before. They are the only
+  tools of a second MCP endpoint, `/mcp/pinned`, and only while the variable `MCP_TOOLS_SHA256` is set (64 hex digits,
+  taken lowercased, surrounding spaces ignored; any other value, such as one with `0x`, keeps the whole service in setup
+  mode, and its `problem` names `MCP_TOOLS_SHA256` and the form it needs): the manifest then lists them after the eight
+  REST methods and ends with `mcp: { endpoint: <PUBLIC_URL>/mcp/pinned, toolsSha256 }`, and only they are held to that
+  value (a signed `TOOLS_CHANGED`, HTTP 409, if their tool text no longer matches, or with `current` null while their
+  tool list cannot be built; the REST methods are not tools of that endpoint and keep answering). `tapeapi-mcp` then
+  verifies and shows their answers, and offers only them; `tapeapi connect` lists all 16 as the manifest's free methods,
+  not as tools, since it does not read the endpoint (see Changed). With the variable set, `/mcp` and the REST methods give
+  the same answers as without it (the same results, the same `/mcp` tools), and without it the Worker is exactly what
+  it was (tested end to end on a local fake chain). **On the public service this stays off**: `api.tapeapi.fun` runs
+  this code once 2.4 is pushed, but serves the tool methods and `/mcp/pinned` only once `MCP_TOOLS_SHA256` is set on
+  it by hand, and `11.1013.tape` declares them only once its holder publishes such a manifest on chain; until both,
+  its manifest and answers are as before (apart from the version) and `tapeapi connect 11.1013.tape` says `not-ai`. New in `@tapeapi/server/mcp`: the `createMcpEndpoint` option `mcpResults` (default false): when the
+  methods' signed results are MCP tool results, a result is passed on after the provenance line (imitations of that
+  line labelled, as `createMcpProxy` does) instead of as JSON text.
+
+### Changed
+
+- **The public Worker's `MCP_TOOLS_SHA256` declares `/mcp/pinned`, no longer `/mcp`** (experimental). In 2.3 the
+  variable added `mcp: { endpoint: <PUBLIC_URL>/mcp, toolsSha256 }` to the manifest and held the eight REST methods,
+  the tools of `/mcp`, to it. From 2.4 `/mcp` is never declared and never held: the variable adds the tool methods,
+  declares `/mcp/pinned`, and must be the digest of `/mcp/pinned`'s tools (`mcpToolsSha256(mcpToolsManifestOf(env))`
+  from `examples/public-api/worker.js`). A value computed for `/mcp` under 2.3 and kept across a redeploy now declares
+  `/mcp/pinned` with the wrong digest: the tool methods answer a signed `TOOLS_CHANGED` (409) while the REST methods
+  and `/mcp` keep answering. The public service has never set the variable; without it nothing changes.
+- **The holder console accepts an `mcp` field whose endpoint's tools are some of the methods, not all**
+  (`site/console`). It refused a manifest with any method that is not one of the tools at `mcp.endpoint` (the rule of
+  the signing proxy, where every method is a tool); TAPs #16 §4.1 allows methods that are not bound. It now refuses
+  only an `mcp` field that binds no method, and before the wallet asks it says which methods are the tools and which
+  are plain methods that MCP clients do not show to a model. The digest, hidden-text and shape checks are unchanged.
+- **`tapeapi connect` lists an MCP tool service's free methods as methods, not as tools** (experimental). A manifest
+  may bind only some of its methods (TAPs #16 §4.1; with the variable set, the public Worker's binds eight of sixteen),
+  and which methods are tools only `tools/list` at the endpoint says, which this command does not read. The card's row
+  said "tools 16 (the manifest's free methods)"; it now says "methods 16 (the manifest's free methods; the tools are
+  the ones tools/list names)", and the note under it says that the card does not say which or how many are tools.
+  `tapeapi-mcp`, which reads the list, offers only the tools, as before. `--json` keeps `service.tools` (2.3) with the
+  same list.
+
 ## [2.3.0] — 2026-10-19
 
 TapeAPI 2.3.0: from nothing to live, step by step, and fewer checks lost to a node that failed for a moment. `tapeapi
@@ -2153,7 +2216,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.0.0...v2.1.0

@@ -36,7 +36,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 > this works on mainnet today; it is checked on local chains and in tests only, and `@tapeapi/sdk/agent` is outside the
 > 2.x compatibility promise. [Bounded agents](#bounded-agents-experimental-not-usable-on-mainnet)
 
-> **Status: released, 2.3.0.** Everything live today is free. TapeAPI follows semantic versioning: code written to the
+> **Status: released, 2.4.0.** Everything live today is free. TapeAPI follows semantic versioning: code written to the
 > 2.0 docs keeps working in every 2.x release, and 1.x receives security fixes for 6 months after 2.0.0. Paid calls
 > (TAPI-22) are experimental and not deployed. Nothing here has had a third-party audit. **Security note:** on 1.0.0 to
 > 1.4.0, streamed AI receipt verification could, under particular chunking, report a truncated or content-injected
@@ -208,12 +208,12 @@ curl shows the signed envelope but checks nothing. The SDK checks it. It is not 
 release (Node.js 20 or later):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz
 ```
 
 The server package (`@tapeapi/server`: providers, the AI sidecar, the MCP proxy) depends on this SDK, which is not on
 npm either, so installed alone it fails with a 404: install both in one command,
-`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-server-2.3.0.tgz`.
+`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-server-2.4.0.tgz`.
 
 ```js
 // try.mjs: node try.mjs
@@ -276,7 +276,7 @@ No outside provider has published a price table on chain yet, so this was run ag
 
 ```bash
 # Terminal 1 (it keeps running). 42.1013.tape is an example name: put your AI provider's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.3.0/tapeapi-sdk-2.3.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash
@@ -371,8 +371,8 @@ the signature adds is accountability. A receipt cannot be disowned, so anyone ru
   and under the 2.0 default both must answer every strict read.
 - **No third-party audit.** Tests: the JavaScript suite (`npm test`), the contract tests (`forge test`) and an
   independent Python implementation of every signature, hash and encoding (`python3 spec/vectors/verify.py`), all
-  three run by CI on every push. On the 2.3.0 release commit, `npm test` in this repository runs
-  2,224 JavaScript tests: 2,221 pass, 3 are skipped, none fail.
+  three run by CI on every push. On the 2.4.0 release commit, `npm test` in this repository runs
+  2,230 JavaScript tests: 2,227 pass, 3 are skipped, none fail.
 
 ## Privacy, plainly
 
@@ -405,7 +405,7 @@ them: eight on 2026-09-30 and 2026-10-01, two on the container-agent formats on 
 review the format, not the merits (TAP-01 §4), so a merge into Draft is not adoption. TAPI-20 to TAPI-27 (with the
 version 2 of TAPI-26 and TAPI-27) remain the basis of the 2.x compatibility promise.
 
-| Our spec | Draft (pull request) | Status, as of 2026-10-19 |
+| Our spec | Draft (pull request) | Status, as of 2026-10-21 |
 |---|---|---|
 | TAPI-20 (core: §3.1 to §3.4, §3.6, §3.10) | Service identity and manifest, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8) | Merged on 2026-10-01 as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md), Draft. The 2.0 default resolves as its §2 says |
 | TAPI-21 | Signed responses, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10) | Merged on 2026-10-04 as [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md), Draft |

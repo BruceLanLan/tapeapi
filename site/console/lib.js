@@ -609,19 +609,27 @@ export function invisibleProblems(tools) {
 }
 
 /** Why the tools read from mcp.endpoint cannot be published with this manifest ([] when they can): their digest must be
- *  the toolsSha256 the service reports, every method must be one of the tools (the proxy makes one method per tool), and
- *  no pinned text may be invisible to the holder who approves it (review MCP-R7).
- *  从 mcp.endpoint 读到的工具为何不能随这份清单发布：摘要必须等于服务报出的 toolsSha256，每个方法都必须是其中一个工具，
- *  钉住的文本不能有批准它的持有人看不见的部分（审查 MCP-R7）。 */
+ *  the toolsSha256 the service reports, at least one method must be one of the tools (a method named after a tool is
+ *  bound to it; other methods may stay plain methods, as TAPs #16 §4.1 allows: 2.4, until then every method had to be a
+ *  tool), and no pinned text may be invisible to the holder who approves it (review MCP-R7).
+ *  从 mcp.endpoint 读到的工具为何不能随这份清单发布：摘要必须等于服务报出的 toolsSha256，至少一个方法是其中的工具（与工具同名的
+ *  方法绑定到该工具；其它方法可以仍是普通方法，#16 §4.1 允许：2.4 起，此前要求每个方法都是工具），钉住的文本不能有批准它的持有人
+ *  看不见的部分（审查 MCP-R7）。 */
 export async function mcpToolsProblems({ mcp, methods, tools }) {
   let digest
   try { digest = await toolsDigest(tools) } catch (e) { return [`the tool list cannot be hashed as clients hash it: ${e.message}`] }
   const out = []
   if (digest !== mcp?.toolsSha256) out.push(`the tools served by ${clip(mcp?.endpoint)} hash to ${digest}, but the service reports toolsSha256 ${clip(mcp?.toolsSha256)}`)
-  const names = new Set(tools.map((t) => t.name))
-  for (const x of Array.isArray(methods) ? methods : []) if (!names.has(x?.name)) out.push(`method ${clip(x?.name)} is not one of the MCP tools`)
+  if (!boundMethods({ methods, tools }).length) out.push(`no method is one of the MCP tools served by ${clip(mcp?.endpoint)}, so the mcp field would bind nothing`)
   for (const p of invisibleProblems(tools)) out.push(`${p}: an invisible or format character (text a model reads but you cannot see)`)
   return out
+}
+
+/** The names of the methods bound to a tool (TAPs #16 §4.1: a method named after a tool), in manifest order.
+ *  绑定到工具的方法名（与工具同名的方法），按清单顺序。 */
+export function boundMethods({ methods, tools }) {
+  const names = new Set((Array.isArray(tools) ? tools : []).map((t) => t?.name))
+  return (Array.isArray(methods) ? methods : []).map((x) => x?.name).filter((n) => typeof n === 'string' && names.has(n))
 }
 
 // JSON as the SDK's safeParseJSON reads it: a prototype key or a repeated key anywhere is refused (two parsers may

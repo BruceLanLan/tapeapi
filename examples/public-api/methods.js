@@ -57,6 +57,54 @@ export const MANIFEST_METHODS = [
     description: '[quorum] Resolve a TapeOut name such as 11.1013.tape: processor contract, container, current holder, whether the container is opened, and whether it publishes a TapeAPI manifest or channel keys.' },
 ]
 
+// ---------------------------------------------------------------------------------------------------------------
+// Tool methods (2.4, experimental) / 工具方法（2.4，实验性）
+// ---------------------------------------------------------------------------------------------------------------
+// The same eight reads as methods whose signed result is an MCP tool result, { content: [{ type: 'text', text }],
+// structuredContent }, and nothing else: what TAPI-20 §3.8 and the MCP tools draft (TAPs #16 §4.2) want of a method
+// bound to a tool. They are in the manifest only while the Worker declares `mcp` (MCP_TOOLS_SHA256, worker.js), and are
+// the tools of /mcp/pinned. The REST methods above answer exactly as before.
+// 同样八个读取，作为签名结果恰为 MCP 工具结果（{ content: [{ type: 'text', text }], structuredContent }，没有别的成员）的方法：
+// 这正是 TAPI-20 §3.8 与 MCP 工具草案（TAPs #16 §4.2）对绑定到工具的方法的要求。只有 Worker 声明 `mcp` 时（MCP_TOOLS_SHA256，
+// 见 worker.js）才在清单里，是 /mcp/pinned 的工具。上面的 REST 方法回答完全不变。
+const TOOL_RETURNS = { content: 'array', structuredContent: 'object' }
+/** The REST method each tool method calls. / 每个工具方法调用的 REST 方法。 */
+export const TOOL_OF = Object.freeze({
+  tool_block_number: 'blockNumber', tool_balance: 'balance', tool_token_info: 'tokenInfo', tool_token_balance: 'tokenBalance',
+  tool_nft_owner: 'nftOwner', tool_pair_price: 'pairPrice', tool_bnb_usd: 'bnbUsd', tool_tape_name: 'tapeName',
+})
+const TOOL_TEXT = {
+  tool_block_number: 'The latest BNB Smart Chain block the service agrees on.',
+  tool_balance: 'Native BNB balance of an address, pinned to one block.',
+  tool_token_info: 'BEP-20 token metadata and total supply, pinned to one block.',
+  tool_token_balance: 'BEP-20 balance of an address (raw and in token units), pinned to one block.',
+  tool_nft_owner: 'Owner of an ERC-721 token, pinned to one block.',
+  tool_pair_price: 'Spot price from a PancakeSwap V2 pair\'s reserves, pinned to one block. Do not use a spot price alone for liquidations.',
+  tool_bnb_usd: 'BNB in USDT from the PancakeSwap V2 WBNB/USDT pair, pinned to one block. A spot price.',
+  tool_tape_name: 'Resolve a TapeOut name such as 11.1013.tape: processor, container, holder, whether it is opened, and its TapeAPI manifest and channel keys.',
+}
+/** The manifest entries of the tool methods, in the order clients show them. / 工具方法的清单声明，按展示顺序。 */
+export const TOOL_MANIFEST_METHODS = Object.entries(TOOL_OF).map(([name, rest]) => {
+  const m = MANIFEST_METHODS.find((x) => x.name === rest)
+  return { name, priceBEM: '0', params: { ...m.params }, returns: { ...TOOL_RETURNS },
+    description: `${TOOL_TEXT[name]} MCP tool result: structuredContent is what ${rest} returns, also as JSON text.` }
+})
+
+/**
+ * The tool methods over the REST handlers of publicMethods(chain): the same call, its answer as an MCP tool result. A
+ * bad argument is still a thrown BAD_REQUEST (a signed refusal, HTTP 400), as #16 §4.2 has it for arguments the tool
+ * refuses; any other failure is thrown as the REST method throws it.
+ * 基于 publicMethods(chain) 的 REST 处理函数的工具方法：同样的调用，回答包成 MCP 工具结果。参数错误仍抛出 BAD_REQUEST（签名拒绝，
+ * HTTP 400），即 #16 §4.2 对工具拒绝参数的处理；其它失败与 REST 方法抛出的相同。
+ * @param {Record<string, Function>} rest  publicMethods(chain)
+ */
+export function toolMethods(rest) {
+  return Object.fromEntries(Object.entries(TOOL_OF).map(([name, of]) => [name, async (params, ctx) => {
+    const r = await rest[of](params, ctx)
+    return { content: [{ type: 'text', text: JSON.stringify(r) }], structuredContent: r }
+  }]))
+}
+
 /**
  * The implementations. `chain` is a reader from createChainReader(); its rpc must answer eth_call with a block object
  * or tag. / 实现。`chain` 是 createChainReader() 的读取器。

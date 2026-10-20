@@ -121,14 +121,17 @@ export const FORMAT_NAMES = Object.freeze(FORMATS.map((f) => f.name))
 // ---------------------------------------------------------------------------------------------------------------
 // A service whose manifest has no `ai` field but carries `mcp: { endpoint, toolsSha256 }` is an MCP tool service: its
 // methods are the tools of an MCP server behind a signing proxy. Only that declaration counts (a /mcp route a server
-// happens to answer is not in the manifest and is never guessed at), and nothing is fetched from the endpoint. The tools
+// happens to answer is not in the manifest and is never guessed at), and nothing is fetched from the endpoint. The methods
 // shown are those tapeapi-mcp can offer: the manifest's free methods (it offers no priced method), as manifestToTools
 // lists them without a paid policy. A method is a tool only when the endpoint's tools/list has a tool of its name (the
-// MCP tools draft, TAPs #16 §4.1: bound), which tapeapi-mcp checks, with the list's digest against mcp.toolsSha256.
+// MCP tools draft, TAPs #16 §4.1: bound), which tapeapi-mcp checks, with the list's digest against mcp.toolsSha256; a
+// manifest may bind only some of its methods (2.4), so the card calls them methods and does not count tools. The --json
+// key stays service.tools (2.3) with the same meaning: these candidate methods.
 // 清单没有 ai 字段、但带 mcp: { endpoint, toolsSha256 } 的服务是 MCP 工具服务：它的方法就是签名代理后面那个 MCP 服务器的工具。
-// 只认这个声明（服务器碰巧应答的 /mcp 路由不在清单里，从不猜测），也不访问端点。显示的工具是 tapeapi-mcp 能提供的那些：清单里的
+// 只认这个声明（服务器碰巧应答的 /mcp 路由不在清单里，从不猜测），也不访问端点。显示的方法是 tapeapi-mcp 能提供的那些：清单里的
 // 免费方法（它不提供收费方法），即不带 paid 策略时 manifestToTools 列出的方法。方法只有在端点的 tools/list 里有同名工具时才是工具
-// （MCP 工具草案 TAPs #16 §4.1：绑定），这由 tapeapi-mcp 检查，同时用列表的摘要核对 mcp.toolsSha256。
+// （MCP 工具草案 TAPs #16 §4.1：绑定），这由 tapeapi-mcp 检查，同时用列表的摘要核对 mcp.toolsSha256；清单可以只绑定部分方法（2.4），
+// 所以卡片称之为方法、不数工具。--json 的键仍是 service.tools（2.3），含义相同：这些候选方法。
 
 /** @experimental The tools an MCP settings snippet is written for. / MCP 配置片段面向的工具。 */
 export const MCP_SNIPPET_TOOLS = Object.freeze(['claude-code', 'claude-desktop'])
@@ -136,8 +139,8 @@ export const MCP_SNIPPET_TOOLS = Object.freeze(['claude-code', 'claude-desktop']
 export const MCP_NOTES = Object.freeze({
   receipt: T('A receipt proves which service key signed which request and answer, and when; it does not prove which program produced the answer, or that it is right.',
     '回执证明哪个服务钥匙在何时签了哪个请求与回答；不证明回答由哪个程序产生，也不证明回答正确。'),
-  tools: T('The tools are the manifest\'s free methods (tapeapi-mcp offers no priced method), pinned on chain by mcp.toolsSha256; this command does not contact the endpoint. tapeapi-mcp reads tools/list, refuses the service if it does not hash to toolsSha256, and offers a method only if the list has a tool of that name.',
-    '工具即清单里的免费方法（tapeapi-mcp 不提供收费方法），由链上的 mcp.toolsSha256 钉住；本命令不访问端点。tapeapi-mcp 读取 tools/list，摘要与 toolsSha256 不符即拒绝该服务，且只提供列表里有同名工具的方法。'),
+  tools: T('The methods shown are the manifest\'s free methods (tapeapi-mcp offers no priced method). Which of them are tools is decided by tools/list at the endpoint, pinned on chain by mcp.toolsSha256; this command does not contact the endpoint, so it does not say which or how many. tapeapi-mcp reads tools/list, refuses the service if it does not hash to toolsSha256, and offers a method only if the list has a tool of that name.',
+    '上面列的是清单里的免费方法（tapeapi-mcp 不提供收费方法）。其中哪些是工具，由端点的 tools/list 决定，并由链上的 mcp.toolsSha256 钉住；本命令不访问端点，所以不说是哪些、有几个。tapeapi-mcp 读取 tools/list，摘要与 toolsSha256 不符即拒绝该服务，且只提供列表里有同名工具的方法。'),
   boundary: NOTES.boundary,
 })
 // 64 lowercase hex digits, as TAPI-20 §3.8, the MCP tools draft (TAPs #16 §2) and the holder console write it (2.3).
@@ -261,7 +264,9 @@ export function renderConnect(r, { lang = 'both', color = false, version = '', n
     row(L('status', '状态'), green(L('usable: an MCP tool service (experimental)', '可用：MCP 工具服务（实验性）')))
     row(L('mcp', 'MCP 端点'), `${s.mcp.endpoint}   (${L('MCP Streamable HTTP, as the manifest declares', 'MCP Streamable HTTP，按清单声明')})`)
     const n = s.tools.length
-    row(L('tools', '工具'), `${n} (${L("the manifest's free methods", '清单里的免费方法')})   toolsSha256 ${s.mcp.toolsSha256.slice(0, 8)}…`)
+    // methods, not tools: which free methods are tools only tools/list at the endpoint says (TAPI-20 §3.8), and this
+    // command does not read it (2.4). / 是方法，不是工具：哪些免费方法是工具只有端点的 tools/list 说了算，本命令不读取它（2.4）。
+    row(L('methods', '方法'), `${n} (${L("the manifest's free methods; the tools are the ones tools/list names", '清单里的免费方法；工具是其中 tools/list 列出的')})   toolsSha256 ${s.mcp.toolsSha256.slice(0, 8)}…`)
     if (n) cont(`${s.tools.slice(0, 10).join(', ')}${n > 10 ? `  … ${L(`${n - 10} more (--json lists all)`, `另有 ${n - 10} 个（--json 列出全部）`)}` : ''}`)
     out.push('')
     out.push(...P(MCP_NOTES.receipt), ...P(MCP_NOTES.tools))
