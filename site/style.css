@@ -657,5 +657,7 @@ body.home {
 body [lang] { display: none; }
 :root[data-lang="zh"] body [lang="zh"], :root[data-lang="en"] body [lang="en"] { display: revert; }
 :root:not([data-lang]) body [lang="en"] { display: revert; }
+:root[data-default-lang="zh"]:not([data-lang]) body [lang="en"] { display: none; }
+:root[data-default-lang="zh"]:not([data-lang]) body [lang="zh"] { display: revert; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

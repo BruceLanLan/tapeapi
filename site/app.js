@@ -8,12 +8,18 @@
 
   var lang = get('tapeapi.lang');
   if (lang !== 'zh' && lang !== 'en') {
-    var nav = (navigator.languages && navigator.languages[0]) || navigator.language || 'en';
-    lang = /^zh/i.test(nav) ? 'zh' : 'en';
+    // A page may name its own default (the home page is Chinese first); the rest follow the browser.
+    // 页面可以自己指定默认语言（首页中文优先），其余页面跟随浏览器。
+    var dflt = root.getAttribute('data-default-lang');
+    if (dflt === 'zh' || dflt === 'en') lang = dflt;
+    else {
+      var nav = (navigator.languages && navigator.languages[0]) || navigator.language || 'en';
+      lang = /^zh/i.test(nav) ? 'zh' : 'en';
+    }
   }
   // <html lang> and the tab title follow the language too (screen readers, bookmarks).
   // <html lang> 与标签页标题也随语言切换（读屏软件、书签）。
-  var TITLE = { en: document.title, zh: 'TapeAPI — 每次 AI 调用都附一张签名回执' };
+  var TITLE = { en: root.getAttribute('data-title-en') || document.title, zh: root.getAttribute('data-title-zh') || 'TapeAPI — 每次 AI 调用都附一张签名回执' };
   function setLang(l) {
     root.setAttribute('data-lang', l);
     root.lang = l === 'zh' ? 'zh-CN' : 'en';
