@@ -21,9 +21,9 @@
 <meta name="twitter:description" content="TapeAPI: put a signing sidecar in front of any OpenAI- or Anthropic-compatible API and every answer carries a receipt anyone can verify against the chain: who signed, which request, which bytes, what usage and price were claimed. Since 2.0 the SDK resolves services as TapeOut's official TAPs say by default.">
 <meta name="twitter:image" content="https://tapeapi.fun/og.png?v=2">
 <link rel="preload" href="fonts/tapeapi-archivo.woff2?v=b19983b68b" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=9d27517a8a">
+<link rel="stylesheet" href="style.css?v=870b7db9ac">
 </head>
-<body>
+<body class="home">
 <header class="hd-bar">
   <div class="hd">
     <a class="hd-brand" href="./" aria-label="TapeAPI"><svg class="hd-mark" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" width="99" height="11" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a>
@@ -37,35 +37,91 @@
     <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button">中文</button><button class="hd-btn" id="theme-btn" type="button">Theme</button></div>
   </div>
 </header>
-<div class="sheet">
+<main class="home-main">
 
-<div class="plate">
-  <p class="docno"><span><span lang="zh">数据手册</span><span lang="en">Datasheet</span></span><span>v3.0.0</span><span>2026-11-06</span><span>BNB 56 · X Layer 196 · Base 8453</span></p>
-
-  <h1 lang="zh">每次 AI 调用，都附一张签名回执</h1>
-  <h1 lang="en">A signed receipt for every AI call</h1>
-
-  <p class="lede" lang="zh">在任何 OpenAI 或 Anthropic 兼容接口前面加一个签名旁路，每个回答都附一张回执：谁签的、答的是哪个请求、回了哪些字节、声称了多少用量和价格。任何人都能对照链上记录核验。你的用户只改 base URL。</p>
-  <p class="lede" lang="en">Put a signing sidecar in front of any OpenAI- or Anthropic-compatible API, and every answer carries a receipt: who signed it, which request it answers, which bytes, and what usage and price were claimed. Anyone can check it against the chain. Your users change only the base URL.</p>
-
-  <div class="badges">
-    <span class="stamp">STABLE 3.x</span>
-    <span class="meta" lang="zh">3.x 接口冻结，遵循语义化版本（新增的 0.1.0 包除外，它们是实验性的） · 未经第三方审计，三套测试每次推送都跑 · 今天免费：付费托管合约未部署 · 代码 MIT · 规范 CC0</span>
-    <span class="meta" lang="en">3.x interfaces frozen, semantic versioning (the new 0.1.0 packages excepted: they are experimental) · No third-party audit; three test suites run on every push · Free today: the paid-call escrow is not deployed · Code MIT · Spec CC0</span>
+<!-- hero / 首屏 -->
+<div class="hm hero">
+  <div class="hero-text">
+    <p class="eyebrow">TAPEAPI 3.0 · v3.0.0 · 2026-11-06 · BNB 56 · X LAYER 196 · BASE 8453</p>
+    <h1 lang="zh">每个 Agent，<br>都能被<span class="ac">陌生人</span>核验</h1>
+    <h1 lang="en">Any agent can be<br>checked by a <span class="ac">stranger</span></h1>
+    <p class="lede" lang="zh">一次 AI 调用留下签名回执；一个 Agent 的身份和花钱规则，别人在自己的机器上就能重新查一遍。不用先认识它，不用相信它自己怎么说。</p>
+    <p class="lede" lang="en">An AI call leaves a signed receipt. An agent's identity and its spending rules can be checked again by anyone, on their own machine. You need not know it first, and you need not take its word.</p>
+    <div class="hcta">
+      <a class="hb pri" href="#new"><span lang="zh">3.0 新增</span><span lang="en">New in 3.0</span><span class="ar" aria-hidden="true">↓</span></a>
+      <a class="hb" href="playground/"><span lang="zh">在线试用</span><span lang="en">Try it live</span><span class="ar" aria-hidden="true">→</span></a>
+      <a class="hb ghost" href="#try"><span lang="zh">安装</span><span lang="en">Install</span></a>
+    </div>
+    <ul class="chips">
+      <li class="chip-on">STABLE 3.x</li>
+      <li lang="zh">未经第三方审计</li><li lang="en">No third-party audit</li>
+      <li lang="zh">今天免费</li><li lang="en">Free today</li>
+      <li lang="zh">代码 MIT · 规范 CC0</li><li lang="en">Code MIT · Spec CC0</li>
+    </ul>
   </div>
-  <div class="cta">
-    <a class="btn pri" href="#receipt"><span lang="zh">看一张回执</span><span lang="en">See a receipt</span><span class="ar" aria-hidden="true">↓</span></a>
-    <a class="btn" href="playground/"><span lang="zh">在线试用</span><span lang="en">Try it live</span><span class="ar" aria-hidden="true">→</span></a>
-    <a class="btn" href="#new"><span lang="zh">3.0 新增</span><span lang="en">New in 3.0</span><span class="ar" aria-hidden="true">↓</span></a>
-    <a class="btn ghost" href="#try"><span lang="zh">安装</span><span lang="en">Install</span><span class="ar" aria-hidden="true">↓</span></a>
+
+  <div class="hero-card">
+    <div class="pcard" role="group" aria-labelledby="pc-t">
+      <div class="pc-top"><span id="pc-t">AGENT PASSPORT</span><span class="pc-ex" lang="zh">示例，不是真实 Agent</span><span class="pc-ex" lang="en">Example, not a real agent</span></div>
+      <dl class="pc-rows">
+        <div><dt lang="zh">ERC-8004 身份</dt><dt lang="en">ERC-8004 identity</dt><dd>agent #… @ 0x…</dd></div>
+        <div><dt lang="zh">TapeOut 电路</dt><dt lang="en">TapeOut circuit</dt><dd>#… @ 0x…</dd></div>
+        <div><dt lang="zh">读取区块</dt><dt lang="en">Read at block</dt><dd lang="zh">钉住在同一个区块</dd><dd lang="en">pinned to one block</dd></div>
+        <div><dt lang="zh">运营方</dt><dt lang="en">Operators</dt><dd lang="zh">2 家，答案必须一致</dd><dd lang="en">2; answers must match</dd></div>
+      </dl>
+      <div class="pc-verdict">
+        <p class="pc-v">UNAVAILABLE</p>
+        <p lang="zh">两家运营方读到的不一致，所以结果是「不知道」，不猜。</p>
+        <p lang="en">The two operators read different answers, so the result is "unknown". It does not guess.</p>
+      </div>
+    </div>
+    <p class="pc-cap" lang="zh">读不一致就说不知道，是这套机制最重要的一条。</p>
+    <p class="pc-cap" lang="en">Saying "unknown" when the reads disagree is the most important rule in this mechanism.</p>
   </div>
 </div>
 
-<section id="receipt">
-  <div class="shead"><span class="idx">01</span><h2 lang="zh">一张回执长什么样</h2><h2 lang="en">What a Receipt Looks Like</h2></div>
-  <p class="tcap" lang="zh">AI 用量回执 · 结构取自 TAPI-21 规范，数值为示例</p>
-  <p class="tcap" lang="en">An AI usage receipt · structure from the TAPI-21 spec, example values</p>
-  <div class="receipt">
+<!-- four layers / 四层 -->
+<section id="layers" class="hs">
+  <div class="hm">
+    <p class="eyebrow" lang="zh">四层，都能自己查</p><p class="eyebrow" lang="en">Four layers, each one checkable by you</p>
+    <h2 lang="zh">身份、工具、账、规矩</h2><h2 lang="en">Identity, tools, accounts, rules</h2>
+    <div class="layers">
+      <article class="lcard">
+        <div class="lc-top"><h3 lang="zh">身份</h3><h3 lang="en">Identity</h3><span class="tag new" lang="zh">3.0 新增 · 实验性</span><span class="tag new" lang="en">New in 3.0 · experimental</span></div>
+        <p lang="zh">同一钉块、两家以上运营方一致，才说这个 ERC-8004 身份和这枚 TapeOut 电路是同一个钱包持有。</p>
+        <p lang="en">Only when two or more operators agree at one pinned block does it say that one wallet holds this ERC-8004 identity and this TapeOut circuit.</p>
+        <p class="cmd"><code>tapeapi passport &lt;<span lang="zh">名字</span><span lang="en">name</span>&gt;</code></p>
+      </article>
+      <article class="lcard">
+        <div class="lc-top"><h3 lang="zh">工具</h3><h3 lang="en">Tools</h3><span class="tag" lang="zh">1.0 起</span><span class="tag" lang="en">Since 1.0</span></div>
+        <p lang="zh">MCP 工具定义的哈希钉在链上，也钉在你本机。之后定义变了，就拒绝这个服务。</p>
+        <p lang="en">The hash of an MCP server's tool definitions is pinned on chain and on your machine. If the definitions change later, that service is refused.</p>
+        <p class="cmd"><code>tapeapi-mcp</code></p>
+      </article>
+      <article class="lcard">
+        <div class="lc-top"><h3 lang="zh">账</h3><h3 lang="en">Accounts</h3><span class="tag" lang="zh">2.x 起 · 3.0 加清单</span><span class="tag" lang="en">Since 2.x · statement in 3.0</span></div>
+        <p lang="zh">回执和账单逐行对；3.0 加按服务、模型、天汇总的清单，和发出前拦住超额的本地预算。</p>
+        <p lang="en">Receipts are set against a bill row by row. 3.0 adds a statement by service, model and day, and a local budget that stops an over-limit call before it is sent.</p>
+        <p class="cmd"><code>tapeapi reconcile</code></p>
+      </article>
+      <article class="lcard">
+        <div class="lc-top"><h3 lang="zh">规矩</h3><h3 lang="en">Rules</h3><span class="tag new" lang="zh">3.0 新增 · 实验性</span><span class="tag new" lang="en">New in 3.0 · experimental</span></div>
+        <p lang="zh">委托人的花钱规则写成小电路，对方自己重跑；没电路、哈希不对、已撤销，一律拒绝。</p>
+        <p lang="en">The principal's spending rule is written as a small circuit that the other side re-runs. No circuit, a wrong hash, or a revoked binding: denied.</p>
+        <p class="cmd"><code>admit()</code></p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- receipt anatomy / 回执解剖 -->
+<section id="receipt" class="hs band">
+  <div class="hm">
+    <p class="eyebrow" lang="zh">回执长什么样</p><p class="eyebrow" lang="en">What a receipt looks like</p>
+    <h2 lang="zh">每个回答，附一张谁都能核验的回执</h2><h2 lang="en">Every answer carries a receipt anyone can check</h2>
+    <p class="sub" lang="zh">AI 用量回执的结构取自 TAPI-21 规范，数值为示例。</p>
+    <p class="sub" lang="en">The structure of an AI usage receipt comes from the TAPI-21 spec; the values are examples.</p>
+    <div class="receipt">
 <div class="code"><div class="cap">x-tapeapi-receipt</div><pre class="sys">{ "id": "chatcmpl-v1", "ok": true,
   "container": "0x…",                             <i>1</i>
   "ts": 1790000000,
@@ -95,8 +151,7 @@
       <li lang="zh"><code>model</code>：只是上游报的名字。回执不证明实际跑的是哪个模型。</li>
       <li lang="en"><code>model</code>: only the name the upstream reported. A receipt does not prove which model actually ran.</li>
     </ol>
-  </div>
-
+    </div>
   <div class="panel pad proves">
     <p class="tcap" lang="zh">一张回执证明什么</p>
     <p class="tcap" lang="en">What one receipt proves</p>
@@ -117,11 +172,15 @@
     <p class="note" lang="zh"><b>回执不证明实际跑的是哪个模型。</b>服务方可以把便宜模型的回答标成贵的。签名带来的是可追责：回执无法抵赖，任何人发测试请求、公开结果，都会留下证据。</p>
     <p class="note" lang="en"><b>A receipt does not prove which model actually ran.</b> A provider could label a cheaper model's answer as a dearer one. What the signature adds is accountability: a receipt cannot be disowned, so anyone sending test prompts and publishing the results leaves evidence.</p>
   </div>
-  <div class="more"><a class="doclink" href="verify/" lang="zh">在浏览器里核验一张回执 →</a><a class="doclink" href="verify/" lang="en">Check a receipt in your browser →</a><a class="doclink" href="docs/zh/ai-providers" lang="zh">回执怎么签、怎么验 →</a><a class="doclink" href="docs/en/ai-providers" lang="en">How receipts are signed and checked →</a></div>
+    <div class="more"><a class="doclink" href="verify/" lang="zh">在浏览器里核验一张回执 →</a><a class="doclink" href="verify/" lang="en">Check a receipt in your browser →</a><a class="doclink" href="docs/zh/ai-providers" lang="zh">回执怎么签、怎么验 →</a><a class="doclink" href="docs/en/ai-providers" lang="en">How receipts are signed and checked →</a></div>
+  </div>
 </section>
 
-<section id="how">
-  <div class="shead"><span class="idx">02</span><h2 lang="zh">它怎么接进来</h2><h2 lang="en">How It Fits In</h2></div>
+<!-- how it fits / 怎么接进来 -->
+<section id="how" class="hs">
+  <div class="hm">
+    <p class="eyebrow" lang="zh">接入方式</p><p class="eyebrow" lang="en">How it fits in</p>
+    <h2 lang="zh">它怎么接进来</h2><h2 lang="en">The sidecar, the receipt, the chain</h2>
   <figure class="flow">
     <div class="figbox">
       <svg class="flow-h" viewBox="0 0 700 200" width="700" height="200" role="img" aria-labelledby="flow-t">
@@ -200,70 +259,125 @@
     <p class="plain" lang="zh">旁路会经手用户的 API 密钥，所以由服务方自己部署；TapeAPI 不托管。链上价目表只是公开声明，不经结算，用户照旧向服务方付款。支持 OpenAI Chat、Responses、Anthropic Messages 和 Embeddings，流式也支持。</p>
     <p class="plain" lang="en">The sidecar handles your users' API keys, so the provider runs it; TapeAPI never hosts it. The on-chain prices are a public statement, not settled: users pay the provider as before. OpenAI Chat, Responses, Anthropic Messages and Embeddings, streams included.</p>
   </figure>
+  </div>
 </section>
 
-<section id="start">
-  <div class="shead"><span class="idx">03</span><h2 lang="zh">你是谁，从哪开始</h2><h2 lang="en">Who You Are, Where to Start</h2></div>
-  <p class="tcap" lang="zh">按你的角色选一行，每条大约 5 分钟</p>
-  <p class="tcap" lang="en">Pick your row; each takes about five minutes</p>
-  <div class="paths">
-    <div class="path-row">
-      <div class="who"><span class="no">FOR 01</span><h3 lang="zh">中转站 / 网关运营者</h3><h3 lang="en">Relay or gateway operators</h3></div>
-      <p lang="zh">你的用户看不到上游。加一个旁路，每个回答附一张你签的回执，用户能核对你声称的用量与价格；它不证明上游模型，证明的是你签了什么。</p>
-      <p lang="en">Your users cannot see your upstream. Add a sidecar and every answer carries a receipt you signed: users can check the usage and price you claimed. It does not prove the upstream model; it proves what you signed.</p>
-      <div class="go"><a class="doclink" href="docs/zh/ai-providers" lang="zh">AI 服务方指南 →</a><a class="doclink" href="docs/en/ai-providers" lang="en">Guide for AI providers →</a></div>
+<!-- three paths / 三条路 -->
+<section id="start" class="hs band">
+  <div class="hm">
+    <p class="eyebrow" lang="zh">你是谁，从哪开始</p><p class="eyebrow" lang="en">Who you are, where to start</p>
+    <h2 lang="zh">三种人，三条路</h2><h2 lang="en">Three kinds of reader, three ways in</h2>
+    <div class="paths3">
+      <div class="pcell">
+        <p class="p-tag" lang="zh">AI 服务方</p><p class="p-tag" lang="en">AI providers</p>
+        <h3 lang="zh">给你的接口加签名回执</h3><h3 lang="en">Add signed receipts to your API</h3>
+        <p lang="zh">在 OpenAI 或 Anthropic 兼容接口前面放一个签名旁路，你的用户只改 base URL。</p>
+        <p lang="en">Put a signing sidecar in front of an OpenAI- or Anthropic-compatible API. Your users change only the base URL.</p>
+        <a class="go" href="docs/zh/ai-providers" lang="zh">给 AI 服务方 →</a><a class="go" href="docs/en/ai-providers" lang="en">For AI providers →</a>
+      </div>
+      <div class="pcell">
+        <p class="p-tag" lang="zh">调用方</p><p class="p-tag" lang="en">Callers</p>
+        <h3 lang="zh">核验你收到的每个回答</h3><h3 lang="en">Check every answer you receive</h3>
+        <p lang="zh">用 SDK 或 <code>tapeapi-verify</code> 对照链上记录，核验回执、对账、钉住 MCP 工具。</p>
+        <p lang="en">Use the SDK or <code>tapeapi-verify</code> to check receipts against the chain, reconcile bills and pin MCP tools.</p>
+        <a class="go" href="docs/zh/consume" lang="zh">调用一个服务 →</a><a class="go" href="docs/en/consume" lang="en">Call a service →</a>
+      </div>
+      <div class="pcell">
+        <p class="p-tag" lang="zh">Agent 与守门方</p><p class="p-tag" lang="en">Agents and gatekeepers</p>
+        <h3 lang="zh">先查它，再让它调用</h3><h3 lang="en">Check it first, then let it call</h3>
+        <p lang="zh">护照查身份，策略电路重跑规则，本地预算拦住超额。3.0 新增，实验性。</p>
+        <p lang="en">The passport checks identity, a policy circuit re-runs the rule, a local budget stops overspend. New in 3.0, experimental.</p>
+        <a class="go" href="docs/zh/passport" lang="zh">Agent 护照 →</a><a class="go" href="docs/en/passport" lang="en">Agent Passport →</a>
+      </div>
     </div>
-    <div class="path-row">
-      <div class="who"><span class="no">FOR 02</span><h3 lang="zh">写 agent 的开发者</h3><h3 lang="en">Agent developers</h3></div>
-      <p lang="zh">把 <code>createVerifyingFetch</code> 接进官方 SDK，回执核验失败就抛错；命令行里的编码助手读不到回执，走本地的 <code>tapeapi-verify</code> 代理。</p>
-      <p lang="en">Plug <code>createVerifyingFetch</code> into the official SDK and a bad receipt throws; a command-line coding assistant cannot read receipts, so it goes through the local <code>tapeapi-verify</code> proxy.</p>
-      <div class="go"><a class="doclink" href="docs/zh/ai-providers#你的用户要做什么" lang="zh">调用服务 →</a><a class="doclink" href="docs/en/ai-providers#what-your-users-do" lang="en">Call a service →</a></div>
-    </div>
-    <div class="path-row">
-      <div class="who"><span class="no">FOR 03</span><h3 lang="zh">MCP 服务作者</h3><h3 lang="en">MCP server authors</h3></div>
-      <p lang="zh">工具结果是服务器随口给的，工具定义批准后也能被改。放一个签名代理：定义的哈希钉在链上，每个结果都签名。还没有第三方服务器接入。</p>
-      <p lang="en">A tool result is whatever the server sent, and a definition can change after you approved it. Put a signing proxy in front: the hash of your definitions is pinned on chain and every result is signed. No third-party server has been taped out yet.</p>
-      <div class="go"><a class="doclink" href="docs/zh/mcp" lang="zh">MCP 指南 →</a><a class="doclink" href="docs/en/mcp" lang="en">MCP guide →</a></div>
-    </div>
-    <div class="path-row">
-      <div class="who"><span class="no">FOR 04</span><h3 lang="zh">TapeOut 社区 · 电路持有人</h3><h3 lang="en">TapeOut community, circuit holders</h3></div>
-      <p lang="zh">TapeAPI 把「服务」加进 TapeOut：电路是身份，容器放清单，每个回答带签名。规则走官方 TAP 流程；合并为 Draft 不等于被采纳。</p>
-      <p lang="en">TapeAPI adds services to TapeOut: the circuit is the identity, the container holds the manifest, every answer is signed. The rules go through the official TAP process; a merge into Draft is not adoption.</p>
-      <div class="go"><a class="doclink" href="console/" lang="zh">持有人操作台 →</a><a class="doclink" href="console/" lang="en">Holder console →</a><a class="doclink" href="docs/zh/provide" lang="zh">运行服务 →</a><a class="doclink" href="docs/en/provide" lang="en">Run a service →</a></div>
-    </div>
-    <div class="path-row">
-      <div class="who"><span class="no">FOR 05</span><h3 lang="zh">评审者与生态里的其他项目</h3><h3 lang="en">Reviewers and other projects</h3></div>
-      <p lang="zh">规范 CC0、代码 MIT；三套测试（JS、合约、独立的 Python 实现）每次推送都跑；没有第三方审计；1.0–1.4 的流式回执缺陷在 1.5 修了。</p>
-      <p lang="en">Specs CC0, code MIT; three test suites (JS, contracts, an independent Python implementation) run on every push; no third-party audit; the streamed-receipt flaw of 1.0 to 1.4 was fixed in 1.5.</p>
-      <div class="go"><a class="doclink" href="https://github.com/BruceLanLan/tapeapi" lang="zh">源代码 →</a><a class="doclink" href="https://github.com/BruceLanLan/tapeapi" lang="en">Source →</a><a class="doclink" href="docs/zh/reference#安全说明" lang="zh">安全说明 →</a><a class="doclink" href="docs/en/reference#security-note" lang="en">Security note →</a></div>
+    <div class="more">
+      <a class="doclink" href="docs/zh/provide" lang="zh">运行一个服务（电路持有人） →</a><a class="doclink" href="docs/en/provide" lang="en">Run a service (circuit holders) →</a>
+      <a class="doclink" href="docs/zh/mcp" lang="zh">MCP 指南 →</a><a class="doclink" href="docs/en/mcp" lang="en">MCP guide →</a>
+      <a class="doclink" href="console/" lang="zh">持有人操作台 →</a><a class="doclink" href="console/" lang="en">Holder console →</a>
+      <a class="doclink" href="docs/zh/reference#安全说明" lang="zh">安全说明 →</a><a class="doclink" href="docs/en/reference#security-note" lang="en">Security note →</a>
     </div>
   </div>
 </section>
 
-<section id="try">
-  <div class="shead"><span class="idx">04</span><h2 lang="zh">试一试、安装</h2><h2 lang="en">Try It, Install It</h2></div>
-  <div class="steps">
-    <div class="stp">
-      <p class="step"><span class="no">A · curl</span><span lang="zh">向公共服务要 BNB 价格。curl 只显示签名信封，不做任何核对；验签用 SDK 或调试台。</span><span lang="en">Ask the public service for the BNB price. curl shows the signed envelope and checks nothing; the SDK or the playground verifies it.</span></p>
+<!-- new in 3.0 and the limits / 3.0 新增与限制 -->
+<section id="new" class="hs">
+  <div class="hm">
+    <div class="duo2">
+      <div class="newcard">
+        <p class="eyebrow">NEW IN 3.0</p>
+        <h3 lang="zh">三样新东西，都在你自己的机器上完成</h3><h3 lang="en">Three new things, all done on your own machine</h3>
+        <ul class="nlist">
+          <li lang="zh"><b>Agent 护照</b>：<code>tapeapi passport</code>、<code>@tapeapi/passport</code>。在同一个钉住的区块上读链，两家以上运营方一致才下结论：这个 ERC-8004 身份和这枚 TapeOut 电路，是不是同一个钱包持有；读不一致就说「不知道」。</li>
+          <li lang="en"><b>Agent Passport</b>: <code>tapeapi passport</code>, <code>@tapeapi/passport</code>. It reads the chain at one pinned block and concludes only when two or more operators agree: whether one wallet holds this ERC-8004 identity and this TapeOut circuit. When the reads disagree it says "unknown".</li>
+          <li lang="zh"><b>策略电路</b>：<code>@tapeapi/policy-circuit</code>。花钱的规则写成小电路，对方自己重跑，拿不准就拒绝。</li>
+          <li lang="en"><b>Policy circuits</b>: <code>@tapeapi/policy-circuit</code>. A spending rule is written as a small circuit that the other side re-runs; when unsure, it denies.</li>
+          <li lang="zh"><b>花费清单与本地预算</b>：<code>tapeapi receipts statement</code>。按服务、模型、天汇总，并在调用发出之前拦住超额。</li>
+          <li lang="en"><b>Spend statement and local budget</b>: <code>tapeapi receipts statement</code>. It sums spend by service, model and day, and stops an over-limit call before it is sent.</li>
+        </ul>
+        <div class="more"><a class="doclink" href="docs/zh/passport" lang="zh">Agent 护照 →</a><a class="doclink" href="docs/en/passport" lang="en">Agent Passport →</a><a class="doclink" href="docs/zh/policy-circuit" lang="zh">策略电路 →</a><a class="doclink" href="docs/en/policy-circuit" lang="en">Policy circuits →</a><a class="doclink" href="docs/zh/upgrade-3.0" lang="zh">升级到 3.0 →</a><a class="doclink" href="docs/en/upgrade-3.0" lang="en">Upgrading to 3.0 →</a></div>
+      </div>
+      <div class="limits" id="limits30">
+        <p class="eyebrow warn" lang="zh">限制，如实说</p><p class="eyebrow warn" lang="en">The limits, plainly</p>
+        <ul>
+          <li lang="zh">新增的两个包是 0.1.0、实验性，不在兼容承诺之内。</li><li lang="en">The two new packages are 0.1.0, experimental, and outside the compatibility promise.</li>
+          <li lang="zh">相关的 TAP 草案（#83、#84）已提交（评审中），未合并；提交不等于被采纳。</li><li lang="en">The related TAP drafts (#83, #84) are submitted (in review), not merged; submitting is not adoption.</li>
+          <li lang="zh">主网上目前还没有已知的 CONFIRMED 护照。</li><li lang="en">No CONFIRMED passport is known on mainnet yet.</li>
+          <li lang="zh">策略电路只约束去检查它的一方。</li><li lang="en">A policy circuit binds only those who check it.</li>
+          <li lang="zh">回执只证明签名方说了什么。</li><li lang="en">A receipt proves only what its signer said.</li>
+          <li lang="zh">付费托管合约未经审计、未部署，今天不收任何费用。</li><li lang="en">The paid-call escrow is not audited and not deployed; nothing is charged today.</li>
+          <li lang="zh">3.0 有五项破坏性修改，每一项（除 Node.js 22 下限）都有保留 2.x 行为的选项。</li><li lang="en">3.0 has five breaking changes; each but the Node.js 22 floor has an option that keeps the 2.x behaviour.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="strip since2">
+      <span class="stamp">DEFAULT SINCE 2.0</span>
+      <p lang="zh"><b>标准即默认。</b>不传选项，SDK 就按 TapeOut 官方 TAP 解析服务：每次解析钉一个区块，链 ID 与持有人要所有节点一致，名字未开通或未付费就得到一个明确的状态，而不是悄悄解析成功。TAP-11 与 TAP-13 由我们起草，已合并为 Draft（合并不等于被采纳）。要 1.x 的行为，传 <code>conform: false</code>。</p>
+      <p lang="en"><b>Standards by default.</b> Pass no options and the SDK resolves a service as TapeOut's official TAPs say: one pinned block, all nodes agreeing on chain and owner, and a named status for a name not opened or not paid up. TAP-11 and TAP-13 to TAP-18, drafts we wrote, are merged as Drafts (a merge is not adoption). For 1.x: <code>conform: false</code>.</p>
+      <p id="agents" lang="zh">同一版首次公开三项实验性功能——有界代理、美元报价、容器间评价。它们依赖的托管合约未经审计、未部署，主网不可用，今天只在本地链与测试中可以验证，也不收任何费用。</p>
+      <p lang="en">The same release first makes public three experimental features: bounded agents, US-dollar prices and reviews between containers. The escrow they rely on is not audited and not deployed, so they do not work on mainnet; today they are checked on local chains and in tests only, and nothing is charged.</p>
+      <div class="more"><a class="doclink" href="docs/zh/upgrade-2.0" lang="zh">升级到 2.0 →</a><a class="doclink" href="docs/en/upgrade-2.0" lang="en">Upgrading to 2.0 →</a><a class="doclink" href="docs/zh/reference#20-新增" lang="zh">2.0 改了什么、实验性功能的细节 →</a><a class="doclink" href="docs/en/reference#new-in-20" lang="en">What changed, and the experimental features in detail →</a></div>
+    </div>
+  </div>
+</section>
+
+<!-- install / 安装 -->
+<section id="try" class="hs">
+  <div class="hm">
+    <div class="install">
+      <div class="in-text">
+        <p class="eyebrow dk" lang="zh">安装</p><p class="eyebrow dk" lang="en">Install</p>
+        <h3 lang="zh">从 GitHub 发布页安装</h3><h3 lang="en">Install from the GitHub release</h3>
+        <p lang="zh">包还不在 npm 上，从 GitHub 发布页装进一个空目录。需要 Node.js 22 或更高版本。</p>
+        <p lang="en">The packages are not on npm yet; install them from the GitHub release into an empty directory. Node.js 22 or later is required.</p>
+      </div>
+      <div class="code in-code"><div class="cap">shell</div><pre>npm install \
+  https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz \
+  https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-server-3.0.0.tgz</pre></div>
+    </div>
+    <div class="steps tryit">
+      <div class="stp">
+        <p class="step"><span class="no">A · curl</span><span lang="zh">向公共服务要 BNB 价格。curl 只显示签名信封，不做任何核对；验签用 SDK 或调试台。</span><span lang="en">Ask the public service for the BNB price. curl shows the signed envelope and checks nothing; the SDK or the playground verifies it.</span></p>
 <div class="code"><div class="cap">shell</div><pre class="sys">curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/json' -d '{"id":"1","params":{}}'</pre></div>
-    </div>
-    <div class="stp">
-      <p class="step"><span class="no">B · SDK</span><span lang="zh">SDK 还没发到 npm，从 GitHub Release 装进一个空目录（Node.js 22 或以上）。存为 <code>try.mjs</code>，运行 <code>node try.mjs</code>：SDK 从链上解析服务、验签，验签成功才返回结果。</span><span lang="en">The SDK is not on npm yet; install it from the GitHub release into an empty directory (Node.js 22 or later). Save this as <code>try.mjs</code> and run <code>node try.mjs</code>: the SDK resolves the service from the chain and verifies the answer before it returns.</span></p>
-<div class="code"><div class="cap">shell</div><pre>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz</pre></div>
-    </div>
-    <div class="stp wide">
+      </div>
+      <div class="stp">
+        <p class="step"><span class="no">B · SDK</span><span lang="zh">存为 <code>try.mjs</code>，在装好 SDK 的目录里运行 <code>node try.mjs</code>：SDK 从链上解析服务、验签，验签成功才返回结果。</span><span lang="en">Save this as <code>try.mjs</code> and run <code>node try.mjs</code> in the directory where the SDK is installed: the SDK resolves the service from the chain and verifies the answer before it returns.</span></p>
 <div class="code"><div class="cap">try.mjs</div><pre><span class="k">import</span> { createTapeAPI, rpcUrlsFor } <span class="k">from</span> <span class="s">'@tapeapi/sdk'</span>
 <span class="k">const</span> api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })      <span class="c">// <span lang="zh">3 家运营方的节点</span><span lang="en">nodes of 3 operators</span></span>
 <span class="k">const</span> service = <span class="k">await</span> api.resolve(<span class="s">'11.1013.tape'</span>)            <span class="c">// <span lang="zh">按官方 TAP 解析</span><span lang="en">resolved as the official TAPs say</span></span>
 <span class="k">const</span> { result, verified } = <span class="k">await</span> api.call(service, <span class="s">'bnbUsd'</span>, {})
 console.log(result.bnbUsd, verified)                         <span class="c">// <span lang="zh">验签成功才为 true</span><span lang="en">true only after the signature checked out</span></span></pre></div>
+      </div>
     </div>
+    <div class="more"><a class="doclink" href="playground/" lang="zh">无需安装：调试台在浏览器里运行 SDK →</a><a class="doclink" href="playground/" lang="en">Nothing to install: the playground runs the SDK in your browser →</a><a class="doclink" href="docs/zh/ai-providers#你的用户要做什么" lang="zh">AI 回执的完整示例在手册 →</a><a class="doclink" href="docs/en/ai-providers#what-your-users-do" lang="en">The full AI-receipt example is in the docs →</a></div>
   </div>
-  <div class="more"><a class="doclink" href="playground/" lang="zh">无需安装：调试台在浏览器里运行 SDK →</a><a class="doclink" href="playground/" lang="en">Nothing to install: the playground runs the SDK in your browser →</a><a class="doclink" href="docs/zh/ai-providers#你的用户要做什么" lang="zh">AI 回执的完整示例在手册 →</a><a class="doclink" href="docs/en/ai-providers#what-your-users-do" lang="en">The full AI-receipt example is in the docs →</a></div>
 </section>
 
-<section id="live">
-  <div class="shead"><span class="idx">05</span><h2 lang="zh">现已上线</h2><h2 lang="en">Live Now</h2></div>
+<!-- live now / 现已上线 -->
+<section id="live" class="hs band">
+  <div class="hm">
+    <p class="eyebrow" lang="zh">现已上线</p><p class="eyebrow" lang="en">Live now</p>
+    <h2 lang="zh">我们运行的，和你自己运行的</h2><h2 lang="en">What we run, and what you run</h2>
   <div class="live">
     <div class="col">
       <p class="tcap" lang="zh">我们运行的 · 免费（付费托管合约未部署）· 无需注册</p>
@@ -287,37 +401,14 @@ console.log(result.bnbUsd, verified)                         <span class="c">// 
     </div>
   </div>
   <p class="sitelinks"><a href="verify/"><span lang="zh">回执核验页</span><span lang="en">Receipt checker</span></a><a href="playground/"><span lang="zh">调试台</span><span lang="en">Playground</span></a><a href="directory/"><span lang="zh">服务方目录</span><span lang="en">Provider directory</span></a><a href="console/"><span lang="zh">持有人操作台</span><span lang="en">Holder console</span></a><a href="dashboard/"><span lang="zh">我的服务</span><span lang="en">Dashboard</span></a><a href="status/"><span lang="zh">状态</span><span lang="en">Status</span></a></p>
-</section>
-
-<div class="duo">
-<section id="new">
-  <div class="shead"><span class="idx">06</span><h2 lang="zh">3.0 与 2.0 新增</h2><h2 lang="en">New in 3.0 and 2.0</h2></div>
-  <div class="strip">
-    <span class="stamp">NEW IN 3.0</span>
-    <p lang="zh"><b>每个 Agent 都能被陌生人核验。</b>三样新东西，让你在自己的机器上查清一个 AI Agent 是谁、守什么规矩：<b>Agent 护照</b>（<code>tapeapi passport</code>、<code>@tapeapi/passport</code>）在同一个钉住的区块上读链，两家以上运营方一致才下结论，说明这个 ERC-8004 身份和这枚 TapeOut 电路是不是同一个钱包持有，读不一致就说「不知道」；<b>策略电路</b>（<code>@tapeapi/policy-circuit</code>）把花钱的规则写成小电路，对方自己重跑一遍，拿不准就拒绝；<b>花费清单与本地预算</b>（<code>tapeapi receipts statement</code>）按服务、模型、天汇总花费，并在调用发出之前拦住超额。</p>
-    <p lang="en"><b>Any agent can be checked by a stranger.</b> Three new things let you check, on your own machine, who an AI agent is and what rules it keeps: the <b>Agent Passport</b> (<code>tapeapi passport</code>, <code>@tapeapi/passport</code>) reads the chain at one pinned block and concludes only when two or more operators agree, saying whether one wallet holds this ERC-8004 identity and this TapeOut circuit, and "unknown" when the reads disagree; <b>policy circuits</b> (<code>@tapeapi/policy-circuit</code>) write a spending rule as a small circuit that the other side re-runs, and deny when unsure; a <b>spend statement and local budget</b> (<code>tapeapi receipts statement</code>) sum spend by service, model and day and stop an over-limit call before it is sent.</p>
-    <div id="limits30">
-      <p lang="zh">限制，如实说：新增的两个包是 0.1.0、实验性，不在兼容承诺之内；它们相关的 TAP 草案（#83、#84）已提交，评审中，未合并，提交不等于被采纳；主网上目前还没有已知的 CONFIRMED 护照；策略电路只约束去检查它的一方；回执只证明签名方说了什么。3.0 有五项破坏性修改，每一项（除 Node.js 22 下限）都有保留 2.x 行为的选项。</p>
-      <p lang="en">The limits, plainly: the two new packages are 0.1.0, experimental and outside the compatibility promise; the TAP drafts they relate to (#83, #84) are submitted and in review, not merged, and submitting is not adoption; no CONFIRMED passport is known on mainnet yet; a policy circuit binds only those who check it; a receipt proves only what its signer said. 3.0 has five breaking changes, each but the Node.js 22 floor with an option that keeps the 2.x behaviour.</p>
-    </div>
-    <div class="more"><a class="doclink" href="docs/zh/passport" lang="zh">Agent 护照 →</a><a class="doclink" href="docs/en/passport" lang="en">Agent Passport →</a><a class="doclink" href="docs/zh/policy-circuit" lang="zh">策略电路 →</a><a class="doclink" href="docs/en/policy-circuit" lang="en">Policy circuits →</a><a class="doclink" href="docs/zh/upgrade-3.0" lang="zh">升级到 3.0 →</a><a class="doclink" href="docs/en/upgrade-3.0" lang="en">Upgrading to 3.0 →</a></div>
-  </div>
-  <div class="strip">
-    <span class="stamp">DEFAULT SINCE 2.0</span>
-    <p lang="zh"><b>标准即默认。</b>不传选项，SDK 就按 TapeOut 官方 TAP 解析服务：每次解析钉一个区块，链 ID 与持有人要所有节点一致，名字未开通或未付费就得到一个明确的状态，而不是悄悄解析成功。TAP-11 与 TAP-13 由我们起草，已合并为 Draft（合并不等于被采纳）。要 1.x 的行为，传 <code>conform: false</code>。</p>
-    <p lang="en"><b>Standards by default.</b> Pass no options and the SDK resolves a service as TapeOut's official TAPs say: one pinned block, all nodes agreeing on chain and owner, and a named status for a name not opened or not paid up. TAP-11 and TAP-13 to TAP-18, drafts we wrote, are merged as Drafts (a merge is not adoption). For 1.x: <code>conform: false</code>.</p>
-    <div id="agents">
-      <p lang="zh">同一版首次公开三项实验性功能——有界代理、美元报价、容器间评价。它们依赖的托管合约未经审计、未部署，主网不可用，今天只在本地链与测试中可以验证，也不收任何费用。</p>
-      <p lang="en">The same release first makes public three experimental features: bounded agents, US-dollar prices and reviews between containers. The escrow they rely on is not audited and not deployed, so they do not work on mainnet; today they are checked on local chains and in tests only, and nothing is charged.</p>
-    </div>
-    <div class="more"><a class="doclink" href="docs/zh/upgrade-2.0" lang="zh">升级到 2.0 →</a><a class="doclink" href="docs/en/upgrade-2.0" lang="en">Upgrading to 2.0 →</a><a class="doclink" href="docs/zh/upgrade-3.0" lang="zh">升级到 3.0 →</a><a class="doclink" href="docs/en/upgrade-3.0" lang="en">Upgrading to 3.0 →</a><a class="doclink" href="docs/zh/reference#20-新增" lang="zh">2.0 改了什么、实验性功能的细节 →</a><a class="doclink" href="docs/en/reference#new-in-20" lang="en">What changed, and the experimental features in detail →</a></div>
   </div>
 </section>
 
-<section id="reference">
-  <div class="shead"><span class="idx">07</span><h2 lang="zh">参考</h2><h2 lang="en">Reference</h2></div>
-  <p class="tcap" lang="zh">数据手册附录，已从首页搬到手册</p>
-  <p class="tcap" lang="en">The datasheet appendix, moved from this page to the docs</p>
+<!-- reference / 参考 -->
+<section id="reference" class="hs">
+  <div class="hm">
+    <p class="eyebrow" lang="zh">参考</p><p class="eyebrow" lang="en">Reference</p>
+    <h2 lang="zh">数据手册附录，在手册里</h2><h2 lang="en">The datasheet appendix is in the docs</h2>
   <ol class="reflist">
     <li><a href="docs/zh/reference#极限参数" lang="zh">极限参数</a><a href="docs/en/reference#absolute-maximum-ratings" lang="en">Absolute maximum ratings</a></li>
     <li><a href="docs/zh/reference#一致性真值表" lang="zh">一致性真值表</a><a href="docs/en/reference#agreement-truth-table" lang="en">Agreement truth table</a></li>
@@ -329,9 +420,12 @@ console.log(result.bnbUsd, verified)                         <span class="c">// 
     <li><a href="docs/zh/reference#安全说明" lang="zh">安全说明</a><a href="docs/en/reference#security-note" lang="en">Security note</a></li>
     <li class="exp"><a href="docs/zh/reference#实验性付费通道" lang="zh">付费通道与其它实验性功能</a><a href="docs/en/reference#experimental-paid-channels" lang="en">Paid channels and other experiments</a><p class="b" lang="zh">未审计、未部署，主网不可用，仅本地链与测试，今天不收费</p><p class="b" lang="en">not audited, not deployed, not on mainnet; local chains and tests only; nothing charged today</p></li>
   </ol>
+  </div>
 </section>
-</div>
 
+</main>
+
+<div class="hm foot-wrap">
 <footer>
   <div class="fbrand">
     <a class="fb-brand" href="./" aria-label="TapeAPI"><svg class="hd-mark" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" width="99" height="11" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a>
@@ -354,8 +448,8 @@ console.log(result.bnbUsd, verified)                         <span class="c">// 
     <p lang="en">Specs CC0-1.0, code MIT.<br><a href="https://github.com/BruceLanLan/tapeapi"><code>github.com/BruceLanLan/tapeapi</code></a><br><a href="docs/">Docs</a> · <a href="playground/">Playground</a> · <a href="verify/">Receipt checker</a> · <a href="dashboard/">Dashboard</a> · <a href="status/">Status</a> · <a href="directory/">Provider directory</a> · <a href="console/">Holder console</a> · <a href="https://github.com/TapeOutProtocol/TAPs">TapeOut TAPs</a></p>
   </div>
 </footer>
-
 </div>
+
 <script src="app.js?v=73303f8766"></script>
 </body>
 </html>
