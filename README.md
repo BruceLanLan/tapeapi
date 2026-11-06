@@ -16,6 +16,18 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 
 [中文说明](README.zh-CN.md) · [Website](https://tapeapi.fun) · [Docs](https://tapeapi.fun/docs/) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md) · [Upgrading to 2.0](docs/guides/upgrade-2.0.md) · [Upgrading to 3.0](docs/guides/upgrade-3.0.md)
 
+> **3.0: any agent can be checked by a stranger.** Two new experimental packages and one new command let you check, on
+> your own machine, who an AI agent is and what rules it keeps. [`@tapeapi/passport`](docs/guides/passport.md): does one
+> wallet hold this ERC-8004 identity and this TapeOut circuit? It reads at one pinned block, two or more operators must
+> agree, and when they do not it says "unknown". [`@tapeapi/policy-circuit`](docs/guides/policy-circuit.md): a spending
+> rule written as a small circuit that the other side re-runs; when unsure, it denies. `tapeapi receipts statement`:
+> spend by service, model and day, with a local budget that stops an over-limit call before it is sent. **The limits,
+> plainly:** the packages are 0.1.0, experimental and outside the compatibility promise; the TAP drafts they relate to
+> ([#83](https://github.com/TapeOutProtocol/TAPs/pull/83), [#84](https://github.com/TapeOutProtocol/TAPs/pull/84)) are submitted and in review, not merged, and submitting is not adoption; no CONFIRMED
+> passport is known on mainnet yet; a policy circuit binds only those who check it; a receipt proves only what its
+> signer said. 3.0 has five breaking changes, each but the Node.js 22 floor with an option that keeps the 2.x behaviour.
+> [New in 3.0](#new-in-30) · [Upgrading to 3.0](docs/guides/upgrade-3.0.md)
+
 > **2.0: standards by default.** Pass no options and `createTapeAPI()` resolves a service the way TapeOut's official
 > TAPs say: TAP-10 v1.1 §3 to §7 and TAP-11 §2, every read at one pinned block, strict agreement of the nodes on the
 > chain and the owner, and a named status instead of a quiet success when a name was never opened (`not-opened`), is
@@ -71,6 +83,51 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 - **Prices in US dollars, paid in BEM, and reviews between containers** (2.0, experimental). The reference
   implementations of two TAP drafts we submitted as pull requests (#52 and #54; submitted, in review), not merged. No escrow is deployed, so no call is charged.
   [Below](#also-experimental-in-20)
+
+## New in 3.0
+
+3.0 has one theme: before you let an agent call, check it yourself. The new pieces are experimental and outside the
+compatibility promise; what 2.x did, 3.0 still does, except the five changes under "Upgrading" below. The live
+services answer as 2.5.0 does, except for the version number.
+
+### Agent Passport (experimental)
+
+`tapeapi passport <name>` and `@tapeapi/passport` (0.1.0) resolve an Agent Passport, read-only: one wallet holds both an
+ERC-8004 identity and a TapeOut circuit, and the holder published the link. Every read is at one pinned block and the
+nodes of at least two operators must agree; the answer is one state word (`CONFIRMED`, `BROKEN`, `UNAVAILABLE`, ...) with a
+named reason, and reads that do not agree give "unknown", never a guess. It follows the open draft [TAPs #83](https://github.com/TapeOutProtocol/TAPs/pull/83)
+(submitted, in review, not merged); the package implements the text at head `cae25e6`, the draft has been updated since,
+and each result carries the head it was read against. A passport says nothing about the code an agent runs or whether it
+is honest, and no CONFIRMED passport is known on mainnet yet. [Agent Passport](docs/guides/passport.md)
+
+### Policy circuits (experimental)
+
+`@tapeapi/policy-circuit` (0.1.0): the principal writes a spending rule as a small circuit, fixed by its hash and bound
+to an account by signature; the other side re-runs the request on its own machine, and the gatekeeper's `admit()` denies
+whenever it cannot tell (no circuit, wrong hash, expired or revoked binding, new holder, revocations unreadable). It
+follows the open draft [TAPs #84](https://github.com/TapeOutProtocol/TAPs/pull/84) at head `0b73174` (submitted, in review, now a draft pull request, not merged).
+It is an off-chain check: it binds only the parties that run it, deploys nothing and sends no transaction.
+[Policy circuits](docs/guides/policy-circuit.md)
+
+### Spend statement and local budget (experimental)
+
+`tapeapi receipts statement` sums what the receipts claim by service, model and UTC day, next to your limits; a client-side
+budget refuses a call that would go over a limit before it is sent. Both build on the signed receipts and `tapeapi
+reconcile` of 2.x, whose formats do not change. [Reconcile](docs/guides/reconcile.md)
+
+### Also experimental in 3.0
+
+Visitor grants between container apps (`@tapeapi/interop` 0.1.0, a prototype with no TAP behind it, [TAPI-28](spec/TAPI-28.md));
+an x402 batch-settlement backend for bounded agents (`enforcement: 'x402-batch'`, off by default, payers that are
+ordinary wallets only, never run on mainnet); a receipt-reference proposal (`ai.receiptRef`, off by default). Every paid
+call now checks the escrow's token first and is refused with an unsigned 503 when it cannot. The escrow contract is
+still **not audited and not deployed**. [CHANGELOG](CHANGELOG.md)
+
+### Upgrading
+
+Node.js 22 or later; `createAIProxy` refuses undeclared formats by default; `createMcpProxy` refuses browser origins you
+did not list; `tapeapi-verify` is strict by default; the MCP proxy negotiates the upstream's version by default. Each
+but the first has an option that keeps the 2.x behaviour. [Upgrading to 3.0](docs/guides/upgrade-3.0.md)
 
 ## New in 2.0
 

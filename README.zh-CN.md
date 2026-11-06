@@ -18,6 +18,15 @@ TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上�
 
 [English](README.md) · [网站](https://tapeapi.fun) · [手册](https://tapeapi.fun/docs/zh/) · [指南](docs/guides/zh-CN/) · [规范](spec/) · [示例](examples/) · [更新日志](CHANGELOG.md) · [路线图](docs/ROADMAP.md) · [升级到 2.0](docs/guides/zh-CN/upgrade-2.0.md) · [升级到 3.0](docs/guides/zh-CN/upgrade-3.0.md)
 
+> **3.0：每个 Agent 都能被陌生人核验。** 两个新的实验性包和一个新命令，让你在自己的机器上查清：一个 AI Agent 是谁，守什么规矩。
+> [`@tapeapi/passport`](docs/guides/zh-CN/passport.md)：这个 ERC-8004 身份和这枚 TapeOut 电路，是不是同一个钱包持有？在同一个钉住
+> 的区块上读，两家以上运营方必须一致，不一致就说「不知道」。[`@tapeapi/policy-circuit`](docs/guides/zh-CN/policy-circuit.md)：把花钱的
+> 规则写成一个小电路，对方自己重跑一遍；拿不准就拒绝。`tapeapi receipts statement`：按服务、模型、天汇总花费，并有一个在调用发出之前
+> 就拦住超额的本地预算。**限制，如实说：** 这两个包是 0.1.0、实验性，不在兼容承诺之内；它们相关的 TAP 草案（[#83](https://github.com/TapeOutProtocol/TAPs/pull/83)、
+> [#84](https://github.com/TapeOutProtocol/TAPs/pull/84)）已提交、评审中，未合并，提交不等于被采纳；主网上目前还没有已知的 CONFIRMED 护照；策略电路只约束去检查它的一方；
+> 回执只证明签名方说了什么。3.0 有五项破坏性修改，除 Node.js 22 下限外，每一项都有保留 2.x 行为的选项。
+> [3.0 新增](#30-新增) · [升级到 3.0](docs/guides/zh-CN/upgrade-3.0.md)
+
 > **2.0：标准即默认。** 不传任何选项，`createTapeAPI()` 就按 TapeOut 官方 TAP 的规定解析服务：TAP-10 v1.1 §3 至 §7
 > 与 TAP-11 §2，所有读取钉在同一个区块上，链 ID 与持有人要所有节点一致；名字从未开通（`not-opened`）、未激活或付费到期
 > （`unpaid`）、TapeOut 的站点存储或付费合约换成了 SDK 不认识的实现（`store-changed`），都会得到一个明确的状态，而不是悄悄
@@ -46,6 +55,42 @@ TapeAPI 是 [TapeOut](https://tapeout.net) 的签名 API 层。同一套链上�
 - **流式 AI 回执，用量也能核验**（1.5 至 1.6）。被截断或被追加内容的流，回执核验不通过；可选的 `requestUsage` 把流式 OpenAI Chat 回答的用量放进签名的流里，像整段回答一样核对（它不证明上游自己的计数）。[流式 Chat 的用量：三条路](docs/guides/zh-CN/ai-providers.md#流式-chat-的用量三条路)
 - **容器代理**（实验性）。阶段 0（1.7）：持有人签名的授权书、从报价到验收的任务线程、只读的付款核验，不需要新合约，不做强制执行。有界代理（2.0）：写了金额的授权书由托管通道强制执行，只在本地链与测试中可用。[容器代理](docs/guides/zh-CN/container-agents.md) · [有界代理](#有界代理实验性主网不可用)
 - **美元报价、BEM 结算，以及容器之间的评价**（2.0，实验性）。我们以拉取请求提交的两份 TAP 草稿（#52、#54；已提交，评审中，尚未合并）的参考实现。托管合约没有部署，所以不收任何费用。[见下](#20-里另外两项实验性功能)
+
+## 3.0 新增
+
+3.0 只有一个主题：让一个 Agent 调用你之前，你自己先查一遍。新增的部分都是实验性的，不在兼容承诺之内；2.x 能做的，3.0 照样能做，
+只有下面「升级」里的五项修改除外。线上服务的回答与 2.5.0 相同，只有版本号不同。
+
+### Agent 护照（实验性）
+
+`tapeapi passport <名字>` 与 `@tapeapi/passport`（0.1.0）只读地解析 Agent 护照：同一个钱包持有一个 ERC-8004 身份和一枚 TapeOut
+电路，并且持有人公开了这层关联。所有读取都在同一个钉住的区块上，至少两家运营方的节点必须一致；结果是一个状态词（`CONFIRMED`、
+`BROKEN`、`UNAVAILABLE`……）加一个具名原因，读取不一致就是「不知道」，绝不猜。它跟随未合并的草案 [TAPs #83](https://github.com/TapeOutProtocol/TAPs/pull/83)（已提交，评审中）；
+本包按头提交 `cae25e6` 的文字实现，草案此后又改过，每个结果都带着它读取时依据的头。护照不说明 Agent 跑什么代码，也不说明它诚实与否，
+主网上目前还没有已知的 CONFIRMED 护照。[Agent 护照](docs/guides/zh-CN/passport.md)
+
+### 策略电路（实验性）
+
+`@tapeapi/policy-circuit`（0.1.0）：委托人把花钱的规则写成一个小电路，按哈希固定，用签名绑到一个账户；对方在自己机器上把这笔请求重跑
+一遍，守门方的 `admit()` 只要拿不准就拒绝（没有电路、哈希不对、绑定过期或被撤销、换了持有人、读不到撤销记录）。它跟随未合并的草案
+[TAPs #84](https://github.com/TapeOutProtocol/TAPs/pull/84)，头提交 `0b73174`（已提交，评审中，目前转为 draft PR）。这是链下检查：只约束去检查它的一方，不部署任何东西，也不发交易。
+[策略电路](docs/guides/zh-CN/policy-circuit.md)
+
+### 花费清单与本地预算（实验性）
+
+`tapeapi receipts statement` 按服务、模型、UTC 天汇总回执所声称的花费，并列出你的限额；客户端预算会在调用发出之前就拒绝会超限的调用。
+两者都建立在 2.x 已有的签名回执与 `tapeapi reconcile` 之上，那些格式不变。[对账](docs/guides/zh-CN/reconcile.md)
+
+### 3.0 里另外几项实验性功能
+
+容器应用之间的访客授权（`@tapeapi/interop` 0.1.0，是原型，背后没有任何 TAP，见 [TAPI-28](spec/TAPI-28.md)）；给有界代理用的 x402 批量结算后端
+（`enforcement: 'x402-batch'`，默认关闭，付款方只能是普通钱包，没有在主网上运行过）；收据引用提案（`ai.receiptRef`，默认关闭）。每个付费调用现在
+都先核对托管的代币，核对不了就以未签名的 503 拒绝。托管合约仍然**未经审计、未部署**。[更新日志](CHANGELOG.md)
+
+### 升级
+
+Node.js 22 或更高版本；`createAIProxy` 默认拒绝未声明的格式；`createMcpProxy` 拒绝你没有列出的浏览器来源；`tapeapi-verify` 默认严格；
+MCP 代理默认先协商上游的版本。除第一条外，每一项都有保留 2.x 行为的选项。[升级到 3.0](docs/guides/zh-CN/upgrade-3.0.md)
 
 ## 2.0 新增
 
