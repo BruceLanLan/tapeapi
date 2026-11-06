@@ -8,7 +8,7 @@ the [changelog](../CHANGELOG.md).
 
 ## 1. Now (live)
 
-The current release is **2.4.0** (2026-10-21), whose public Worker code adds experimental MCP tool methods and a `/mcp/pinned` endpoint (`api.tapeapi.fun` runs that code from 2.4 on but serves them only once `MCP_TOOLS_SHA256` is set on it by hand, and `11.1013.tape` declares them only once its holder publishes a new manifest); 2.3.0 (2026-10-19) added the experimental `tapeapi init` and `tapeapi prices`, `tapeapi connect` for MCP tool services and a bounded retry of chain reads, 2.2.0 (2026-10-19) the experimental `tapeapi receipts` and `tapeapi reconcile`, 2.1.0 (2026-10-17) the experimental `tapeapi connect`, and 2.0.0 (2026-10-12) made standards the default. What each release added is in the
+The current release is **2.5.0** (2026-11-06), which adds, all experimental, helpers for an operator's billing layer (`ai.amountOf` and `ai.pricesOf` public again, `ai.maxAmountOf`, `ai.maxPricesOf`, `ai.completionLimitOf`, and two sidecar variables), request facts, mandate caps and local limits in `tapeapi reconcile` (with `--fail-on`, and `tapeapi-verify --save-requests`), and MCP revision 2026-07-28 on every MCP entry point, `api.tapeapi.fun/mcp` included (clients of earlier revisions are answered as by 2.4.0); 2.4.0 (2026-10-21) added, in the public Worker's code, experimental MCP tool methods and a `/mcp/pinned` endpoint (`api.tapeapi.fun` runs that code but serves them only once `MCP_TOOLS_SHA256` is set on it by hand, and `11.1013.tape` declares them only once its holder publishes a new manifest); 2.3.0 (2026-10-19) added the experimental `tapeapi init` and `tapeapi prices`, `tapeapi connect` for MCP tool services and a bounded retry of chain reads, 2.2.0 (2026-10-19) the experimental `tapeapi receipts` and `tapeapi reconcile`, 2.1.0 (2026-10-17) the experimental `tapeapi connect`, and 2.0.0 (2026-10-12) made standards the default. What each release added is in the
 [changelog](../CHANGELOG.md); in short:
 
 - **Standards by default** (2.0). With no options, `createTapeAPI()` resolves a service the way TapeOut's official TAPs
@@ -68,29 +68,22 @@ The current release is **2.4.0** (2026-10-21), whose public Worker code adds exp
   ([TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), TAP-01), all written against TAP-10: eight on
   2026-09-30 and 2026-10-01, two on the container-agent formats on 2026-10-04 and 2026-10-05, two on 2026-10-08, and two
   on 2026-10-13.
-  The service identity and manifest was merged as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)
-  (Draft, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8), 2026-10-01) and signed responses as
-  [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md) (Draft, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10), 2026-10-04);
-  a merge into Draft is not adoption. Twelve are open pull requests with no number yet (three of them, #54, #59 and #60, are draft PRs for now, so they don't take the editors' queue): private channels
-  [#12](https://github.com/TapeOutProtocol/TAPs/pull/12), MCP tool binding [#16](https://github.com/TapeOutProtocol/TAPs/pull/16),
-  attested reads [#18](https://github.com/TapeOutProtocol/TAPs/pull/18), private groups [#20](https://github.com/TapeOutProtocol/TAPs/pull/20),
-  AI usage receipts [#26](https://github.com/TapeOutProtocol/TAPs/pull/26), proof-verified reads [#28](https://github.com/TapeOutProtocol/TAPs/pull/28),
-  container agent mandates and task messages, phase 0 [#47](https://github.com/TapeOutProtocol/TAPs/pull/47), the agent
-  member of the service manifest [#49](https://github.com/TapeOutProtocol/TAPs/pull/49), payment vouchers (prices in
-  US dollars, settled in BEM) [#52](https://github.com/TapeOutProtocol/TAPs/pull/52), evidence-backed reviews between
-  containers [#54](https://github.com/TapeOutProtocol/TAPs/pull/54), escrow channels for paying container services
-  (Standards) [#59](https://github.com/TapeOutProtocol/TAPs/pull/59) and container agent mandates enforced by escrow channels, phase 1 [#60](https://github.com/TapeOutProtocol/TAPs/pull/60). One more draft, an Information draft on a privacy map for container sites, messages and services, [#61](https://github.com/TapeOutProtocol/TAPs/pull/61), is submitted and open as a draft PR for now. Follow-up edits are waiting for the editors:
-  to TAP-11, [#51](https://github.com/TapeOutProtocol/TAPs/pull/51) (drops the `TAP-26/` label mention),
-  [#53](https://github.com/TapeOutProtocol/TAPs/pull/53) (`priceBEM` as a per-call upper bound for a later TAP; where the
-  escrow's chain is named) and [#55](https://github.com/TapeOutProtocol/TAPs/pull/55) (the reference implementation
-  brought up to date, with a mainnet vector that ends in `resolved`); to TAP-13,
-  [#56](https://github.com/TapeOutProtocol/TAPs/pull/56) (an outdated sentence in its reference implementation section).
-  When the editors assign numbers, we rename our references.
+  Seven are merged as Drafts (merging is not adoption): the service identity and manifest as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)
+  (Draft, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8), 2026-10-01), signed responses as [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md) (Draft, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10), 2026-10-04), and, on 2026-11-03,
+  private channels as [TAP-14](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-14.md) ([#12](https://github.com/TapeOutProtocol/TAPs/pull/12)), MCP tool binding as [TAP-15](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-15.md) ([#16](https://github.com/TapeOutProtocol/TAPs/pull/16)), attested reads as [TAP-16](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-16.md)
+  ([#18](https://github.com/TapeOutProtocol/TAPs/pull/18)), AI usage receipts as [TAP-17](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-17.md) ([#26](https://github.com/TapeOutProtocol/TAPs/pull/26)) and container agent mandates and task messages, phase 0, as
+  [TAP-18](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-18.md) ([#47](https://github.com/TapeOutProtocol/TAPs/pull/47)). Seven are submitted (in review) and have no number yet: private groups [#20](https://github.com/TapeOutProtocol/TAPs/pull/20), proof-verified reads [#28](https://github.com/TapeOutProtocol/TAPs/pull/28),
+  the agent member of the service manifest [#49](https://github.com/TapeOutProtocol/TAPs/pull/49), payment vouchers (prices in US dollars, settled in BEM) [#52](https://github.com/TapeOutProtocol/TAPs/pull/52),
+  evidence-backed reviews between containers [#54](https://github.com/TapeOutProtocol/TAPs/pull/54), escrow channels for paying container services (Standards) [#59](https://github.com/TapeOutProtocol/TAPs/pull/59)
+  and container agent mandates enforced by escrow channels, phase 1, [#60](https://github.com/TapeOutProtocol/TAPs/pull/60) (submitted, now a draft PR). One more draft, an Information draft on a privacy map for container sites, messages and services, [#61](https://github.com/TapeOutProtocol/TAPs/pull/61), is submitted (in review).
+  The follow-up edits to TAP-11 ([#51](https://github.com/TapeOutProtocol/TAPs/pull/51), [#53](https://github.com/TapeOutProtocol/TAPs/pull/53), [#55](https://github.com/TapeOutProtocol/TAPs/pull/55)) and TAP-13 ([#56](https://github.com/TapeOutProtocol/TAPs/pull/56)) were merged on 2026-11-03; thirteen
+  further edits to TAP-11 and TAP-13 to TAP-18, [#89](https://github.com/TapeOutProtocol/TAPs/pull/89) to [#101](https://github.com/TapeOutProtocol/TAPs/pull/101), are submitted (in review).
+  The other drafts have no number yet; when the editors assign one, we rename our references.
 - **Stable status names, after the review.** Once TAP-11 is in Review and its review period ends with no unresolved
   objection, we will consider raising `data.status`, `SiteStatus` and `svc.conform` to Stable. This is a
   consideration, not a promise, and it has no date.
 - **A Standards TAP for the escrow interface, and the bounded-agents draft.** Both are submitted: the escrow interface
-  as a Standards draft, [#59](https://github.com/TapeOutProtocol/TAPs/pull/59), and the draft for bounded agents (phase 1), [#60](https://github.com/TapeOutProtocol/TAPs/pull/60); both are open as draft PRs for now.
+  as a Standards draft, [#59](https://github.com/TapeOutProtocol/TAPs/pull/59), and the draft for bounded agents (phase 1), [#60](https://github.com/TapeOutProtocol/TAPs/pull/60); #59 is in review and #60 is now a draft PR.
 - **Escrow: audit, then deployment.** The audit candidate (v3) is in the repository; the first instance is planned to
   hold BEM (TAPI-22 §3.5). It stays undeployed until an independent audit is done, so no channel exists, no call is
   charged, and bounded agents run on local chains and in tests only.
@@ -133,7 +126,7 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
 
 ## 1. 现在（已上线）
 
-当前版本是 **2.4.0**（2026-10-21），公共 Worker 的代码新增实验性的 MCP 工具方法与 `/mcp/pinned` 端点（`api.tapeapi.fun` 从 2.4 起运行这份代码，但要等有人手动设置 `MCP_TOOLS_SHA256` 才提供它们；持有人发布新清单之后，`11.1013.tape` 才声明它们）；2.3.0（2026-10-19）新增实验性的 `tapeapi init` 与 `tapeapi prices`、`tapeapi connect` 对 MCP 工具服务的支持，以及有上限的链上读取重试，2.2.0（2026-10-19）新增实验性的 `tapeapi receipts` 与 `tapeapi reconcile`，2.1.0（2026-10-17）新增实验性的 `tapeapi connect`，2.0.0（2026-10-12）起标准即默认。每一版加了什么见[更新日志](../CHANGELOG.md)；简要如下：
+当前版本是 **2.5.0**（2026-11-06），新增（均为实验性）给运营方计费层的辅助函数（`ai.amountOf` 与 `ai.pricesOf` 重新公开，`ai.maxAmountOf`、`ai.maxPricesOf`、`ai.completionLimitOf`，以及旁路的两个变量）、`tapeapi reconcile` 的请求事实、授权书上限与本地限额（含 `--fail-on`，以及 `tapeapi-verify --save-requests`），以及所有 MCP 入口（含 `api.tapeapi.fun/mcp`）对 MCP 2026-07-28 的支持（更早版本的客户端得到与 2.4.0 相同的回答）；2.4.0（2026-10-21）在公共 Worker 的代码里新增实验性的 MCP 工具方法与 `/mcp/pinned` 端点（`api.tapeapi.fun` 运行这份代码，但要等有人手动设置 `MCP_TOOLS_SHA256` 才提供它们；持有人发布新清单之后，`11.1013.tape` 才声明它们）；2.3.0（2026-10-19）新增实验性的 `tapeapi init` 与 `tapeapi prices`、`tapeapi connect` 对 MCP 工具服务的支持，以及有上限的链上读取重试，2.2.0（2026-10-19）新增实验性的 `tapeapi receipts` 与 `tapeapi reconcile`，2.1.0（2026-10-17）新增实验性的 `tapeapi connect`，2.0.0（2026-10-12）起标准即默认。每一版加了什么见[更新日志](../CHANGELOG.md)；简要如下：
 
 - **标准即默认**（2.0）。不传任何选项，`createTapeAPI()` 就按 TapeOut 官方 TAP（TAP-10 v1.1 §3 至 §7 与 TAP-11 §2）解析服务：
   每次解析钉一个区块，链 ID 与持有人要所有节点一致；名字从未开通（`not-opened`）、未激活或付费到期（`unpaid`）、站点存储或付费
@@ -179,23 +172,18 @@ specification starts as a *spec proposal (TAPI)* issue; see [CONTRIBUTING.md](..
 - **官方 TAP 评审。** 我们就 TapeAPI 规范的部分内容向 TapeOut 的 TAP 流程（[TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs)，TAP-01）
   提交了 14 份草稿，一律按 TAP-10 写：8 份在 2026-09-30 至 10-01，2 份关于容器代理格式在 2026-10-04 与 10-05，2 份在 2026-10-08，
   2 份在 2026-10-13。
-  服务身份与清单已合并为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)，2026-10-01），
-  签名响应已合并为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（Draft，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)，2026-10-04）；
-  合并为 Draft 不等于被采纳。另有 12 份是尚未合并的拉取请求，尚无编号（其中 #54、#59、#60 目前转为 draft PR，暂不占用编辑的评审队列）：私密通道 [#12](https://github.com/TapeOutProtocol/TAPs/pull/12)、
-  MCP 工具绑定 [#16](https://github.com/TapeOutProtocol/TAPs/pull/16)、多家交叉验证读取 [#18](https://github.com/TapeOutProtocol/TAPs/pull/18)、
-  私密群聊 [#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、AI 用量回执 [#26](https://github.com/TapeOutProtocol/TAPs/pull/26)、
-  证明核验读取 [#28](https://github.com/TapeOutProtocol/TAPs/pull/28)、容器代理授权书与任务消息（阶段 0）[#47](https://github.com/TapeOutProtocol/TAPs/pull/47)、
-  清单里的代理成员 [#49](https://github.com/TapeOutProtocol/TAPs/pull/49)、付费凭证（美元报价、BEM 结算）[#52](https://github.com/TapeOutProtocol/TAPs/pull/52)、
-  有证据的容器间评价 [#54](https://github.com/TapeOutProtocol/TAPs/pull/54)、支付容器服务的托管通道（Standards）[#59](https://github.com/TapeOutProtocol/TAPs/pull/59)、
-  由托管通道强制执行的容器代理授权书（阶段 1）[#60](https://github.com/TapeOutProtocol/TAPs/pull/60)。另有 1 份 Information 草稿 [#61](https://github.com/TapeOutProtocol/TAPs/pull/61)（容器网站、消息与服务的隐私地图），已提交，目前转为 draft PR。后续修改在等待编辑处理：对 TAP-11 的
-  [#51](https://github.com/TapeOutProtocol/TAPs/pull/51)（删去对 `TAP-26/` 标签的提及）、[#53](https://github.com/TapeOutProtocol/TAPs/pull/53)
-  （允许后续 TAP 把 `priceBEM` 读作单次调用的上限；托管合约所在的链由谁规定）与 [#55](https://github.com/TapeOutProtocol/TAPs/pull/55)
-  （参考实现更新到当前版本，并加一条以 `resolved` 结束的主网向量）；对 TAP-13 的 [#56](https://github.com/TapeOutProtocol/TAPs/pull/56)
-  （参考实现一节里一句过时的话）。编辑分配编号后，我们改引用。
+  7 份已合并为 Draft（合并不等于被采纳）：服务身份与清单为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)，2026-10-01），
+  签名响应为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（Draft，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)，2026-10-04），以及 2026-11-03 合并的私密通道 [TAP-14](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-14.md)（[#12](https://github.com/TapeOutProtocol/TAPs/pull/12)）、
+  MCP 工具绑定 [TAP-15](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-15.md)（[#16](https://github.com/TapeOutProtocol/TAPs/pull/16)）、多家交叉验证读取 [TAP-16](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-16.md)（[#18](https://github.com/TapeOutProtocol/TAPs/pull/18)）、AI 用量回执 [TAP-17](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-17.md)（[#26](https://github.com/TapeOutProtocol/TAPs/pull/26)）、
+  容器代理授权书与任务消息（阶段 0）[TAP-18](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-18.md)（[#47](https://github.com/TapeOutProtocol/TAPs/pull/47)）。另有 7 份已提交（评审中），尚无编号：私密群聊 [#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、证明核验读取 [#28](https://github.com/TapeOutProtocol/TAPs/pull/28)、
+  清单里的代理成员 [#49](https://github.com/TapeOutProtocol/TAPs/pull/49)、付费凭证（美元报价、BEM 结算）[#52](https://github.com/TapeOutProtocol/TAPs/pull/52)、有证据的容器间评价 [#54](https://github.com/TapeOutProtocol/TAPs/pull/54)、支付容器服务的托管通道（Standards）[#59](https://github.com/TapeOutProtocol/TAPs/pull/59)、
+  由托管通道强制执行的容器代理授权书（阶段 1）[#60](https://github.com/TapeOutProtocol/TAPs/pull/60)（已提交，目前转为 draft PR）。另有 1 份 Information 草稿 [#61](https://github.com/TapeOutProtocol/TAPs/pull/61)（容器网站、消息与服务的隐私地图），已提交（评审中）。
+  对 TAP-11 的 [#51](https://github.com/TapeOutProtocol/TAPs/pull/51)、[#53](https://github.com/TapeOutProtocol/TAPs/pull/53)、[#55](https://github.com/TapeOutProtocol/TAPs/pull/55) 与对 TAP-13 的 [#56](https://github.com/TapeOutProtocol/TAPs/pull/56) 已于 2026-11-03 合并；对 TAP-11、TAP-13 至 TAP-18 的另外 13 个修改
+  [#89](https://github.com/TapeOutProtocol/TAPs/pull/89) 至 [#101](https://github.com/TapeOutProtocol/TAPs/pull/101) 已提交（评审中）。其它草稿尚无编号，编辑分配编号后，我们改引用。
 - **评审之后再考虑稳定的状态名。** TAP-11 进入 Review、评审期满且没有未解决的异议之后，我们再考虑把 `data.status`、`SiteStatus`
   与 `svc.conform` 升为 Stable。这是"考虑"，不是承诺，也没有日期。
 - **托管接口的 Standards TAP 与有界代理草稿。** 两份都已提交：规定托管接口的 Standards 草稿 [#59](https://github.com/TapeOutProtocol/TAPs/pull/59)，有界代理（阶段 1）的草稿
-  [#60](https://github.com/TapeOutProtocol/TAPs/pull/60)；两份目前都转为 draft PR，暂不占评审队列。
+  [#60](https://github.com/TapeOutProtocol/TAPs/pull/60)；#59 在评审中，#60 目前转为 draft PR。
 - **托管合约：先审计，再部署。** 送审候选版（v3）已在仓库，首个实例计划托管 BEM（TAPI-22 §3.5）。独立审计完成之前一直不部署，
   所以不存在任何通道、不收任何费用，有界代理只在本地链与测试中可用。
 - **开发者控制台（完整版）。** 只读版*我的服务*已在 https://tapeapi.fun/dashboard/ 上线（添加服务名，查看健康、

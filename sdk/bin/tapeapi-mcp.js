@@ -29,7 +29,8 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve as resolvePath } from 'node:path'
 import { createInterface } from 'node:readline'
 import { createTapeAPI, TapeAPIError, canonicalJSON, rpcUrlsFor, operatorOf, parseTapeName, CHAINS, chainByKey } from '../src/index.js'
-import { createMcpServer, receiptOf, toolResultOf, toolsDigest, normalizeTools, invisibleProblems, quoteProvenance, JSONRPC, MCP_PROTOCOL_VERSIONS, RECEIPT_META_KEY } from '../src/mcp.js'
+import { createMcpServer, receiptOf, toolResultOf, toolsDigest, normalizeTools, invisibleProblems, quoteProvenance, JSONRPC, MCP_PROTOCOL_VERSIONS, RECEIPT_META_KEY,
+  MCP_MODERN_PROTOCOL_VERSIONS, MCP_ERRORS, PROTOCOL_VERSION_META, CLIENT_CAPABILITIES_META } from '../src/mcp.js'
 import { manifestToTools, sanitizePrefix } from '../src/webmcp.js'
 import { recoverResponseSigner } from '../src/sig.js'
 import { safeParseJSON } from '../src/canon.js'
@@ -74,6 +75,11 @@ Usage: tapeapi-mcp [options] <service> [<service> ...]
   --no-pin             do not read or write the pin file (definitions are still pinned for this session)
   --allow-changed      accept tool definitions that changed on chain since they were pinned, once, and re-pin them
   --link-content       put each call's params and result in its verify link, in clear (default: hashes only)
+  --upstream-negotiation <legacy|auto>
+                       EXPERIMENTAL (2.5): how the tools of a taped-out MCP server are read from its mcp.endpoint.
+                       legacy (the default, as before): initialize first. auto: probe with server/discover and speak
+                       MCP 2026-07-28 to an endpoint that offers it (no initialize, no session), else fall back to
+                       initialize. Calls are not affected: they always go through the signed TapeAPI path
   --dev <url>          TESTING ONLY: read a local provider's manifest over http, no on-chain identity check (repeatable).
                        It also makes this whole session resolve the names it reads on chain the 1.x way (dev: true counts as
                        conform: false); the log line "resolution:" says so
@@ -104,7 +110,7 @@ Claude Desktop / Cursor config:
 // Arguments / 参数
 // ---------------------------------------------------------------------------------------------------------------
 function parseArgs(argv) {
-  const o = { targets: [], rpc: null, chainRpc: {}, pin: DEFAULT_PIN, noPin: false, allowChanged: false, dev: [], linkContent: false, noConform: false }
+  const o = { targets: [], rpc: null, chainRpc: {}, pin: DEFAULT_PIN, noPin: false, allowChanged: false, dev: [], linkContent: false, noConform: false, upstreamNegotiation: 'legacy' }
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i], v
     const eq = a.startsWith('--') ? a.indexOf('=') : -1
@@ -123,6 +129,8 @@ function parseArgs(argv) {
       case '--no-pin': o.noPin = true; break
       case '--allow-changed': o.allowChanged = true; break
       case '--link-content': o.linkContent = true; break
+      // 2.5, experimental: as createMcpProxy({ upstreamNegotiation }) / 2.5，实验性：与 createMcpProxy 的同名选项相同
+      case '--upstream-negotiation': o.upstreamNegotiation = value(); if (o.upstreamNegotiation !== 'legacy' && o.upstreamNegotiation !== 'auto') throw new Error("--upstream-negotiation must be 'legacy' or 'auto'"); break
       // 2.0: the 1.x resolution (conform: false, deprecated) / 2.0：1.x 的解析（conform: false，已弃用）
       case '--no-conform': o.noConform = true; break
       // TESTING ONLY: resolve a local provider's manifest over http, without any on-chain identity check.
@@ -296,17 +304,44 @@ function sseMessages(text) {
   return out
 }
 
-async function fetchUpstreamTools(endpoint) {
-  let session = null, protocol = null, seq = 0
+// --upstream-negotiation auto (2.5, experimental): MCP 2026-07-28 toward the endpoint, as createMcpProxy's
+// upstreamNegotiation: 'auto' (server/src/mcp-proxy.js) speaks it: per-request _meta and the standard request headers,
+// no initialize and no session. / 对端点说 2026-07-28，与 createMcpProxy 的 upstreamNegotiation: 'auto' 相同：每个请求带
+// _meta 与标准请求头，不发 initialize、不建会话。
+const MODERN = MCP_MODERN_PROTOCOL_VERSIONS[0]
+const MODERN_ERRORS = new Set(Object.values(MCP_ERRORS))
+const modernParams = (params) => ({ ...params, _meta: { [PROTOCOL_VERSION_META]: MODERN, 'io.modelcontextprotocol/clientInfo': { name: 'tapeapi-mcp', version: VERSION }, [CLIENT_CAPABILITIES_META]: {} } })
+// An answer that is not ours to decide on: legacy unless it is a recognized sign of the other era. / 用于区分两代的应答。
+class ProbeAnswer extends Error {
+  constructor(message, body) { super(message); this.name = 'ProbeAnswer'; this.body = body }
+}
+
+/**
+ * The tool definitions an MCP endpoint lists. negotiation 'legacy' (the default): initialize, notifications/initialized,
+ * then tools/list in the session, as before. 'auto': first server/discover (2026-07-28); a DiscoverResult offering
+ * 2026-07-28 means tools/list is asked that way; a recognized 2026-07-28 error (-32020/-32021/-32022) lets it fall back
+ * to initialize only when it lists an older revision (stdio "Backward Compatibility": do not fall back otherwise); any
+ * other error, an HTTP 4xx without such an error body or no JSON-RPC answer falls back to initialize. The decision is
+ * the proxy's (createMcpProxy upstreamNegotiation: 'auto'). A network failure or the time limit is a failure, as before.
+ * 读取 MCP 端点列出的工具定义。'legacy'（默认）：与以前相同。'auto'：先发 server/discover；规则与代理的 'auto' 相同。
+ */
+async function fetchUpstreamTools(endpoint, negotiation = 'legacy') {
+  let session = null, protocol = null, seq = 0, modern = false
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), MCP_FETCH_TIMEOUT_MS)
-  const post = async (msg) => {
+  const post = async (msg, { probe = false } = {}) => {
     const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }
-    if (session) headers['mcp-session-id'] = session
-    if (protocol) headers['mcp-protocol-version'] = protocol
+    if (modern || probe) {
+      // Streamable HTTP "Standard Request Headers"; tools/list and server/discover carry no Mcp-Name. / 标准请求头。
+      headers['mcp-protocol-version'] = MODERN
+      headers['mcp-method'] = msg.method
+    } else {
+      if (session) headers['mcp-session-id'] = session
+      if (protocol) headers['mcp-protocol-version'] = protocol
+    }
     const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(msg), signal: ac.signal })
     const sid = res.headers.get('mcp-session-id')
-    if (sid && !session) {
+    if (sid && !session && !modern && !probe) {
       if (!/^[\x21-\x7e]{1,256}$/.test(sid)) throw new Error('the server sent an invalid mcp-session-id')
       session = sid
     }
@@ -315,32 +350,73 @@ async function fetchUpstreamTools(endpoint) {
       if (!res.ok) throw new Error(`HTTP ${res.status} for ${msg.method}`)
       return null
     }
-    if (!res.ok) { res.body?.cancel().catch(() => {}); throw new Error(`HTTP ${res.status} for ${msg.method}`) }
+    if (!res.ok) {
+      // A 2026-07-28 server refuses with 400 / 404 and a JSON-RPC error body: the probe reads it. / 探测读取新版错误正文。
+      if (probe && (res.status === 400 || res.status === 404)) {
+        let body = null
+        try { body = safeParseJSON(await readBounded(res)) } catch { /* not JSON / 不是 JSON */ }
+        throw new ProbeAnswer(`HTTP ${res.status} for ${msg.method}`, body)
+      }
+      res.body?.cancel().catch(() => {})
+      // Any other refusal of the probe: an older server, so initialize (as the proxy decides). / 其它拒绝：按旧版处理。
+      if (probe) throw new ProbeAnswer(`HTTP ${res.status} for ${msg.method}`, null)
+      throw new Error(`HTTP ${res.status} for ${msg.method}`)
+    }
     const sse = /^text\/event-stream\b/i.test(res.headers.get('content-type') || '')
     const mine = (m) => isObj(m) && m.id === msg.id && ('result' in m || 'error' in m)
     const text = await readBounded(res, sse ? (t) => sseMessages(t).some(mine) : null)
-    const messages = sse ? sseMessages(text) : [].concat(safeParseJSON(text))
+    let messages
+    try { messages = sse ? sseMessages(text) : [].concat(safeParseJSON(text)) } catch (e) { if (probe) throw new ProbeAnswer(`${msg.method}: answer is not JSON`, null); throw e }
     const reply = messages.find(mine)
-    if (!reply) throw new Error(`no answer to ${msg.method}`)
-    if (reply.error) throw new Error(`${msg.method} failed: ${String(reply.error?.code)} ${String(reply.error?.message ?? '').slice(0, 200)}`)
+    if (!reply) { if (probe) throw new ProbeAnswer(`no answer to ${msg.method}`, null); throw new Error(`no answer to ${msg.method}`) }
+    if (reply.error) {
+      if (probe) throw new ProbeAnswer(`${msg.method} failed`, reply)
+      throw new Error(`${msg.method} failed: ${String(reply.error?.code)} ${String(reply.error?.message ?? '').slice(0, 200)}`)
+    }
     return reply.result
   }
+  // The probe: true when the endpoint speaks 2026-07-28 to us. / 探测：端点对我们说 2026-07-28 时为 true。
+  async function negotiate() {
+    let r
+    try { r = await post({ jsonrpc: '2.0', id: ++seq, method: 'server/discover', params: modernParams({}) }, { probe: true }) } catch (e) {
+      if (!(e instanceof ProbeAnswer)) throw e
+      const m = e.body
+      if (isObj(m) && isObj(m.error) && MODERN_ERRORS.has(m.error.code)) {
+        const sup = Array.isArray(m.error.data?.supported) ? m.error.data.supported : []
+        if (sup.some((x) => MCP_PROTOCOL_VERSIONS.includes(x))) return false
+        throw new Error(`the endpoint is a 2026-07-28 MCP server that refused revision ${MODERN}`)
+      }
+      return false
+    }
+    if (!isObj(r)) return false
+    const v = r.supportedVersions
+    if (Array.isArray(v) && v.includes(MODERN)) return true
+    if (Array.isArray(v) && v.some((x) => MCP_PROTOCOL_VERSIONS.includes(x))) return false
+    throw new Error('the endpoint offers no MCP revision tapeapi-mcp speaks')
+  }
   try {
-    const init = await post({ jsonrpc: '2.0', id: ++seq, method: 'initialize', params: { protocolVersion: MCP_PROTOCOL_VERSIONS[0], capabilities: {}, clientInfo: { name: 'tapeapi-mcp', version: VERSION } } })
-    if (!isObj(init)) throw new Error('initialize returned no result')
-    protocol = typeof init.protocolVersion === 'string' && /^[\x21-\x7e]{1,32}$/.test(init.protocolVersion) ? init.protocolVersion : null
-    await post({ jsonrpc: '2.0', method: 'notifications/initialized' })
+    if (negotiation === 'auto') modern = await negotiate()
+    if (!modern) {
+      const init = await post({ jsonrpc: '2.0', id: ++seq, method: 'initialize', params: { protocolVersion: MCP_PROTOCOL_VERSIONS[0], capabilities: {}, clientInfo: { name: 'tapeapi-mcp', version: VERSION } } })
+      if (!isObj(init)) throw new Error('initialize returned no result')
+      protocol = typeof init.protocolVersion === 'string' && /^[\x21-\x7e]{1,32}$/.test(init.protocolVersion) ? init.protocolVersion : null
+      await post({ jsonrpc: '2.0', method: 'notifications/initialized' })
+    }
     const tools = []
     let cursor
     for (let page = 0; ; page++) {
       if (page >= MCP_MAX_PAGES) throw new Error(`tools/list has more than ${MCP_MAX_PAGES} pages`)
-      const r = await post({ jsonrpc: '2.0', id: ++seq, method: 'tools/list', ...(cursor ? { params: { cursor } } : {}) })
+      const r = modern
+        ? await post({ jsonrpc: '2.0', id: ++seq, method: 'tools/list', params: modernParams(cursor ? { cursor } : {}) })
+        : await post({ jsonrpc: '2.0', id: ++seq, method: 'tools/list', ...(cursor ? { params: { cursor } } : {}) })
       if (!isObj(r) || !Array.isArray(r.tools)) throw new Error('tools/list returned no tools array')
+      // MRTR (input_required) asks for input tapeapi-mcp cannot give. / input_required 要的输入 tapeapi-mcp 给不了。
+      if (modern && r.resultType !== undefined && r.resultType !== 'complete') throw new Error(`tools/list answered resultType ${String(r.resultType).slice(0, 32)}, which tapeapi-mcp does not handle`)
       tools.push(...r.tools)
       cursor = r.nextCursor
       if (typeof cursor !== 'string' || !cursor) break
     }
-    return tools
+    return { tools, era: modern ? MODERN : 'initialize' }
   } catch (e) {
     throw new Error(ac.signal.aborted ? `no answer within ${MCP_FETCH_TIMEOUT_MS / 1000} s` : (e?.cause?.message ? `${e.message} (${e.cause.message})` : e?.message || String(e)))
   } finally {
@@ -499,8 +575,8 @@ async function main() {
       return
     }
     const endpoint = m.mcp.endpoint, want = m.mcp.toolsSha256.toLowerCase()
-    let tools
-    try { tools = await fetchUpstreamTools(endpoint) } catch (err) {
+    let tools, era
+    try { ({ tools, era } = await fetchUpstreamTools(endpoint, opts.upstreamNegotiation)) } catch (err) {
       log(`${e.label}: cannot read the MCP tools from ${endpoint}: ${err.message}; calls are refused until they can be checked`)
       e.mcpState = { state: 'unreachable', endpoint, want, detail: err.message, at }
       return
@@ -521,7 +597,7 @@ async function main() {
       return
     }
     e.mcpState = { state: 'ok', endpoint, want, tools: normalizeTools(tools), at }
-    log(`${e.label}: MCP tools verified: ${tools.length} tool(s) from ${endpoint} hash to the manifest's mcp.toolsSha256 ${want.slice(0, 16)}...`)
+    log(`${e.label}: MCP tools verified: ${tools.length} tool(s) from ${endpoint} hash to the manifest's mcp.toolsSha256 ${want.slice(0, 16)}...${opts.upstreamNegotiation === 'auto' ? ` (read with ${era === MODERN ? `MCP ${MODERN}, no initialize` : 'initialize'}; --upstream-negotiation auto)` : ''}`)
     // A pin made while the tools could not be read gets them now. / 读不到工具时做的钉子，现在补上工具。
     if (e.pin && e.pin.tools === undefined && e.pin.material.toolsSha256 === want) {
       e.pin = { ...e.pin, tools: e.mcpState.tools }

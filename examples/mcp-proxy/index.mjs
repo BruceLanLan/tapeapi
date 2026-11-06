@@ -54,6 +54,10 @@ proxy = createMcpProxy({
   allowHttp: /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(live),
   name: process.env.TAPE_NAME || undefined,
   toolsSha256: process.env.TOOLS_SHA256 || undefined,
+  // ALLOWED_ORIGINS (2.5, experimental): comma-separated origins a browser may call /mcp from; unset, any origin (CORS *).
+  // Set it when this runs on your machine in front of tools with side effects. / 浏览器可调用 /mcp 的来源；本机运行且工具有
+  // 副作用时请设置。
+  ...(process.env.ALLOWED_ORIGINS ? { allowedOrigins: process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
 })
 let m
 try { m = await proxy.ready } catch (e) {

@@ -41,7 +41,8 @@
 // 否则原样转发，结论行注明 usage-request-skipped。只与 OpenAI Chat 客户端有关：Claude Code 与 Codex 的流本来就带用量。
 
 import http from 'node:http'
-import { appendFileSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { appendFileSync, readFileSync, realpathSync, statSync, mkdirSync, writeFileSync } from 'node:fs'
+import { join as joinPath, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createTapeAPI, rpcUrlsFor, operatorOf, parseTapeName, CHAINS, chainByKey } from '../src/index.js'
 import * as ai from '../src/ai.js'
@@ -84,6 +85,14 @@ Usage: tapeapi-verify [options] <service>
   --max-skew <s>       a receipt's time must be within this many seconds of now (default 300)
   --no-salt            send request bodies exactly as the client wrote them (default: 64 random whitespace
                        characters are appended to a JSON body, so the request hash cannot be guessed)
+  --save-requests <dir>
+                       EXPERIMENTAL (2.5), off by default: write the exact bytes of every metered request sent (salt
+                       included) to <dir>, one file per request named by its SHA-256, for tapeapi reconcile --requests.
+                       PRIVACY: these files hold your prompts, files and tool output in clear, which nothing else here
+                       stores. The directory is made 700 (an existing one must not be open to group or others) and
+                       each file 600; delete them when they are no longer needed
+                       把每个计量请求实际发出的字节（含盐）写入 <dir>，供 tapeapi reconcile --requests 使用。隐私：这些文件
+                       含明文的提示词、文件与工具输出；目录 700、文件 600，用完请删除
   --strip-session-headers
                        do not pass the client's session headers (x-claude-code-session-id, session-id,
                        thread-id) to the service; they let it tie your requests into one session
@@ -120,7 +129,7 @@ or a verification link made with its content, contains that conversation.
 `
 
 function parseArgs(argv) {
-  const o = { target: null, dev: null, rpc: null, chainRpc: {}, port: DEFAULT_PORT, host: '127.0.0.1', log: null, strict: false, maxSkew: 300, quiet: false, salt: true, stripSession: false, requestUsage: false, noConform: false }
+  const o = { target: null, dev: null, rpc: null, chainRpc: {}, port: DEFAULT_PORT, host: '127.0.0.1', log: null, strict: false, maxSkew: 300, quiet: false, salt: true, stripSession: false, requestUsage: false, noConform: false, saveRequests: null }
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i], v
     const eq = a.startsWith('--') ? a.indexOf('=') : -1
@@ -139,6 +148,8 @@ function parseArgs(argv) {
       case '--strict': o.strict = true; break
       case '--quiet': o.quiet = true; break
       case '--no-salt': o.salt = false; break
+      // 2.5, experimental, off by default: the request bytes on disk (a privacy trade-off) / 2.5，实验性，默认关闭
+      case '--save-requests': o.saveRequests = value(); if (!o.saveRequests) throw new Error('--save-requests needs a directory'); break
       case '--strip-session-headers': o.stripSession = true; break
       case '--request-usage': o.requestUsage = true; break
       // 2.0: the 1.x resolution (conform: false, deprecated) / 2.0：1.x 的解析（conform: false，已弃用）
@@ -239,6 +250,33 @@ function verdictLine(rep) {
   return bits.join('  ')
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// --save-requests <dir> (2.5, experimental, off by default) / 保存请求字节（2.5，实验性，默认关闭）
+// The bytes the receipt's requestSha256 covers, so `tapeapi reconcile --requests <dir>` can join each receipt with its
+// request even when it was salted. They are the conversation in clear, so: the directory 700, an existing one refused when
+// group or others can enter it (POSIX), each file 600 and written once (flag wx: the same bytes give the same name). A file
+// reconcile would skip (over 16 MiB) is not written. A failed write is logged and the call goes on, as with --log.
+// 回执 requestSha256 覆盖的字节，让 tapeapi reconcile --requests 在加盐时也能把回执与请求对上。它们就是明文的对话，所以：目录 700，
+// 已有目录若组或其他人可进入则拒绝（POSIX）；文件 600，只写一次。超过 16 MiB（reconcile 会跳过）的不写。写失败只记日志，调用照常。
+// ---------------------------------------------------------------------------------------------------------------
+const SAVE_REQUEST_MAX = 16 * 1024 * 1024
+function prepareSaveDir(dir) {
+  const path = resolvePath(dir)
+  let st = null
+  try { st = statSync(path) } catch (e) { if (e.code !== 'ENOENT') throw new Error(`cannot use ${path}: ${e.code ?? e.message}`) }
+  if (st && !st.isDirectory()) throw new Error(`${path} is not a directory`)
+  if (!st) { try { mkdirSync(path, { recursive: true, mode: 0o700 }) } catch (e) { throw new Error(`cannot create ${path}: ${e.code ?? e.message}`) } }
+  else if (process.platform !== 'win32' && (st.mode & 0o077)) {
+    throw new Error(`${path} can be read by group or others (mode ${(st.mode & 0o777).toString(8)}): the saved requests hold your prompts in clear; use chmod 700 ${path}, or a new directory`)
+  }
+  return path
+}
+function saveRequest(dir, bytes) {
+  if (bytes.length > SAVE_REQUEST_MAX) { log(`--save-requests: a request of ${bytes.length} bytes is over ${SAVE_REQUEST_MAX} (tapeapi reconcile would skip it): not saved`); return }
+  const file = joinPath(dir, `${ai.sha256Hex(bytes)}.request`)
+  try { writeFileSync(file, bytes, { mode: 0o600, flag: 'wx' }) } catch (e) { if (e.code !== 'EEXIST') log(`--save-requests: cannot write ${file}: ${e.message}`) }
+}
+
 async function main() {
   // `task` (experimental, 1.7) is taken first and only as the very first word; everything else below is as it was in 1.6
   if (process.argv[2] === 'task') { process.exitCode = await taskMain(process.argv.slice(3)); return }
@@ -249,6 +287,10 @@ async function main() {
   if (opts.help) { process.stdout.write(USAGE + TASK_USAGE); return }
   if (opts.version) { process.stdout.write(`${VERSION}\n`); return }
   if (!opts.target && !opts.dev) { process.stderr.write(`tapeapi-verify: name the AI service\n\n${USAGE}`); process.exit(2) }
+  if (opts.saveRequests !== null) {
+    try { opts.saveRequests = prepareSaveDir(opts.saveRequests) } catch (e) { process.stderr.write(`tapeapi-verify: --save-requests: ${e.message}\n`); process.exit(1) }
+    log(`--save-requests: the bytes of every metered request (your prompts, in clear) are written to ${opts.saveRequests} (files 600); delete them when they are no longer needed`)
+  }
   if (opts.dev) {
     log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
     log('!! --dev is for TESTING ONLY: the service identity is NOT checked on chain.          !!')
@@ -355,6 +397,8 @@ async function main() {
     }
     // The salt goes on the bytes forwarded, and the receipt is checked over exactly those. / 盐加在转发的字节上，回执按这些字节核验。
     if (r.metered && opts.salt && body && body.length) { const more = ai.saltRequestBody(body, headers); if (more) body = more }
+    // --save-requests: exactly those bytes, before they are sent. / 正是这些字节，发出之前写下。
+    if (r.metered && opts.saveRequests && body && body.length) saveRequest(opts.saveRequests, body)
     const target = r.root + url.pathname + url.search
     let up
     try { up = await fetch(target, { method: verb, headers, body: body && body.length ? body : verb === 'POST' ? body : undefined, redirect: 'manual', signal: ac.signal }) } catch (e) {
@@ -534,7 +578,7 @@ async function main() {
   log(`service ${short(m.name, 80)}  ${svc.chainId && svc.chainId !== 56 ? `on ${CHAINS[svc.chainId]?.name ?? `chain ${svc.chainId}`}  ` : ''}container ${svc.container}  signer ${m.signer}${svc.verified.dev ? '  (DEV: not checked on chain)' : `  holder ${svc.verified.holder}`}`)
   for (const r of routes) log(`  ${r.format.name.padEnd(18)} -> ${r.root}${r.format.baseSuffix}`)
   log(`models priced: ${m[ai.MANIFEST_FIELD].models.map((x) => x.id).slice(0, 12).join(', ')}${m[ai.MANIFEST_FIELD].models.length > 12 ? ', ...' : ''}`)
-  log(`listening on ${local}${opts.strict ? '  (strict)' : ''}${opts.salt ? '' : '  (no salt)'}${opts.stripSession ? '  (session headers stripped)' : ''}${opts.requestUsage ? '  (usage requested)' : ''}${opts.log ? `  log ${opts.log}` : ''}`)
+  log(`listening on ${local}${opts.strict ? '  (strict)' : ''}${opts.salt ? '' : '  (no salt)'}${opts.stripSession ? '  (session headers stripped)' : ''}${opts.requestUsage ? '  (usage requested)' : ''}${opts.log ? `  log ${opts.log}` : ''}${opts.saveRequests ? `  requests saved to ${opts.saveRequests}` : ''}`)
   log(`  ANTHROPIC_BASE_URL=${local}    OPENAI_BASE_URL=${local}/v1`)
   const stop = (sig) => { log(`${sig}: ${stats.ok} verified, ${stats.failed} failed, ${stats.sidecarErrors} sidecar errors, ${stats.passThrough} passed through; exiting`); process.exit(0) }
   process.on('SIGTERM', () => stop('SIGTERM'))

@@ -545,6 +545,66 @@ export function amountOf(price, usage) {
 }
 
 /**
+ * @experimental (2.5) The most one call can cost in one currency when it uses at most `promptTokens` prompt tokens and
+ * at most `completionTokens` completion tokens, for a billing layer that holds funds before forwarding:
+ *   promptTokens × max(input, cacheRead, cacheWrite, cacheWrite1h) + completionTokens × max(output, reasoning)
+ * per 1M tokens, rounded up once to 8 decimals, so it is never below amountOf for any usage within those counts (a cache
+ * write may cost more than input, so no bucket is assumed cheaper). The bound is only as good as the counts: a model
+ * that ignores max_tokens, a hidden system prompt, images or tool definitions can make the real usage larger, and the
+ * receipt's amount then exceeds this. Settle on the receipt; enforce a hard cap of your own.
+ * 实验性：一次调用在一个币种下的最高金额（提示 token 至多 promptTokens、补全 token 至多 completionTokens），供转发前冻结额度用；
+ * 每个提示 token 按 input / cacheRead / cacheWrite / cacheWrite1h 中最高的价，每个补全 token 按 output / reasoning 中最高的价，
+ * 对总和向上取整一次到 8 位小数，因此不低于这些计数以内任何用量的 amountOf。上限只在计数可靠时成立：无视 max_tokens 的模型、
+ * 隐藏系统提示词、图片或工具定义都会让实际用量更大，回执金额就会超过它。按回执结算，并自己设硬上限。
+ * @param {{ input: string, output: string, cacheRead?: string, cacheWrite?: string, cacheWrite1h?: string, reasoning?: string }} price
+ * @param {{ promptTokens: number, completionTokens: number }} bounds
+ */
+export function maxAmountOf(price, { promptTokens, completionTokens } = {}) {
+  const dec = (v) => typeof v === 'string' && PRICE_RE.test(v)
+  if (!isObj(price) || !dec(price.input) || !dec(price.output) || PRICE_KEYS.some((k) => given(price[k]) && !dec(price[k]))) throw new TapeAPIError('BAD_REQUEST', 'prices must be decimal strings')
+  if (!safeCount(promptTokens) || !safeCount(completionTokens)) throw new TapeAPIError('BAD_REQUEST', 'promptTokens and completionTokens must be whole numbers of tokens (0 or more)')
+  const top = (keys) => keys.filter((k) => given(price[k])).map((k) => units(price[k])).reduce((a, b) => (b > a ? b : a), 0n)
+  const num = BigInt(promptTokens) * top(['input', 'cacheRead', 'cacheWrite', 'cacheWrite1h']) + BigInt(completionTokens) * top(['output', 'reasoning'])
+  return formatAmount((num + PER - 1n) / PER)
+}
+
+/** @experimental (2.5) maxAmountOf for every price of a price-table entry: [{ currency, amount }] in the entry's order, or
+ *  null for an entry without prices. / 实验性：对价目表条目的每个价格求 maxAmountOf，按条目顺序；条目没有价格时为 null。 */
+export function maxPricesOf(entry, bounds) {
+  if (!isObj(entry) || !Array.isArray(entry.prices)) return null
+  return entry.prices.map((p) => ({ currency: p.currency, amount: maxAmountOf(p, bounds) }))
+}
+
+/**
+ * @experimental (2.5) The completion-token limit a request body declares, by format, or null when it declares none (then
+ * only the model's own ceiling bounds the answer, and a billing layer should set one or refuse the call). openai-chat:
+ * the larger of max_completion_tokens and max_tokens, times n (each of n choices is billed); openai-responses:
+ * max_output_tokens; anthropic-messages: max_tokens (it includes any thinking budget); openai-embeddings: 0. This is
+ * what the request asks for, not what an upstream does: some models ignore it.
+ * 实验性：请求正文按格式声明的补全 token 上限；没有声明时为 null（此时只有模型自身的上限，计费层应自己设定或拒绝）。这是请求的
+ * 要求，不是上游的行为：有的模型会无视它。
+ * @param {unknown} body  the parsed JSON request body / 解析后的 JSON 请求正文
+ * @param {string|{ name: string }} format
+ * @returns {number|null}
+ */
+export function completionLimitOf(body, format) {
+  const name = typeof format === 'string' ? format : format?.name
+  if (name === 'openai-embeddings') return 0
+  if (!isObj(body)) return null
+  const n = (v) => (safeCount(v) ? v : null)
+  if (name === 'openai-chat') {
+    const a = n(body.max_completion_tokens), b = n(body.max_tokens)
+    const lim = a === null ? b : b === null ? a : Math.max(a, b)
+    if (lim === null) return null
+    const choices = Number.isSafeInteger(body.n) && body.n > 1 ? body.n : 1
+    return Number.isSafeInteger(lim * choices) ? lim * choices : null
+  }
+  if (name === 'openai-responses') return n(body.max_output_tokens)
+  if (name === 'anthropic-messages') return n(body.max_tokens)
+  return null
+}
+
+/**
  * The price-table entry for a model id: the one whose `id` or one of whose `aliases` equals it exactly (case-sensitive),
  * among the entries allowed for `format` (no `formats`, or `formats` listing it); null when none. No prefix matching.
  * 某个模型 id 对应的价目表条目：id 或某个别名与之精确相等（区分大小写），且允许用于该格式；没有则为 null。不做前缀匹配。

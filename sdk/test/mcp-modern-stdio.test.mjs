@@ -54,7 +54,9 @@ test('tapeapi-mcp: the 2026-07-28 fields go to a request of that revision only; 
   const legacy = (await request('tools/list', {})).result
   const modern = (await request('tools/list', { _meta: META })).result
   assert.deepEqual(Object.keys(legacy), ['tools'])
-  assert.deepEqual(modern, { ...legacy, resultType: 'complete', ttlMs: 0, cacheScope: 'public' })
+  const { _meta: info, ...rest } = modern
+  assert.deepEqual(rest, { ...legacy, resultType: 'complete', ttlMs: 0, cacheScope: 'public' })
+  assert.equal(info['io.modelcontextprotocol/serverInfo'].name, 'tapeapi-mcp', '2.6: serverInfo in _meta')
   assert.equal(toolsDigest(modern.tools), toolsDigest(legacy.tools))
   const name = legacy.tools[0].name
   const cl = (await request('tools/call', { name, arguments: { text: 'hi' } })).result

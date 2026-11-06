@@ -51,7 +51,24 @@ function without20Option(text, what) {
   assert.ok(at > 0 && text.indexOf(NO_CONFORM_LINES, at + 1) === -1, `${what}: the 2.0 --no-conform lines appear once`)
   assert.match(text.slice(0, at), /--dev <url> {10}TESTING ONLY: read the manifest from a local sidecar, no on-chain identity check\n$/, `${what}: after --dev`)
   assert.ok(text.slice(at + NO_CONFORM_LINES.length).startsWith('  --quiet  '), `${what}: before --quiet`)
-  return text.slice(0, at) + text.slice(at + NO_CONFORM_LINES.length)
+  return without25Option(text.slice(0, at) + text.slice(at + NO_CONFORM_LINES.length), what)
+}
+// CHANGED in 2.5: --save-requests (experimental, off by default) adds its lines right after --no-salt. They are taken out
+// the same way (checked to be there once, in that place), so the rest is still the 1.6 bytes.
+// CHANGED in 2.5：--save-requests 的几行紧接在 --no-salt 之后；同样先确认恰在此处出现一次再取出，其余仍与 1.6 逐字节相同。
+const SAVE_REQUESTS_AT = '  --save-requests <dir>\n'
+function without25Option(text, what) {
+  const at = text.indexOf(SAVE_REQUESTS_AT)
+  assert.ok(at > 0 && text.indexOf(SAVE_REQUESTS_AT, at + 1) === -1, `${what}: the 2.5 --save-requests lines appear once`)
+  assert.match(text.slice(0, at), /characters are appended to a JSON body, so the request hash cannot be guessed\)\n$/, `${what}: right after --no-salt`)
+  const end = text.indexOf('  --strip-session-headers\n', at)
+  assert.ok(end > at, `${what}: before --strip-session-headers`)
+  const lines = text.slice(at, end)
+  assert.match(lines, /EXPERIMENTAL \(2\.5\), off by default/)
+  assert.match(lines, /PRIVACY: these files hold your prompts/)
+  assert.match(lines, /隐私：这些文件/)
+  assert.equal(lines.split('\n').length - 1, 8, `${what}: eight lines`)
+  return text.slice(0, at) + text.slice(end)
 }
 
 test('FIXED TV-01: nothing outside `task` changed: the 1.6 output, stderr and exit status are byte for byte the same, and --help only gained the task text', () => {

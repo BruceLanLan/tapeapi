@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>旁路前面的计费层 · TapeAPI 手册</title>
+<meta name="description" content="写给已经有自己的账户、余额和 API 密钥，并把 TapeAPI 签名旁路放在它们后面的运营方。旁路负责签名，你的计费层负责扣费。本页说明两者怎样衔接、转发前冻结多少、记录什么、对用户怎么说。本页只讲 TapeAPI 的工具：TapeAPI 不运营、不托管、不登记、也不担保任何这类服务，本页的任何内容都不收款、不付款。">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../docs.css?v=62ad162ee6">
+<link rel="alternate" hreflang="en" href="../en/billing-layer">
+<script src="../docs.js?v=dee763d4ca"></script>
+</head>
+<body data-page="billing-layer" data-other="../en/billing-layer" data-l-copy="复制" data-l-copied="已复制" data-l-none="没有结果" data-l-light="浅色" data-l-dark="深色" data-l-theme="主题">
+<header class="hd-bar top"><div class="hd">
+  <button class="hd-btn menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">目录</button>
+  <a class="hd-brand" href="/" aria-label="TapeAPI"><svg class="hd-mark" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" width="99" height="11" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a><a class="hd-sec" href="./">手册</a>
+  <div class="search"><input id="q" type="search" placeholder="搜索手册" aria-label="搜索手册" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <nav class="hd-nav" aria-label="TapeAPI"><a href="./" aria-current="true">手册</a><a href="https://tapeapi.fun/playground/">调试台</a><a href="https://tapeapi.fun/dashboard/">我的服务</a><a href="https://tapeapi.fun/status/">状态</a><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></nav>
+  <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="en">English</button><button class="hd-btn" id="theme-btn" type="button">主题</button></div>
+</div></header>
+<div class="layout">
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="./">简介</a></li><li><a href="public-api">公共 API</a></li><li><a href="mcp">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume">调用服务</a></li><li><a href="provide">运行服务</a></li><li><a href="ai-providers">接入 AI 服务</a></li><li><a href="billing-layer" aria-current="page">旁路前面的计费层</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels">私密通道</a></li><li><a href="groups">群聊</a></li><li><a href="agents">AI 智能体</a></li><li><a href="container-agents">容器代理（实验性）</a></li><li><a href="reconcile">回执对账（实验性）</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq">常见问题与排障</a></li><li><a href="reference">参考</a></li><li><a href="upgrade-1.0">从 0.x 升级到 1.0</a></li><li><a href="upgrade-2.0">从 1.x 升级到 2.0</a></li><li><a href="changelog">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="旁路前面的计费层">旁路前面的计费层</h1>
+<p>写给已经有自己的账户、余额和 API 密钥，并把 TapeAPI 签名旁路放在它们后面的运营方。旁路负责签名，你的计费层负责扣费。本页说明两者怎样衔接、转发前冻结多少、记录什么、对用户怎么说。本页只讲 TapeAPI 的工具：TapeAPI 不运营、不托管、不登记、也不担保任何这类服务，本页的任何内容都不收款、不付款。</p>
+<p>这里新增的都是<strong>实验性</strong>功能（2.5，不在 2.x 兼容承诺之内）：SDK 的 <code>ai.amountOf</code>、<code>ai.pricesOf</code>、<code>ai.maxAmountOf</code>、 <code>ai.maxPricesOf</code>、<code>ai.completionLimitOf</code>，旁路选项 <code>upstreamResponseHeaders</code>（<code>UPSTREAM_RESPONSE_HEADERS</code>），以及 new-api 旁路的 <code>RECEIPT_LOOKUPS_PER_MIN</code>。不调用、不设置就不生效；没有用到它们的旁路行为不变。</p>
+<p>请先读<a href="ai-providers">接入 AI 服务</a>：那里讲旁路、委托和价目表的设置。</p>
+<h2 id="拓扑"><a class="anchor" href="#拓扑" aria-hidden="true">#</a>拓扑</h2>
+<div class="code"><pre><code>用户 ──► 你的计费层 ──► TapeAPI 旁路 ──► 上游（new-api、LiteLLM、厂商接口）
+         密钥、余额、      为 FORMATS 启用的格式
+         冻结、结算        的每个回答签名</code></pre></div>
+<ul><li>计费层鉴别用户、冻结额度，把请求<strong>逐字节</strong>转给旁路，再按返回的回执结算。它不改动转发的请求正文（回执绑定 <code>requestSha256</code>，即旁路收到的字节的哈希），也不改动转交的回答（回执绑定 <code>responseSha256</code>）。</li><li>回执原样转交：整体回答的 <code>x-tapeapi-receipt</code> 响应头，以及事件流里的 <code>: tapeapi-receipt …</code> 注释。如果计费层过滤响应头，要保留 <code>x-tapeapi-receipt</code>，并把它列进 <code>access-control-expose-headers</code>，否则浏览器客户端读不到。</li><li>旁路自己不做鉴权。只让计费层能访问它（内网或回环地址），不要暴露在公网上。</li><li>用户可以自己核验每张回执（<code>tapeapi-verify</code> 或 <code>ai.createVerifyingFetch</code>）。你数据库里的标记只是你的记录，不是核验：除非已经用 <code>ai.verifyUsageReceipt</code> 对照链上清单核验过签名，否则不要显示&quot;签名已核验&quot;。</li></ul>
+<h2 id="formats-必须与计费范围一致"><a class="anchor" href="#formats-必须与计费范围一致" aria-hidden="true">#</a>FORMATS 必须与计费范围一致</h2>
+<p>旁路的 <code>FORMATS</code> 应当正好是你的计费层计费、你的上游真正提供的 API 格式，价目表里每个模型的 <code>formats</code> 也只写这些。三处要一致：</p>
+<div class="table"><table><thead><tr><th>位置</th><th>内容</th></tr></thead><tbody><tr><td>你的计费层</td><td>计费的路径（<code>/v1/chat/completions</code>、<code>/v1/responses</code>、<code>/v1/messages</code>、<code>/v1/embeddings</code>）</td></tr><tr><td>旁路的 <code>FORMATS</code></td><td><code>openai-chat</code>、<code>openai-responses</code>、<code>anthropic-messages</code>、<code>openai-embeddings</code></td></tr><tr><td>价目表（<code>models.json</code>，发布在链上）</td><td>每个模型的 <code>formats</code></td></tr></tbody></table></div>
+<p>计费层计费、但 <code>FORMATS</code> 没有启用的路径拿不到回执：旁路对它回 HTTP 400 <code>bad_path</code>（2.1 起），你就没有结算依据。旁路发布了、计费层却不转发的格式，是链上一条你的服务做不到的公开声明。<code>tapeapi init</code>（2.3）会要求明确选择 <code>FORMATS</code>，并与清单比对。</p>
+<h2 id="按回执扣费"><a class="anchor" href="#按回执扣费" aria-hidden="true">#</a>按回执扣费</h2>
+<p>按回执里的金额扣费（<code>result.prices</code>，8 位小数，向上取整），用你计价的那个币种。要按用量和价目表重算时，用 SDK 自己的规则，不要自己抄一份：</p>
+<div class="code"><pre data-lang="js"><code>import { amountOf, pricesOf } from '@tapeapi/sdk/ai'
+
+const entry = models.find((m) =&gt; m.id === receipt.result.model)  // 或用 ai.modelEntryOf，它也匹配别名
+const usdt = entry.prices.find((p) =&gt; p.currency === 'USDT')
+const charge = amountOf(usdt, receipt.result.usage)              // '0.00357500'，与旁路签名的完全一致</code></pre></div>
+<p>扣费前至少检查：回执的 <code>requestSha256</code> 等于你转发的字节的 SHA-256；整体回答的 <code>responseSha256</code> 等于你收到的字节的 SHA-256 （<code>ai.sha256Hex</code>）。没有回执时（上游失败、流在结束前断开、价目表里没有上游报告的模型），扣多少要事先定好，并写进你的条款。</p>
+<h2 id="冻结额度怎么定"><a class="anchor" href="#冻结额度怎么定" aria-hidden="true">#</a>冻结额度怎么定</h2>
+<p>固定一个很小的冻结额度，一次调用就可能花掉远超冻结的钱，多个并发调用会把余额打成很大的负数。应当按请求估算：</p>
+<div class="code"><pre data-lang="js"><code>import { completionLimitOf, maxPricesOf, modelEntryOf } from '@tapeapi/sdk/ai'
+
+const body = JSON.parse(requestText)
+const entry = modelEntryOf(models, body.model, 'openai-chat')
+if (!entry) return refuse(400, 'unknown model')
+const completion = completionLimitOf(body, 'openai-chat') ?? MODEL_MAX_OUTPUT[entry.id]   // 请求没写：用模型自身的上限
+if (completion &gt; HARD_CAP_COMPLETION) return refuse(400, 'max_tokens above this service\'s cap')
+const prompt = promptTokenBound(body)        // 你自己分词器的计数，或保守估计（见下），再加余量
+const hold = maxPricesOf(entry, { promptTokens: prompt, completionTokens: completion })
+// hold: [{ currency: 'USDT', amount: '0.50900000' }, ...]：原子地冻结，转发，再按回执结算</code></pre></div>
+<p><code>maxAmountOf</code> 把每个提示 token 按 <code>input</code>、<code>cacheRead</code>、<code>cacheWrite</code>、<code>cacheWrite1h</code> 中最高的价计（缓存写可能比输入贵），把每个补全 token 按 <code>output</code>、<code>reasoning</code> 中较高的价计，对总和向上取整一次：只要实际用量在给定计数以内，它不会低于回执的金额。 <code>completionLimitOf</code> 读出请求声明的上限：Chat Completions 取 <code>max_completion_tokens</code> 与 <code>max_tokens</code> 中较大的，再乘以 <code>n</code>； Responses 取 <code>max_output_tokens</code>；Messages 取 <code>max_tokens</code>（包含思考预算）；Embeddings 为 0；请求没有声明时为 <code>null</code>。</p>
+<p><strong>单靠价目表限不住的情况。</strong> 冻结额度只在计数可靠时成立：</p>
+<ul><li><strong>无视 <code>max_tokens</code> 的模型。</strong> 有些上游模型会超过请求设定的上限。这种调用，价目表上的任何算术都限不住。请自己设硬上限（只接受不超过某个值的补全上限，超过就拒绝或改写请求），按回执的 <code>completion_tokens</code> 结算，并事先定好回执金额超过冻结额时怎么办（补扣差额并允许有上限的负余额，或者自己承担）。</li><li><strong>没算到的提示 token。</strong> 上游可能加隐藏系统提示词（按输入计费）、对话模板、工具定义、图片、音频或文件。对字节级分词器来说，请求里文本的 UTF-8 字节数大致是文本本身 token 数的上界，但对上面这些都不成立。每次调用留余量，图片和文件按上游自己的规则计，或者限制它们的大小。</li><li><strong>上游报告的模型。</strong> 回执按上游报告的模型计价，它可能与请求的不同（别名，或另一个模型）。如果价目表里有上游可能报告的更贵的条目，就按最贵的冻结，或者拒绝报告模型与请求模型不一致的回答。</li><li><strong>并发。</strong> 冻结必须是原子操作，所有未结冻结额之和不能超过余额。按用户限制并发，而不是按密钥：一个用户可以创建很多密钥。</li></ul>
+<h2 id="回执补查"><a class="anchor" href="#回执补查" aria-hidden="true">#</a>回执补查</h2>
+<p>回答本身带着回执，那一份是主要的。旁路另外在内存里保留每张回执一小时（<code>RECEIPT_TTL_S</code>；重启即丢），由免费的 <code>receipt</code> 方法提供，并按客户端 IP 限流：默认每分钟 10 次。计费层从同一个地址补查时，全站共用一个桶；请设置 <code>RECEIPT_LOOKUPS_PER_MIN</code>（new-api 和 LiteLLM 旁路 2.5 起支持；Cloudflare Worker 原本就读取它），例如 600。设为 <code>0</code> 则拒绝所有补查，与 Worker 相同；设为 <code>off</code> 则不单独限流（只受 <code>RATE_IP</code> 约束）。其它值进入设置模式并点名该变量。优先从回答里读回执，补查只用于连接中断后的补救。</p>
+<h2 id="上游响应头"><a class="anchor" href="#上游响应头" aria-hidden="true">#</a>上游响应头</h2>
+<p>上游响应头可能透露你的渠道、供应方或成本。把 <code>UPSTREAM_RESPONSE_HEADERS</code>（或 <code>createAIProxy</code> 的 <code>upstreamResponseHeaders</code>）设成允许用户看到的上游头，例如 <code>x-request-id</code>：其余上游头一律去掉。有两个始终保留：<code>content-type</code>（只保留媒体类型与 <code>charset</code>、 <code>boundary</code> 参数，其它参数可能带出白名单要藏的东西），以及 <code>retry-after</code>（客户端在 429、503 时靠它退避）。旁路自己的头（回执、CORS）照旧加上。响应头不属于回执，所以开不开，回执和回答字节都一样。不设置或留空即不开白名单，与以前一样全部转交；除这两个之外一个都不转，就设成 <code>content-type</code>。它只过滤响应头：回答正文（<code>id</code> 的格式、上游报告的 <code>model</code>、用量字段）原样透传，因为回执签的就是这些字节。</p>
+<h2 id="模型名"><a class="anchor" href="#模型名" aria-hidden="true">#</a>模型名</h2>
+<p>回执里的 <code>model</code> 是签名方声称上游报告的名字。如果旁路和上游之间有东西改写模型名（例如把上游名字映射成你价目表 id 的代理），回执里就是改写后的名字。格式允许这样做，但不能让它不可见：</p>
+<ul><li><strong>公开说明</strong>：在价目页或条款里写明&quot;回执中的 model 是我们价目表的 id，不是上游原样返回的名字&quot;。</li><li><strong>两个名字都记下来</strong>：每次调用都在你自己的记录里写下请求的模型，以及改写之前上游报告的模型，审计或纠纷时两者都能查到。</li><li><strong>绝不声称回执能证明上游跑的是哪个模型。</strong> 回执证明的是谁签的名、针对哪些确切的请求与回答字节、声称了多少用量和价格；它不证明上游的模型或渠道。</li></ul>
+<h2 id="对用户怎么说"><a class="anchor" href="#对用户怎么说" aria-hidden="true">#</a>对用户怎么说</h2>
+<p>页脚或条款的建议文案（把 <code>&lt;运营方&gt;</code> 换成你的名字）：</p>
+<blockquote><p>回执为 TapeAPI 格式，由 <code>&lt;运营方&gt;</code> 签发。TapeAPI 不运营、不担保本服务。</p></blockquote>
+<p>不要把 TapeAPI 的名字或标志用得像是它在运营、检查或推荐你的服务；不要把回执说成上游模型的证明；界面上的&quot;已核验&quot;只在用户自己的客户端核验过签名时才这样写，并说明这一点。</p>
+<h2 id="旁路从-20-升级到-24"><a class="anchor" href="#旁路从-20-升级到-24" aria-hidden="true">#</a>旁路从 2.0 升级到 2.4</h2>
+<p>适用于从 2.0.0 部署的旁路（new-api 一键包、LiteLLM 一键包或 Cloudflare Worker）。固定部署的版本（带 SHA-256 的发布包，或某个标签的提交），看更新日志，升级后运行 <code>tapeapi doctor &lt;名字&gt;</code>。</p>
+<div class="table"><table><thead><tr><th>版本</th><th>对旁路运营方的影响</th><th>要做什么</th></tr></thead><tbody><tr><td>2.1.0</td><td><code>FORMATS</code>：设置后只发布并签名这些格式，未启用格式的计量路径回 HTTP 400 <code>bad_path</code>；不设置则与 2.0.0 一样发布四种，并在日志和 <code>/tapeapi/v1/health</code> 里给出 <code>WARNING</code>；名字不认识、或模型的 <code>formats</code> 列了未启用的格式，进入设置模式。<code>pricing-convert.mjs</code> 把 new-api 的 <code>/api/pricing</code> 转成 <code>models.json</code>。<code>tapeapi connect</code></td><td>把 <code>FORMATS</code> 设成上游真正提供、计费层计费的格式；格式有变化就重新发布清单。用转换器代替自己写的换算脚本。</td></tr><tr><td>2.2.0</td><td><code>tapeapi receipts</code> 与 <code>tapeapi reconcile</code>（含 <code>--preset new-api</code>）；doctor 的 <code>paidUntil</code>、<code>monthlyFeeWei</code> 字段</td><td>用回执和自己的账本或上游账单对账。</td></tr><tr><td>2.3.0</td><td><code>tapeapi init</code>（要求选择 <code>FORMATS</code> 并与清单比对）和 <code>tapeapi prices convert|check|show</code>；doctor 会报告处于设置模式的旁路及其 <code>missing</code>、<code>problem</code></td><td>在每日检查里用 <code>prices check</code> 发现价格漂移。</td></tr><tr><td>2.4.0</td><td>AI 旁路没有变化（只有 MCP 工具方法）</td><td>无。</td></tr><tr><td>2.5.0</td><td>本页的实验性辅助函数和选项（<code>ai.amountOf</code>、<code>ai.pricesOf</code>、<code>ai.maxAmountOf</code>、<code>ai.maxPricesOf</code>、<code>ai.completionLimitOf</code>、<code>RECEIPT_LOOKUPS_PER_MIN</code>、<code>UPSTREAM_RESPONSE_HEADERS</code>）；<code>tapeapi reconcile</code> 逐个请求对照回执，输出上限用同一个 <code>ai.completionLimitOf</code> 读取；MCP 2026-07-28 只涉及 MCP 入口（AI 旁路没有变化）；默认值不变</td><td>可选：<code>RECEIPT_LOOKUPS_PER_MIN</code>、<code>UPSTREAM_RESPONSE_HEADERS</code>。new-api 与 LiteLLM 旁路从 2.5 起读取这两个变量（2.4 不读）：compose 文件里留着的坏值现在会让旁路进入设置模式（所有 <code>/v1/*</code> 答 503，<code>/tapeapi/v1/health</code> 点名该变量），升级前请检查这两项。计费层改用 SDK 的辅助函数，不再自己抄价格规则。导出账本时用用户能在 <code>--map</code> 里指定的列名：见<a href="reconcile#给运营者给用户能对账的行">回执对账·给运营者</a>。</td></tr></tbody></table></div>
+<p>回执格式（TAPI-21）、清单的 <code>ai</code> 字段（TAPI-20）及其测试向量在 2.0 到 2.4 之间都没有变化：2.0 旁路签的回执 2.4 客户端能核验，反过来也一样。</p>
+</article>
+<nav class="pn"><a class="prev" href="ai-providers"><span>上一篇</span>接入 AI 服务</a><a class="next" href="channels"><span>下一篇</span>私密通道</a></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/billing-layer.md" rel="noopener">在 GitHub 上编辑此页</a></p>
+</main>
+<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#拓扑">拓扑</a></li><li class="l2"><a href="#formats-必须与计费范围一致">FORMATS 必须与计费范围一致</a></li><li class="l2"><a href="#按回执扣费">按回执扣费</a></li><li class="l2"><a href="#冻结额度怎么定">冻结额度怎么定</a></li><li class="l2"><a href="#回执补查">回执补查</a></li><li class="l2"><a href="#上游响应头">上游响应头</a></li><li class="l2"><a href="#模型名">模型名</a></li><li class="l2"><a href="#对用户怎么说">对用户怎么说</a></li><li class="l2"><a href="#旁路从-20-升级到-24">旁路从 2.0 升级到 2.4</a></li></ul></aside>
+</div>
+</body>
+</html>

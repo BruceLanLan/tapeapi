@@ -3,7 +3,8 @@
 // 公共 TapeAPI 服务（api.tapeapi.fun）的 Cloudflare Worker：身份与设置模式同 examples/cloudflare-worker，方法见 methods.js。
 //
 // Secret: SIGNER_KEY. Variables: CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES, DELEGATION_SIG, PUBLIC_URL,
-// RPC_URLS (kept across deploys by keep_vars), and, experimental, MCP_TOOLS_SHA256 (TAPI-20 §3.8, see manifestOf):
+// RPC_URLS (kept across deploys by keep_vars), experimental MCP_ALLOWED_ORIGINS (see mcpAllowedOriginsOf), and,
+// experimental, MCP_TOOLS_SHA256 (TAPI-20 §3.8, see manifestOf):
 // set, the manifest adds the tool methods and declares /mcp/pinned, whose tools they are. An MCP_TOOLS_SHA256 that is
 // not 64 hex digits keeps the whole service in setup mode, with a problem naming it.
 // Adding or changing a method changes the manifest: republish it on chain with the holder console, step 7.
@@ -41,6 +42,22 @@ export function mcpToolsSha256Of(env) {
   if (typeof t === 'string' && /^[0-9a-fA-F]{64}$/.test(t)) return t.toLowerCase()
   const got = typeof t !== 'string' ? typeof t : `${t.length} characters${/^0x/i.test(t) ? ' starting with 0x' : ''}`
   throw new Error(`MCP_TOOLS_SHA256 must be the toolsSha256 the holder published: 64 hex digits, without 0x (got ${got})`)
+}
+
+// MCP_ALLOWED_ORIGINS (experimental, 2.5): comma-separated exact origins a browser may call /mcp and
+// /mcp/pinned from (createMcpEndpoint allowedOrigins). Unset or empty: every origin, as before. A value that is not a
+// list of origins is an Error naming the variable: build() turns it into setup mode.
+// MCP_ALLOWED_ORIGINS（实验性）：逗号分隔的来源。未设或为空：任何来源，与以前相同。不是来源列表时抛出点名该变量的错误，进入设置模式。
+export function mcpAllowedOriginsOf(env) {
+  const v = typeof env?.MCP_ALLOWED_ORIGINS === 'string' ? env.MCP_ALLOWED_ORIGINS.trim() : ''
+  if (!v) return undefined
+  const list = v.split(',').map((x) => x.trim()).filter(Boolean)
+  for (const o of list) {
+    let ok = false
+    try { ok = new URL(o).origin === o } catch { /* below / 见下 */ }
+    if (!ok) throw new Error(`MCP_ALLOWED_ORIGINS must be comma-separated origins such as https://app.example (got ${JSON.stringify(o.slice(0, 80))})`)
+  }
+  return list
 }
 
 export function manifestOf(env) {
@@ -82,6 +99,7 @@ export function mcpToolsManifestOf(env) {
 }
 
 export function build(env) {
+  mcpAllowedOriginsOf(env)   // a malformed value is setup mode, before anything is served / 格式不对即设置模式
   const rpcUrls = (env.RPC_URLS || DEFAULT_RPC_URLS).split(',').map((u) => u.trim()).filter(Boolean)
   // 2-of-3 and a one-block lag behind the lowest head: one node down or behind still leaves a quorum.
   // 三取二，比最低链头落后一个块：一个节点宕机或落后时仍有法定数。
@@ -159,13 +177,16 @@ export default {
     // /mcp: the REST methods as MCP tools (remote MCP, Streamable HTTP), exactly as before; never declared in the manifest.
     // /mcp：REST 方法作为 MCP 工具（远程 MCP），与以前完全相同；从不在清单里声明。
     if (path === MCP_PATH) {
-      mcpEndpoint ??= createMcpEndpoint({ provider, manifest: restView(provider.manifest ?? manifestOf(env)), name: env.TAPE_NAME || undefined, version: VERSION, onMessage: (m) => logMcp(m, env) })
+      mcpEndpoint ??= createMcpEndpoint({ provider, manifest: restView(provider.manifest ?? manifestOf(env)), name: env.TAPE_NAME || undefined, version: VERSION, allowedOrigins: mcpAllowedOriginsOf(env), onMessage: (m) => logMcp(m, env) })
       return mcpEndpoint.handleRequest(request, { clientIp })
     }
     // /mcp/pinned (2.4, experimental): the tool methods, only while MCP_TOOLS_SHA256 is set; the manifest declares it.
-    // /mcp/pinned（2.4，实验性）：工具方法，只在设置了 MCP_TOOLS_SHA256 时提供；清单声明的就是它。
+    // Its tools/list is held to MCP_TOOLS_SHA256 as its calls are (2.5): refused while the tools hash to
+    // anything else, as createMcpProxy refuses it.
+    // /mcp/pinned（2.4，实验性）：工具方法，只在设置了 MCP_TOOLS_SHA256 时提供；清单声明的就是它。它的 tools/list 与调用一样受
+    // MCP_TOOLS_SHA256 约束：摘要不符时按 createMcpProxy 的方式拒绝。
     if (path === MCP_PINNED_PATH && mcpToolsSha256Of(env)) {
-      pinnedEndpoint ??= createMcpEndpoint({ provider, manifest: toolView(provider.manifest ?? manifestOf(env)), name: env.TAPE_NAME || undefined, version: VERSION, mcpResults: true, onMessage: (m) => logMcp(m, env) })
+      pinnedEndpoint ??= createMcpEndpoint({ provider, manifest: toolView(provider.manifest ?? manifestOf(env)), name: env.TAPE_NAME || undefined, version: VERSION, mcpResults: true, pinnedToolsSha256: mcpToolsSha256Of(env), allowedOrigins: mcpAllowedOriginsOf(env), onMessage: (m) => logMcp(m, env) })
       return pinnedEndpoint.handleRequest(request, { clientIp })
     }
     return provider.handleRequest(request, { clientIp })

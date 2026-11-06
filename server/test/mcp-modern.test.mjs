@@ -40,7 +40,8 @@ test('endpoint: tools/list of revision 2026-07-28 carries resultType, ttlMs 0 an
   const res = await post({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: { _meta: META } }, MODERN_HEADERS('tools/list'))
   assert.equal(res.status, 200)
   const modern = await res.json()
-  assert.deepEqual(modern.result, { ...legacy.result, resultType: 'complete', ttlMs: 0, cacheScope: 'public' })
+  // 2.6: a modern result also carries serverInfo in _meta. / 2.6：新版结果的 _meta 还带 serverInfo。
+  assert.deepEqual(modern.result, { ...legacy.result, resultType: 'complete', ttlMs: 0, cacheScope: 'public', _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'tapeapi-11.1013.tape', title: 'Echo (TapeAPI)', version: '0.3.0' } } })
   assert.deepEqual(Object.keys(legacy.result), ['tools'], 'an earlier revision gets no new field')
   assert.equal(mcp.toolsDigest(modern.result.tools), mcp.toolsDigest(legacy.result.tools))
 })
@@ -63,14 +64,17 @@ test('endpoint: tools/call of revision 2026-07-28 carries resultType; the signed
   assert.equal(modern.isError, false)
 })
 
-test('endpoint: a batch with one message of each revision answers each by its own; the preflight allows the 2026-07-28 headers', async () => {
-  const out = await (await post([
+// CHANGED MR-1: a batch holding a 2026-07-28 message is refused 400 (the body of a 2026-07-28 POST is
+// one message); a legacy batch is answered as before. / CHANGED MR-1：含新版消息的批量 400；旧版批量照旧。
+test('endpoint: a batch holding a 2026-07-28 message is refused 400, a legacy one answered; the preflight allows the 2026-07-28 headers', async () => {
+  const res = await post([
     { jsonrpc: '2.0', id: 'm', method: 'tools/list', params: { _meta: META } },
     { jsonrpc: '2.0', id: 'l', method: 'tools/list' },
-  ])).json()
-  const by = Object.fromEntries(out.map((m) => [m.id, m.result]))
-  assert.equal(by.m.resultType, 'complete'); assert.equal(by.m.ttlMs, 0); assert.equal(by.m.cacheScope, 'public')
-  assert.deepEqual(Object.keys(by.l), ['tools'])
+  ])
+  assert.equal(res.status, 400)
+  assert.deepEqual(await res.json(), { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'a request of MCP 2026-07-28 is a single JSON-RPC message, not a batch' } })
+  const out = await (await post([{ jsonrpc: '2.0', id: 'l', method: 'tools/list' }])).json()
+  assert.deepEqual(Object.keys(out[0].result), ['tools'])
   const pre = await ep.handleRequest(new Request('https://echo.example/mcp', { method: 'OPTIONS' }))
   const allowed = pre.headers.get('access-control-allow-headers').split(',').map((s) => s.trim())
   for (const h of ['mcp-protocol-version', 'mcp-method', 'mcp-name']) assert.ok(allowed.includes(h), h)
@@ -114,7 +118,9 @@ test('proxy: /mcp gives the 2026-07-28 fields to a request of that revision only
   assert.equal(m.mcp.toolsSha256, mcp.toolsDigest(listed))
   const legacy = await rpc(p, 'tools/list', {})
   const modern = await rpc(p, 'tools/list', { _meta: META }, MODERN_HEADERS('tools/list'))
-  assert.deepEqual(modern.result, { ...legacy.result, resultType: 'complete', ttlMs: 0, cacheScope: 'public' })
+  const { _meta: info, ...rest } = modern.result
+  assert.deepEqual(rest, { ...legacy.result, resultType: 'complete', ttlMs: 0, cacheScope: 'public' })
+  assert.equal(info['io.modelcontextprotocol/serverInfo'].name, 'tapeapi-proxy-Demo MCP', '2.6: serverInfo in _meta')
   assert.deepEqual(Object.keys(legacy.result), ['tools'])
   assert.equal(mcp.toolsDigest(modern.result.tools), m.mcp.toolsSha256)
   const cl = (await rpc(p, 'tools/call', { name: 'add', arguments: { a: 2, b: 3 } })).result

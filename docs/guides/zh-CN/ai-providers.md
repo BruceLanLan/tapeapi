@@ -24,7 +24,7 @@ npm ci --no-audit --no-fund
 在任何目录都能运行，不需要克隆仓库：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-doctor <你的名字>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-doctor <你的名字>
 ```
 
 在检出的根目录里，`node sdk/bin/tapeapi-doctor.js <你的名字>` 效果相同。两种方式下，报告给出的下一条命令都按你的运行方式书写。
@@ -222,7 +222,7 @@ const client = new OpenAI({ baseURL, apiKey: process.env.API_KEY, fetch })  // �
 
 ```sh
 # 终端 1。42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -245,7 +245,7 @@ $env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex
 
 ```sh
 # 任何目录都能运行，不需要克隆仓库；42.1013.tape 是示例名
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi connect 42.1013.tape            # 服务卡片与配置
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi connect 42.1013.tape            # 服务卡片与配置
 # 装好 SDK 之后命令就是 tapeapi connect …
 tapeapi connect 42.1013.tape --proxy    # 然后为它运行 tapeapi-verify
 ```
@@ -262,7 +262,7 @@ tapeapi connect 42.1013.tape --proxy    # 然后为它运行 tapeapi-verify
 
 ```sh
 # 任何目录都能运行，不需要克隆仓库
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi receipts tail --receipts ~/.tapeapi/receipts.jsonl   # tapeapi-verify --log 写下的内容
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi receipts tail --receipts ~/.tapeapi/receipts.jsonl   # tapeapi-verify --log 写下的内容
 # 装好 SDK 之后命令就是 tapeapi receipts … 与 tapeapi reconcile …
 tapeapi receipts show <id> --receipts ~/.tapeapi/receipts.jsonl         # 一张回执，离线重放核验
 tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # 与账单文件对账
@@ -270,11 +270,13 @@ tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # 与账
 
 在检出里（先在根目录运行一次 `npm ci`），`node sdk/bin/tapeapi.js receipts …` 与 `node sdk/bin/tapeapi.js reconcile …` 效果相同。
 
-`show` 依据用户存在回执旁的你的清单（`manifest.json`）重放一张回执的核验（签名、容器、方法与路径、价目表；给出确切字节时也核对哈希；请求字节只在 `tapeapi-verify --no-salt` 运行时才有）；
+`show` 依据用户存在回执旁的你的清单（`manifest.json`）重放一张回执的核验（签名、容器、方法与路径、价目表；给出确切字节时也核对哈希；请求字节只在 `tapeapi-verify --no-salt` 运行时或由它的 `--save-requests <目录>` 写下的文件里才有）；
 没有清单就不判定（退出码 3）。`reconcile` 列出匹配、只在一边出现的缺失行，以及与回执声称不一致的字段，每条都带两边的出处行；它不下结论。
 `--preset new-api` 对应 new-api 的 `GET /api/log/self` 返回的 JSON（`data.items`）里的字段名（取自 new-api 源码，尚未用真实实例核对）。
 它不是 new-api 网页端导出的 CSV：那份文件的表头是本地化的显示标题，`Cost` 是格式化后的字符串、不是可比较的数，id 列是 `request_id`
 而不是 `upstream_request_id`，所以预设对它匹配不上（退出码 2）；和其它账单一样，用 `--map` 指定它的列。
+
+给运营者的导出列名、请求事实检查、与授权书和本地限额的对照，见 [回执对账](reconcile.md)（实验性）。
 
 `tapeapi-verify` 在链上解析你的服务，回答原样透传，每次调用打印一行结论；加 `--strict` 时，核验失败会变成客户端看得到的错误。单份回执也可以贴到
 [核验页](https://tapeapi.fun/verify/)。这些都需要你的清单已经上链（操作台第 5 步，见上文）。
@@ -291,6 +293,9 @@ tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # 与账
   写的样子：网关靠它们把同一段对话路由到同一个账号，缓存才能命中。
 - **不处理的：** 压缩过的正文（`Content-Encoding` 不是 `identity`，追加会破坏它）、非 JSON 正文，以及所有不出回执的路径。
   `salt: false` / `--no-salt` 完全按客户端写的字节发送。
+- **保留加盐后的字节（实验性，2.5，默认关闭）：** `tapeapi-verify --save-requests <目录>` 把它发出的每个计量请求（含盐）写到
+  `<目录>/<sha256>.request`（目录 700、文件 600），供 `tapeapi reconcile --requests <目录>` 使用。这些文件是明文的对话，回执与
+  `--log` 都不含这些内容：只在要核对的调用期间打开，用完删除（见对账指南）。
 - 如果客户端与旁路之间有代理重新序列化请求，字节本来就会变；这时回执核验会在 `requestSha256` 上失败，这样的代理因此会暴露出来。
 - **尚未实测：** 按 JSON 语法，所有上游都必须接受尾随空白，测试也对参考旁路验证过；对 OpenAI Chat、OpenAI Responses、
   Anthropic Messages 线上接口的实测还没有做。

@@ -5,15 +5,16 @@
 // The file functions come in as io.host (receipts-cli.js hostOf). / 文件函数经 io.host 传入。
 // tapeapi reconcile 命令行部分（实验性；仅 Node）：本机回执声称的用量与价格，与运营者导出的账单文件逐行对账。只读两个本地文件、
 // 不联网、不需要密钥。只报告三类事实（匹配、缺失、与回执声称不一致），每条带出处行；不判定谁对。
-import { modelEntryOf, formatOfMethod, MANIFEST_FIELD } from './ai.js'
+import { modelEntryOf, MANIFEST_FIELD, sha256Hex } from './ai.js'
 import { NOTES } from './connect.js'
 import {
   T, parseOptions, commonOptions, loadSource, filterRecords, ui, usageExit, usage, redactKeeping, keepOf, clean, shellWord, iso,
   parseTime, snapshotsFor, at, shown, table, padTo, hostOf,
 } from './receipts-cli.js'
+import { claimOf, requestFacts, patternChecks, mandateOf, mandateSpend, policyOf, policyCheck, CLASS_IGNORES, FINDING_KINDS } from './reconcile-checks.js'
 
 /** What a bill column can stand for. / 账单列可以表示的字段。 */
-export const BILL_KEYS = Object.freeze(['id', 'model', 'prompt', 'completion', 'amount', 'time'])
+export const BILL_KEYS = Object.freeze(['id', 'model', 'prompt', 'completion', 'amount', 'time', 'request', 'request_bytes', 'max_tokens'])
 /**
  * Column-name presets. new-api: the field names of the JSON its GET /api/log/self returns (data.items; model/log.go,
  * read in its source code, not yet checked against a real instance): upstream_request_id, model_name, prompt_tokens,
@@ -29,12 +30,24 @@ export const BILL_PRESETS = Object.freeze({
   'new-api': Object.freeze({ id: 'upstream_request_id', model: 'model_name', prompt: 'prompt_tokens', completion: 'completion_tokens', amount: 'quota', time: 'created_at' }),
 })
 const DEFAULT_WINDOW = 120
+const DEFAULT_PROMPT_SPREAD = 16
+const MAX_REQUEST_FILE = 16 * 1024 * 1024
+// What --fail-on can name (2.5, experimental). / --fail-on 可以点名的种类。
+const FAIL_ON_KINDS = Object.freeze(['findings', 'mandate-above-cap', 'policy'])
 
 export const CNOTES = Object.freeze({
   facts: T('This lists facts and decides nothing: a difference is a question to raise with the provider, with the two lines it comes from.',
     '本工具只列事实、不下结论：每条差异都带出处行，是可以向服务方询问的问题。'),
   preset: T("new-api preset: the field names of the JSON new-api's GET /api/log/self returns (data.items), read in its source code, not yet checked against a real instance. new-api's web CSV export is not that file (localized headers, a formatted Cost, request_id): name its columns with --map.",
     'new-api 预设：new-api 的 GET /api/log/self 返回的 JSON（data.items）的字段名，取自其源码，尚未用真实实例核对。new-api 网页端导出的 CSV 不是这份文件（表头本地化、Cost 已格式化、id 列为 request_id）：请用 --map 指定它的列。'),
+  findings: T("Findings are facts about what the receipts claim next to what you know of each request; they say nothing about why. A receipt proves only what its signer said: it does not prove which model ran, and these checks cannot tell which model ran.",
+    '发现只是把回执声称的内容与你掌握的请求事实并列，不说明原因。回执只证明签名方说了什么：不证明实际运行的是哪个模型，这些检查也无法判断实际运行的是哪个模型。'),
+  salt: T('tapeapi-verify salts each request by default, so the same request gets a different request hash every time; the request files you give must be the exact bytes sent (a --no-salt run, or the files tapeapi-verify --save-requests writes: the bytes sent, salt included).',
+    'tapeapi-verify 默认给每个请求加盐，同一请求每次的请求哈希都不同；给出的请求文件必须是实际发出的确切字节（--no-salt 运行，或 tapeapi-verify --save-requests 写下的文件：发出的字节，含盐）。'),
+  mandate: T("The mandate's signature is not checked here and nothing was enforced: this sets what the receipts claim against the caps the mandate names, after the fact. A phase-0 mandate names no funds.",
+    '这里不核对授权书的签名，也没有执行任何限制：只是事后把回执声称的花费与授权书写的上限对照。阶段 0 的授权书不写金额。'),
+  policy: T('The policy file is your own: it was not enforced when the calls were made; this lists the windows whose receipts claim more than it says.',
+    '策略文件是你自己的：调用时并未执行；这里只列出回执声称超过它的时间窗口。'),
 })
 
 export function reconcileUsage(cmd = 'tapeapi') {
@@ -42,6 +55,7 @@ export function reconcileUsage(cmd = 'tapeapi') {
 把回执声称的用量与价格，与账单文件逐行对账。
 
 Usage: ${cmd} reconcile --receipts <file|dir> --bill <file> [--preset new-api | --map <key>=<column>,...] [options]
+       ${cmd} reconcile --receipts <file|dir> [--bill <file>] [--requests <dir>] [--mandate <file>] [--policy <file>]
 
   --receipts <path>    the file tapeapi-verify --log wrote, or a directory of them (also --log <path>)
   --bill <file>        the bill or usage file from the provider: CSV (with a header line), JSON (an array, or
@@ -54,7 +68,9 @@ Usage: ${cmd} reconcile --receipts <file|dir> --bill <file> [--preset new-api | 
                        (localized; Cost formatted, not a comparable amount; request_id): name them with --map
                        new-api 的 /api/log/self JSON 字段名；网页端导出的 CSV 请用 --map
   --map <k>=<col>,...  name the columns yourself (over the preset): ${BILL_KEYS.join(', ')}. model, prompt and completion
-                       are needed, and id or time        自己指定列名（覆盖预设）
+                       are needed, and id or time. Optional, for the request checks: request (rows with one value are
+                       one request), request_bytes (the request's size), max_tokens (the output limit it set)
+                       自己指定列名（覆盖预设）；request、request_bytes、max_tokens 可选，供请求检查使用
   --amount-scale <n>   how many bill amount units make one unit of the receipt's currency (new-api: quota_per_unit,
                        from its /api/status). Without it, amounts are not compared
                        多少个账单金额单位等于回执币种的 1 个单位（new-api：quota_per_unit）。不给就不比较金额
@@ -69,15 +85,46 @@ Usage: ${cmd} reconcile --receipts <file|dir> --bill <file> [--preset new-api | 
                        model and its aliases count as the same model      有快照时，模型与其别名算同一个模型
   --service <s>, --container <addr>, --model <id>, --since <t>, --until <t>
                        the same filters as receipts; --since / --until apply to the bill's time column too
-  --json               one JSON object on stdout     --lang <en|zh|both>   (default both)     --no-color
+
+Checks on what the receipts claim (facts, listed with their receipt lines; no verdict):
+  --requests <path>    a directory (or one file) of request bodies you saved: each file whose SHA-256 equals a receipt's
+                       requestSha256 gives that receipt's request facts (size, requested model, output limit, request
+                       class). Only the exact bytes sent match: tapeapi-verify salts requests unless --no-salt
+                       你保存的请求体目录：SHA-256 等于回执 requestSha256 的文件给出该回执的请求事实（只有发出的确切字节才对得上）
+                       Listed: prompt_tokens that differ within one request class (same model: beyond
+                       --tolerance-tokens; across models: beyond --prompt-spread <n>, default ${DEFAULT_PROMPT_SPREAD}); prompt_tokens
+                       above the request's byte count; completion_tokens above the request's output limit; model names
+                       that differ for one requested model (by stream flag), or that differ from the bill row only as
+                       aliases. The request class leaves out ${CLASS_IGNORES.join(', ')}
+  --mandate <file>     a mandate (JSON; a bare Mandate or { mandate }): per scope item, the receipts of its provider
+                       (container) signed in [notBefore, expires) summed and set against the cap; receipts of other
+                       containers and outside the period listed. Its signature is not checked
+                       授权书：按 scope 每项求和回执声称的花费并与上限对照；不核对签名
+  --token-decimals <n> the decimals of the scope items' token (a cap is in its base units); without it caps are not
+                       compared        --mandate-currency <c>   the receipt currency the caps are in (default: BEM or
+                       USDT for those listed tokens)        --near <fraction>   near a cap from (default 0.8)
+  --policy <file>      your own local limits (JSON { "tapeapiPolicy": 1, "rules": [...] }) per service, model and call,
+                       day, month or total: the windows whose receipts claim more are listed. Not enforced anywhere
+                       你自己的本地限额文件：列出回执声称超出的窗口；不在任何地方执行
+  --bill is needed unless --requests, --mandate or --policy is given.
+  --fail-on <kinds>    EXPERIMENTAL (2.5): exit 4 instead of 0 when one of these is listed (comma-separated):
+                       findings (any finding), mandate-above-cap (a scope item above its cap; needs --mandate and
+                       --token-decimals), policy (a window over a --policy rule). Without it the exit status is as below
+                       发现 / 授权书超出上限 / 策略超出时退出 4 而不是 0（逗号分隔）；不给时退出码与下面相同
+  --json              one JSON object on stdout     --lang <en|zh|both>   (default both)     --no-color
   --help
 
 It reads the two files only: no network, no key, nothing uploaded. Every difference names the receipt line and the bill
 line it comes from; a difference is a fact to raise with the provider, not a verdict.
 只读这两个文件：不联网、不需要密钥、不上传。每条差异都给出回执行与账单行；差异是可以向服务方询问的事实，不是结论。
-Exit status: 0 every receipt and every bill row match; 1 something is missing or differs; 2 a usage mistake (also a
-column named that the bill does not have); 3 nothing to compare (no receipt claiming usage and no bill row).
-退出码：0 全部匹配；1 有缺失或不一致；2 用法错误（点名了账单里没有的列也算）；3 没有可比较的内容（没有声称用量的回执，也没有账单行）。
+Exit status: 0 every receipt and every bill row match (without --bill: the report was made); 1 something is missing or
+differs; 2 a usage mistake (also a column named that the bill does not have, or a mandate or policy file that cannot be
+read); 3 nothing to compare (no receipt claiming usage and no bill row); 4 only with --fail-on: no other reason to
+exit non-zero, and a kind it names was listed. Without --fail-on, findings, mandate and policy facts do not change the
+exit status; --json carries their counts.
+退出码：0 全部匹配（不给 --bill 时：报告已生成）；1 有缺失或不一致；2 用法错误（点名了账单里没有的列、授权书或策略文件读不了也算）；
+3 没有可比较的内容；4 只在给了 --fail-on 时出现：没有别的非零原因，且列出了它点名的一类。不给 --fail-on 时，发现、授权书与策略的
+事实不改变退出码；--json 里有它们的计数。
 `
 }
 
@@ -85,6 +132,8 @@ const SPEC = {
   '--receipts': 'value', '--log': '--receipts', '--bill': 'value', '--relay-export': '--bill', '--preset': 'value', '--map': 'value', '--amount-scale': 'value',
   '--currency': 'value', '--tolerance-amount': 'value', '--tolerance-tokens': 'value', '--window': 'value', '--manifest': 'value',
   '--service': 'value', '--container': 'value', '--model': 'value', '--since': 'value', '--until': 'value',
+  '--requests': 'value', '--prompt-spread': 'value', '--mandate': 'value', '--token-decimals': 'value', '--mandate-currency': 'value', '--near': 'value', '--policy': 'value',
+  '--fail-on': 'value',
   '--json': 'bool', '--lang': 'value', '--no-color': 'bool', '--help': 'bool', '-h': '--help',
 }
 
@@ -225,11 +274,9 @@ export function reconcile(receipts, rows, o = {}) {
     const key = typeof e.sig === 'string' ? e.sig : JSON.stringify(e)
     if (seen.has(key)) { duplicates++; continue }
     seen.add(key)
-    const r = e.result, u = r?.usage
-    if (!(Number.isInteger(r?.status) && r.status >= 200 && r.status < 300 && u && typeof u === 'object')) { noClaim.push(rec); continue }
-    claims.push({ rec, id: typeof e.id === 'string' ? e.id : '', model: typeof r.model === 'string' ? r.model : null, prompt: Number.isSafeInteger(u.prompt_tokens) ? u.prompt_tokens : null,
-      completion: Number.isSafeInteger(u.completion_tokens) ? u.completion_tokens : null, prices: Array.isArray(r.prices) ? r.prices : null,
-      t: Number.isSafeInteger(e.ts) ? e.ts : null, format: formatOfMethod(e.method)?.name, container: e.container, used: false })
+    const c = claimOf(rec)
+    if (!c) { noClaim.push(rec); continue }
+    claims.push({ ...c, used: false, row: null })
   }
   const sameModel = (c, m) => {
     if (c.model === m) return true
@@ -269,6 +316,7 @@ export function reconcile(receipts, rows, o = {}) {
   }
   const items = []
   for (const { c, row, basis } of pairs) {
+    c.row = row
     const differences = []
     if (!sameModel(c, row.model)) differences.push({ field: 'model', receipt: c.model, bill: row.model })
     for (const [field, a, b] of [['prompt_tokens', c.prompt, row.prompt], ['completion_tokens', c.completion, row.completion]]) {
@@ -293,7 +341,7 @@ export function reconcile(receipts, rows, o = {}) {
     missing: { receiptsOnly: items.filter((x) => x.side === 'receipts-only').length, billOnly: items.filter((x) => x.side === 'bill-only').length },
     mismatch: items.filter((x) => x.class === 'mismatch').length,
   }
-  return { items, counts, claims: claims.length, noClaim: noClaim.length, duplicates }
+  return { items, counts, claims: claims.length, noClaim: noClaim.length, duplicates, claimList: claims, sameModel }
 }
 const round = (x) => Math.round(x * 1e10) / 1e10
 const claimView = (c) => ({ source: c.rec.source, id: c.id, signedAt: c.t === null ? null : iso(c.t), model: c.model, prompt_tokens: c.prompt, completion_tokens: c.completion,
@@ -315,26 +363,53 @@ export async function runReconcile(argv, io = {}) {
   let keep = []
   const say = (write, text) => write(redactKeeping(text, keep, env))
   const help = reconcileUsage(cmd)
-  let o, common, src, bill, cols, num
+  let o, common, src, bill = null, cols = null, num, requests = null, mandate = null, rules = null, failOn = null
   try {
     const parsed = parseOptions(argv, SPEC)
     o = parsed.opts
     if (o['--help']) { say(stdout, help); return { exitCode: 0 } }
     if (parsed.positional.length) throw usage(`unexpected ${JSON.stringify(parsed.positional[0])}`, `多余的参数 ${JSON.stringify(parsed.positional[0])}`)
     common = commonOptions(o)
-    if (!o['--bill']) throw usage('--bill <file> is needed: the bill or usage file from the provider (CSV, JSON or JSON lines)', '需要 --bill <文件>：服务方的账单或用量文件（CSV、JSON 或 JSON 行）')
+    const checksOnly = o['--requests'] !== undefined || o['--mandate'] !== undefined || o['--policy'] !== undefined
+    if (!o['--bill'] && !checksOnly) throw usage('--bill <file> is needed: the bill or usage file from the provider (CSV, JSON or JSON lines); or give --requests, --mandate or --policy', '需要 --bill <文件>：服务方的账单或用量文件（CSV、JSON 或 JSON 行）；或者给出 --requests、--mandate 或 --policy')
     num = {}
-    for (const [flag, key, min, intOnly] of [['--window', 'window', 0, false], ['--tolerance-tokens', 'toleranceTokens', 0, true], ['--amount-scale', 'amountScale', Number.MIN_VALUE, false], ['--tolerance-amount', 'toleranceAmount', 0, false]]) {
+    for (const [flag, key, min, intOnly] of [['--window', 'window', 0, false], ['--tolerance-tokens', 'toleranceTokens', 0, true], ['--amount-scale', 'amountScale', Number.MIN_VALUE, false], ['--tolerance-amount', 'toleranceAmount', 0, false],
+      ['--prompt-spread', 'promptSpread', 0, true], ['--token-decimals', 'tokenDecimals', 0, true], ['--near', 'near', 0, false]]) {
       if (o[flag] === undefined) continue
       const v = Number(o[flag])
       if (!/^\d+(\.\d+)?$/.test(o[flag]) || !(v >= min) || (intOnly && !Number.isInteger(v))) throw usage(`${flag} must be a ${intOnly ? 'whole ' : ''}number${min > 0 ? ' above 0' : ''}`, `${flag} 必须是${min > 0 ? '大于 0 的' : ''}${intOnly ? '整数' : '数'}`)
       num[key] = v
     }
+    if (num.near !== undefined && !(num.near > 0 && num.near <= 1)) throw usage('--near must be a fraction above 0 and at most 1, such as 0.8', '--near 必须是大于 0、不超过 1 的比例，例如 0.8')
+    if (num.tokenDecimals !== undefined && num.tokenDecimals > 77) throw usage('--token-decimals must be at most 77', '--token-decimals 不能超过 77')
     if (o['--tolerance-amount'] !== undefined && o['--amount-scale'] === undefined) throw usage('--tolerance-amount applies with --amount-scale only', '--tolerance-amount 只与 --amount-scale 一起使用')
     if (o['--currency'] !== undefined && o['--amount-scale'] === undefined) throw usage('--currency applies with --amount-scale only', '--currency 只与 --amount-scale 一起使用')
+    for (const f of ['--token-decimals', '--mandate-currency', '--near']) if (o[f] !== undefined && o['--mandate'] === undefined) throw usage(`${f} applies with --mandate only`, `${f} 只与 --mandate 一起使用`)
+    if (o['--fail-on'] !== undefined) {
+      failOn = [...new Set(String(o['--fail-on']).split(',').map((x) => x.trim()).filter(Boolean))]
+      if (!failOn.length) throw usage(`--fail-on needs one or more of ${FAIL_ON_KINDS.join(', ')}`, `--fail-on 需要 ${FAIL_ON_KINDS.join('、')} 中的一个或多个`)
+      for (const k of failOn) if (!FAIL_ON_KINDS.includes(k)) throw usage(`--fail-on: unknown kind ${JSON.stringify(k)} (one of ${FAIL_ON_KINDS.join(', ')})`, `--fail-on：未知的种类 ${JSON.stringify(k)}（可用 ${FAIL_ON_KINDS.join('、')}）`)
+      // A kind that could never be listed would make the option silently useless. / 永远不会列出的种类会让开关悄悄失效。
+      if (failOn.includes('mandate-above-cap') && (o['--mandate'] === undefined || o['--token-decimals'] === undefined)) throw usage('--fail-on mandate-above-cap needs --mandate and --token-decimals (without the decimals no cap is compared)', '--fail-on mandate-above-cap 需要 --mandate 与 --token-decimals（不给小数位就不比较上限）')
+      if (failOn.includes('policy') && o['--policy'] === undefined) throw usage('--fail-on policy needs --policy', '--fail-on policy 需要 --policy')
+    }
+    if (!o['--bill']) for (const f of ['--preset', '--map', '--amount-scale', '--window']) if (o[f] !== undefined) throw usage(`${f} applies with --bill only`, `${f} 只与 --bill 一起使用`)
     src = loadSource(o, h)
-    try { bill = readBill(at(o['--bill'], h), h) } catch (e) { throw usage(`cannot read the bill ${o['--bill']}: ${e.code ?? e.message}`, `读不了账单 ${o['--bill']}：${e.code ?? e.message}`) }
-    cols = columnsFor(bill.header, { preset: o['--preset'] ?? null, map: o['--map'] !== undefined ? parseMap(o['--map']) : null })
+    if (o['--bill']) {
+      try { bill = readBill(at(o['--bill'], h), h) } catch (e) { throw usage(`cannot read the bill ${o['--bill']}: ${e.code ?? e.message}`, `读不了账单 ${o['--bill']}：${e.code ?? e.message}`) }
+      cols = columnsFor(bill.header, { preset: o['--preset'] ?? null, map: o['--map'] !== undefined ? parseMap(o['--map']) : null })
+    }
+    if (o['--requests'] !== undefined) requests = readRequests(at(o['--requests'], h), h, o['--requests'])
+    if (o['--mandate'] !== undefined) {
+      let v
+      try { v = JSON.parse(h.readFileSync(at(o['--mandate'], h), 'utf8').replace(/^\uFEFF/, '')) } catch (e) { throw usage(`cannot read the mandate ${o['--mandate']}: ${e.code ?? e.message}`, `读不了授权书 ${o['--mandate']}：${e.code ?? e.message}`) }
+      try { mandate = mandateOf(v) } catch (e) { throw usage(`${o['--mandate']} is not a mandate: ${e.message}`, `${o['--mandate']} 不是授权书：${e.message}`) }
+    }
+    if (o['--policy'] !== undefined) {
+      let v
+      try { v = JSON.parse(h.readFileSync(at(o['--policy'], h), 'utf8').replace(/^\uFEFF/, '')) } catch (e) { throw usage(`cannot read the policy ${o['--policy']}: ${e.code ?? e.message}`, `读不了策略文件 ${o['--policy']}：${e.code ?? e.message}`) }
+      try { rules = policyOf(v) } catch (e) { throw usage(`${o['--policy']}: ${e.message}`, `${o['--policy']}：${e.message}`) }
+    }
   } catch (e) {
     if (!e.usage) throw e
     return usageExit({ e, prog: `${cmd} reconcile`, help, cmd: `${cmd} reconcile`, stderr, say })
@@ -344,28 +419,55 @@ export async function runReconcile(argv, io = {}) {
   const { since, until } = src.filters
   // The bill's rows, mapped; --since / --until apply to its time column too (a row with no time is kept).
   // 账单行按列映射；--since / --until 同样作用于它的时间列（没有时间的行保留）。
-  const rows = bill.rows.map((r) => {
+  const rows = !bill ? [] : bill.rows.map((r) => {
     const v = (k) => (cols.cols[k] ? r.values[cols.cols[k]] : undefined)
     return { source: r.source, id: cols.cols.id ? clean(v('id')).trim() : '', model: clean(v('model')).trim(), prompt: int(v('prompt')), completion: int(v('completion')),
-      ...(cols.cols.amount ? { amount: decimal(v('amount')) } : {}), time: cols.cols.time ? parseTime(typeof v('time') === 'string' ? v('time') : v('time') ?? '') : null }
+      ...(cols.cols.amount ? { amount: decimal(v('amount')) } : {}), time: cols.cols.time ? parseTime(typeof v('time') === 'string' ? v('time') : v('time') ?? '') : null,
+      ...(cols.cols.request ? { request: clean(v('request')).trim() || null } : {}), ...(cols.cols.request_bytes ? { requestBytes: int(v('request_bytes')) } : {}), ...(cols.cols.max_tokens ? { maxTokens: int(v('max_tokens')) } : {}) }
   }).filter((r) => (since === null || r.time === null || r.time >= since) && (until === null || r.time === null || r.time < until) && (!src.filters.model || r.model === src.filters.model))
   const receipts = filterRecords(src.records, src.filters).filter((r) => r.envelope)
   const amountScale = num.amountScale ?? null
-  const res = reconcile(receipts, rows, { ...num, amountScale: cols.cols.amount ? amountScale : null, currency: o['--currency'] ?? null, toleranceAmount: num.toleranceAmount ?? null, manifests: src.manifests })
+  const res = reconcile(receipts, rows, { ...num, amountScale: cols?.cols.amount ? amountScale : null, currency: o['--currency'] ?? null, toleranceAmount: num.toleranceAmount ?? null, manifests: src.manifests })
+  if (!bill) { res.items = []; res.counts = { match: 0, missing: { receiptsOnly: 0, billOnly: 0 }, mismatch: 0 } }
+  // Request facts: a request file joins the receipts whose requestSha256 is its hash. / 请求文件按哈希对应回执。
+  let reqStats = null
+  if (requests) {
+    const used = new Set()
+    for (const c of res.claimList) {
+      const f = c.requestSha256 ? requests.byHash.get(c.requestSha256) : undefined
+      if (!f) continue
+      used.add(f.file)
+      c.req = { file: f.file, ...requestFacts(f.bytes, c.format) }
+    }
+    reqStats = { source: o['--requests'], files: requests.files, joined: res.claimList.filter((c) => c.req).length, unused: requests.files - used.size, skipped: requests.skipped }
+  }
+  const pattern = patternChecks(res.claimList, { toleranceTokens: num.toleranceTokens ?? 0, promptSpread: num.promptSpread ?? DEFAULT_PROMPT_SPREAD, manifests: src.manifests, sameModel: res.sameModel })
+  const spend = mandate ? mandateSpend(res.claimList, mandate, { currency: o['--mandate-currency'] ?? undefined, tokenDecimals: num.tokenDecimals ?? null, near: num.near ?? 0.8 }) : null
+  const policy = rules ? policyCheck(res.claimList, rules) : null
+  const findingCounts = Object.fromEntries(FINDING_KINDS.map((k) => [k, pattern.findings.filter((f) => f.kind === k).length]))
   const differs = res.counts.mismatch + res.counts.missing.receiptsOnly + res.counts.missing.billOnly
-  const exitCode = !res.claims && !rows.length ? 3 : differs ? 1 : 0
+  const baseExit = !res.claims && !rows.length ? 3 : differs ? 1 : 0
+  // --fail-on (2.5, experimental): exit 4 only where the exit would otherwise be 0. / 只在原本退出 0 时改为 4。
+  const failHit = failOn && Object.fromEntries(failOn.map((k) => [k, k === 'findings' ? pattern.findings.length : k === 'mandate-above-cap' ? (spend ? countsOfSpend(spend).aboveCap : 0) : (policy ? policy.reduce((a, r) => a + r.over.length, 0) : 0)]))
+  const failed = failHit ? Object.keys(failHit).filter((k) => failHit[k] > 0) : []
+  const exitCode = baseExit === 0 && failed.length ? 4 : baseExit
   const first = res.items.find((x) => x.class === 'mismatch' && x.receipt?.id) ?? res.items.find((x) => x.side === 'receipts-only' && x.receipt?.id)
-  const next = exitCode === 0 ? null : exitCode === 1 && first ? `${cmd} receipts show ${shellWord(first.receipt.id)} --receipts ${shellWord(src.path)}` : `${cmd} receipts tail --receipts ${shellWord(src.path)}`
-  const amounts = !cols.cols.amount ? { compared: false, why: 'no amount column' } : amountScale === null ? { compared: false, why: 'no --amount-scale' }
+  const next = exitCode === 0 || exitCode === 4 ? null : exitCode === 1 && first ? `${cmd} receipts show ${shellWord(first.receipt.id)} --receipts ${shellWord(src.path)}` : `${cmd} receipts tail --receipts ${shellWord(src.path)}`
+  const amounts = !bill ? { compared: false, why: 'no bill' } : !cols.cols.amount ? { compared: false, why: 'no amount column' } : amountScale === null ? { compared: false, why: 'no --amount-scale' }
     : { compared: true, scale: amountScale, currency: o['--currency'] ?? null, tolerance: num.toleranceAmount ?? 'under one unit of the last decimal place' }
+  const checks = { requests: reqStats, checked: pattern.checked, counts: findingCounts, findings: pattern.findings, requestClassIgnores: CLASS_IGNORES, toleranceTokens: num.toleranceTokens ?? 0, promptSpread: num.promptSpread ?? DEFAULT_PROMPT_SPREAD }
+  const spendJson = spend && { source: shown(at(o['--mandate'], h), h), ...spend, counts: countsOfSpend(spend) }
+  const policyJson = policy && { source: shown(at(o['--policy'], h), h), rules: policy, over: policy.reduce((a, r) => a + r.over.length, 0) }
   if (common.json) {
     const L = (t) => (U.lang === 'en' ? t.en : U.lang === 'zh' ? t.zh : t)
     say(stdout, JSON.stringify({
       tool: 'tapeapi', command: 'reconcile', version, experimental: true, ok: exitCode === 0, exitCode,
       receipts: { source: src.path, records: src.records.length, claims: res.claims, claimNone: res.noClaim, duplicates: res.duplicates, skipped: src.skipped },
-      bill: { source: shown(at(o['--bill'], h), h), kind: bill.kind, rows: rows.length, columns: cols.cols, preset: cols.preset, presetDetected: cols.detected, presetUnverified: cols.preset === 'new-api', droppedPresetColumns: cols.dropped },
-      join: { id: cols.cols.id ?? null, window: num.window ?? DEFAULT_WINDOW, toleranceTokens: num.toleranceTokens ?? 0 }, amounts, counts: res.counts, items: res.items,
-      notes: { facts: L(CNOTES.facts), receipt: L(NOTES.receipt), prices: L(NOTES.prices), ...(cols.preset === 'new-api' ? { preset: L(CNOTES.preset) } : {}) }, next,
+      bill: bill ? { source: shown(at(o['--bill'], h), h), kind: bill.kind, rows: rows.length, columns: cols.cols, preset: cols.preset, presetDetected: cols.detected, presetUnverified: cols.preset === 'new-api', droppedPresetColumns: cols.dropped } : null,
+      join: bill ? { id: cols.cols.id ?? null, window: num.window ?? DEFAULT_WINDOW, toleranceTokens: num.toleranceTokens ?? 0 } : null, amounts, counts: res.counts, items: res.items,
+      checks, mandate: spendJson, policy: policyJson, ...(failOn ? { failOn: { kinds: failOn, counts: failHit, listed: failed } } : {}),
+      notes: { facts: L(CNOTES.facts), receipt: L(NOTES.receipt), prices: L(NOTES.prices), findings: L(CNOTES.findings), ...(requests ? { salt: L(CNOTES.salt) } : {}), ...(spend ? { mandate: L(CNOTES.mandate) } : {}), ...(policy ? { policy: L(CNOTES.policy) } : {}),
+        ...(cols?.preset === 'new-api' ? { preset: L(CNOTES.preset) } : {}) }, next,
     }, null, 2) + '\n')
     return { exitCode }
   }
@@ -373,19 +475,24 @@ export async function runReconcile(argv, io = {}) {
   const lab = (t) => padTo(U.lab(t), U.lang === 'both' ? 26 : U.lang === 'zh' ? 10 : 12)
   out.push(`  ${lab(T('receipts', '回执'))}${clean(src.path)}   ${U.lang === 'zh' ? `${src.records.length} 条记录，${res.claims} 张声称用量，${res.noClaim} 张未声称用量（失败的调用，不参与对账）${res.duplicates ? `，${res.duplicates} 张重复` : ''}${src.skipped.length ? `，${src.skipped.length} 行跳过` : ''}`
     : `${src.records.length} records, ${res.claims} claiming usage, ${res.noClaim} claiming none (failed calls, not compared)${res.duplicates ? `, ${res.duplicates} duplicates` : ''}${src.skipped.length ? `, ${src.skipped.length} lines skipped` : ''}`}`)
-  out.push(`  ${lab(T('bill', '账单'))}${clean(shown(at(o['--bill'], h), h))}   ${rows.length} ${U.lang === 'zh' ? '行' : 'rows'} (${bill.kind})`)
-  out.push(`  ${lab(T('columns', '列'))}${Object.entries(cols.cols).map(([k, c]) => `${k}=${clean(c)}`).join(', ')}${cols.preset ? `   (${U.lab(cols.detected ? T(`${cols.preset} preset, found in the header`, `${cols.preset} 预设，从表头识别`) : T(`${cols.preset} preset`, `${cols.preset} 预设`))})` : ''}${cols.dropped.length ? `   ${U.lab(T('not in the bill', '账单里没有'))}: ${cols.dropped.join(', ')}` : ''}`)
-  out.push(`  ${lab(T('joined on', '匹配依据'))}${cols.cols.id ? `${U.lab(T('id column', 'id 列'))} ${clean(cols.cols.id)}${U.lang === 'zh' ? '；' : '; '}${U.lab(T('else', '否则'))} ` : ''}${U.lab(T(`time ±${num.window ?? DEFAULT_WINDOW} s × model × tokens (±${num.toleranceTokens ?? 0})`, `时间 ±${num.window ?? DEFAULT_WINDOW} 秒 × 模型 × token 数（±${num.toleranceTokens ?? 0}）`))}`)
-  out.push(`  ${lab(T('amounts', '金额'))}${amounts.compared ? U.lab(T(`bill ÷ ${amountScale} = ${o['--currency'] ?? "the receipt's first currency"}`, `账单 ÷ ${amountScale} = ${o['--currency'] ?? '回执的第一个币种'}`))
-    : U.lab(amounts.why === 'no amount column' ? T('not compared: no amount column', '不比较：没有金额列') : T('not compared: give --amount-scale', '不比较：请给出 --amount-scale'))}`)
-  out.push('')
-  const mark = (cls) => (cls === 'match' ? U.green : U.yellow)
-  out.push(...table([
-    [mark('match')(U.lab(T('MATCH', '匹配'))), String(res.counts.match), ''],
-    [mark('missing')(U.lab(T('MISSING', '缺失'))), String(res.counts.missing.receiptsOnly + res.counts.missing.billOnly), U.lab(T(`${res.counts.missing.receiptsOnly} in the receipts with no bill row, ${res.counts.missing.billOnly} bill row${res.counts.missing.billOnly === 1 ? '' : 's'} with no receipt`, `${res.counts.missing.receiptsOnly} 张回执在账单里没有对应行，${res.counts.missing.billOnly} 行账单没有对应回执`))],
-    [mark('mismatch')(U.lab(T('MISMATCH', '不一致'))), String(res.counts.mismatch), U.lab(T('differs from what the receipt claims', '与回执声称不一致'))],
-  ]))
   const v = (x) => (x === null || x === undefined ? 'null' : clean(x))
+  if (bill) {
+    out.push(`  ${lab(T('bill', '账单'))}${clean(shown(at(o['--bill'], h), h))}   ${rows.length} ${U.lang === 'zh' ? '行' : 'rows'} (${bill.kind})`)
+    out.push(`  ${lab(T('columns', '列'))}${Object.entries(cols.cols).map(([k, c]) => `${k}=${clean(c)}`).join(', ')}${cols.preset ? `   (${U.lab(cols.detected ? T(`${cols.preset} preset, found in the header`, `${cols.preset} 预设，从表头识别`) : T(`${cols.preset} preset`, `${cols.preset} 预设`))})` : ''}${cols.dropped.length ? `   ${U.lab(T('not in the bill', '账单里没有'))}: ${cols.dropped.join(', ')}` : ''}`)
+    out.push(`  ${lab(T('joined on', '匹配依据'))}${cols.cols.id ? `${U.lab(T('id column', 'id 列'))} ${clean(cols.cols.id)}${U.lang === 'zh' ? '；' : '; '}${U.lab(T('else', '否则'))} ` : ''}${U.lab(T(`time ±${num.window ?? DEFAULT_WINDOW} s × model × tokens (±${num.toleranceTokens ?? 0})`, `时间 ±${num.window ?? DEFAULT_WINDOW} 秒 × 模型 × token 数（±${num.toleranceTokens ?? 0}）`))}`)
+    out.push(`  ${lab(T('amounts', '金额'))}${amounts.compared ? U.lab(T(`bill ÷ ${amountScale} = ${o['--currency'] ?? "the receipt's first currency"}`, `账单 ÷ ${amountScale} = ${o['--currency'] ?? '回执的第一个币种'}`))
+      : U.lab(amounts.why === 'no amount column' ? T('not compared: no amount column', '不比较：没有金额列') : T('not compared: give --amount-scale', '不比较：请给出 --amount-scale'))}`)
+  } else out.push(`  ${lab(T('bill', '账单'))}${U.lab(T('none given: no row-by-row join', '未给出：不做逐行对账'))}`)
+  if (reqStats) out.push(`  ${lab(T('requests', '请求'))}${clean(reqStats.source)}   ${U.lang === 'zh' ? `${reqStats.files} 个文件，对上 ${reqStats.joined} 张回执，${reqStats.unused} 个文件没有对应回执${reqStats.skipped.length ? `，${reqStats.skipped.length} 个跳过` : ''}` : `${reqStats.files} files, ${reqStats.joined} receipts joined, ${reqStats.unused} files with no receipt${reqStats.skipped.length ? `, ${reqStats.skipped.length} skipped` : ''}`}`)
+  if (bill) {
+    out.push('')
+    const mark = (cls) => (cls === 'match' ? U.green : U.yellow)
+    out.push(...table([
+      [mark('match')(U.lab(T('MATCH', '匹配'))), String(res.counts.match), ''],
+      [mark('missing')(U.lab(T('MISSING', '缺失'))), String(res.counts.missing.receiptsOnly + res.counts.missing.billOnly), U.lab(T(`${res.counts.missing.receiptsOnly} in the receipts with no bill row, ${res.counts.missing.billOnly} bill row${res.counts.missing.billOnly === 1 ? '' : 's'} with no receipt`, `${res.counts.missing.receiptsOnly} 张回执在账单里没有对应行，${res.counts.missing.billOnly} 行账单没有对应回执`))],
+      [mark('mismatch')(U.lab(T('MISMATCH', '不一致'))), String(res.counts.mismatch), U.lab(T('differs from what the receipt claims', '与回执声称不一致'))],
+    ]))
+  }
   const rLine = (r) => `${r.source}  ${r.signedAt ?? '-'}  id ${v(r.id)}  ${v(r.model)}  in ${v(r.prompt_tokens)} out ${v(r.completion_tokens)}  ${r.prices ? clean(r.prices) : 'price null'}${r.loggedOk === false ? `  (${U.lab(T('the log marks this receipt failed', '日志把这张回执标为失败'))})` : ''}`
   const bLine = (b) => `${b.source}  ${b.time ?? '-'}${b.id ? `  id ${v(b.id)}` : ''}  ${v(b.model)}  in ${v(b.prompt_tokens)} out ${v(b.completion_tokens)}${b.amount !== undefined ? `  amount ${v(b.amount)}` : ''}`
   const mism = res.items.filter((x) => x.class === 'mismatch')
@@ -407,9 +514,115 @@ export async function runReconcile(argv, io = {}) {
     out.push('', `  ${U.yellow(U.lab(T('MISSING: a bill row, and no receipt for it (a call not made through tapeapi-verify, or not logged?)', '缺失：有账单行，没有对应回执（没有经过 tapeapi-verify，或没有记录？）')))}`)
     for (const x of onlyB) out.push(`    ${bLine(x.bill)}`)
   }
+  if (pattern.findings.length) out.push('', ...findingLines(pattern.findings, U, v))
+  if (spend) out.push('', ...mandateLines(spend, U, v, shown(at(o['--mandate'], h), h)))
+  if (policy) out.push('', ...policyLines(policy, U, v, shown(at(o['--policy'], h), h)))
   out.push('', ...U.say(CNOTES.facts, '  '), ...U.say(NOTES.receipt, '  '), ...U.say(NOTES.prices, '  '))
-  if (cols.preset === 'new-api') out.push(...U.say(CNOTES.preset, '  '))
+  if (pattern.findings.length) out.push(...U.say(CNOTES.findings, '  '))
+  if (requests) out.push(...U.say(CNOTES.salt, '  '))
+  if (spend) out.push(...U.say(CNOTES.mandate, '  '))
+  if (policy) out.push(...U.say(CNOTES.policy, '  '))
+  if (cols?.preset === 'new-api') out.push(...U.say(CNOTES.preset, '  '))
+  if (failOn) {
+    const what = failOn.map((k) => `${k} ${failHit[k]}`).join(', ')
+    out.push(`  ${U.lab(T(`--fail-on ${failOn.join(',')}: ${what}${exitCode === 4 ? ': exit 4' : ''}`, `--fail-on ${failOn.join(',')}：${what}${exitCode === 4 ? '：退出 4' : ''}`))}`)
+  }
   if (next) out.push(U.next(next))
   say(stdout, out.join('\n') + '\n')
   return { exitCode }
+}
+
+/**
+ * The request files a --requests path names: the file, or every regular file in the directory (not in subdirectories),
+ * hashed. Files over 16 MiB are skipped. / --requests 指定的请求文件：该文件，或目录下的每个普通文件（不含子目录），逐个求哈希。
+ */
+export function readRequests(path, h, given = path) {
+  let st
+  try { st = h.statSync(path) } catch (e) { throw usage(`cannot read --requests ${given}: ${e.code ?? e.message}`, `读不了 --requests ${given}：${e.code ?? e.message}`) }
+  const names = st.isDirectory() ? h.readdirSync(path).sort().map((n) => h.join(path, n)) : [path]
+  const byHash = new Map(), skipped = []
+  let files = 0
+  for (const f of names) {
+    let s
+    try { s = h.statSync(f) } catch { skipped.push(shown(f, h)); continue }
+    if (!s.isFile()) continue
+    if (s.size > MAX_REQUEST_FILE) { skipped.push(shown(f, h)); continue }
+    let bytes
+    try { bytes = new Uint8Array(h.readFileSync(f)) } catch { skipped.push(shown(f, h)); continue }
+    files++
+    const hash = sha256Hex(bytes)
+    if (!byHash.has(hash)) byHash.set(hash, { file: shown(f, h), bytes })
+  }
+  return { byHash, files, skipped }
+}
+
+function countsOfSpend(s) {
+  const by = (st) => s.scope.filter((x) => x.status === st).length
+  return { aboveCap: by('above-cap'), atCap: by('at-cap'), nearCap: by('near-cap'), belowCap: by('below-cap'), notCompared: by('not-compared'), outOfScopeReceipts: s.outOfScope.reduce((a, x) => a + x.receipts, 0), outsidePeriod: s.outsidePeriod.receipts }
+}
+
+const FINDING_TITLES = {
+  'prompt-tokens-spread': T('prompt_tokens differ for one request', '同一请求的 prompt_tokens 不同'),
+  'prompt-tokens-above-request-bytes': T('prompt_tokens above the request size in bytes', 'prompt_tokens 多于请求的字节数'),
+  'completion-above-request-limit': T("completion_tokens above the request's output limit", 'completion_tokens 多于请求设的输出上限'),
+  'model-names-vary': T('model names differ for one requested model', '同一请求模型对应的回执模型名不同'),
+  'model-name-differs-from-bill': T('receipt and bill row name the model differently (aliases in the snapshot)', '回执与账单行的模型名不同（快照里互为别名）'),
+}
+const BASIS = {
+  'request-bytes': T('from the request bytes', '依据请求字节'), 'bill-request-column': T("from the bill's request column", '依据账单的 request 列'), 'request-sha256': T('same request hash (a --no-salt log)', '请求哈希相同（--no-salt 的日志）'),
+  'bill-request-bytes-column': T("from the bill's request_bytes column", '依据账单的 request_bytes 列'), 'bill-max-tokens-column': T("from the bill's max_tokens column", '依据账单的 max_tokens 列'),
+  'requested-model': T('requested model from the request bytes', '请求模型取自请求字节'), 'bill-model-column': T("requested model taken from the bill's model column", '请求模型取自账单的 model 列'),
+  'manifest-entry': T('one price-table entry in the snapshot (no request facts)', '快照里的同一个价目表条目（没有请求事实）'),
+}
+function findingLines(findings, U, v) {
+  const out = [`  ${U.yellow(U.lab(T(`FINDINGS: ${findings.length} (facts, not verdicts)`, `发现：${findings.length} 条（事实，不是结论）`)))}`]
+  const item = (x) => `      ${U.lab(T('receipt', '回执'))} ${x.receipt}  ${v(x.model)}${x.stream === null ? '' : x.stream ? '  stream' : '  non-stream'}  in ${v(x.prompt_tokens)} out ${v(x.completion_tokens)}${x.reasoning_tokens !== undefined ? ` (reasoning ${x.reasoning_tokens})` : ''}${x.request ? `  ${U.lab(T('request', '请求'))} ${clean(x.request)} ${x.requestBytes} B${x.requestedModel ? ` model ${clean(x.requestedModel)}` : ''}${x.limit !== undefined ? ` ${x.limitField} ${x.limit}` : ''}` : ''}${x.bill ? `  ${U.lab(T('bill', '账单'))} ${x.bill}` : ''}`
+  for (const f of findings) {
+    let what
+    if (f.kind === 'prompt-tokens-spread') what = f.scope === 'same-model' ? T(`model ${f.model}: prompt_tokens from ${f.min} to ${f.max} (tolerance ${f.tolerance})`, `模型 ${f.model}：prompt_tokens 从 ${f.min} 到 ${f.max}（容差 ${f.tolerance}）`)
+      : T(`across ${f.models.length} models (${f.models.join(', ')}): prompt_tokens from ${f.min} to ${f.max} (tokenizers differ; listed beyond ${f.tolerance})`, `跨 ${f.models.length} 个模型（${f.models.join('、')}）：prompt_tokens 从 ${f.min} 到 ${f.max}（各模型分词器不同；差值超过 ${f.tolerance} 才列出）`)
+    else if (f.kind === 'prompt-tokens-above-request-bytes') what = T(`prompt_tokens ${f.prompt_tokens}, the request is ${f.requestBytes} bytes`, `prompt_tokens ${f.prompt_tokens}，请求只有 ${f.requestBytes} 字节`)
+    else if (f.kind === 'completion-above-request-limit') what = T(`completion_tokens ${f.completion_tokens}${f.reasoning_tokens !== null ? ` (of which reasoning ${f.reasoning_tokens})` : ''}, the request set ${f.limitN ? `${f.limitField} ${f.limit / f.limitN} × n ${f.limitN} = ${f.limit}` : `${f.limitField} ${f.limit}`}${f.ratio !== null ? ` (${f.ratio}×)` : ''}`, `completion_tokens ${f.completion_tokens}${f.reasoning_tokens !== null ? `（其中推理 ${f.reasoning_tokens}）` : ''}，请求设的 ${f.limitN ? `${f.limitField} ${f.limit / f.limitN} × n ${f.limitN} = ${f.limit}` : `${f.limitField} 为 ${f.limit}`}${f.ratio !== null ? `（${f.ratio} 倍）` : ''}`)
+    else if (f.kind === 'model-names-vary') {
+      const names = f.names.map((n) => `${n.name} ×${n.receipts} (stream ${n.stream}, non-stream ${n.nonStream})`).join('; ')
+      what = T(`${f.requested !== undefined ? `requested ${f.requested}` : `entry ${f.entry}`}: ${names}`, `${f.requested !== undefined ? `请求的模型 ${f.requested}` : `条目 ${f.entry}`}：${names}`)
+    } else what = T(`receipt ${f.receiptModel}, bill ${f.billModel}`, `回执 ${f.receiptModel}，账单 ${f.billModel}`)
+    out.push(`    ${U.yellow(U.lab(FINDING_TITLES[f.kind]))}: ${clean(U.lang === 'zh' ? what.zh : what.en)}${f.basis ? `   (${U.lab(BASIS[f.basis])})` : ''}`)
+    for (const x of f.items) out.push(item(x))
+  }
+  return out
+}
+function mandateLines(s, U, v, file) {
+  const out = [`  ${U.lab(T('MANDATE', '授权书'))} ${clean(file)}   principal ${s.principal}  agent ${s.agent}   ${new Date(s.notBefore * 1000).toISOString()} .. ${new Date(s.expires * 1000).toISOString()}${s.phase0 ? `   (${U.lab(T('phase 0: names no funds', '阶段 0：不写金额'))})` : ''}`]
+  const status = {
+    'above-cap': T('ABOVE THE CAP', '超出上限'), 'at-cap': T('AT THE CAP', '达到上限'), 'near-cap': T(`NEAR THE CAP (≥ ${s.near})`, `接近上限（≥ ${s.near}）`), 'below-cap': T('below the cap', '低于上限'),
+    'not-compared': T('not compared', '不比较'),
+  }
+  const why = { 'phase-0-no-funds': T('phase 0 names no funds', '阶段 0 不写金额'), 'cap-zero': T('cap 0', '上限为 0'), 'no-currency': T('the token is not a listed one: give --mandate-currency', '代币不在列表里：请给出 --mandate-currency'), 'no-token-decimals': T('give --token-decimals', '请给出 --token-decimals') }
+  for (const x of s.scope) {
+    const mark = x.status === 'above-cap' || x.status === 'at-cap' || x.status === 'near-cap' ? U.yellow : (t) => t
+    out.push(`    ${x.provider}  ${x.receipts} ${U.lang === 'zh' ? '张回执' : 'receipts'}  ${U.lab(T('spent', '花费'))} ${x.spent === null ? '-' : `${x.spent} ${clean(x.currency)}`}  cap ${x.cap}${x.capInCurrency !== undefined ? ` (= ${x.capInCurrency} ${clean(x.currency)})` : ''}${x.tokenLabel ? (x.capInCurrency !== undefined && x.tokenLabel === x.currency ? '' : ` ${clean(x.tokenLabel)}`) : ` token ${x.token}`}  ${mark(U.lab(status[x.status]))}${x.why ? `: ${U.lab(why[x.why])}` : ''}${x.share !== undefined && x.share !== null ? `  ${x.share}%` : ''}${x.unpriced.length && x.currency ? `  ${x.unpriced.length} ${U.lab(T(`without a ${x.currency} price`, `张没有 ${x.currency} 价格`))}` : ''}`)
+    for (const r of x.sources.slice(0, 20)) out.push(`      ${r}`)
+    if (x.sources.length > 20) out.push(`      … ${x.sources.length - 20}`)
+  }
+  for (const x of s.outOfScope) {
+    out.push(`    ${U.yellow(U.lab(T('not in the scope', '不在 scope 里')))}: ${v(x.container)}  ${x.receipts} ${U.lang === 'zh' ? '张回执' : 'receipts'}  ${Object.entries(x.spent).map(([c, a]) => `${a} ${clean(c)}`).join(' / ') || '-'}`)
+    for (const r of x.sources.slice(0, 20)) out.push(`      ${r}`)
+  }
+  if (s.outsidePeriod.receipts) out.push(`    ${U.lab(T(`outside the mandate's period: ${s.outsidePeriod.receipts} receipts (not counted)`, `不在授权书有效期内：${s.outsidePeriod.receipts} 张回执（不计入）`))}`, ...s.outsidePeriod.sources.slice(0, 20).map((r) => `      ${r}`))
+  return out
+}
+function policyLines(list, U, v, file) {
+  const out = [`  ${U.lab(T('POLICY', '策略'))} ${clean(file)}   ${list.length} ${U.lang === 'zh' ? '条规则' : 'rules'}`]
+  for (const p of list) {
+    const r = p.rule
+    const limits = [r.maxAmount !== undefined ? `maxAmount ${r.maxAmount} ${r.currency}` : null, r.maxCalls !== undefined ? `maxCalls ${r.maxCalls}` : null, r.maxPromptTokens !== undefined ? `maxPromptTokens ${r.maxPromptTokens}` : null, r.maxCompletionTokens !== undefined ? `maxCompletionTokens ${r.maxCompletionTokens}` : null].filter(Boolean).join(', ')
+    out.push(`    ${clean(r.name)}: service ${clean(r.service)}  model ${clean(r.model)}  per ${r.period}  ${clean(limits)}   ${p.receipts} ${U.lang === 'zh' ? '张回执' : 'receipts'}, ${p.windows} ${U.lang === 'zh' ? '个窗口' : 'windows'}${p.over.length ? `, ${U.yellow(U.lab(T(`${p.over.length} over`, `${p.over.length} 处超出`)))}` : ''}`)
+    for (const x of p.over) {
+      out.push(`      ${clean(x.window)}  ${x.limit}: ${v(x.value)} > ${v(x.max)}${x.unpriced ? `  (${x.unpriced} ${U.lab(T('without that currency', '张没有该币种'))})` : ''}`)
+      if (r.period !== 'call') { for (const s of x.sources.slice(0, 10)) out.push(`        ${s}`); if (x.sources.length > 10) out.push(`        … ${x.sources.length - 10}`) }
+    }
+    if (p.noTime.length) out.push(`      ${U.lab(T(`${p.noTime.length} receipts carry no signed time and are left out`, `${p.noTime.length} 张回执没有签名时间，未计入`))}`)
+  }
+  return out
 }

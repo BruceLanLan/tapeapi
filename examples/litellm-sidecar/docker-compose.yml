@@ -74,7 +74,7 @@ services:
         sdk: ../../sdk
         server: ../../server
         newapi: ../new-api-sidecar
-    image: tapeapi-litellm-sidecar:2.4.0
+    image: tapeapi-litellm-sidecar:2.5.0
     restart: unless-stopped
     depends_on:
       litellm:
@@ -98,6 +98,8 @@ services:
       RATE_IP: ${RATE_IP:-600}
       CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
       RECEIPT_TTL_S: ${RECEIPT_TTL_S:-}
+      RECEIPT_LOOKUPS_PER_MIN: ${RECEIPT_LOOKUPS_PER_MIN:-}
+      UPSTREAM_RESPONSE_HEADERS: ${UPSTREAM_RESPONSE_HEADERS:-}
       RECEIPT_REQUIRE_HASH: ${RECEIPT_REQUIRE_HASH:-}
       FORWARD_SESSION_HEADERS: ${FORWARD_SESSION_HEADERS:-}
       FORMATS: ${FORMATS:-}

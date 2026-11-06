@@ -95,6 +95,8 @@ export declare function createAIProxy(o: {
   formats?: readonly AIFormat[]
   /** @experimental A metered path of a built-in format (ai.FORMATS) that `formats` leaves out is answered HTTP 400 bad_path (with the sidecar-error header) and never forwarded, instead of passed through without a receipt; `hint` ends the message. Default false: passed through. */
   refuseOtherFormats?: boolean | { hint?: string }
+  /** @experimental (2.5) Pass on only these upstream response headers (case-insensitive) on every /v1/* answer, plus two that are always kept: content-type (its media type and its charset and boundary parameters only) and retry-after. The sidecar's own headers are added as before. Headers are not in a receipt, so receipts and bodies do not change. Default unset: no allowlist, every upstream header passes as before; an empty list passes only those two. (The sidecars' UPSTREAM_RESPONSE_HEADERS variable, when empty, leaves this option unset.) */
+  upstreamResponseHeaders?: readonly string[]
   fetch?: typeof fetch
   log?: (...args: unknown[]) => void
   /** Passed to createProvider; its `ip` budget (default free + paid) also bounds /v1/* per IP. false: off. */

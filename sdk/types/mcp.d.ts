@@ -1,6 +1,22 @@
 // Type declarations for @tapeapi/sdk/mcp (hand-written; ../src/mcp.js is the source of truth).
 
+/** The initialize-based revisions (2025-11-25, 2025-06-18, 2025-03-26), newest first: the initialize negotiation list. */
 export declare const MCP_PROTOCOL_VERSIONS: readonly string[]
+/** @experimental (2.5) The modern revisions served without initialize: ['2026-07-28']. */
+export declare const MCP_MODERN_PROTOCOL_VERSIONS: readonly string[]
+/** @experimental (2.5) Every revision served, modern first (server/discover supportedVersions, -32022 data.supported). */
+export declare const MCP_SUPPORTED_PROTOCOL_VERSIONS: readonly string[]
+/** @experimental (2.5) Error codes defined by MCP 2026-07-28. */
+export declare const MCP_ERRORS: Readonly<{ HEADER_MISMATCH: -32020; MISSING_REQUIRED_CLIENT_CAPABILITY: -32021; UNSUPPORTED_PROTOCOL_VERSION: -32022 }>
+export declare const PROTOCOL_VERSION_META: 'io.modelcontextprotocol/protocolVersion'
+export declare const CLIENT_CAPABILITIES_META: 'io.modelcontextprotocol/clientCapabilities'
+export declare const SERVER_INFO_META: 'io.modelcontextprotocol/serverInfo'
+export type McpRequestEra =
+  | { era: 'legacy' }
+  | { era: 'modern'; version: string; error?: undefined }
+  | { era: 'modern'; version?: undefined; error: { code: number; message: string; data?: { supported: string[]; requested: string } } }
+/** @experimental (2.5) Whether a request is legacy (initialize-based) or modern (2026-07-28), and the refusal of a malformed modern one. */
+export declare function requestEra(method: string, params: unknown): McpRequestEra
 export declare const RECEIPT_META_KEY: 'fun.tapeapi/receipt'
 export declare const VERIFY_BASE: string
 export declare const JSONRPC: Readonly<{ PARSE: -32700; INVALID_REQUEST: -32600; METHOD_NOT_FOUND: -32601; INVALID_PARAMS: -32602; INTERNAL: -32603 }>
@@ -24,8 +40,10 @@ export interface CallToolResult {
 export interface McpServer {
   /**
    * One JSON-RPC message in; the response, or null for a notification. A request that declares MCP revision 2026-07-28
-   * or later in `params._meta['io.modelcontextprotocol/protocolVersion']` gets `resultType: 'complete'` on its result,
-   * and a list result also `ttlMs: 0` and `cacheScope: 'public'`; any other request gets the result unchanged.
+   * in `params._meta['io.modelcontextprotocol/protocolVersion']` (with `clientCapabilities`) gets `resultType: 'complete'`
+   * and `_meta['io.modelcontextprotocol/serverInfo']` on its result, a list or server/discover result also `ttlMs: 0` and
+   * `cacheScope: 'public'`; another value of that key is refused (-32022, or -32602 when not a string). A request without
+   * the key, or with a legacy revision in it, gets the result unchanged (experimental, 2.5).
    */
   handle(message: unknown): Promise<Record<string, unknown> | null>
 }

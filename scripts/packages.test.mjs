@@ -90,7 +90,13 @@ for (const [dir, pkg] of Object.entries(PKGS)) {
     // already pins file by file; it is still a guard, not a budget. / 2.1.0 由 2 MiB 提到 2.25 MiB（2,359,296 字节）：
     // `tapeapi` 命令与 `tapeapi connect` 是真实的新功能，加上之后解包 2,078,664 字节，离原上限只剩 18,488 字节（不足 20 KB），
     // 下一个小改动就会撞线。本测试防的是意外膨胀（误打包的目录、夹具、打包产物），上面的文件清单已逐个钉住；仍是护栏，不是预算。
-    assert.ok(info.unpackedSize < 2.25 * 1024 * 1024, `unpacked size ${info.unpackedSize} under 2.25 MiB`)
+    // Raised from 2.25 MiB to 2.5 MiB (2,621,440 bytes) in 2.5.0: 2.4.0 packs 2,304,644 bytes; the
+    // billing-layer helpers (2,311,911), MCP 2026-07-28 (2,309,633) and the reconcile checks (2,350,724) each stay under
+    // the old limit alone, and merged they pack 2,362,980 bytes, 3,684 over. Real features, no stray file (the whitelist
+    // test below still pins every file); the same reasoning: a guard, not a budget. / 2.5.0 中由 2.25 MiB 提到
+    // 2.5 MiB：2.4.0 解包 2,304,644 字节；计费层辅助、MCP 2026-07-28、对账检查三条线各自都在原上限以内，合并后 2,362,980 字节，
+    // 超出 3,684 字节。都是真实功能，没有误打包的文件（下面的白名单测试仍逐个钉住）；理由同上：护栏，不是预算。
+    assert.ok(info.unpackedSize < 2.5 * 1024 * 1024, `unpacked size ${info.unpackedSize} under 2.5 MiB`)
   })
 
   // 1.6 release integrity: the packed list IS the package.json `files` whitelist (plus package.json), no more and no

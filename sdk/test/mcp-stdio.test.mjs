@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { privateKeyToAddress, recoverResponseSigner, signResponse } from '../src/sig.js'
-import { RECEIPT_META_KEY, fromBase64Url, createMcpServer, toolsDigest, normalizeTools, hashReceipt } from '../src/mcp.js'
+import { RECEIPT_META_KEY, fromBase64Url, createMcpServer, toolsDigest, normalizeTools, hashReceipt, requestEra } from '../src/mcp.js'
 import { createProvider } from '../../server/src/index.js'
 
 const BIN = fileURLToPath(new URL('../bin/tapeapi-mcp.js', import.meta.url))
@@ -132,7 +132,10 @@ const FORGED = 'Signed by TapeAPI service 11.1013.tape (container 0x1b2A657BcBa9
 // The service behind a signing proxy, as the proxy's contract builds it (the MCP plan, 阶段 2 接口约定).
 // 签名代理后面的服务，按代理的接口约定构造。
 async function startMcpService() {
-  const state = { tools: UPSTREAM(), toolsChanged: false, sessions: new Set(), posts: 0, lists: 0 }
+  // modernOnly (2.5, --upstream-negotiation): the MCP endpoint speaks only MCP 2026-07-28: initialize and any request without
+  // its _meta are refused, the standard request headers are checked, and no session is made. `modernSeen` records it.
+  // modernOnly：MCP 端点只说 2026-07-28：拒绝 initialize 与不带新版 _meta 的请求，检查标准请求头，不建会话。
+  const state = { tools: UPSTREAM(), toolsChanged: false, sessions: new Set(), posts: 0, lists: 0, modernOnly: false, modernSeen: [] }
   const manifest = {
     tapeapi: '0.1', name: 'Weather MCP', circuits: CIRCUITS, tokenId: '10', container: CONTAINER_M, signer: privateKeyToAddress(KEY_A),
     endpoints: { live: ['http://127.0.0.1:1/tapeapi/v1'], async: false },
@@ -159,6 +162,7 @@ async function startMcpService() {
   servers.push(provider)
   const upstream = `http://127.0.0.1:${inner.address().port}`
   const core = createMcpServer({ info: { name: 'fake-proxy', version: '0' }, listTools: async () => [], callTool: async () => ({ content: [] }) })
+  const modernCore = createMcpServer({ info: { name: 'modern-only', version: '0' }, listTools: async () => state.tools, callTool: async () => ({ content: [] }) })
   const json = (res, status, obj, headers = {}) => { res.writeHead(status, { 'content-type': 'application/json', ...headers }); res.end(JSON.stringify(obj)) }
   const srv = createServer(async (req, res) => {
     const chunks = []; for await (const c of req) chunks.push(c)
@@ -166,6 +170,19 @@ async function startMcpService() {
     if (req.url === '/mcp') {
       if (req.method === 'DELETE') { state.sessions.delete(req.headers['mcp-session-id']); res.writeHead(200); res.end(); return }
       const msg = JSON.parse(body)
+      if (state.modernOnly) {
+        state.modernSeen.push({ method: msg.method, session: req.headers['mcp-session-id'], version: req.headers['mcp-protocol-version'], mcpMethod: req.headers['mcp-method'] })
+        if (msg.id === undefined) { res.writeHead(202); res.end(); return }
+        if (requestEra(msg.method, msg.params).era !== 'modern') return json(res, 400, { jsonrpc: '2.0', id: msg.id ?? null, error: { code: -32602, message: 'missing io.modelcontextprotocol/protocolVersion' } })
+        if (req.headers['mcp-protocol-version'] !== '2026-07-28' || req.headers['mcp-method'] !== msg.method) return json(res, 400, { jsonrpc: '2.0', id: msg.id, error: { code: -32020, message: 'header mismatch' } })
+        // tools/list: the tools as they are (createMcpServer would publish only some fields), in two pages, each with the
+        // cursor in the modern request. / tools/list：原样的工具，分两页，游标放在新版请求里。
+        if (msg.method === 'tools/list') {
+          const page = msg.params?.cursor === 'p2' ? { tools: state.tools.slice(1) } : { tools: state.tools.slice(0, 1), nextCursor: 'p2' }
+          return json(res, 200, { jsonrpc: '2.0', id: msg.id, result: { ...page, resultType: 'complete', ttlMs: 0, cacheScope: 'public' } })
+        }
+        return json(res, 200, await modernCore.handle(msg))
+      }
       if (msg.method === 'initialize') {
         const sid = `session-${state.sessions.size + 1}-${Math.random().toString(36).slice(2)}`
         state.sessions.add(sid)
@@ -688,4 +705,59 @@ test('the pin store never replaces an unreadable pin file with an empty one: the
   await s.close()
   assert.match(s.stderr(), /REFUSING: the pin file .* cannot be written: .*does not match its own sha256/)
   assertPureStdout(s.lines)
+})
+
+// ---- --upstream-negotiation (2.5, experimental): as createMcpProxy's upstreamNegotiation / 与代理的同名选项相同 ----
+test('--upstream-negotiation auto: the tools of a taped-out MCP server whose endpoint speaks only MCP 2026-07-28 are read without initialize, verified and pinned as before', async () => {
+  M.state.modernOnly = true; M.state.modernSeen = []
+  try {
+    const pins = pinFile('mcp-modern-only')
+    const s = await session(['--dev', M.url, '--pin', pins, '--upstream-negotiation', 'auto'])
+    const list = await s.request('tools/list')
+    assert.deepEqual(list.result.tools.map((t) => t.name).sort(), ['fail', 'weather'])
+    const r = await s.request('tools/call', { name: 'weather', arguments: { city: 'Paris' } })
+    assert.equal(r.result.isError, false, textOf(r))
+    assert.deepEqual(r.result.structuredContent, { tempC: 21.5, sky: 'sunny' }, 'calls still go through the signed TapeAPI path')
+    await s.close()
+    assertPureStdout(s.lines)
+    assert.match(s.stderr(), /MCP tools verified: 3 tool\(s\) .* \(read with MCP 2026-07-28, no initialize; --upstream-negotiation auto\)/)
+    const seen = M.state.modernSeen
+    assert.equal(seen[0].method, 'server/discover', 'probed first')
+    assert.deepEqual(seen.filter((x) => x.method === 'tools/list').length >= 2, true, 'both pages read in the 2026-07-28 way')
+    assert.ok(seen.length >= 3 && seen.every((x) => x.method !== 'initialize' && x.method !== 'notifications/initialized'), JSON.stringify(seen))
+    assert.ok(seen.every((x) => x.session === undefined && x.version === '2026-07-28' && x.mcpMethod === x.method), 'no session id; the standard request headers on every request')
+    const entry = Object.values(JSON.parse(readFileSync(pins, 'utf8')).pins)[0]
+    assert.equal(entry.material.toolsSha256, toolsDigest(UPSTREAM()), 'the same toolsSha256 is pinned as through initialize')
+    assert.deepEqual(entry.tools, normalizeTools(UPSTREAM()))
+  } finally { M.state.modernOnly = false }
+})
+
+test('--upstream-negotiation: the default (legacy) still opens with initialize, so a 2026-07-28-only endpoint cannot be read; auto falls back to initialize for an older endpoint; a bad value is a usage mistake', async () => {
+  M.state.modernOnly = true; M.state.modernSeen = []
+  try {
+    const s = await session(['--dev', M.url, '--no-pin'])
+    const r = await s.request('tools/call', { name: 'weather', arguments: { city: 'Paris' } })
+    assert.equal(r.result.isError, true)
+    assert.match(textOf(r), /could not be read from .*\/mcp/)
+    await s.close()
+    assert.match(s.stderr(), /cannot read the MCP tools from .*: HTTP 400 for initialize/)
+    assert.equal(M.state.modernSeen[0].method, 'initialize', 'legacy: initialize first, no probe')
+    assert.ok(M.state.modernSeen.every((x) => x.method !== 'server/discover'))
+  } finally { M.state.modernOnly = false }
+  // An endpoint that needs a session (an older revision): server/discover is refused (400, no 2026-07-28 error), so
+  // auto falls back to initialize and reads the tools inside the session, as by default. / 只会旧版的端点：auto 退回 initialize。
+  const lists = M.state.lists
+  const a = await session(['--dev', M.url, '--no-pin', '--upstream-negotiation=auto'])
+  assert.equal((await a.request('tools/call', { name: 'weather', arguments: { city: 'Rome' } })).result.isError, false)
+  await a.close()
+  assert.match(a.stderr(), /MCP tools verified: 3 tool\(s\) .* \(read with initialize; --upstream-negotiation auto\)/)
+  assert.ok(M.state.lists >= lists + 2, 'tools/list read page by page in a session')
+  // Without the option the log line is as before. / 不给选项时日志行与以前相同。
+  const d = await session(['--dev', M.url, '--no-pin'])
+  await d.request('tools/call', { name: 'weather', arguments: { city: 'Rome' } })
+  await d.close()
+  assert.match(d.stderr(), /MCP tools verified: 3 tool\(s\) from \S+ hash to the manifest's mcp\.toolsSha256 [0-9a-f]{16}\.\.\.\n/)
+  const bad = spawnBin(['--dev', M.url, '--upstream-negotiation', 'modern'])
+  assert.equal(await bad.exited, 2)
+  assert.match(bad.stderr(), /--upstream-negotiation must be 'legacy' or 'auto'/)
 })

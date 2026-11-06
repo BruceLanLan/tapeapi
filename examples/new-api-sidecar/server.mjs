@@ -21,6 +21,19 @@
 //   RATE_IP              requests per minute per client IP at the sidecar (default 600; 0 = off, leave limits to new-api)
 //   CLIENT_IP_HEADER     the header your reverse proxy sets to the client's address (x-real-ip, x-forwarded-for, ...);
 //                        unset = the TCP peer (then every caller behind one proxy shares one rate-limit bucket)
+//   RECEIPT_LOOKUPS_PER_MIN  optional: lookups of the free `receipt` method per client IP per minute (default 10, as
+//                        before; 0 refuses every lookup, as in examples/ai-proxy's Worker; off: no budget of its own, RATE_IP
+//                        only). A billing layer in front that looks receipts up from one address shares one bucket: raise it there.
+//                        Read since 2.5: a value 2.4 ignored, if malformed, is now setup mode.
+//                        可选：免费 receipt 方法每个客户端 IP 每分钟的次数（默认 10，与以前相同；0 拒绝所有取回，与 Worker 相同；off 不单独限流，只受 RATE_IP 约束）。2.5 起才读取：2.4 忽略的坏值现在会进设置模式。前面的
+//                        计费层从同一个地址取回执时共用一个桶，请调高。
+//   UPSTREAM_RESPONSE_HEADERS  optional, experimental (2.5): comma-separated upstream response headers to pass on to
+//                        callers; every other upstream header is dropped (content-type, as its media type, charset and boundary
+//                        only, and retry-after are always kept). Receipts are unchanged (headers are not in a receipt).
+//                        Unset or empty: no allowlist, every header passed, as before; content-type alone = none extra.
+//                        可选，实验性（2.5）：逗号分隔的上游响应头白名单，其余上游头一律去掉（content-type 只保留媒体类型与
+//                        charset、boundary，以及 retry-after，始终保留）。回执不变（响应头不在回执里）。未设或留空：不开白名单，与以前一样
+//                        全部转交；只写 content-type 即除这两个之外一个都不转。
 //   SIGNER_ADDRESS       optional: must match SIGNER_KEY (a guard against pasting the wrong key)
 //   FORMATS              SET IT: the API formats your new-api really serves, comma-separated, among openai-chat,
 //                        openai-responses, anthropic-messages, openai-embeddings (or "all" for the four). Only these are
@@ -175,6 +188,15 @@ export function readConfig(rawEnv = process.env, profile = NEW_API_PROFILE) {
   if (!Number.isInteger(receiptTtlS) || receiptTtlS <= 0) return out('RECEIPT_TTL_S must be a whole number of seconds above 0 (default 3600)', { signer })
   if (![undefined, '', '0', '1'].includes(env.RECEIPT_REQUIRE_HASH)) return out('RECEIPT_REQUIRE_HASH must be 1 (a receipt lookup must name requestSha256 too) or 0', { signer })
   const requireRequestHash = env.RECEIPT_REQUIRE_HASH === '1'
+  // The receipt method's own budget per client IP (2.5; the Worker already read this variable). / receipt 方法的按 IP 预算。
+  // 0 refuses every lookup (as the Worker); `off` (any case) leaves the receipt method to the sidecar's RATE_IP alone
+  // 0 拒绝所有补查（与 Worker 相同）；off（不区分大小写）表示不单独限流，只受 RATE_IP 约束
+  const lookupsRaw = env.RECEIPT_LOOKUPS_PER_MIN === undefined || env.RECEIPT_LOOKUPS_PER_MIN === '' ? null : env.RECEIPT_LOOKUPS_PER_MIN
+  const receiptLookupsPerMin = lookupsRaw === null ? null : /^off$/i.test(lookupsRaw) ? 'off' : /^\d{1,7}$/.test(lookupsRaw) ? Number(lookupsRaw) : undefined
+  if (receiptLookupsPerMin === undefined) return out('RECEIPT_LOOKUPS_PER_MIN must be a whole number of receipt lookups per minute per client IP (default 10; 0 refuses every lookup), or off (no limit of its own)', { signer })
+  // Upstream response headers passed on, when listed (2.5, experimental). / 列出时只转交这些上游响应头。
+  const upstreamResponseHeaders = env.UPSTREAM_RESPONSE_HEADERS ? env.UPSTREAM_RESPONSE_HEADERS.split(/[\s,]+/).filter(Boolean).map((h) => h.toLowerCase()) : null
+  if (upstreamResponseHeaders && (!upstreamResponseHeaders.length || !upstreamResponseHeaders.every((h) => HEADER_NAME.test(h) && h.length <= 128))) return out('UPSTREAM_RESPONSE_HEADERS must be header names separated by commas, such as x-request-id,retry-after', { signer })
   // 0: the clients' session headers (x-claude-code-session-id, session-id, thread-id) do not reach new-api. / 0：不转发会话头。
   if (![undefined, '', '0', '1'].includes(env.FORWARD_SESSION_HEADERS)) return out('FORWARD_SESSION_HEADERS must be 1 (pass the clients\' session headers upstream, the default) or 0', { signer })
   const forwardSessionHeaders = env.FORWARD_SESSION_HEADERS !== '0'
@@ -182,7 +204,7 @@ export function readConfig(rawEnv = process.env, profile = NEW_API_PROFILE) {
   return {
     ok: true, missing: [], problem: null, signer,
     config: {
-      publicUrl, loopback, upstreamBaseUrl, modelsFile, models, formats, signerKey, signer, rateIp, clientIpHeader, receiptTtlS, requireRequestHash, forwardSessionHeaders,
+      publicUrl, loopback, upstreamBaseUrl, modelsFile, models, formats, signerKey, signer, rateIp, clientIpHeader, receiptTtlS, requireRequestHash, forwardSessionHeaders, receiptLookupsPerMin, upstreamResponseHeaders,
       formatsWarning,
       tapeName: env.TAPE_NAME || null,
       manifestBase: {
@@ -242,6 +264,8 @@ export function buildProxy(config, { fetch, log, formats } = {}) {
     ...(config.receiptTtlS ? { receiptTtlMs: config.receiptTtlS * 1000 } : {}),
     ...(config.requireRequestHash ? { requireRequestHash: true } : {}),
     ...(config.forwardSessionHeaders === false ? { forwardSessionHeaders: false } : {}),
+    ...(Number.isInteger(config.receiptLookupsPerMin) ? { receiptRateLimit: { ip: config.receiptLookupsPerMin, windowMs: 60_000 } } : config.receiptLookupsPerMin === 'off' ? { receiptRateLimit: false } : {}),
+    ...(config.upstreamResponseHeaders ? { upstreamResponseHeaders: config.upstreamResponseHeaders } : {}),
     ...(fetch ? { fetch } : {}),
     ...(log ? { log } : {}),
   })

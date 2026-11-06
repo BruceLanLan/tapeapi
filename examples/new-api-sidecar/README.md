@@ -31,7 +31,7 @@ new-api:3000            渠道、令牌、额度、倍率、计费全部照旧
 
 还没准备好花钱？先在本机跑一遍本地试跑（不需要密钥、电路，也不花钱）：先在仓库根目录运行 `npm ci --no-audit --no-fund`，再运行
 `node examples/relay-trial/trial.mjs`。下面每一步做完都可以用 `tapeapi-doctor`（实验性）检查，它会说清缺什么、去哪做、下一条命令。
-它随 SDK 发布包提供，在任何目录都能运行：`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-doctor <你的名字或旁路地址>`；
+它随 SDK 发布包提供，在任何目录都能运行：`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-doctor <你的名字或旁路地址>`；
 在本目录（`examples/new-api-sidecar`）里也可以用检出自带的 `node ../../sdk/bin/tapeapi-doctor.js`。逐步清单见 [AI 服务方指南 · 从零到上线](../../docs/guides/zh-CN/ai-providers.md#从零到上线)。
 
 前提：一台装了 Docker 与 Docker Compose 2.17 或更高版本的服务器；一个域名和你已有的 HTTPS 反向代理（Nginx、Caddy、1Panel、宝塔都行）；
@@ -129,7 +129,7 @@ compose 文件，放在同一个网络里，`UPSTREAM_BASE_URL` 指向你的 new
 
 ```sh
 # 终端 1。42.1013.tape 是示例名：换成你的 TapeOut 名字（即 .env 里的 TAPE_NAME）
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -178,8 +178,10 @@ SSE 注释 `: tapeapi-receipt …`（官方 SDK、Claude Code、Codex 都忽略�
   额度与限流不受影响。旁路自己按客户端 IP 限流（`RATE_IP`，默认每分钟 600 次；设 `0` 则交给 new-api），反向代理后面要设
   `CLIENT_IP_HEADER`，否则所有用户共用一个限流桶。
 - 回执在旁路内存里按 (id, requestSha256) 保留 1 小时（`RECEIPT_TTL_S` 可改，重启即丢），随回答送达的那一份才是主要的。免费的
-  `receipt` 取回方法单独限流（每个客户端 IP 每分钟 10 次）。有些渠道的回答 id 可以猜（Ollama 的是 `chatcmpl-` 加一个小于 999 的数），
+  `receipt` 取回方法单独限流（每个客户端 IP 每分钟 10 次；`RECEIPT_LOOKUPS_PER_MIN` 可改，`0` 拒绝所有取回，与 Cloudflare Worker 同义——注意与 `RATE_IP=0` 表示"交给 new-api"不同；`off` 表示不单独限流、只受 `RATE_IP` 约束；其它值进入设置模式并点名该变量；2.5，实验性。2.4 不读这个变量，升级前请确认 compose 里留着的值是整数或 `off`）。有些渠道的回答 id 可以猜（Ollama 的是 `chatcmpl-` 加一个小于 999 的数），
   旁路看到这种 id 会在日志里提示；这时设 `RECEIPT_REQUIRE_HASH=1`，取回执必须同时给出请求哈希 `requestSha256`，只猜中 id 的人拿不到。
+- `UPSTREAM_RESPONSE_HEADERS`（2.5，实验性，默认不设）：逗号分隔的上游响应头白名单。设置后只把列出的上游头（不区分大小写）、`content-type`（只保留媒体类型与 `charset`、`boundary`）
+  和 `retry-after` 转给调用方，旁路自己的头（回执、旁路错误标记、CORS）照旧；不设或留空即不开白名单，与以前一样全部转发；除这两个之外一个都不转，就设成 `content-type`。2.4 不读这个变量，升级前请确认留着的值是逗号分隔的头名。只过滤响应头，回答正文与回执不变。
 - 上限：请求体 32 MiB，非流式回答 16 MiB，非流式回答须在 600 秒内完成，流静默 300 秒即结束。
 
 ### 合规
@@ -295,7 +297,7 @@ Not ready to pay for anything yet? Run the local trial on your machine first (no
 `npm ci --no-audit --no-fund` at the repository root, then `node examples/relay-trial/trial.mjs`. After each step below,
 `tapeapi-doctor` (experimental) checks it and says what is missing, where to fix it and the next command. It ships in
 the SDK's release package and runs from any directory:
-`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-doctor <your name or sidecar URL>`; in this directory (`examples/new-api-sidecar`)
+`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-doctor <your name or sidecar URL>`; in this directory (`examples/new-api-sidecar`)
 the checkout's own is `node ../../sdk/bin/tapeapi-doctor.js`. The step-by-step checklist is [AI providers · From zero to live](../../docs/guides/ai-providers.md#from-zero-to-live).
 
 You need a server with Docker and Docker Compose 2.17 or later; a domain and your existing HTTPS reverse proxy (Nginx,
@@ -403,9 +405,18 @@ steps 3 to 5.
   `CLIENT_IP_HEADER`, or every user shares one bucket.
 - Receipts are kept in the sidecar's memory per (id, requestSha256) for 1 hour (`RECEIPT_TTL_S` changes it; a restart
   loses them); the copy delivered with the answer is the primary one. The free `receipt` lookup method has a budget of
-  its own (10 per client IP per minute). Some channels' answer ids can be guessed (Ollama's are `chatcmpl-` and a
+  its own (10 per client IP per minute; `RECEIPT_LOOKUPS_PER_MIN` changes it, `0` refuses every lookup as in the
+  Cloudflare Worker, unlike `RATE_IP=0`, which leaves limiting to new-api; `off` gives it no budget of its own, `RATE_IP` only;
+  anything else is setup mode naming the variable; 2.5, experimental. 2.4 did not read it: before upgrading, check that a
+  value left in your compose file is a whole number or `off`). Some channels' answer ids can be guessed (Ollama's are `chatcmpl-` and a
   number below 999); the sidecar's log says so when it sees such ids. Then set `RECEIPT_REQUIRE_HASH=1`: a lookup must
   also name the request hash `requestSha256`, which someone who only guessed an id does not have.
+- `UPSTREAM_RESPONSE_HEADERS` (2.5, experimental, unset by default): a comma-separated allowlist of upstream response
+  headers. Set, only the listed upstream headers (case-insensitive), `content-type` (its media type with `charset` and
+  `boundary` only) and `retry-after` reach callers; the sidecar's own headers (the receipt, the sidecar-error mark, CORS)
+  are added as before. Unset or empty, there is no allowlist and every upstream header passes as before; to pass none
+  beyond those two, set it to `content-type`. 2.4 did not read it: before upgrading, check that a value left over is a
+  comma-separated list of header names. It filters headers only: the answer body and the receipt are the same.
 - Caps: request body 32 MiB, non-stream answer 16 MiB, a non-stream answer must complete within 600 s, a stream silent
   for 300 s is ended.
 

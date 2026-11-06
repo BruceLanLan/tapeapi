@@ -11,7 +11,7 @@
 // Variables: UPSTREAM_BASE_URL, MODELS_JSON (the price table), CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES,
 // DELEGATION_SIG, PUBLIC_URL; optional SERVICE_NAME, RATE_IP (requests per minute per IP, default 600), RECEIPT_TTL_S
 // (how long receipts stay retrievable, default 3600), RECEIPT_LOOKUPS_PER_MIN (the receipt method's budget per IP,
-// default 10), RECEIPT_REQUIRE_HASH ("1": a receipt lookup must name requestSha256 too; for an upstream whose answer
+// default 10; 0 refuses every lookup; off: no budget of its own; anything else is setup mode), RECEIPT_REQUIRE_HASH ("1": a receipt lookup must name requestSha256 too; for an upstream whose answer
 // ids are guessable, such as Ollama's), FORWARD_SESSION_HEADERS ("0": do not pass the clients' session headers
 // x-claude-code-session-id, session-id and thread-id upstream; default: pass them).
 // FORMATS (set it): the API formats your upstream really serves, comma-separated, among openai-chat, openai-responses,
@@ -21,7 +21,7 @@
 // values. An unknown name: setup mode, naming the variable. Same rule as examples/new-api-sidecar. A metered path of a
 // format left out is answered HTTP 400 naming FORMATS and is not forwarded.
 // 密钥：SIGNER_KEY（只有上游需要你自己的而不是调用方的密钥时，再加 UPSTREAM_AUTHORIZATION）。变量见上；RECEIPT_TTL_S 为回执
-// 可取回的秒数，RECEIPT_LOOKUPS_PER_MIN 为 receipt 方法每 IP 每分钟的次数，RECEIPT_REQUIRE_HASH 为 "1" 时取回执须同时给出
+// 可取回的秒数，RECEIPT_LOOKUPS_PER_MIN 为 receipt 方法每 IP 每分钟的次数（0 拒绝所有补查，off 不单独限流，其它坏值进设置模式），RECEIPT_REQUIRE_HASH 为 "1" 时取回执须同时给出
 // requestSha256（上游 id 可猜时用，例如 Ollama）；FORWARD_SESSION_HEADERS 为 "0" 时不把客户端的会话头转发给上游（默认转发）。
 // FORMATS（请设置）：上游真正提供的 API 格式，逗号分隔，或 "all"。只有这些格式写进清单（链上的公开声明）并签发回执；只兼容 OpenAI 的
 // 上游设 FORMATS=openai-chat。未设：四种都发布（与 2.0.0 相同），/tapeapi/v1/health 带 warning，每个隔离实例打一次控制台警告，点名该变量
@@ -71,10 +71,25 @@ export function manifestBaseOf(env) {
   }
 }
 
+/**
+ * RECEIPT_LOOKUPS_PER_MIN, checked: createAIProxy's receiptRateLimit (undefined when unset: its default), false for `off`,
+ * or a sentence naming the variable (setup mode, as the new-api sidecar; never a throw out of createAIProxy). 0 refuses
+ * every lookup. / RECEIPT_LOOKUPS_PER_MIN 的检查结果：未设为 undefined（用默认值），off 为 false，否则为设置模式的一句话；0 拒绝所有补查。
+ */
+export function receiptLimitOf(env) {
+  const v = env.RECEIPT_LOOKUPS_PER_MIN === undefined ? '' : String(env.RECEIPT_LOOKUPS_PER_MIN).trim()
+  if (v === '') return undefined
+  if (/^off$/i.test(v)) return false
+  if (/^\d{1,7}$/.test(v)) return { ip: Number(v), windowMs: 60_000 }
+  return 'RECEIPT_LOOKUPS_PER_MIN must be a whole number of receipt lookups per minute per client IP (default 10; 0 refuses every lookup), or off (no limit of its own)'
+}
+
 export function build(env, extra = {}) {
   if (env.SIGNER_ADDRESS && env.SIGNER_ADDRESS.toLowerCase() !== sig.privateKeyToAddress(env.SIGNER_KEY).toLowerCase()) throw new Error(`SIGNER_ADDRESS ${env.SIGNER_ADDRESS} does not match SIGNER_KEY`)
   const formats = formatsOf(env)
   if (typeof formats === 'string') throw new Error(formats)
+  const receiptLimit = receiptLimitOf(env)
+  if (typeof receiptLimit === 'string') throw new Error(receiptLimit)
   let models
   try { models = JSON.parse(env.MODELS_JSON) } catch { throw new Error('MODELS_JSON must be the price table as JSON: [{ "id", "aliases"?, "formats"?, "prices": [{ "currency", "unit": "1M tokens", "input", "output", "cacheRead"?, "cacheWrite"?, "cacheWrite1h"?, "reasoning"? }] }]') }
   // A model limited to a format FORMATS leaves out, in words. / 模型限定的格式被 FORMATS 排除：用一句话说清。
@@ -98,7 +113,7 @@ export function build(env, extra = {}) {
     // `receipt` method finds only those this isolate signed. / 按隔离实例计；回执也存在隔离实例内，receipt 方法只能找到本实例签的。
     rateLimit: { windowMs: 60_000, free: 600, paid: 0, ip: Number(env.RATE_IP || 600) },
     ...(env.RECEIPT_TTL_S ? { receiptTtlMs: Number(env.RECEIPT_TTL_S) * 1000 } : {}),
-    ...(env.RECEIPT_LOOKUPS_PER_MIN !== undefined && env.RECEIPT_LOOKUPS_PER_MIN !== '' ? { receiptRateLimit: { ip: Number(env.RECEIPT_LOOKUPS_PER_MIN), windowMs: 60_000 } } : {}),
+    ...(receiptLimit !== undefined ? { receiptRateLimit: receiptLimit } : {}),
     ...(env.RECEIPT_REQUIRE_HASH === '1' || env.RECEIPT_REQUIRE_HASH === 'true' ? { requireRequestHash: true } : {}),
     ...(env.FORWARD_SESSION_HEADERS === '0' || env.FORWARD_SESSION_HEADERS === 'false' ? { forwardSessionHeaders: false } : {}),
     ...extra,
@@ -115,6 +130,8 @@ export default {
     if (!env.UPSTREAM_BASE_URL) return setupAnswer(env, request, 'UPSTREAM_BASE_URL (the /v1 base URL of your AI API) is not set')
     const formats = formatsOf(env)
     if (typeof formats === 'string') return setupAnswer(env, request, formats)
+    const receiptLimit = receiptLimitOf(env)
+    if (typeof receiptLimit === 'string') return setupAnswer(env, request, receiptLimit)
     if (!proxy) { try { proxy = build(env) } catch (e) { return setupAnswer(env, request, e.message) } }
     const res = await proxy.handleRequest(request, { clientIp: request.headers.get('cf-connecting-ip') || undefined })
     // FORMATS unset: every format, and a warning in health (and once in the log). / 未设 FORMATS：全部格式，health 带警告。

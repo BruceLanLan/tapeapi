@@ -26,25 +26,52 @@ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
 const rpcError = (id, code, message, data) => ({ jsonrpc: '2.0', id: id ?? null, error: data === undefined ? { code, message } : { code, message, data } })
 const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result })
 
-// MCP revision 2026-07-28 (checked against https://modelcontextprotocol.io/specification/2026-07-28 on 2026-10-14):
-// every result carries `resultType` (basic/index), and the results of tools/list, resources/list,
-// resources/templates/list and prompts/list carry `ttlMs` and `cacheScope` (server/utilities/caching). They are added
-// only to the answer to a request that itself declares that revision or a later one in
-// `_meta['io.modelcontextprotocol/protocolVersion']`, a key no earlier revision defines: a client of an earlier revision
-// gets exactly what it got before. The server does not otherwise speak 2026-07-28 (no server/discover, no header
-// checks). The fields sit beside a result, never inside a receipt or a tool, so no signature and no toolsSha256 changes.
-// ttlMs 0 keeps today's behaviour (a client re-reads the list each time, so a changed tool is seen at once); the lists
-// are the same for every caller, hence `public`.
-// MCP 2026-07-28 版：每个结果带 resultType；tools/list 等列表结果带 ttlMs 与 cacheScope。只加在“请求自己在 _meta 里声明了
-// 该版本或更新版本”的回答上（更早的版本没有这个键）：更早版本的客户端收到的与以前完全相同。服务器在别的方面仍不说 2026-07-28
-// （没有 server/discover，不校验请求头）。这些字段在结果旁边，不在回执或工具定义里，签名与 toolsSha256 都不变。ttlMs 为 0
-// 保持现状（客户端每次重读列表，工具一变立刻看到）；列表对所有调用方相同，所以是 public。
-const PROTOCOL_VERSION_META = 'io.modelcontextprotocol/protocolVersion'
-const RESULT_TYPE_SINCE = '2026-07-28'
+// MCP revision 2026-07-28, @experimental (2.5). Checked against the specification on 2026-10-21, when 2026-07-28 was its
+// latest revision: https://modelcontextprotocol.io/specification/2026-07-28/ basic/versioning ("Protocol Version
+// Negotiation", "Backward Compatibility with Initialization-Based Versions"), basic/index ("Error Codes", "_meta" >
+// "Per-request protocol fields" / "Per-response protocol fields"), server/discover, server/utilities/caching.
+// This server is dual-era. A request is modern when its params._meta carries io.modelcontextprotocol/protocolVersion
+// with a value other than a legacy revision, and it is not initialize (initialize selects the legacy semantics). A
+// modern request of 2026-07-28 is served statelessly: its result carries resultType "complete" and _meta
+// io.modelcontextprotocol/serverInfo (beside any receipt there), and a list or server/discover result also ttlMs 0 and
+// cacheScope "public"; server/discover answers. A modern request with any other version gets
+// UnsupportedProtocolVersionError (-32022, data { supported, requested }), and one whose version is not a string or
+// that lacks clientCapabilities, -32602. Every other request (no such key: every request of 2025-11-25, 2025-06-18 and
+// 2025-03-26) is answered exactly as before. Nothing added sits in a receipt or a tool, so no signature and no
+// toolsSha256 changes. ttlMs 0 keeps a client re-reading the list each time; the lists are the same for every caller.
+// MCP 2026-07-28 版（实验性，2.5）。本服务器同时服务两代：params._meta 带 io.modelcontextprotocol/protocolVersion 且值不是旧版本、
+// 方法也不是 initialize 的请求算新版。2026-07-28 的请求无状态处理：结果带 resultType 与 _meta 里的 serverInfo（与回执并列），
+// 列表与 server/discover 的结果还带 ttlMs 0 与 cacheScope public；server/discover 有回答。其它版本得到 -32022，版本不是字符串或
+// 缺 clientCapabilities 得到 -32602。其余请求（三个旧版本的所有请求）的回答与以前完全相同。新增内容不在回执或工具定义里，签名与
+// toolsSha256 都不变。
+/** @experimental (2.5) The modern revisions this server implements, newest first. / 实现的新版版本。 */
+export const MCP_MODERN_PROTOCOL_VERSIONS = Object.freeze(['2026-07-28'])
+/** @experimental (2.5) Every revision served: modern, then the initialize-based ones. / 支持的全部版本。 */
+export const MCP_SUPPORTED_PROTOCOL_VERSIONS = Object.freeze([...MCP_MODERN_PROTOCOL_VERSIONS, ...MCP_PROTOCOL_VERSIONS])
+/** @experimental (2.5) Error codes MCP 2026-07-28 defines (basic/index "Error Codes"). / 2026-07-28 定义的错误码。 */
+export const MCP_ERRORS = Object.freeze({ HEADER_MISMATCH: -32020, MISSING_REQUIRED_CLIENT_CAPABILITY: -32021, UNSUPPORTED_PROTOCOL_VERSION: -32022 })
+export const PROTOCOL_VERSION_META = 'io.modelcontextprotocol/protocolVersion'
+export const CLIENT_CAPABILITIES_META = 'io.modelcontextprotocol/clientCapabilities'
+export const SERVER_INFO_META = 'io.modelcontextprotocol/serverInfo'
 const LIST_CACHE_HINTS = Object.freeze({ ttlMs: 0, cacheScope: 'public' })
-const declaresResultType = (params) => {
-  const v = isObj(params._meta) ? params._meta[PROTOCOL_VERSION_META] : undefined
-  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && v >= RESULT_TYPE_SINCE
+
+/**
+ * @experimental (2.5) The era of one request: `{ era: 'legacy' }`, `{ era: 'modern', version }`, or `{ era: 'modern',
+ * error: { code, message, data? } }` for a modern request that must be refused. The HTTP layers call it too, to choose
+ * the status (400 for such an error). / 一个请求属于哪一代；HTTP 层也调用它来决定状态码。
+ * @param {string} method
+ * @param {unknown} params
+ */
+export function requestEra(method, params) {
+  if (method === 'initialize' || !isObj(params) || !isObj(params._meta) || !Object.prototype.hasOwnProperty.call(params._meta, PROTOCOL_VERSION_META)) return { era: 'legacy' }
+  const v = params._meta[PROTOCOL_VERSION_META]
+  if (typeof v === 'string' && MCP_PROTOCOL_VERSIONS.includes(v)) return { era: 'legacy' }
+  if (typeof v !== 'string') return { era: 'modern', error: { code: JSONRPC.INVALID_PARAMS, message: `_meta["${PROTOCOL_VERSION_META}"] must be a string` } }
+  if (!MCP_MODERN_PROTOCOL_VERSIONS.includes(v)) {
+    return { era: 'modern', error: { code: MCP_ERRORS.UNSUPPORTED_PROTOCOL_VERSION, message: 'Unsupported protocol version', data: { supported: [...MCP_SUPPORTED_PROTOCOL_VERSIONS], requested: v.slice(0, 64) } } }
+  }
+  if (!isObj(params._meta[CLIENT_CAPABILITIES_META])) return { era: 'modern', error: { code: JSONRPC.INVALID_PARAMS, message: `_meta["${CLIENT_CAPABILITIES_META}"] is required (an object)` } }
+  return { era: 'modern', version: v }
 }
 
 /**
@@ -69,10 +96,21 @@ export function createMcpServer({ info, instructions, listTools, callTool }) {
     if (id === undefined) return null
     if (typeof id !== 'string' && typeof id !== 'number') return rpcError(null, JSONRPC.INVALID_REQUEST, 'id must be a string or a number')
     if (!isObj(params)) return rpcError(id, JSONRPC.INVALID_PARAMS, 'params must be an object')
-    // A request of revision 2026-07-28 or later gets resultType (and, for a list, the cache hints); any other request,
-    // the result unchanged. / 2026-07-28 及以后版本的请求得到 resultType（列表还有缓存提示）；其余请求的结果不变。
-    const modern = declaresResultType(params)
-    const done = (result, list = false) => rpcResult(id, modern ? { ...result, resultType: 'complete', ...(list ? LIST_CACHE_HINTS : {}) } : result)
+    // A modern request (2026-07-28) gets resultType, serverInfo in _meta (and, for a list, the cache hints); a legacy
+    // request, the result unchanged. / 新版请求得到 resultType、_meta 里的 serverInfo（列表还有缓存提示）；旧版请求结果不变。
+    const era = requestEra(method, params)
+    if (era.error) return rpcError(id, era.error.code, era.error.message, era.error.data)
+    const modern = era.era === 'modern'
+    const done = (result, list = false) => rpcResult(id, modern
+      ? { ...result, resultType: 'complete', ...(list ? LIST_CACHE_HINTS : {}), _meta: { ...(isObj(result._meta) ? result._meta : {}), [SERVER_INFO_META]: { ...info } } }
+      : result)
+    // server/discover exists in the modern era only; a legacy request for it is an unknown method, as before.
+    // server/discover 只属于新版；旧版请求它仍是未知方法。
+    if (modern && method === 'server/discover') {
+      const result = { supportedVersions: [...MCP_SUPPORTED_PROTOCOL_VERSIONS], capabilities: { tools: { listChanged: false } } }
+      if (instructions) result.instructions = instructions
+      return done(result, true)
+    }
     try {
       switch (method) {
         case 'initialize': {

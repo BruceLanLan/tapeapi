@@ -231,6 +231,14 @@ function validFormat(f) {
  *        that enables the format). Default false: passed through, as before.
  *        / 实验性：`formats` 未包含的内置格式的计量路径答 400 bad_path（带旁路错误头），不转发，而不是无回执透传；hint 附在
  *        消息末尾（例如启用该格式的设置）。默认 false：照旧透传。
+ * @param {string[]} [o.upstreamResponseHeaders]  @experimental (2.5) an allowlist of upstream response header names: when
+ *        set, only these (case-insensitive), `content-type` (always kept: clients need it; its media type, charset and
+ *        boundary only) and `retry-after` (always kept: clients back off with it) are passed on to the caller,
+ *        on every /v1/* answer; the sidecar's own headers (receipt, sidecar-error, CORS) are added as before. For an
+ *        upstream whose headers name its channels or costs. Headers are not part of a receipt (it binds the body bytes),
+ *        so receipts and bodies are the same with or without it. Default: unset, every header passed but those dropped
+ *        today. / 实验性：上游响应头白名单。设置后只转交这些头（不区分大小写）与 content-type、retry-after（始终保留）；旁路自己的头照旧加上。
+ *        响应头不属于回执（回执绑定正文字节），所以开不开回执与正文都不变。默认不设：与现在一样转交。
  */
 export function createAIProxy(opts = {}) {
   const { upstream, manifestBase, signerKey, models, receiptTtlMs = RECEIPT_TTL_MS, maxReceipts = MAX_RECEIPTS, formats = ai.FORMATS, requireRequestHash = false, forwardSessionHeaders = true } = opts
@@ -268,6 +276,15 @@ export function createAIProxy(opts = {}) {
   const servedNames = formats.map((f) => f.name)
   const otherFormats = refuseOther ? ai.FORMATS.filter((f) => !servedNames.includes(f.name)) : []
   const otherHint = isObj(refuseOther) && refuseOther.hint ? `; ${refuseOther.hint}` : ''
+  // The upstream response headers passed on, when the operator lists them (2.5, experimental); null: as before.
+  // 运营方列出时只转交这些上游响应头（2.5，实验性）；null：与以前相同。
+  const keepUpstream = opts.upstreamResponseHeaders === undefined ? null : (() => {
+    const list = opts.upstreamResponseHeaders
+    if (!Array.isArray(list) || !list.every((h) => typeof h === 'string' && /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$/.test(h))) throw new TapeAPIError('INVALID_ARGUMENT', 'upstreamResponseHeaders must be a list of header names')
+    // content-type and retry-after are always kept: clients need the one to read the answer and the other to back off on
+    // a 429 or 503. / content-type 与 retry-after 始终保留：前者读回答要用，后者 429/503 时退避要用
+    return new Set(['content-type', 'retry-after', ...list.map((h) => h.toLowerCase())])
+  })()
   const listOf = (k) => formats.flatMap((f) => (Array.isArray(f[k]) ? f[k].map((h) => String(h).toLowerCase()) : []))
   const forward = [...new Set([...FORWARD_BASE, ...listOf('headers')])]
   const allowHeaders = forward.join(', ')
@@ -570,9 +587,19 @@ export function createAIProxy(opts = {}) {
     const allow = asked && asked.length <= 2048 && TOKEN_LIST.test(asked.trim()) ? `${allowHeaders}, ${asked.trim()}` : allowHeaders
     return new Response(null, { status: 204, headers: { ...CORS, 'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS', 'access-control-allow-headers': allow, 'access-control-max-age': '86400' } })
   }
+  // with the allowlist on, content-type (always kept) is passed as its media type and its charset and
+  // boundary parameters only: any other parameter is a field an upstream can fill with what the allowlist hides
+  // (a channel, a cost). Unset allowlist: verbatim, as before / 白名单开启时，content-type（始终保留）只转交媒体类型与
+  // charset、boundary 参数；其它参数是上游可以塞进白名单要藏的东西（渠道、成本）的地方。未设白名单：原样，与以前相同
+  const KEEP_PARAMS = new Set(['charset', 'boundary'])
+  const contentTypeOf = (v) => {
+    const [type, ...params] = String(v).split(';')
+    const kept = params.map((x) => x.trim()).filter((x) => KEEP_PARAMS.has(x.split('=')[0].trim().toLowerCase()))
+    return [type.trim(), ...kept].join('; ')
+  }
   function responseHeaders(res) {
     const h = new Headers()
-    for (const [k, v] of res.headers) { if (DROP.has(k) || k.startsWith('access-control-')) continue; h.append(k, v) }
+    for (const [k, v] of res.headers) { if (DROP.has(k) || k.startsWith('access-control-') || (keepUpstream && !keepUpstream.has(k))) continue; h.append(k, keepUpstream && k === 'content-type' ? contentTypeOf(v) : v) }
     for (const [k, v] of Object.entries(CORS)) h.set(k, v)
     return h
   }

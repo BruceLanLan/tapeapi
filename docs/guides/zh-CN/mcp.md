@@ -94,38 +94,73 @@ not the params or result.)
 
 ### 协议版本
 
-远程服务器通过 Streamable HTTP 使用 MCP 的 2025-11-25、2025-06-18 和 2025-03-26 三个版本，调用之间不保存会话。较新的
-2026-07-28 版本用每个请求自带的元数据和 `server/discover` 调用取代了 `initialize` 握手，本服务器没有实现它。
+远程服务器、签名代理的 `/mcp` 和本地命令都支持四个 MCP 版本。其中三个使用 `initialize` 握手：2025-11-25、2025-06-18 和
+2025-03-26。第四个 2026-07-28 没有握手：每个请求在 `params._meta` 里自带版本和客户端能力。对 2026-07-28 的支持是**实验性**的
+（2.5）：不在 2.x 兼容承诺之内，任何 2.x 版本都可能改动它。两种情况下调用之间都不保存会话，也不发 `Mcp-Session-Id`。
 
-- **两代协议都能处理的客户端**先试较新的版本。较新版本规定：服务器不认识它时，这样的客户端回退到 `initialize`，之后
-  正常连接，用法同上文。
-- **只接受 2026-07-28 版本的客户端**连不上这个端点，会报告版本无法协商或方法不存在。
+一个请求的 `params._meta` 里有键 `io.modelcontextprotocol/protocolVersion`、值不是三个旧版本之一、方法也不是
+`initialize` 时，就按 2026-07-28 处理。旧版本的客户端都不发这个键，所以它们得到的回答与 2.4 完全相同：测试集回放从
+2.4.0 版录下的 290 个回答（本地命令所用的服务器核心、远程服务器、签名代理，以及公共服务的 `/mcp` 和 `/mcp/pinned`），
+要求逐字节一致；例外是带 `MCP-Protocol-Version: 2026-07-28` 请求头、正文却没有 2026-07-28 `_meta` 的请求的 5 个回答
+（每个 HTTP 入口一个）：旧版客户端不会这样发，它现在被拒绝（见下文）。
 
-以上依据较新版本对旧服务器的规定。我们没有逐个试过各种客户端。端点也放行了该版本新增的 `Mcp-Method` 和 `Mcp-Name`
-请求头，所以浏览器里的客户端不会在 CORS 预检这一步被拦下。
+2026-07-28 的请求得到什么：
 
-回答里会加上 2026-07-28 版本的两个字段，而且只加给自己声明了该版本或更新版本的请求（在 `params._meta` 里，键为
-`io.modelcontextprotocol/protocolVersion`，更早的版本都没有这个键）：
+| 请求 | 回答 | HTTP 状态 |
+| --- | --- | --- |
+| 不经 `initialize` 直接发 `tools/list`、`tools/call` 等方法 | 结果，带 `resultType: "complete"` 和 `_meta["io.modelcontextprotocol/serverInfo"]`（本服务器的名称和版本）。列表结果另带 `ttlMs: 0` 和 `cacheScope: "public"`。工具结果里，回执仍在 `_meta` 原来的位置，serverInfo 放在它旁边。 | 200 |
+| `server/discover` | `supportedVersions`（先是 `2026-07-28`，再是三个旧版本）、`capabilities`（`tools`）、`instructions`、`ttlMs: 0`、`cacheScope: "public"`，`_meta` 里有 serverInfo | 200 |
+| 本服务器没有的版本（例如 `2027-01-01`） | 错误 `-32022` "Unsupported protocol version"，`data: { supported, requested }` | 400 |
+| 版本值不是字符串，或者没有 `io.modelcontextprotocol/clientCapabilities` 对象 | 错误 `-32602` | 400 |
+| 请求头 `MCP-Protocol-Version`、`Mcp-Method` 或（对 `tools/call`、`prompts/get`、`resources/read`）`Mcp-Name` 缺失或与正文不一致。`Mcp-Name` 可以用 `=?base64?...?=` 形式，先解码再比较。 | 错误 `-32020` "Header mismatch" | 400 |
+| 本服务器没有的方法 | 错误 `-32601` | 404 |
 
-- 除 `initialize` 的回答外，每个结果带 `resultType: "complete"`；
-- `tools/list` 的结果（以及空的资源列表和提示词列表）另带 `ttlMs: 0` 和 `cacheScope: "public"`。`ttlMs: 0` 让客户端
-  每次需要时都重新读取列表，这本来就是这类客户端在缺少该字段时的做法，所以工具一变就能马上发现。`public`：列表对每个
-  调用方都一样。
+状态码和请求头检查只在 HTTP 上（远程服务器和签名代理）。本地命令（stdio）没有请求头，给出相同的 JSON-RPC 回答。两代协议
+都能处理的客户端，无论哪种传输都会认出这是新版服务器：在 stdio 上它用 `server/discover` 探测会得到结果，在 HTTP 上它的
+第一个请求要么成功，要么得到上表中的某个错误。
 
-不带这个键的请求，也就是上面三个版本的全部请求，得到的回答与以前完全相同。这些字段在结果旁边，不在回执里，也不在工具
-定义里，所以签名和 `toolsSha256` 都不变。签名代理和本地命令的回答方式相同。这并不让端点成为 2026-07-28 版本的服务器：
-它仍然没有 `server/discover`，也不校验新增的请求头。较新版本没有提到 CORS；它为工具参数新增的 `Mcp-Param-*` 请求头
-无法在预检回答里逐个列出：TapeAPI 服务的工具不用它们，但被代理的 MCP 服务器的工具可能会用。
+签名的内容一概不变。新增字段都在结果旁边：回执、签名信封、核验链接和 `toolsSha256` 在两代协议下都相同。
 
-这里有两处是有意为之。`cacheScope` 固定为 `"public"`，不能设置：之所以成立，是因为三个入口（端点、签名代理、本地命令）都不会
-按调用方给出不同的 `tools/list`；基于 `createMcpServer` 写的代码若按调用方过滤列表，就需要 `"private"`，这一版不提供。另外，
-`initialize` 的回答不带 `resultType`，即使请求声明了 2026-07-28：服务器用它实现的某个较早版本回答 `initialize`，客户端随后就按那个版本通信。
+有几处是有意为之：
 
-2026-10-14 对照规范核对过，当时 2026-07-28 是最新版本：
-[结果与 `resultType`](https://modelcontextprotocol.io/specification/2026-07-28/basic/index)、
-[缓存](https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching)、
+- 2026-07-28 的请求发 `ping` 仍然会得到回答，尽管该版本删掉了这个方法。
+- 一个 JSON 数组里的多条旧版消息（批量）仍像以前一样逐条回答，HTTP 状态为 200。含 2026-07-28 消息、或带
+  `MCP-Protocol-Version: 2026-07-28` 请求头的批量，以 HTTP 400 和 `-32600` 拒绝：2026-07-28 要求每个请求只有一条消息，批量会把
+  消息带过上面的请求头校验。
+- 带 `MCP-Protocol-Version: 2026-07-28` 请求头、正文却没有 2026-07-28 元数据的单条请求，是格式错误的 2026-07-28 请求：HTTP 400；
+  它的 `Mcp-Method` 或 `Mcp-Name` 请求头（或 `_meta` 里的版本）与正文矛盾时为 `-32020`，否则为 `-32602`。信任这些请求头的网关
+  就不会被误导。（2.4.0 把没有矛盾请求头的这种请求按旧版请求回答；旧版客户端不会发这个请求头值。无论请求头写什么，
+  `initialize` 仍走旧版握手。）
+- 所有入口都不检查 `Mcp-Param-*` 请求头。TapeAPI 的工具都没有声明 `x-mcp-header`。被代理的上游工具若声明了，代理的 `/mcp`
+  既不要求这个请求头，也不拿它核对参数，而 2026-07-28 要求服务器这样做（「Server Behavior for Custom Headers」）：不要让代理前面
+  的网关依据 `Mcp-Param-*` 请求头做决定；上游若依赖它们，请在上游自己核对。
+- `initialize` 请求总是用三个旧版本之一回答，即使它带了 2026-07-28 的元数据。客户端随后按那个版本通信。
+- `cacheScope` 固定为 `"public"`：没有哪个入口会按调用方给出不同的 `tools/list`。基于 `createMcpServer` 写的代码若按调用方
+  过滤列表，就需要 `"private"`，这一版不提供。
+- 2.5 之前，版本键的值若不是任何版本（`"latest"`、`"2026-7-28"`、更晚的日期、数字），会被当作旧版本请求回答。现在按
+  2026-07-28 的要求拒绝。
+- 签名代理连接上游时默认仍以 `initialize` 开场，与以前相同。设置 `upstreamNegotiation: 'auto'`（实验性）后，它先向上游发
+  `server/discover`，上游支持 2026-07-28 就用它通信，所以只支持 2026-07-28 的上游也能代理；其它回答都会让它退回
+  `initialize`。本地命令读取已 tape out 的 MCP 服务器的工具（从它的 `mcp.endpoint`）时，可以用
+  `tapeapi-mcp --upstream-negotiation auto`（实验性，2.5；默认 `legacy` 与以前一样以 `initialize` 开场）按同样的规则选择。
+  变的只是读取方式：工具仍须哈希到清单的 `mcp.toolsSha256`，钉住的是同一个摘要，每次调用仍走签名的 TapeAPI 路径。
+  日志行会写明这次是怎样读取的。
+
+三个旧版本继续支持，没有定下移除日期。MCP 项目的弃用政策给已弃用的功能至少十二个月。
+
+我们没有逐个试过各种客户端。官方 TypeScript 客户端 v2（`@modelcontextprotocol/client` 2.3.1）在本机连过远程服务器、签名
+代理、公共服务的 `/mcp` 和 `/mcp/pinned`，以及本地命令：默认模式（2025-11-25）和指定 2025-06-18、2025-03-26 时它用
+`initialize` 连接，`auto` 模式和指定 `2026-07-28` 时它经由 `server/discover`、不发 `initialize` 连接；每种情况下都列出了工具
+并调用成功。测试本身发送的是规范描述的请求。
+
+2026-10-21 对照规范核对过，当时 2026-07-28 是最新版本：
 [版本与旧服务器](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning)、
-[Streamable HTTP 与旧服务器](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http)。
+[消息、错误码与 `_meta`](https://modelcontextprotocol.io/specification/2026-07-28/basic/index)、
+[`server/discover`](https://modelcontextprotocol.io/specification/2026-07-28/server/discover)、
+[缓存](https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching)、
+[Streamable HTTP](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http)、
+[stdio](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio)、
+[自 2025-11-25 以来的变化](https://modelcontextprotocol.io/specification/2026-07-28/changelog)。
 
 ## 本地核验命令
 
@@ -133,7 +168,7 @@ not the params or result.)
 不经过 npm 注册表：
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 它和远程服务器的不同之处：
@@ -162,7 +197,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -182,7 +217,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -194,7 +229,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### 远程还是本地
@@ -243,7 +278,7 @@ claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeap
 [调用服务](consume.md)里那样在仓库的克隆目录里操作：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz
 ```
 
 ```js
@@ -318,7 +353,8 @@ export default {
   签名回答恰为 MCP 工具结果（`{ content: [{ type: "text", text }], structuredContent }`）。它们是第二个端点 `/mcp/pinned` 仅有的
   工具，清单要声明的正是这个端点：`mcp: { endpoint: ".../mcp/pinned", toolsSha256 }`。只有它们受这个摘要约束；REST 方法与 `/mcp`
   的回答与不设该变量时相同。这样 `tapeapi-mcp` 会展示这八个工具和它们的回答。两者都只在 Worker 设置了 `MCP_TOOLS_SHA256` 变量时出现，
-  `/mcp/pinned` 由 `createMcpEndpoint({ ..., mcpResults: true })` 提供（见
+  `/mcp/pinned` 由 `createMcpEndpoint({ ..., mcpResults: true, pinnedToolsSha256 })` 提供：自 2.5 起，工具摘要不等于该变量时，它的
+  `tools/list` 按签名代理的方式拒绝（`-32603`，`data.code: "TOOLS_CHANGED"`）（见
   [`examples/public-api/worker.js`](../../../examples/public-api/worker.js)）。**代码已上线，工具是关着的**：`api.tapeapi.fun`
   从本仓库的 `main` 重新部署，所以从 2.4 起运行这份代码；但线上没有设置该变量，所以在有人手动设置之前，它既不提供工具方法，也不提供
   `/mcp/pinned`（回答与 2.3 相同，版本号除外）。在持有人随后发布这份清单之前，`11.1013.tape` 什么都不声明：`tapeapi connect 11.1013.tape`
@@ -394,6 +430,13 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
 代理的网址，签署委托，把 `CIRCUITS`、`TOKEN_ID`、`CONTAINER`、`DELEGATION_EXPIRES` 和 `DELEGATION_SIG` 设为变量，
 `SIGNER_KEY` 设为 secret。每一步见[运行服务](provide.md#2-从手机上线cloudflare-与持有者控制台)。
 
+**浏览器与 `Origin`（2.5，实验性）。** 默认情况下 `/mcp` 对任何来源都以 CORS `*` 作答：不涉及 cookie、会话或调用方密钥，网页
+得不到它直接调用拿不到的东西。但代理若在你自己的电脑（或内网）上运行，前面是有副作用的工具（文件、shell、数据库），情况就不同了：
+你打开的任何网页都能经 `http://127.0.0.1:.../mcp` 调用这些工具。请给 `createMcpProxy` 设置 `allowedOrigins: ['https://app.example']`
+（`examples/mcp-proxy/index.mjs` 里是变量 `ALLOWED_ORIGINS`，逗号分隔）：`Origin` 不在名单内的请求在执行任何东西之前就以 HTTP 403
+拒绝（Streamable HTTP 的要求）；名单内的来源代替 `*` 回显；不带 `Origin` 的请求（桌面客户端、`curl`）照常作答。`createMcpEndpoint`
+有同样的选项，公共 Worker 用变量 `MCP_ALLOWED_ORIGINS`。
+
 ### 2. 用持有者控制台发布清单
 
 控制台的发布步骤会读取代理的 `/.well-known/tapeapi.json`。清单里有 `mcp` 字段时，控制台不听代理的一面之词：它在你的
@@ -413,7 +456,7 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
 
   ```bash
   # 42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### 用 `tapeapi connect` 查看服务

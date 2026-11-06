@@ -162,6 +162,9 @@ test('FIXED G1-S6: every tokenId and processor the SDK returns is a decimal stri
 // public `group` namespace. The whole bus-privacy subpath is @experimental.
 // FIXED RC-7：能 import 到的都算 1.0 的承诺，所以缩小冻结面。ai 走公开门面；group 去掉 senderKey、buildEpoch；bus-privacy 整体实验性。
 const AI_STABLE = ['FORMATS', 'MANIFEST_FIELD', 'RECEIPT_HEADER', 'RECEIPT_METHOD', 'SIDECAR_ERROR_HEADER', 'VERIFY_ERROR_HEADER', 'createVerifyingFetch', 'decodeReceiptHeader', 'formatFor', 'readSseReceipt', 'scanSse', 'sha256Hex', 'usageOf', 'validateAIField', 'verifyUsageReceipt']
+// 2.5: the price arithmetic a billing layer in front of a sidecar needs is back in the public face, @experimental (an
+// operator had re-implemented amountOf because 1.0 stopped exporting it). / 2.5：计费层需要的价格计算重新公开，标为实验性。
+const AI_EXPERIMENTAL = ['amountOf', 'completionLimitOf', 'maxAmountOf', 'maxPricesOf', 'pricesOf']
 const AI_INTERNAL = ['FORWARD_HEADERS', 'MODEL_ID_MAX', 'SESSION_HEADERS', 'apiPath', 'completeOf', 'createSseScanner', 'encodeReceipt', 'envelopeProblems', 'formatOfMethod', 'forwardsHeader', 'isAnswerId', 'isSessionHeader', 'modelEntryOf', 'priceProblems', 'pricingOf', 'receiptComment', 'requestUsageBody']
 // The JSDoc block right above each `export` line of a declaration file (null when there is none).
 // 声明文件里每个 export 行正上方的 JSDoc 块（没有时为 null）。
@@ -185,16 +188,18 @@ test('FIXED RC-7: ai is a public face (Stable + @internal, the rest not exported
   const { readFileSync } = await import('node:fs')
   const root = await import('../src/index.js')
   const sub = await import('@tapeapi/sdk/ai')
-  const want = [...AI_STABLE, ...AI_INTERNAL].sort()
+  const want = [...AI_STABLE, ...AI_INTERNAL, ...AI_EXPERIMENTAL].sort()
   assert.deepEqual(Object.keys(root.ai).sort(), want)
   assert.deepEqual(Object.keys(sub).sort(), want)
-  for (const gone of ['amountOf', 'sentinelOf', 'sseDigestOfPayloads', 'saltRequestBody', 'rootOf', 'CURRENCIES', 'PRICE_UNIT']) assert.equal(gone in root.ai, false, gone)
+  for (const gone of ['sentinelOf', 'sseDigestOfPayloads', 'saltRequestBody', 'rootOf', 'CURRENCIES', 'PRICE_UNIT']) assert.equal(gone in root.ai, false, gone)
   assert.equal(typeof (await import('../src/ai.js')).amountOf, 'function', 'the implementation module still has it (tests, the CLI)')
   assert.equal('senderKey' in root.group, false); assert.equal('buildEpoch' in root.group, false)
   assert.equal(typeof (await import('../src/group.js')).buildEpoch, 'function')
   const aiDocs = docsOfExports(readFileSync(new URL('../types/ai.d.ts', import.meta.url), 'utf8'))
   for (const n of AI_INTERNAL) assert.match(aiDocs.get(n) ?? '', /@internal/, `ai.${n} is @internal`)
   for (const n of AI_STABLE) assert.doesNotMatch(aiDocs.get(n) ?? '', /@internal|@experimental/, `ai.${n} is Stable`)
+  for (const n of AI_EXPERIMENTAL) assert.match(aiDocs.get(n) ?? '', /@experimental \(2\.5\)/, `ai.${n} is @experimental`)
+  for (const n of AI_EXPERIMENTAL) assert.equal(root.ai[n], (await import('../src/ai.js'))[n], `ai.${n} is the implementation's own`)
   const bp = docsOfExports(readFileSync(new URL('../types/bus-privacy.d.ts', import.meta.url), 'utf8'))
   assert.ok(bp.size >= 15)
   for (const [n, doc] of bp) assert.match(doc ?? '', /@experimental/, `bus-privacy ${n} is @experimental`)

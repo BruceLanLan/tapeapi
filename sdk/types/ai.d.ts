@@ -95,6 +95,32 @@ export interface AIField { endpoints: Array<{ format: string; baseUrl: string }>
 /** One amount of a receipt: 8 decimals, rounded up. */
 export interface ReceiptPrice { currency: Currency; amount: string }
 
+/**
+ * @experimental (2.5) The amount a receipt carries for one call in one currency: the rule the sidecar signs with (per 1M
+ * tokens over disjoint buckets, rounded up once to 8 decimals). Throws BAD_REQUEST for a price that is not decimal
+ * strings or a usage without prompt_tokens. Use it instead of re-implementing the rule.
+ */
+export declare function amountOf(price: Omit<TokenPrice, 'currency' | 'unit'> & Partial<Pick<TokenPrice, 'currency' | 'unit'>>, usage: RawUsage | Usage): string
+/** @experimental (2.5) amountOf for every price of an entry, in its order; null for an entry without prices or a usage without prompt_tokens. */
+export declare function pricesOf(entry: Pick<ModelPrice, 'prices'>, usage: RawUsage | Usage | null): ReceiptPrice[] | null
+/** Upper bounds on one call's token counts, as a billing layer estimates them before forwarding. */
+export interface TokenBounds { promptTokens: number; completionTokens: number }
+/**
+ * @experimental (2.5) The most one call can cost in one currency within `bounds`: promptTokens at the highest of input,
+ * cacheRead, cacheWrite and cacheWrite1h, completionTokens at the higher of output and reasoning, rounded up once to 8
+ * decimals; never below amountOf for a usage within the bounds. Only as good as the bounds: a model that ignores
+ * max_tokens, a hidden system prompt, images or tool definitions can exceed them. Settle on the receipt; keep a hard cap.
+ */
+export declare function maxAmountOf(price: Omit<TokenPrice, 'currency' | 'unit'> & Partial<Pick<TokenPrice, 'currency' | 'unit'>>, bounds: TokenBounds): string
+/** @experimental (2.5) maxAmountOf for every price of an entry, in its order; null for an entry without prices. */
+export declare function maxPricesOf(entry: Pick<ModelPrice, 'prices'>, bounds: TokenBounds): ReceiptPrice[] | null
+/**
+ * @experimental (2.5) The completion-token limit a parsed request body declares for a format, or null when it declares
+ * none: openai-chat max(max_completion_tokens, max_tokens) × n, openai-responses max_output_tokens, anthropic-messages
+ * max_tokens, openai-embeddings 0. What the request asks for, not what the upstream does.
+ */
+export declare function completionLimitOf(body: unknown, format: string | { name: string }): number | null
+
 /** An AI usage receipt: a TAPI-21 envelope, with the method and params it is signed over. */
 export interface UsageReceipt {
   id: string

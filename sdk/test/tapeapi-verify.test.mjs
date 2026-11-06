@@ -11,13 +11,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import { spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, readdirSync, statSync, writeFileSync, mkdirSync, chmodSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as ai from '../src/ai.js'
 import { routesOf, route } from '../bin/tapeapi-verify.js'
 import { createAIProxy } from '../../server/src/ai-proxy.js'
+import { runReconcile } from '../src/reconcile-cli.js'
 import { createFakeUpstream } from '../../examples/ai-proxy/fake-upstream.mjs'
 
 const BIN = fileURLToPath(new URL('../bin/tapeapi-verify.js', import.meta.url))
@@ -76,7 +77,7 @@ async function startVerify(sidecarUrl, extra = []) {
     child.stderr.on('data', on); on()
     child.once('exit', (c) => fail(new Error(`exited ${c}: ${err}`)))
   })
-  return { url, stderr: () => err, log: () => { try { return readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) } catch { return [] } } }
+  return { url, logFile, stderr: () => err, log: () => { try { return readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) } catch { return [] } } }
 }
 // What an SSE client dispatches. / SSE 客户端分派的事件。
 function events(text) {
@@ -173,6 +174,59 @@ test('salt (the default): a metered JSON body reaches the sidecar with 64 random
   // count_tokens is not a receipt path: sent as written. / count_tokens 不是回执路径：原样发送。
   await (await fetch(`${v.url}/v1/messages/count_tokens?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body })).arrayBuffer()
   assert.equal(knobs.bodies.at(-1).toString('utf8'), body)
+})
+
+// --save-requests (2.5, experimental, off by default): the exact bytes sent, salt included, so reconcile --requests joins
+// a salted receipt. / 保存实际发出的字节（含盐），让 reconcile --requests 能对上加盐的回执。
+test('--save-requests: the salted bytes sent are saved (dir 700, files 600, named by SHA-256) and tapeapi reconcile --requests joins them to the receipts; off by default', async () => {
+  const side = await startSidecar()
+  const dir = join(TMP, 'saved', 'requests')
+  const v = await startVerify(side.url, ['--save-requests', dir])
+  assert.match(v.stderr(), /--save-requests: the bytes of every metered request \(your prompts, in clear\) are written to .*saved\/requests \(files 600\)/)
+  assert.match(v.stderr(), /listening on .* {2}requests saved to /)
+  knobs.bodies = []
+  const j = await fetch(`${v.url}/v1/messages?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(false, 'save me') })
+  const env = ai.decodeReceiptHeader(j.headers.get(ai.RECEIPT_HEADER)); await j.arrayBuffer()
+  const sent = knobs.bodies.at(-1)
+  const s = await (await fetch(`${v.url}/v1/messages?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(true, 'save me') })).text()
+  assert.equal(events(s).at(-1).event, 'message_stop')
+  // A free path is not saved. / 免费路径不保存。
+  await (await fetch(`${v.url}/v1/messages/count_tokens?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(false) })).arrayBuffer()
+  await waitFor(() => v.log().length === 2, 'two metered calls logged')
+  assert.equal(statSync(dir).mode & 0o777, 0o700)
+  const files = readdirSync(dir).sort()
+  assert.equal(files.length, 2, files.join(', '))
+  for (const f of files) assert.equal(statSync(join(dir, f)).mode & 0o777, 0o600, f)
+  const mine = readFileSync(join(dir, `${env.params.requestSha256}.request`))
+  assert.ok(mine.equals(sent), 'the bytes that reached the sidecar, salt included')
+  assert.equal(mine.length, Buffer.byteLength(claudeBody(false, 'save me')) + ai.SALT_LENGTH)
+  // reconcile joins both receipts with their files. / reconcile 把两张回执与文件对上。
+  let out = ''
+  const r = await runReconcile(['--receipts', v.logFile, '--requests', dir, '--json'], { host: { readFileSync, readdirSync, statSync, writeFileSync, join, dirname, relative, isAbsolute }, cwd: TMP, env: {}, isTTY: false, stdout: (t) => { out += t }, stderr: () => {} })
+  assert.equal(r.exitCode, 0, out)
+  const req = JSON.parse(out).checks.requests
+  assert.deepEqual([req.files, req.joined, req.unused], [2, 2, 0])
+  // Without the option nothing is written. / 不给选项就什么都不写。
+  const before = readdirSync(TMP).sort()
+  const w = await startVerify(side.url)
+  assert.doesNotMatch(w.stderr(), /save-requests|requests saved/)
+  await (await fetch(`${w.url}/v1/messages?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(false, 'not saved') })).arrayBuffer()
+  await waitFor(() => w.log().length === 1, 'one call logged')
+  assert.deepEqual(readdirSync(TMP).sort().filter((n) => !n.startsWith('log-')), before.filter((n) => !n.startsWith('log-')))
+  assert.equal(readdirSync(dir).length, 2)
+})
+
+test('--save-requests: a directory open to group or others is refused before anything starts (exit 1); a file is refused', async () => {
+  const run = (args) => new Promise((ok) => { const c = spawn(process.execPath, [BIN, ...args], { stdio: ['ignore', 'pipe', 'pipe'] }); let e = ''; c.stderr.on('data', (d) => { e += d }); c.on('exit', (code) => ok({ code, e })) })
+  const open = join(TMP, 'open-dir'); mkdirSync(open); chmodSync(open, 0o755)
+  const r = await run(['--dev', 'http://127.0.0.1:1', '--save-requests', open])
+  assert.equal(r.code, 1)
+  assert.match(r.e, /--save-requests: .*open-dir can be read by group or others \(mode 755\).*chmod 700/)
+  assert.doesNotMatch(r.e, /cannot use http/, 'refused before the service is read')
+  const file = join(TMP, 'a-file'); writeFileSync(file, 'x')
+  assert.match((await run(['--dev', 'http://127.0.0.1:1', '--save-requests', file])).e, /a-file is not a directory/)
+  assert.equal((await run(['--dev', 'http://127.0.0.1:1', '--save-requests'])).code, 2)
+  assert.equal(existsSync(join(TMP, 'never')), false)
 })
 
 test('--strip-session-headers: the client\'s session headers do not reach the service; without it they do (the default)', async () => {

@@ -5,6 +5,7 @@
 // 一样经过 provider.handleRequest，所以结果是同样签名的 TAPI-21 信封、受同样的限流，并附带任何人都能对照链上核验的回执。
 import { mcp, webmcp, TapeAPIError } from '@tapeapi/sdk'
 import { readCapped, TooLarge } from './read-capped.js'
+import { modernRefusal, batchRefusal, statusOf, allowedOriginsOf, withOrigin } from './mcp-http.js'
 
 export const MCP_PATH = '/mcp'
 const BODY_LIMIT = 64 * 1024
@@ -38,10 +39,21 @@ const rpcFail = (status, code, message) => reply(status, { jsonrpc: '2.0', id: n
  *        provenance line, instead of as JSON text; default: every result is data, shown as JSON text
  *        方法的签名结果本身就是 MCP 工具结果：放在来源说明行之后原样交出，而不是作为 JSON 文本；默认：结果都是数据，以 JSON 文本展示
  * @param {(m: { method: string, tool?: string, clientIp?: string }) => void} [o.onMessage]  called once for every
- *        JSON-RPC message the endpoint handles (never for a request refused as too large, unparsable or an oversized
- *        batch), for usage counting; method and tool are cut to 64 characters; errors in it are ignored
- *        对实际处理的每条 JSON-RPC 消息调用一次（过大、无法解析或超长批量的请求不计），用于用量统计；method 和 tool 截到
+ *        JSON-RPC message the endpoint handles (never for a request refused as too large, unparsable, an oversized
+ *        batch or a batch holding a 2026-07-28 message), for usage counting; method and tool are cut to 64 characters; errors in it are ignored
+ *        对实际处理的每条 JSON-RPC 消息调用一次（过大、无法解析、超长批量或含 2026-07-28 消息的批量不计），用于用量统计；method 和 tool 截到
  *        64 个字符；其中的错误被忽略
+ * @param {string[]} [o.allowedOrigins]  @experimental (2.5) exact origins a browser may call from: a request
+ *        whose Origin header is present and not listed is 403 (Streamable HTTP "Security & Endpoint"), a listed one is
+ *        echoed instead of CORS `*`; a request without Origin is answered as usual. Default: every origin, as before.
+ *        浏览器可以从哪些来源调用：带 Origin 且不在名单内的请求 403，名单内的来源代替 `*` 回显；不带 Origin 的照常。默认：任何来源。
+ * @param {string} [o.pinnedToolsSha256]  @experimental (2.5) the toolsSha256 the holder published for this
+ *        endpoint (TAPI-20 §3.8): while this endpoint's tools hash to anything else, or carry invisible characters,
+ *        tools/list is refused as createMcpProxy refuses it (JSON-RPC -32603, data { code: 'TOOLS_CHANGED', published,
+ *        current } or { code: 'INVISIBLE_CHARACTERS', problems }, HTTP 200). Hold the calls with holdToToolsSha256.
+ *        Default: tools/list is always answered, as before.
+ *        持有人为本端点发布的 toolsSha256：工具摘要不等于它、或含不可见字符时，tools/list 按 createMcpProxy 的方式拒绝。调用由
+ *        holdToToolsSha256 约束。默认：tools/list 总是作答。
  * @returns {{ handleRequest(request: Request, ctx?: { clientIp?: string }): Promise<Response>, tools: object[], toolsSha256: () => Promise<string> }}
  *          (1.0: was handle). toolsSha256 is @experimental (2.3): the TAPI-20 §3.8 digest of this endpoint's tools/list
  *          answer. / toolsSha256 为实验性（2.3）：本端点 tools/list 回答的 TAPI-20 §3.8 摘要。
@@ -49,7 +61,9 @@ const rpcFail = (status, code, message) => reply(status, { jsonrpc: '2.0', id: n
 export function createMcpEndpoint(o = {}) {
   // 1.0 (review G1 S11): the display name is `name`; `identity` meant a key pair elsewhere in the SDK. / 展示名改为 name。
   if (o && Object.prototype.hasOwnProperty.call(o, 'identity')) throw new TapeAPIError('INVALID_ARGUMENT', 'createMcpEndpoint takes { name } (the TapeOut name to show): the option `identity` was renamed in 1.0 (https://tapeapi.fun/docs/en/upgrade-1.0)')
-  const { provider, manifest, name: tapeName, version = '0', onMessage, linkContent = false, mcpResults = false } = o
+  const { provider, manifest, name: tapeName, version = '0', onMessage, linkContent = false, mcpResults = false, pinnedToolsSha256 } = o
+  const allowed = allowedOriginsOf(o.allowedOrigins)
+  if (pinnedToolsSha256 !== undefined && (typeof pinnedToolsSha256 !== 'string' || !SHA256_HEX.test(pinnedToolsSha256))) throw new TapeAPIError('INVALID_ARGUMENT', 'pinnedToolsSha256 must be the toolsSha256 the holder published: 64 lowercase hex characters')
   const { tools, skipped } = endpointTools(manifest)
   if (!tools.length) throw new TapeAPIError('MANIFEST_INVALID', `no tool to expose (${skipped.map((s) => `${s.method}: ${s.code}`).join(', ') || 'no free methods'})`)
   const byName = new Map(tools.map((t) => [t.name, t]))
@@ -103,7 +117,26 @@ export function createMcpEndpoint(o = {}) {
   // One small server per request, so the caller's IP reaches the provider's limiter. / 每个请求一个小服务器，调用方 IP 才能到达限流器。
   const serverFor = (clientIp) => mcp.createMcpServer({ info, instructions, listTools: async () => tools, callTool: (n, a) => callTool(n, a, clientIp) })
 
-  async function handle(request, ctx = {}) {
+  // tools/list held to the published digest: the refusal createMcpProxy gives on drift, or null.
+  // tools/list 受已发布摘要约束：与 createMcpProxy 漂移时相同的拒绝，或 null。
+  let held = null
+  const heldState = () => (held ??= listedBy(serverFor(undefined)).then((listed) => {
+    let current = null
+    try { current = mcp.toolsDigest(listed) } catch { /* no digest / 没有摘要 */ }
+    return { current, hidden: mcp.invisibleProblems(listed) }
+  }, () => { held = null; return { current: null, hidden: [] } }))
+  async function listRefusal(m) {
+    if (pinnedToolsSha256 === undefined || !isObj(m) || m.method !== 'tools/list' || (typeof m.id !== 'string' && typeof m.id !== 'number')) return null
+    const { current, hidden } = await heldState()
+    if (current !== pinnedToolsSha256) {
+      return { jsonrpc: '2.0', id: m.id, error: { code: mcp.JSONRPC.INTERNAL, message: `TOOLS_CHANGED: this endpoint's tool definitions no longer match the published toolsSha256 ${pinnedToolsSha256}; the holder must republish the manifest`, data: { code: 'TOOLS_CHANGED', published: pinnedToolsSha256, current } } }
+    }
+    if (hidden.length) return { jsonrpc: '2.0', id: m.id, error: { code: mcp.JSONRPC.INTERNAL, message: 'the tool definitions carry invisible or format characters (text a model reads but a person cannot see); they are not served', data: { code: 'INVISIBLE_CHARACTERS', problems: hidden.slice(0, 16) } } }
+    return null
+  }
+
+  const handle = (request, ctx = {}) => withOrigin(request, allowed, () => answer(request, ctx))
+  async function answer(request, ctx) {
     if (request.method === 'OPTIONS') return reply(204, null)
     // No server-to-client stream is offered: GET is 405, as Streamable HTTP allows. / 不提供服务器推送流：GET 回 405。
     if (request.method !== 'POST') return reply(405, { jsonrpc: '2.0', id: null, error: { code: mcp.JSONRPC.INVALID_REQUEST, message: 'use POST' } }, { allow: 'POST, OPTIONS' })
@@ -129,13 +162,21 @@ export function createMcpEndpoint(o = {}) {
         onMessage({ method: m.method.slice(0, NOTE_MAX), tool, clientIp: ctx.clientIp })
       } catch { /* counting never breaks a call / 统计绝不影响调用 */ }
     }
-    const one = (m) => { note(m); return server.handle(m) }
+    const one = async (m) => { note(m); return (await listRefusal(m)) ?? server.handle(m) }
     if (Array.isArray(msg)) {
+      const no = batchRefusal(request, msg)
+      if (no) return reply(no.status, no.body)
       const out = (await Promise.all(msg.map(one))).filter(Boolean)
       return out.length ? reply(200, out) : reply(202, null)
     }
+    // A single request of MCP 2026-07-28 (experimental, 2.5): malformed or with headers that do not match its body, 400;
+    // a method this server does not have, 404. Legacy batches and legacy requests: 200 as before (a batch holding a
+    // 2026-07-28 message was refused above).
+    // 单条 2026-07-28 请求（实验性）：格式错误或头部与正文不符为 400，方法不存在为 404。旧版批量与旧版请求照旧 200。
+    const refused = modernRefusal(request, msg)
+    if (refused) { note(msg); return reply(refused.status, refused.body) }
     const out = await one(msg)
-    return out ? reply(200, out) : reply(202, null)
+    return out ? reply(statusOf(msg, out), out) : reply(202, null)
   }
 
   // The digest of what tools/list answers, from this endpoint's own server (2.3, experimental). / 本端点 tools/list 回答的摘要。

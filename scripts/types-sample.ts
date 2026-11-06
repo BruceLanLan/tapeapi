@@ -28,8 +28,9 @@ import { createRpc as createRpc2 } from '@tapeapi/sdk/rpc'
 import { createProvider, memoryStore, VERSION, type Provider } from '@tapeapi/server'
 import { ai } from '@tapeapi/sdk'
 import { createVerifyingFetch, verifyUsageReceipt, FORMATS, type AIFormat, type UsageReceipt, type UsageRequestSkip } from '@tapeapi/sdk/ai'
+import { amountOf, maxPricesOf, completionLimitOf, type TokenBounds, type ReceiptPrice } from '@tapeapi/sdk/ai'
 import { createAIProxy, type AIProxy } from '@tapeapi/server/ai-proxy'
-import { createMcpServer, receiptOf, hashReceipt, verifyLink, toolResultOf, toolsDigest, invisibleProblems, quoteProvenance, RECEIPT_META_KEY, type Receipt, type HashedReceipt, type McpTool, type CallToolResult } from '@tapeapi/sdk/mcp'
+import { createMcpServer, receiptOf, hashReceipt, verifyLink, toolResultOf, toolsDigest, invisibleProblems, quoteProvenance, RECEIPT_META_KEY, requestEra, MCP_MODERN_PROTOCOL_VERSIONS, MCP_SUPPORTED_PROTOCOL_VERSIONS, MCP_ERRORS, type McpRequestEra, type Receipt, type HashedReceipt, type McpTool, type CallToolResult } from '@tapeapi/sdk/mcp'
 import { CHAINS as CHAINS2, chainById, parseTapeName, formatTapeName, isNameShaped, type TapeOutChain, type ParsedTapeName } from '@tapeapi/sdk/chains'
 import { createMcpEndpoint, listedMcpTools, mcpToolsSha256, holdToToolsSha256, MCP_PATH } from '@tapeapi/server/mcp'
 import { createMcpProxy, MCP_UPSTREAM_TIMEOUT_MS, type McpProxy, type McpProxyStats } from '@tapeapi/server/mcp-proxy'
@@ -142,6 +143,12 @@ async function aiSidecar(): Promise<void> {
   // 1.6: the client asks for the usage itself; the report says whether it did, or why not. / 客户端自己要用量；报告说明是否做到、为何没有。
   const asking = createVerifyingFetch({ service: {}, requestUsage: true, strict: false, onReport: (r) => { const asked: boolean | undefined = r.usageRequested; const why: UsageRequestSkip | undefined = r.usageRequestSkipped; void [asked, why] } })
   const member: readonly [string, string] | undefined = chat.usageMember
+  // 2.5 (experimental): the receipt's own amount, and a worst-case hold for a billing layer. / 回执金额与冻结额度上限。
+  const charged: string = amountOf({ input: '1.25', output: '10' }, { prompt_tokens: 1200, completion_tokens: 300 })
+  const limit: number | null = completionLimitOf({ max_tokens: 512 }, 'anthropic-messages')
+  const bounds: TokenBounds = { promptTokens: 4096, completionTokens: limit ?? 4096 }
+  const hold: ReceiptPrice[] | null = maxPricesOf({ prices: [{ currency: 'USDT', unit: '1M tokens', input: '1.25', output: '10' }] }, bounds)
+  void [charged, hold?.[0]?.amount, ai.maxAmountOf({ input: '1', output: '2' }, bounds)]
   void [chat.method, base, fetch, asking, member, receipt?.result.prices?.[0]?.amount, receipt?.result.unpriced, receipt?.result.complete, receipt?.result.modelMatchedBy, receipt?.result.usage?.cache_write_1h_tokens, ai.MANIFEST_FIELD]
 }
 
@@ -203,15 +210,19 @@ async function mcpAll(): Promise<void> {
   const digest: string = toolsDigest([])
   const bad: string[] = invisibleProblems([])
   const quoted = quoteProvenance([{ type: 'text', text: 'x' }])
+  const era: McpRequestEra = requestEra('tools/list', { _meta: { 'io.modelcontextprotocol/protocolVersion': MCP_MODERN_PROTOCOL_VERSIONS[0], 'io.modelcontextprotocol/clientCapabilities': {} } })
+  const refused: number | undefined = era.era === 'modern' ? era.error?.code : undefined
+  const unsupported: -32022 = MCP_ERRORS.UNSUPPORTED_PROTOCOL_VERSION
+  void [refused, unsupported, MCP_SUPPORTED_PROTOCOL_VERSIONS.length]
   const provider = createProvider({ manifest: {}, signerKey: '0x', methods: {} })
-  const ep = createMcpEndpoint({ provider, manifest: provider.manifest, name: '11.1013.tape', linkContent: false, onMessage: (m) => void m.method })
+  const ep = createMcpEndpoint({ provider, manifest: provider.manifest, name: '11.1013.tape', linkContent: false, allowedOrigins: ['https://app.example'], pinnedToolsSha256: 'ab'.repeat(32), onMessage: (m) => void m.method })
   const res: Response = await ep.handleRequest(new Request('https://x.example' + MCP_PATH), { clientIp: '1.2.3.4' })
   const pinned: string = await ep.toolsSha256()
   const listed: McpTool[] = await listedMcpTools(provider.manifest)
   const held = holdToToolsSha256({ m: async (p: { a?: number }) => ({ b: p.a }) }, { manifest: provider.manifest, published: await mcpToolsSha256(provider.manifest) })
   void [pinned, listed.length, held.m]
   const base: ManifestBase = { circuits: '0x', tokenId: '1', container: '0x', endpoints: { live: ['https://m.example/tapeapi/v1'], async: false } }
-  const px: McpProxy = createMcpProxy({ upstream: { url: 'https://up.example/mcp' }, manifestBase: base, signerKey: '0x', name: '11.1013.tape', upstreamTimeoutMs: MCP_UPSTREAM_TIMEOUT_MS })
+  const px: McpProxy = createMcpProxy({ upstream: { url: 'https://up.example/mcp' }, manifestBase: base, signerKey: '0x', name: '11.1013.tape', upstreamTimeoutMs: MCP_UPSTREAM_TIMEOUT_MS, allowedOrigins: ['http://localhost:5173'] })
   const st: McpProxyStats = px.stats()
   const timeouts: number[] = [MCP_UPSTREAM_TIMEOUT_MS, AI_UPSTREAM_TIMEOUT_MS]
   void [answer, link, shown.isError, digest, bad, quoted, res.status, st.drift, px.tools().length, timeouts, RECEIPT_META_KEY]

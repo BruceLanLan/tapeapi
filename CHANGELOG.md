@@ -7,6 +7,187 @@ interfaces.
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-11-06
+
+TapeAPI 2.5: accountable first — the numbers line up. Experimental additions for the people who hold the ledger, on
+either side of a receipt. An operator's billing layer can charge from the receipt with the rule every receipt is signed
+with (`ai.amountOf`, `ai.pricesOf`, public again) and size a hold before the call (`ai.maxAmountOf`, `ai.maxPricesOf`,
+`ai.completionLimitOf`); the new-api and LiteLLM sidecars take an allowlist of upstream response headers
+(`UPSTREAM_RESPONSE_HEADERS`) and a receipt lookup limit the operator sets (`RECEIPT_LOOKUPS_PER_MIN`); a guide
+describes a billing layer in front of the sidecar. A buyer's `tapeapi reconcile` sets receipts against the requests
+that were sent (`--requests`), a mandate's caps (`--mandate`) and the buyer's own limits (`--policy`), from local files
+only, and lists each fact with the receipt line it comes from; `--fail-on` makes named kinds exit status 4 for a script,
+and `tapeapi-verify --save-requests` keeps the salted request bytes for that join (off by default: the files hold the
+prompts in clear). MCP clients of revision 2026-07-28 are served without `initialize` (`server/discover`, header
+checks), clients of earlier revisions get byte for byte the answers of 2.4.0, and `createMcpProxy` and `tapeapi-mcp`
+can be asked (`upstreamNegotiation: 'auto'`, `--upstream-negotiation auto`) to read an upstream that speaks only
+2026-07-28. All of this is **experimental**: outside the 2.x compatibility promise, off unless called or set, and
+nothing in it makes or takes a payment. Three things change without being asked for (see Changed): a value in the MCP
+`_meta` protocol-version key that is not a revision is refused, a request sent with `MCP-Protocol-Version: 2026-07-28`
+but without the 2026-07-28 `_meta` is refused, and `tapeapi reconcile --json` carries three more keys.
+Pushing this release redeploys the public service, the relay and the website as usual; the public service's `/mcp` then
+answers `server/discover` and serves 2026-07-28 clients, and nothing else about the live services changes but the
+version number they report: no variable is set or needed, and the REST methods, the manifest and the receipts are as in
+2.4.0. A receipt still shows what its signer said, not which model ran; these checks list facts, not verdicts.
+
+### Added: helpers for a billing layer in front of the AI sidecar (experimental)
+
+All of these are **experimental** (outside the 2.x compatibility promise) and change nothing unless called or set: a
+sidecar that sets none of the new variables answers, signs and limits exactly as in 2.4.0. Nothing here makes or takes
+a payment, and a receipt still shows what its signer says, not which model ran.
+
+- **`ai.amountOf` and `ai.pricesOf` are public again, with a worst-case hold: `ai.maxAmountOf`, `ai.maxPricesOf`,
+  `ai.completionLimitOf`** (in `@tapeapi/sdk/ai` and the root `ai` namespace, `@experimental (2.5)` in `types/ai.d.ts`).
+  `amountOf(price, usage)` is the rule every receipt is signed with (per 1M tokens over disjoint buckets, rounded up
+  once to 8 decimals); 1.0 had stopped exporting it (RC-7), and an operator's billing layer had to copy it by hand.
+  `maxAmountOf(price, { promptTokens, completionTokens })` is the most one call can cost within those counts: every
+  prompt token at the dearest of `input`, `cacheRead`, `cacheWrite`, `cacheWrite1h` (a cache write can cost more than
+  input), every completion token at the dearer of `output` and `reasoning`, rounded up once, so never below `amountOf`
+  for a usage within the counts; `maxPricesOf(entry, bounds)` gives it per currency. `completionLimitOf(body, format)`
+  reads the completion limit a request declares (Chat Completions: the larger of `max_completion_tokens` and
+  `max_tokens`, times `n`; Responses: `max_output_tokens`; Messages: `max_tokens`; Embeddings: 0), or null. Limits,
+  stated in the declarations and the guide: a model that ignores `max_tokens`, a hidden system prompt, images or tool
+  definitions can exceed any bound computed from the price table; settle on the receipt and keep a hard cap. Tests:
+  the public `amountOf` and `pricesOf` reproduce every amount of `sdk/test/fixtures/ai-receipt-vectors.json`, and
+  `maxAmountOf` is never below `amountOf` over a grid of usages within the bounds. The SDK grows by these five
+  functions only; the playground's vendored copy of the SDK is rebuilt.
+- **`createAIProxy({ upstreamResponseHeaders })` and `UPSTREAM_RESPONSE_HEADERS` in the new-api and LiteLLM sidecars**:
+  an allowlist of the upstream response headers passed on to callers, so headers that name an operator's channels or
+  costs need no second proxy. Set, only the listed upstream headers (case-insensitive) and `content-type` (always kept, as its media type
+  with `charset` and `boundary` only: other parameters could carry what the list hides) and `retry-after` (always kept,
+  so clients can back off) pass, on every `/v1/*` answer; the sidecar's own headers (the receipt, the sidecar-error mark, CORS) are added as
+  before. Headers are not part of a receipt, so receipts and answer bytes are the same with or without it (tested on a
+  whole answer and a stream). Unset or empty (the default), every upstream header passes as before. It filters headers only:
+  the answer body, including its `id` and `model`, passes unchanged.
+- **`RECEIPT_LOOKUPS_PER_MIN` in the new-api and LiteLLM sidecars**: the `receipt` method's lookups per client IP per
+  minute, as the Cloudflare Worker (`examples/ai-proxy/worker.js`) already read it. Unset or empty: 10, as before;
+  `0` refuses every lookup, as in the Worker; `off` gives the method no budget of its own (`RATE_IP` only); anything else
+  is setup mode naming the variable, in the Worker too (it used to fail inside `createAIProxy`). 2.4 did not read this
+  variable or `UPSTREAM_RESPONSE_HEADERS`: a malformed value left over from then is now setup mode. A billing
+  layer that looks receipts up from one address shares one bucket and can now raise it without changing code.
+  `env.example` and `docker-compose.yml` of both packages list both variables, commented out or empty.
+- **Guide: "A billing layer in front of the sidecar"** (`docs/guides/billing-layer.md`, `zh-CN/billing-layer.md`):
+  the topology (billing layer, sidecar, upstream; requests and answers byte for byte, the receipt passed on), why
+  `FORMATS` must match the formats the billing layer meters and the price table's `formats`, charging from the receipt
+  with `ai.amountOf`, sizing the hold with `ai.maxPricesOf` and what it cannot bound (models that ignore `max_tokens`,
+  hidden prompts, images, the reported model, concurrency), receipt lookups, upstream headers, disclosing any model-name
+  rewriting and logging both the requested and the upstream name, suggested wording ("Receipts in TapeAPI format,
+  signed by <operator>; TapeAPI does not operate or endorse this service") and never claiming that a receipt proves the
+  upstream model; and a table for upgrading a sidecar from 2.0 to 2.4 (`FORMATS` and the price converter in 2.1,
+  receipts and reconcile in 2.2, `init` and `prices` in 2.3, nothing for the AI sidecar in 2.4).
+
+### Added: MCP revision 2026-07-28 (experimental)
+
+- **MCP revision 2026-07-28 for clients that send no `initialize`** (experimental: outside the 2.x compatibility
+  promise, it may change or go away in any 2.x release). `createMcpServer` in `@tapeapi/sdk/mcp`, and so
+  `createMcpEndpoint`, `createMcpProxy`'s `/mcp`, `tapeapi-mcp` and the public Worker's `/mcp` and `/mcp/pinned`, serve
+  a request whose `params._meta['io.modelcontextprotocol/protocolVersion']` is `2026-07-28` (with a
+  `clientCapabilities` object) statelessly: the result carries `resultType: "complete"` and
+  `_meta['io.modelcontextprotocol/serverInfo']` (placed beside a receipt, which keeps its place), list results
+  `ttlMs: 0` / `cacheScope: "public"`; `server/discover` answers `supportedVersions` (`2026-07-28`, `2025-11-25`,
+  `2025-06-18`, `2025-03-26`), `capabilities`, `instructions` and the cache hints; another version is refused with
+  `-32022` `{ supported, requested }`, a version that is not a string or a missing `clientCapabilities` with `-32602`.
+  On HTTP (`createMcpEndpoint`, `createMcpProxy`) a single such request is also checked against its
+  `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers (`=?base64?...?=` decoded): a missing or different value
+  is `-32020` with HTTP 400; a refused version or malformed `_meta` is HTTP 400; an unknown method is HTTP 404. These
+  checks cannot be skipped (review 2026-10-22): a JSON array body (a batch) that holds a 2026-07-28 message, or that
+  comes with `MCP-Protocol-Version: 2026-07-28`, is refused with HTTP 400 and `-32600` (`id: null`), since a gateway
+  routing on `Mcp-Name` could otherwise be passed a header naming one tool while the batched body called another
+  (Streamable HTTP "Sending Messages": the body is one message; "Server Validation") (review MR-1); a single request
+  sent with `MCP-Protocol-Version: 2026-07-28` but no 2026-07-28 `_meta` is refused with 400 and `-32020` when its
+  `Mcp-Method` or `Mcp-Name` header, or a `_meta` version it carries, does not match the body (review MR-2). Only the
+  exact header value `2026-07-28` counts: any other value is answered as 2.4.0 answered it. New SDK
+  exports: `requestEra`, `MCP_MODERN_PROTOCOL_VERSIONS`, `MCP_SUPPORTED_PROTOCOL_VERSIONS`, `MCP_ERRORS`,
+  `PROTOCOL_VERSION_META`, `CLIENT_CAPABILITIES_META`, `SERVER_INFO_META`. Requests of revisions 2025-11-25,
+  2025-06-18 and 2025-03-26 get byte for byte the answers of 2.4.0: `server/test/fixtures/mcp-legacy-2.4.0.json` holds
+  290 exchanges recorded from the 2.4.0 tree and the tests replay them; 285 match byte for byte, and the other 5 are
+  the one recorded request that no client of an earlier revision sends (the 2026-07-28 header without its `_meta`, on
+  each of the five HTTP entry points; see Changed). A randomized comparison against the 2.4.0 code (9 000 exchanges,
+  legacy-shaped requests only) found no difference. Nothing signed changes (receipts, envelopes,
+  verify links, `toolsSha256`). `MCP_PROTOCOL_VERSIONS` (the `initialize` list), and the `initialize` the proxy and
+  `tapeapi-mcp` send to an upstream MCP server, are unchanged by default. `createMcpProxy` takes
+  `upstreamNegotiation: 'auto'` (experimental; default `'legacy'`, as before): it probes the upstream with
+  `server/discover` and speaks 2026-07-28 to one that offers it, so an upstream that speaks only 2026-07-28 can be
+  proxied; otherwise it falls back to `initialize`. `stats()` gains `upstreamEra`. `tapeapi-mcp` takes the same choice
+  as `--upstream-negotiation legacy|auto` (experimental; default `legacy`, as before) for reading a taped-out MCP
+  server's tools from its `mcp.endpoint`, with the same fallback rules; its calls go through the signed TapeAPI path
+  either way, and the `toolsSha256` it checks and pins is the same (tested against an endpoint that speaks only
+  2026-07-28, which the default cannot read). The official TypeScript client v2
+  (`@modelcontextprotocol/client` 2.3.1) was run locally against these entry points in its legacy, `auto` and
+  pinned-2026-07-28 modes and against 2025-06-18 and 2025-03-26. Kept as before, on purpose: `ping` is answered for a 2026-07-28 request; a batch of older-revision
+  messages is answered message by message with HTTP 200, as before; `Mcp-Param-*` headers are not checked on any entry
+  point, and the MCP guide now says so plainly (review MR-9). Checked on 2026-10-21
+  against https://modelcontextprotocol.io/specification/2026-07-28/ (basic/versioning, basic/index, server/discover,
+  basic/transports/streamable-http, basic/transports/stdio, changelog). The MCP guide (English and Chinese) describes it.
+- **`/mcp/pinned` holds its `tools/list` to `MCP_TOOLS_SHA256`** as it holds the calls (review MR-7b, experimental):
+  while the tools hash to anything else, `tools/list` is refused as the signing proxy refuses it (`-32603`, `data: {
+  code: "TOOLS_CHANGED", published, current }`, HTTP 200). New option `createMcpEndpoint({ pinnedToolsSha256 })`
+  (experimental); without it nothing changes. `tapeapi-mcp` then reports that the tools could not be read, and still
+  sends nothing. With `MCP_TOOLS_SHA256` unset (as on the live service), `/mcp/pinned` stays 404 as in 2.4.0.
+- **Opt-in `Origin` check** (review MR-8, experimental): `allowedOrigins` on `createMcpEndpoint` and `createMcpProxy`,
+  `MCP_ALLOWED_ORIGINS` on the public Worker, `ALLOWED_ORIGINS` in `examples/mcp-proxy/index.mjs`. An unlisted `Origin`
+  is 403 before anything runs; a listed one is echoed instead of `*`; no `Origin`, answered as usual. Default unchanged
+  (every origin, CORS `*`). The MCP guide says to set it for a proxy run locally in front of tools with side effects.
+
+### Added: reconcile request facts, mandate caps and local limits (experimental)
+
+- **`tapeapi reconcile`: facts about each request, a mandate's caps and your own limits** (experimental, outside the
+  2.x compatibility promise; files only: no network, no key, nothing uploaded, no telemetry). Every fact names the
+  receipt line it comes from, and the request file or bill line it uses; none is a verdict, and none changes the exit
+  status unless `--fail-on` asks (`--json` carries the counts). A receipt proves only what its signer said; it does not prove which model ran,
+  and these checks cannot tell which model ran. Guide: [Reconcile your receipts](docs/guides/reconcile.md).
+  - `--requests <dir>`: request bodies you saved, joined to the receipts by SHA-256 (`requestSha256`). Listed:
+    `prompt_tokens` that differ within one request class (same model beyond `--tolerance-tokens`; across models beyond
+    `--prompt-spread`, default 16), `prompt_tokens` above the request's size in bytes, `completion_tokens` above the
+    request's output limit (with `reasoning_tokens`; the limit is `ai.completionLimitOf`'s, the rule a billing layer
+    sizes its hold with: for Chat the larger of `max_completion_tokens` and `max_tokens`, times `n`), and the model
+    names the receipts carry for one requested model, by stream and non-stream. Only the exact bytes sent match: `tapeapi-verify` salts requests unless `--no-salt`; `tapeapi-verify --save-requests <dir>` keeps the salted bytes (below).
+  - Three optional `--map` keys give the same facts from a bill: `request`, `request_bytes`, `max_tokens`. A receipt
+    and its bill row whose model names differ only as aliases in the snapshot are listed (the join counts them as one
+    model, so they are not a mismatch).
+  - `--mandate <file>`: per scope item, the receipts of its provider signed in `[notBefore, expires)`, summed and set
+    against the cap (`--token-decimals`, `--mandate-currency`, `--near`); other containers and receipts outside the
+    period are listed apart. A phase-0 mandate names no funds and is not compared; the signature is not checked.
+  - `--policy <file>`: your own limits (`{ "tapeapiPolicy": 1, "rules": [...] }`: amount, calls, prompt and completion
+    tokens per service, model and call, day, month or total). Nothing is enforced at call time; the windows whose
+    receipts claim more are listed. An unknown key is a usage mistake.
+  - `--bill` is optional when any of the three is given. No per-provider preset is added: an operator exports its
+    ledger with columns `--map` can name (the guide lists them).
+  - `--fail-on <kinds>` (opt-in): `findings`, `mandate-above-cap`, `policy`, comma-separated. When the exit status
+    would be 0 and a named kind is listed, it is **4**; 1, 2 and 3 stay as they are, and without `--fail-on` nothing
+    changes (no new JSON key either; with it, `failOn: { kinds, counts, listed }`). A kind that could never be listed is
+    a usage mistake: `policy` without `--policy`, `mandate-above-cap` without `--mandate` and `--token-decimals`. For a
+    script or CI step that should stop on a fact; the facts are still facts, not verdicts.
+- **`tapeapi-verify --save-requests <dir>`** (experimental, **off by default**: a privacy trade-off). It writes the
+  exact bytes of every metered request it sends, salt included, to `<dir>`, one `<sha256>.request` file each, so
+  `tapeapi reconcile --requests <dir>` joins salted receipts. **These files hold the prompts, files and tool output in
+  clear**, which neither the receipt nor `--log` holds; `--help`, the start-up line and both guides say so. The
+  directory is created 700, an existing one open to group or others is refused (exit 1), each file is 600 and written
+  once; a request over 16 MiB (which reconcile skips) is not written; a failed write is logged and the call goes on.
+  Free paths are not saved, and the `--log` format is unchanged. Tested end to end: a salted JSON call and a stream
+  through the real binary, their files the bytes that reached the sidecar (one compared byte for byte, both by hash),
+  and reconcile joining both.
+
+### Changed
+
+- **MCP: a single request sent with `MCP-Protocol-Version: 2026-07-28` but no 2026-07-28 `_meta` is refused** with
+  HTTP 400 (review MR-2b, 2026-10-22): `-32602` (the required `_meta` field is missing) when no header contradicts the
+  body, `-32020` when one does. 2.4.0 answered it as an older-revision request; no client of an older revision sends
+  that header value. `initialize` keeps the older handshake whatever the header says. On each of the five HTTP entry
+  points this is the one recorded 2.4.0 exchange that is answered differently.
+- **MCP: a value of `_meta['io.modelcontextprotocol/protocolVersion']` that is not a revision is refused.** From 2.2.0
+  to 2.4.0 such a request was answered: `"2027-01-01"` (a later date) as 2026-07-28, `"latest"`, `"2026-7-28"` and a
+  number as an earlier revision. Now a string is `-32022` and a number `-32602` (on HTTP, status 400), as revision
+  2026-07-28 asks; no client of 2025-11-25 or earlier sends the key. A legacy revision in that key
+  (`"2025-11-25"`, ...) is still answered as before.
+- **`tapeapi reconcile` prints more without the new options.** Every `--json` output gains the keys `checks`
+  (always), `mandate` and `policy` (null unless asked for) and `notes.findings`; with a manifest snapshot, the text output gains
+  a findings section when one price-table entry carries several model names in the receipts, or a receipt and its bill
+  row differ only as aliases. The exit status is unchanged (0 / 1 / 2 / 3 as in 2.4.0): findings change it only when
+  the new `--fail-on` asks (exit 4).
+- The playground's vendored SDK and the site's asset hashes are rebuilt for the changed `sdk/src/mcp.js` and
+  `sdk/src/ai-public.js` (whose header comment now says which price helpers are public again, as experimental).
+
 ## [2.4.0] — 2026-10-21
 
 TapeAPI 2.4.0: MCP tool results that the public service's Worker can sign and declare. The public Worker's code
@@ -2216,7 +2397,8 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.1.0...v2.2.0

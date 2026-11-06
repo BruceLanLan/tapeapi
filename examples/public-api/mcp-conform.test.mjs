@@ -377,11 +377,17 @@ test('changed tools: the Worker refuses the tool methods with a signed TOOLS_CHA
   const viaPinned = (await (await post(w.url, MCP_PINNED_PATH, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'tool_bnb_usd', arguments: {} } })).json()).result
   assert.equal(viaPinned.isError, true)
   assert.match(viaPinned.content[1].text, /^The service refused: TOOLS_CHANGED: /)
+  // CHANGED MR-7b: /mcp/pinned's tools/list is held to MCP_TOOLS_SHA256 as the calls are, with the
+  // refusal createMcpProxy gives on drift; tapeapi-mcp then cannot read the tools at all, and still sends nothing.
+  // CHANGED MR-7b：/mcp/pinned 的 tools/list 与调用一样受约束，按 createMcpProxy 的方式拒绝；tapeapi-mcp 读不到工具，仍然什么都不发。
+  const list = await (await post(w.url, MCP_PINNED_PATH, { jsonrpc: '2.0', id: 3, method: 'tools/list' })).json()
+  assert.equal(list.error.code, -32603)
+  assert.deepEqual(list.error.data, { code: 'TOOLS_CHANGED', published, current })
   const s = await mcpSession(['--dev', w.url, '--no-pin'])
   const r = await s.request('tools/call', { name: 'tool_block_number', arguments: {} })
   assert.equal(r.result.isError, true)
-  assert.match(textOf(r), /REFUSED, nothing was sent/)
-  assert.match(textOf(r), new RegExp(`hash to ${current}`))
+  assert.match(textOf(r), /^Nothing was sent: /)
+  assert.match(textOf(r), /TOOLS_CHANGED/)
   await s.close()
 })
 

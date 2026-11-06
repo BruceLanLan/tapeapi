@@ -65,8 +65,10 @@ Usage: tapeapi <command> [arguments]
                        a manifest snapshot), export them as CSV or JSON. tapeapi receipts --help for the options
                        本机保存的回执：列出、查看一张并离线重放核验（依据清单快照）、导出为 CSV 或 JSON
   reconcile            the usage and prices your receipts claim, set row by row against a bill file: match, missing,
-                       mismatch, each with its lines. tapeapi reconcile --help for the options
-                       把回执声称的用量与价格与账单文件逐行对账：匹配、缺失、不一致，各带出处行
+                       mismatch, each with its lines; with --requests, --mandate or --policy (experimental) also facts
+                       about each request, a mandate's caps and your own limits. tapeapi reconcile --help for the options
+                       把回执声称的用量与价格与账单文件逐行对账：匹配、缺失、不一致，各带出处行；加 --requests、--mandate 或
+                       --policy（实验性）还列出请求事实、授权书上限与你自己的限额对照
                        receipts and reconcile read files only: no network, no key
                        receipts 与 reconcile 只读本机文件：不联网、不需要密钥
   init                 the operator's wizard, step by step from nothing to live: what you do, where, who pays (you),

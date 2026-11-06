@@ -17,6 +17,7 @@
 import { mcp, sig, TapeAPIError, METHOD_NAME_RE } from '@tapeapi/sdk'
 import { createProvider, VERSION } from './index.js'
 import { readCapped, TooLarge } from './read-capped.js'
+import { modernRefusal, batchRefusal, statusOf, allowedOriginsOf, withOrigin } from './mcp-http.js'
 
 export const MCP_PATH = '/mcp'
 export const UPSTREAM_RESPONSE_LIMIT = 1024 * 1024
@@ -102,8 +103,14 @@ async function readSse(body, id, limit) {
  * scratch here, so nothing a caller of the proxy sent can reach the upstream.
  * 面向单个上游的小型 MCP 客户端：Streamable HTTP（{ url }）或进程内（{ call }）。请求头在这里从零构造，代理调用方发来的任何东西都到不了上游。
  */
-function createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall }) {
+function createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall, negotiation = 'legacy' }) {
   let seq = 0
+  // The upstream's era (MCP 2026-07-28 basic/versioning, "Backward Compatibility"): 'legacy' (initialize) or 'modern'
+  // (2026-07-28, per-request _meta). With negotiation 'legacy' (the default) it is legacy from the start and nothing
+  // below changes; with 'auto' a server/discover probe decides it once, before the first request.
+  // 上游属于哪一代：默认 'legacy'，一开始就是旧版，以下行为不变；'auto' 时在第一个请求前用 server/discover 探测一次。
+  let era = negotiation === 'auto' ? null : 'legacy'
+  let negotiating = null
   let session = null            // { id?: string, protocolVersion: string } once initialized / 初始化后
   let initializing = null
   const url = upstream.url ? new URL(upstream.url) : null
@@ -117,7 +124,7 @@ function createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall }) {
   }
 
   // One message out; the answer to it back (null for a notification). / 发出一条消息，取回它的回答（通知为 null）。
-  async function send(message) {
+  async function send(message, modern = false) {
     onCall()
     const isNote = message.id === undefined
     if (upstream.call) {
@@ -130,8 +137,11 @@ function createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall }) {
       return { msg: JSON.parse(text) }
     }
     const headers = { ...extraHeaders, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }
-    if (session?.id) headers['mcp-session-id'] = session.id
-    if (session?.protocolVersion) headers['mcp-protocol-version'] = session.protocolVersion
+    if (modern) Object.assign(headers, modernHeaders(message))
+    else {
+      if (session?.id) headers['mcp-session-id'] = session.id
+      if (session?.protocolVersion) headers['mcp-protocol-version'] = session.protocolVersion
+    }
     const ac = new AbortController()
     return withTimeout((async () => {
       let res
@@ -139,7 +149,15 @@ function createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall }) {
       catch (e) { throw new UpstreamError(`fetch failed: ${e?.message || e}`) }
       const sessionId = res.headers.get('mcp-session-id')
       if (res.status === 404 && session?.id) { try { await res.body?.cancel() } catch { /* ignore */ } throw new UpstreamError('session expired', { sessionExpired: true }) }
-      if (!res.ok) { try { await res.body?.cancel() } catch { /* ignore */ } throw new UpstreamError(`HTTP ${res.status}`) }
+      // A 2026-07-28 server answers a refused request with 400 / 404 and a JSON-RPC error body: read it, so the caller
+      // can tell a modern error from a legacy server's refusal. / 新版服务器的 400 / 404 带 JSON-RPC 错误正文，读出来以便区分。
+      if (!res.ok && modern && (res.status === 400 || res.status === 404) && !isNote) {
+        let body = null
+        try { body = JSON.parse(await readCapped(res.body, 64 * 1024)) } catch { /* not JSON / 不是 JSON */ }
+        if (isObj(body) && isObj(body.error)) return { msg: body, httpStatus: res.status }
+        throw new UpstreamError(`HTTP ${res.status}`, { httpStatus: res.status })
+      }
+      if (!res.ok) { try { await res.body?.cancel() } catch { /* ignore */ } throw new UpstreamError(`HTTP ${res.status}`, modern ? { httpStatus: res.status } : undefined) }
       if (isNote) { try { await res.body?.cancel() } catch { /* ignore */ } return null }
       const type = (res.headers.get('content-type') || '').toLowerCase()
       let msg
@@ -174,7 +192,58 @@ function createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall }) {
     return initializing
   }
 
+  // ---- MCP 2026-07-28 toward the upstream (opt-in, experimental, 2.5) / 对上游说 2026-07-28（选用，实验性）----
+  const MODERN = mcp.MCP_MODERN_PROTOCOL_VERSIONS[0]
+  const clientInfo = { name: 'tapeapi-mcp-proxy', version: VERSION }
+  const modernParams = (params) => ({ ...params, _meta: { ...(isObj(params?._meta) ? params._meta : {}), [mcp.PROTOCOL_VERSION_META]: MODERN, 'io.modelcontextprotocol/clientInfo': clientInfo, [mcp.CLIENT_CAPABILITIES_META]: {} } })
+  // Streamable HTTP "Standard Request Headers". / 标准请求头。
+  function modernHeaders(message) {
+    const h = { 'mcp-protocol-version': MODERN, 'mcp-method': message.method }
+    // The proxy only calls tools/call, with a TAPI-20 method name (plain ASCII), so no Base64 form is ever needed.
+    // 代理只发 tools/call，工具名是 TAPI-20 方法名（纯 ASCII），不需要 Base64 形式。
+    if (message.method === 'tools/call' && typeof message.params?.name === 'string') h['mcp-name'] = message.params.name
+    return h
+  }
+  const MODERN_ERRORS = new Set(Object.values(mcp.MCP_ERRORS))
+  // The probe of basic/transports/stdio and streamable-http "Backward Compatibility": a DiscoverResult offering
+  // 2026-07-28 means modern; a recognized modern error means modern, and then only an older revision it lists lets us
+  // fall back to initialize; any other error, an HTTP 4xx without a modern error body, or no answer in time means legacy.
+  // A network failure is thrown (nothing is decided). / 探测：DiscoverResult 含 2026-07-28 即新版；新版错误只在它列出旧版本时才
+  // 退回 initialize；其它错误、无新版错误正文的 4xx、超时都算旧版；网络失败直接抛出（不下结论）。
+  function negotiate() {
+    negotiating ??= (async () => {
+      const id = ++seq
+      let out
+      try { out = await send({ jsonrpc: '2.0', id, method: 'server/discover', params: modernParams({}) }, true) } catch (e) {
+        if (/^fetch failed/.test(e?.message || '')) throw e
+        era = 'legacy'; return
+      }
+      const m = out?.msg
+      if (isObj(m) && m.id === id && isObj(m.result)) {
+        const v = m.result.supportedVersions
+        if (Array.isArray(v) && v.includes(MODERN)) { era = 'modern'; return }
+        if (Array.isArray(v) && v.some((x) => mcp.MCP_PROTOCOL_VERSIONS.includes(x))) { era = 'legacy'; return }
+        throw new UpstreamError('the upstream offers no MCP revision this proxy speaks')
+      }
+      if (isObj(m) && isObj(m.error) && MODERN_ERRORS.has(m.error.code)) {
+        const sup = Array.isArray(m.error.data?.supported) ? m.error.data.supported : []
+        if (sup.some((x) => mcp.MCP_PROTOCOL_VERSIONS.includes(x))) { era = 'legacy'; return }
+        throw new UpstreamError(`the upstream is a modern MCP server that refused revision ${MODERN}`)
+      }
+      era = 'legacy'
+    })().finally(() => { negotiating = null })
+    return negotiating
+  }
+
   async function request(method, params) {
+    if (era === null) await negotiate()
+    if (era === 'modern') {
+      const id = ++seq
+      const result = unwrap(await send({ jsonrpc: '2.0', id, method, params: modernParams(params) }, true), id)
+      // MRTR (input_required) asks the client for input this proxy cannot give. / 代理无法提供 input_required 要的输入。
+      if (result.resultType !== undefined && result.resultType !== 'complete') throw new UpstreamError(`the upstream answered resultType ${String(result.resultType).slice(0, 32)}, which this proxy does not handle`)
+      return result
+    }
     for (let attempt = 0; ; attempt++) {
       if (!session) await initialize()
       const id = ++seq
@@ -201,7 +270,7 @@ function createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall }) {
     throw new UpstreamError(`tools/list did not end within ${PAGES_MAX} pages`)
   }
 
-  return { listTools, callTool: (name, args) => request('tools/call', { name, arguments: args }), label: url ? url.origin + url.pathname : 'in-process' }
+  return { listTools, callTool: (name, args) => request('tools/call', { name, arguments: args }), label: url ? url.origin + url.pathname : 'in-process', era: () => era }
 }
 
 // An upstream tool -> a TAPI-20 method (the MCP plan, "阶段 2 接口约定"): params from inputSchema, each property's
@@ -248,6 +317,16 @@ function methodOf(tool) {
  * @param {boolean} [o.linkContent=false]  verify links carry the params and result in clear; default: hashes only
  *        / 核验链接带明文参数与结果；默认只带哈希
  * @param {number} [o.upstreamTimeoutMs=20000]
+ * @param {'legacy'|'auto'} [o.upstreamNegotiation='legacy']  @experimental (2.5) how the proxy talks to its upstream:
+ *        'legacy' opens with initialize, as before; 'auto' first probes with server/discover and speaks MCP 2026-07-28
+ *        (no initialize, per-request _meta and headers) to an upstream that offers it, else falls back to initialize
+ *        / 代理怎样与上游通信：'legacy' 以 initialize 开场（与以前相同）；'auto' 先用 server/discover 探测，上游支持就说
+ *        2026-07-28，否则退回 initialize
+ * @param {string[]} [o.allowedOrigins]  @experimental (2.5) exact origins a browser may call /mcp from: a
+ *        request to /mcp whose Origin is present and not listed is 403; default: every origin, as before. Set it when the
+ *        proxy runs on a local machine in front of tools with side effects: with CORS `*` any web page the user opens can
+ *        call them. / 浏览器可以从哪些来源调用 /mcp；默认任何来源。代理在本机运行、上游工具有副作用时应设置：CORS `*` 下用户打开的
+ *        任何网页都能调用它们。
  */
 export function createMcpProxy(opts = {}) {
   if (Object.prototype.hasOwnProperty.call(opts, 'identity')) throw new TapeAPIError('INVALID_ARGUMENT', 'createMcpProxy takes { name } (the TapeOut name shown in receipts): the option `identity` was renamed in 1.0 (https://tapeapi.fun/docs/en/upgrade-1.0)')
@@ -261,12 +340,14 @@ export function createMcpProxy(opts = {}) {
   const log = opts.log || ((...a) => console.error('[tapeapi/mcp-proxy]', ...a))
   const fetchImpl = opts.fetch || ((...a) => globalThis.fetch(...a))
   const timeoutMs = Math.min(Number(opts.upstreamTimeoutMs ?? MCP_UPSTREAM_TIMEOUT_MS), UPSTREAM_TIMEOUT_MAX_MS)
+  const allowed = allowedOriginsOf(opts.allowedOrigins)
 
   const st = {
     upstreamCalls: 0, upstreamFailures: 0, driftRefusals: 0, hiddenRefusals: 0, refreshes: 0, refreshFailures: 0,
     lastRefreshAt: 0, lastRefreshOk: null, skipped: [],
   }
-  const client = createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall: () => { st.upstreamCalls++ } })
+  if (opts.upstreamNegotiation !== undefined && !['legacy', 'auto'].includes(opts.upstreamNegotiation)) throw new TapeAPIError('INVALID_ARGUMENT', "upstreamNegotiation must be 'legacy' or 'auto'")
+  const client = createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall: () => { st.upstreamCalls++ }, negotiation: opts.upstreamNegotiation })
 
   let manifest = null, provider = null
   let published = null          // the digest calls are held to / 调用被核对的摘要
@@ -469,15 +550,25 @@ export function createMcpProxy(opts = {}) {
     }
     if (Array.isArray(msg)) {
       if (!msg.length || msg.length > BATCH_MAX) return reply(400, rpcError(null, mcp.JSONRPC.INVALID_REQUEST, `a batch holds 1 to ${BATCH_MAX} messages`))
+      const no = batchRefusal(request, msg)
+      if (no) return reply(no.status, no.body)
       const out = (await Promise.all(msg.map(one))).filter(Boolean)
       return out.length ? reply(200, out) : reply(202, null)
     }
+    // A single request of MCP 2026-07-28 (experimental, 2.5): 400 when malformed or its headers do not match its body,
+    // 404 for a method the proxy does not have; the refusals of tools/list (drift, invisible characters) stay 200.
+    // 单条 2026-07-28 请求（实验性）：格式错误或头部不符为 400，方法不存在为 404；tools/list 的拒绝（漂移等）仍为 200。
+    const refused = modernRefusal(request, msg)
+    if (refused) return reply(refused.status, refused.body)
     const out = await one(msg)
-    return out ? reply(200, out) : reply(202, null)
+    return out ? reply(statusOf(msg, out), out) : reply(202, null)
   }
 
-  async function handleRequest(request, { clientIp } = {}) {
+  async function handleRequest(request, ctx = {}) {
     const path = new URL(request.url).pathname.replace(/\/+$/, '') || '/'
+    return path === MCP_PATH ? withOrigin(request, allowed, () => route(request, ctx, path)) : route(request, ctx, path)
+  }
+  async function route(request, { clientIp } = {}, path) {
     if (path === MCP_PATH && request.method === 'OPTIONS') return reply(204, null)
     try { await ready } catch (e) {
       return reply(503, { ok: false, error: { code: 'INTERNAL', message: 'the proxy has not started: its upstream MCP server could not be read' } })
@@ -500,7 +591,7 @@ export function createMcpProxy(opts = {}) {
     manifest: () => manifest,
     tools: () => upstreamTools.slice(),
     stats: () => ({
-      ready: !!provider, upstream: client.label, toolsSha256: published, upstreamToolsSha256: current, drift, invisible: hidden.slice(),
+      ready: !!provider, upstream: client.label, upstreamEra: client.era(), toolsSha256: published, upstreamToolsSha256: current, drift, invisible: hidden.slice(),
       tools: upstreamTools.length, methods: manifest ? manifest.methods.length : 0, skipped: st.skipped.map((s) => ({ ...s })),
       upstreamCalls: st.upstreamCalls, upstreamFailures: st.upstreamFailures, driftRefusals: st.driftRefusals, hiddenRefusals: st.hiddenRefusals,
       refreshes: st.refreshes, refreshFailures: st.refreshFailures, lastRefreshOk: st.lastRefreshOk,

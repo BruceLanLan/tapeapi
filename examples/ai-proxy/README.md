@@ -259,7 +259,13 @@ not have unless you paste them too.
 - Receipts are kept for 1 hour (`receiptTtlMs`, `RECEIPT_TTL_S` in the Worker), at most 50,000, per (id,
   requestSha256), in the process (or Worker isolate) that signed them; the one delivered with the answer is the primary
   copy. The free `receipt` method has a budget of its own (`receiptRateLimit`, default 10 lookups per client IP per
-  minute, `RECEIPT_LOOKUPS_PER_MIN`), answered past it with the unsigned 429 of TAPI-21 §3.4.
+  minute, `RECEIPT_LOOKUPS_PER_MIN`: `0` refuses every lookup, `off` sets no budget of its own, anything else is setup
+  mode), answered past it with the unsigned 429 of TAPI-21 §3.4.
+- **Upstream response headers** (2.5, experimental). By default every upstream response header is passed on, except
+  hop-by-hop ones, cookies, the upstream's CORS and any receipt header. `upstreamResponseHeaders` (a list of names;
+  `UPSTREAM_RESPONSE_HEADERS`, comma-separated, in the new-api and LiteLLM sidecars) passes on only those,
+  `content-type` (its media type with `charset` and `boundary` only) and `retry-after`, for an upstream whose headers name its channels or costs. Headers are not part of a receipt, so
+  receipts and answer bytes do not change. See [A billing layer in front of the sidecar](../../docs/guides/billing-layer.md).
 - **Guessable answer ids.** The sidecar keeps the upstream's answer id (TAPI-21 §3.5), and some upstreams' ids can be
   guessed: Ollama's OpenAI-compatible API numbers chat ids `chatcmpl-0` to `chatcmpl-998`. Anyone could then walk
   through the ids with the free `receipt` method and read the receipts (model, usage, time and the two hashes). The

@@ -15,6 +15,13 @@ export declare function createMcpEndpoint(o: {
    *  TAPI-20 §3.8): each is passed on as that tool result after the provenance line, not as JSON text. Default false. */
   mcpResults?: boolean
   version?: string
+  /** @experimental (2.5) Exact origins a browser may call from: an unlisted Origin is 403, a listed one is echoed instead
+   *  of CORS `*`; a request without Origin is answered as usual. Default: every origin. */
+  allowedOrigins?: string[]
+  /** @experimental (2.5) The toolsSha256 the holder published for this endpoint: while the tools hash to anything else
+   *  (or carry invisible characters), tools/list is refused as createMcpProxy refuses it (-32603, data.code
+   *  'TOOLS_CHANGED' or 'INVISIBLE_CHARACTERS'). Default: tools/list is always answered. */
+  pinnedToolsSha256?: string
   /** Called once per JSON-RPC message handled (not for refused requests; usage counting); method and tool are cut to 64 characters; errors in it are ignored. */
   onMessage?: (m: { method: string; tool?: string; clientIp?: string }) => void
 }): {

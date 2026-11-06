@@ -37,8 +37,8 @@ export const LANGS = {
   zh: { html: 'zh-CN', label: '中文', docs: '手册', onThisPage: '本页内容', search: '搜索手册', noResults: '没有结果', prev: '上一篇', next: '下一篇', edit: '在 GitHub 上编辑此页', menu: '目录', home: '首页', theme: '主题', light: '浅色', dark: '深色', copy: '复制', copied: '已复制', other: 'en', otherLabel: 'English' },
 }
 export const GROUPS = [
-  { en: 'Getting started', zh: '开始', pages: ['index', 'public-api', 'mcp', 'consume', 'provide', 'ai-providers'] },
-  { en: 'Features', zh: '功能', pages: ['channels', 'groups', 'agents', 'container-agents'] },
+  { en: 'Getting started', zh: '开始', pages: ['index', 'public-api', 'mcp', 'consume', 'provide', 'ai-providers', 'billing-layer'] },
+  { en: 'Features', zh: '功能', pages: ['channels', 'groups', 'agents', 'container-agents', 'reconcile'] },
   { en: 'Help', zh: '帮助', pages: ['faq', 'reference', 'upgrade-1.0', 'upgrade-2.0', 'changelog'] },
 ]
 const SOURCES = {
@@ -48,10 +48,12 @@ const SOURCES = {
   consume: { en: 'docs/guides/consume.md', zh: 'docs/guides/zh-CN/consume.md' },
   provide: { en: 'docs/guides/provide.md', zh: 'docs/guides/zh-CN/provide.md' },
   'ai-providers': { en: 'docs/guides/ai-providers.md', zh: 'docs/guides/zh-CN/ai-providers.md' },
+  'billing-layer': { en: 'docs/guides/billing-layer.md', zh: 'docs/guides/zh-CN/billing-layer.md' },   // 2.5, experimental / 实验性
   channels: { en: 'docs/guides/channels.md', zh: 'docs/guides/zh-CN/channels.md' },
   groups: { en: 'docs/guides/groups.md', zh: 'docs/guides/zh-CN/groups.md' },
   agents: { en: 'docs/guides/agents.md', zh: 'docs/guides/zh-CN/agents.md' },
   'container-agents': { en: 'docs/guides/container-agents.md', zh: 'docs/guides/zh-CN/container-agents.md' },
+  reconcile: { en: 'docs/guides/reconcile.md', zh: 'docs/guides/zh-CN/reconcile.md' },
   faq: { en: 'docs/guides/faq.md', zh: 'docs/guides/zh-CN/faq.md' },
   reference: { en: 'docs/guides/reference.md', zh: 'docs/guides/zh-CN/reference.md' },   // the datasheet appendix, once on the home page / 数据手册附录，原在首页
   'upgrade-1.0': { en: 'docs/guides/upgrade-1.0.md', zh: 'docs/guides/zh-CN/upgrade-1.0.md' },

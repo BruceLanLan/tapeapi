@@ -21,6 +21,8 @@ export type McpProxyManifestBase = ManifestBase
 export interface McpProxyStats {
   ready: boolean
   upstream: string
+  /** @experimental (2.5) the upstream's era: 'legacy', 'modern', or null before an 'auto' probe has decided. */
+  upstreamEra: 'legacy' | 'modern' | null
   toolsSha256: string | null
   upstreamToolsSha256: string | null
   drift: boolean
@@ -72,4 +74,12 @@ export declare function createMcpProxy(o: {
   mcpEndpoint?: string
   allowHttp?: boolean
   upstreamTimeoutMs?: number
+  /**
+   * @experimental (2.5) 'legacy' (default): open the upstream with initialize, as before. 'auto': probe with
+   * server/discover and speak MCP 2026-07-28 to an upstream that offers it, else fall back to initialize.
+   */
+  upstreamNegotiation?: 'legacy' | 'auto'
+  /** @experimental (2.5) Exact origins a browser may call /mcp from (an unlisted Origin is 403). Default: every origin.
+   *  Set it for a proxy on a local machine in front of tools with side effects. */
+  allowedOrigins?: string[]
 }): McpProxy

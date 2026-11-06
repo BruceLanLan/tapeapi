@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>回执对账（实验性） · TapeAPI 手册</title>
+<meta name="description" content="你向一个对每次回答都签用量回执的服务购买了 AI 调用， tapeapi-verify --log 把这些回执留在了你的机器上。本篇把它们与你手里的其它材料逐项对照：服务方的账单、你发出的请求、你为代理签的授权书、你自己的花费限额。这里的一切都是 tapeapi reconcile ，属实验性，不受 2.x 兼容承诺约">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../docs.css?v=62ad162ee6">
+<link rel="alternate" hreflang="en" href="../en/reconcile">
+<script src="../docs.js?v=dee763d4ca"></script>
+</head>
+<body data-page="reconcile" data-other="../en/reconcile" data-l-copy="复制" data-l-copied="已复制" data-l-none="没有结果" data-l-light="浅色" data-l-dark="深色" data-l-theme="主题">
+<header class="hd-bar top"><div class="hd">
+  <button class="hd-btn menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">目录</button>
+  <a class="hd-brand" href="/" aria-label="TapeAPI"><svg class="hd-mark" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" width="99" height="11" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a><a class="hd-sec" href="./">手册</a>
+  <div class="search"><input id="q" type="search" placeholder="搜索手册" aria-label="搜索手册" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <nav class="hd-nav" aria-label="TapeAPI"><a href="./" aria-current="true">手册</a><a href="https://tapeapi.fun/playground/">调试台</a><a href="https://tapeapi.fun/dashboard/">我的服务</a><a href="https://tapeapi.fun/status/">状态</a><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></nav>
+  <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="en">English</button><button class="hd-btn" id="theme-btn" type="button">主题</button></div>
+</div></header>
+<div class="layout">
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="./">简介</a></li><li><a href="public-api">公共 API</a></li><li><a href="mcp">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume">调用服务</a></li><li><a href="provide">运行服务</a></li><li><a href="ai-providers">接入 AI 服务</a></li><li><a href="billing-layer">旁路前面的计费层</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels">私密通道</a></li><li><a href="groups">群聊</a></li><li><a href="agents">AI 智能体</a></li><li><a href="container-agents">容器代理（实验性）</a></li><li><a href="reconcile" aria-current="page">回执对账（实验性）</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq">常见问题与排障</a></li><li><a href="reference">参考</a></li><li><a href="upgrade-1.0">从 0.x 升级到 1.0</a></li><li><a href="upgrade-2.0">从 1.x 升级到 2.0</a></li><li><a href="changelog">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="回执对账实验性">回执对账（实验性）</h1>
+<p>你向一个对每次回答都签用量回执的服务购买了 AI 调用，<code>tapeapi-verify --log</code> 把这些回执留在了你的机器上。本篇把它们与你手里的其它材料逐项对照：服务方的账单、你发出的请求、你为代理签的授权书、你自己的花费限额。这里的一切都是 <code>tapeapi reconcile</code>，属实验性，不受 2.x 兼容承诺约束，任何 2.x 版本都可能改变或移除。</p>
+<p><strong>它做什么，绝不做什么。</strong>只读本机文件：不联网、不需要密钥、不上传、没有遥测。它只列事实，每条带出处的回执行（用到账单行或请求文件时也带上）。它不下结论：差异是可以拿着出处行去问服务方的问题。<strong>回执只证明签名方说了什么</strong>：谁签了哪些请求与回答字节、声称了多少用量与价格。它不证明实际运行的是哪个模型，这里的任何检查也无法判断实际运行的是哪个模型。</p>
+<div class="code"><pre data-lang="sh"><code># 装好 SDK 之后；在检出里用 node sdk/bin/tapeapi.js reconcile … 效果相同
+tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv               # 与账单对账
+tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --requests ~/.tapeapi/requests   # 每个请求的事实
+tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --mandate mandate.json --token-decimals 18
+tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --policy my-limits.json</code></pre></div>
+<p>这些选项可以在一次运行里同时使用。除非给了 <code>--requests</code>、<code>--mandate</code> 或 <code>--policy</code>，否则需要 <code>--bill</code>。 <code>--json</code> 输出一个对象（<code>counts</code>、<code>items</code>、<code>checks</code>、<code>mandate</code>、<code>policy</code>、<code>notes</code>、<code>next</code>）。</p>
+<h2 id="与账单对账"><a class="anchor" href="#与账单对账" aria-hidden="true">#</a>与账单对账</h2>
+<p>服务方的账单或用量文件（带表头的 CSV、JSON 或 JSON 行）与回执逐行对应：有 id 列就按 id，否则按时间、模型与 token 数。每张回执、每行账单最终是匹配、只在一边出现（缺失），或不一致（某字段与回执声称的不同），两边的出处行都会给出。用 <code>--map</code> 指定账单的列：</p>
+<div class="code"><pre data-lang="sh"><code>tapeapi reconcile --receipts receipts.jsonl --bill bill.csv \
+  --map id=request_id,model=model,prompt=input_tokens,completion=output_tokens,time=created_at,amount=cost \
+  --amount-scale 1</code></pre></div>
+<p><code>model</code>、<code>prompt</code>、<code>completion</code> 必须指定，另需 <code>id</code> 或 <code>time</code>。只有给了 <code>--amount-scale</code>（多少个账单单位等于回执币种的 1 个单位）才比较 <code>amount</code>。<code>--preset new-api</code> 指的是 new-api 的 <code>GET /api/log/self</code> 返回的 JSON 字段名，它是什么、不是什么见 <a href="ai-providers">AI 服务方指南</a>。没有为任何其它服务方准备预设：请自己指定列。</p>
+<h2 id="每个请求的事实"><a class="anchor" href="#每个请求的事实" aria-hidden="true">#</a>每个请求的事实</h2>
+<p>回执带的是确切请求字节的哈希（<code>requestSha256</code>），不是请求本身。如果你还留有这些字节，<code>--requests &lt;目录&gt;</code> 会把它们与回执对应起来：目录里 SHA-256 等于某张回执 <code>requestSha256</code> 的文件，给出该回执的请求事实（字节数、请求的模型、输出上限，以及 <em>请求类别</em>）。文件名不重要；对不上任何回执的文件只计数。</p>
+<div class="table"><table><thead><tr><th>列出的事实</th><th>依据</th><th>能说明什么</th><th>不能说明什么</th></tr></thead><tbody><tr><td><code>prompt-tokens-spread</code>（同一模型）</td><td>同一类别的请求（除 <code>model</code>、<code>stream</code>、<code>stream_options</code>、输出上限、<code>temperature</code>、<code>top_p</code>、<code>seed</code>、<code>user</code>、<code>metadata</code> 外 JSON 相同）</td><td>同一模型的回执对同一提示词声称了不同的 <code>prompt_tokens</code>（超出 <code>--tolerance-tokens</code>，默认 0）</td><td>原因：上游加了内容、缓存、模板改动等</td></tr><tr><td><code>prompt-tokens-spread</code>（跨模型）</td><td>同一类别、多个模型</td><td>差值超过 <code>--prompt-spread</code>（默认 16）时把各模型的数并列</td><td>单独看说明不了什么：各模型的分词器与对话模板本来就不同</td></tr><tr><td><code>prompt-tokens-above-request-bytes</code></td><td>请求的字节数</td><td>回执声称的输入 token 多于请求的字节数（分词器很少对每字节文本切出超过一个 token；对话模板每条消息另加几个）</td><td>多出来的 token 是什么；以 URL 给出的图片或文件字节很少却计很多 token，这类请求被列出是正常的</td></tr><tr><td><code>completion-above-request-limit</code></td><td><code>ai.completionLimitOf</code> 读出的上限（与计费层估冻结额度的规则相同）：<code>max_completion_tokens</code> 与 <code>max_tokens</code> 取较大者再乘 <code>n</code>（Chat）、<code>max_output_tokens</code>（Responses）、<code>max_tokens</code>（Anthropic）</td><td><code>completion_tokens</code> 超过请求设的上限，旁边列出 <code>reasoning_tokens</code></td><td>服务方是否把推理 token 算在上限内：那要看它自己的文档</td></tr><tr><td><code>model-names-vary</code></td><td>请求的模型</td><td>同一个请求模型对应的回执模型名，按流式与非流式分开</td><td>哪个名字（如果有的话）是实际运行的模型</td></tr><tr><td><code>model-name-differs-from-bill</code></td><td>对上的账单行与清单快照</td><td>回执与其账单行的模型名不同，而快照把两者列为别名（所以对账时算同一个模型）</td><td>同上</td></tr></tbody></table></div>
+<p><strong>请求字节必须是实际发出的字节。</strong><code>tapeapi-verify</code> 默认给每个请求加盐（在末尾追加空白，使短提示词的哈希无法被猜出），这时客户端保存的字节就不是回执哈希的那份字节，不会有文件对得上。加盐之后保存的字节，或 <code>tapeapi-verify</code> 以 <code>--no-salt</code> 运行时的字节，才对得上（这时你把回执交给谁，谁就能猜出短提示词的哈希）。<code>--log</code> 文件本身从不保存提示词。</p>
+<p><code>tapeapi-verify --save-requests &lt;目录&gt;</code>（实验性，2.5；<strong>默认关闭</strong>）替你保存这些字节：它发出的每个计量请求（含盐）在 <code>&lt;目录&gt;</code> 里存成一个 <code>&lt;sha256&gt;.request</code> 文件，之后把这个目录交给 <code>--requests &lt;目录&gt;</code>。</p>
+<blockquote><p><strong>隐私。</strong> 保存下来的文件就是明文的对话：提示词、附带的文件、工具输出，客户端发出的一切。回执与 <code>--log</code> 文件都不含这些。 <code>tapeapi-verify</code> 以 700 权限创建目录，已有目录若组或其他人能打开就拒绝启动（退出 1），每个文件以 600 权限写入；但备份、同步文件夹或多人共用的机器仍可能复制它们。只在要核对的那些调用期间打开，用完删除。Windows 上不设置这些权限。</p></blockquote>
+<p>没有请求字节时，账单可以用三个可选的 <code>--map</code> 键给出同样的事实：<code>request</code>（值相同的行属同一请求类别）、<code>request_bytes</code>、 <code>max_tokens</code>；这时账单的 <code>model</code> 列被当作请求的模型。两者都没有时，<code>--no-salt</code> 日志里 <code>requestSha256</code> 相同的回执算同一类别（只有字节完全相同的请求才会这样），模型名按回执旁清单快照里的价目表条目分组。</p>
+<p>除非用 <code>--fail-on</code> 要求（见下），发现不改变退出码；<code>--json</code> 里有 <code>checks.counts</code>，<code>checks.checked</code> 记录每项检查有多少张回执具备所需的输入。</p>
+<h2 id="与授权书对照"><a class="anchor" href="#与授权书对照" aria-hidden="true">#</a>与授权书对照</h2>
+<p>如果代理按一份授权书替你花钱（见 <a href="container-agents">容器代理</a>），<code>--mandate &lt;文件&gt;</code> 把回执声称的花费与它对照。文件是 JSON 形式的授权书，可以是裸对象，也可以是 <code>{ &quot;mandate&quot;: { … } }</code>；不读它的签名。对每个 scope 项，取容器等于该项 <code>provider</code>、签名时间在 <code>[notBefore, expires)</code> 内的回执，按该项的币种求和，与上限对照：</p>
+<ul><li>上限以该项代币的基本单位计：给出 <code>--token-decimals &lt;n&gt;</code> 才比较（不给只列花费、不比较）。列表里的代币币种是 <code>BEM</code> 或 <code>USDT</code>，其它代币用 <code>--mandate-currency &lt;c&gt;</code> 指定；</li><li>结果是 <code>below-cap</code>、<code>near-cap</code>（从 <code>--near</code> 开始，默认 0.8）、<code>at-cap</code> 或 <code>above-cap</code>，带比例与回执行；</li><li>不在 scope 里的容器的回执、不在有效期内的回执单独列出；</li><li>阶段 0 的授权书不写金额（上限都是 0）：只列花费，从不比较。</li></ul>
+<p>这是事后的可见性。调用时没有执行任何限制，回执里的价格是签名方声称的价格。</p>
+<h2 id="你自己的限额"><a class="anchor" href="#你自己的限额" aria-hidden="true">#</a>你自己的限额</h2>
+<p><code>--policy &lt;文件&gt;</code> 读取你为自己写的限额。它不是平台规则，调用时也没有执行；<code>reconcile</code> 列出回执声称超过它的时间窗口。</p>
+<div class="code"><pre data-lang="json"><code>{
+  &quot;tapeapiPolicy&quot;: 1,
+  &quot;note&quot;: &quot;我自己的限额&quot;,
+  &quot;rules&quot;: [
+    { &quot;name&quot;: &quot;单次回答&quot;, &quot;model&quot;: &quot;*&quot;, &quot;period&quot;: &quot;call&quot;, &quot;maxCompletionTokens&quot;: 4096 },
+    { &quot;name&quot;: &quot;每天&quot;, &quot;service&quot;: &quot;0x…容器地址…&quot;, &quot;period&quot;: &quot;day&quot;, &quot;maxAmount&quot;: &quot;2.5&quot;, &quot;currency&quot;: &quot;USD&quot; },
+    { &quot;name&quot;: &quot;本月&quot;, &quot;period&quot;: &quot;month&quot;, &quot;maxCalls&quot;: 5000, &quot;maxPromptTokens&quot;: 20000000 }
+  ]
+}</code></pre></div>
+<p><code>service</code> 是容器地址或 <code>&quot;*&quot;</code>，<code>model</code> 是回执里写的模型名或 <code>&quot;*&quot;</code>，<code>period</code> 是 <code>call</code>、<code>day</code>、<code>month</code>（UTC）或 <code>total</code> 之一。每条规则至少设 <code>maxAmount</code>（至多 8 位小数的十进制字符串，需带 <code>currency</code>）、<code>maxCalls</code>、<code>maxPromptTokens</code>、 <code>maxCompletionTokens</code> 中的一项。未知的键是错误（退出 2），拼错的限额不会被悄悄忽略。</p>
+<h2 id="给运营者给用户能对账的行"><a class="anchor" href="#给运营者给用户能对账的行" aria-hidden="true">#</a>给运营者：给用户能对账的行</h2>
+<p>如果你运营服务并有自己的账本，导出时用 <code>--map</code> 能指定的列即可；<code>tapeapi receipts export</code> 的列名就很合适：</p>
+<div class="table"><table><thead><tr><th><code>--map</code> 键</th><th>导出的列</th><th>说明</th></tr></thead><tbody><tr><td><code>id</code></td><td>回答的 id，与回执里的一致</td><td>账单行与回执精确对应</td></tr><tr><td><code>time</code></td><td>调用时间（unix 秒或 ISO 8601）</td><td>没有 id 时用来对应</td></tr><tr><td><code>model</code></td><td>用户请求的模型</td><td>请求里写的名字</td></tr><tr><td><code>prompt</code>、<code>completion</code></td><td>你计费的 token 数</td><td>全部输入与全部输出 token，口径与回执相同</td></tr><tr><td><code>amount</code></td><td>你收取的金额，单一币种</td><td>配合 <code>--amount-scale</code></td></tr><tr><td><code>request</code>、<code>request_bytes</code>、<code>max_tokens</code></td><td>可选</td><td>用户不保存请求字节也能做请求检查</td></tr></tbody></table></div>
+<p>用户随后运行例如 <code>tapeapi reconcile --receipts receipts.jsonl --bill ledger.csv --map id=id,model=model,prompt=prompt_tokens,completion=completion_tokens,time=ts,amount=amount --amount-scale 1</code>。你签的回执本身（每行一个 JSON 信封）可以直接交给 <code>--receipts</code> 读取。不打算为任何一家服务方做预设：列名由你决定，由用户指定。</p>
+<h2 id="退出码"><a class="anchor" href="#退出码" aria-hidden="true">#</a>退出码</h2>
+<p><code>0</code> 每张回执与每行账单都匹配（不给 <code>--bill</code> 时：报告已生成）；<code>1</code> 有缺失或不一致；<code>2</code> 用法错误（点名了账单里没有的列、授权书或策略文件读不了或不合格）；<code>3</code> 没有可比较的内容。发现、授权书与策略的事实不改变退出码，除非你要求：</p>
+<p><code>--fail-on &lt;种类&gt;</code>（实验性，2.5）以逗号分隔点名 <code>findings</code>（任何发现）、<code>mandate-above-cap</code>（某个 scope 项超出上限）、 <code>policy</code>（某个时间窗口超出你的规则）。原本会退出 <code>0</code>、而点名的一类被列出时，退出码为 <code>4</code>；<code>1</code>、<code>2</code>、<code>3</code> 不变。这时 <code>--json</code> 多一个 <code>failOn: { kinds, counts, listed }</code>，文本输出最后多一行计数。永远不会被列出的种类算用法错误（<code>2</code>）：没有 <code>--policy</code> 却点名 <code>policy</code>；没有 <code>--mandate</code> 与 <code>--token-decimals</code> 却点名 <code>mandate-above-cap</code>（不给小数位就不比较上限）。它给需要据此停下的脚本或 CI 步骤用；退出 <code>4</code> 仍然只表示&quot;列出了&quot;，不表示&quot;错了&quot;。</p>
+<div class="code"><pre data-lang="sh"><code>tapeapi reconcile --receipts receipts.jsonl --requests requests/ --policy my-limits.json --fail-on findings,policy</code></pre></div>
+</article>
+<nav class="pn"><a class="prev" href="container-agents"><span>上一篇</span>容器代理（实验性）</a><a class="next" href="faq"><span>下一篇</span>常见问题与排障</a></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/reconcile.md" rel="noopener">在 GitHub 上编辑此页</a></p>
+</main>
+<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#与账单对账">与账单对账</a></li><li class="l2"><a href="#每个请求的事实">每个请求的事实</a></li><li class="l2"><a href="#与授权书对照">与授权书对照</a></li><li class="l2"><a href="#你自己的限额">你自己的限额</a></li><li class="l2"><a href="#给运营者给用户能对账的行">给运营者：给用户能对账的行</a></li><li class="l2"><a href="#退出码">退出码</a></li></ul></aside>
+</div>
+</body>
+</html>

@@ -99,46 +99,87 @@ not the params or result.)
 
 ### Protocol versions
 
-The remote server speaks MCP revisions 2025-11-25, 2025-06-18 and 2025-03-26 over Streamable HTTP, and keeps no
-session between calls. It does not implement the newer revision 2026-07-28, which replaces the `initialize` handshake
-with per-request metadata and a `server/discover` call.
+The remote server, the signing proxy's `/mcp` and the local command speak four MCP revisions. Three use the
+`initialize` handshake: 2025-11-25, 2025-06-18 and 2025-03-26. The fourth, 2026-07-28, has no handshake: every request
+carries its revision and the client's capabilities in `params._meta`. Support for 2026-07-28 is **experimental** (2.5):
+outside the 2.x compatibility promise, it may change in any 2.x release. No session is kept between calls in either
+case, and no `Mcp-Session-Id` is issued.
 
-- **A client that works with both generations** tries the newer one first. The newer revision tells such a client to
-  fall back to `initialize` when the server does not know it, and it then connects and works as described above.
-- **A client set to accept only revision 2026-07-28** does not connect to this endpoint. It reports that the version
-  could not be negotiated or that a method does not exist.
+A request is treated as 2026-07-28 when its `params._meta` has the key `io.modelcontextprotocol/protocolVersion` with
+a value that is not one of the three older revisions, and the method is not `initialize`. No client of the older
+revisions sends that key, so such a client gets exactly the answer it got from 2.4: the test suite replays 290 answers
+recorded from release 2.4.0 (the server core the local command runs on, the remote server, the signing proxy, and the
+public service's `/mcp` and `/mcp/pinned`) and requires them byte for byte, except the five answers (one per HTTP
+entry point) to a request sent with the header `MCP-Protocol-Version: 2026-07-28` but without the 2026-07-28 `_meta`:
+no client of an older revision sends that, and it is now refused (see below).
 
-This follows what the newer revision says about older servers. We have not tried every client. The endpoint also allows
-the `Mcp-Method` and `Mcp-Name` request headers that revision adds, so a browser client is not stopped at the CORS
-preflight.
+What a 2026-07-28 request gets:
 
-Two fields of revision 2026-07-28 are added to answers, and only to a request that itself declares that revision or a
-later one (in `params._meta`, key `io.modelcontextprotocol/protocolVersion`, which no earlier revision has):
+| Request | Answer | HTTP status |
+| --- | --- | --- |
+| `tools/list`, `tools/call` and the other methods, without `initialize` | the result, with `resultType: "complete"` and `_meta["io.modelcontextprotocol/serverInfo"]` (name and version of this server). A list result also has `ttlMs: 0` and `cacheScope: "public"`. In a tool result the receipt stays where it was in `_meta`; serverInfo is placed beside it. | 200 |
+| `server/discover` | `supportedVersions` (`2026-07-28`, then the three older ones), `capabilities` (`tools`), `instructions`, `ttlMs: 0`, `cacheScope: "public"`, serverInfo in `_meta` | 200 |
+| a revision this server does not have (for example `2027-01-01`) | error `-32022` "Unsupported protocol version", `data: { supported, requested }` | 400 |
+| a revision value that is not a string, or no `io.modelcontextprotocol/clientCapabilities` object | error `-32602` | 400 |
+| the `MCP-Protocol-Version`, `Mcp-Method` or (for `tools/call`, `prompts/get`, `resources/read`) `Mcp-Name` header missing or not equal to the body. `Mcp-Name` may use the `=?base64?...?=` form and is decoded first. | error `-32020` "Header mismatch" | 400 |
+| a method this server does not have | error `-32601` | 404 |
 
-- every result except the answer to `initialize` carries `resultType: "complete"`;
-- the result of `tools/list` (and of the empty resource and prompt lists) also carries `ttlMs: 0` and
-  `cacheScope: "public"`. `ttlMs: 0` asks the client to read the list again each time it needs it, as such a client
-  already did when the field was missing, so a changed tool is noticed at once. `public`: the list is the same for every
-  caller.
+The status codes and the header checks apply on HTTP (the remote server and the signing proxy). The local command
+(stdio) has no headers; it gives the same JSON-RPC answers. A client that speaks both generations finds this server
+modern either way: over stdio its `server/discover` probe gets a result, and over HTTP its first request succeeds or
+gets one of the errors above.
 
-A request without that key, which is every request of the three revisions above, gets exactly the answer it got
-before. The fields sit beside the result, not in the receipt or in a tool, so signatures and `toolsSha256` do not
-change. The signing proxy and the local command answer the same way. This does not make the endpoint a 2026-07-28
-server: it still has no `server/discover` and does not check the new headers. The newer revision says nothing about
-CORS, and the `Mcp-Param-*` headers it adds for tool arguments cannot all be named in a preflight answer: the tools of
-a TapeAPI service do not use them, but the tools of a proxied MCP server might.
+Nothing signed changes. The added fields sit beside the result: receipts, signed envelopes, verify links and
+`toolsSha256` are the same for both generations.
 
-Two choices here are deliberate. `cacheScope` is always `"public"` and cannot be set: that is true because none of the
-three entry points (the endpoint, the signing proxy, the local command) answers `tools/list` differently for different
-callers; code built on `createMcpServer` that filtered its list by caller would need `"private"`, which this version
-does not offer. And the answer to `initialize` carries no `resultType`, even for a request that declares 2026-07-28: the
-server answers `initialize` with one of the earlier revisions it implements, and the client then speaks that one.
+Some choices are deliberate:
 
-Checked against the specification on 2026-10-14, when 2026-07-28 was its latest revision:
-[results and `resultType`](https://modelcontextprotocol.io/specification/2026-07-28/basic/index),
-[caching](https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching),
+- `ping` is still answered for a 2026-07-28 request, although that revision removed the method.
+- A JSON array of messages (a batch) of the older revisions is answered message by message with HTTP 200, as before.
+  A batch that holds a 2026-07-28 message, or that is sent with `MCP-Protocol-Version: 2026-07-28`, is refused with
+  HTTP 400 and `-32600`: revision 2026-07-28 expects one message per request, and a batch would carry a message past
+  the header checks above.
+- A single request sent with `MCP-Protocol-Version: 2026-07-28` but without 2026-07-28 metadata in its body is a
+  malformed 2026-07-28 request: HTTP 400, with `-32020` when its `Mcp-Method` or `Mcp-Name` header (or a version in
+  `_meta`) contradicts the body, else `-32602`. A gateway that trusts those headers is never misled. (2.4.0 answered
+  such a request without contradicting headers as an older-revision one; no client of an older revision sends that
+  header value. `initialize` keeps the older handshake whatever the header says.)
+- `Mcp-Param-*` headers are not checked, on any entry point. No TapeAPI tool declares `x-mcp-header`. For a proxied
+  upstream tool that declares it, the proxy's `/mcp` neither requires the header nor compares it with the argument,
+  which 2026-07-28 asks a server to do ("Server Behavior for Custom Headers"): do not let a gateway in front of the
+  proxy make decisions on `Mcp-Param-*` headers, and if your upstream relies on them, check them in the upstream.
+- An `initialize` request is always answered with one of the three older revisions, even when it carries 2026-07-28
+  metadata. The client then speaks that revision.
+- `cacheScope` is always `"public"`: none of the entry points answers `tools/list` differently for different callers.
+  Code built on `createMcpServer` that filtered its list by caller would need `"private"`, which this version does not
+  offer.
+- Before 2.5, a value of the version key that is not any revision (`"latest"`, `"2026-7-28"`, a later date, a number)
+  was answered as an older-revision request. It is now refused, as 2026-07-28 asks.
+- The signing proxy opens its upstream with `initialize` by default, as before. With `upstreamNegotiation: 'auto'`
+  (experimental) it first asks the upstream `server/discover` and speaks 2026-07-28 to an upstream that offers it, so
+  an upstream that speaks only 2026-07-28 can be proxied; any other answer makes it fall back to `initialize`. The local
+  command makes the same choice with `tapeapi-mcp --upstream-negotiation auto` (experimental, 2.5; the default `legacy`
+  opens with `initialize`, as before) when it reads a taped-out MCP server's tools from its `mcp.endpoint`, by the same
+  rules. Only that reading changes: the tools must still hash to the manifest's `mcp.toolsSha256`, the same digest is
+  pinned, and every call still goes through the signed TapeAPI path. Its log line says which way the tools were read.
+
+The three older revisions stay supported. No date for removing them is set. The MCP project's deprecation policy gives a
+deprecated feature at least twelve months.
+
+We have not tried every client. The official TypeScript client v2 (`@modelcontextprotocol/client` 2.3.1) was run
+locally against the remote server, the signing proxy, the public service's `/mcp` and `/mcp/pinned`, and the local
+command: in its default mode (2025-11-25) and pinned to 2025-06-18 and 2025-03-26 it connects with `initialize`, and in
+its `auto` and `2026-07-28` modes it connects without, through `server/discover`; it listed the tools and called one
+in every case. The tests themselves send the requests the specification describes.
+
+Checked against the specification on 2026-10-21, when 2026-07-28 was its latest revision:
 [versions and older servers](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning),
-[Streamable HTTP and older servers](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http).
+[messages, error codes and `_meta`](https://modelcontextprotocol.io/specification/2026-07-28/basic/index),
+[`server/discover`](https://modelcontextprotocol.io/specification/2026-07-28/server/discover),
+[caching](https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching),
+[Streamable HTTP](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http),
+[stdio](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio),
+[changes since 2025-11-25](https://modelcontextprotocol.io/specification/2026-07-28/changelog).
 
 ## The local verifying command
 
@@ -146,7 +187,7 @@ Checked against the specification on 2026-10-14, when 2026-07-28 was its latest 
 it from the GitHub release, not from the npm registry:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 What it does differently from the remote server:
@@ -177,7 +218,7 @@ Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -197,7 +238,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -209,7 +250,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### Remote or local
@@ -263,7 +304,7 @@ Save the receipt (the `_meta["fun.tapeapi/receipt"]` object) as `receipt.json`. 
 release, or work inside a clone of the repository as in [Call a service](consume.md):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz
 ```
 
 ```js
@@ -349,7 +390,9 @@ export default {
   `/mcp/pinned`, which is what the manifest would declare: `mcp: { endpoint: ".../mcp/pinned", toolsSha256 }`. Only
   they are held to that digest; the REST methods and `/mcp` answer as they do without it. `tapeapi-mcp` then shows these
   eight tools and their answers. Both appear only while the Worker's `MCP_TOOLS_SHA256` variable is set, with
-  `createMcpEndpoint({ ..., mcpResults: true })` serving `/mcp/pinned` (see
+  `createMcpEndpoint({ ..., mcpResults: true, pinnedToolsSha256 })` serving `/mcp/pinned`: since 2.5 its `tools/list` is
+  refused, as the signing proxy refuses it (`-32603`, `data.code: "TOOLS_CHANGED"`), while the tools hash to anything
+  but that variable (see
   [`examples/public-api/worker.js`](../../examples/public-api/worker.js)). **The code is live, the tools are off**:
   `api.tapeapi.fun` is redeployed from this repository's `main`, so it runs this code from 2.4 on, but the variable is
   not set there, so it serves neither the tool methods nor `/mcp/pinned` (and answers as 2.3 did, apart from the version)
@@ -435,6 +478,16 @@ in the [holder console](https://tapeapi.fun/console/), sign the delegation, and 
 `CONTAINER`, `DELEGATION_EXPIRES` and `DELEGATION_SIG` as variables and `SIGNER_KEY` as a secret.
 [Run a service](provide.md#2-go-live-from-a-phone-cloudflare-and-holder-console) walks through each step.
 
+**Browsers and `Origin` (2.5, experimental).** By default `/mcp` answers any origin with CORS `*`: no cookie, session or
+caller key is involved, so a web page gains nothing it could not get by calling directly. That changes when the proxy
+runs on your own machine (or a private network) in front of tools with side effects, such as files, a shell or a
+database: then any web page you open can call those tools through `http://127.0.0.1:.../mcp`. Set
+`allowedOrigins: ['https://app.example']` on `createMcpProxy` (in `examples/mcp-proxy/index.mjs`, the variable
+`ALLOWED_ORIGINS`, comma-separated): a request whose `Origin` is not listed is refused with HTTP 403 before anything
+runs, as Streamable HTTP asks; a listed origin is echoed instead of `*`; a request without `Origin` (a desktop client,
+`curl`) is answered as usual. `createMcpEndpoint` takes the same option, and the public Worker the variable
+`MCP_ALLOWED_ORIGINS`.
+
 ### 2. Publish the manifest with the holder console
 
 The console's publishing step reads the proxy's `/.well-known/tapeapi.json`. When the manifest has an `mcp` field, the
@@ -458,7 +511,7 @@ isolate can be restarted at any time. With it, changed tools are refused after a
 
   ```bash
   # 42.1013.tape is an example name: put your service's TapeOut name here
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.4.0/tapeapi-sdk-2.4.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### See a service with `tapeapi connect`
