@@ -50,7 +50,7 @@ The same "change both together" rule applies to the other bilingual documents:
 
 | English | Chinese | Layout |
 |---|---|---|
-| `README.md` | `README.zh-CN.md` | Two files; update both. |
+| `README.md` (Chinese) | `README.en.md` (English) | Two files; update both. |
 | `docs/guides/*.md` | `docs/guides/zh-CN/*.md` | Two files per guide; update both, then rebuild the docs site (§6). |
 | `examples/README.md` and the per-example READMEs | same file | One file, Chinese then English. |
 | `CONTRIBUTING.md`, `SECURITY.md`, `docs/ROADMAP.md`, `CODE_OF_CONDUCT.md` | same file | One file, English then Chinese. |
@@ -180,7 +180,7 @@ If you add a document, link it from `docs/README.md` and write both language hal
 
 | 英文 | 中文 | 形式 |
 |---|---|---|
-| `README.md` | `README.zh-CN.md` | 两个文件，都要改。 |
+| `README.md`（中文） | `README.en.md`（英文） | 两个文件，都要改。 |
 | `docs/guides/*.md` | `docs/guides/zh-CN/*.md` | 每篇指南两个文件，都要改，然后重建文档站（§6）。 |
 | `examples/README.md` 与各示例 README | 同一文件 | 一个文件，中文在前、英文在后。 |
 | `CONTRIBUTING.md`、`SECURITY.md`、`docs/ROADMAP.md`、`CODE_OF_CONDUCT.md` | 同一文件 | 一个文件，英文在前、中文在后。 |

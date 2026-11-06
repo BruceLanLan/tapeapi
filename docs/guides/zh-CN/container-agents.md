@@ -571,7 +571,7 @@ const putFile = {                                    // 交给持有人的钱包
 累计限额器）：它依赖 TAPI-22 的托管合约，而该合约**未经审计、未部署**，所以只在本地链与测试中验证，主网上不可用。SDK 没有为
 任何链配置托管地址，SDK 的审计名单为空，所以阶段 1 的任何部分（计划、收尾、出资前的检查）都不能在主网上动用资金；这些检查
 只会拒绝或报告，没有一项能让会话钥匙提前失效。见
-[有界代理](https://github.com/BruceLanLan/tapeapi/blob/main/README.zh-CN.md#有界代理实验性主网不可用)与[更新日志](../../../CHANGELOG.md)。
+[有界代理](https://github.com/BruceLanLan/tapeapi/blob/main/README.md#有界代理实验性主网不可用)与[更新日志](../../../CHANGELOG.md)。
 Idea [#40](https://github.com/TapeOutProtocol/TAPs/issues/40) 设想的两个后续阶段是：
 
 - **阶段 1：支付通道。** 委托方为每个服务开一条通道并充值，把代理的钥匙授权为这条通道的会话钥匙，于是通道余额就是

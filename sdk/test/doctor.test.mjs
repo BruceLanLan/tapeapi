@@ -609,7 +609,7 @@ test('FIXED ONB2-1: the documents say tapeapi-doctor ships in the release packag
 })
 
 test('FIXED ONB2-2: step 0 says to run npm ci at the repository root first, everywhere it is given', () => {
-  for (const p of [...GUIDES, 'README.md', 'README.zh-CN.md', 'examples/relay-trial/README.md']) {
+  for (const p of [...GUIDES, 'README.md', 'README.en.md', 'examples/relay-trial/README.md']) {
     const t = doc(p)
     const trial = t.indexOf('node examples/relay-trial/trial.mjs')
     assert.ok(trial > 0, p)
@@ -634,7 +634,7 @@ test('FIXED ONB2-3: after `cd examples/new-api-sidecar` no document runs node sd
 })
 
 test('FIXED ONB2-6: every bash client line has its PowerShell form, and tapeapi-verify is said to need a second terminal', () => {
-  for (const p of [...GUIDES, 'README.md', 'README.zh-CN.md', 'sdk/README.md', 'examples/new-api-sidecar/README.md']) {
+  for (const p of [...GUIDES, 'README.md', 'README.en.md', 'sdk/README.md', 'examples/new-api-sidecar/README.md']) {
     const t = doc(p)
     assert.ok(t.includes('ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude'), p)
     assert.ok(t.includes('$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8790"; claude'), `${p}: PowerShell for Claude Code`)
@@ -646,7 +646,7 @@ test('FIXED ONB2-6: every bash client line has its PowerShell form, and tapeapi-
 })
 
 test('FIXED ONB2-7: the documents agree on key names and Codex, mark the doctor experimental, and say the server package needs the SDK package', () => {
-  for (const p of [...GUIDES, 'README.md', 'README.zh-CN.md']) {
+  for (const p of [...GUIDES, 'README.md', 'README.en.md']) {
     const t = doc(p)
     assert.ok(!t.includes('RELAY_KEY'), `${p}: API_KEY, as in the README`)
     assert.match(t, /OPENAI_BASE_URL/, p); assert.match(t, /config\.toml/, p)
@@ -655,8 +655,8 @@ test('FIXED ONB2-7: the documents agree on key names and Codex, mark the doctor 
   assert.match(doc(GUIDES[1]), /`tapeapi-doctor`（实验性）/); assert.match(doc(GUIDES[1]), /它是实验性的/)
   const ver = JSON.parse(doc('sdk/package.json')).version.replaceAll('.', '\\.')   // the current release / 当前版本
   const both = new RegExp(`npm install https://\\S+tapeapi-sdk-${ver}\\.tgz https://\\S+tapeapi-server-${ver}\\.tgz`)
-  assert.match(doc('README.md'), both); assert.match(doc('README.zh-CN.md'), both)
-  assert.match(doc('README.md'), /fails with a 404/); assert.match(doc('README.zh-CN.md'), /报 404/)
+  assert.match(doc('README.md'), both); assert.match(doc('README.en.md'), both)
+  assert.match(doc('README.en.md'), /fails with a 404/); assert.match(doc('README.md'), /报 404/)
   const ignore = doc('.gitignore')
   assert.match(ignore, /^examples\/new-api-sidecar\/data\/$/m); assert.match(ignore, /^examples\/new-api-sidecar\/logs\/$/m)
 })

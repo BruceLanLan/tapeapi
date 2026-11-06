@@ -649,7 +649,7 @@ agents (`{ enforcement: 'escrow-channel' }`, the holder's plan, the agent's spen
 contract of TAPI-22, which is **not audited and not deployed**, so it is checked on local chains and in tests only and
 does not work on mainnet. No escrow address is configured for any chain and the SDK's list of audited escrows is
 empty, so nothing in phase 1 (the plan, the close-out, the checks before funding) can move money on mainnet; those
-checks only refuse or report, and none of them can end a session key before it expires. See [Bounded agents](https://github.com/BruceLanLan/tapeapi#bounded-agents-experimental-not-usable-on-mainnet)
+checks only refuse or report, and none of them can end a session key before it expires. See [Bounded agents](https://github.com/BruceLanLan/tapeapi/blob/main/README.en.md#bounded-agents-experimental-not-usable-on-mainnet)
 and the [changelog](../../CHANGELOG.md). Idea [#40](https://github.com/TapeOutProtocol/TAPs/issues/40) sketches the two
 further phases:
 

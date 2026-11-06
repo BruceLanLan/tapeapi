@@ -22,7 +22,7 @@ Tick only what is true. **An unchecked box with one sentence of explanation is m
 - [ ] If I changed a signature, hash or encoding: the SDK, `spec/vectors/verify.py` and the Solidity tests all agree. 改了签名/哈希/编码时，SDK、Python 校验器与 Solidity 测试三方一致。
 - [ ] **Generated files rebuilt and committed** (`npm run build:docs` for guides or the changelog, `npm run build:playground` for `sdk/src`). 生成文件已重建并提交。
 - [ ] Any test count or measured number I changed in the docs was **re-measured**, not copied from an older file. 文档里改动的测试数/实测数字是**重新跑出来的**，不是从旧文件抄的。
-- [ ] **Both language halves updated** (`spec/` with matching section numbers and MUST / SHOULD / MAY counts, `README.md` + `README.zh-CN.md`, `docs/guides/` + `docs/guides/zh-CN/`, `examples/` READMEs). English is authoritative. 两个语言版本均已更新，英文为准。
+- [ ] **Both language halves updated** (`spec/` with matching section numbers and MUST / SHOULD / MAY counts, `README.md` (Chinese) + `README.en.md` (English), `docs/guides/` + `docs/guides/zh-CN/`, `examples/` READMEs). English is authoritative. 两个语言版本均已更新，英文为准。
 - [ ] **New documents are linked** from `docs/README.md`, in both languages. 新文档已在 `docs/README.md` 中链接，中英两半齐全。
 - [ ] User-visible change noted under `[Unreleased]` in `CHANGELOG.md`. 用户可见的改动已写进 `CHANGELOG.md`。
 - [ ] **No secrets.** No private keys, `.env` contents, mnemonics, or RPC URLs carrying an API key — in the diff, the tests, or the PR description. 无私钥、`.env` 内容、助记词或带 API Key 的 RPC URL。

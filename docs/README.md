@@ -1,6 +1,6 @@
 # 文档地图 / Documents
 
-**从这里开始 / Start here:** [`README.md`](../README.md)（[中文](../README.zh-CN.md)）→ [`docs/guides/`](guides/) → [`DESIGN.md`](../DESIGN.md) → [`spec/TAPI-20.md`](../spec/TAPI-20.md) → [`examples/README.md`](../examples/README.md).
+**从这里开始 / Start here:** [`README.md`](../README.md)（中文；[English](../README.en.md)）→ [`docs/guides/`](guides/) → [`DESIGN.md`](../DESIGN.md) → [`spec/TAPI-20.md`](../spec/TAPI-20.md) → [`examples/README.md`](../examples/README.md).
 
 ## 指南 / Guides
 
