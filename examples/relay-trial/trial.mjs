@@ -117,7 +117,7 @@ export async function runTrial({ say = () => {}, lang = 'both', keep = false } =
     if (shown) {
       say(L('\n   One signed receipt, as your users receive it (header x-tapeapi-receipt, or an SSE comment in a stream):', '\n   一份签名回执，用户收到的就是它（响应头 x-tapeapi-receipt，流里是一行 SSE 注释）：'))
       say(JSON.stringify(shown, null, 2).split('\n').map((l) => `   ${l}`).join('\n'))
-      say(L('   It proves who answered (signer), which request and response bytes (hashes), and what usage and price were claimed; not which model actually ran.', '   它证明谁回答的（签名者）、哪些请求与回答字节（哈希）、声称了多少用量与价格；不证明实际运行的是哪个模型。'))
+      say(L('   It proves who answered (signer), which request bytes and which answer (hashes: the exact bytes of a whole answer, the event data of a stream read by a fixed rule), and what usage and price were claimed; not which model actually ran.', '   它证明谁回答的（签名者）、哪些请求字节与哪个回答（哈希：整体回答取其确切字节，流式回答取按固定规则读出的事件数据）、声称了多少用量与价格；不证明实际运行的是哪个模型。'))
     }
 
     // 3. Through tapeapi-verify, as a Claude Code user. / 经由 tapeapi-verify，像 Claude Code 用户那样。

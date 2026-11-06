@@ -1,0 +1,67 @@
+# The TapeAPI signing sidecar, ADDED to the new-api compose you already run, on a hostname of its own.
+# 把 TapeAPI 签名旁路**加进**你已经在跑的 new-api compose，并给它一个单独的主机名。
+#
+# Your existing hostname (api.example.com -> new-api:3000) does not change: your users keep it, with no receipts.
+# A second hostname (tape.example.com -> this sidecar -> new-api) serves the same API with a signed receipt per answer;
+# it is the one written into the on-chain manifest (PUBLIC_URL). Nothing of new-api changes.
+# 你现有的主机名（api.example.com -> new-api:3000）不变，用户照旧用它（没有回执）。第二个主机名（tape.example.com -> 旁路 ->
+# new-api）提供同一套接口、每个回答带签名回执；写进链上清单的是它（PUBLIC_URL）。new-api 本身什么都不改。
+#
+# You run all of this, on your own server (OPERATOR-KIT.md, "Add the sidecar to your new-api"; add-sidecar.sh does the
+# file steps). / 这些都由你自己在你自己的服务器上运行（见 OPERATOR-KIT.md；文件准备可用 add-sidecar.sh）。
+#
+#   docker build --build-context sdk=../../sdk --build-context server=../../server -t tapeapi-new-api-sidecar:local .
+#   cp docker-compose.sidecar.yml tapeapi-sidecar.env.example models.example.json /path/to/your/new-api/
+#   cd /path/to/your/new-api && mv tapeapi-sidecar.env.example tapeapi-sidecar.env && chmod 600 tapeapi-sidecar.env
+#   mv models.example.json tapeapi-models.json                 # then edit both / 然后编辑这两个文件
+#   docker compose -f docker-compose.yml -f docker-compose.sidecar.yml up -d tapeapi-sidecar
+#
+# (Or put COMPOSE_FILE=docker-compose.yml:docker-compose.sidecar.yml in the .env next to your compose file, and every
+# `docker compose` command includes both files.) Both files must sit in the same directory: relative paths below are
+# read from there. The sidecar joins the same project network, so it reaches new-api by its service name.
+# （也可以在 compose 文件旁的 .env 里写 COMPOSE_FILE=docker-compose.yml:docker-compose.sidecar.yml，之后每条 docker compose 命令
+# 都带上两个文件。）两个文件须在同一目录：下面的相对路径从那里读。旁路加入同一项目网络，按服务名访问 new-api。
+#
+# The signing key: made INSIDE the container at its first start (SIGNER_KEY_GENERATE=1), kept in the volume
+# tapeapi-signer on this server only, never in a file you edit, never printed: the log and /tapeapi/v1/health say its
+# address only. `docker compose config` does not show it either (it is in no variable). Deleting the volume deletes the
+# key: the delegation then names a key that no longer exists (sign a new one).
+# 签名密钥：容器第一次启动时**在容器内**生成（SIGNER_KEY_GENERATE=1），只保存在本服务器的卷 tapeapi-signer 里；不在任何你编辑的文件里，
+# 也从不打印：日志与 /tapeapi/v1/health 只给出它的地址。`docker compose config` 也看不到它（它不在任何变量里）。删除这个卷就删除了密钥：
+# 委托指向的密钥不复存在（需重新签委托）。
+services:
+  tapeapi-sidecar:
+    # Built from this checkout (the command above); nothing is pulled from a registry. / 由本检出构建（上面的命令），不从镜像仓库拉取。
+    image: ${TAPEAPI_SIDECAR_IMAGE:-tapeapi-new-api-sidecar:local}
+    restart: unless-stopped
+    # Identity, FORMATS, UPSTREAM_BASE_URL, OPERATOR_SITE_URL ...: see tapeapi-sidecar.env.example.
+    # 身份、FORMATS、UPSTREAM_BASE_URL、OPERATOR_SITE_URL 等：见 tapeapi-sidecar.env.example。
+    env_file:
+      - tapeapi-sidecar.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8080"
+      MODELS_FILE: /config/models.json
+      SIGNER_KEY_FILE: /keys/signer.key
+      SIGNER_KEY_GENERATE: "1"
+    volumes:
+      - ./tapeapi-models.json:/config/models.json:ro
+      - tapeapi-signer:/keys
+    # Loopback only: your HTTPS reverse proxy serves tape.example.com -> 127.0.0.1:8080. Pick another port if 8080 is taken.
+    # 只在回环地址：你的 HTTPS 反向代理把 tape.example.com 转到 127.0.0.1:8080。8080 被占用就换一个端口。
+    ports:
+      - "${TAPEAPI_SIDECAR_BIND:-127.0.0.1}:${TAPEAPI_SIDECAR_PORT:-8080}:8080"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      # 200 in setup mode too; `docker compose logs tapeapi-sidecar` says what is missing. / 设置模式下也是 200，缺什么看日志。
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/tapeapi/v1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  # The signing key, on this server only. Back it up as you back up a password; never copy it to anyone.
+  # 签名密钥，只在本服务器上。像备份密码一样备份它；不要复制给任何人。
+  tapeapi-signer:

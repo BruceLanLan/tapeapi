@@ -87,7 +87,7 @@ test('FIXED GRP-5: format 2 carries 128 members in ONE wire message (104 bytes a
 function released(file = 'sdk/src/group.js', rev = '2b76f45') {
   const root = fileURLToPath(new URL('../../', import.meta.url))
   let src
-  try { src = execFileSync('git', ['show', `${rev}:${file}`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch { return null }
+  try { src = execFileSync('git', ['show', `${rev}:${file}`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 300_000, killSignal: 'SIGKILL' }) } catch { return null }
   src = src.replace(/from '\.\/([a-z-]+\.js)'/g, (_, f) => `from '${pathToFileURL(join(root, 'sdk/src', f)).href}'`)
     .replace(/from '(@noble\/[^']+)'/g, (_, f) => `from '${import.meta.resolve(f)}'`)
   const dir = mkdtempSync(join(tmpdir(), 'tapi27-1.1.0-'))

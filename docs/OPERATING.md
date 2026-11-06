@@ -13,7 +13,7 @@
 | 通道身份 `identity.json` | 应用 | TAPI-26/27 的 X25519 + Ed25519 | 在记录到期或被替换前可冒充该容器开新通道、在群里发言 | 权限 600 的文件；`scripts/channel-keys.mjs` 生成 | 生成新身份 → 持有人签新记录（`issued` 更大）→ 发布；客户端会拒绝更旧的记录 |
 | ChannelBus 发送密钥 | 应用 | 往总线发帧时付 gas | 只有它钱包里的 BNB；发送地址与资金来源在链上永久公开 | 专用、只放少量 BNB | 随时换 |
 
-**规则：** 持有人钱包永远不在服务器上。委托和通道记录的有效期都建议 ≤ 90 天，并按期续签（运行时在委托剩余不足 7 天时会在日志里提醒）。
+**规则：** 持有人钱包永远不在服务器上。委托建议 ≤ 30 天（操作台 3.0 起默认 30 天），通道记录建议 ≤ 90 天，并按期续签（运行时在委托剩余不足 7 天时会在日志里提醒）。
 
 ## 2. 要盯的指标 / What to monitor
 
@@ -24,6 +24,7 @@
 | `health.ok` | 委托是否仍有效 | **为 `false` 立即处理**：之后的调用一律回未签名的 503 `DELEGATION_INVALID` |
 | `delegationExpires` | 委托到期时间（Unix 秒） | 距现在 < 7 天 |
 | `delegationLapsed` | 因委托过期被拒的调用数 | > 0 |
+| `escrowTokenRefused` | 3.0：因托管代币未确认（代币不符、托管没有 `token()`、节点读不出）而被拒的付费调用数（未签名的 503 `UNSUPPORTED_PAYMENT_TOKEN`；日志写明原因）。托管未经审计、未部署 | > 0 |
 | `singleInstance` | 计量存储没有原子 `advance()` | 为 `true` 且跑了多个实例（会重复服务同一凭证） |
 | `failed`、`byCode` | 失败调用及按错误码分布 | `INTERNAL` 持续上升；`BAD_VOUCHER` 突增（价格或清单不一致） |
 | `rateLimited` | 被限流的请求数 | 突增（被刷或额度太紧） |
@@ -84,7 +85,7 @@ Since 2.2 the monitor also reads DomainBinding's `monthlyFee()` for an activated
 
 ## 7. 上线前检查清单 / Before going live
 
-1. 持有人签了委托，`delegationExpires` 在 30 到 90 天后；清单已通过 `api.tx.publishManifest` 写入站点。
+1. 持有人签了委托，`delegationExpires` 在 7 到 30 天后；清单已通过 `api.tx.publishManifest` 写入站点。
 2. 收费服务：计量是持久的（`METER_FILE` 或 D1），结算循环在跑（`SETTLER_KEY`），结算者钱包有 BNB。
 3. RPC 至少 3 个节点、来自至少 2 个运营方；读 ChannelBus 的节点支持 `eth_getLogs`。
 4. 监控了 §2 的告警条件和结算者余额。

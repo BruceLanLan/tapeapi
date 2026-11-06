@@ -324,7 +324,7 @@ test('readAnswer: text, stop reason and refusal of each format, whole and stream
 // ---------------------------------------------------------------------------------------------------------------
 function run(args, env = {}) {
   return new Promise((resolve) => {
-    const p = spawn(process.execPath, args, { cwd: join(HERE, '..', '..'), env: { PATH: process.env.PATH, ...env }, stdio: ['ignore', 'pipe', 'pipe'] })
+    const p = spawn(process.execPath, args, { cwd: join(HERE, '..', '..'), env: { PATH: process.env.PATH, ...env }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
     let out = '', err = ''
     p.stdout.on('data', (d) => { out += d })
     p.stderr.on('data', (d) => { err += d })

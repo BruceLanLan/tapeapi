@@ -66,7 +66,7 @@ async function startSidecar() {
 }
 async function startVerify(sidecarUrl, extra = []) {
   const logFile = join(TMP, `log-${Math.random().toString(36).slice(2)}.jsonl`)
-  const child = spawn(process.execPath, [BIN, '--dev', sidecarUrl, '--port', '0', '--log', logFile, ...extra], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const child = spawn(process.execPath, [BIN, '--dev', sidecarUrl, '--port', '0', '--log', logFile, ...extra], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   let err = ''
   child.stderr.setEncoding('utf8')
   child.stderr.on('data', (d) => { err += d })
@@ -217,7 +217,7 @@ test('--save-requests: the salted bytes sent are saved (dir 700, files 600, name
 })
 
 test('--save-requests: a directory open to group or others is refused before anything starts (exit 1); a file is refused', async () => {
-  const run = (args) => new Promise((ok) => { const c = spawn(process.execPath, [BIN, ...args], { stdio: ['ignore', 'pipe', 'pipe'] }); let e = ''; c.stderr.on('data', (d) => { e += d }); c.on('exit', (code) => ok({ code, e })) })
+  const run = (args) => new Promise((ok) => { const c = spawn(process.execPath, [BIN, ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' }); let e = ''; c.stderr.on('data', (d) => { e += d }); c.on('exit', (code) => ok({ code, e })) })
   const open = join(TMP, 'open-dir'); mkdirSync(open); chmodSync(open, 0o755)
   const r = await run(['--dev', 'http://127.0.0.1:1', '--save-requests', open])
   assert.equal(r.code, 1)
@@ -244,10 +244,32 @@ test('--strip-session-headers: the client\'s session headers do not reach the se
   assert.deepEqual([knobs.headers['session-id'], knobs.headers['x-claude-code-session-id'], knobs.headers['thread-id']], ['s-1', 'cc-1', 't-1'])
 })
 
+// 3.0: strict is the default. No flag and --strict (still accepted) refuse a tampered answer; --no-strict passes it on,
+// as 2.x did without --strict. / 3.0：严格是默认。不给参数与 --strict（仍接受）都拒绝被篡改的回答；--no-strict 照 2.x 原样放行。
+test('3.0: strict by default: with no flag a tampered JSON answer is HTTP 502; --no-strict passes it on and only reports it', async () => {
+  const side = await startSidecar()
+  const d = await startVerify(side.url)
+  const s = await startVerify(side.url, ['--strict'])
+  const lax = await startVerify(side.url, ['--no-strict'])
+  assert.match(d.stderr(), /listening on http:\/\/\S+ {2}\(strict\)/)
+  assert.match(lax.stderr(), /listening on http:\/\/\S+ {2}\(--no-strict: failures are only logged\)/)
+  try {
+    knobs.tamper = true
+    for (const v of [d, s]) {
+      const j = await fetch(`${v.url}/v1/messages?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(false) })
+      assert.equal(j.status, 502); assert.match((await j.json()).error.message, /responseSha256 does not match/)
+    }
+    const l = await fetch(`${lax.url}/v1/messages?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(false) })
+    assert.equal(l.status, 200); await l.arrayBuffer()
+    await waitFor(() => lax.log().length === 1, 'logged')
+    assert.equal(lax.log()[0].ok, false)
+  } finally { knobs.tamper = false }
+})
+
 test('--strict: a tampered JSON answer becomes HTTP 502 (not retried), a tampered stream ends in an error event instead of its final event, even when the receipt comment arrives in pieces', async () => {
   const side = await startSidecar()
   const v = await startVerify(side.url, ['--strict'])
-  const lax = await startVerify(side.url)
+  const lax = await startVerify(side.url, ['--no-strict'])
   try {
     knobs.tamper = true
     const j = await fetch(`${v.url}/v1/messages?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(false) })
@@ -269,7 +291,7 @@ test('--strict: a tampered JSON answer becomes HTTP 502 (not retried), a tampere
       assert.equal(JSON.parse(oe.at(-1).data).response.error.code, 'receipt_invalid')
       assert.ok(!oe.some((e) => e.event === 'response.completed'))
     }
-    // Without --strict the bytes go through as they came, and the failure is only reported. / 非严格模式：字节照常通过，只报告。
+    // With --no-strict the bytes go through as they came, and the failure is only reported. / --no-strict：字节照常通过，只报告。
     knobs.chunk = 0
     const l = await (await fetch(`${lax.url}/v1/messages?beta=true`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(true) })).text()
     assert.equal(events(l).at(-1).event, 'message_stop')
@@ -316,7 +338,7 @@ test('FIXED RC-2: --strict, receipt stripped, any chunking: the stream ends in o
 test('FIXED RC-4: the sidecar breaking the connection after the final event: the client still gets the whole stream, with and without --strict', async () => {
   const side = await startSidecar()
   const strict = await startVerify(side.url, ['--strict'])
-  const lax = await startVerify(side.url)
+  const lax = await startVerify(side.url, ['--no-strict'])
   knobs.reset = true
   try {
     for (const v of [strict, lax]) {
@@ -348,10 +370,10 @@ test('an error the sidecar made itself passes through as it is, reported as a si
 // as a free path, unverified, even with --strict; OpenAI and Anthropic serve such paths. --strict now answers 400 and
 // forwards nothing; without it the request goes on and the log says it was not verified.
 // 计量路径的宽松写法曾被当作免费路径不经核验地转发（--strict 也一样）。--strict 现在回 400、不转发；不加时照常转发并在日志里说明。
-test('FIXED P2-O1: --strict refuses a metered path written loosely before forwarding it; without --strict it is logged as not verified', async () => {
+test('FIXED P2-O1: --strict refuses a metered path written loosely before forwarding it; with --no-strict it is logged as not verified', async () => {
   const side = await startSidecar()
   const v = await startVerify(side.url, ['--strict'])
-  const lax = await startVerify(side.url)
+  const lax = await startVerify(side.url, ['--no-strict'])
   const before = knobs.bodies.length
   for (const path of ['/v1//messages', '/v1/%6Dessages', '/v1/messages/', '//v1/messages']) {
     const r = await fetch(`${v.url}${path}`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(false) })
@@ -362,12 +384,12 @@ test('FIXED P2-O1: --strict refuses a metered path written loosely before forwar
   assert.equal(knobs.bodies.length, before, 'nothing reached the service')
   const r = await fetch(`${lax.url}/v1//messages`, { method: 'POST', headers: CLAUDE_HEADERS, body: claudeBody(false) })
   await r.arrayBuffer()
-  assert.equal(knobs.bodies.length, before + 1, 'forwarded without --strict')
+  assert.equal(knobs.bodies.length, before + 1, 'forwarded with --no-strict')
   await waitFor(() => /not verified/.test(lax.stderr()), 'the log says it was not verified')
 })
 
 test('arguments: a service or --dev, not both; bad names refused before anything is read', async () => {
-  const run = (args) => new Promise((ok) => { const c = spawn(process.execPath, [BIN, ...args], { stdio: ['ignore', 'pipe', 'pipe'] }); let e = ''; c.stderr.on('data', (d) => { e += d }); c.on('exit', (code) => ok({ code, e })) })
+  const run = (args) => new Promise((ok) => { const c = spawn(process.execPath, [BIN, ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' }); let e = ''; c.stderr.on('data', (d) => { e += d }); c.on('exit', (code) => ok({ code, e })) })
   assert.equal((await run([])).code, 2)
   assert.match((await run(['not-a-name'])).e, /not a TapeOut name/)
   assert.match((await run(['11.1013.tape', '--dev', 'http://127.0.0.1:1'])).e, /not both/)

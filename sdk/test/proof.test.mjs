@@ -228,7 +228,7 @@ test('FIXED PROOF-7: spec/vectors/tapi-20-proof.json matches the SDK, and verify
     list[m.node] = flip(list[m.node], m.byte, m.xor)
     assert.throws(() => verifyAccountProof(vectors.mainnet.block.stateRoot, vectors.mainnet.accounts[m.account].address, vectors.mainnet.accounts[m.account].slots, a), code('PROOF_INVALID'))
   }
-  const out = execFileSync('python3', [fileURLToPath(new URL('../../spec/vectors/verify.py', import.meta.url))], { encoding: 'utf8' })
+  const out = execFileSync('python3', [fileURLToPath(new URL('../../spec/vectors/verify.py', import.meta.url))], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
   assert.match(out, /^ok: \d+ checks/m)
 })
 

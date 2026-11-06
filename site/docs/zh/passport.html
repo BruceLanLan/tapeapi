@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agent 护照（实验性） · TapeAPI 手册</title>
+<meta name="description" content="Agent 护照 把一个 ERC-8004 agent 身份与一枚 TapeOut 电路关联起来（电路的容器托管着 agent 的服务），让任何人都能只读地核对：这个身份与这个服务属于同一个持有人。TapeAPI 3.0 为它加了解析器：独立包 @tapeapi/passport ，以及命令 tapeapi passp">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../docs.css?v=62ad162ee6">
+<link rel="alternate" hreflang="en" href="../en/passport">
+<script src="../docs.js?v=dee763d4ca"></script>
+</head>
+<body data-page="passport" data-other="../en/passport" data-l-copy="复制" data-l-copied="已复制" data-l-none="没有结果" data-l-light="浅色" data-l-dark="深色" data-l-theme="主题">
+<header class="hd-bar top"><div class="hd">
+  <button class="hd-btn menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">目录</button>
+  <a class="hd-brand" href="/" aria-label="TapeAPI"><svg class="hd-mark" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" width="99" height="11" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a><a class="hd-sec" href="./">手册</a>
+  <div class="search"><input id="q" type="search" placeholder="搜索手册" aria-label="搜索手册" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <nav class="hd-nav" aria-label="TapeAPI"><a href="./" aria-current="true">手册</a><a href="https://tapeapi.fun/playground/">调试台</a><a href="https://tapeapi.fun/dashboard/">我的服务</a><a href="https://tapeapi.fun/status/">状态</a><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></nav>
+  <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="en">English</button><button class="hd-btn" id="theme-btn" type="button">主题</button></div>
+</div></header>
+<div class="layout">
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="./">简介</a></li><li><a href="public-api">公共 API</a></li><li><a href="mcp">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume">调用服务</a></li><li><a href="provide">运行服务</a></li><li><a href="ai-providers">接入 AI 服务</a></li><li><a href="billing-layer">旁路前面的计费层</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels">私密通道</a></li><li><a href="groups">群聊</a></li><li><a href="agents">AI 智能体</a></li><li><a href="container-agents">容器代理（实验性）</a></li><li><a href="reconcile">回执对账（实验性）</a></li><li><a href="receipts-and-payment-protocols">回执与支付协议（实验性）</a></li><li><a href="interop">应用与容器之间的互通（实验性）</a></li><li><a href="passport" aria-current="page">Agent 护照（实验性）</a></li><li><a href="policy-circuit">策略电路（实验性）</a></li><li><a href="circuit-jobs">Circuit Jobs（草案；TapeAPI 不提供代码）</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq">常见问题与排障</a></li><li><a href="reference">参考</a></li><li><a href="upgrade-1.0">从 0.x 升级到 1.0</a></li><li><a href="upgrade-2.0">从 1.x 升级到 2.0</a></li><li><a href="upgrade-3.0">从 2.x 升级到 3.0</a></li><li><a href="changelog">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="agent-护照实验性">Agent 护照（实验性）</h1>
+<p><strong>Agent 护照</strong>把一个 ERC-8004 agent 身份与一枚 TapeOut 电路关联起来（电路的容器托管着 agent 的服务），让任何人都能只读地核对：这个身份与这个服务属于同一个持有人。TapeAPI 3.0 为它加了解析器：独立包 <code>@tapeapi/passport</code>，以及命令 <code>tapeapi passport</code>、 <code>tapeapi-doctor --passport</code>、<code>tapeapi connect --passport</code> 与 <code>tapeapi init --passport</code>。</p>
+<blockquote><p><strong>这里的一切都是实验性的</strong>，依据一份未合并的草案：TapeOutProtocol/TAPs 的 PR <a href="https://github.com/TapeOutProtocol/TAPs/pull/83" rel="noopener">#83</a>，头 <code>cae25e6</code>，<strong>尚未合并</strong>（已提交，评审中）。文字与向量都可能变；每个结果都带着解析时依据的头。草案此后已有更新（现在的头是 <code>cbf4e03</code>）：本包实现的是 <code>cae25e6</code> 时的文字，跟进新文字的包已列入计划。 <strong>主网上目前还不知道有任何护照解析为 CONFIRMED</strong>：草案里的两个真实读取（agent #1、电路 #4246@0）都是 BROKEN，草案作者本人的主网小额实跑也还没有进行。TapeAPI 读取 ERC-8004 在 BNB 链上已部署的公开注册表来互通；这不是 ERC-8004 的扩展，也没有得到其作者或注册表运营者的背书。本包<strong>不受兼容承诺约束</strong>：可能在任何一次发布中改变或撤下。</p></blockquote>
+<h2 id="护照说明什么不说明什么"><a class="anchor" href="#护照说明什么不说明什么" aria-hidden="true">#</a>护照说明什么，不说明什么</h2>
+<p>只有当下面每一条都在同一个钉块上成立、且每次读取都由至少两家运营方的全部已配置节点一致回答（严格共识）时，解析器才报 <strong>CONFIRMED</strong>：</p>
+<ul><li>同一个钱包（持有人）同时持有身份与电路（P-1）；</li><li>身份带着元数据键 <code>tap.passport</code> = <code>abi.encode(56, 处理器, #ID)</code>，指向这枚电路（P-2 至 P-4）；</li><li>电路的容器已开通（P-5）；</li><li>容器站点里有 <code>/.well-known/agent-registration.json</code>：其 <code>tap</code> 成员与链上一致、有 <code>tape://&lt;链上名&gt;</code> 服务条目、只列出这一个身份（P-7、P-10）；</li><li>没有早先持有人设置、至今仍有效的站点操作员（P-8）；</li><li>注册表的 agent 钱包等于持有人（P-9）。</li></ul>
+<p>先读链、最后读文件，所以文件只能增加问题，不能消除问题。结果是一个状态词、一个具名原因与全部警告：</p>
+<div class="table"><table><thead><tr><th>状态</th><th>含义</th></tr></thead><tbody><tr><td>CONFIRMED</td><td>全部规则成立；结果同时写明哪些没能检查</td></tr><tr><td>BROKEN</td><td>有一条绑定事实不成立；原因写明是哪一条（例如 <code>registration-file-missing</code>、<code>holder-mismatch</code>）</td></tr><tr><td>AMBIGUOUS</td><td>持有人的文件为这个注册表列出了多个身份；全部显示，不挑选任何一个</td></tr><tr><td>wallet-unset</td><td>只有 agent 钱包不成立：身份换手时被清空；持有人可以自己重新设置</td></tr><tr><td>stale-agent-wallet</td><td>agent 钱包是另一个地址；这个地址绝不显示为付款地址</td></tr><tr><td>UNAVAILABLE</td><td>读取未能一致（节点、超时、分歧、注册表已升级）：什么都无从得知</td></tr></tbody></table></div>
+<p>护照只说明同一个钱包持有两枚代币、且持有人公布了这一关联。它不说明 agent 运行什么代码，也不说明它诚实或安全；它不是凭证，也不带来任何收入或资产上的权利。回执只证明签名方所说的内容。</p>
+<h2 id="需要知道的限制"><a class="anchor" href="#需要知道的限制" aria-hidden="true">#</a>需要知道的限制</h2>
+<ul><li><strong>注册表可以升级。</strong> 两个 ERC-8004 注册表都是 UUPS 代理。2026-10-28 读到的 owner 是一个代理合约，对 <code>getThreshold()</code> 答 3、 <code>getOwners()</code> 答 5 个地址，形如 3-of-5 的 Safe。解析器钉住草案列出的实现；一旦升级，每个结果都是 UNAVAILABLE（<code>registry-changed</code>），直到新版本接受新的实现。</li><li><strong>赠送的身份与电路。</strong> 在已部署的注册表上，任何人都能用任意 URI 与元数据登记一个身份，并在对方不知情时转给任何钱包；电路也可以这样转手。 agent 钱包、文件列名与&quot;一个电路&quot;三条规则（P-9、P-10、P-11）让这类代币解析不成护照；TapeAPI 也从不按所有者列出身份。按所有者列身份的其它工具，仍会在受害者地址旁显示陌生人的文字。</li><li><strong>站点操作员与持有人历史需要能查日志的节点。</strong> P-8 与持有人纪元（§7：&quot;持有人于块 n 变更：此前的声誉不属于当前持有人&quot;）需要 <code>eth_getLogs</code> 历史，公共节点不提供长区间。没有能查日志的节点时，两者报为 <code>operators-not-checked</code> 与 <code>transfer-history-unavailable</code>， CONFIRMED 的结果写明&quot;站点操作员未检查；持有人历史未检查&quot;。拿不到的历史绝不当作空历史。</li><li><strong>只能签 EIP-712 的钱包。</strong> 这样的持有人可以设置 agent 钱包（<code>setAgentWallet</code> 本身是 EIP-712），但无法派生 TapeSend 密封收件箱（那需要 <code>personal_sign</code>）。这不是护照的故障。</li><li><strong>隐私。</strong> 护照会把钱包、身份、容器、站点与评价公开且永久地关联在一起。</li><li><strong>形近字检查是一张固定的表。</strong> <code>tap</code> 内的禁用成员名（如 <code>reward</code>、<code>points</code> 这类与钱有关的词）在 NFKC 与草案的 31 个西里尔、希腊字母表（及其大写）之后查找。它抓不到所有形近字，这里也不这样声称。</li></ul>
+<h2 id="安装"><a class="anchor" href="#安装" aria-hidden="true">#</a>安装</h2>
+<p><code>@tapeapi/passport</code> 是独立的包（版本 0.1.0），实验性，不在兼容承诺之内。它是与 SDK 同一个 GitHub 发布上的 tgz，需要同一发布的 SDK，先装 SDK：</p>
+<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-passport-0.1.0.tgz</code></pre></div>
+<p>见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/passport/README.md" rel="noopener">passport/README.md</a>。</p>
+<h2 id="解析"><a class="anchor" href="#解析" aria-hidden="true">#</a>解析</h2>
+<div class="code"><pre data-lang="bash"><code>tapeapi passport 4246.0.tape                # BNB 链上的 TapeOut 名字（示例）
+tapeapi passport 1001                       # ERC-8004 的 agentId
+tapeapi passport 0x50a9...9dd9#4246 --json  # 处理器合约与 #ID</code></pre></div>
+<p>退出码：0 CONFIRMED；1 不是护照或尚未确认（会写明原因）；2 用法错误或未安装该包；3 读不到：请重试。要检查站点操作员与持有人历史，请给出两家能查日志的节点，以及注册表部署之前的一个块号：</p>
+<div class="code"><pre data-lang="bash"><code>tapeapi passport 1001 --logs-rpc https://logs-a.example,https://logs-b.example --logs-from &lt;块号&gt;</code></pre></div>
+<p>扫描从这个块到钉块分块进行（默认每块 5,000 个区块），有请求预算（64）；任何一块被拒、日志节点没有钉块、或超出预算，历史都重新算作&quot;未检查&quot;。</p>
+<p>代码里：</p>
+<div class="code"><pre data-lang="js"><code>import { createTapeAPI, rpcUrlsFor } from '@tapeapi/sdk'
+import { resolvePassport } from '@tapeapi/passport'
+
+const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })
+const r = await resolvePassport({ name: '4246.0.tape' }, { api })
+// r.state、r.reasons、r.warnings、r.checked、r.display.en / r.display.zh、r.draft.head</code></pre></div>
+<p>给了 <code>api</code> 时，解析器使用该客户端的节点与处理器表（<code>api.chain.processorNumber</code>，为此新增的实验性 SDK 方法）；它给出的编号再经一次严格的 <code>cpuAt</code> 读取核对。<code>recordSnapshot: true</code> 把读取导出为 <code>tap-agent-passport-snapshot/1</code>，可用 <code>resolveFromSnapshot</code> 离线重放。</p>
+<h2 id="在其它命令里"><a class="anchor" href="#在其它命令里" aria-hidden="true">#</a>在其它命令里</h2>
+<ul><li><code>tapeapi-doctor &lt;名字&gt; --passport</code>：在&quot;清单格式&quot;之后多一项，不属于 14 项。CONFIRMED 记为 pass，或给警告并写明没查什么； &quot;这个服务没有发布护照&quot;记为跳过，不算失败（服务不一定需要护照）；其它状态给警告；UNAVAILABLE 为&quot;无法判定&quot;。</li><li><code>tapeapi connect &lt;名字&gt; --passport</code>：卡片旁多一节护照。服务能否使用的判断不变。</li><li><code>tapeapi init --passport --agent-id &lt;n&gt; --name &lt;名字&gt; [--gateway-domain &lt;域名&gt;]</code>：单独的一步。只读检查（身份所有者即电路持有人；身份的 <code>tap.passport</code> 键指向这枚电路；清单的 SHA-256 取自站点存储）之后，在 <code>--dir</code> 写出 <code>.well-known/agent-registration.json</code>，并打印你接下来在自己钱包里做的事：在持有人操作台用 <code>putFile</code> 写入这个文件（费用由你支付），并使用规范形式的 <code>agentURI</code> <code>https://&lt;标签&gt;.&lt;网关域名&gt;/.well-known/agent-registration.json</code>（其它形式只会得到警告 <code>agent-uri-not-canonical</code>）。它不登记、不发送任何东西。从你的 <code>register</code> 交易到这次 <code>putFile</code> 之间，你自己的身份会解析为 BROKEN：登记之后请立刻写入文件。</li></ul>
+<p><strong>委托期。</strong> 草案 W-1 规定：请持有人签 TAP-11 委托的工具，默认提议的期限不得超过 30 天，宜不超过 7 天。3.0 起持有人操作台（<code>tapeapi init</code> 指向的那个）提议 30 天，持有人也可以填 1 到 366 之间任意整数天（包括 7 天）；所以 TapeAPI 的引导流程守住了 W-1 的 30 天上限，但没有照它的建议默认 7 天。包里的 <code>checkDelegationProposal</code> 供需要的工具按 W-1 检查。其它草案的期限见下表。</p>
+<h2 id="期限对照"><a class="anchor" href="#期限对照" aria-hidden="true">#</a>期限对照</h2>
+<p>每份草案限制的是不同的签名对象，数字也不都是同一种限制：硬上限由核验方检查，默认上限只规定工具可以提议多长。TapeAPI 在这里不替任何一份草案做决定。</p>
+<div class="table"><table><thead><tr><th>签名对象</th><th>期限</th><th>限制种类</th><th>出处</th></tr></thead><tbody><tr><td>容器代理阶段 0 的授权书（#47）</td><td><code>expires − notBefore</code> 至多 30 天（2,592,000 秒）；更长的报 <code>mandate-too-long</code>，TapeAPI 也核对这一条</td><td>硬上限</td><td>TAP-18（#47）草案 §5.1 第 4 项检查</td></tr><tr><td><code>PolicyBinding</code>（#84）</td><td>工具默认不得提议超过 30 天，宜至多 7 天；<code>policyBindingTypedData</code> 提议 7 天，更长的窗口标 <code>longWindow</code></td><td>工具的默认值；更长的窗口是绑定者自己的选择</td><td>TAPs #84 草案；<a href="policy-circuit">策略电路</a></td></tr><tr><td>TAP-11 委托，按 #83 W-1 对工具的要求</td><td>工具默认不得提议超过 30 天，宜不超过 7 天；持有人可以选更长，直到 TAP-11 的上限</td><td>工具的默认值</td><td>TAPs #83 草案 W-1</td></tr><tr><td>TAP-11 委托本身的上限</td><td>366 天；TapeAPI 客户端拒绝更长的委托，W-1 也规定任何工具都不得把它作为默认值</td><td>硬上限</td><td>TAP-11 §4.3</td></tr><tr><td>今天 <code>tapeapi init</code> 与持有人操作台提议的 TAP-11 委托</td><td>默认 30 天（剩不到 7 天时 doctor 会警告）；持有人可选 1 到 366 天</td><td>TapeAPI 自己的默认值：等于 W-1 的 30 天默认上限，长于它建议的 7 天</td><td>本仓库</td></tr></tbody></table></div>
+<p>绑定、授权书与委托都只能由签名者签一份撤销来提前结束：签不了名的持有人（钥匙被冻结、持有人已更换）在到期前无法结束它们，这也是窗口宜短的又一个理由。</p>
+<h2 id="a2a-名片与评价"><a class="anchor" href="#a2a-名片与评价" aria-hidden="true">#</a>A2A 名片与评价</h2>
+<ul><li><code>agentCardFromPassport</code> 只为 CONFIRMED 的护照生成 A2A 1.0 名片（草案附录 B）。只用于显示：不提升状态，也绝不是签名者来源。清单没有标记哪些端点提供 A2A，所以由调用方指出。清单带 <code>mcp</code> 时，工具列表仍以 <code>mcp.toolsSha256</code> 钉住的为准。</li><li><code>@tapeapi/passport/feedback</code> 实现 §10：评价写成 ERC-8004 反馈及其汇总。它是可选的，依赖评价草案 TAPs #54（头 <code>703b2a9</code>），该草案<strong>尚未合并</strong>；目前还没有人写过这类反馈。</li></ul>
+<h2 id="怎样测试"><a class="anchor" href="#怎样测试" aria-hidden="true">#</a>怎样测试</h2>
+<p>草案自己的向量（147 例，<code>vectors.json</code>，SHA-256 <code>7720772c…fca4</code>）作为测试夹具按哈希钉住、逐字节回放，不进入安装包。同样的 73 个解析用例还经实时层在假链上、用 SDK 的严格共识客户端再跑一遍。TapeAPI 自己补的用例与草案向量分开存放，覆盖向量没有覆盖的情形：大写形近字母、成员名里 U+FFFF 以上的码点、登记文件里的小数字面量（<code>&quot;chainId&quot;: 56.0</code> 无效，<code>&quot;agentId&quot;: 1001.0</code> 不算列出）。</p>
+</article>
+<nav class="pn"><a class="prev" href="interop"><span>上一篇</span>应用与容器之间的互通（实验性）</a><a class="next" href="policy-circuit"><span>下一篇</span>策略电路（实验性）</a></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/passport.md" rel="noopener">在 GitHub 上编辑此页</a></p>
+</main>
+<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#护照说明什么不说明什么">护照说明什么，不说明什么</a></li><li class="l2"><a href="#需要知道的限制">需要知道的限制</a></li><li class="l2"><a href="#安装">安装</a></li><li class="l2"><a href="#解析">解析</a></li><li class="l2"><a href="#在其它命令里">在其它命令里</a></li><li class="l2"><a href="#期限对照">期限对照</a></li><li class="l2"><a href="#a2a-名片与评价">A2A 名片与评价</a></li><li class="l2"><a href="#怎样测试">怎样测试</a></li></ul></aside>
+</div>
+</body>
+</html>

@@ -14,6 +14,7 @@
 // default 10; 0 refuses every lookup; off: no budget of its own; anything else is setup mode), RECEIPT_REQUIRE_HASH ("1": a receipt lookup must name requestSha256 too; for an upstream whose answer
 // ids are guessable, such as Ollama's), FORWARD_SESSION_HEADERS ("0": do not pass the clients' session headers
 // x-claude-code-session-id, session-id and thread-id upstream; default: pass them).
+// OPERATOR_SITE_URL (optional): your own site; GET / on this Worker's host answers 302 there (see operatorSite below).
 // FORMATS (set it): the API formats your upstream really serves, comma-separated, among openai-chat, openai-responses,
 // anthropic-messages, openai-embeddings, or "all". Only these are published in the manifest (a public statement on
 // chain) and get receipts; an upstream that is OpenAI-compatible only sets FORMATS=openai-chat. Unset: all four, as
@@ -120,12 +121,39 @@ export function build(env, extra = {}) {
   })
 }
 
+/**
+ * OPERATOR_SITE_URL (optional): the operator's own site, where GET / and HEAD / on this Worker's host answer 302,
+ * the location as set (URL-normalised), nothing added. The same rules as examples/new-api-sidecar/server.mjs operatorSiteOf
+ * (kept inline: that file needs node:http): https, no credentials, query or fragment, at most 200 characters, not
+ * tapeapi.fun (the holder console is not the operator's site), not the Worker's own PUBLIC_URL. Anything else: null,
+ * and GET / answers as before (404, or 503 in setup mode).
+ * OPERATOR_SITE_URL（可选）：服务方自己的站点，本 Worker 主机名上的 GET / 与 HEAD / 302 过去（按 URL 标准写法），不附加任何东西。规则同
+ * new-api-sidecar 的 operatorSiteOf：https、不带凭据/查询串/片段、最多 200 字符、不是 tapeapi.fun、不是 Worker 自己的 PUBLIC_URL。
+ * 否则为 null，GET / 照旧（404，设置模式下 503）。
+ */
+export function operatorSite(env) {
+  const v = typeof env.OPERATOR_SITE_URL === 'string' ? env.OPERATOR_SITE_URL : ''
+  if (!v || v.length > 200) return null
+  let u
+  try { u = new URL(v) } catch { return null }
+  if (u.protocol !== 'https:' || u.username || u.password || u.search || u.hash) return null
+  const host = u.hostname.toLowerCase().replace(/\.$/, '')
+  if (host === 'tapeapi.fun' || host.endsWith('.tapeapi.fun')) return null
+  try { if (env.PUBLIC_URL && new URL(env.PUBLIC_URL).origin === u.origin) return null } catch { /* PUBLIC_URL is checked elsewhere */ }
+  return u.href
+}
+
 let proxy = null
 let warnedFormats = false
 export default {
   async fetch(request, env) {
     // Values pasted on a phone often carry a trailing space or newline. / 手机上粘贴的值常带尾随空白。
     env = Object.fromEntries(Object.entries(env || {}).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]))
+    // GET / to the operator's own site, when set; every other path untouched. / 设置了就把 GET / 送到服务方自己的站点；其它路径不动。
+    if ((request.method === 'GET' || request.method === 'HEAD') && new URL(request.url).pathname === '/') {
+      const site = operatorSite(env)
+      if (site) return new Response(null, { status: 302, headers: { location: site, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' } })
+    }
     if (!configured(env)) return setupAnswer(env, request)
     if (!env.UPSTREAM_BASE_URL) return setupAnswer(env, request, 'UPSTREAM_BASE_URL (the /v1 base URL of your AI API) is not set')
     const formats = formatsOf(env)

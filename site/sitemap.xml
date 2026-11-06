@@ -6,6 +6,11 @@
   <url><loc>https://tapeapi.fun/docs/en/agents</loc></url>
   <url><loc>https://tapeapi.fun/docs/en/container-agents</loc></url>
   <url><loc>https://tapeapi.fun/docs/en/reconcile</loc></url>
+  <url><loc>https://tapeapi.fun/docs/en/receipts-and-payment-protocols</loc></url>
+  <url><loc>https://tapeapi.fun/docs/en/interop</loc></url>
+  <url><loc>https://tapeapi.fun/docs/en/passport</loc></url>
+  <url><loc>https://tapeapi.fun/docs/en/policy-circuit</loc></url>
+  <url><loc>https://tapeapi.fun/docs/en/circuit-jobs</loc></url>
   <url><loc>https://tapeapi.fun/docs/en/changelog</loc></url>
   <url><loc>https://tapeapi.fun/docs/en/channels</loc></url>
   <url><loc>https://tapeapi.fun/docs/en/groups</loc></url>
@@ -19,10 +24,16 @@
   <url><loc>https://tapeapi.fun/docs/en/billing-layer</loc></url>
   <url><loc>https://tapeapi.fun/docs/en/upgrade-1.0</loc></url>
   <url><loc>https://tapeapi.fun/docs/en/upgrade-2.0</loc></url>
+  <url><loc>https://tapeapi.fun/docs/en/upgrade-3.0</loc></url>
   <url><loc>https://tapeapi.fun/docs/zh/</loc></url>
   <url><loc>https://tapeapi.fun/docs/zh/agents</loc></url>
   <url><loc>https://tapeapi.fun/docs/zh/container-agents</loc></url>
   <url><loc>https://tapeapi.fun/docs/zh/reconcile</loc></url>
+  <url><loc>https://tapeapi.fun/docs/zh/receipts-and-payment-protocols</loc></url>
+  <url><loc>https://tapeapi.fun/docs/zh/interop</loc></url>
+  <url><loc>https://tapeapi.fun/docs/zh/passport</loc></url>
+  <url><loc>https://tapeapi.fun/docs/zh/policy-circuit</loc></url>
+  <url><loc>https://tapeapi.fun/docs/zh/circuit-jobs</loc></url>
   <url><loc>https://tapeapi.fun/docs/zh/changelog</loc></url>
   <url><loc>https://tapeapi.fun/docs/zh/channels</loc></url>
   <url><loc>https://tapeapi.fun/docs/zh/groups</loc></url>
@@ -36,6 +47,7 @@
   <url><loc>https://tapeapi.fun/docs/zh/billing-layer</loc></url>
   <url><loc>https://tapeapi.fun/docs/zh/upgrade-1.0</loc></url>
   <url><loc>https://tapeapi.fun/docs/zh/upgrade-2.0</loc></url>
+  <url><loc>https://tapeapi.fun/docs/zh/upgrade-3.0</loc></url>
   <url><loc>https://tapeapi.fun/playground/</loc></url>
   <url><loc>https://tapeapi.fun/dashboard/</loc></url>
   <url><loc>https://tapeapi.fun/status/</loc></url>

@@ -25,7 +25,7 @@ Search your code for the name in the first column.
 | Private channels and groups use the labels `TAP-26/…` and `TAP-27/…` (TAPI-26 and TAPI-27 version 1) unless you pass `labels: 'v2'` | They use the labels `tape-channel/…` and `tape-group/…` ([TAPI-26 v2](../../spec/TAPI-26-v2.md), [TAPI-27 v2](../../spec/TAPI-27-v2.md)) unless you pass `labels: 'v1'` | The editors of TapeOutProtocol/TAPs asked that no label look like a TAP number before the drafts of private channels and groups are merged. Labels are frozen in a Stable (v1) spec, so the rename is a version 2 of each spec. 1.8.1 added it as an option; 2.0 makes it the default. See "Channels and groups" below. |
 | `e.tooLarge`, `e.rpcCode`, `e.rpcRevert`, `e.rpcData`, `e.agreed`, `e.disagreed`, `e.failed`, `e.groups`, `e.quorum`, `e.reason`, `e.refusals`, `e.effectiveK`, ... | `e.data.tooLarge`, `e.data.rpcCode`, ... | `TapeAPIError`'s top-level fields have been fixed since 1.0 (`name`, `code`, `message`, `data`, `signed`, `httpStatus`, `cause`, and `ts`, `block`, `id`, `sig`, `error` on a signed provider error); every other detail is in `data`. 1.x also kept the old names as deprecated read-only aliases. 2.0 removes them: reading one gives `undefined`. |
 | A mistake in your own options or arguments to the channel module (`channel.*`, TAPI-26) reported as `CHANNEL_INVALID` | `INVALID_ARGUMENT` | The rule every other module has followed since 1.0: one code for "your own options or arguments are wrong", raised before anything is sent and never worth retrying. TAPI-26 data that fails stays `CHANNEL_INVALID`. See the table below. |
-| `createTapeAPI()` without `conform` resolves in TapeAPI's own way; `conform: 'tap10'` (experimental) resolves as TAP-10 and TAP-11 say | Without `conform` it resolves as TAP-10 / TAP-11 §2 say; `conform: false` is the 1.x behaviour (deprecated, kept in all of 2.x) | The official TAPs define how a name is resolved; 2.0 follows them unless you opt out. See "Conformance becomes the default" below. |
+| `createTapeAPI()` without `conform` resolves in TapeAPI's own way; `conform: 'tap10'` (experimental) resolves as TAP-10 and TAP-11 say | Without `conform` it resolves as TAP-10 / TAP-11 §2 say; `conform: false` is the 1.x behaviour (deprecated, kept in all of 2.x and 3.x) | The official TAPs define how a name is resolved; 2.0 follows them unless you opt out. See "Conformance becomes the default" below. |
 
 ### Conformance becomes the default
 
@@ -47,8 +47,8 @@ Pass `conform: false` (or `null`) and you get the 1.x default back. A test pins 
 requests in the same order with the same results as the 1.8 default, except for the v2 inbox room that `chain.channelKeys`
 reports (the labels default; see "Channels and groups") and the deprecation warning. `conform: false` is deprecated: every client
 made with it reports one warning through `onWarning` when it is created (it never throws and changes nothing; clients the
-SDK makes inside itself, such as the ones `forChain` returns, do not repeat it), and 2.x keeps it. Whether 3.0
-removes it is not decided.
+SDK makes inside itself, such as the ones `forChain` returns, do not repeat it), and 2.x keeps it. 3.x keeps it
+too; it is removed no earlier than 4.0.
 
 Not changed: `allChains` stays off (turning it on sends queries to the public nodes of other chains), `sentinel` stays
 `'warn'`, `siteStatus` was the same in both modes, and the agent toolkit already resolves as TAP-11 §2 says.

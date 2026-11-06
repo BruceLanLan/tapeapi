@@ -1,4 +1,4 @@
-// Security 1.1 helpers. Everything here is @experimental: outside the 1.0 stability promise; may change in a 1.x minor release.
+// Security 1.1 helpers. Everything here is @experimental: outside the compatibility promise; may change in a minor release.
 import type { Address, Hex, BigNumberish } from './common.js'
 import type { TapeAPI, ResolvedService, CallOptions, CallResult } from './index.js'
 

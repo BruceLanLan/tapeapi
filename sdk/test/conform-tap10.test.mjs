@@ -516,6 +516,8 @@ test('FIXED review (regression): conform: null and false are the 1.x resolution 
     const warned = []
     const api = createTapeAPI({ conform, rpcUrls: RPC, fetch: chain.fetch, quiet: true, clock: () => T, onWarning: (w) => warned.push(w) })
     assert.deepEqual(warned.map((w) => [w.code, w.option]), [['DEPRECATED', 'conform']], String(conform))
+    // 3.0: kept through all of 3.x, removed no earlier than 4.0; the warning says so. / 3.0：整个 3.x 保留，最早 4.0 才移除；警告照此说明。
+    assert.match(warned[0].message, /deprecated since 2\.0 and kept through all of 3\.x \(removal no earlier than 4\.0\)/, String(conform))
     const svc = await api.resolve('4246.7')
     assert.deepEqual(warned.length, 1, 'once, when the client is made; never on resolve')
     assert.equal(svc.conform, undefined, String(conform)); assert.equal(svc.pinned, undefined)

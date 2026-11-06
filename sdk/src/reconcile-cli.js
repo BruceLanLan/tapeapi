@@ -46,8 +46,8 @@ export const CNOTES = Object.freeze({
     'tapeapi-verify 默认给每个请求加盐，同一请求每次的请求哈希都不同；给出的请求文件必须是实际发出的确切字节（--no-salt 运行，或 tapeapi-verify --save-requests 写下的文件：发出的字节，含盐）。'),
   mandate: T("The mandate's signature is not checked here and nothing was enforced: this sets what the receipts claim against the caps the mandate names, after the fact. A phase-0 mandate names no funds.",
     '这里不核对授权书的签名，也没有执行任何限制：只是事后把回执声称的花费与授权书写的上限对照。阶段 0 的授权书不写金额。'),
-  policy: T('The policy file is your own: it was not enforced when the calls were made; this lists the windows whose receipts claim more than it says.',
-    '策略文件是你自己的：调用时并未执行；这里只列出回执声称超过它的时间窗口。'),
+  policy: T('The policy file is your own: reconcile enforces nothing; this lists the windows whose receipts claim more than it says. (A client-side budget that read the same file, createVerifyingFetch({ policy }), only refused calls in its own process.)',
+    '策略文件是你自己的：reconcile 不执行任何限制；这里只列出回执声称超过它的时间窗口。（如果客户端预算 createVerifyingFetch({ policy }) 读过同一个文件，它也只是在自己的进程里拒绝过调用。）'),
 })
 
 export function reconcileUsage(cmd = 'tapeapi') {
@@ -211,6 +211,8 @@ export function parseMap(s) {
     const eq = part.indexOf('=')
     const k = eq > 0 ? part.slice(0, eq).trim() : '', col = eq > 0 ? part.slice(eq + 1).trim() : ''
     if (!BILL_KEYS.includes(k) || !col) throw usage(`--map takes <key>=<column> pairs, keys ${BILL_KEYS.join(', ')}: ${JSON.stringify(part)}`, `--map 的格式是 <键>=<列名>，键为 ${BILL_KEYS.join('、')}：${JSON.stringify(part)}`)
+    // a key named twice would silently take the last (FIXED RC-2) / 同一个键给两次会悄悄取最后一个
+    if (Object.hasOwn(out, k)) throw usage(`--map names ${k} twice`, `--map 两次指定了 ${k}`)
     out[k] = col
   }
   return out
@@ -238,6 +240,9 @@ export function columnsFor(header, { preset = null, map = null } = {}) {
   if (!presetName && !map) throw usage(`name the bill's columns: --map model=<column>,prompt=<column>,completion=<column>,time=<column>[,id=<column>][,amount=<column>], or --preset new-api. Its header: ${header.slice(0, 30).join(', ')}`,
     `请指定账单的列：--map model=<列>,prompt=<列>,completion=<列>,time=<列>[,id=<列>][,amount=<列>]，或 --preset new-api。它的表头：${header.slice(0, 30).join(', ')}`)
   const missing = Object.entries(cols).filter(([, c]) => !has.has(c)).map(([k, c]) => `${k}=${c}`)
+  // a column the bill has twice: which one is meant cannot be told (FIXED RC-2) / 账单里出现两次的列：无法判断指的是哪一个
+  const twice = [...new Set(Object.values(cols).filter((c) => header.filter((x) => x === c).length > 1))]
+  if (twice.length) throw usage(`the bill's header has the column ${twice.join(', ')} more than once; name another column, or fix the header`, `账单表头里 ${twice.join('、')} 出现不止一次；请指定别的列，或修正表头`)
   if (missing.length) throw usage(`the bill has no column ${missing.join(', ')}; its header: ${header.slice(0, 30).join(', ')}`, `账单里没有这些列：${missing.join(', ')}；它的表头：${header.slice(0, 30).join(', ')}`)
   const lack = ['model', 'prompt', 'completion'].filter((k) => !cols[k])
   if (lack.length) throw usage(`--map must name ${lack.join(', ')}`, `--map 必须指定 ${lack.join('、')}`)
@@ -306,7 +311,9 @@ export function reconcile(receipts, rows, o = {}) {
   const rest = []
   for (const row of [...unmatched].sort((a, b) => (a.time ?? Infinity) - (b.time ?? Infinity))) {
     let best = null
-    if (row.time !== null) {
+    // A row whose id is a receipt's id, already joined to another row (the same id billed twice), is not joined to some
+    // other receipt by time: it stays bill-only (FIXED RC-3). / id 属于某张已对上的回执（同一 id 记了两次）的行，不再按时间对到别的回执。
+    if (row.time !== null && !(row.id && byId.has(row.id))) {
       for (const c of claims) {
         if (c.used || near(c.t, row.time) > window || !sameModel(c, row.model) || !tokensClose(c, row)) continue
         if (!best || near(c.t, row.time) < near(best.t, row.time)) best = c
@@ -592,7 +599,7 @@ function findingLines(findings, U, v) {
   }
   return out
 }
-function mandateLines(s, U, v, file) {
+export function mandateLines(s, U, v, file) {
   const out = [`  ${U.lab(T('MANDATE', '授权书'))} ${clean(file)}   principal ${s.principal}  agent ${s.agent}   ${new Date(s.notBefore * 1000).toISOString()} .. ${new Date(s.expires * 1000).toISOString()}${s.phase0 ? `   (${U.lab(T('phase 0: names no funds', '阶段 0：不写金额'))})` : ''}`]
   const status = {
     'above-cap': T('ABOVE THE CAP', '超出上限'), 'at-cap': T('AT THE CAP', '达到上限'), 'near-cap': T(`NEAR THE CAP (≥ ${s.near})`, `接近上限（≥ ${s.near}）`), 'below-cap': T('below the cap', '低于上限'),
@@ -612,7 +619,7 @@ function mandateLines(s, U, v, file) {
   if (s.outsidePeriod.receipts) out.push(`    ${U.lab(T(`outside the mandate's period: ${s.outsidePeriod.receipts} receipts (not counted)`, `不在授权书有效期内：${s.outsidePeriod.receipts} 张回执（不计入）`))}`, ...s.outsidePeriod.sources.slice(0, 20).map((r) => `      ${r}`))
   return out
 }
-function policyLines(list, U, v, file) {
+export function policyLines(list, U, v, file) {
   const out = [`  ${U.lab(T('POLICY', '策略'))} ${clean(file)}   ${list.length} ${U.lang === 'zh' ? '条规则' : 'rules'}`]
   for (const p of list) {
     const r = p.rule

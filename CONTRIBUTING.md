@@ -59,7 +59,7 @@ The same "change both together" rule applies to the other bilingual documents:
 
 ## 4. Setting up and running the tests
 
-Prerequisites: **Node.js 20 or later**, **Python 3** (standard library only) and [Foundry](https://getfoundry.sh). Clone with the submodule (forge-std):
+Prerequisites: **Node.js 22 or later**, **Python 3** (standard library only) and [Foundry](https://getfoundry.sh). Clone with the submodule (forge-std):
 
 ```sh
 git clone --recurse-submodules https://github.com/BruceLanLan/tapeapi.git
@@ -112,7 +112,7 @@ Edit the markdown sources, never the generated HTML. `site/` uses relative paths
 We follow semver, applied to the standard and to the packages separately.
 
 - **Specs.** A TAP in `Draft` may change freely; record what changed and why in its own change log section. A TAP in `Stable (v1)` (TAPI-1 §4.1) is frozen: every field, encoding, signature domain and error code keeps its meaning, a revision may add only optional content and non-normative text, and a change that can make a conforming v1 implementation non-conforming is a new version (v2) with its own wire markers. `Experimental` sections and TAPs may change in any release.
-- **Packages.** `@tapeapi/sdk` and `@tapeapi/server` follow semantic versioning from 1.0.0: code written against the 2.0 documentation keeps working in every 2.x release, and a breaking change to a Stable interface is a major bump (3.0). Anything marked `@experimental` may change in a minor release, with a changelog entry. The packages ship as release assets on GitHub, not on npm.
+- **Packages.** `@tapeapi/sdk` and `@tapeapi/server` follow semantic versioning from 1.0.0: code written against the 3.0 documentation keeps working in every 3.x release, and a breaking change to a Stable interface is a major bump (4.0). For the 2.x line the same promise was made for the 2.0 documentation and stays as it was. Anything marked `@experimental` may change in a minor release, with a changelog entry. The packages ship as release assets on GitHub, not on npm.
 - Do not bump versions in a PR unless a maintainer asks. Releases are cut separately. Add a line under `[Unreleased]` in `CHANGELOG.md` for a user-visible change.
 
 ## 8. Repository layout
@@ -121,7 +121,7 @@ We follow semver, applied to the standard and to the packages separately.
 |---|---|
 | `spec/` | TAPI-1 and TAPI-20…27, plus test vectors and `verify.py` in `spec/vectors/`. Bilingual, English authoritative, CC0. |
 | `contracts/` | `src/ServiceDirectory.sol`, `src/TapeAPIEscrow.sol`, `src/ChannelBus.sol`, Foundry tests in `test/`; forge-std is a submodule in `lib/`. |
-| `sdk/` | `@tapeapi/sdk` — ESM, Node 20+ and browser, depends only on `@noble/*`. |
+| `sdk/` | `@tapeapi/sdk` — ESM, Node 22+ and browser, depends only on `@noble/*`. |
 | `server/` | `@tapeapi/server` — the provider runtime (Node and the Fetch API). |
 | `examples/` | Runnable examples, including the public service and the relay; index in `examples/README.md`. |
 | `conformance/` | A black-box conformance suite for providers and relays. |
@@ -189,7 +189,7 @@ If you add a document, link it from `docs/README.md` and write both language hal
 
 ## 4. 环境与测试
 
-前置条件：**Node.js 20 或更高**、**Python 3**（只用标准库）与 [Foundry](https://getfoundry.sh)。克隆时带上子模块（forge-std）：
+前置条件：**Node.js 22 或更高**、**Python 3**（只用标准库）与 [Foundry](https://getfoundry.sh)。克隆时带上子模块（forge-std）：
 
 ```sh
 git clone --recurse-submodules https://github.com/BruceLanLan/tapeapi.git
@@ -242,7 +242,7 @@ GitHub Pages 不执行构建，所以 `site/` 下有些文件是生成后**提�
 遵循 semver，标准与软件包分别适用。
 
 - **规范。** 处于 `Draft` 的 TAP 可自由修改，在其自身的变更记录小节写清改了什么、为什么。处于 `Stable (v1)`（TAPI-1 §4.1）的 TAP 已冻结：已定义的字段、编码、签名域与错误码保持含义，修订只能追加可选内容与非规范性文字；可能让合规的 v1 实现变得不合规的改动，要开新版本（v2），并使用自己的线上标记。标为 `Experimental` 的章节与 TAP 可以在任何版本里修改。
-- **软件包。** `@tapeapi/sdk` 与 `@tapeapi/server` 自 1.0.0 起遵循语义化版本：按 2.0 文档写的代码在所有 2.x 版本里都能继续使用，Stable 接口的破坏性修改只能升 major（3.0）。标为 `@experimental` 的接口可以在 minor 版本里修改，并写进更新日志。两个包以 GitHub Release 附件的形式发布，不在 npm 上。
+- **软件包。** `@tapeapi/sdk` 与 `@tapeapi/server` 自 1.0.0 起遵循语义化版本：按 3.0 文档写的代码在所有 3.x 版本里都能继续使用，Stable 接口的破坏性修改只能升 major（4.0）。2.x 一线对 2.0 文档做过同样的承诺，保持不变。标为 `@experimental` 的接口可以在 minor 版本里修改，并写进更新日志。两个包以 GitHub Release 附件的形式发布，不在 npm 上。
 - 除非维护者要求，PR 里不要改版本号，发版单独进行。用户可见的改动请在 `CHANGELOG.md` 的 `[Unreleased]` 下加一行。
 
 ## 8. 仓库布局
@@ -251,7 +251,7 @@ GitHub Pages 不执行构建，所以 `site/` 下有些文件是生成后**提�
 |---|---|
 | `spec/` | TAPI-1 与 TAPI-20…27，测试向量与 `verify.py` 在 `spec/vectors/`。双语，英文为准，CC0。 |
 | `contracts/` | `src/ServiceDirectory.sol`、`src/TapeAPIEscrow.sol`、`src/ChannelBus.sol`，Foundry 测试在 `test/`；forge-std 是 `lib/` 下的子模块。 |
-| `sdk/` | `@tapeapi/sdk`——ESM，Node 20+ 与浏览器，仅依赖 `@noble/*`。 |
+| `sdk/` | `@tapeapi/sdk`——ESM，Node 22+ 与浏览器，仅依赖 `@noble/*`。 |
 | `server/` | `@tapeapi/server`——提供者运行时（Node 与 Fetch API）。 |
 | `examples/` | 可运行示例，包括公共服务与中继；索引见 `examples/README.md`。 |
 | `conformance/` | 面向提供者与中继的黑盒一致性测试。 |

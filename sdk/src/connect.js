@@ -7,14 +7,15 @@
 import { snippetsFor, SNIPPET_TOOLS, MANIFEST_FIELD, FORMATS } from './ai.js'
 import { chainById } from './chains.js'
 import { manifestToTools } from './webmcp.js'
+import { passportLines } from './passport-view.js'
 
 export { snippetsFor, SNIPPET_TOOLS }
 
 const T = (en, zh) => Object.freeze({ en, zh })
 /** @experimental The fixed sentences every card carries. / 每张卡片都带的固定句子。 */
 export const NOTES = Object.freeze({
-  receipt: T('A receipt proves who signed which request and response bytes and what usage and price were claimed; it does not prove which model ran.',
-    '回执证明谁签了哪些请求与回答字节、声称了多少用量与价格；不证明实际运行的是哪个模型。'),
+  receipt: T('A receipt proves who signed which request bytes and which answer (the exact bytes of a whole answer; the event data of a stream, read by a fixed rule) and what usage and price were claimed; it does not prove which model ran.',
+    '回执证明谁签了哪些请求字节与哪个回答（整体回答取其确切字节；流式回答取按固定规则读出的事件数据）、声称了多少用量与价格；不证明实际运行的是哪个模型。'),
   prices: T("Prices are the provider's public statement on chain, per 1M tokens; USD is for display only; nothing is settled here.",
     '价目是服务方的链上公开声明（每百万 token）；USD 仅作展示；这里不结算。'),
   boundary: T('Experimental, outside the compatibility promise. It reads the chain and the manifest only: it sends no transaction, asks for no key or password, uploads nothing and pays nothing.',
@@ -124,13 +125,13 @@ export const FORMAT_NAMES = Object.freeze(FORMATS.map((f) => f.name))
 // happens to answer is not in the manifest and is never guessed at), and nothing is fetched from the endpoint. The methods
 // shown are those tapeapi-mcp can offer: the manifest's free methods (it offers no priced method), as manifestToTools
 // lists them without a paid policy. A method is a tool only when the endpoint's tools/list has a tool of its name (the
-// MCP tools draft, TAPs #16 §4.1: bound), which tapeapi-mcp checks, with the list's digest against mcp.toolsSha256; a
+// MCP tools draft, TAP-15 §4.1: bound), which tapeapi-mcp checks, with the list's digest against mcp.toolsSha256; a
 // manifest may bind only some of its methods (2.4), so the card calls them methods and does not count tools. The --json
 // key stays service.tools (2.3) with the same meaning: these candidate methods.
 // 清单没有 ai 字段、但带 mcp: { endpoint, toolsSha256 } 的服务是 MCP 工具服务：它的方法就是签名代理后面那个 MCP 服务器的工具。
 // 只认这个声明（服务器碰巧应答的 /mcp 路由不在清单里，从不猜测），也不访问端点。显示的方法是 tapeapi-mcp 能提供的那些：清单里的
 // 免费方法（它不提供收费方法），即不带 paid 策略时 manifestToTools 列出的方法。方法只有在端点的 tools/list 里有同名工具时才是工具
-// （MCP 工具草案 TAPs #16 §4.1：绑定），这由 tapeapi-mcp 检查，同时用列表的摘要核对 mcp.toolsSha256；清单可以只绑定部分方法（2.4），
+// （MCP 工具草案 TAP-15 §4.1：绑定），这由 tapeapi-mcp 检查，同时用列表的摘要核对 mcp.toolsSha256；清单可以只绑定部分方法（2.4），
 // 所以卡片称之为方法、不数工具。--json 的键仍是 service.tools（2.3），含义相同：这些候选方法。
 
 /** @experimental The tools an MCP settings snippet is written for. / MCP 配置片段面向的工具。 */
@@ -143,8 +144,8 @@ export const MCP_NOTES = Object.freeze({
     '上面列的是清单里的免费方法（tapeapi-mcp 不提供收费方法）。其中哪些是工具，由端点的 tools/list 决定，并由链上的 mcp.toolsSha256 钉住；本命令不访问端点，所以不说是哪些、有几个。tapeapi-mcp 读取 tools/list，摘要与 toolsSha256 不符即拒绝该服务，且只提供列表里有同名工具的方法。'),
   boundary: NOTES.boundary,
 })
-// 64 lowercase hex digits, as TAPI-20 §3.8, the MCP tools draft (TAPs #16 §2) and the holder console write it (2.3).
-// 64 位小写十六进制，与 TAPI-20 §3.8、MCP 工具草案（TAPs #16 §2）和持有人操作台一致（2.3）。
+// 64 lowercase hex digits, as TAPI-20 §3.8, the MCP tools draft (TAP-15 §2) and the holder console write it (2.3).
+// 64 位小写十六进制，与 TAPI-20 §3.8、MCP 工具草案（TAP-15 §2）和持有人操作台一致（2.3）。
 const SHA256_RE = /^[0-9a-f]{64}$/
 /** Why a manifest's `mcp` field cannot be used (null when it can), as tapeapi-mcp decides it. / mcp 字段为何不能用（与 tapeapi-mcp 一致）。 */
 function mcpFieldProblem(m, dev) {
@@ -186,9 +187,9 @@ export function mcpSnippetsFor(manifest, { target = '<name>', dev = null, versio
     `claude mcp add ${shq(srv)} -- npx ${args.map(shq).join(' ')}`)
   add('claude-desktop', 'stdio', 'Claude Desktop, through tapeapi-mcp (claude_desktop_config.json: Settings > Developer > Edit Config)', 'Claude Desktop，经 tapeapi-mcp（claude_desktop_config.json：设置 > 开发者 > 编辑配置）',
     JSON.stringify({ mcpServers: { [srv]: { command: 'npx', args } } }, null, 2))
-  // Direct: a tools/call sent to the endpoint is not a call under the MCP tools draft (TAPs #16 §4.2): its answer is not
+  // Direct: a tools/call sent to the endpoint is not a call under the MCP tools draft (TAP-15 §4.2): its answer is not
   // a signed envelope, and a client must not present it as signed or verified. Only tapeapi-mcp (above) checks answers.
-  // 直连：发给端点的 tools/call 不是 MCP 工具草案（TAPs #16 §4.2）意义上的调用：回答不是签名信封，客户端不得当作已签名或已核验。
+  // 直连：发给端点的 tools/call 不是 MCP 工具草案（TAP-15 §4.2）意义上的调用：回答不是签名信封，客户端不得当作已签名或已核验。
   // 只有经 tapeapi-mcp（上面）才核验回答。
   add('claude-code', 'direct', 'Claude Code, the declared endpoint direct (MCP Streamable HTTP): not checked here; a direct answer is not a signed envelope, do not treat it as signed or verified (only tapeapi-mcp, above, checks answers)', 'Claude Code，直连声明的端点（MCP Streamable HTTP）：这里不核验；直连的回答不是签名信封，不要当作已签名或已核验（只有经上面的 tapeapi-mcp 才核验回答）',
     `claude mcp add --transport http ${shq(srv)} ${shq(endpoint)}`)
@@ -310,6 +311,12 @@ export function renderConnect(r, { lang = 'both', color = false, version = '', n
       out.push(...P(NOTES.token))
     }
     out.push(...P(NOTES.boundary))
+  }
+  // --passport (3.0, experimental): one more section, the state and the draft's sentence; nothing else changes.
+  // --passport（3.0，实验性）：多一节护照，只有状态与草案的句子；别的不变。
+  if (r.passport) {
+    out.push('', bold(L('passport (experimental)', '护照（实验性）')))
+    for (const l of r.passport.result ? passportLines(r.passport.result, { lang }) : P(r.passport.skipped)) out.push(`  ${l}`)
   }
   if (r.exitCode !== 0 && next) {
     if (nextHint) out.push(L(nextHint.en, nextHint.zh))

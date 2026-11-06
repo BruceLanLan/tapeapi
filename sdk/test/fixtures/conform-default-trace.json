@@ -16817,14 +16817,14 @@
     "requests": [],
     "error": {
      "code": "INVALID_ARGUMENT",
-     "message": "conform: 'tap10' pins every resolution as TAP-10 §5.3 does (pin: 'tap10'); it cannot be combined with another pin option (false, 'latest', true or { tag }). Since 2.0 createTapeAPI() resolves as TAP-10 / TAP-11 §2 say by default (conform: 'tap10'); this configuration is not a TAP-10 one (your own addresses, a local chain or fork, a chain without TAP-10 lists, or another pin): pass conform: false for the 1.x resolution (deprecated, kept in 2.x)"
+     "message": "conform: 'tap10' pins every resolution as TAP-10 §5.3 does (pin: 'tap10'); it cannot be combined with another pin option (false, 'latest', true or { tag }). Since 2.0 createTapeAPI() resolves as TAP-10 / TAP-11 §2 say by default (conform: 'tap10'); this configuration is not a TAP-10 one (your own addresses, a local chain or fork, a chain without TAP-10 lists, or another pin): pass conform: false for the 1.x resolution (deprecated, kept through 3.x)"
     }
    },
    {
     "requests": [],
     "error": {
      "code": "INVALID_ARGUMENT",
-     "message": "conform: 'tap10' pins every resolution as TAP-10 §5.3 does (pin: 'tap10'); it cannot be combined with another pin option (false, 'latest', true or { tag }). Since 2.0 createTapeAPI() resolves as TAP-10 / TAP-11 §2 say by default (conform: 'tap10'); this configuration is not a TAP-10 one (your own addresses, a local chain or fork, a chain without TAP-10 lists, or another pin): pass conform: false for the 1.x resolution (deprecated, kept in 2.x)"
+     "message": "conform: 'tap10' pins every resolution as TAP-10 §5.3 does (pin: 'tap10'); it cannot be combined with another pin option (false, 'latest', true or { tag }). Since 2.0 createTapeAPI() resolves as TAP-10 / TAP-11 §2 say by default (conform: 'tap10'); this configuration is not a TAP-10 one (your own addresses, a local chain or fork, a chain without TAP-10 lists, or another pin): pass conform: false for the 1.x resolution (deprecated, kept through 3.x)"
     }
    },
    {

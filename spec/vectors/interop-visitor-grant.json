@@ -1,0 +1,151 @@
+{
+  "note": "Self-test vectors of the EXPERIMENTAL visitor-grant prototype (@tapeapi/sdk/interop). Not a specification, not a TAP, not a TAP's assets; no service knows this format. Fake keys (repeated bytes). Checked by sdk/test/interop.test.mjs (JS), spec/vectors/verify.py (Python) and contracts/test/VisitorGrantTypehash.t.sol (Solidity).",
+  "v": 1,
+  "types": {
+    "VisitorGrant": "VisitorGrant(string statement,address user,address caller,string callerName,address callerHolder,address callerKey,address audience,string audienceName,address audienceHolder,string[] methods,uint32 maxCalls,uint64 notBefore,uint64 expires,bytes32 nonce)",
+    "GrantRevocation": "GrantRevocation(address user,bytes32[] grantHashes,uint64 revokedBefore,uint64 issued)"
+  },
+  "typeHashes": {
+    "VisitorGrant": "0xbc95bd5b4977cb089511e2e459636a0c22d7d0d29280f72043963456ac3e8f0e",
+    "GrantRevocation": "0x065cffa2962afb3c14827c4d10da27f7f6992c32837f9748a7046963335f03f5"
+  },
+  "domain": {
+    "name": "TapeAPI Visitor Grant",
+    "version": "1",
+    "chainId": 56,
+    "verifyingContract": "0xe61A9C7213a6Aa616C246a2B569e555B417b25ee"
+  },
+  "domainSeparator": "0xdbd05ddb38a6097675b1f87bde7ad79201d08085045992096a6f8a2f72b07d80",
+  "otherChain": {
+    "chainId": 8453,
+    "domainSeparator": "0xd1a17783628b594a7ccff2b01bcd0c72958dbf7e878d424fde983f0c63a8ffb5",
+    "digest": "0x9feb1d26a72ab10d66adeb76f2d24171d559dca20ae37330110dc319c6ebcd5f"
+  },
+  "userKey": "0x3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a",
+  "userAddress": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+  "callerKey": "0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b",
+  "callerKeyAddress": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+  "callProofPrefix": "TAPI-grant/call1",
+  "grants": [
+    {
+      "name": "en, one method",
+      "message": {
+        "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history. At most 100 calls, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+        "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+        "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+        "callerName": "12.7.tape",
+        "callerHolder": "0x4444444444444444444444444444444444444444",
+        "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+        "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+        "audienceName": "13.7.tape",
+        "audienceHolder": "0x6666666666666666666666666666666666666666",
+        "methods": [
+          "history"
+        ],
+        "maxCalls": 100,
+        "notBefore": 1791000000,
+        "expires": 1791003600,
+        "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+      },
+      "methodsHash": "0x08184b04f84d1d5103cc4fddca18010c3d437fa72c5efe181c56381f299fe77f",
+      "structHash": "0xc5ad6c2f9a7dde9b323668c30c90b141fd932a56a4698ea72c6bf6e246af8334",
+      "digest": "0xb33a51914cd294d4313c6e296db5680bd7e95292d81062c63f252eb49980fa47",
+      "userSig": "0x0719deaacbd5f7f701dbd192e0e5e5877e2129190cbc7a631566bdf73083680e3583c22eeda3aa9f0762b0ba93429e379dd2b056d9f41c39b0a761bd93110ae11c",
+      "statements": {
+        "en": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history. At most 100 calls, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+        "zh": "允许 12.7.tape 代表我调用 13.7.tape 的方法：history。最多 100 次，2026-10-03 04:00:00 至 2026-10-03 05:00:00 UTC 有效。本授权不含任何付款。可随时向 13.7.tape 撤销。"
+      }
+    },
+    {
+      "name": "zh, three methods, 7 days",
+      "message": {
+        "statement": "允许 12.7.tape 代表我调用 13.7.tape 的方法：history, notes, quote_list。最多 10000 次，2026-10-03 04:00:00 至 2026-10-10 04:00:00 UTC 有效。本授权不含任何付款。可随时向 13.7.tape 撤销。",
+        "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+        "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+        "callerName": "12.7.tape",
+        "callerHolder": "0x4444444444444444444444444444444444444444",
+        "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+        "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+        "audienceName": "13.7.tape",
+        "audienceHolder": "0x6666666666666666666666666666666666666666",
+        "methods": [
+          "history",
+          "notes",
+          "quote_list"
+        ],
+        "maxCalls": 10000,
+        "notBefore": 1791000000,
+        "expires": 1791604800,
+        "nonce": "0xfefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"
+      },
+      "methodsHash": "0xc121b9b56e9458f1a20b707e0d4bf4ce0c3acf24a727b2e125dface7234099bd",
+      "structHash": "0x3a93dba372b151b1abdffad9d6b34f768d514f8013d9f8ca13b00088ad33665c",
+      "digest": "0xf0ba9856b07fe5f00f18ef944f7f6e42d11390ca8e9afdbdef85d44d3605b1da",
+      "userSig": "0x435db829544187c272a8c590d40ce9f8ab26ce60c982edaaced036819407366843494e5aabd2338cd5385883fe57e00e912e04a971c347177a0a0a65069571fb1b",
+      "statements": {
+        "en": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes, quote_list. At most 10000 calls, valid from 2026-10-03 04:00:00 to 2026-10-10 04:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+        "zh": "允许 12.7.tape 代表我调用 13.7.tape 的方法：history, notes, quote_list。最多 10000 次，2026-10-03 04:00:00 至 2026-10-10 04:00:00 UTC 有效。本授权不含任何付款。可随时向 13.7.tape 撤销。"
+      }
+    }
+  ],
+  "proofs": [
+    {
+      "name": "empty params",
+      "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+      "grantHash": "0xb33a51914cd294d4313c6e296db5680bd7e95292d81062c63f252eb49980fa47",
+      "id": "c6f1",
+      "method": "history",
+      "params": {},
+      "ts": 1791000007,
+      "preimage": "0x544150492d6772616e742f63616c6c315e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5eb33a51914cd294d4313c6e296db5680bd7e95292d81062c63f252eb49980fa4723cef42a21889342501425c07aed2c69ba749b66e52d961b1ebb5000838a2333009447ff967f2d17fdb303da465bb226469de6becdeecb4ddbddfe11e53cc26f000000006ac07dc7",
+      "digest": "0x9c01ae70f1f4a611033c6fc1da62e2f101228afa8d10007840129d675a0fc0f2",
+      "personalDigest": "0xdfc2ca24d1543426591570d407eefa9c66d5d75e00fe0b73a4cebb2f0a50e8c6",
+      "sig": "0x659015ac0d5ee86911cc09f488eb5a870508053ebea449ff74e4684f8d4041b004e736fb31ae8479fcc96f0821cccfff1d91fba7c3e59636b1b03bce9f2a10d41b"
+    },
+    {
+      "name": "params bound",
+      "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+      "grantHash": "0xb33a51914cd294d4313c6e296db5680bd7e95292d81062c63f252eb49980fa47",
+      "id": "g-0001",
+      "method": "history",
+      "params": {
+        "limit": 1,
+        "from": "2026-10-01"
+      },
+      "ts": 1791000007,
+      "preimage": "0x544150492d6772616e742f63616c6c315e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5eb33a51914cd294d4313c6e296db5680bd7e95292d81062c63f252eb49980fa4721542370882e40d07184bb80181eb6cca32f10bb235d0eeb0061652fe9d350e1cfc251d74719fff9058ae658d75a9b0e98aaed4284cf928cacd102ae7dd0803d000000006ac07dc7",
+      "digest": "0xd324aea0c4f42cbfb03ab6a63b3b71a6c0a0c03cead86d5678c617ff55c3225c",
+      "personalDigest": "0x6604c79155760357ada869b0eb8f77b946794d1dbfb05cc0fda1ed955049e3c8",
+      "sig": "0x060cac04e11b74a6e84d1b68b0a28198f07512c108fc2fcdaa41bf8f102a5ab009435987bf067cc1fef5e7668fcfa581f6a093810a939376e984c7f3cb0312f91b"
+    }
+  ],
+  "revocations": [
+    {
+      "name": "by hash",
+      "revocation": {
+        "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+        "grantHashes": [
+          "0xb33a51914cd294d4313c6e296db5680bd7e95292d81062c63f252eb49980fa47",
+          "0xf0ba9856b07fe5f00f18ef944f7f6e42d11390ca8e9afdbdef85d44d3605b1da"
+        ],
+        "revokedBefore": 0,
+        "issued": 1791000060
+      },
+      "structHash": "0x16e80f7799c8cb42937bd4acfaeeb47dcdb0137af024a13854a1975d0d1602f5",
+      "digest": "0x3516327ba070a2e29a1f224149fc3c09af8ce26e4abd16f6196f6ea31794d7b4",
+      "sig": "0x8b6d5413fec533d792cde50bd3993bb13c164d662ed39f1c1f3c40afbe6d2ae5287f2ec1bc1839135dada01d5c99822f2fef2cb647617aaf37f644440a3304b21c"
+    },
+    {
+      "name": "by date",
+      "revocation": {
+        "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+        "grantHashes": [],
+        "revokedBefore": 1791000000,
+        "issued": 1791000060
+      },
+      "structHash": "0x3624f6a9288d37bfbc45697333bab91c0988fb735abcc32f09889c97ebcd511c",
+      "digest": "0xb7f06eeeb9b682c82ec42e8b7381cb5e9bdcd9154e04a4802b0b752cc7a098a7",
+      "sig": "0xf9f44957138b0aa4faaaafcf42d1d727dce01673483bccd867f72126b5000f0c61f5adbd28b051960fd7973d68588a994b7861fd38c0204c1ec4eb7ef0d4bd7d1b"
+    }
+  ]
+}

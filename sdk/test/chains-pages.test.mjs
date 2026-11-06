@@ -144,7 +144,7 @@ test('console page: the chain is chosen before anything is read, the wallet is s
 
 // ── the bins / 命令行 ────────────────────────────────────────────────────────────────────────────────────────────
 const run = (bin, args) => new Promise((ok) => {
-  const c = spawn(process.execPath, [fileURLToPath(new URL(`../bin/${bin}`, import.meta.url)), ...args], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const c = spawn(process.execPath, [fileURLToPath(new URL(`../bin/${bin}`, import.meta.url)), ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   let e = ''; c.stderr.on('data', (d) => { e += d }); c.stdout.on('data', () => {})
   const t = setTimeout(() => c.kill('SIGKILL'), 20_000)
   c.on('exit', (code) => { clearTimeout(t); ok({ code, e }) })

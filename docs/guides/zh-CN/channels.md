@@ -100,7 +100,7 @@ ChannelBus 消息是事件，而公共 BNB Chain 节点只保留部分历史，�
 
 ## 5. 读取隐私
 
-1.0 中为实验性：下面的选项、默认值与 `stats().privacy` 可能在 1.x 的次版本里改变。
+实验性（1.0 起，不在兼容承诺之内）：下面的选项、默认值与 `stats().privacy` 可能在次版本里改变。
 
 `busTransport` 与 `busReader` 按名字向每家节点询问你的房间：一次 `eth_getLogs`，其房间 topic 列出这些房间，发给客户端的
 2 到 4 家运营方。每家节点因此都看到"这个 IP 在读这些房间"；收件房间由容器地址推导（`channel.inboxRoom`），节点就能把

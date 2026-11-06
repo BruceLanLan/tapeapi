@@ -96,7 +96,7 @@ const post = (url, path, body) => fetch(url + path, { method: 'POST', headers: {
 
 // tapeapi-mcp over stdio. / stdio 上的 tapeapi-mcp。
 function spawnMcp(args) {
-  const child = spawn(process.execPath, [MCP_BIN, ...args], { stdio: ['pipe', 'pipe', 'pipe'] })
+  const child = spawn(process.execPath, [MCP_BIN, ...args], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   closers.push(() => new Promise((ok) => { if (child.exitCode !== null || child.signalCode !== null) return ok(); child.once('exit', ok); child.kill('SIGKILL') }))
   let out = '', err = '', seq = 0
   const waiters = new Map()
@@ -146,7 +146,7 @@ test('the digest the holder would publish: /mcp/pinned lists the eight tool meth
   assert.deepEqual(declared.mcp, { endpoint: 'https://api.tapeapi.fun/mcp/pinned', toolsSha256: PINNED_TOOLS_SHA256 })
   assert.deepEqual(Object.keys(declared), [...Object.keys(m), 'mcp'], 'mcp comes last')
   assert.equal(JSON.stringify(mcpToolsManifestOf({ ...env, MCP_TOOLS_SHA256: PINNED_TOOLS_SHA256 })), JSON.stringify(view), 'not self-referential')
-  // Every tool method passes the console's method rules, and no tool text hides characters (TAPs #16 §3.4).
+  // Every tool method passes the console's method rules, and no tool text hides characters (TAP-15 §3.4).
   // 每个工具方法都通过控制台的方法规则，工具文本不含隐藏字符。
   assert.deepEqual(C.methodsProblems(declared.methods), [])
   assert.deepEqual(mcp.invisibleProblems(await listedMcpTools(view)), [])

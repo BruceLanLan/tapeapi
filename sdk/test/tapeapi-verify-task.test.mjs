@@ -21,7 +21,7 @@ const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 const TMP = mkdtempSync(join(tmpdir(), 'tapeapi-verify-task-'))
 test.after(() => rmSync(TMP, { recursive: true, force: true }))
 const file = (name, v) => { const p = join(TMP, name); writeFileSync(p, typeof v === 'string' ? v : JSON.stringify(v)); return p }
-const spawn = (args) => { const r = spawnSync(process.execPath, [BIN, ...args], { encoding: 'utf8', timeout: 30_000 }); return { code: r.status, stdout: r.stdout, stderr: r.stderr } }
+const spawn = (args) => { const r = spawnSync(process.execPath, [BIN, ...args], { encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL' }); return { code: r.status, stdout: r.stdout, stderr: r.stderr } }
 async function run(x, args) {
   let stdout = '', stderr = ''
   const code = await runTask(args, { api: x.api(), clock: () => NOW, out: (t) => { stdout += t }, err: (t) => { stderr += t } })
@@ -43,8 +43,31 @@ const DEV_1_6 = '  --dev <url>          TESTING ONLY: read the manifest from a l
 const DEV_2_0 = '  --dev <url>          TESTING ONLY: read the manifest from a local sidecar, no on-chain identity check. It also makes the\n' +
   '                       names this run reads on chain resolve the 1.x way (dev: true counts as conform: false); the\n' +
   '                       "resolution:" line says so\n'
+// CHANGED in 3.0: strict is the default, so the --strict line became --no-strict (three lines) and the --request-usage
+// note says what --no-strict sends. Each 3.0 text is checked to be there once and put back as the 1.6 text before the
+// comparison. / CHANGED 3.0：严格成为默认，--strict 一行换成 --no-strict（三行），--request-usage 的说明随之改写；各自确认恰好出现一次后
+// 换回 1.6 的文字再比较。
+const STRICT_30 = [
+  ['  --no-strict          only log a receipt that does not verify, and pass the answer on (the 2.x default). By default\n' +
+   '                       (3.0) it becomes an error to the client (HTTP 502, or an error event in place of a stream\'s final\n' +
+   '                       event); --strict is still accepted and changes nothing\n',
+  '  --strict             a receipt that does not verify becomes an error to the client (HTTP 502, or an error\n' +
+   '                       event in place of a stream\'s final event)\n'],
+  ['                       A body that cannot be changed that way: refused, or sent as is with --no-strict\n',
+   '                       A body that cannot be changed that way: refused with --strict, else sent as is\n'],
+  ['                       一个 choices: [] 的块。无法这样改写的正文：拒绝；--no-strict 时原样发送\n',
+   '                       一个 choices: [] 的块。无法这样改写的正文：--strict 时拒绝，否则原样发送\n'],
+]
+function without30Strict(text, what) {
+  for (const [now, was] of STRICT_30) {
+    assert.ok(text.includes(now) && text.indexOf(now) === text.lastIndexOf(now), `${what}: the 3.0 strict text appears once: ${now.slice(0, 40)}`)
+    text = text.replace(now, was)
+  }
+  return text
+}
 function without20Option(text, what) {
   if (!text.includes('--dev <url>')) return text   // no usage text in it / 里面没有用法文本
+  text = without30Strict(text, what)
   assert.ok(text.includes(DEV_2_0) && text.indexOf(DEV_2_0) === text.lastIndexOf(DEV_2_0), `${what}: the 2.0 --dev note appears once`)
   text = text.replace(DEV_2_0, DEV_1_6)
   const at = text.indexOf(NO_CONFORM_LINES)
@@ -57,7 +80,23 @@ function without20Option(text, what) {
 // the same way (checked to be there once, in that place), so the rest is still the 1.6 bytes.
 // CHANGED in 2.5：--save-requests 的几行紧接在 --no-salt 之后；同样先确认恰在此处出现一次再取出，其余仍与 1.6 逐字节相同。
 const SAVE_REQUESTS_AT = '  --save-requests <dir>\n'
+// CHANGED 3.0 (experimental, off by default): --policy and --budget-store add their lines right before
+// --strip-session-headers. Taken out the same way (once, in that place) before the 2.5 check.
+// CHANGED 3.0：--policy 与 --budget-store 的几行紧接在 --strip-session-headers 之前；同样先确认恰在此处出现一次再取出。
+const POLICY_AT = '  --policy <file>      EXPERIMENTAL (3.0), off by default'
+function without27Option(text, what) {
+  const at = text.indexOf(POLICY_AT)
+  assert.ok(at > 0 && text.indexOf(POLICY_AT, at + 1) === -1, `${what}: the 3.0 --policy lines appear once`)
+  const end = text.indexOf('  --strip-session-headers\n', at)
+  assert.ok(end > at, `${what}: before --strip-session-headers`)
+  const lines = text.slice(at, end)
+  assert.match(lines, /--budget-store <file>/)
+  assert.match(lines, /实验性，默认关闭：你自己的策略文件/)
+  assert.match(lines, /not an enforcement anyone else can rely on/)
+  return text.slice(0, at) + text.slice(end)
+}
 function without25Option(text, what) {
+  text = without27Option(text, what)
   const at = text.indexOf(SAVE_REQUESTS_AT)
   assert.ok(at > 0 && text.indexOf(SAVE_REQUESTS_AT, at + 1) === -1, `${what}: the 2.5 --save-requests lines appear once`)
   assert.match(text.slice(0, at), /characters are appended to a JSON body, so the request hash cannot be guessed\)\n$/, `${what}: right after --no-salt`)
@@ -84,7 +123,7 @@ test('FIXED TV-01: nothing outside `task` changed: the 1.6 output, stderr and ex
       // the 1.6 help, verbatim, then the new text and nothing else
       assert.ok(stdout.startsWith(put(c.stdout)), `${what}: the 1.6 help is the beginning, unchanged`)
       const extra = stdout.slice(put(c.stdout).length)
-      assert.match(extra, /^\ntapeapi-verify task \(experimental, 1\.7; not covered by the 2\.x compatibility promise\)/)
+      assert.match(extra, /^\ntapeapi-verify task \(experimental, 1\.7; not covered by the compatibility promise\)/)
       assert.match(extra, /tapeapi-verify task（实验性，1\.7/)
       assert.equal(stderr, '')
       assert.ok(r.stdout.includes(NO_CONFORM_LINES), `${what}: 2.0: the help names --no-conform`)

@@ -116,7 +116,7 @@ const MANIFEST = proxy.manifest()
 
 async function startVerify({ strict = true } = {}) {
   const logFile = join(TMP, `verify-${Date.now()}.jsonl`)
-  const child = spawn(process.execPath, [join(ROOT, 'sdk/bin/tapeapi-verify.js'), '--dev', SIDECAR, '--port', '0', '--log', logFile, ...(strict ? ['--strict'] : [])], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const child = spawn(process.execPath, [join(ROOT, 'sdk/bin/tapeapi-verify.js'), '--dev', SIDECAR, '--port', '0', '--log', logFile, ...(strict ? ['--strict'] : ['--no-strict'])], { stdio: ['ignore', 'ignore', 'pipe'] })
   let err = ''
   const url = await new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`tapeapi-verify did not start: ${err}`)), 15_000)

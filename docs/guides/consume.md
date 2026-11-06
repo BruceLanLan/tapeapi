@@ -1,13 +1,13 @@
 # Call a service
 
 This guide shows how an application finds a TapeAPI service, calls it and knows the answer is genuine. It uses
-`@tapeapi/sdk`, which works in Node 20+, browsers, DeWEB sites and Cloudflare Workers.
+`@tapeapi/sdk`, which works in Node 22+, browsers, DeWEB sites and Cloudflare Workers.
 
 ## 1. Try it
 
 ### Set up once
 
-The packages are not on npm yet, so you work inside a clone of the repository (Node.js 20 or later):
+The packages are not on npm yet, so you work inside a clone of the repository (Node.js 22 or later):
 
 ```bash
 git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm install
@@ -16,7 +16,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 Or install just the SDK into your own project from the GitHub release (not the npm registry):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz
 ```
 
 Save the scripts below as `.mjs` files where `@tapeapi/sdk` resolves, and run them with `node <file>.mjs`: in a clone,
@@ -100,7 +100,7 @@ A resolved service is cached; the SDK re-reads it about once an hour, and at onc
 matching. `api.refresh(svc)` forces it.
 
 For an AI service there is also a command that does this resolution and shows the result: `tapeapi connect <name>`
-(experimental, new in 2.1, outside the 2.x compatibility promise) prints the service card and client settings for the
+(experimental, new in 2.1, outside the compatibility promise) prints the service card and client settings for the
 API formats its manifest declares, and asks for no key and pays nothing; see
 [AI providers, "What your users do"](ai-providers.md#what-your-users-do).
 
@@ -122,6 +122,7 @@ try {
 | Code | Meaning | What to do |
 |---|---|---|
 | `INVALID_ARGUMENT` | Your own options or arguments are wrong (a missing `rpcUrls`, an unsupported target, a bad option). Nothing was sent. | Fix the call; never retry it. |
+| `BUDGET_EXCEEDED` | A spending budget of your own refused the call before it was sent: WebMCP's, or (3.0, experimental) a local policy file's ([Reconcile your receipts](reconcile.md#the-same-file-before-each-call-client-side-budget-experimental-30)). | Wait for the window to move on, or change your policy. |
 | `RPC_UNAVAILABLE` | Fewer RPC nodes answered than the quorum. | Retry; add a node. |
 | `RPC_DISAGREE` | Nodes returned different bytes. | Retry; if it persists, one node is lagging or lying. |
 | `MANIFEST_INVALID` | No manifest, a bad one, or its bytes do not match the chain. | The service is not (correctly) published. |
@@ -152,7 +153,7 @@ freshness checks and a circuit breaker.
 
 ## 5. Pay for calls
 
-> **Experimental.** Payments (TAPI-22 payment channels and the escrow contract) are not deployed or audited and are not covered by the 1.0 stability promise: the names below may change in a 1.x minor release. See [Upgrading to 1.0](upgrade-1.0.md#what-10-promises).
+> **Experimental.** Payments (TAPI-22 payment channels and the escrow contract) are not deployed or audited and are outside the compatibility promise: the names below may change in a minor release. See [Upgrading to 1.0](upgrade-1.0.md#what-10-promises).
 
 Free methods need nothing. Paid methods take a voucher signed by the consumer ([TAPI-22](../../spec/TAPI-22.md)):
 
@@ -176,6 +177,13 @@ lets that contract pull your tokens. `amount` is in the token's own base units: 
 escrow holds another token (`UNSUPPORTED_PAYMENT_TOKEN`, `reason` `not-bem`): the escrow contract itself takes any
 admitted token, but the manifest's pricing in more than one token is not yet specified, so `fund` is never built for an
 escrow that holds anything but BEM, whatever token you name, and even if you allowed that escrow.
+
+A provider that has not confirmed its own escrow's token refuses paid calls with an unsigned HTTP 503
+`UNSUPPORTED_PAYMENT_TOKEN`. It is unsigned, so the SDK reports `PROVIDER_UNAVAILABLE` (the message says
+`unsigned claim: UNSUPPORTED_PAYMENT_TOKEN`), releases the call's reservation and does not pass the body's
+`data.reason` on. A plain HTTP client sees the reason: `escrow-token-mismatch` stays for that provider instance (do
+not retry), while `escrow-no-token` and `escrow-token-unreadable` are read again at the next paid call
+([TAPI-22](../../spec/TAPI-22.md) §3.2, informative note).
 
 You pay the provider's listed price and nothing more: TapeAPI adds no fee on the consumer side. The maintenance
 contribution, if the provider keeps it, comes out of the provider's share ([`docs/FEES.md`](../FEES.md)). A paid

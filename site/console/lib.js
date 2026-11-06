@@ -69,6 +69,23 @@ export function newSignerKey(getRandomValues = (b) => globalThis.crypto.getRando
   }
 }
 
+// How long the delegation signed in step 4 lasts. 30 days by default (90 before 3.0): the Agent Passport draft (TAPs pull
+// request #83, W-1) allows at most 30 days as a default and suggests 7 or less. The holder may type any whole number of
+// days from 1 to 366 (more than 366 days ahead, clients refuse the delegation: TAPI-20 §3.4), 90 and 7 included.
+// 第 4 步所签委托的有效期。默认 30 天（3.0 之前为 90 天）：护照草案（TAPs #83 的 W-1）默认最多 30 天、建议 7 天或更短。
+// 持有人可以填 1 到 366 之间任意整数天（超过 366 天客户端会拒绝：TAPI-20 §3.4），90 与 7 都可以。
+export const DELEGATION_DAYS = 30
+export const MAX_DELEGATION_DAYS = 366
+/** `expires` (Unix seconds) of a delegation of `days` days from `nowS`; a value outside 1..366 whole days throws.
+ *  委托的 expires（Unix 秒）；天数不是 1 到 366 的整数就抛错。 */
+export function delegationExpiry(nowS, days = DELEGATION_DAYS) {
+  const d = typeof days === 'string' && /^\s*\d+\s*$/.test(days) ? Number(days) : days
+  if (!Number.isSafeInteger(d) || d < 1 || d > MAX_DELEGATION_DAYS) {
+    throw new Error(`委托天数必须是 1 到 ${MAX_DELEGATION_DAYS} 之间的整数 / the delegation's days must be a whole number from 1 to ${MAX_DELEGATION_DAYS} (got ${String(days)})`)
+  }
+  return Math.floor(nowS) + d * 86400
+}
+
 /** The EIP-712 delegation the holder signs (eth_signTypedData_v4), exactly as sdk sig.delegationTypedData builds it.
  *  持有人签的 EIP-712 委托，与 SDK 构造的完全一致。 */
 export function delegationTypedData({ container, signer, expires, chainId = pageChain }) {
@@ -795,11 +812,11 @@ export function readBackProblems(onChainText, sentText) {
 }
 
 // ---------------------------------------------------------------- renewal: the key already on chain ----
-// A delegation lasts 90 days. To renew it the holder signs a new one for the SAME service key, which the page may not
+// A delegation lasts 30 days by default (DELEGATION_DAYS). To renew it the holder signs a new one for the SAME service key, which the page may not
 // have generated (another service was set up since, or the browser was cleared). The manifest already in the container
 // names that key, and its delegation, recovered here, proves the current holder authorised it: re-signing for it grants
 // nothing new. The chain is read as every client reads it (fileInfo, then read; exact length and SHA-256, as the SDK's
-// readVerifiedFile), never through the service. / 委托有效 90 天。续期就是持有人为**同一把**服务密钥再签一次，而这把
+// readVerifiedFile), never through the service. / 委托默认有效 30 天。续期就是持有人为**同一把**服务密钥再签一次，而这把
 // 密钥可能不是本页生成的（之后又设置过别的服务，或浏览器被清空）。容器里已有的清单写着这把密钥，这里恢复出的委托签名证明
 // 当前持有人授权过它：为它重签不会授予任何新东西。读链方式与每个客户端相同（先 fileInfo 再 read，长度和 SHA-256 严格一致，
 // 同 SDK 的 readVerifiedFile），从不经过服务。

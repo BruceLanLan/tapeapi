@@ -121,7 +121,7 @@ const res = await p.handleRequest(new Request('https://ai.example/v1/chat/comple
 const out = await res.text()
 console.log(JSON.stringify({ logs, seen, status: res.status, receipt: /tapeapi-receipt/.test(out) }))
 `)
-      const r = spawnSync(process.execPath, [...(old ? ['--import', url(join(dir, 'register.mjs'))] : []), join(dir, 'child.mjs')], { encoding: 'utf8' })
+      const r = spawnSync(process.execPath, [...(old ? ['--import', url(join(dir, 'register.mjs'))] : []), join(dir, 'child.mjs')], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
       assert.equal(r.status, 0, r.stderr)
       return JSON.parse(r.stdout.trim().split('\n').pop())
     }

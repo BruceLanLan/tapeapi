@@ -1,0 +1,55 @@
+{
+  "name": "@tapeapi/interop",
+  "version": "0.1.0",
+  "description": "TapeAPI visitor grants between apps (experimental prototype, not a TAP): a visitor lets app A call a few methods of service B for a short time; B checks the grant",
+  "keywords": [
+    "tapeapi",
+    "tapeout",
+    "bnb",
+    "bsc",
+    "web3",
+    "eip-712",
+    "experimental"
+  ],
+  "homepage": "https://tapeapi.fun/docs/",
+  "bugs": {
+    "url": "https://github.com/BruceLanLan/tapeapi/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BruceLanLan/tapeapi.git",
+    "directory": "interop"
+  },
+  "license": "MIT",
+  "author": "Bruce (@BruceLanLan)",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/interop-public.js",
+  "types": "./types/interop.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/interop.d.ts",
+      "default": "./src/interop-public.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "@noble/hashes": "1.8.0",
+    "@tapeapi/sdk": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

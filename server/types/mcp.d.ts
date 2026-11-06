@@ -16,8 +16,9 @@ export declare function createMcpEndpoint(o: {
   mcpResults?: boolean
   version?: string
   /** @experimental (2.5) Exact origins a browser may call from: an unlisted Origin is 403, a listed one is echoed instead
-   *  of CORS `*`; a request without Origin is answered as usual. Default: every origin. */
-  allowedOrigins?: string[]
+   *  of CORS `*`; a request without Origin is answered as usual. Default (or '*'): every origin (createMcpProxy's
+   *  default refuses browsers since 3.0; this endpoint's does not). */
+  allowedOrigins?: string[] | '*'
   /** @experimental (2.5) The toolsSha256 the holder published for this endpoint: while the tools hash to anything else
    *  (or carry invisible characters), tools/list is refused as createMcpProxy refuses it (-32603, data.code
    *  'TOOLS_CHANGED' or 'INVISIBLE_CHARACTERS'). Default: tools/list is always answered. */
@@ -37,7 +38,7 @@ export declare function mcpToolsSha256(manifest: Manifest): Promise<string>
 /**
  * @experimental (2.3) A handler table for createProvider whose bound methods (tools of createMcpEndpoint) are refused
  * with a signed TOOLS_CHANGED (409, data { published, current }) while the tools no longer hash to `published`
- * (TAPI-20 §3.8, TAP draft #16 §5.1); other methods pass through unchanged. While the tool list cannot be built, every
+ * (TAPI-20 §3.8, TAP-15 §5.1); other methods pass through unchanged. While the tool list cannot be built, every
  * method is refused (TOOLS_CHANGED, current null) and the next call tries again; a list once read is kept.
  */
 export declare function holdToToolsSha256<T extends Record<string, (params: any, ctx?: any) => unknown>>(methods: T, o: { manifest: Manifest; published: string }): T

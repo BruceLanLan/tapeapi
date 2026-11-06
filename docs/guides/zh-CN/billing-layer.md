@@ -4,7 +4,7 @@
 两者怎样衔接、转发前冻结多少、记录什么、对用户怎么说。本页只讲 TapeAPI 的工具：TapeAPI 不运营、不托管、不登记、也不担保任何
 这类服务，本页的任何内容都不收款、不付款。
 
-这里新增的都是**实验性**功能（2.5，不在 2.x 兼容承诺之内）：SDK 的 `ai.amountOf`、`ai.pricesOf`、`ai.maxAmountOf`、
+这里新增的都是**实验性**功能（2.5，不在兼容承诺之内）：SDK 的 `ai.amountOf`、`ai.pricesOf`、`ai.maxAmountOf`、
 `ai.maxPricesOf`、`ai.completionLimitOf`，旁路选项 `upstreamResponseHeaders`（`UPSTREAM_RESPONSE_HEADERS`），以及 new-api 旁路
 的 `RECEIPT_LOOKUPS_PER_MIN`。不调用、不设置就不生效；没有用到它们的旁路行为不变。
 
@@ -112,7 +112,7 @@ Responses 取 `max_output_tokens`；Messages 取 `max_tokens`（包含思考预�
 
 - **公开说明**：在价目页或条款里写明"回执中的 model 是我们价目表的 id，不是上游原样返回的名字"。
 - **两个名字都记下来**：每次调用都在你自己的记录里写下请求的模型，以及改写之前上游报告的模型，审计或纠纷时两者都能查到。
-- **绝不声称回执能证明上游跑的是哪个模型。** 回执证明的是谁签的名、针对哪些确切的请求与回答字节、声称了多少用量和价格；它不证明
+- **绝不声称回执能证明上游跑的是哪个模型。** 回执证明的是谁签的名、针对哪些确切的请求字节与哪个回答（回答的字节；流式回答取其事件数据）、声称了多少用量和价格；它不证明
   上游的模型或渠道。
 
 ## 对用户怎么说

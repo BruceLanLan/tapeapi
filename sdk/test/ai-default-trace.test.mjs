@@ -121,7 +121,7 @@ async function recordCli(names, flags) {
   await new Promise((ok) => srv.listen(0, '127.0.0.1', ok))
   const url = `http://127.0.0.1:${srv.address().port}`
   w = await cannedWorld({ live: `${url}/tapeapi/v1` })
-  const child = spawn(process.execPath, ['--import', HELPER, CLI, '--dev', url, '--port', '0', '--log', logFile, ...flags], { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, TAPEAPI_TEST_DETERMINISTIC: '1', TAPEAPI_TEST_SEED: '7' } })
+  const child = spawn(process.execPath, ['--import', HELPER, CLI, '--dev', url, '--port', '0', '--log', logFile, ...flags], { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, TAPEAPI_TEST_DETERMINISTIC: '1', TAPEAPI_TEST_SEED: '7' }, timeout: 300_000, killSignal: 'SIGKILL' })
   let err = ''; child.stderr.setEncoding('utf8'); child.stderr.on('data', (d) => { err += d })
   const out = {}
   try {

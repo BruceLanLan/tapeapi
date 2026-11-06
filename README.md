@@ -14,7 +14,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 [![Playground](https://img.shields.io/badge/try-playground-orange.svg)](https://tapeapi.fun/playground/)
 [![Status](https://img.shields.io/badge/status-tapeapi.fun%2Fstatus-green.svg)](https://tapeapi.fun/status/)
 
-[中文说明](README.zh-CN.md) · [Website](https://tapeapi.fun) · [Docs](https://tapeapi.fun/docs/) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md) · [Upgrading to 2.0](docs/guides/upgrade-2.0.md)
+[中文说明](README.zh-CN.md) · [Website](https://tapeapi.fun) · [Docs](https://tapeapi.fun/docs/) · [Guides](docs/guides/) · [Specifications](spec/) · [Examples](examples/) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md) · [Upgrading to 2.0](docs/guides/upgrade-2.0.md) · [Upgrading to 3.0](docs/guides/upgrade-3.0.md)
 
 > **2.0: standards by default.** Pass no options and `createTapeAPI()` resolves a service the way TapeOut's official
 > TAPs say: TAP-10 v1.1 §3 to §7 and TAP-11 §2, every read at one pinned block, strict agreement of the nodes on the
@@ -24,7 +24,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 > editors merged both into the official repository as **Drafts**, and a merge into Draft is not adoption. TAP-10 and
 > TAP-11 are Drafts, so the default follows their text by one rule: a loosening or a new status name in a 2.x minor
 > release, a tightening first as an optional profile and the default in 3.0. The 1.x behaviour is one option away,
-> `conform: false` (deprecated, kept in all of 2.x). One known exception: without `allChains`, a processor
+> `conform: false` (deprecated, kept through all of 3.x, removed no earlier than 4.0). One known exception: without `allChains`, a processor
 > contract#ID is refused; see [Upgrading to 2.0](docs/guides/upgrade-2.0.md). Also in 2.0: private channels and groups
 > use the `tape-channel/` and `tape-group/` labels the TAPs editors asked for.
 > [New in 2.0](#new-in-20) · [Upgrading to 2.0](docs/guides/upgrade-2.0.md)
@@ -34,10 +34,11 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
 > for the agent, a limiter that never signs past the cap, and orders that resume after a restart with the keys and order
 > records kept encrypted. **The limits, plainly:** the escrow contract is **not audited and not deployed**, so none of
 > this works on mainnet today; it is checked on local chains and in tests only, and `@tapeapi/sdk/agent` is outside the
-> 2.x compatibility promise. [Bounded agents](#bounded-agents-experimental-not-usable-on-mainnet)
+> compatibility promise. [Bounded agents](#bounded-agents-experimental-not-usable-on-mainnet)
 
-> **Status: released, 2.5.0.** Everything live today is free. TapeAPI follows semantic versioning: code written to the
-> 2.0 docs keeps working in every 2.x release, and 1.x receives security fixes for 6 months after 2.0.0. Paid calls
+> **Status: the latest release is 3.0.0 (2026-11-06).** Everything live today is free. TapeAPI
+> follows semantic versioning: code written to the 3.0 docs keeps working in every 3.x release (as code written to the
+> 2.0 docs does in every 2.x release); 2.x receives security fixes for 6 months after 3.0.0, and 1.x until 2027-04-12. Paid calls
 > (TAPI-22) are experimental and not deployed. Nothing here has had a third-party audit. **Security note:** on 1.0.0 to
 > 1.4.0, streamed AI receipt verification could, under particular chunking, report a truncated or content-injected
 > stream as verified; it was fixed in 1.5.0
@@ -50,7 +51,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
   [Call a service](docs/guides/consume.md) · [For AI providers](docs/guides/ai-providers.md)
 - **Resolution as TapeOut's official TAPs say** (the default since 2.0). A name is resolved as TAP-10 v1.1 and
   TAP-11 §2 (a Draft) say, at one pinned block, with a status from the TAPs (`e.data.status`) on every failure. Introduced in 1.4
-  as the opt-in `conform: 'tap10'`; `conform: false` keeps the 1.x resolution through 2.x. Its status names only grow,
+  as the opt-in `conform: 'tap10'`; `conform: false` keeps the 1.x resolution through 3.x (removal no earlier than 4.0). Its status names only grow,
   and they are experimental in 2.0.
   [Upgrading to 2.0](docs/guides/upgrade-2.0.md#conformance-becomes-the-default)
 - **MCP tools** (Stable since 1.0). Signed results with a receipt, and tool definitions pinned on chain by their hash:
@@ -68,7 +69,7 @@ MCP tools and end-to-end encrypted channels and groups, on BNB Chain, X Layer an
   funds, enforced by escrow channels, on local chains and in tests only.
   [Container agents](docs/guides/container-agents.md) · [Bounded agents](#bounded-agents-experimental-not-usable-on-mainnet)
 - **Prices in US dollars, paid in BEM, and reviews between containers** (2.0, experimental). The reference
-  implementations of two TAP drafts we submitted as pull requests (#52 and #54), submitted (in review). No escrow is deployed, so no call is charged.
+  implementations of two TAP drafts we submitted as pull requests (#52 and #54; submitted, in review), not merged. No escrow is deployed, so no call is charged.
   [Below](#also-experimental-in-20)
 
 ## New in 2.0
@@ -85,7 +86,7 @@ import { createTapeAPI, rpcUrlsFor } from '@tapeapi/sdk'
 
 // 2.0: TAP-10 / TAP-11 §2 resolution, exactly what conform: 'tap10' did in 1.x
 const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })
-// 2.0: the 1.x resolution, request for request (deprecated; kept in all of 2.x; one onWarning when the client is made)
+// 2.0: the 1.x resolution, request for request (deprecated; kept through all of 3.x; one onWarning when the client is made)
 const legacy = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: false })
 ```
 
@@ -132,7 +133,7 @@ new profile and becomes the default in 3.0. Status names only grow. `conform: fa
 ### Other breaking changes
 
 - **Private channels and groups use TAPI-26 v2 and TAPI-27 v2 by default:** labels that begin with `tape-channel/` and
-  `tape-group/` instead of `TAP-26/` and `TAP-27/`, as the TAPs editors asked before merging the drafts #12 and #20.
+  `tape-group/` instead of `TAP-26/` and `TAP-27/`, as the TAPs editors asked while reviewing the drafts #12 (now TAP-14) and #20.
   `labels: 'v1'` selects version 1 (deprecated in 2.x, not removed in 2.x). The two versions do not interoperate, and
   nothing fails open: a mismatched pair times out or gets a named mismatch (`data.labels`, `data.peerLabels`). A group
   keeps its version for life, so a 1.x group resumes as a version-1 group. Channel records, relays and ChannelBus are
@@ -168,19 +169,19 @@ most what was put in those channels, and only toward the services the mandate na
 deployed** on any chain, and the SDK's list of audited escrows is empty, so none of this works on mainnet. It is checked
 on the SDK's fake chain (`node --test examples/agent-service/agent-service-spend.test.mjs`) and, for the transactions and
 vouchers, against a local copy of the escrow (`cd contracts && forge test --match-path 'test/Phase1*'`). It is
-experimental and outside the 2.x compatibility promise. The phase-1 TAP draft is submitted as
-[TapeOutProtocol/TAPs#60](https://github.com/TapeOutProtocol/TAPs/pull/60) (now a draft PR), and the escrow interface it relies on as [#59](https://github.com/TapeOutProtocol/TAPs/pull/59) (in review).
+experimental and outside the compatibility promise. The phase-1 TAP draft is submitted as
+[TapeOutProtocol/TAPs#60](https://github.com/TapeOutProtocol/TAPs/pull/60) (submitted, now a draft PR), and the escrow interface it relies on as [#59](https://github.com/TapeOutProtocol/TAPs/pull/59) (in review).
 
 ### Also experimental in 2.0
 
 - **Prices in US dollars, paid in BEM** ([TAPI-22](spec/TAPI-22.md) §3.6; the TAP draft
-  [#52](https://github.com/TapeOutProtocol/TAPs/pull/52), submitted (in review)). A manifest may price methods in US dollars; a
+  [#52](https://github.com/TapeOutProtocol/TAPs/pull/52); submitted, in review). A manifest may price methods in US dollars; a
   provider states a BEM rate in a signed quote, the client checks it against on-chain reference pools before it signs a
   voucher, and every priced answer carries a signed charge record. A method's `priceBEM` stays the most one call can
   cost. A manifest without `usdPricing` answers and pays byte for byte as before. No escrow is deployed, so nothing is
   charged.
 - **Reviews between containers** (`@tapeapi/sdk/review`; the TAP draft
-  [#54](https://github.com/TapeOutProtocol/TAPs/pull/54), submitted (in review)). A review is signed by the reviewer's holder or
+  [#54](https://github.com/TapeOutProtocol/TAPs/pull/54); submitted, in review). A review is signed by the reviewer's holder or
   delegate and counts only with evidence: a signed answer the reviewer received, or a task thread between the two
   containers. Summaries count distinct reviewers and holders, never amounts. `tapeapi-verify review <name>` prints them.
 
@@ -205,15 +206,15 @@ curl -s https://api.tapeapi.fun/tapeapi/v1/bnbUsd -H 'content-type: application/
 ```
 
 curl shows the signed envelope but checks nothing. The SDK checks it. It is not on npm yet; install it from the GitHub
-release (Node.js 20 or later):
+release (Node.js 22 or later):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz
 ```
 
 The server package (`@tapeapi/server`: providers, the AI sidecar, the MCP proxy) depends on this SDK, which is not on
 npm either, so installed alone it fails with a 404: install both in one command,
-`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-server-2.5.0.tgz`.
+`npm install https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-server-3.0.0.tgz`.
 
 ```js
 // try.mjs: node try.mjs
@@ -246,7 +247,7 @@ const dev = createTapeAPI({ dev: true })                 // a local http:// serv
 const local = createTapeAPI({                            // an anvil chain with your own TapeOut contracts
   rpcUrls: ['http://127.0.0.1:8545'], allowSingleNode: true, allowHttp: true,
   chainId: 31337, hub: HUB, factory: FACTORY, siteRegistry: SITE_REGISTRY,
-  conform: false,                                        // the 1.x resolution; deprecated, kept in 2.x
+  conform: false,                                        // the 1.x resolution; deprecated, kept through 3.x
 })
 ```
 
@@ -276,7 +277,7 @@ No outside provider has published a price table on chain yet, so this was run ag
 
 ```bash
 # Terminal 1 (it keeps running). 42.1013.tape is an example name: put your AI provider's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```bash
@@ -338,7 +339,8 @@ flowchart LR
 ## What a receipt proves, and what it does not
 
 A receipt proves **who answered** (a key the circuit's holder delegated on chain), **to exactly which request bytes**,
-**with exactly which response bytes**, and **what usage and price were claimed**, priced from the table on chain.
+**with exactly which answer** (its exact bytes; for a stream, the data of its events, read by a fixed rule), and **what
+usage and price were claimed**, priced from the table on chain.
 
 It does **not prove which model actually ran**: a provider could label a cheaper model's answer as a dearer one. What
 the signature adds is accountability. A receipt cannot be disowned, so anyone running the
@@ -356,12 +358,21 @@ the signature adds is accountability. A receipt cannot be disowned, so anyone ru
 - **Experimental, not deployed:** paid calls and the escrow ([TAPI-22](spec/TAPI-22.md), with prices in US dollars paid
   in BEM in §3.6), the service directory, and circuit-verified methods ([TAPI-25](spec/TAPI-25.md)).
 - **Experimental, in the SDK:** container agents (`@tapeapi/sdk/agent`: phase 0 since 1.7, bounded agents since 2.0,
-  local chains only) and reviews (`@tapeapi/sdk/review`, since 2.0), outside the 2.x compatibility promise.
-- **What 2.0 promises:** code written against the 2.0 docs keeps working in every 2.x release; everything is Stable
-  except what is marked `@experimental` or `@internal`. That includes `data.status`, `SiteStatus` and `svc.conform`,
-  which follow Drafts: TAP-10 and TAP-11 are Drafts, so the default follows their text by one rule, a loosening or a new
-  status name in a 2.x minor release, a tightening first as an optional profile and the default in 3.0.
-  `conform: false` and `labels: 'v1'` are deprecated and kept in all of 2.x. 1.x receives security fixes for 6 months after 2.0.0. Coming from 1.x:
+  local chains only) and reviews (`@tapeapi/sdk/review`, since 2.0), outside the compatibility promise.
+- **What 3.0 promises (3.0.0, 2026-11-06):** code written against the 3.0 docs keeps working in every 3.x release;
+  everything is Stable except what is marked `@experimental` or `@internal`, and the three new packages
+  (`@tapeapi/interop`, `@tapeapi/passport`, `@tapeapi/policy-circuit`, all 0.1.0) are outside the promise. 3.0 has five
+  breaking changes, each but the Node.js 22 floor with an option that keeps the 2.x behaviour. No TAP tightening became
+  the default in 3.0, and the rule stays: a loosening or a new status name in a 3.x minor release, a tightening first as
+  an optional profile and the default in 4.0. `conform: false` stays (deprecated) through all of 3.x, removed no earlier than 4.0; `labels: 'v1'` stays
+  (deprecated). 2.x receives
+  security fixes for 6 months after 3.0.0, 1.x until 2027-04-12. Coming from 2.x:
+  [Upgrading to 3.0](docs/guides/upgrade-3.0.md).
+- **What 2.0 promised (history):** code written against the 2.0 docs keeps working in every 2.x release; everything is
+  Stable except what is marked `@experimental` or `@internal`. That includes `data.status`, `SiteStatus` and
+  `svc.conform`, which follow Drafts: TAP-10 and TAP-11 are Drafts, so the default follows their text by one rule, a
+  loosening or a new status name in a 2.x minor release, a tightening first as an optional profile and the default in
+  3.0. `conform: false` and `labels: 'v1'` are deprecated and kept in all of 2.x. Coming from 1.x:
   [Upgrading to 2.0](docs/guides/upgrade-2.0.md).
 - **What we do not do:** host the sidecar for anyone (it sees your users' API keys, so you run it); issue a token;
   help anyone get around an upstream provider's bans or regional limits (TapeAPI is for providers working within their
@@ -371,8 +382,8 @@ the signature adds is accountability. A receipt cannot be disowned, so anyone ru
   and under the 2.0 default both must answer every strict read.
 - **No third-party audit.** Tests: the JavaScript suite (`npm test`), the contract tests (`forge test`) and an
   independent Python implementation of every signature, hash and encoding (`python3 spec/vectors/verify.py`), all
-  three run by CI on every push. On the 2.5.0 release commit, `npm test` in this repository runs
-  2,322 JavaScript tests: 2,319 pass, 3 are skipped, none fail.
+  three run by CI on every push. On the 3.0.0 release commit, `npm test` in this repository runs
+  2,702 JavaScript tests: 2,698 pass, 4 are skipped, none fail.
 
 ## Privacy, plainly
 
@@ -400,16 +411,15 @@ demand ([TAPI-22](spec/TAPI-22.md) §3.5). See [docs/FEES.md](docs/FEES.md).
 These are TapeAPI's own specifications, not TAPs. TapeOut publishes its standards as TAPs, numbered by its editors in
 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01. We submitted fourteen TAP drafts for parts of
 them: eight on 2026-09-30 and 2026-10-01, two on the container-agent formats on 2026-10-04 and 2026-10-05, two on
-2026-10-08 (payment vouchers, reviews), and two on 2026-10-13 (escrow channels, bounded agents). Seven are merged as
-Drafts (merging is not adoption): TAP-11, TAP-13, TAP-14, TAP-15, TAP-16, TAP-17 and TAP-18. The other seven are submitted
-(in review): #20, #28, #49, #52, #54, #59 and #60 (#60 is now a draft PR). One more draft, an Information draft, #61 (a privacy map), is submitted (in review). Editors
+2026-10-08 (payment vouchers, reviews), and two on 2026-10-13 (escrow channels, bounded agents). Seven are merged as Drafts
+(TAP-11, TAP-13, TAP-14, TAP-15, TAP-16, TAP-17, TAP-18; merging is not adoption) and seven are submitted (in review): #20, #28, #49, #52, #54, #59 and #60 (#60 is now a draft PR). One more draft, an Information draft, #61 (a privacy map), is submitted (in review). Editors
 review the format, not the merits (TAP-01 §4), so a merge into Draft is not adoption. TAPI-20 to TAPI-27 (with the
-version 2 of TAPI-26 and TAPI-27) remain the basis of the 2.x compatibility promise.
+version 2 of TAPI-26 and TAPI-27) remain the basis of the compatibility promise.
 
 | Our spec | Draft (pull request) | Status, as of 2026-11-06 |
 |---|---|---|
-| TAPI-20 (core: §3.1 to §3.4, §3.6, §3.10) | Service identity and manifest, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8) | Merged on 2026-10-01 as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md), Draft (merging is not adoption). The 2.0 default resolves as its §2 says |
-| TAPI-21 | Signed responses, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10) | Merged on 2026-10-04 as [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md), Draft (merging is not adoption) |
+| TAPI-20 (core: §3.1 to §3.4, §3.6, §3.10) | Service identity and manifest, [#8](https://github.com/TapeOutProtocol/TAPs/pull/8) | Merged on 2026-10-01 as [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md), Draft. The 2.0 default resolves as its §2 says |
+| TAPI-21 | Signed responses, [#10](https://github.com/TapeOutProtocol/TAPs/pull/10) | Merged on 2026-10-04 as [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md), Draft |
 | TAPI-26 (v2) | Private channels, [#12](https://github.com/TapeOutProtocol/TAPs/pull/12) | Merged on 2026-11-03 as [TAP-14](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-14.md), Draft (merging is not adoption); uses the `tape-channel/` labels the editors asked for, the 2.0 default |
 | TAPI-20 §3.8, TAPI-21 | MCP tool binding, [#16](https://github.com/TapeOutProtocol/TAPs/pull/16) | Merged on 2026-11-03 as [TAP-15](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-15.md), Draft (merging is not adoption); the drafts it requires (TAP-11, TAP-13) are merged as Drafts too |
 | TAPI-23 | Attested reads from independent services, [#18](https://github.com/TapeOutProtocol/TAPs/pull/18) | Merged on 2026-11-03 as [TAP-16](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-16.md), Draft (merging is not adoption); the drafts it requires (TAP-11, TAP-13) are merged as Drafts too |
@@ -425,10 +435,12 @@ version 2 of TAPI-26 and TAPI-27) remain the basis of the 2.x compatibility prom
 | No TAPI spec (an Information draft) | Privacy map for container sites, messages and services (Information), [#61](https://github.com/TapeOutProtocol/TAPs/pull/61) | Submitted (in review) |
 | Edits to TAP-11 | Security note on `verifyingContract` [#35](https://github.com/TapeOutProtocol/TAPs/pull/35) and Chinese translation [#36](https://github.com/TapeOutProtocol/TAPs/pull/36); dropping the `TAP-26/` label mention [#51](https://github.com/TapeOutProtocol/TAPs/pull/51); two sentences on `priceBEM` as a per-call upper bound and the escrow's chain [#53](https://github.com/TapeOutProtocol/TAPs/pull/53); the reference implementation brought up to date, with a mainnet vector that ends in `resolved` [#55](https://github.com/TapeOutProtocol/TAPs/pull/55) | #35 and #36 merged on 2026-10-04; #51, #53 and #55 merged on 2026-11-03 |
 | Edits to TAP-13 | Wording on reserved names, [#46](https://github.com/TapeOutProtocol/TAPs/pull/46); an outdated sentence in the reference implementation section [#56](https://github.com/TapeOutProtocol/TAPs/pull/56) | #46 merged on 2026-10-05; #56 merged on 2026-11-03 |
-| Further edits to TAP-11 and TAP-13 to TAP-18 | Small wording and rule changes to the merged Drafts, [#89](https://github.com/TapeOutProtocol/TAPs/pull/89) to [#101](https://github.com/TapeOutProtocol/TAPs/pull/101) (13 pull requests) | Submitted (in review) |
+| Further edits to TAP-11, TAP-13, TAP-14, TAP-15, TAP-16, TAP-17 and TAP-18 | Thirteen small wording and rule edits, [#89](https://github.com/TapeOutProtocol/TAPs/pull/89) to [#101](https://github.com/TapeOutProtocol/TAPs/pull/101) | Submitted (in review) |
 
-TAPI-22 (other than §3.1 to §3.6), TAPI-24 and TAPI-25 have not been submitted. The five new numbers (TAP-14 to TAP-18)
-are the editors'; the other drafts have no number yet, and when the editors assign one we rename our references to it.
+Not counted above: four later drafts related to 3.0, none merged. Agent passports, [#83](https://github.com/TapeOutProtocol/TAPs/pull/83), submitted (in review), followed by the experimental `@tapeapi/passport`; the policy circuit gate, [#84](https://github.com/TapeOutProtocol/TAPs/pull/84), submitted, now a draft PR, followed by the experimental `@tapeapi/policy-circuit`; circuit jobs, [#85](https://github.com/TapeOutProtocol/TAPs/pull/85), submitted, now a draft PR, described in a guide only; and visitor grants for container service calls, [#77](https://github.com/TapeOutProtocol/TAPs/pull/77), submitted (in review). `@tapeapi/passport` implements the text of #83 at head `cae25e6`; the draft has been updated since (it is now at `cbf4e03`), and a package that follows the new text is planned. The experimental `@tapeapi/interop` implements our own [TAPI-28](spec/TAPI-28.md), which is not a TAP, rather than #77.
+
+TAPI-22 (other than §3.1 to §3.6), TAPI-24 and TAPI-25 have not been submitted. The five drafts that got numbers on
+2026-11-03 (TAP-14 to TAP-18) are named by number above; the others are named by pull request until the editors number them.
 
 | Spec | Title | Status |
 |---|---|---|

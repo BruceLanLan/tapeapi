@@ -11,11 +11,11 @@ export declare function isAddress(a: unknown): a is Address
 export declare function checksumAddress(a: string): Address
 export declare function eqAddr(a: unknown, b: unknown): boolean
 export declare const ZERO_ADDRESS: Address
-/** @experimental ServiceDirectory labels (not deployed); may change in a 1.x minor release. */
+/** @experimental ServiceDirectory labels (not deployed); outside the compatibility promise; may change in a minor release. */
 export declare const LABEL_RE: RegExp
-/** @experimental ServiceDirectory labels (not deployed); may change in a 1.x minor release. */
+/** @experimental ServiceDirectory labels (not deployed); outside the compatibility promise; may change in a minor release. */
 export declare function labelToBytes32(label: string): Hex
-/** @experimental ServiceDirectory labels (not deployed); may change in a 1.x minor release. */
+/** @experimental ServiceDirectory labels (not deployed); outside the compatibility promise; may change in a minor release. */
 export declare function bytes32ToLabel(h: string): string
 export declare function encodeParams(types: string[], values: unknown[]): Hex
 export declare function decodeParams(types: string[], data: string | Uint8Array, base?: number): any[]
@@ -28,9 +28,9 @@ export declare const SERVICE_TUPLE: Record<string, unknown>
  */
 export declare const FUNCTIONS: Record<string, { inputs: unknown[]; outputs: unknown[]; fn?: string; [key: string]: unknown }>
 export declare function signatureOf(name: string): string
-/** @experimental Escrow v3 event signatures (TapeAPIEscrow is not deployed); may change in a 1.x minor release. */
+/** @experimental Escrow v3 event signatures (TapeAPIEscrow is not deployed); outside the compatibility promise; may change in a minor release. */
 export declare const EVENTS: Readonly<{ Settled: string; TreasuryClaimed: string }>
-/** @experimental topic0 of an escrow event in `EVENTS`; may change in a 1.x minor release. */
+/** @experimental topic0 of an escrow event in `EVENTS`; outside the compatibility promise; may change in a minor release. */
 export declare function eventTopic(name: 'Settled' | 'TreasuryClaimed'): Hex
 export declare function selector(nameOrSig: string): Hex
 export declare function encodeCall(name: string, args?: unknown[]): Hex

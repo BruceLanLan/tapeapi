@@ -51,7 +51,7 @@ Worker 的名称必须与 `wrangler.toml` 的 `name` 一致（`my-tapeapi-servic
    生成一把热签名密钥，由电路持有人为它签一份委托：
    ```
    HOLDER_KEY=0x... node examples/reader-service/sign-delegation.mjs \
-     --container 0x<container> --signer 0x<signer> --expires $(( $(date +%s) + 90*86400 ))
+     --container 0x<container> --signer 0x<signer> --expires $(( $(date +%s) + 30*86400 ))
    ```
 3. Set the variables. `SIGNER_KEY` is the only secret; `CIRCUITS`, `TOKEN_ID`, `CONTAINER`, `DELEGATION_EXPIRES`,
    `DELEGATION_SIG` and `PUBLIC_URL` are public (they end up in the manifest) and can be plain dashboard variables,

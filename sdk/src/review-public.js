@@ -1,5 +1,5 @@
 // @tapeapi/sdk/review — @experimental evidence-backed reviews between containers, published since 2.0.0. Everything
-// this subpath exports is experimental and outside the 2.x compatibility promise: the format is the draft
+// this subpath exports is experimental and outside the compatibility promise: the format is the draft
 // "Evidence-Backed Reviews between Containers" (TapeOutProtocol/TAPs pull request #54, tap TBD) and changes with it.
 // A review is a public statement signed for a reviewer container by its current holder or delegate, optionally backed by
 // a signed answer (level 1) or a task (level 2). Verification reads the chain; summaries count counterparties, never

@@ -547,7 +547,7 @@ test('FIXED P1RR-11: a sealed key never outlives its order record: a crash betwe
 function childOn(dir, then = 'wait') {
   const url = new URL('./state.mjs', import.meta.url).href
   const code = `import { createFileStore } from ${JSON.stringify(url)}; const st = createFileStore(${JSON.stringify(dir)}); process.stdout.write('held ' + st.lock.pid + '\\n'); ${then === 'exit' ? 'process.exit(0)' : 'setInterval(() => {}, 1000)'}`
-  const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'inherit'] })
+  const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'inherit'], timeout: 300_000, killSignal: 'SIGKILL' })
   const held = new Promise((res, rej) => { child.stdout.on('data', (b) => { if (String(b).startsWith('held')) res() }); child.on('exit', (c) => (then === 'exit' ? res() : rej(new Error(`the child exited (${c})`)))) })
   const exited = new Promise((res) => child.on('exit', res))
   return { child, held, exited }
@@ -593,7 +593,7 @@ test('FIXED P1RR-13: a lock is taken over only when its process is gone on this 
   put({ host: hostname(), startedAt: at })
   locked(() => createFileStore(dir), /cannot be read/)
   // a pid on this host that no longer exists: taken over / 本机上已不存在的 pid：接管
-  const gone = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))']).stdout.toString()
+  const gone = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { timeout: 300_000, killSignal: 'SIGKILL' }).stdout.toString()
   put({ pid: Number(gone), host: hostname(), startedAt: at })
   assert.equal(createFileStore(dir).lock.pid, process.pid)
   assert.deepEqual(readdirSync(dir), [LOCK_FILE], 'no temporary or moved-aside file is left behind')

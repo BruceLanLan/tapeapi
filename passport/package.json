@@ -1,0 +1,67 @@
+{
+  "name": "@tapeapi/passport",
+  "version": "0.1.0",
+  "description": "TapeAPI Agent Passport resolver (experimental, follows an open TAP draft, PR #83 at cae25e6; the draft has been updated since, now cbf4e03): read-only check that one wallet holds both an ERC-8004 agent identity and a TapeOut circuit and published the link",
+  "keywords": [
+    "tapeapi",
+    "tapeout",
+    "bnb",
+    "bsc",
+    "erc-8004",
+    "agent",
+    "experimental"
+  ],
+  "homepage": "https://tapeapi.fun/docs/",
+  "bugs": {
+    "url": "https://github.com/BruceLanLan/tapeapi/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BruceLanLan/tapeapi.git",
+    "directory": "passport"
+  },
+  "license": "MIT",
+  "author": "Bruce (@BruceLanLan)",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/passport-public.js",
+  "types": "./types/passport.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/passport.d.ts",
+      "default": "./src/passport-public.js"
+    },
+    "./feedback": {
+      "types": "./types/feedback.d.ts",
+      "default": "./src/passport-feedback.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "@noble/hashes": "1.8.0",
+    "@tapeapi/sdk": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "tapeapi": {
+    "draft": {
+      "repo": "TapeOutProtocol/TAPs",
+      "pr": 83,
+      "head": "cae25e6df54ad2e2e38e185304de55f92792966d",
+      "vectorsSha256": "7720772c05d60062f48daa7c1d2ab6f45affc3d05425126d9de9b00a4ff8fca4"
+    }
+  }
+}

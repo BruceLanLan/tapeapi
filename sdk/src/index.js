@@ -344,11 +344,11 @@ export function createTapeAPI(opts = {}) {
   //                       按 TAP-10 v1.1 与 TAP-11 §2.2 解析（解析路径）。隐含 pin: 'tap10'。1.5 起也包括消息路径。1.5.0 起
   //                       resolve 用严格共识检查 eth_chainId、读取 ownerOf 与合约持有人的 EIP-1271 调用。
   //                       2.0: THE DEFAULT. Left out = 'tap10' (dev: true excepted, which means false). false or null = the
-  //                       1.x resolution, deprecated (kept in 2.x; one onWarning, code DEPRECATED, when the client is made).
+  //                       1.x resolution, deprecated (kept through 3.x; one onWarning, code DEPRECATED, when the client is made).
   //                       Under the default, a configuration that is not TAP-10's (hub, factory, siteRegistry, opener or
   //                       binding of your own, a chain without TAP-10 lists, a pin other than 'tap10') is INVALID_ARGUMENT
   //                       when the client is made, saying to pass conform: false (design points D-1, D-2; docs/guides/upgrade-2.0.md).
-  //                       2.0：默认。不传即 'tap10'（dev: true 除外，视同 false）。false 或 null 为 1.x 的解析，弃用（2.x 内保留；
+  //                       2.0：默认。不传即 'tap10'（dev: true 除外，视同 false）。false 或 null 为 1.x 的解析，弃用（整个 3.x 保留；
   //                       建客户端时 onWarning 一次，code 为 DEPRECATED）。默认下非 TAP-10 的配置（自定义地址、没有 TAP-10 列表的链、
   //                       'tap10' 以外的 pin）在建客户端时 INVALID_ARGUMENT，信息写明传 conform: false。
   //                       The default follows changes in the TAP texts (docs/guides/upgrade-2.0.md): loosenings and new status
@@ -381,16 +381,16 @@ export function createTapeAPI(opts = {}) {
   const now = clockOf(opts.clock)
   // 2.0: the conformance mode is the default (design points D-1..D-6; docs/guides/upgrade-2.0.md). Left out (undefined) it is on, unless
   // dev: true (the dev mode skips the on-chain identity, so it means the 1.x resolution, D-1). false and null are the 1.x
-  // resolution: deprecated and kept in 2.x, one warning when the client is made (D-6); never an error, never other behaviour.
+  // resolution: deprecated and kept through 3.x, one warning when the client is made (D-6); never an error, never other behaviour.
   // 2.0：一致模式成为默认。不传（undefined）即开启，除非 dev: true（开发模式本来就跳过链上身份，视同 1.x 的解析）。false 与 null
-  // 是 1.x 的解析：2.x 内弃用但保留，建客户端时警告一次；不报错，不改变行为。
+  // 是 1.x 的解析：弃用但整个 3.x 保留，建客户端时警告一次；不报错，不改变行为。
   if (opts.conform !== undefined && opts.conform !== null && opts.conform !== false && opts.conform !== 'tap10') throw new TapeAPIError('INVALID_ARGUMENT', "conform: pass 'tap10' (TAP-10 v1.1, the default since 2.0), false (the 1.x resolution, deprecated), or leave it out")
   const conformDefaulted = opts.conform === undefined && !devMode
   const conformMode = opts.conform === 'tap10' || conformDefaulted
   // A construction error of the conformance mode says how to get the 1.x resolution when the mode was not asked for (D-1, D-2).
   // 没有显式要求一致模式时，一致模式的构造错误写明如何回到 1.x 的解析。
   const conformError = (msg) => new TapeAPIError('INVALID_ARGUMENT', conformDefaulted
-    ? `${msg}. Since 2.0 createTapeAPI() resolves as TAP-10 / TAP-11 §2 say by default (conform: 'tap10'); this configuration is not a TAP-10 one (your own addresses, a local chain or fork, a chain without TAP-10 lists, or another pin): pass conform: false for the 1.x resolution (deprecated, kept in 2.x)`
+    ? `${msg}. Since 2.0 createTapeAPI() resolves as TAP-10 / TAP-11 §2 say by default (conform: 'tap10'); this configuration is not a TAP-10 one (your own addresses, a local chain or fork, a chain without TAP-10 lists, or another pin): pass conform: false for the 1.x resolution (deprecated, kept through 3.x)`
     : msg)
   // D-1: a chain without TAP-10 lists (a local chain, a fork under another chainId, any chain chains.js does not know)
   // D-1：没有 TAP-10 列表的链（本地链、换了 chainId 的分叉、chains.js 不认识的链）
@@ -434,12 +434,12 @@ export function createTapeAPI(opts = {}) {
   const delegationFloor = opts.delegationFloor === true ? new Map() : (isFloorStore(opts.delegationFloor) ? opts.delegationFloor : null)
   if (opts.onWarning !== undefined && typeof opts.onWarning !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'onWarning must be a function')
   const onWarning = opts.onWarning ?? consoleWarning
-  // D-6: conform: false (or null) is the 1.x resolution, deprecated in 2.x: one warning per client, when it is made. Not for
-  // dev: true (not deprecated) and not for the clients made inside the SDK (forChain, the conformance sibling: ROUTER),
-  // so one client warns once whatever chains it reads. / conform: false（或 null）是 2.x 内弃用的 1.x 解析：每个客户端建立时
+  // D-6: conform: false (or null) is the 1.x resolution, deprecated since 2.0 and kept through 3.x: one warning per
+  // client, when it is made. Not for dev: true (not deprecated) and not for the clients made inside the SDK (forChain,
+  // the conformance sibling: ROUTER), so one client warns once whatever chains it reads. / conform: false（或 null）是 2.0 起弃用、整个 3.x 保留的 1.x 解析：每个客户端建立时
   // 警告一次。dev: true 不警告（未弃用）；SDK 内部建的客户端（forChain、一致模式同胞，带 ROUTER）也不警告。
   if ((opts.conform === false || opts.conform === null) && typeof opts[ROUTER] !== 'function') {
-    try { onWarning({ code: 'DEPRECATED', option: 'conform', message: "conform: false is the 1.x resolution, deprecated in 2.x (kept in 2.x, not removed): since 2.0 createTapeAPI() resolves as TAP-10 / TAP-11 §2 say by default; see https://tapeapi.fun/docs/en/upgrade-2.0" }) } catch { /* a reporter never breaks the client / 报告函数绝不影响客户端 */ }
+    try { onWarning({ code: 'DEPRECATED', option: 'conform', message: "conform: false is the 1.x resolution, deprecated since 2.0 and kept through all of 3.x (removal no earlier than 4.0): since 2.0 createTapeAPI() resolves as TAP-10 / TAP-11 §2 say by default; see https://tapeapi.fun/docs/en/upgrade-2.0" }) } catch { /* a reporter never breaks the client / 报告函数绝不影响客户端 */ }
   }
   // SHARED_RPC (internal): the conformance sibling of a client shares that client's RPC client (conform-sibling.js)
   // SHARED_RPC（内部）：客户端的一致模式同胞共用该客户端的 RPC 客户端
@@ -542,6 +542,17 @@ export function createTapeAPI(opts = {}) {
     /** Processor contract number `processor` (the number in <#ID>.<processor>.tape); NOT_FOUND past the last one.
      *  处理器编号对应的合约；超出范围为 NOT_FOUND。 */
     cpuAt: (processor) => cpuAtAt(processor, 'latest'),
+    /** @experimental (3.0, for @tapeapi/passport) TAP-10 §4.3 step 3 through this client's processor table (kept table,
+     *  shipped snapshot checked by one cpuAt, resumable scan) at `at`, a pinned block { number, hash } as rpc.tap10Block()
+     *  returns (default: a new TAP-10 pin). The number as a string; null when the factory's list does not name it;
+     *  RPC_UNAVAILABLE until the scan reaches it. Default agreement: a caller needing strict agreement re-reads cpuAt(n).
+     *  经本客户端的处理器表查处理器号；null 表示工厂列表里没有；扫描未到时 RPC_UNAVAILABLE。默认共识：需要严格共识的调用方自己再读 cpuAt(n)。 */
+    processorNumber: async (circuits, { at } = {}) => {
+      if (!isAddress(circuits)) throw new TapeAPIError('INVALID_ARGUMENT', 'processorNumber: a processor contract address')
+      const pin = at ?? await tap10Pin()
+      if (!pin || typeof pin.hash !== 'string') throw new TapeAPIError('INVALID_ARGUMENT', 'processorNumber: at is a pinned block { number, hash }')
+      return processorNumberOf(circuits, tapAt(pin))
+    },
     /** TapeKit SPEC §3.3 step 2: only a factory-deployed processor is TapeOut. true is cached for good (the processor
      *  list is append-only); false is not. / 只有工厂部署的处理器才是 TapeOut。true 永久缓存（列表只增不删），false 不缓存。 */
     isCPU: (circuits) => isCPUAt(circuits, 'latest'),
@@ -2801,7 +2812,9 @@ export function createTapeAPI(opts = {}) {
     // tapCtx (@experimental TAP draft): the voucher names the quote's rate and is sent with v of 27 or 28
     // the 1.8.1 path passes only waitMs: it waits (only while a draft voucher of the channel is in flight) as long as the
     // draft path does / 1.8.1 路径只传 waitMs：仅在有草稿凭证在途时等待，时长与草稿路径相同
-    if (price > 0n) { lease = tapCtx ? await payer.reserve(svc, price, { rate: tapCtx.rate, strictV: true, waitMs: timeoutMs + 30_000 }) : await payer.reserve(svc, price, { waitMs: timeoutMs + 30_000 }); box.lease = lease; body.voucher = lease.voucher }
+    // `method` (3.0): a mandate-limited payer bounds the call by the method's priceBEM; api.payer ignores it
+    // `method`：受授权书约束的 payer 用该方法的 priceBEM 约束本次调用；api.payer 不看它
+    if (price > 0n) { lease = tapCtx ? await payer.reserve(svc, price, { rate: tapCtx.rate, strictV: true, waitMs: timeoutMs + 30_000, method }) : await payer.reserve(svc, price, { waitMs: timeoutMs + 30_000, method }); box.lease = lease; body.voucher = lease.voucher }
     let timedOut = false
     const ac = new AbortController(); const t = setTimeout(() => { timedOut = true; ac.abort() }, timeoutMs)
     const onAbort = () => ac.abort()
@@ -3554,7 +3567,7 @@ export function createTapeAPI(opts = {}) {
       return { to: isAddress(esc) ? esc : needEscrow(), data: encodeCall('setContribution', [circuits, BigInt(tokenId), n]), value: '0x0' }
     },
     // Experimental: one setContribution per escrow instance, since each keeps its own setting and one never set applies
-    // the default (PLAN-1.0 "1.8"; the doctor's --escrows warning). `escrows` defaults to the instances this client builds
+    // the default (since 1.8; the doctor's --escrows warning). `escrows` defaults to the instances this client builds
     // for (AUDITED_ESCROWS of the chain, then allowEscrows), the same list as chain.escrow.contributions; duplicates count
     // once; none at all is an error, never an empty list. The holder sends every transaction.
     // 实验性：每个托管实例一笔 setContribution（各实例各自保存设置，从未设置的按默认）。`escrows` 默认为本客户端为之构造交易的实例

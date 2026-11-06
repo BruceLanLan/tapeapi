@@ -75,11 +75,12 @@ export declare function createMcpProxy(o: {
   allowHttp?: boolean
   upstreamTimeoutMs?: number
   /**
-   * @experimental (2.5) 'legacy' (default): open the upstream with initialize, as before. 'auto': probe with
-   * server/discover and speak MCP 2026-07-28 to an upstream that offers it, else fall back to initialize.
+   * @experimental (2.5) 'auto' (default since 3.0): probe with server/discover and speak MCP 2026-07-28 to an upstream
+   * that offers it, else fall back to initialize. 'legacy': open the upstream with initialize, as in 2.x.
    */
   upstreamNegotiation?: 'legacy' | 'auto'
-  /** @experimental (2.5) Exact origins a browser may call /mcp from (an unlisted Origin is 403). Default: every origin.
-   *  Set it for a proxy on a local machine in front of tools with side effects. */
-  allowedOrigins?: string[]
+  /** @experimental (2.5) Exact origins a browser may call /mcp from (an unlisted Origin is 403; a request without
+   *  Origin is answered as usual). Default since 3.0: none listed, so every browser request is refused. '*': every
+   *  origin with CORS `*`, as in 2.x. */
+  allowedOrigins?: string[] | '*'
 }): McpProxy

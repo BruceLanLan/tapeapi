@@ -60,7 +60,7 @@ async function fixture() {
   mkdirSync(dir)
   const log = join(dir, 'receipts.jsonl')
   const port = await freePort()
-  const child = spawn(process.execPath, [VERIFY, '--dev', url, '--port', String(port), '--no-salt', '--log', log], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const child = spawn(process.execPath, [VERIFY, '--dev', url, '--port', String(port), '--no-salt', '--log', log], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   closers.push(() => new Promise((r) => { if (child.exitCode !== null || child.signalCode !== null) return r(); child.once('exit', r); child.kill('SIGKILL') }))
   await new Promise((ok, fail) => {
     let t = ''
@@ -510,7 +510,7 @@ test('receipts and reconcile make no network request and import no network modul
 test('the dispatcher runs receipts and reconcile; an unknown subcommand is exit 2 with a next line', async () => {
   const f = await fixture()
   const spawnRun = (args) => new Promise((ok) => {
-    const c = spawn(process.execPath, [BIN, ...args], { cwd: f.dir, stdio: ['ignore', 'pipe', 'pipe'] })
+    const c = spawn(process.execPath, [BIN, ...args], { cwd: f.dir, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
     let out = '', err = ''
     c.stdout.on('data', (d) => { out += d }); c.stderr.on('data', (d) => { err += d })
     c.once('exit', (code) => ok({ code, out, err }))

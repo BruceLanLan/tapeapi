@@ -63,7 +63,7 @@ async function startTamperProxy(upstream) {
 // 记下每个启动的服务器：断言失败也不会留下进程把测试进程（或 CI）挂住。
 const children = new Set()
 function spawnBin(args) {
-  const child = spawn(process.execPath, [BIN, ...args], { stdio: ['pipe', 'pipe', 'pipe'] })
+  const child = spawn(process.execPath, [BIN, ...args], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   children.add(child); child.once('exit', () => children.delete(child))
   let out = '', err = '', seq = 0
   const waiters = new Map()
@@ -589,8 +589,8 @@ test('an unusable mcp field (bad or uppercase digest, non-https endpoint, query 
   const good = { ...M.manifest.mcp }
   const cases = [
     [{ ...good, toolsSha256: 'xyz' }, /unusable "mcp" field: mcp\.toolsSha256 must be 64 lowercase hex characters/],
-    // 2.3, as tapeapi connect and TAPs #16 §2: the same digest in capitals, and an endpoint with a query or a fragment.
-    // 2.3，与 tapeapi connect 和 TAPs #16 §2 一致：同一摘要写成大写，以及带 query 或 fragment 的端点。
+    // 2.3, as tapeapi connect and TAP-15 §2: the same digest in capitals, and an endpoint with a query or a fragment.
+    // 2.3，与 tapeapi connect 和 TAP-15 §2 一致：同一摘要写成大写，以及带 query 或 fragment 的端点。
     [{ ...good, toolsSha256: good.toolsSha256.toUpperCase() }, /unusable "mcp" field: mcp\.toolsSha256 must be 64 lowercase hex characters/],
     [{ ...good, endpoint: good.endpoint + '?x=1' }, /unusable "mcp" field: mcp\.endpoint must have no query or fragment/],
     [{ ...good, endpoint: good.endpoint + '#tools' }, /unusable "mcp" field: mcp\.endpoint must have no query or fragment/],
@@ -720,7 +720,7 @@ test('--upstream-negotiation auto: the tools of a taped-out MCP server whose end
     assert.deepEqual(r.result.structuredContent, { tempC: 21.5, sky: 'sunny' }, 'calls still go through the signed TapeAPI path')
     await s.close()
     assertPureStdout(s.lines)
-    assert.match(s.stderr(), /MCP tools verified: 3 tool\(s\) .* \(read with MCP 2026-07-28, no initialize; --upstream-negotiation auto\)/)
+    assert.match(s.stderr(), /MCP tools verified: 3 tool\(s\) .* \(read with MCP 2026-07-28, no initialize; upstream negotiation auto\)/)
     const seen = M.state.modernSeen
     assert.equal(seen[0].method, 'server/discover', 'probed first')
     assert.deepEqual(seen.filter((x) => x.method === 'tools/list').length >= 2, true, 'both pages read in the 2026-07-28 way')
@@ -732,10 +732,17 @@ test('--upstream-negotiation auto: the tools of a taped-out MCP server whose end
   } finally { M.state.modernOnly = false }
 })
 
-test('--upstream-negotiation: the default (legacy) still opens with initialize, so a 2026-07-28-only endpoint cannot be read; auto falls back to initialize for an older endpoint; a bad value is a usage mistake', async () => {
+test('--upstream-negotiation: legacy (the 2.x default) still opens with initialize, so a 2026-07-28-only endpoint cannot be read; auto, the default since 3.0, reads it with no option and falls back to initialize for an older endpoint; a bad value is a usage mistake', async () => {
   M.state.modernOnly = true; M.state.modernSeen = []
   try {
-    const s = await session(['--dev', M.url, '--no-pin'])
+    // 3.0: no option is auto. / 3.0：不给选项即 auto。
+    const n = await session(['--dev', M.url, '--no-pin'])
+    assert.equal((await n.request('tools/call', { name: 'weather', arguments: { city: 'Paris' } })).result.isError, false)
+    await n.close()
+    assert.match(n.stderr(), /\(read with MCP 2026-07-28, no initialize; upstream negotiation auto\)/)
+    assert.equal(M.state.modernSeen[0].method, 'server/discover')
+    M.state.modernSeen = []
+    const s = await session(['--dev', M.url, '--no-pin', '--upstream-negotiation', 'legacy'])
     const r = await s.request('tools/call', { name: 'weather', arguments: { city: 'Paris' } })
     assert.equal(r.result.isError, true)
     assert.match(textOf(r), /could not be read from .*\/mcp/)
@@ -750,10 +757,10 @@ test('--upstream-negotiation: the default (legacy) still opens with initialize, 
   const a = await session(['--dev', M.url, '--no-pin', '--upstream-negotiation=auto'])
   assert.equal((await a.request('tools/call', { name: 'weather', arguments: { city: 'Rome' } })).result.isError, false)
   await a.close()
-  assert.match(a.stderr(), /MCP tools verified: 3 tool\(s\) .* \(read with initialize; --upstream-negotiation auto\)/)
+  assert.match(a.stderr(), /MCP tools verified: 3 tool\(s\) .* \(read with initialize; upstream negotiation auto\)/)
   assert.ok(M.state.lists >= lists + 2, 'tools/list read page by page in a session')
-  // Without the option the log line is as before. / 不给选项时日志行与以前相同。
-  const d = await session(['--dev', M.url, '--no-pin'])
+  // With legacy the log line is as in 2.x. / legacy 时日志行与 2.x 相同。
+  const d = await session(['--dev', M.url, '--no-pin', '--upstream-negotiation', 'legacy'])
   await d.request('tools/call', { name: 'weather', arguments: { city: 'Rome' } })
   await d.close()
   assert.match(d.stderr(), /MCP tools verified: 3 tool\(s\) from \S+ hash to the manifest's mcp\.toolsSha256 [0-9a-f]{16}\.\.\.\n/)

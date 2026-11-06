@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22]   # package.json engines says >= 20 / engines 声明 >= 20
+        node: [22, 24]   # package.json engines says >= 22 / engines 声明 >= 22
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

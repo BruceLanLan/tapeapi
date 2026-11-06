@@ -225,12 +225,12 @@ function validFormat(f) {
  * @param {boolean} [o.allowHttp]  http endpoints (local testing)
  * @param {number} [o.upstreamTimeoutMs=600000]
  * @param {number} [o.streamIdleMs=300000]  a stream silent this long is ended (0: never) / 流静默这么久即结束（0：不限）
- * @param {boolean|{ hint?: string }} [o.refuseOtherFormats=false]  @experimental a metered path of a built-in format
+ * @param {boolean|{ hint?: string }} [o.refuseOtherFormats=true]  @experimental a metered path of a built-in format
  *        (ai.FORMATS) that `formats` leaves out is answered HTTP 400 bad_path (with the sidecar-error header), never
  *        forwarded, instead of being passed through without a receipt; `hint` ends the message (for example the setting
- *        that enables the format). Default false: passed through, as before.
+ *        that enables the format). Default true since 3.0; false passes such a path through without a receipt, as 2.x did.
  *        / 实验性：`formats` 未包含的内置格式的计量路径答 400 bad_path（带旁路错误头），不转发，而不是无回执透传；hint 附在
- *        消息末尾（例如启用该格式的设置）。默认 false：照旧透传。
+ *        消息末尾（例如启用该格式的设置）。3.0 起默认 true；false 则像 2.x 一样无回执透传。
  * @param {string[]} [o.upstreamResponseHeaders]  @experimental (2.5) an allowlist of upstream response header names: when
  *        set, only these (case-insensitive), `content-type` (always kept: clients need it; its media type, charset and
  *        boundary only) and `retry-after` (always kept: clients back off with it) are passed on to the caller,
@@ -239,9 +239,16 @@ function validFormat(f) {
  *        so receipts and bodies are the same with or without it. Default: unset, every header passed but those dropped
  *        today. / 实验性：上游响应头白名单。设置后只转交这些头（不区分大小写）与 content-type、retry-after（始终保留）；旁路自己的头照旧加上。
  *        响应头不属于回执（回执绑定正文字节），所以开不开回执与正文都不变。默认不设：与现在一样转交。
+ * @param {boolean} [o.priceRef=false]  @experimental (3.0, a proposal, not part of TAPI-21 or of any TAP; see the CHANGELOG)
+ *        sign the price basis into every receipt as `result.priceRef` (ai.priceRefOf of the published table), so a
+ *        verifier can tell which version of the price table priced it. It changes the signed content of every receipt
+ *        (verifiers that know nothing of it still accept it: TAPI-21 §3.5 has no rule against another result member, and
+ *        the reference verifiers ignore it). Default false: receipts exactly as before.
+ *        / 实验性（3.0，提案，非规范）：把价格依据作为 result.priceRef 签进每份回执，核验方由此知道是哪一版价目表定的价。
+ *        它会改变每份回执的签名内容（不认识它的核验方照样接受）。默认 false：回执与以前完全相同。
  */
 export function createAIProxy(opts = {}) {
-  const { upstream, manifestBase, signerKey, models, receiptTtlMs = RECEIPT_TTL_MS, maxReceipts = MAX_RECEIPTS, formats = ai.FORMATS, requireRequestHash = false, forwardSessionHeaders = true } = opts
+  const { upstream, manifestBase, signerKey, models, receiptTtlMs = RECEIPT_TTL_MS, maxReceipts = MAX_RECEIPTS, formats = ai.FORMATS, requireRequestHash = false, forwardSessionHeaders = true, priceRef = false } = opts
   if (!isObj(upstream) || typeof upstream.baseUrl !== 'string') throw new TapeAPIError('INVALID_ARGUMENT', 'upstream must be { baseUrl, headers? }')
   let up
   try { up = new URL(upstream.baseUrl) } catch { throw new TapeAPIError('INVALID_ARGUMENT', 'upstream.baseUrl must be a URL') }
@@ -262,6 +269,8 @@ export function createAIProxy(opts = {}) {
   if (!Number.isInteger(maxReceipts) || maxReceipts <= 0) throw new TapeAPIError('INVALID_ARGUMENT', 'maxReceipts must be a positive integer')
   if (typeof requireRequestHash !== 'boolean') throw new TapeAPIError('INVALID_ARGUMENT', 'requireRequestHash must be true or false')
   if (typeof forwardSessionHeaders !== 'boolean') throw new TapeAPIError('INVALID_ARGUMENT', 'forwardSessionHeaders must be true or false')
+  if (typeof priceRef !== 'boolean') throw new TapeAPIError('INVALID_ARGUMENT', 'priceRef must be true or false')
+  if (priceRef && typeof ai.priceRefOf !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'priceRef needs @tapeapi/sdk 3.0 or later (ai.priceRefOf)')
   const receiptRl = opts.receiptRateLimit === false ? null : {
     ip: Number(opts.receiptRateLimit?.ip ?? RECEIPT_LOOKUPS_PER_MIN),
     windowMs: Number(opts.receiptRateLimit?.windowMs ?? 60_000),
@@ -269,9 +278,9 @@ export function createAIProxy(opts = {}) {
   if (receiptRl && (!Number.isInteger(receiptRl.ip) || receiptRl.ip < 0 || !Number.isInteger(receiptRl.windowMs) || receiptRl.windowMs <= 0)) throw new TapeAPIError('INVALID_ARGUMENT', 'receiptRateLimit must be false or { ip: a non-negative integer, windowMs: a positive integer }')
   if (!Array.isArray(formats) || !formats.length || !formats.every(validFormat)) throw new TapeAPIError('INVALID_ARGUMENT', 'formats must be a non-empty list of adapters (see sdk ai.js)')
   if (new Set(formats.map((f) => f.method)).size !== formats.length || new Set(formats.map((f) => f.name)).size !== formats.length) throw new TapeAPIError('INVALID_ARGUMENT', 'two formats share a name or a receipt method')
-  // The built-in formats this proxy does not serve, when their metered paths are refused (refuseOtherFormats).
-  // 不提供的内置格式（refuseOtherFormats 开启时拒绝其计量路径）。
-  const refuseOther = opts.refuseOtherFormats ?? false
+  // The built-in formats this proxy does not serve, when their metered paths are refused (refuseOtherFormats, on by
+  // default since 3.0). / 不提供的内置格式（refuseOtherFormats 开启时拒绝其计量路径；3.0 起默认开启）。
+  const refuseOther = opts.refuseOtherFormats ?? true
   if (typeof refuseOther !== 'boolean' && !(isObj(refuseOther) && (refuseOther.hint === undefined || typeof refuseOther.hint === 'string'))) throw new TapeAPIError('INVALID_ARGUMENT', 'refuseOtherFormats must be true, false or { hint?: string }')
   const servedNames = formats.map((f) => f.name)
   const otherFormats = refuseOther ? ai.FORMATS.filter((f) => !servedNames.includes(f.name)) : []
@@ -315,6 +324,8 @@ export function createAIProxy(opts = {}) {
   if (!root) throw new TapeAPIError('INVALID_ARGUMENT', 'publicUrl is required when endpoints.live is empty')
   const field = ai.validateAIField({ endpoints: formats.map((f) => ({ format: f.name, baseUrl: root + f.baseSuffix })), models }, { allowHttp: opts.allowHttp === true })
   const rootPath = new URL(root).pathname.replace(/\/+$/, '')
+  // Proposal (experimental, off by default): the price basis signed into every receipt. / 提案：签进每份回执的价格依据。
+  const priceBasis = priceRef ? ai.priceRefOf(field) : null
   const manifest = { tapeapi, ...base, signer, methods: [{ ...RECEIPT_METHOD, params: { ...RECEIPT_METHOD.params }, returns: { ...RECEIPT_METHOD.returns }, description: receiptDescription(receiptTtlMs) }], [ai.MANIFEST_FIELD]: field }
   const size = byteLength(JSON.stringify(manifest))
   if (size > MANIFEST_LIMIT) throw new TapeAPIError('MANIFEST_INVALID', `the manifest would be ${size} bytes, over TAPI-20's ${MANIFEST_LIMIT}; shorten the price table`)
@@ -419,6 +430,7 @@ export function createAIProxy(opts = {}) {
     if (p.modelMatchedBy) r.modelMatchedBy = p.modelMatchedBy
     if (p.unpriced) r.unpriced = p.unpriced
     if (usageInjected) r.usageInjected = true
+    if (priceBasis) r.priceRef = priceBasis
     return r
   }
   function signReceipt({ id, method, params, result }, upstreamId = false) {

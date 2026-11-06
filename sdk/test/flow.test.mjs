@@ -756,3 +756,17 @@ test('resolve by TapeOut name: <#ID>.<processor>.tape goes through factory.cpuAt
   await assert.rejects(api.resolve('4246.8.tape'), (e) => e.code === 'NOT_FOUND' && /processor 8 does not exist/.test(e.message))
   await assert.rejects(api.resolve('4246.7.tap'), (e) => e.code !== undefined, 'not a name: falls through to the label path')
 })
+
+// 3.0: api.call tells the payer which method it pays for, so a mandate-limited payer can bound the call by
+// that method's priceBEM; a payer that ignores extra.method (api.payer) is unaffected
+// 3.0：api.call 告诉 payer 所付的是哪个方法，受授权书约束的 payer 可按该方法的 priceBEM 约束调用；不看它的 payer 不受影响
+test('FIXED P1CP-05: a priced api.call passes the method it pays for to payer.reserve as extra.method', async () => {
+  const svc = await api.resolve('reader')
+  const seen = []
+  const stop = new Error('recorded')
+  const payer = { consumer, signer: sessionAddr, cumulativeOf: () => 0n, reserve: async (_svc, price, extra) => { seen.push({ price, extra }); throw stop } }
+  await assert.rejects(api.call(svc, 'circuitHolder', P, { payer }), (e) => e === stop)
+  assert.equal(seen.length, 1)
+  assert.equal(seen[0].extra.method, 'circuitHolder')
+  assert.equal(seen[0].price, PRICE)
+})

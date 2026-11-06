@@ -64,7 +64,7 @@ test('D-6: conform: false and null are the 1.x resolution, with one DEPRECATED w
     const warned = []
     const api = mk(chain, { conform, onWarning: (w) => warned.push(w), chains: { 8453: { rpcUrls: ['http://rpc8453-a', 'http://rpc8453-b'] } } })
     assert.equal(warned.length, 1, String(conform))
-    assert.equal(warned[0].code, 'DEPRECATED'); assert.equal(warned[0].option, 'conform'); assert.match(warned[0].message, /deprecated in 2\.x/)
+    assert.equal(warned[0].code, 'DEPRECATED'); assert.equal(warned[0].option, 'conform'); assert.match(warned[0].message, /deprecated since 2\.0 and kept through all of 3\.x/)   // 3.0: kept through 3.x / 3.0 起整个 3.x 保留
     const svc = await api.resolve('4246.7.tape')
     assert.equal(svc.container, c.container); assert.equal(svc.conform, undefined); assert.equal(svc.pinned, undefined)
     api.forChain(8453); api.forChain(196)
@@ -159,20 +159,20 @@ test('D-5 doctor: under the default an unactivated name fails activation (resolu
 test('D-5: tapeapi-mcp, tapeapi-verify and tapeapi-doctor document --no-conform and accept it; mcp and verify say which resolution they use', () => {
   const bin = (n) => fileURLToPath(new URL(`../bin/${n}.js`, import.meta.url))
   for (const n of ['tapeapi-mcp', 'tapeapi-verify', 'tapeapi-doctor']) {
-    const help = spawnSync(process.execPath, [bin(n), '--help'], { encoding: 'utf8' })
+    const help = spawnSync(process.execPath, [bin(n), '--help'], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
     assert.equal(help.status, 0, n); assert.match(help.stdout, /--no-conform +resolve as 1\.x did \(createTapeAPI\(\{ conform: false \}\), deprecated\)/, n)
     // accepted (not "unknown option"): with --help after it, the usage is printed and the exit status is 0
     // 被接受（不是"未知选项"）：后面跟 --help 时打印用法、退出码 0
-    const r = spawnSync(process.execPath, [bin(n), '--no-conform', '--help'], { encoding: 'utf8' })
+    const r = spawnSync(process.execPath, [bin(n), '--no-conform', '--help'], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
     assert.equal(r.status, 0, `${n}: ${r.stderr}`); assert.doesNotMatch(r.stderr, /unknown option/)
   }
   // tapeapi-mcp and tapeapi-verify say which resolution they use (stderr), before reading anything: nodes that refuse at once
   // tapeapi-mcp 与 tapeapi-verify 在读链之前说明所用的解析（stderr）；节点立即拒绝连接
   const dead = ['--rpc', 'http://127.0.0.1:9,http://localhost:9']
   for (const n of ['tapeapi-mcp', 'tapeapi-verify']) {
-    const def = spawnSync(process.execPath, [bin(n), ...dead, '11.1013.tape'], { encoding: 'utf8', timeout: 8000 })
+    const def = spawnSync(process.execPath, [bin(n), ...dead, '11.1013.tape'], { encoding: 'utf8', timeout: 8000, killSignal: 'SIGKILL' })
     assert.match(def.stderr, /resolution: TAP-10 \/ TAP-11 \(the default since 2\.0; --no-conform for the 1\.x one\)/, n)
-    const old = spawnSync(process.execPath, [bin(n), ...dead, '--no-conform', '11.1013.tape'], { encoding: 'utf8', timeout: 8000 })
+    const old = spawnSync(process.execPath, [bin(n), ...dead, '--no-conform', '11.1013.tape'], { encoding: 'utf8', timeout: 8000, killSignal: 'SIGKILL' })
     assert.match(old.stderr, /resolution: 1\.x \(--no-conform: conform: false, deprecated\)/, n)
     assert.match(old.stderr, /DEPRECATED: conform: false is the 1\.x resolution/, `${n}: the SDK's warning`)
   }

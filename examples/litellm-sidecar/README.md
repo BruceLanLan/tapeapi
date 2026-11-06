@@ -94,7 +94,7 @@ Nginx 要点：`proxy_buffering off;`（流式逐块到达）、`proxy_read_time
 
 与 new-api 包完全相同：第 3 步生成服务密钥，把 `SIGNER_KEY`、`CIRCUITS`、`TOKEN_ID`、`CONTAINER` 填进 `.env`，
 `docker compose up -d`；第 4 步输入 `PUBLIC_URL`，操作台从 `PUBLIC_URL/tapeapi/v1/health` 读出签名地址，你用钱包签委托（EIP-712，
-不涉及资金，90 天到期），把 `DELEGATION_EXPIRES`、`DELEGATION_SIG` 填进 `.env` 再 `docker compose up -d`；日志出现
+不涉及资金，默认 30 天到期），把 `DELEGATION_EXPIRES`、`DELEGATION_SIG` 填进 `.env` 再 `docker compose up -d`；日志出现
 `signer …, container …, delegation until …` 和四个端点后，第 5 步把清单写上链。第 5 步可以先粘贴 `models.json` 预览。
 
 **然后告诉你的用户**：密钥不变（仍是 LiteLLM 的虚拟密钥），只换 base URL，而且**必须带 `/v1`**：
@@ -117,7 +117,7 @@ LiteLLM 返回的失败（401 密钥无效、429 超出预算或限流……）�
 
 ### 续期
 
-与 new-api 包相同（见[那里的“续期”](../new-api-sidecar/README.md#续期)）：委托 90 天到期，最后 30 天旁路每次启动都在日志里打
+与 new-api 包相同（见[那里的“续期”](../new-api-sidecar/README.md#续期)）：委托默认 30 天到期，最后 7 天旁路每次启动都在日志里打
 `RENEW`；过期后旁路回到设置模式，所有 API 调用返回 503，直到续期。
 
 ### 局限
@@ -306,7 +306,7 @@ circuit with its container opened, and a checkout of this repository:
    set `UPSTREAM_BASE_URL` to your LiteLLM service, and point the API hostname at the sidecar.
 3. **Identity and the manifest, in the holder console at https://tapeapi.fun/console/**, exactly as in the new-api
    package: step 3 generates the service key (`SIGNER_KEY`, with `CIRCUITS`, `TOKEN_ID`, `CONTAINER`); step 4 reads the
-   signer from `PUBLIC_URL/tapeapi/v1/health` and you sign the delegation (EIP-712, no funds move, 90 days); put
+   signer from `PUBLIC_URL/tapeapi/v1/health` and you sign the delegation (EIP-712, no funds move, 30 days by default); put
    `DELEGATION_EXPIRES` and `DELEGATION_SIG` in `.env`, `docker compose up -d`; step 5 publishes the manifest.
 
 **Then tell your users**: same keys (LiteLLM virtual keys), new base URL, **with `/v1`**: OpenAI SDKs and compatible
@@ -325,8 +325,8 @@ budget or rate limit, ...) are signed too, with no usage and no price claimed.
 
 ### Renewing the delegation
 
-As in the new-api package ([its "Renewing the delegation"](../new-api-sidecar/README.md#renewing-the-delegation)): 90
-days; `RENEW` in the log at every start in the last 30; an expired delegation puts the sidecar in setup mode (503).
+As in the new-api package ([its "Renewing the delegation"](../new-api-sidecar/README.md#renewing-the-delegation)): 30
+days by default; `RENEW` in the log at every start in the last 7; an expired delegation puts the sidecar in setup mode (503).
 
 ### Limits
 

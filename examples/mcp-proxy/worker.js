@@ -43,6 +43,12 @@ export function build(env, extra = {}) {
     allowHttp: /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(env.PUBLIC_URL),
     // Per isolate; the edge sets cf-connecting-ip and a client cannot forge it. / 按隔离实例计；该头由边缘设置，客户端无法伪造。
     rateLimit: { windowMs: 60_000, free: Number(env.RATE_FREE || 600), paid: 0 },
+    // ALLOWED_ORIGINS: comma-separated origins a browser may call /mcp from. Unset: any origin (CORS *), as before. On a
+    // public Worker an Origin check protects nothing (anything that is not a browser can call it), and the holder console
+    // reads tools/list from the browser; createMcpProxy's own default since 3.0 (browsers refused) is for a proxy on a
+    // local machine. / 浏览器可调用 /mcp 的来源，逗号分隔。不设：任何来源（CORS *），与以前相同。公开的 Worker 上来源校验保护不了
+    // 什么（非浏览器照样能调用），而持有人操作台在浏览器里读 tools/list；createMcpProxy 3.0 起的默认（拒绝浏览器）是给本机代理的。
+    allowedOrigins: env.ALLOWED_ORIGINS && env.ALLOWED_ORIGINS.trim() !== '*' ? env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean) : '*',
     ...extra,
   })
 }

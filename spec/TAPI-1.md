@@ -4,6 +4,7 @@
 | Author | Bruce (@BruceLanLan) |
 | Status | Draft |
 | Implementation | Applies to TapeAPI's own documents (2026-09-30). TapeOut's proposal process is TAP-01 in TapeOutProtocol/TAPs; the suggestion first offered in TapeKit issue #8 was not adopted as TapeOut's process. |
+| Revision | 2026-10-29: editorial, non-normative. The note on version 2 of TAPI-26 and TAPI-27 calls them Stable (v2), as their own Status rows have said since TapeAPI 2.0.0, not Drafts. No normative text changed. |
 | Type | Informational (Process) |
 | Created | 2026-09-20 |
 | Requires | — |
@@ -13,7 +14,7 @@
 
 > English is authoritative. 中文译文见下半部分，章节编号一一对应。
 
-> **TapeAPI's own process document, not TapeOut's.** TAPI-1 (called TAP-1 until 2026-09-30) governs only TapeAPI's own documents, TAPI-1 and TAPI-20 to TAPI-27, and their compatibility rules: the statuses and the freeze rule of §4.1, and the rest of this document, apply to them as before. It is not a TAP and does not define TapeOut's proposal process: that process is the official TAP-01 in [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), whose editors assign TAP numbers. Where the rest of this document speaks of TAP numbering and of TapeKit maintainers, it keeps the text of the suggestion first offered in [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8); for TapeOut proposals, TAP-01 prevails. Parts of TapeAPI's specifications have been submitted as TAP drafts under TAP-01: service identity and manifest from TAPI-20 ([PR #8](https://github.com/TapeOutProtocol/TAPs/pull/8)), signed responses from TAPI-21 ([PR #10](https://github.com/TapeOutProtocol/TAPs/pull/10)) and private channels from TAPI-26 ([PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12)). Frozen constants that contain an old name (for example the `TAP-26/…` labels) are historical constants and never change. The TAPs editors asked that no label look like a TAP number, so TAPI-26 and TAPI-27 have a version 2 under the rule of §4.1, [TAPI-26 v2](TAPI-26-v2.md) and [TAPI-27 v2](TAPI-27-v2.md) (Drafts; implemented as an option from TapeAPI 1.8.1 and the default from 2.0), whose labels begin with `tape-channel/` and `tape-group/`; version 1 of each keeps its labels and stays Stable (v1).
+> **TapeAPI's own process document, not TapeOut's.** TAPI-1 (called TAP-1 until 2026-09-30) governs only TapeAPI's own documents, TAPI-1 and TAPI-20 to TAPI-28, and their compatibility rules: the statuses and the freeze rule of §4.1, and the rest of this document, apply to them as before. It is not a TAP and does not define TapeOut's proposal process: that process is the official TAP-01 in [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs), whose editors assign TAP numbers. Where the rest of this document speaks of TAP numbering and of TapeKit maintainers, it keeps the text of the suggestion first offered in [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8); for TapeOut proposals, TAP-01 prevails. Parts of TapeAPI's specifications have been submitted as TAP drafts under TAP-01: service identity and manifest from TAPI-20 ([PR #8](https://github.com/TapeOutProtocol/TAPs/pull/8)), signed responses from TAPI-21 ([PR #10](https://github.com/TapeOutProtocol/TAPs/pull/10)) and private channels from TAPI-26 ([PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12)). Frozen constants that contain an old name (for example the `TAP-26/…` labels) are historical constants and never change. The TAPs editors asked that no label look like a TAP number, so TAPI-26 and TAPI-27 have a version 2 under the rule of §4.1, [TAPI-26 v2](TAPI-26-v2.md) and [TAPI-27 v2](TAPI-27-v2.md) (each Stable (v2) from TapeAPI 2.0.0; implemented as an option from TapeAPI 1.8.1 and the default from 2.0), whose labels begin with `tape-channel/` and `tape-group/`; version 1 of each keeps its labels and stays Stable (v1).
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
@@ -48,7 +49,7 @@ Status transitions are recorded by editors in the front matter.
 
 ### 4.1 Interim Statuses: Stable (v1)
 
-TapeKit has no numbered-proposal process yet (§5), so no document can reach Final under §4. Until it has one, the documents this repository publishes (TAPI-20 to TAPI-27) carry one of the four statuses below in their `Status` row. They are this repository's own labels for its own documents: they are not TapeKit statuses and claim no endorsement by the maintainers.
+TapeKit has no numbered-proposal process yet (§5), so no document can reach Final under §4. Until it has one, the documents this repository publishes (TAPI-20 to TAPI-28) carry one of the four statuses below in their `Status` row. They are this repository's own labels for its own documents: they are not TapeKit statuses and claim no endorsement by the maintainers.
 
 - **Draft**: as in §4 item 2. Normative text can still change, including incompatibly.
 - **Stable (v1)**: version 1 of the document is frozen under the rules below. A document reaches it once its test vectors are complete and checked by independent implementations (§6 item 6).
@@ -79,10 +80,10 @@ A document that intends to become Stable (v1) MAY say so while still in Draft wi
 
 - `TAPI-1` is reserved for this document.
 - `10–19`: messaging. `TAP-10` is TapeSend, the maintainers' own number.
-- `20–29`: services. `TAPI-20` is TapeAPI; `TAPI-21` to `TAPI-27` are its companion documents.
+- `20–29`: services. `TAPI-20` is TapeAPI; `TAPI-21` to `TAPI-28` are its companion documents.
 - Other ranges are unallocated; maintainers MAY allocate a range when a family of proposals appears.
 - Maintainers assign numbers. Authors MUST NOT self-assign. A number, once assigned, is never reused.
-- The names TAPI-1 and TAPI-20 to TAPI-27 are TapeAPI's own document names (TAP-1 and TAP-20 to TAP-27 until 2026-09-30), not TAP numbers. TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01; TAP-20 is left free.
+- The names TAPI-1 and TAPI-20 to TAPI-28 are TapeAPI's own document names (TAP-1 and TAP-20 to TAP-27 until 2026-09-30; TAPI-28, created on 2026-10-21, never had a TAP- name), not TAP numbers. TAP numbers are assigned by the editors of [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) under TAP-01; TAP-20 is left free.
 
 ## 6. What Belongs in a TAP
 
@@ -134,9 +135,11 @@ Copyright and related rights waived via CC0-1.0. Code samples in TAPs are MIT un
 
 > 英文为权威文本，本译文与英文章节一一对应。
 
-> **TapeAPI 自己的流程文档，不是 TapeOut 的。** TAPI-1（2026-09-30 之前叫 TAP-1）只管 TapeAPI 自己的文档（TAPI-1 与 TAPI-20 至 TAPI-27）及其兼容性规则：§4.1 的状态与冻结规则以及本文档其余内容，对这些文档照旧适用。它不是 TAP，也不规定 TapeOut 的提案流程：TapeOut 生态的提案流程是 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 中官方的 TAP-01，TAP 编号由其编辑分配。本文档其余部分谈到 TAP 编号与 TapeKit 维护者之处，保留的是最初在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提出的建议原文；就 TapeOut 提案而言，以 TAP-01 为准。TapeAPI 规范的部分内容已按 TAP-01 作为 TAP 草稿提交：TAPI-20 的服务身份与清单（[PR #8](https://github.com/TapeOutProtocol/TAPs/pull/8)）、TAPI-21 的签名响应（[PR #10](https://github.com/TapeOutProtocol/TAPs/pull/10)）、TAPI-26 的私密通道（[PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12)）。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。TAPs 编辑要求标签不要看起来像 TAP 编号，因此 TAPI-26 与 TAPI-27 按 §4.1 的规则各出了第 2 版：[TAPI-26 v2](TAPI-26-v2.md) 与 [TAPI-27 v2](TAPI-27-v2.md)（Draft；自 TapeAPI 1.8.1 起作为选项实现，2.0 起为默认），其标签以 `tape-channel/`、`tape-group/` 开头；两者的第 1 版保留原标签，仍是 Stable (v1)。
+> **TapeAPI 自己的流程文档，不是 TapeOut 的。** TAPI-1（2026-09-30 之前叫 TAP-1）只管 TapeAPI 自己的文档（TAPI-1 与 TAPI-20 至 TAPI-28）及其兼容性规则：§4.1 的状态与冻结规则以及本文档其余内容，对这些文档照旧适用。它不是 TAP，也不规定 TapeOut 的提案流程：TapeOut 生态的提案流程是 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 中官方的 TAP-01，TAP 编号由其编辑分配。本文档其余部分谈到 TAP 编号与 TapeKit 维护者之处，保留的是最初在 [TapeKit issue #8](https://github.com/TapeOutProtocol/TapeKit/issues/8) 中提出的建议原文；就 TapeOut 提案而言，以 TAP-01 为准。TapeAPI 规范的部分内容已按 TAP-01 作为 TAP 草稿提交：TAPI-20 的服务身份与清单（[PR #8](https://github.com/TapeOutProtocol/TAPs/pull/8)）、TAPI-21 的签名响应（[PR #10](https://github.com/TapeOutProtocol/TAPs/pull/10)）、TAPI-26 的私密通道（[PR #12](https://github.com/TapeOutProtocol/TAPs/pull/12)）。含有旧名字的冻结常量（例如 `TAP-26/…` 标签）是历史常量，永不改变。TAPs 编辑要求标签不要看起来像 TAP 编号，因此 TAPI-26 与 TAPI-27 按 §4.1 的规则各出了第 2 版：[TAPI-26 v2](TAPI-26-v2.md) 与 [TAPI-27 v2](TAPI-27-v2.md)（自 TapeAPI 2.0.0 起均为 Stable (v2)；自 TapeAPI 1.8.1 起作为选项实现，2.0 起为默认），其标签以 `tape-channel/`、`tape-group/` 开头；两者的第 1 版保留原标签，仍是 Stable (v1)。
 
 > **实现状态（2026-09-30）：** 适用于 TapeAPI 自己的文档。TapeOut 的提案流程是 TapeOutProtocol/TAPs 中的 TAP-01；最初在 TapeKit issue #8 中提出的建议没有被采纳为 TapeOut 的流程。
+
+> **修订：** 2026-10-29：编辑性、非规范性修订。关于 TAPI-26、TAPI-27 第 2 版的说明改称 Stable (v2)，与这两份文件自 TapeAPI 2.0.0 起的 Status 行一致，不再称 Draft。规范性文字均未改动。
 
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 
@@ -171,7 +174,7 @@ TAPI-1 的目标是为生态贡献者提供一个明确的入口。该流程 MUS
 
 ### 4.1 过渡状态：Stable (v1)
 
-TapeKit 目前还没有编号提案流程（§5），因此任何文档都无法按 §4 进入 Final。在它有流程之前，本仓库发布的文档（TAPI-20 至 TAPI-27）在 `Status` 行使用下面四种状态之一。这些是本仓库给自己文档的标签：不是 TapeKit 的状态，也不代表维护者的认可。
+TapeKit 目前还没有编号提案流程（§5），因此任何文档都无法按 §4 进入 Final。在它有流程之前，本仓库发布的文档（TAPI-20 至 TAPI-28）在 `Status` 行使用下面四种状态之一。这些是本仓库给自己文档的标签：不是 TapeKit 的状态，也不代表维护者的认可。
 
 - **Draft（草案）**：同 §4 第 2 项。规范性文本仍会变化，包括不兼容的变化。
 - **Stable (v1)（稳定，第 1 版）**：文档的第 1 版按下列规则冻结。文档的测试向量齐全、并经独立实现核对之后（§6 第 6 项），即进入此状态。
@@ -202,10 +205,10 @@ TapeKit 目前还没有编号提案流程（§5），因此任何文档都无法
 
 - `TAPI-1` 保留给本文档。
 - `10–19`：消息。`TAP-10` 为 TapeSend，是维护者自己的编号。
-- `20–29`：服务。`TAPI-20` 为 TapeAPI；`TAPI-21` 至 `TAPI-27` 为其配套文档。
+- `20–29`：服务。`TAPI-20` 为 TapeAPI；`TAPI-21` 至 `TAPI-28` 为其配套文档。
 - 其他区间未分配；当出现一族提案时，维护者 MAY 分配新区间。
 - 编号由维护者分配。作者 MUST NOT 自行编号。编号一经分配永不复用。
-- TAPI-1 与 TAPI-20 至 TAPI-27 是 TapeAPI 自己的文档名（2026-09-30 之前叫 TAP-1 与 TAP-20 至 TAP-27），不是 TAP 编号。TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 分配；TAP-20 留空不用。
+- TAPI-1 与 TAPI-20 至 TAPI-28 是 TapeAPI 自己的文档名（2026-09-30 之前叫 TAP-1 与 TAP-20 至 TAP-27；TAPI-28 建于 2026-10-21，从未用过 TAP- 名字），不是 TAP 编号。TAP 编号由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 分配；TAP-20 留空不用。
 
 ## 6. TAP 应包含的内容
 

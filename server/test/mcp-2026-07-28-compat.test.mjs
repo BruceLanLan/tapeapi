@@ -11,10 +11,10 @@
 //   [H]  https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http  "Protocol Version
 //        Header", "Standard Request Headers", "Value Encoding", "Server Validation", "Earlier Streamable HTTP Revisions"
 //   [S]  https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio  "Backward Compatibility"
-// Until 2.6 the gaps below were pinned as release/2.4.0's answers ("today:" tests, commit 2b7bb2aa) next to todo tests
-// stating the spec; 2.6 (experimental) implements them, so the todo tests became these. The one todo left is client side.
+// Until 2.5 the gaps below were pinned as release/2.4.0's answers ("today:" tests, commit 2b7bb2aa) next to todo tests
+// stating the spec; 2.5 (experimental) implements them, so the todo tests became these. The one todo left is client side.
 // 2026-07-28 版 MCP 客户端从每个入口得到什么。这种客户端不发 initialize；每个请求在 _meta 里带版本与能力，HTTP 上还带三个头。
-// 2.6 之前，下面的缺口以 release/2.4.0 的回答钉住（"today:" 测试，提交 2b7bb2aa），旁边是写明规范要求的 todo 测试；2.6（实验性）
+// 2.5 之前，下面的缺口以 release/2.4.0 的回答钉住（"today:" 测试，提交 2b7bb2aa），旁边是写明规范要求的 todo 测试；2.5（实验性）
 // 实现了它们，todo 测试就成了现在这些。剩下的唯一 todo 在客户端一侧。
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -101,7 +101,7 @@ test('[V] dual-era: an initialize that carries modern _meta still selects a lega
 })
 
 // ---------------------------------------------------------------------------------------------------------------
-// Implemented in 2.6 (experimental): what the spec asks / 2.6 实现（实验性）：规范的要求
+// Implemented in 2.5 (experimental): what the spec asks / 2.5 实现（实验性）：规范的要求
 // ---------------------------------------------------------------------------------------------------------------
 test('[D] server/discover answers supportedVersions, capabilities, serverInfo in _meta, instructions, ttlMs and cacheScope', async () => {
   const check = (result, who) => {
@@ -263,7 +263,7 @@ async function stdio() {
   const srv = await provider.listen(0)
   const url = `http://127.0.0.1:${srv.address().port}`
   manifest.endpoints.live = [`${url}/tapeapi/v1`]
-  const child = spawn(process.execPath, [BIN, '--dev', url, '--no-pin'], { stdio: ['pipe', 'pipe', 'pipe'] })
+  const child = spawn(process.execPath, [BIN, '--dev', url, '--no-pin'], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   let out = '', err = '', seq = 0
   const waiters = new Map()
   child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
@@ -345,16 +345,38 @@ test('createMcpProxy, upstreamNegotiation auto: an upstream that speaks only 202
   assert.ok(up.calls.every((c) => c.method !== 'initialize' && c.params._meta['io.modelcontextprotocol/protocolVersion'] === V), 'every upstream request is modern')
   const env = await signedAdd(p)
   assert.equal(env.ok, true); assert.deepEqual(env.result, { content: [{ type: 'text', text: '5' }], structuredContent: { sum: 5 } }, 'resultType and serverInfo of the upstream are not signed')
-  // The same tools and the same signed result as through a legacy upstream. / 与旧版上游相同的工具与签名结果。
-  const legacy = proxyOver({ call: (msg) => upCore().handle(msg) })
+  // The same tools and the same signed result as through a legacy upstream (the 2.x handshake). / 与旧版上游相同的工具与签名结果。
+  const legacy = proxyOver({ call: (msg) => upCore().handle(msg) }, { upstreamNegotiation: 'legacy' })
   assert.equal((await legacy.ready).mcp.toolsSha256, m.mcp.toolsSha256)
   assert.deepEqual((await signedAdd(legacy)).result, env.result)
   assert.equal(legacy.stats().upstreamEra, 'legacy')
 })
 
-test('createMcpProxy, default upstreamNegotiation (legacy): a 2026-07-28-only upstream still cannot be proxied', async () => {
-  const p = proxyOver({ call: modernOnly().call })
+test('createMcpProxy, upstreamNegotiation legacy (the 2.x default): a 2026-07-28-only upstream still cannot be proxied', async () => {
+  const p = proxyOver({ call: modernOnly().call }, { upstreamNegotiation: 'legacy' })
   await assert.rejects(p.ready, /could not read the upstream tools/)
+})
+
+// 3.0: 'auto' is the default. A 2026-07-28-only upstream is proxied with no option; a legacy-only one (initialize, and
+// -32601 for server/discover) falls back to initialize. / 3.0：默认 'auto'。只会新版的上游不加选项也能代理；只会旧版的退回 initialize。
+test('3.0: createMcpProxy negotiates by default: server/discover first, 2026-07-28 when offered, else initialize', async () => {
+  const up = modernOnly()
+  const p = proxyOver({ call: up.call })
+  await p.ready
+  assert.equal(p.stats().upstreamEra, 'modern'); assert.equal(up.calls[0].method, 'server/discover')
+  assert.equal((await signedAdd(p)).ok, true)
+  const legacyCalls = []
+  const core = upCore()
+  const legacyOnly = async (m) => {
+    legacyCalls.push(m.method)
+    if (m.method === 'server/discover') return { jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'Method not found' } }
+    return core.handle(m)
+  }
+  const l = proxyOver({ call: legacyOnly })
+  await l.ready
+  assert.equal(l.stats().upstreamEra, 'legacy')
+  assert.deepEqual(legacyCalls.slice(0, 3), ['server/discover', 'initialize', 'notifications/initialized'])
+  assert.equal((await signedAdd(l)).ok, true)
 })
 
 test('createMcpProxy, upstreamNegotiation auto over HTTP: the headers a 2026-07-28 server checks; a legacy-only upstream falls back to initialize', async () => {

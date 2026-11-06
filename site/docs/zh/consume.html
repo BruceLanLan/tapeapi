@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>调用服务 · TapeAPI 手册</title>
-<meta name="description" content="本指南介绍应用如何找到一个 TapeAPI 服务、调用它，并确认回答是真实的。它使用 @tapeapi/sdk ，可运行于 Node 20+、浏览器、DeWEB 站点和 Cloudflare Workers。">
+<meta name="description" content="本指南介绍应用如何找到一个 TapeAPI 服务、调用它，并确认回答是真实的。它使用 @tapeapi/sdk ，可运行于 Node 22+、浏览器、DeWEB 站点和 Cloudflare Workers。">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../docs.css?v=62ad162ee6">
 <link rel="alternate" hreflang="en" href="../en/consume">
@@ -19,17 +19,17 @@
   <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="en">English</button><button class="hd-btn" id="theme-btn" type="button">主题</button></div>
 </div></header>
 <div class="layout">
-<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="./">简介</a></li><li><a href="public-api">公共 API</a></li><li><a href="mcp">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume" aria-current="page">调用服务</a></li><li><a href="provide">运行服务</a></li><li><a href="ai-providers">接入 AI 服务</a></li><li><a href="billing-layer">旁路前面的计费层</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels">私密通道</a></li><li><a href="groups">群聊</a></li><li><a href="agents">AI 智能体</a></li><li><a href="container-agents">容器代理（实验性）</a></li><li><a href="reconcile">回执对账（实验性）</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq">常见问题与排障</a></li><li><a href="reference">参考</a></li><li><a href="upgrade-1.0">从 0.x 升级到 1.0</a></li><li><a href="upgrade-2.0">从 1.x 升级到 2.0</a></li><li><a href="changelog">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="./">简介</a></li><li><a href="public-api">公共 API</a></li><li><a href="mcp">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume" aria-current="page">调用服务</a></li><li><a href="provide">运行服务</a></li><li><a href="ai-providers">接入 AI 服务</a></li><li><a href="billing-layer">旁路前面的计费层</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels">私密通道</a></li><li><a href="groups">群聊</a></li><li><a href="agents">AI 智能体</a></li><li><a href="container-agents">容器代理（实验性）</a></li><li><a href="reconcile">回执对账（实验性）</a></li><li><a href="receipts-and-payment-protocols">回执与支付协议（实验性）</a></li><li><a href="interop">应用与容器之间的互通（实验性）</a></li><li><a href="passport">Agent 护照（实验性）</a></li><li><a href="policy-circuit">策略电路（实验性）</a></li><li><a href="circuit-jobs">Circuit Jobs（草案；TapeAPI 不提供代码）</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq">常见问题与排障</a></li><li><a href="reference">参考</a></li><li><a href="upgrade-1.0">从 0.x 升级到 1.0</a></li><li><a href="upgrade-2.0">从 1.x 升级到 2.0</a></li><li><a href="upgrade-3.0">从 2.x 升级到 3.0</a></li><li><a href="changelog">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
 <main class="doc">
 <article>
 <h1 id="调用服务">调用服务</h1>
-<p>本指南介绍应用如何找到一个 TapeAPI 服务、调用它，并确认回答是真实的。它使用 <code>@tapeapi/sdk</code>，可运行于 Node 20+、浏览器、DeWEB 站点和 Cloudflare Workers。</p>
+<p>本指南介绍应用如何找到一个 TapeAPI 服务、调用它，并确认回答是真实的。它使用 <code>@tapeapi/sdk</code>，可运行于 Node 22+、浏览器、DeWEB 站点和 Cloudflare Workers。</p>
 <h2 id="1-试用"><a class="anchor" href="#1-试用" aria-hidden="true">#</a>1. 试用</h2>
 <h3 id="一次性准备"><a class="anchor" href="#一次性准备" aria-hidden="true">#</a>一次性准备</h3>
-<p>这些包尚未发布到 npm，所以要在仓库的克隆里操作（Node.js 20 或更高版本）：</p>
+<p>这些包尚未发布到 npm，所以要在仓库的克隆里操作（Node.js 22 或更高版本）：</p>
 <div class="code"><pre data-lang="bash"><code>git clone https://github.com/BruceLanLan/tapeapi.git &amp;&amp; cd tapeapi &amp;&amp; npm install</code></pre></div>
 <p>或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：</p>
-<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz</code></pre></div>
+<div class="code"><pre data-lang="bash"><code>npm install https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz</code></pre></div>
 <p>把下面的脚本保存为 <code>.mjs</code> 文件，放在能解析到 <code>@tapeapi/sdk</code> 的地方，然后用 <code>node &lt;文件&gt;.mjs</code> 运行：用克隆时，<strong>放在 <code>tapeapi</code> 目录之内</strong>（包通过仓库的 workspace 解析）；装了发布包时，放在那个项目里。放在其它位置的脚本会以 <code>ERR_MODULE_NOT_FOUND</code> 失败。</p>
 <h3 id="调用线上的公共服务"><a class="anchor" href="#调用线上的公共服务" aria-hidden="true">#</a>调用线上的公共服务</h3>
 <p>一个免费的公共服务运行在 <code>https://api.tapeapi.fun</code>，TapeOut 名称为 <code>11.1013.tape</code>。用 curl：</p>
@@ -69,7 +69,7 @@ const byCircuit = await api.resolve({ circuits: '0x&lt;processor contract&gt;', 
 <p>解析（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-20.md" rel="noopener">TAPI-20 §3.6</a>）依次执行：</p>
 <ol><li>从电路推导出容器（<code>DeWebHub.accountOf</code>），并检查处理器确实是 TapeOut 的处理器（<code>factory.isCPU</code>），使伪造的 NFT 无法冒充服务；</li><li>从容器的站点读取 <code>.well-known/tapeapi.json</code>，并对照链上数据检查其长度和 SHA-256；</li><li>校验清单；</li><li>对照<strong>当前</strong>持有者，检查电路持有者对服务签名密钥的 EIP-712 委托。</li></ol>
 <p>解析出的服务会被缓存；SDK 大约每小时重读一次，并在签名或价格不再匹配时立即重读。<code>api.refresh(svc)</code> 可强制重读。</p>
-<p>对 AI 服务还有一条命令做同样的解析并把结果展示出来：<code>tapeapi connect &lt;名字&gt;</code>（实验性，2.1 新增，不受 2.x 兼容承诺约束）打印服务卡片，并只为其清单声明的 API 格式给出客户端配置；它不索要任何密钥，也不付款。见 <a href="ai-providers#你的用户要做什么">接入 AI 服务的“你的用户要做什么”</a>。</p>
+<p>对 AI 服务还有一条命令做同样的解析并把结果展示出来：<code>tapeapi connect &lt;名字&gt;</code>（实验性，2.1 新增，不受兼容承诺约束）打印服务卡片，并只为其清单声明的 API 格式给出客户端配置；它不索要任何密钥，也不付款。见 <a href="ai-providers#你的用户要做什么">接入 AI 服务的“你的用户要做什么”</a>。</p>
 <h2 id="3-处理错误"><a class="anchor" href="#3-处理错误" aria-hidden="true">#</a>3. 处理错误</h2>
 <p>每一种失败都是带有稳定 <code>code</code> 的 <code>TapeAPIError</code>：</p>
 <div class="code"><pre data-lang="js"><code>import { TapeAPIError } from '@tapeapi/sdk'
@@ -80,7 +80,7 @@ try {
   if (!(e instanceof TapeAPIError)) throw e
   console.error(e.code, e.message, e.signed ? '(signed by the service)' : '')
 }</code></pre></div>
-<div class="table"><table><thead><tr><th>错误码</th><th>含义</th><th>应对</th></tr></thead><tbody><tr><td><code>INVALID_ARGUMENT</code></td><td>你自己的选项或参数有误（没配 <code>rpcUrls</code>、不支持的目标、选项不合法）。没有发出任何请求。</td><td>改正调用；绝不重试。</td></tr><tr><td><code>RPC_UNAVAILABLE</code></td><td>作答的 RPC 节点少于法定人数。</td><td>重试；增加节点。</td></tr><tr><td><code>RPC_DISAGREE</code></td><td>节点返回了不同的字节。</td><td>重试；若持续出现，说明某个节点落后或在说谎。</td></tr><tr><td><code>MANIFEST_INVALID</code></td><td>没有清单、清单有误，或其字节与链上不符。</td><td>该服务没有（正确地）发布。</td></tr><tr><td><code>DELEGATION_INVALID</code></td><td>签名密钥未获当前持有者授权，或委托已过期。</td><td>提供者必须续期。</td></tr><tr><td><code>BAD_SIGNATURE</code></td><td>回答不是由被委托的密钥签名的。</td><td>不要使用它。SDK 会重读一次清单，以防密钥已轮换。</td></tr><tr><td><code>METHOD_NOT_FOUND</code></td><td>清单中没有该方法。</td><td>检查 <code>svc.manifest.methods</code>。</td></tr><tr><td><code>PRICE_CHANGED</code></td><td>价格涨到了你已接受的价格之上。</td><td>先征询你的用户，再调用 <code>api.acceptPrice(svc, method)</code> 或传入 <code>{ maxPrice }</code>。</td></tr><tr><td><code>QUORUM_FAILED</code></td><td><code>callQuorum</code> 中的提供者未达成一致。</td><td>视为没有回答。</td></tr></tbody></table></div>
+<div class="table"><table><thead><tr><th>错误码</th><th>含义</th><th>应对</th></tr></thead><tbody><tr><td><code>INVALID_ARGUMENT</code></td><td>你自己的选项或参数有误（没配 <code>rpcUrls</code>、不支持的目标、选项不合法）。没有发出任何请求。</td><td>改正调用；绝不重试。</td></tr><tr><td><code>BUDGET_EXCEEDED</code></td><td>你自己的花费预算在发出之前拒绝了这次调用：WebMCP 的，或（3.0，实验性）本地策略文件的（<a href="reconcile#每次调用之前读同一个文件客户端预算实验性30">回执对账</a>）。</td><td>等窗口过去，或改你的策略。</td></tr><tr><td><code>RPC_UNAVAILABLE</code></td><td>作答的 RPC 节点少于法定人数。</td><td>重试；增加节点。</td></tr><tr><td><code>RPC_DISAGREE</code></td><td>节点返回了不同的字节。</td><td>重试；若持续出现，说明某个节点落后或在说谎。</td></tr><tr><td><code>MANIFEST_INVALID</code></td><td>没有清单、清单有误，或其字节与链上不符。</td><td>该服务没有（正确地）发布。</td></tr><tr><td><code>DELEGATION_INVALID</code></td><td>签名密钥未获当前持有者授权，或委托已过期。</td><td>提供者必须续期。</td></tr><tr><td><code>BAD_SIGNATURE</code></td><td>回答不是由被委托的密钥签名的。</td><td>不要使用它。SDK 会重读一次清单，以防密钥已轮换。</td></tr><tr><td><code>METHOD_NOT_FOUND</code></td><td>清单中没有该方法。</td><td>检查 <code>svc.manifest.methods</code>。</td></tr><tr><td><code>PRICE_CHANGED</code></td><td>价格涨到了你已接受的价格之上。</td><td>先征询你的用户，再调用 <code>api.acceptPrice(svc, method)</code> 或传入 <code>{ maxPrice }</code>。</td></tr><tr><td><code>QUORUM_FAILED</code></td><td><code>callQuorum</code> 中的提供者未达成一致。</td><td>视为没有回答。</td></tr></tbody></table></div>
 <p>完整列表见<a href="upgrade-1.0#错误码">升级到 1.0</a>与 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-21.md" rel="noopener">TAPI-21</a>。服务发出的错误同样带签名（<code>e.signed</code>）。</p>
 <h2 id="4-要求多个提供者之间达成一致"><a class="anchor" href="#4-要求多个提供者之间达成一致" aria-hidden="true">#</a>4. 要求多个提供者之间达成一致</h2>
 <p>单个服务的签名回答只能证明是谁说的，不能证明它是真的。对于重要的数值，请向多个独立提供者询问同一个区块，只接受逐字节相同的结果：</p>
@@ -91,7 +91,7 @@ const q = await api.callQuorum([a, b], 'bnbUsd', { block }, { quorum: 2 })
 console.log(q.result, 'agreed by', q.agreed)                  // 否则抛出 TapeAPIError('QUORUM_FAILED')</code></pre></div>
 <p>只有描述以 <code>[quorum]</code> 开头的方法才能这样比较；<code>[no-quorum]</code> 方法（带随机 id 的报价、<code>latest</code> 读取）按设计就会各不相同。使用单一来源数值的协议仍应施加边界检查、新鲜度检查和熔断机制。</p>
 <h2 id="5-为调用付费"><a class="anchor" href="#5-为调用付费" aria-hidden="true">#</a>5. 为调用付费</h2>
-<blockquote><p><strong>实验性。</strong> 付费功能（TAPI-22 付费通道与托管合约）尚未部署、未经审计，不在 1.0 的稳定承诺之内：下面的名字可能在 1.x 的次版本里改变。见<a href="upgrade-1.0#10-承诺什么">升级到 1.0</a>。</p></blockquote>
+<blockquote><p><strong>实验性。</strong> 付费功能（TAPI-22 付费通道与托管合约）尚未部署、未经审计，不在兼容承诺之内：下面的名字可能在次版本里改变。见<a href="upgrade-1.0#10-承诺什么">升级到 1.0</a>。</p></blockquote>
 <p>免费方法无需任何东西。付费方法需要一张由消费者签名的凭证（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-22.md" rel="noopener">TAPI-22</a>）：</p>
 <div class="code"><pre data-lang="js"><code>const consumer = '0x&lt;your address&gt;'                             // 签署凭证的钱包账户
 const payer = api.payer({
@@ -100,6 +100,7 @@ const payer = api.payer({
 })
 const r = await api.call(svc, 'pairPrice', { pair: '0x…' }, { payer })</code></pre></div>
 <p>为避免每次调用都弹出钱包提示，可以一次性授权一把会话密钥（<code>api.tx.authorizeSession(svc, sessionAddress, expires)</code>），然后改为传入 <code>{ consumer, sessionKey, sessionExpiry }</code>。为通道充值需要两笔交易，由 SDK 为你的钱包构建：先 <code>await api.tx.approve({ amount, spender: svc })</code>，再 <code>await api.tx.fund(svc, amount)</code>。两者都先在链上读取托管的代币，并且只为 SDK 已审计部署名单里的托管（目前为空：还没有任何托管经过审计）或你自己用 <code>createTapeAPI({ allowEscrows: [...] })</code> 添加的托管构造，因为授权让那个合约可以拉走你的代币。<code>amount</code> 以代币自己的最小单位计：用 <code>api.chain.escrow.paymentToken(svc)</code> 读取代币（小数位从代币读取，绝不假设），用 <code>formatPaymentAmount(amount, token)</code> 显示金额。清单价格是 <code>priceBEM</code>，所以 SDK 拒绝为托管持有其它代币的服务充值或付费（<code>UNSUPPORTED_PAYMENT_TOKEN</code>，<code>reason</code> 为 <code>not-bem</code>）：托管合约本身支持任意准入代币，但清单的多币种定价规范尚未规定，所以 <code>fund</code> 对持有 BEM 以外代币的托管一律不构造，无论你声明什么代币，即使你已把该托管加入 <code>allowEscrows</code>。</p>
+<p>没有确认自己托管代币的提供者，以未签名的 HTTP 503 <code>UNSUPPORTED_PAYMENT_TOKEN</code> 拒绝付费调用。它没有签名，所以 SDK 报 <code>PROVIDER_UNAVAILABLE</code>（消息里写 <code>unsigned claim: UNSUPPORTED_PAYMENT_TOKEN</code>），释放这次调用的预留，不转交回答里的 <code>data.reason</code>。直接用 HTTP 的客户端能看到原因：<code>escrow-token-mismatch</code> 在该提供者实例内一直如此（不要重试），<code>escrow-no-token</code> 与 <code>escrow-token-unreadable</code> 在下一次付费调用时重读（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-22.md" rel="noopener">TAPI-22</a> §3.2 的说明性段落）。</p>
 <p>你只付提供者标明的价格：TapeAPI 不在消费者这一侧加任何费用。维护贡献（如果提供者保留它）从提供者的所得中划出（<a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/FEES.md" rel="noopener"><code>docs/FEES.md</code></a>）。一次付费调用以它所用的托管实例的代币结算：下一版托管计划在 BNB Smart Chain 上首先支持 BEM，USDT 锚定币（Binance-Peg）与 WBNB（包装的 BNB）按需、用同一份字节码（见 <a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/FEES.md" rel="noopener"><code>docs/FEES.md</code></a>）。清单里的价格在规范其它代币的写法之前仍以 BEM（<code>priceBEM</code>）书写，所以本 SDK 只为持有 BEM 的托管构造付费调用。</p>
 <blockquote><p>托管合约尚未部署，因此付费服务还没有在主网上线。以上内容都可以针对示例运行（本地使用 <code>FREE_ALL=1</code> 跳过付费）。</p></blockquote>
 <p>SDK 只在收到经过验证的回答之后才推进本地计量，并在提供者的计数不一致时自动重新同步。传入 <code>store: { get, set }</code> 可在重启之间保留计量。</p>

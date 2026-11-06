@@ -40,7 +40,7 @@ test('endpoint: tools/list of revision 2026-07-28 carries resultType, ttlMs 0 an
   const res = await post({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: { _meta: META } }, MODERN_HEADERS('tools/list'))
   assert.equal(res.status, 200)
   const modern = await res.json()
-  // 2.6: a modern result also carries serverInfo in _meta. / 2.6：新版结果的 _meta 还带 serverInfo。
+  // 2.5: a modern result also carries serverInfo in _meta. / 2.5：新版结果的 _meta 还带 serverInfo。
   assert.deepEqual(modern.result, { ...legacy.result, resultType: 'complete', ttlMs: 0, cacheScope: 'public', _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'tapeapi-11.1013.tape', title: 'Echo (TapeAPI)', version: '0.3.0' } } })
   assert.deepEqual(Object.keys(legacy.result), ['tools'], 'an earlier revision gets no new field')
   assert.equal(mcp.toolsDigest(modern.result.tools), mcp.toolsDigest(legacy.result.tools))
@@ -104,7 +104,7 @@ function inProcess({ modern = false } = {}) {
 }
 const BASE = 'https://mcp.example'
 const manifestBase = () => ({ name: 'Demo MCP', circuits: CIRCUITS, tokenId: '11', container: CONTAINER, delegation: null, endpoints: { live: [`${BASE}/tapeapi/v1`], async: false } })
-const make = (upstream) => createMcpProxy({ upstream, manifestBase: manifestBase(), signerKey: KEY, log: () => {} })
+const make = (upstream, extra = {}) => createMcpProxy({ upstream, manifestBase: manifestBase(), signerKey: KEY, log: () => {}, ...extra })
 const rpc = async (p, method, params, headers = {}) => (await (await p.handleRequest(new Request(BASE + MCP_PATH, {
   method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
   body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, ...(params === undefined ? {} : { params }) }),
@@ -112,7 +112,8 @@ const rpc = async (p, method, params, headers = {}) => (await (await p.handleReq
 
 test('proxy: /mcp gives the 2026-07-28 fields to a request of that revision only; toolsSha256 and the upstream conversation are unchanged', async () => {
   const up = inProcess()
-  const p = make(up.upstream)
+  // upstreamNegotiation 'legacy': the 2.x upstream conversation (3.0 negotiates by default). / 2.x 的上游对话（3.0 默认协商）。
+  const p = make(up.upstream, { upstreamNegotiation: 'legacy' })
   const m = await p.ready
   const listed = (await mcp.createMcpServer({ info: { name: 'up', version: '1' }, listTools: async () => TOOLS, callTool: upCall }).handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).result.tools
   assert.equal(m.mcp.toolsSha256, mcp.toolsDigest(listed))
@@ -120,7 +121,7 @@ test('proxy: /mcp gives the 2026-07-28 fields to a request of that revision only
   const modern = await rpc(p, 'tools/list', { _meta: META }, MODERN_HEADERS('tools/list'))
   const { _meta: info, ...rest } = modern.result
   assert.deepEqual(rest, { ...legacy.result, resultType: 'complete', ttlMs: 0, cacheScope: 'public' })
-  assert.equal(info['io.modelcontextprotocol/serverInfo'].name, 'tapeapi-proxy-Demo MCP', '2.6: serverInfo in _meta')
+  assert.equal(info['io.modelcontextprotocol/serverInfo'].name, 'tapeapi-proxy-Demo MCP', '2.5: serverInfo in _meta')
   assert.deepEqual(Object.keys(legacy.result), ['tools'])
   assert.equal(mcp.toolsDigest(modern.result.tools), m.mcp.toolsSha256)
   const cl = (await rpc(p, 'tools/call', { name: 'add', arguments: { a: 2, b: 3 } })).result

@@ -29,6 +29,7 @@
 | [`spec/TAPI-25.md`](../spec/TAPI-25.md) | 链上 `eval()` 裁决的方法。Circuit-Verified Methods. |
 | [`spec/TAPI-26.md`](../spec/TAPI-26.md) | **Tape Channel：** 两个容器之间的端到端加密通道（持有人授权的通道密钥、收件房间、中继 / ChannelBus / TapeSend）。Private channels between containers. |
 | [`spec/TAPI-27.md`](../spec/TAPI-27.md) | **Tape Group：** 至多 32 个容器的加密群聊（实验性的格式 2 最多 128 个；群主管理的纪元、加密名单、发送者签名）。Private groups of up to 32 containers (up to 128 in the experimental format 2). |
+| [`spec/TAPI-28.md`](../spec/TAPI-28.md) | **访客授权（实验性，不是 TAP）：** 容器应用之间的访客授权格式，供独立实现被调用方一侧的核验；以 `sdk/src/interop*` 为准。Visitor grants between container apps (experimental, not a TAP). |
 | [`spec/vectors/`](../spec/vectors/) | 测试向量与独立的 Python 实现 `verify.py`。Test vectors and an independent Python implementation. |
 
 ## 设计与说明 / Design and explainers

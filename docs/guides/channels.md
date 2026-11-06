@@ -99,7 +99,7 @@ publicnode and the dataseed nodes. The relay transport does not depend on any of
 
 ## 5. Read privacy
 
-Experimental in 1.0: the options, defaults and `stats().privacy` below may change in a 1.x minor release.
+Experimental (since 1.0, outside the compatibility promise): the options, defaults and `stats().privacy` below may change in a minor release.
 
 `busTransport` and `busReader` ask every node for your rooms by name: one `eth_getLogs` whose room topic lists them,
 sent to each of the 2 to 4 operators of the client. Each node therefore sees "this IP reads these rooms", and an inbox

@@ -126,7 +126,8 @@ const svc = await createTapeAPI({ rpcUrls: [/* ... */], quorum: 2 }).resolve('0x
 
 ## 4. Renew
 
-A delegation lasts 90 days by default. Clients read it from the on-chain manifest, so renewing means a new signature
+A delegation lasts 30 days by default (90 before 3.0); in console step 4 you can type any whole number of days from 1
+to 366 instead, such as 7 or 90. `tapeapi-doctor` warns from 7 days left. Clients read it from the on-chain manifest, so renewing means a new signature
 **and** publishing the manifest again. The signing key stays the same. In the [holder console](https://tapeapi.fun/console/):
 
 1. **Step 2:** read your circuit. The console also reads the manifest already on chain and the signing address it
@@ -141,7 +142,7 @@ generate a new key in step 3, sign for it in step 4 and publish in step 5 at onc
 
 ## 5. Paid methods
 
-> **Experimental.** Payments (TAPI-22 payment channels and the escrow contract) are not deployed or audited and are not covered by the 1.0 stability promise: the names below may change in a 1.x minor release. See [Upgrading to 1.0](upgrade-1.0.md#what-10-promises).
+> **Experimental.** Payments (TAPI-22 payment channels and the escrow contract) are not deployed or audited and are outside the compatibility promise: the names below may change in a minor release. See [Upgrading to 1.0](upgrade-1.0.md#what-10-promises).
 
 Set `priceBEM` on a method and name an escrow in `payment`. The runtime verifies each voucher, meters per consumer and
 refuses anything below the price. Every endpoint of one paid service must share one atomic meter store (D1 on
@@ -154,6 +155,28 @@ tokens and why: [`docs/FEES.md`](../FEES.md).) Until a manifest can price in ano
 pay a service whose escrow holds anything but BEM (`UNSUPPORTED_PAYMENT_TOKEN`; the escrow contract itself takes any
 admitted token, the manifest's multi-token pricing is not yet specified), and it builds `approve` and `fund` only for an
 audited escrow or one the consumer adds explicitly.
+
+**The escrow's token is checked before the first paid call (3.0).** The runtime reads the escrow's `token()` and
+compares it with the token the manifest prices in (BEM on BNB Smart Chain, or `createProvider({ escrowToken })` on a
+local chain), on every path: `listen()` at start-up, and on Cloudflare Workers (`handleRequest`) before the first paid
+call, so a Worker no longer calls `checkEscrowToken()` itself. An escrow of another token, an escrow without `token()`,
+and nodes that cannot read it all refuse paid calls with an unsigned HTTP 503 (`UNSUPPORTED_PAYMENT_TOKEN`,
+`data.reason` `escrow-token-mismatch`, `escrow-no-token` or `escrow-token-unreadable`): nothing is signed or billed, and
+free methods answer as before. A refused call is unverified traffic and counts against the caller's free budget. A definite answer (a match, a mismatch, or a skip) is kept for the life of the instance,
+and calling `provider.checkEscrowToken()` yourself returns it rather than reading again; a read that failed is tried
+again at the next paid call and is never taken for a match. For a caller the three reasons therefore differ:
+`escrow-token-mismatch` is permanent for that instance (a retry gets the same 503 without a new read, so it is not
+worth retrying; only redeploying with the right escrow or configuration changes it), while `escrow-no-token` and
+`escrow-token-unreadable` are read again at the next paid call. The answer is unsigned, so it proves nothing: the SDK
+reports it as `PROVIDER_UNAVAILABLE` (`unsigned claim: UNSUPPORTED_PAYMENT_TOKEN`) and releases the call's
+reservation ([TAPI-22](../../spec/TAPI-22.md) §3.2, informative note). `listen()` still refuses to start on a mismatch, `dev: true`
+still skips the check, and `provider.stats().escrowTokenRefused` counts the refusals. The check is also skipped, and
+paid calls go on without it, when no method has a price, when no escrow is configured, when `settlementFacts` is
+configured (the settlement contract is not read) or `enforcement` is (the enforcement backend checks its own channels
+and token), when there are no `rpcUrls`, and on a chain other than BNB Smart Chain unless you pass
+`createProvider({ escrowToken })` (there is no default token there). `checkEscrowToken()` then answers `skipped` with
+the reason. The escrow contract is not audited and not
+deployed, so no live service takes payment today.
 
 At settlement, a maintenance contribution comes out of your share, never out of the consumer's price. It defaults to
 1% (100 bps, a constant in the escrow). You can set it to 0 to turn it off, or to anything up to 20%, for your own

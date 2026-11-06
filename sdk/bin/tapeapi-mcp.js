@@ -77,9 +77,9 @@ Usage: tapeapi-mcp [options] <service> [<service> ...]
   --link-content       put each call's params and result in its verify link, in clear (default: hashes only)
   --upstream-negotiation <legacy|auto>
                        EXPERIMENTAL (2.5): how the tools of a taped-out MCP server are read from its mcp.endpoint.
-                       legacy (the default, as before): initialize first. auto: probe with server/discover and speak
-                       MCP 2026-07-28 to an endpoint that offers it (no initialize, no session), else fall back to
-                       initialize. Calls are not affected: they always go through the signed TapeAPI path
+                       auto (the default since 3.0): probe with server/discover and speak MCP 2026-07-28 to an
+                       endpoint that offers it (no initialize, no session), else fall back to initialize. legacy:
+                       initialize first, as 2.x did. Calls are not affected: they always go through the signed TapeAPI path
   --dev <url>          TESTING ONLY: read a local provider's manifest over http, no on-chain identity check (repeatable).
                        It also makes this whole session resolve the names it reads on chain the 1.x way (dev: true counts as
                        conform: false); the log line "resolution:" says so
@@ -110,7 +110,7 @@ Claude Desktop / Cursor config:
 // Arguments / 参数
 // ---------------------------------------------------------------------------------------------------------------
 function parseArgs(argv) {
-  const o = { targets: [], rpc: null, chainRpc: {}, pin: DEFAULT_PIN, noPin: false, allowChanged: false, dev: [], linkContent: false, noConform: false, upstreamNegotiation: 'legacy' }
+  const o = { targets: [], rpc: null, chainRpc: {}, pin: DEFAULT_PIN, noPin: false, allowChanged: false, dev: [], linkContent: false, noConform: false, upstreamNegotiation: 'auto' }
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i], v
     const eq = a.startsWith('--') ? a.indexOf('=') : -1
@@ -129,7 +129,7 @@ function parseArgs(argv) {
       case '--no-pin': o.noPin = true; break
       case '--allow-changed': o.allowChanged = true; break
       case '--link-content': o.linkContent = true; break
-      // 2.5, experimental: as createMcpProxy({ upstreamNegotiation }) / 2.5，实验性：与 createMcpProxy 的同名选项相同
+      // 2.5, experimental: as createMcpProxy({ upstreamNegotiation }); 'auto' by default since 3.0 / 2.5，实验性：与 createMcpProxy 的同名选项相同；3.0 起默认 'auto'
       case '--upstream-negotiation': o.upstreamNegotiation = value(); if (o.upstreamNegotiation !== 'legacy' && o.upstreamNegotiation !== 'auto') throw new Error("--upstream-negotiation must be 'legacy' or 'auto'"); break
       // 2.0: the 1.x resolution (conform: false, deprecated) / 2.0：1.x 的解析（conform: false，已弃用）
       case '--no-conform': o.noConform = true; break
@@ -174,8 +174,8 @@ function pinMaterial(m) {
   return mat
 }
 const PIN_SHA256_RE = /^[0-9a-fA-F]{64}$/
-// 64 lowercase hex digits, as TAPI-20 §3.8, the MCP tools draft (TAPs #16 §2) and the holder console write it (2.3).
-// 64 位小写十六进制，与 TAPI-20 §3.8、MCP 工具草案（TAPs #16 §2）和持有人操作台一致（2.3）。
+// 64 lowercase hex digits, as TAPI-20 §3.8, the MCP tools draft (TAP-15 §2) and the holder console write it (2.3).
+// 64 位小写十六进制，与 TAPI-20 §3.8、MCP 工具草案（TAP-15 §2）和持有人操作台一致（2.3）。
 const SHA256_RE = /^[0-9a-f]{64}$/
 
 // Why a manifest's `mcp` field cannot be used (null when it can). Extra keys are ignored, as TAPI-20 asks of clients.
@@ -317,15 +317,15 @@ class ProbeAnswer extends Error {
 }
 
 /**
- * The tool definitions an MCP endpoint lists. negotiation 'legacy' (the default): initialize, notifications/initialized,
- * then tools/list in the session, as before. 'auto': first server/discover (2026-07-28); a DiscoverResult offering
+ * The tool definitions an MCP endpoint lists. negotiation 'legacy': initialize, notifications/initialized, then
+ * tools/list in the session, as 2.x did. 'auto' (the default since 3.0): first server/discover (2026-07-28); a DiscoverResult offering
  * 2026-07-28 means tools/list is asked that way; a recognized 2026-07-28 error (-32020/-32021/-32022) lets it fall back
  * to initialize only when it lists an older revision (stdio "Backward Compatibility": do not fall back otherwise); any
  * other error, an HTTP 4xx without such an error body or no JSON-RPC answer falls back to initialize. The decision is
  * the proxy's (createMcpProxy upstreamNegotiation: 'auto'). A network failure or the time limit is a failure, as before.
- * 读取 MCP 端点列出的工具定义。'legacy'（默认）：与以前相同。'auto'：先发 server/discover；规则与代理的 'auto' 相同。
+ * 读取 MCP 端点列出的工具定义。'legacy'：与 2.x 相同。'auto'（3.0 起默认）：先发 server/discover；规则与代理的 'auto' 相同。
  */
-async function fetchUpstreamTools(endpoint, negotiation = 'legacy') {
+async function fetchUpstreamTools(endpoint, negotiation = 'auto') {
   let session = null, protocol = null, seq = 0, modern = false
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), MCP_FETCH_TIMEOUT_MS)
@@ -597,7 +597,7 @@ async function main() {
       return
     }
     e.mcpState = { state: 'ok', endpoint, want, tools: normalizeTools(tools), at }
-    log(`${e.label}: MCP tools verified: ${tools.length} tool(s) from ${endpoint} hash to the manifest's mcp.toolsSha256 ${want.slice(0, 16)}...${opts.upstreamNegotiation === 'auto' ? ` (read with ${era === MODERN ? `MCP ${MODERN}, no initialize` : 'initialize'}; --upstream-negotiation auto)` : ''}`)
+    log(`${e.label}: MCP tools verified: ${tools.length} tool(s) from ${endpoint} hash to the manifest's mcp.toolsSha256 ${want.slice(0, 16)}...${opts.upstreamNegotiation === 'auto' ? ` (read with ${era === MODERN ? `MCP ${MODERN}, no initialize` : 'initialize'}; upstream negotiation auto)` : ''}`)
     // A pin made while the tools could not be read gets them now. / 读不到工具时做的钉子，现在补上工具。
     if (e.pin && e.pin.tools === undefined && e.pin.material.toolsSha256 === want) {
       e.pin = { ...e.pin, tools: e.mcpState.tools }

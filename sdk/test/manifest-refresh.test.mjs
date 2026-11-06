@@ -3,6 +3,7 @@
 // a permanent deadlock here: `resync` no-ops whenever the provider's lastCumulative is not ahead of ours, which
 // is exactly the case after a price RISE, so the retry re-signed the same stale price for ever.
 import { test, before, after } from 'node:test'
+import http from 'node:http'
 import assert from 'node:assert/strict'
 import { createTapeAPI, TapeAPIError, parseUnits, MANIFEST_KEY } from '../src/index.js'
 import { privateKeyToAddress, signDigest, delegationDigest } from '../src/sig.js'
@@ -30,6 +31,13 @@ const manifestAt = (priceBEM, endpoints, signer = privateKeyToAddress(SIGNER_KEY
 })
 const publish = (m) => chain.writeFile(ADDR.container, MANIFEST_KEY, JSON.stringify(m))
 
+// What listen() checks before it serves (the escrow token check: the escrow's token is the one the manifest prices in), done here because the
+// file's one server is not started by listen(); a mismatch throws as listen() would. / listen() 服务前的核对（托管代币核对），这里自己做。
+async function boot(p) {
+  const tok = await p.checkEscrowToken()
+  if (tok.status === 'mismatch') throw new Error(tok.message)
+  return p
+}
 before(async () => {
   chain = createFakeChain()
   chain.setOwner(4246, holder); chain.setAccount(4246, ADDR.container)
@@ -42,14 +50,20 @@ before(async () => {
     rpcUrls: RPC, quorum: 2, chainId: 56, fetch: chain.fetch, allowHttp: true, escrowCacheMs: 0, log: () => {},
     methods: { quote: async () => ({ v: 1 }) },
   })
-  srv = await provider.listen(0)
+  // One server for the whole file, on a port the OS picks; a "restart" swaps the provider behind it. Closing and
+  // re-listening on the same port raced the client's keep-alive pool and the OS (EADDRINUSE, a request landing on the
+  // closed socket), which no sleep makes certain. / 整个文件只用一个服务器（端口由系统分配），"重启"只替换它背后的提供者。
+  // 原先在同一端口关闭再监听，会与客户端保活连接池和系统竞争（EADDRINUSE、请求落在已关闭的连接上），睡多久都不保证。
+  await boot(provider)
+  srv = http.createServer((req, res) => provider.handler(req, res))
+  await new Promise((resolve, reject) => srv.once('error', reject).listen(0, '127.0.0.1', resolve))
   port = srv.address().port
   const url = `http://127.0.0.1:${port}/tapeapi/v1`
   provider.manifest.endpoints.live = [url]
   publish(manifestAt(CHEAP, [url]))
   api = createTapeAPI({ conform: false, rpcUrls: RPC, quorum: 2, chainId: 56, hub: ADDR.hub, siteRegistry: ADDR.siteRegistry, escrow: ADDR.escrow, allowHttp: true, fetch: chain.fetchWith() })
 })
-after(() => srv?.close())
+after(() => { srv?.closeAllConnections?.(); srv?.close() })
 
 test('a price RISE does not deadlock a consumer holding the old manifest', async () => {
   const svc = await api.resolve(ADDR.container)
@@ -62,13 +76,11 @@ test('a price RISE does not deadlock a consumer holding the old manifest', async
   // The holder republishes at 50x and the provider starts charging it. The consumer still holds the old manifest.
   // 持有人把价格提到 50 倍并重新发布，提供者开始按新价收费；消费者手里还是旧清单。
   const url = svc.manifest.endpoints.live[0]
-  await new Promise((r) => srv.close(r))
-  provider = createProvider({
+  provider = await boot(createProvider({
     minVoucherLifeS: 0, manifest: manifestAt(DEAR, [url]), signerKey: SIGNER_KEY,
     rpcUrls: RPC, quorum: 2, chainId: 56, fetch: chain.fetch, allowHttp: true, escrowCacheMs: 0, log: () => {},
     methods: { quote: async () => ({ v: 1 }) },
-  })
-  srv = await provider.listen(port)
+  }))
   publish(manifestAt(DEAR, [url]))
 
   // Before the first fix this threw BAD_VOUCHER for ever. Now the client learns the new price from the chain and
@@ -146,20 +158,16 @@ test('a dead first endpoint fails over to the next one', async () => {
   svc.manifest.endpoints.live = [live]
 })
 
-// Restart the provider on the same port with a new price and/or signer, and publish the matching manifest.
-// 在同一端口用新价格和/或新签名密钥重启提供者，并发布对应清单。
+// "Restart" the provider behind the same server with a new price and/or signer, and publish the matching manifest.
+// 在同一服务器背后用新价格和/或新签名密钥"重启"提供者，并发布对应清单。
 async function restart(priceBEM, signerKey = SIGNER_KEY) {
   const url = `http://127.0.0.1:${port}/tapeapi/v1`
-  srv.closeAllConnections?.()   // drop keep-alive sockets, or the next fetch lands on a dead one / 断开保活连接
-  await new Promise((r) => srv.close(r))
-  await new Promise((r) => setTimeout(r, 50))   // let the client pool see the FIN / 让客户端连接池看到 FIN
   const m = manifestAt(priceBEM, [url], privateKeyToAddress(signerKey))
-  provider = createProvider({
+  provider = await boot(createProvider({
     minVoucherLifeS: 0, manifest: m, signerKey,
     rpcUrls: RPC, quorum: 2, chainId: 56, fetch: chain.fetch, allowHttp: true, escrowCacheMs: 0, log: () => {},
     methods: { quote: async () => ({ v: 1 }) },
-  })
-  srv = await provider.listen(port)
+  }))
   publish(manifestAt(priceBEM, [url], privateKeyToAddress(signerKey)))
 }
 

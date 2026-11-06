@@ -164,6 +164,22 @@ test('new-api-sidecar: one call through the sidecar to a stand-in new-api carrie
 
 test('new-api-sidecar: the smoke script runs as a program and every receipt verifies', async () => {
   const { spawnSync } = await import('node:child_process')
-  const r = spawnSync(process.execPath, [fileURLToPath(new URL('smoke.mjs', import.meta.url))], { encoding: 'utf8' })
+  const r = spawnSync(process.execPath, [fileURLToPath(new URL('smoke.mjs', import.meta.url))], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
   assert.equal(r.status, 0, r.stdout + r.stderr)
+})
+
+// 3.0 candidate: the console signs 30 days by default, so RENEW is logged from 7 days left (it was 30, which a fresh
+// 30-day delegation would hit at every start). / 3.0 候选：操作台默认签 30 天，RENEW 从剩 7 天起才打（原为 30 天）。
+test('the startup log says RENEW with fewer than 7 days left, not for a fresh 30-day delegation', async () => {
+  const logOf = async (env) => {
+    const lines = [], orig = console.log
+    console.log = (l) => lines.push(String(l))
+    let sc
+    try { sc = await startSidecar({ env, port: 0, host: '127.0.0.1', localPublicUrl: true, log: () => {} }) } finally { console.log = orig }
+    await sc.close()
+    return lines.join('\n')
+  }
+  const at = (days) => logOf({ ...throwawayIdentity({ days }), MODELS_FILE: EXAMPLE_MODELS, FORMATS: 'all' })
+  for (const d of [30, 8]) assert.doesNotMatch(await at(d), /RENEW/, `${d} days`)
+  assert.match(await at(5), /RENEW {4}the delegation expires in 4 days: renew it in step 4 of /)
 })

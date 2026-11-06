@@ -454,7 +454,7 @@ test('steps 4 to 7: the delegation, the manifest published (both resolutions exi
   assert.match(seven.out, /tapeapi prices check pricing\.json --models models\.json --status status\.json --fetched-as anonymous/)
   assert.match(lastLine(seven.out), /next: \/ 下一条命令: tapeapi doctor 42\.7\.tape --strict$/)
   const renew = await init([...common, '--renew'], { w })
-  assert.equal(renew.code, 0); assert.match(renew.out, /1\. Renew the delegation every 90 days/)
+  assert.equal(renew.code, 0); assert.match(renew.out, /1\. Renew the delegation before it expires \(30 days by default; the doctor warns with fewer than 7 days left\)/)
   // the overview: every step done (0 skipped) once each ran / 总览：各步都运行过
   for (const k of ['0', '1', '2', '3']) await init([...common, '--step', k, '--answers', answers(newDir(), { priceReportRead: true })], { w })
   // (the state file, not one more doctor run: the sidecar's free receipt method allows a few lookups per minute)
@@ -526,12 +526,14 @@ test('--lang: en has no Chinese, zh no English sentences; usage mistakes are exi
 
 test('tapeapi init through the dispatcher: no terminal, no --formats at step 3 is exit 2 on stderr, nothing on stdout', () => {
   const dir = newDir()
-  const r = spawnSync(process.execPath, [BIN, 'init', '--dir', dir, '--upstream', 'new-api', '--step', '3', '--sidecar-url', 'https://api.example.com'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  const r = spawnSync(process.execPath, [BIN, 'init', '--dir', dir, '--upstream', 'new-api', '--step', '3', '--sidecar-url', 'https://api.example.com'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   assert.equal(r.status, 2, r.stderr)
   assert.equal(r.stdout, '')
   assert.match(r.stderr, /FORMATS is not chosen/)
-  assert.match(lastLine(r.stderr), /^next: \/ 下一条命令: node \S*sdk\/bin\/tapeapi\.js init --step 3 --formats openai-chat --upstream new-api --sidecar-url https:\/\/api\.example\.com --dir /)
-  const t = spawnSync(process.execPath, [BIN, 'init', '--dir', dir, '--step', '0'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  // The path is relative to the working directory: sdk/bin/tapeapi.js from the root, bin/tapeapi.js under npm test in sdk/ (N9).
+  // 路径相对于工作目录：在根目录是 sdk/bin/tapeapi.js，在 sdk/ 里跑 npm test 是 bin/tapeapi.js（N9）。
+  assert.match(lastLine(r.stderr), /^next: \/ 下一条命令: node \S*bin\/tapeapi\.js init --step 3 --formats openai-chat --upstream new-api --sidecar-url https:\/\/api\.example\.com --dir /)
+  const t = spawnSync(process.execPath, [BIN, 'init', '--dir', dir, '--step', '0'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   assert.equal(t.status, 0, t.stderr)
   assert.match(t.stdout, /Optional: run node \S*examples\/relay-trial\/trial\.mjs/)
 })

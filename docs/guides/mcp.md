@@ -102,7 +102,7 @@ not the params or result.)
 The remote server, the signing proxy's `/mcp` and the local command speak four MCP revisions. Three use the
 `initialize` handshake: 2025-11-25, 2025-06-18 and 2025-03-26. The fourth, 2026-07-28, has no handshake: every request
 carries its revision and the client's capabilities in `params._meta`. Support for 2026-07-28 is **experimental** (2.5):
-outside the 2.x compatibility promise, it may change in any 2.x release. No session is kept between calls in either
+outside the compatibility promise, it may change in any minor release. No session is kept between calls in either
 case, and no `Mcp-Session-Id` is issued.
 
 A request is treated as 2026-07-28 when its `params._meta` has the key `io.modelcontextprotocol/protocolVersion` with
@@ -155,13 +155,15 @@ Some choices are deliberate:
   offer.
 - Before 2.5, a value of the version key that is not any revision (`"latest"`, `"2026-7-28"`, a later date, a number)
   was answered as an older-revision request. It is now refused, as 2026-07-28 asks.
-- The signing proxy opens its upstream with `initialize` by default, as before. With `upstreamNegotiation: 'auto'`
-  (experimental) it first asks the upstream `server/discover` and speaks 2026-07-28 to an upstream that offers it, so
-  an upstream that speaks only 2026-07-28 can be proxied; any other answer makes it fall back to `initialize`. The local
-  command makes the same choice with `tapeapi-mcp --upstream-negotiation auto` (experimental, 2.5; the default `legacy`
-  opens with `initialize`, as before) when it reads a taped-out MCP server's tools from its `mcp.endpoint`, by the same
-  rules. Only that reading changes: the tools must still hash to the manifest's `mcp.toolsSha256`, the same digest is
-  pinned, and every call still goes through the signed TapeAPI path. Its log line says which way the tools were read.
+- Since 3.0 the signing proxy first asks its upstream `server/discover` (`upstreamNegotiation: 'auto'`, experimental,
+  now the default) and speaks 2026-07-28 to an upstream that offers it, so an upstream that speaks only 2026-07-28 can
+  be proxied; an error answer, an HTTP 4xx or no answer in time makes it fall back to `initialize`. A network failure
+  of that first request is a failure, not a fallback, and an upstream that answers `server/discover` with a result
+  naming no revision is refused at start-up. `upstreamNegotiation: 'legacy'` opens with `initialize`, as 2.x did. The
+  local command makes the same choice by default when it reads a taped-out MCP server's tools from its `mcp.endpoint`
+  (`tapeapi-mcp --upstream-negotiation legacy` for the 2.x way). Only that reading changes: the tools must still hash
+  to the manifest's `mcp.toolsSha256`, the same digest is pinned, and every call still goes through the signed TapeAPI
+  path. Its log line says which way the tools were read.
 
 The three older revisions stay supported. No date for removing them is set. The MCP project's deprecation policy gives a
 deprecated feature at least twelve months.
@@ -183,11 +185,11 @@ Checked against the specification on 2026-10-21, when 2026-07-28 was its latest 
 
 ## The local verifying command
 
-`tapeapi-mcp` is a local MCP server (stdio) in the SDK's release package. It needs Node.js 20 or later. `npx` fetches
+`tapeapi-mcp` is a local MCP server (stdio) in the SDK's release package. It needs Node.js 22 or later. `npx` fetches
 it from the GitHub release, not from the npm registry:
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 What it does differently from the remote server:
@@ -218,7 +220,7 @@ Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -238,7 +240,7 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -250,14 +252,14 @@ The same entry goes under `mcpServers` in `~/.cursor/mcp.json` or `.cursor/mcp.j
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### Remote or local
 
 | | Remote server | Local command |
 |---|---|---|
-| Install | Nothing | Node.js 20 or later |
+| Install | Nothing | Node.js 22 or later |
 | Who checks the signature | Anyone, afterwards, with the link | The command, before the model sees the result |
 | Tool list | As the server lists it | Read from the on-chain manifest and pinned; a change is refused until you accept it |
 | Services | `11.1013.tape` | Any TapeAPI service, by name or container address |
@@ -304,7 +306,7 @@ Save the receipt (the `_meta["fun.tapeapi/receipt"]` object) as `receipt.json`. 
 release, or work inside a clone of the repository as in [Call a service](consume.md):
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz
 ```
 
 ```js
@@ -376,7 +378,7 @@ export default {
   envelope, under the same rate limits, with a receipt and a verification link.
 - `/mcp` is a route on your server. Adding it needs no manifest change and changes nothing on chain.
 - **The public service does not declare this route in its manifest** (no `mcp` field), and that is a decision, not a
-  delay. The manifest's `mcp` field ([TAPI-20 §3.8](../../spec/TAPI-20.md), and the MCP tools draft, TAPs #16) is
+  delay. The manifest's `mcp` field ([TAPI-20 §3.8](../../spec/TAPI-20.md), and the MCP tools draft, merged as Draft TAP-15, #16) is
   written for the other direction: a signing proxy in front and a real MCP server behind it
   ([Tape out your own MCP server](#tape-out-your-own-mcp-server) below), where each method is an MCP tool and its
   signed result is that tool's MCP result (`{ content, ... }`). `createMcpEndpoint` goes the opposite way: the tools
@@ -478,15 +480,17 @@ in the [holder console](https://tapeapi.fun/console/), sign the delegation, and 
 `CONTAINER`, `DELEGATION_EXPIRES` and `DELEGATION_SIG` as variables and `SIGNER_KEY` as a secret.
 [Run a service](provide.md#2-go-live-from-a-phone-cloudflare-and-holder-console) walks through each step.
 
-**Browsers and `Origin` (2.5, experimental).** By default `/mcp` answers any origin with CORS `*`: no cookie, session or
-caller key is involved, so a web page gains nothing it could not get by calling directly. That changes when the proxy
-runs on your own machine (or a private network) in front of tools with side effects, such as files, a shell or a
-database: then any web page you open can call those tools through `http://127.0.0.1:.../mcp`. Set
-`allowedOrigins: ['https://app.example']` on `createMcpProxy` (in `examples/mcp-proxy/index.mjs`, the variable
-`ALLOWED_ORIGINS`, comma-separated): a request whose `Origin` is not listed is refused with HTTP 403 before anything
-runs, as Streamable HTTP asks; a listed origin is echoed instead of `*`; a request without `Origin` (a desktop client,
-`curl`) is answered as usual. `createMcpEndpoint` takes the same option, and the public Worker the variable
-`MCP_ALLOWED_ORIGINS`.
+**Browsers and `Origin` (2.5, experimental; default changed in 3.0).** A proxy on your own machine (or a private
+network) in front of tools with side effects, such as files, a shell or a database, would let any web page you open
+call those tools through `http://127.0.0.1:.../mcp`. So since 3.0 `createMcpProxy` refuses every request that carries
+an `Origin` header (every browser request) with HTTP 403 before anything runs, as Streamable HTTP asks, unless you
+list that origin: `allowedOrigins: ['https://app.example']` (in `examples/mcp-proxy/index.mjs`, the variable
+`ALLOWED_ORIGINS`, comma-separated). A listed origin is echoed instead of `*`; a request without `Origin` (a desktop
+client, `curl`) is answered as usual. `allowedOrigins: '*'` (`ALLOWED_ORIGINS=*`) answers any origin with CORS `*`, as
+2.x did. The Worker template `examples/mcp-proxy/worker.js` keeps any origin unless its `ALLOWED_ORIGINS` lists some:
+on a public hostname an origin check protects nothing, and the holder console needs it (below). `createMcpEndpoint`
+takes the same option but its default is still any origin, and the public Worker (`api.tapeapi.fun/mcp`) takes the
+variable `MCP_ALLOWED_ORIGINS`, unset there.
 
 ### 2. Publish the manifest with the holder console
 
@@ -511,12 +515,12 @@ isolate can be restarted at any time. With it, changed tools are refused after a
 
   ```bash
   # 42.1013.tape is an example name: put your service's TapeOut name here
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### See a service with `tapeapi connect`
 
-`tapeapi connect <name>` (experimental, since 2.3 for MCP tool services, outside the 2.x compatibility promise) shows a taped-out MCP
+`tapeapi connect <name>` (experimental, since 2.3 for MCP tool services, outside the compatibility promise) shows a taped-out MCP
 server as the chain has it. When the manifest has an `mcp` field and no `ai` field, the card says "MCP tool service"
 and shows the endpoint, the manifest's free methods (`tapeapi-mcp` offers no priced method; which of them are tools is
 for the endpoint's `tools/list` to say) and the first 8 hex digits of `toolsSha256`, then Claude
@@ -588,8 +592,11 @@ once with `--allow-changed`. A new tool set reaches those users only with their 
 - **Free tools only, for now.** Every tool becomes a free method. Paid calls wait for the escrow audit
   ([Roadmap](../ROADMAP.md)).
 - **The console step needs CORS.** The console reads `tools/list` from `mcp.endpoint` in your browser, so that endpoint
-  must allow cross-origin requests from `https://tapeapi.fun`. The proxy's `/mcp` already does. Do not put anything in
-  front of it that blocks `OPTIONS` requests or strips the CORS headers.
+  must allow cross-origin requests from `https://tapeapi.fun`. The Worker template's `/mcp` does unless you set
+  `ALLOWED_ORIGINS`; with `examples/mcp-proxy/index.mjs` or your own `createMcpProxy`, list it
+  (`ALLOWED_ORIGINS=https://tapeapi.fun`, `allowedOrigins: ['https://tapeapi.fun']`), because since 3.0 the proxy refuses
+  browser origins it was not given. Do not put anything in front of it that blocks `OPTIONS` requests or strips the
+  CORS headers.
 - **Sizes.** One answer from your server may be at most 1 MiB and take at most 20 seconds. In the manifest, each
   method's description is cut to 256 characters (Unicode code points); the full text is pinned by `toolsSha256`. The console publishes at
   most 24 000 bytes and 64 methods in one transaction.

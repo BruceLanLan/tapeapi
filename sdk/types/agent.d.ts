@@ -1,4 +1,4 @@
-// @tapeapi/sdk/agent: container agents, phase 0. The WHOLE subpath is Experimental (1.7) and outside the 1.x
+// @tapeapi/sdk/agent: container agents, phase 0. The WHOLE subpath is Experimental (1.7) and outside the
 // compatibility promise: the formats follow the public Ideas TapeOutProtocol/TAPs#40 and #41 and may change with them.
 // Phase 0 has no enforcement: every check returns `enforcement: 'none'`.
 import type { Address, Hex, BigNumberish, TxRequest } from './common.js'
@@ -351,6 +351,8 @@ export interface AgentKit {
   /** agentKey / agent: when given, the mandate must name exactly these, and a mismatch keeps the nonce unrecorded; without
    *  them nothing is compared and the nonce is recorded when the other checks allow it */
   verifyMandate(signed: { mandate: Mandate; sig: Hex }, opts: MandateCheckOptions & EscrowChannelOptions & { enforcement: 'escrow-channel' }): Promise<MandateCheck | EscrowChannelMandateCheck>
+  /** @experimental prototype: the channels are x402 batch-settlement channels (payer = the holder EOA only) */
+  verifyMandate(signed: { mandate: Mandate; sig: Hex }, opts: MandateCheckOptions & Omit<EscrowChannelOptions, 'enforcement'> & { enforcement: 'x402-batch'; x402?: X402CheckOptions }): Promise<MandateCheck | X402BatchMandateCheck>
   verifyMandate(signed: { mandate: Mandate; sig: Hex }, opts?: MandateCheckOptions): Promise<MandateCheck>
   /** @experimental (phase 1) with the switch, a thread whose applied mandate names funds gives an EscrowChannelThreadCheck */
   verifyTaskThread(messages: ThreadMessage[], opts: { at?: number; readSite?: boolean } & EscrowChannelOptions & { enforcement: 'escrow-channel' }): Promise<ThreadCheck | EscrowChannelThreadCheck>
@@ -366,7 +368,11 @@ export interface AgentKit {
    *  INVALID_ARGUMENT. The premise (draft §10.5): for each (mandate, provider), what the agent key spent on every channel
    *  the history records plus what is still open to it stays within the cap; a channel the history does not record (a
    *  lost history after the provider changed its escrow) is not seen, and a whole cap may be funded there again */
-  holderPlan(mandate: Mandate, opts: { holder: Address; path?: FundingPath; /** REQUIRED: the session history, [] when there is none */ history: SessionEntry[]; /** review p1m3 recheck 3: the signed mandate, or (not both) the address that signed it: a holder that is not its signer is holder-changed-since-signing */ signed?: { mandate: Mandate; sig: Hex }; signer?: Address; now?: number; /** REQUIRED on the container path: the most each execute may take as the TapeOut fee (execute-fee-too-high) */ maxExecuteFee?: BigNumberish }): Promise<EscrowPlan & { pin: { number: number; hash: Hex }; facts: EscrowPlanFacts & { executeFee?: string | null; providers: EscrowPlanProvider[] } }>
+  holderPlan(mandate: Mandate, opts: { holder: Address; path?: FundingPath; /** REQUIRED: the session history, [] when there is none */ history: SessionEntry[]; /** review p1m3 recheck 3: the signed mandate, or (not both) the address that signed it: a holder that is not its signer is holder-changed-since-signing */ signed?: { mandate: Mandate; sig: Hex }; signer?: Address; now?: number; /** REQUIRED on the container path: the most each execute may take as the TapeOut fee (execute-fee-too-high) */ maxExecuteFee?: BigNumberish; /** session-key handover (d): scan the SessionAuthorized logs first (inheritedSessions); refused on inherited-session-live, session-logs-unavailable, session-scan-short unless refuse is false */ sessionScan?: { fromBlock: number; /** review OPS-A5: each scanned escrow's deployment block; without it the scan is session-logs-unavailable */ deployBlocks?: Record<Address, number>; chunk?: number; refuse?: boolean } }): Promise<EscrowPlan & { pin: { number: number; hash: Hex }; facts: EscrowPlanFacts & { executeFee?: string | null; providers: EscrowPlanProvider[] }; /** the scan, or null when sessionScan was not given */ sessionScan: InheritedSessionScan | null }>
+  /** @experimental (phase 1; session-key handover (d)) Before funding: the live sessions on the mandate's channels that the session history does not record (on the container path, a previous holder's). Logs that cannot be read are status 'unavailable', never "no keys". */
+  inheritedSessions(mandate: Mandate, opts: { path?: FundingPath; holder?: Address; history: SessionEntry[]; /** a block older than now − MAX_SESSION_S */ fromBlock: number; /** each scanned escrow's deployment block (its constructor log proves the nodes' log window); without it: session-logs-unavailable */ deployBlocks?: Record<Address, number>; now?: number; chunk?: number }): Promise<InheritedSessionScan>
+  /** @experimental (phase 1; BEM drill F10) closeOutNext from the facts closeOut reads at one pinned block: `state` is REQUIRED (null to begin, then the previous call's, kept before sending) */
+  closeOutStep(mandate: Mandate, opts: { holder: Address; path?: FundingPath; now?: number; escrows?: Record<string, Address>; maxExecuteFee?: BigNumberish; history: SessionEntry[]; fullRequest?: boolean; state: CloseOutState | null; resendAfterS?: number }): Promise<CloseOutNext & { pin: { number: number; hash: Hex } }>
   /** @experimental (phase 1, M3) closeOutPlan from the channels read at one pinned block; `escrows` names where the money is */
   closeOut(mandate: Mandate, opts: { holder: Address; path?: FundingPath; now?: number; escrows?: Record<string, Address>; /** REQUIRED on the container path */ maxExecuteFee?: BigNumberish; /** REQUIRED (review p1m3 recheck 3): the plan's record or the session history, [] when there is none (consumer-unknown) */ history: SessionEntry[]; /** replace a live partial request by one for the whole channel */ fullRequest?: boolean }): Promise<CloseOutPlan & { pin: { number: number; hash: Hex } }>
   /** @experimental (phase 1, M3) planApplied from readings at a new pinned block, after the plan was sent */
@@ -589,6 +595,10 @@ export interface CloseOutPlan {
   chainId: number
   principal: Address
   steps: EscrowPlanStep[]
+  /** BEM drill F10: what may be sent at `now` (every requestWithdraw, a withdraw whose window is open) */
+  sendNow: EscrowPlanStep[]
+  /** BEM drill F10: the withdraws that revert before their window opens: send them only then (or use closeOutNext) */
+  sendLater: EscrowPlanStep[]
   items: Array<{ provider: Address; escrow: Address; state: 'empty' | 'request' | 'requested' | 'lapsed' | 'replace'; amount?: string; remaining: string; replaces?: { amount: string; requestedAt: number };
     withdrawFrom?: number | { afterRequestS: number }; withdrawUntil?: number | { afterRequestS: number } }>
   fees?: { perExecute: string; executes: number; total: string }
@@ -599,6 +609,52 @@ export interface CloseOutPlan {
 /** @experimental (phase 1) The close-out (also the console's revoke button). Refusals: holder-not-current, execute-fee-too-high, holder-short-of-fee, execute-reverts, consumer-unknown,
  *  escrow-unknown, nothing-to-close. */
 export declare function closeOutPlan(mandate: Mandate, opts: { chainId: number; path?: FundingPath; holder?: Address; channels: CloseOutChannel[]; now: number; /** container path; needs maxExecuteFee (INVALID_ARGUMENT without it) */ executeFee?: BigNumberish; maxExecuteFee?: BigNumberish; currentHolder?: Address; executeReverts?: string | null; holderBalance?: BigNumberish; history?: SessionEntry[]; fullRequest?: boolean }): CloseOutPlan
+/** @experimental (phase 1; session-key handover (d)) What the buyer's scan before funding found. A log names no holder: a session is reported as not in this console's history, with its block. */
+export interface InheritedSessionScan {
+  ok: boolean
+  status: 'clear' | 'inherited' | 'unavailable' | 'short'
+  reason: null | 'inherited-session-live' | 'session-logs-unavailable' | 'session-scan-short'
+  message: string
+  consumer: Address
+  fromBlock: number
+  fromTime?: number
+  toBlock: number
+  escrows: Address[]
+  sessions: Array<{ escrow: Address; consumer: Address; provider: Address; key: Address; /** the escrow's sessionExpiry at the pin */ expires: number; block: number }>
+  pin: { number: number; hash: Hex }
+}
+/** @experimental (phase 1) The version of the close-out state closeOutNext keeps. */
+export declare const CLOSE_OUT_STATE_VERSION: 1
+/** @experimental (phase 1) Seconds a handed-out close-out step is not handed out again while the chain does not show it (900). */
+export declare const CLOSE_OUT_RESEND_S: number
+/** @experimental (phase 1) The stages of a channel in a close-out. */
+export declare const CLOSE_OUT_STAGES: readonly ['empty', 'done', 'request-issued', 'cooling', 'withdraw-issued']
+/** @experimental (phase 1) The close-out state: plain JSON the caller keeps between closeOutNext calls (before sending). */
+export interface CloseOutState {
+  v: 1; kind: 'closeOut'; chainId: number; consumer: Address; principal: Address; agentKey: Address; expires: number; path: FundingPath
+  startedAt: number; updatedAt: number; done: boolean
+  channels: Array<{ provider: Address; escrow: Address | null; stage: typeof CLOSE_OUT_STAGES[number]; requestedAt: number | null; issuedAt: number | null; issuedBlock: number | null; /** decision 6: the nonce the step was sent with (closeOutSent), or null */ nonce: number | null }>
+  log: Array<{ at: number; block: number | null; provider: Address | null; event: string; detail?: string }>
+}
+/** @experimental (phase 1) The next step of a close-out: what to send now, or until when to wait (BEM drill F10). */
+export interface CloseOutNext {
+  phase: 'send' | 'wait' | 'done'
+  send: Array<EscrowPlanStep & { replaceNonce?: number }>
+  waitUntil: number | null
+  items: Array<{ provider: Address; escrow: Address | null; stage: typeof CLOSE_OUT_STAGES[number]; action: 'send' | 'wait' | 'none'; step?: EscrowPlanStep & { /** send with this nonce: it replaces the stuck one */ replaceNonce?: number }; nonce?: number | null; requestedAt?: number; issuedAt?: number; issuedBlock?: number | null; waitUntil?: number; withdrawFrom?: number; withdrawUntil?: number }>
+  state: CloseOutState
+  log: CloseOutState['log']
+  fees?: { perExecute: string; executes: number; total: string }
+  checked: { history: boolean }
+  notes: string[]
+}
+/** @experimental (phase 1; review decision 6) Record the nonce a handed-out step was sent with; a step handed out again then carries replaceNonce. Returns a new state. */
+export declare function closeOutSent(state: CloseOutState, opts: { provider: Address; nonce: number }): CloseOutState
+/** @experimental (phase 1; BEM drill F10) The close-out one step at a time, from closeOutPlan's facts and the state the
+ *  previous call returned (null to begin): requestWithdraw where no request is live, nothing while it cools down,
+ *  withdraw once its window is open; a step handed out is not handed out again within resendAfterS. Pure. Refusals as
+ *  closeOutPlan's (nothing-to-close only for a new close-out); a state of another close-out is INVALID_ARGUMENT. */
+export declare function closeOutNext(mandate: Mandate, opts: { chainId: number; path?: FundingPath; holder?: Address; channels: CloseOutChannel[]; now: number; executeFee?: BigNumberish; maxExecuteFee?: BigNumberish; currentHolder?: Address; executeReverts?: string | null; holderBalance?: BigNumberish; history?: SessionEntry[]; fullRequest?: boolean; state: CloseOutState | null; pinBlock?: number; resendAfterS?: number }): CloseOutNext
 /** @experimental (phase 1) The read-back after a plan was sent. */
 export interface PlanApplied { ok: boolean; problems: Array<AgentProblem & { escrow?: Address; provider?: Address; /** channel-not-at-cap only (review p1m3 recheck) */ cause?: 'excess' | 'fund-failed' | 'withdrawn-or-not-sent' | 'spent-unknown' }>; approveZero: EscrowPlanStep[] }
 /** @experimental (phase 1) allowance-not-zero, channel-not-at-cap (against cap − the record's spentElsewhere), session-not-set, from readings at a block after the plan. */
@@ -620,17 +676,17 @@ export declare const SPEND_DEFAULT_CALL_PRICE_PERCENT: 10
 /** @experimental (phase 1, M4) The version of a spend record (1). */
 export declare const SPEND_RECORD_VERSION: 1
 /** @experimental (phase 1, M4) One capped provider's channel as the start pinned it: base is its claimedOf then, hi the highest cumulative signed. */
-export interface SpendPin { provider: Address; escrow: Address; token: Address; cap: string; base: string; hi: string }
+export interface SpendPin { provider: Address; escrow: Address; token: Address; cap: string; base: string; hi: string; /** @experimental x402-batch: the pinned channel */ channelId?: Hex }
 /** @experimental (phase 1, M4) The record the limiter keeps per agent key (plain JSON). */
-export interface SpendRecord { v: 1; chainId: number; agentKey: Address; seq: number; state: 'accepted' | 'started'; mandateHash: Hex | null; consumer: Address | null; notBefore: number | null; expires: number | null; stopped: null | { reasons: string[]; at: number | null }; providers: SpendPin[] }
+export interface SpendRecord { v: 1; chainId: number; agentKey: Address; seq: number; state: 'accepted' | 'started'; mandateHash: Hex | null; consumer: Address | null; notBefore: number | null; expires: number | null; stopped: null | { reasons: string[]; at: number | null }; /** @experimental absent: escrow-channel */ enforcement?: 'x402-batch'; providers: SpendPin[] }
 /** @experimental (phase 1, M4) Check and normalise a spend record (INVALID_ARGUMENT). */
 export declare function spendRecord(r: unknown): SpendRecord
 /** @experimental (phase 1, M4) The record an ok escrow-channel check starts (AGENT_SPEND_REFUSED spend-not-enforced otherwise). */
-export declare function spendPin(check: EscrowChannelMandateCheck | MandateCheck, opts: { chainId: number; agentKey?: Address }): SpendRecord
+export declare function spendPin(check: EscrowChannelMandateCheck | X402BatchMandateCheck | MandateCheck, opts: { chainId: number; agentKey?: Address }): SpendRecord
 /** @experimental (phase 1, M4) The limiter's rule for one voucher: allowed, or the first refusal of SPEND_REFUSALS. */
 export type SpendDecision = { ok: true; hi: string; spent: string; remaining: string } | { ok: false; refused: string; stop: boolean; message: string }
-/** @experimental (phase 1, M4) May the agent key sign this voucher (pure). `maxPrice` is the per-call price ceiling for this provider (at most its cap: spend-call-price-ceiling-above-cap); without it the ceiling is SPEND_DEFAULT_CALL_PRICE_PERCENT of the cap, rounded down, and 0 is spend-call-price-ceiling-unset; a price above the ceiling is spend-call-price-above-ceiling (none of the three stops the order). */
-export declare function spendDecision(record: SpendRecord, request: { chainId: number; provider: Address; escrow: Address; consumer: Address; cumulative: BigNumberish; price: BigNumberish; now: number; maxPrice?: BigNumberish | null }): SpendDecision
+/** @experimental (phase 1, M4) May the agent key sign this voucher (pure). `maxPrice` is the per-call price ceiling for this provider (at most its cap: spend-call-price-ceiling-above-cap); without it the ceiling is SPEND_DEFAULT_CALL_PRICE_PERCENT of the cap, rounded down, and 0 is spend-call-price-ceiling-unset; a price above the ceiling is spend-call-price-above-ceiling (none of the three stops the order). `listedPrice` (3.0): the method's listed price (its priceBEM in the token's smallest unit); when given the ceiling is the lower of the two, and a method listed at 0 is never paid. The limiter's payer takes it from `extra.method` (api.call passes it). */
+export declare function spendDecision(record: SpendRecord, request: { chainId: number; provider: Address; escrow: Address; consumer: Address; cumulative: BigNumberish; price: BigNumberish; now: number; maxPrice?: BigNumberish | null; listedPrice?: BigNumberish | null }): SpendDecision
 /** @experimental (phase 1, M4) A later check against the record: the stops, the check's problems, hi raised to what was settled (pure). */
 export declare function spendRecheck(record: SpendRecord, check: EscrowChannelMandateCheck | MandateCheck): { ok: boolean; stop: string[]; problems: string[]; hi: string[] }
 /** @experimental (phase 1, M4) A payer wrapped by the limiter: reserve refuses with AGENT_SPEND_REFUSED (data.reason) and adds mandateHash to the voucher. */
@@ -642,15 +698,16 @@ export interface LimitedPayer {
   inflightOf(svc: unknown): number | undefined
   setCumulative(svc: unknown, value: BigNumberish): Promise<void>
   resync(svc: unknown, last: BigNumberish, evidence?: { voucher?: Record<string, unknown> }): Promise<bigint>
-  reserve(svc: unknown, price: BigNumberish): Promise<{ voucher: Record<string, unknown>; next: bigint; amount: bigint; spent: string; remaining: string; commit(): Promise<void>; release(): void }>
+  /** `extra.method` (3.0): the method paid for; its priceBEM in the service's manifest bounds the call (a method the manifest does not list is bounded at 0) */
+  reserve(svc: unknown, price: BigNumberish, extra?: { method?: string; [k: string]: unknown }): Promise<{ voucher: Record<string, unknown>; next: bigint; amount: bigint; spent: string; remaining: string; commit(): Promise<void>; release(): void }>
   voucherFor(svc: unknown, price: BigNumberish): Promise<Record<string, unknown>>
 }
 /** @experimental (phase 1, M4) The agent runtime's spend limiter: one record per agent key; a key without its record never signs. */
 export interface SpendLimiter {
   accept(o: { chainId: number; agentKey: Address }): Promise<SpendRecord>
   /** the record a check starts; for the same mandate again the start is kept (base never moves) and hi is raised to the claimedOf read now; a stopped record is spend-stopped, a check of another escrow or consumer stops it */
-  start(o: { chainId: number; check: EscrowChannelMandateCheck | MandateCheck }): Promise<SpendRecord>
-  recheck(o: { chainId: number; check: EscrowChannelMandateCheck | MandateCheck }): Promise<{ ok: boolean; stop: string[]; problems: string[]; hi: string[]; stopped: SpendRecord['stopped'] }>
+  start(o: { chainId: number; check: EscrowChannelMandateCheck | X402BatchMandateCheck | MandateCheck }): Promise<SpendRecord>
+  recheck(o: { chainId: number; check: EscrowChannelMandateCheck | X402BatchMandateCheck | MandateCheck }): Promise<{ ok: boolean; stop: string[]; problems: string[]; hi: string[]; stopped: SpendRecord['stopped'] }>
   record(o: { chainId: number; agentKey: Address }): Promise<SpendRecord | null>
   stop(o: { chainId: number; agentKey: Address; reason?: string }): Promise<SpendRecord>
   /** @experimental (phase 1, restart) seal the agent key's secret with the limiter's vault and keep only the blob (the record must exist and not be stopped) */
@@ -659,7 +716,7 @@ export interface SpendLimiter {
   resume(o: { chainId: number; agentKey: Address; check?: EscrowChannelMandateCheck | MandateCheck | null }): Promise<{ record: SpendRecord; secret: Hex; recheck: null | { ok: boolean; stop: string[]; problems: string[]; hi: string[]; stopped: SpendRecord['stopped'] } }>
   /** @experimental (phase 1, restart) destroy the sealed key (the order ended); every stop destroys it too */
   forgetKey(o: { chainId: number; agentKey: Address }): Promise<void>
-  payer(o: { chainId: number; payer: { consumer: Address; signer: Address; reserve: Function; cumulativeOf: Function; [k: string]: unknown }; maxPrice?: BigNumberish | Record<string, BigNumberish> | null; signed?: { mandate: Record<string, unknown>; sig: Hex } }): LimitedPayer
+  payer(o: { chainId: number; payer: { consumer: Address; signer: Address; reserve: Function; cumulativeOf: Function; [k: string]: unknown }; maxPrice?: BigNumberish | Record<string, BigNumberish> | null; signed?: { mandate: Record<string, unknown>; sig: Hex }; /** @experimental (3.0) a createBudget() that also admits each voucher's price (in the token's label, rounded up to 8 places) before it is handed out: BUDGET_EXCEEDED, the voucher released. */ budget?: import('./ai.js').Budget; /** @experimental (3.0) with budget: the decimals of the providers' token. */ tokenDecimals?: number | Record<string, number> }): LimitedPayer
 }
 /**
  * @experimental (phase 1, M4) A store of spend records: strings, may be async. One writer per record is the premise; a
@@ -732,3 +789,101 @@ export interface SpendEvidenceItem extends SpendStatementEntry { claimedNow: str
 /** @experimental (phase 1, M7) A delivery's spend statement reconciled (pure): problems for a malformed statement, a
  *  provider without a cap or amounts that do not add up; every mismatch with the chain or the receipts is a warning. */
 export declare function spendEvidence(spend: unknown, opts: { mandate: Mandate | NormalizedMandate; calls?: Array<{ provider: Address; method: string; ok: boolean }>; readings?: Array<Pick<ChannelReading, 'provider' | 'escrow' | 'claimedAtCheck'>> | null; prices?: Record<string, Record<string, string>> | null }): { ok: boolean; problems: AgentProblem[]; warnings: AgentProblem[]; items: SpendEvidenceItem[] }
+
+/** @experimental (3.0) The client-side budget, the same as @tapeapi/sdk/ai's createBudget. */
+export { createBudget, budgetFileStore, memoryBudgetStore } from './ai.js'
+
+// ---- @experimental prototype: enforcement 'x402-batch' (x402 batch-settlement channels; contracts we did not write) ----
+type X402Cfg = Partial<X402ChannelConfig>
+type Read = (to: Address, data: Hex) => Promise<Hex>
+/** @experimental The names of the enforcement backends the phase-1 checks know ('escrow-channel', 'x402-batch'); any other value is phase 0. */
+export declare const ENFORCEMENTS: readonly string[]
+/** @experimental The backend registered under `name`, or null: who signed a voucher on the pinned channel, the payer, payee and cumulative it names, and whether it is on the pinned channel. */
+export declare function enforcementBackend(name: string): { name: string; voucherSigner(o: { chainId: number; pin: SpendPin; voucher: unknown }): Address | null; voucherTerms(v: unknown): Record<string, unknown>; onPinnedChannel(o: { chainId: number; pin: SpendPin; voucher: unknown }): boolean } | null
+/** @experimental prototype: the `enforcement` value for x402 batch-settlement channels. */
+export declare const ENFORCEMENT_X402_BATCH: 'x402-batch'
+/** @experimental prototype: x402BatchSettlement's address as the scheme's EVM binding lists it (spec commit c2a8924e); a contract we did not write and have not reviewed. */
+export declare const X402_SETTLEMENT: Address
+/** @experimental prototype: the Permit2 deposit collector (the spender in a deposit's Permit2 signature). */
+export declare const X402_PERMIT2_COLLECTOR: Address
+/** @experimental prototype: Uniswap's Permit2 address. */
+export declare const PERMIT2: Address
+/** @experimental prototype: the commit of the x402 batch-settlement spec this code follows. */
+export declare const X402_SPEC_COMMIT: string
+/** @experimental prototype: the contract's shortest withdraw delay (900 s). */
+export declare const X402_MIN_WITHDRAW_DELAY_S: number
+/** @experimental prototype: the contract's longest withdraw delay (30 days). */
+export declare const X402_MAX_WITHDRAW_DELAY_S: number
+/** @experimental prototype: the client's cap on a service's withdraw delay by default (48 hours); a longer delay is refused. */
+export declare const X402_DEFAULT_MAX_WITHDRAW_DELAY_S: number
+/** @experimental prototype: how long `x402Payer` signs by default (one hour); the contract has no expiry. */
+export declare const X402_DEFAULT_SESSION_S: number
+/** @experimental prototype: why only plain EOA payers work (a TapeOut container's isValidSignature answers 0; EIP-7702 code is refused). */
+export declare const X402_EOA_ONLY: string
+/** @experimental prototype: a channel's configuration; its EIP-712 hash is the channel id. payerAuthorizer is the agent's session key. */
+export interface X402ChannelConfig { payer: Address; payerAuthorizer: Address; receiver: Address; receiverAuthorizer: Address; token: Address; withdrawDelay: number; salt: Hex }
+/** @experimental prototype: a service's terms (no manifest field carries them yet: configuration). settlement defaults to X402_SETTLEMENT, salt to zero. */
+export interface X402Terms { settlement?: Address; receiver: Address; receiverAuthorizer: Address; token: Address; withdrawDelay: number; salt?: Hex }
+/** @experimental prototype: verifyMandate's x402 options: terms per provider, the client's withdraw-delay cap, other settlement addresses to allow. */
+export interface X402CheckOptions { terms?: Record<string, Omit<X402Terms, 'receiver' | 'settlement'>>; maxWithdrawDelayS?: number; allowSettlements?: Address[] }
+/** @experimental prototype: a voucher as it goes on the wire: the channel's configuration and the session key's signature over a cumulative ceiling. */
+export interface X402WireVoucher { type: 'voucher'; channelConfig: X402ChannelConfig; voucher: { channelId: Hex; maxClaimableAmount: string; signature: Hex } }
+/** @experimental prototype: a mandate check on x402 channels, read at one pinned block; each scope entry names its channel id and withdraw delay. */
+export interface X402BatchMandateCheck extends Omit<EscrowChannelMandateCheck, 'enforcement' | 'scope' | 'fee'> { enforcement: 'none' | 'x402-batch'; scope: Array<Omit<ChannelReading, 'sessionExpiry'> & { sessionExpiry: null; channelId: Hex | null; withdrawDelay: number | null }> }
+/** @experimental prototype: a channel configuration, checked (non-zero addresses, delay in the contract's range, bytes32 salt; INVALID_ARGUMENT). */
+export declare function x402ChannelConfig(c: X402Cfg): X402ChannelConfig
+/** @experimental prototype: the channel id, as the contract's getChannelId computes it. */
+export declare function x402ChannelId(chainId: number, settlement: Address, config: X402Cfg): Hex
+/** @experimental prototype: the EIP-712 digest the session key signs for a cumulative ceiling. */
+export declare function x402VoucherDigest(chainId: number, settlement: Address, channelId: Hex, max: BigNumberish): Uint8Array
+/** @experimental prototype: the digest the receiverAuthorizer signs for claimWithSignature. */
+export declare function x402ClaimBatchDigest(chainId: number, settlement: Address, rows: Array<{ channelId: Hex; maxClaimableAmount: BigNumberish; totalClaimed: BigNumberish }>): Uint8Array
+/** @experimental prototype: Permit2's EIP-712 domain separator on a chain. */
+export declare function permit2DomainSeparator(chainId: number, permit2?: Address): Uint8Array
+/** @experimental prototype: the payer's Permit2 witness digest for a deposit (spender: the collector; witness: the channel id). */
+export declare function x402DepositDigest(chainId: number, o: { token: Address; amount: BigNumberish; nonce: BigNumberish; deadline: BigNumberish; channelId: Hex; collector?: Address; permit2?: Address }): Uint8Array
+/** @experimental prototype: one row of a claim: a channel, the voucher's ceiling and signature, and the total to claim up to. */
+export interface X402ClaimRow { config: X402Cfg; maxClaimableAmount: BigNumberish; signature: Hex; totalClaimed: BigNumberish }
+/** @experimental prototype: unsigned transactions (value 0). The SDK sends none of them: each party sends and pays for its own. */
+export declare const x402Tx: {
+  approvePermit2(token: Address, permit2?: Address): TxRequest
+  deposit(settlement: Address, config: X402Cfg, o: { amount: BigNumberish; nonce: BigNumberish; deadline: BigNumberish; signature: Hex; collector?: Address }): TxRequest
+  claim(settlement: Address, rows: X402ClaimRow[]): TxRequest
+  claimWithSignature(settlement: Address, rows: X402ClaimRow[], signature: Hex): TxRequest
+  settle(settlement: Address, receiver: Address, token: Address): TxRequest
+  initiateWithdraw(settlement: Address, config: X402Cfg, amount: BigNumberish): TxRequest
+  finalizeWithdraw(settlement: Address, config: X402Cfg): TxRequest
+  refund(settlement: Address, config: X402Cfg, amount: BigNumberish): TxRequest
+}
+/** @experimental prototype: a channel read with eth_call: balance, claimed, a pending withdrawal, and what is available (never below 0). */
+export declare function x402ChannelState(read: Read, settlement: Address, channelId: Hex): Promise<{ channelId: Hex; balance: bigint; totalClaimed: bigint; unclaimed: bigint; pending: { amount: bigint; initiatedAt: number }; available: bigint }>
+/** @experimental prototype: throws AGENT_INVALID (`x402-payer-not-eoa`) when the payer has code. */
+export declare function x402CheckPayer(payer: Address, code: Hex): true
+/** @experimental prototype: a service's terms by the client's rules (receiver = the service's container, delay at most the cap). */
+export declare function x402Terms(t: X402Terms, opts?: { container?: Address; maxWithdrawDelayS?: number }): Required<X402Terms>
+/** @experimental prototype: the signer of a wire voucher if it is the configuration's payerAuthorizer on that channel; else null. */
+export declare function x402VoucherSigner(chainId: number, settlement: Address, voucher: unknown): Address | null
+/** @experimental prototype: the client's payer, of api.payer's shape (the spend limiter wraps it); it signs nothing after sessionExpiry. */
+export interface X402Payer {
+  [k: string]: unknown
+  readonly consumer: Address; readonly signer: Address; readonly enforcement: 'x402-batch'; readonly sessionExpiry: number
+  channelOf(svc: unknown): { settlement: Address; config: X402ChannelConfig; channelId: Hex }
+  cumulativeOf(svc: unknown): bigint
+  inflightOf(svc: unknown): number
+  whenFree(svc: unknown, extra?: unknown, waitMs?: number): Promise<void>
+  setCumulative(svc: unknown, value: BigNumberish): Promise<void>
+  resync(svc: unknown, last: BigNumberish, evidence?: { voucher?: Record<string, unknown> }): Promise<bigint>
+  reserve(svc: unknown, price: BigNumberish, extra?: Record<string, unknown>): Promise<{ voucher: X402WireVoucher; next: bigint; amount: bigint; commit(): Promise<void>; release(): void }>
+  voucherFor(svc: unknown, price: BigNumberish): Promise<X402WireVoucher>
+}
+/** @experimental prototype: a payer for x402 channels; resync advances only on the payer's own voucher for exactly that figure. */
+export declare function x402Payer(o: { chainId: number; consumer: Address; sessionKey: Hex; terms: Record<string, X402Terms>; sessionExpiry?: number; maxWithdrawDelayS?: number; store?: { get(k: string): unknown; set(k: string, v: string): unknown }; clock?: () => number }): X402Payer
+/** @experimental prototype: the provider's voucher check for createProvider({ enforcement }); it charges last + price, never more, and builds its own claim and settle. */
+export declare function x402Acceptance(o: { chainId: number; settlement?: Address; container: Address; receiverAuthorizer: Address; token: Address; withdrawDelay: number; read: Read; store?: { get(id: string): unknown; set(id: string, r: unknown): unknown; list(): unknown }; clock?: () => number }): {
+  name: 'x402-batch'
+  terms(): Required<X402Terms> & { scheme: string; spec: string }
+  verifyVoucher(voucher: unknown, price: bigint): Promise<{ consumer: Address; signer: Address; cumulative: bigint; commit(): Promise<void>; release(): void }>
+  claimRows(): Promise<X402ClaimRow[]>
+  claimTx(rows: X402ClaimRow[]): TxRequest
+  settleTx(): TxRequest
+}

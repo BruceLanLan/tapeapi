@@ -164,7 +164,11 @@ test('FIXED G1-S6: every tokenId and processor the SDK returns is a decimal stri
 const AI_STABLE = ['FORMATS', 'MANIFEST_FIELD', 'RECEIPT_HEADER', 'RECEIPT_METHOD', 'SIDECAR_ERROR_HEADER', 'VERIFY_ERROR_HEADER', 'createVerifyingFetch', 'decodeReceiptHeader', 'formatFor', 'readSseReceipt', 'scanSse', 'sha256Hex', 'usageOf', 'validateAIField', 'verifyUsageReceipt']
 // 2.5: the price arithmetic a billing layer in front of a sidecar needs is back in the public face, @experimental (an
 // operator had re-implemented amountOf because 1.0 stopped exporting it). / 2.5：计费层需要的价格计算重新公开，标为实验性。
-const AI_EXPERIMENTAL = ['amountOf', 'completionLimitOf', 'maxAmountOf', 'maxPricesOf', 'pricesOf']
+// 3.0: the client-side budget (createVerifyingFetch({ policy }) and the agent kit's limiter), @experimental.
+// 3.0：客户端预算，实验性。
+// 3.0 (a proposal, not part of TAPI-21 or of any TAP; see the CHANGELOG): the receipt reference and the price basis.
+// 3.0（提案，非规范）：回执引用与价格依据。
+const AI_EXPERIMENTAL = ['amountOf', 'budgetFileStore', 'completionLimitOf', 'createBudget', 'maxAmountOf', 'maxPricesOf', 'memoryBudgetStore', 'priceRefOf', 'pricesOf', 'receiptRef']
 const AI_INTERNAL = ['FORWARD_HEADERS', 'MODEL_ID_MAX', 'SESSION_HEADERS', 'apiPath', 'completeOf', 'createSseScanner', 'encodeReceipt', 'envelopeProblems', 'formatOfMethod', 'forwardsHeader', 'isAnswerId', 'isSessionHeader', 'modelEntryOf', 'priceProblems', 'pricingOf', 'receiptComment', 'requestUsageBody']
 // The JSDoc block right above each `export` line of a declaration file (null when there is none).
 // 声明文件里每个 export 行正上方的 JSDoc 块（没有时为 null）。
@@ -198,7 +202,7 @@ test('FIXED RC-7: ai is a public face (Stable + @internal, the rest not exported
   const aiDocs = docsOfExports(readFileSync(new URL('../types/ai.d.ts', import.meta.url), 'utf8'))
   for (const n of AI_INTERNAL) assert.match(aiDocs.get(n) ?? '', /@internal/, `ai.${n} is @internal`)
   for (const n of AI_STABLE) assert.doesNotMatch(aiDocs.get(n) ?? '', /@internal|@experimental/, `ai.${n} is Stable`)
-  for (const n of AI_EXPERIMENTAL) assert.match(aiDocs.get(n) ?? '', /@experimental \(2\.5\)/, `ai.${n} is @experimental`)
+  for (const n of AI_EXPERIMENTAL) assert.match(aiDocs.get(n) ?? '', /@experimental \((2\.5|3\.0)[,)]/, `ai.${n} is @experimental`)
   for (const n of AI_EXPERIMENTAL) assert.equal(root.ai[n], (await import('../src/ai.js'))[n], `ai.${n} is the implementation's own`)
   const bp = docsOfExports(readFileSync(new URL('../types/bus-privacy.d.ts', import.meta.url), 'utf8'))
   assert.ok(bp.size >= 15)

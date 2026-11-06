@@ -13,7 +13,16 @@
 //   PUBLIC_URL           https://api.example.com   the public https root of THIS sidecar (your users' base URL root)
 //   CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES, DELEGATION_SIG   the identity, as the holder console shows them
 //   SIGNER_KEY           the service key the delegation names (or SIGNER_KEY_FILE: a file holding it, e.g. a Docker secret)
-//   MODELS_FILE          the price table (default: models.json next to this file)
+//   SIGNER_KEY_GENERATE  optional, "1" with SIGNER_KEY_FILE: when that file does not exist yet, the sidecar creates a new
+//                        key in it at start (mode 0600) and prints only its address; the key itself is never printed.
+//                        Not when SIGNER_ADDRESS is set (a lost key file is then setup mode, not a silent new key).
+//                        可选，与 SIGNER_KEY_FILE 一起设为 "1"：该文件还不存在时，旁路启动时在其中生成新密钥（权限 0600），只打印其地址，
+//                        从不打印密钥本身。设了 SIGNER_ADDRESS 时不生成（密钥文件丢失即为设置模式，而不是悄悄换一把新密钥）。
+//   OPERATOR_SITE_URL    optional: your own site (https). GET / on the sidecar's host answers 302 to it (URL-normalised), with
+//                        nothing added. Unset: GET / answers 404 NOT_FOUND as before (503 in setup mode). Never the holder
+//                        console. / 可选：你自己的站点（https）。旁路主机名上的 GET / 302 跳转过去（按 URL 标准写法），不附加任何参数。未设：
+//                        GET / 与以前一样回答 404 NOT_FOUND（设置模式下 503）。不能是持有人操作台。
+//   MODELS_FILE         the price table (default: models.json next to this file)
 //   UPSTREAM_BASE_URL    new-api's /v1 base (default http://new-api:3000/v1, the compose service)
 //   TAPE_NAME            optional: the service's TapeOut name, printed in the hint for tapeapi-verify users
 //   SERVICE_NAME         optional display name (default "AI relay (TapeAPI sidecar)")
@@ -55,7 +64,7 @@
 //   node examples/new-api-sidecar/server.mjs          (Docker: see docker-compose.yml and README.md)
 import http from 'node:http'
 import { isIP } from 'node:net'
-import { readFileSync, realpathSync } from 'node:fs'
+import { readFileSync, realpathSync, writeFileSync, existsSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createAIProxy } from '@tapeapi/server/ai-proxy'
 import { sig, ai } from '@tapeapi/sdk'
@@ -117,6 +126,32 @@ export function selectFormats(value, available = ai.FORMATS) {
   const unknown = asked.filter((n) => !names.includes(n))
   if (unknown.length) return `${FORMATS_VAR} names ${unknown.length === 1 ? 'a format' : 'formats'} this sidecar does not know (${unknown.map((n) => JSON.stringify(n)).join(', ')}): ${choose}`
   return available.filter((f) => asked.includes(f.name))
+}
+
+/**
+ * OPERATOR_SITE_URL, checked: { url } (null when unset) or { problem }. Your own site, where GET / on the sidecar's host
+ * sends a visitor: https (http only for a loopback host), no credentials, query or fragment, at most 200 characters, not
+ * TapeAPI's own site (the holder console, CONSOLE_URL, is not your site) and not the sidecar itself (`publicUrl`).
+ * OPERATOR_SITE_URL 的检查结果：{ url }（未设为 null）或 { problem }。你自己的站点：https（http 只限回环地址），不带凭据、查询串或
+ * 片段，最多 200 个字符；不能是 TapeAPI 自己的站点（持有人操作台 CONSOLE_URL 不是你的站点），也不能是旁路自己。
+ * @param {string|undefined} value
+ * @param {string|null} [publicUrl]
+ * @returns {{ url: string|null, problem?: undefined }|{ problem: string, url?: undefined }}
+ */
+export function operatorSiteOf(value, publicUrl = null) {
+  const v = typeof value === 'string' ? value.trim() : ''
+  if (!v) return { url: null }
+  const bad = (why) => ({ problem: `OPERATOR_SITE_URL ${why}` })
+  if (v.length > 200) return bad('must be at most 200 characters')
+  let u
+  try { u = new URL(v) } catch { return bad(`must be a URL such as https://www.example.com, not ${JSON.stringify(v.slice(0, 80))}`) }
+  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && LOOPBACK_HTTP.test(u.href))) return bad('must be https (http only for 127.0.0.1 or localhost)')
+  if (u.username || u.password || u.search || u.hash) return bad('must not carry credentials, a query or a fragment: the sidecar sends visitors there unchanged and adds nothing')
+  const host = u.hostname.toLowerCase().replace(/\.$/, '')
+  const consoleHost = new URL(CONSOLE_URL).hostname
+  if (host === consoleHost || host.endsWith(`.${consoleHost}`)) return bad(`must be your own site, not ${consoleHost} (the holder console is not your site)`)
+  if (publicUrl) { try { if (new URL(publicUrl).origin === u.origin) return bad('must be another site than the sidecar\'s own PUBLIC_URL (GET / would send visitors to itself)') } catch { /* PUBLIC_URL is checked on its own */ } }
+  return { url: u.href }
 }
 
 /**
@@ -200,12 +235,16 @@ export function readConfig(rawEnv = process.env, profile = NEW_API_PROFILE) {
   // 0: the clients' session headers (x-claude-code-session-id, session-id, thread-id) do not reach new-api. / 0：不转发会话头。
   if (![undefined, '', '0', '1'].includes(env.FORWARD_SESSION_HEADERS)) return out('FORWARD_SESSION_HEADERS must be 1 (pass the clients\' session headers upstream, the default) or 0', { signer })
   const forwardSessionHeaders = env.FORWARD_SESSION_HEADERS !== '0'
+  // Where GET / sends a visitor: the operator's own site, or nowhere (404, as before). / GET / 把访问者送到哪里。
+  const site = operatorSiteOf(env.OPERATOR_SITE_URL, publicUrl)
+  if (site.problem) return out(site.problem, { signer })
 
   return {
     ok: true, missing: [], problem: null, signer,
     config: {
       publicUrl, loopback, upstreamBaseUrl, modelsFile, models, formats, signerKey, signer, rateIp, clientIpHeader, receiptTtlS, requireRequestHash, forwardSessionHeaders, receiptLookupsPerMin, upstreamResponseHeaders,
       formatsWarning,
+      operatorSiteUrl: site.url,
       tapeName: env.TAPE_NAME || null,
       manifestBase: {
         tapeapi: '0.1', name, circuits: env.CIRCUITS, tokenId: String(BigInt(env.TOKEN_ID)), container: env.CONTAINER,
@@ -312,11 +351,59 @@ export function createSidecar(env = process.env, { fetch, profile = NEW_API_PROF
     try { proxy = buildProxy(state.config, { fetch, log }) } catch (e) { state = { ok: false, missing: [], problem: e.message, signer: state.signer } }
     if (proxy && state.config.formatsWarning) proxy = withHealthWarning(proxy, state.config.formatsWarning)
   }
+  // GET / (and HEAD /) only, and only when OPERATOR_SITE_URL is set and valid; in setup mode too, so a link to the
+  // sidecar's host already lands on the operator's site. Every other path is untouched.
+  // 只有 GET /（与 HEAD /），且只在 OPERATOR_SITE_URL 已设且有效时；设置模式下也一样。其它路径一概不动。
+  const site = state.ok ? state.config.operatorSiteUrl : (operatorSiteOf(env?.OPERATOR_SITE_URL, env?.PUBLIC_URL).url ?? null)
+  const answer = (request, { clientIp } = {}) => (proxy ? proxy.handleRequest(request, { clientIp }) : setupAnswer(state, request))
   return {
     state, proxy,
     config: state.ok ? state.config : null,
-    handleRequest: (request, { clientIp } = {}) => (proxy ? proxy.handleRequest(request, { clientIp }) : setupAnswer(state, request)),
+    handleRequest: (request, o) => (site ? siteRedirect(request, site) : null) ?? answer(request, o),
   }
+}
+
+/** 302 to the operator's own site for GET / or HEAD / (the configured location, URL-normalised, nothing added), else null.
+ *  对 GET / 或 HEAD / 回 302 到服务方自己的站点（配置的地址按 URL 标准写法，不附加任何东西），否则为 null。 */
+export function siteRedirect(request, site) {
+  if (!site || (request.method !== 'GET' && request.method !== 'HEAD')) return null
+  if (new URL(request.url).pathname !== '/') return null
+  return new Response(null, { status: 302, headers: { location: site, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' } })
+}
+
+/**
+ * SIGNER_KEY_GENERATE=1 with SIGNER_KEY_FILE: create the signing key file when it does not exist yet, on this machine
+ * only, readable by its owner only (0600), created exclusively (never overwrites a key). Returns { created, signer } or
+ * { created: false, why } and logs one line with the ADDRESS only: the key is never logged, printed or sent anywhere.
+ * Nothing happens when SIGNER_KEY is set, when the switch is off, or when SIGNER_ADDRESS is set (a key file that went
+ * missing is then setup mode, which names the problem, instead of a new key the delegation does not name).
+ * SIGNER_KEY_GENERATE=1 且设了 SIGNER_KEY_FILE：该文件还不存在时在本机生成签名密钥文件，仅所有者可读（0600），独占创建（从不覆盖已有
+ * 密钥）。只记录一行**地址**：密钥从不写进日志、不打印、不发送到任何地方。设了 SIGNER_KEY、没打开开关、或设了 SIGNER_ADDRESS 时什么都不做
+ * （那时密钥文件丢失就是设置模式并说明问题，而不是换一把委托里没有的新密钥）。
+ * @param {Record<string, string|undefined>} rawEnv
+ * @param {{ log?: (line: string) => void, randomKey?: () => string }} [o]
+ */
+export function ensureSignerKeyFile(rawEnv = process.env, { log = () => {}, randomKey = sig.randomPrivateKey } = {}) {
+  const env = Object.fromEntries(Object.entries(rawEnv || {}).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]))
+  if (env.SIGNER_KEY_GENERATE !== '1') return { created: false, why: 'off' }
+  if (env.SIGNER_KEY) return { created: false, why: 'SIGNER_KEY is set' }
+  const file = env.SIGNER_KEY_FILE
+  if (!file) { log('SIGNER_KEY_GENERATE=1 needs SIGNER_KEY_FILE (where the key is kept); no key was created'); return { created: false, why: 'no SIGNER_KEY_FILE' } }
+  if (existsSync(file)) {
+    // An existing key file stays as it is; a group- or world-readable one is worth a line. / 已有的密钥文件保持原样；他人可读时提示一句。
+    try { if (process.platform !== 'win32' && (statSync(file).mode & 0o077)) log(`${file} can be read by other users of this machine: chmod 600 it`) } catch { /* readConfig reports it */ }
+    return { created: false, why: 'exists' }
+  }
+  if (env.SIGNER_ADDRESS) { log(`SIGNER_KEY_FILE ${file} does not exist and SIGNER_ADDRESS is set: no new key was created (restore the key file, or remove SIGNER_ADDRESS and sign a new delegation)`); return { created: false, why: 'SIGNER_ADDRESS is set' } }
+  const key = randomKey()
+  const signer = sig.privateKeyToAddress(key)
+  try { writeFileSync(file, `${key}\n`, { flag: 'wx', mode: 0o600 }) } catch (e) {
+    log(`could not create ${file} (${e.code || 'error'}); no key was created`)
+    return { created: false, why: e.code || 'error' }
+  }
+  log(`created a new signing key in ${file} (readable by its owner only). Its address: ${signer}. The key itself is not shown and never leaves this machine.`)
+  log(`next: the delegation must name exactly this address (OPERATOR-KIT.md, "A key made on the server"), then set DELEGATION_EXPIRES and DELEGATION_SIG`)
+  return { created: true, signer }
 }
 
 /** The client's address: the trusted header when configured (the right-most entry of a list: the one your proxy added),
@@ -387,6 +474,8 @@ export async function startSidecar({ env = process.env, port, host, fetch, log, 
   await new Promise((resolve, reject) => server.once('error', reject).listen(listenPort, listenHost, resolve))
   const actual = server.address().port
   const effective = localPublicUrl && !env.PUBLIC_URL ? { ...env, PUBLIC_URL: `http://127.0.0.1:${actual}` } : env
+  // A key made on this machine, when asked for (SIGNER_KEY_GENERATE=1): only its address is said. / 按要求在本机生成密钥，只说地址。
+  ensureSignerKeyFile(effective, { log: (l) => say(`key      ${l}`) })
   sidecar = createSidecar(effective, { fetch, profile, ...(log ? { log } : {}) })
 
   const { state } = sidecar
@@ -413,9 +502,12 @@ export async function startSidecar({ env = process.env, port, host, fetch, log, 
       say(`verify   clients can check every receipt with: tapeapi-verify ${c.tapeName}${served.length ? `; ${served.join(' and ')} can use it too` : ''}`)
       for (const [n, f] of clients.filter(([, f]) => !on.has(f))) say(`         ${n} calls ${f}, which ${FORMATS_VAR} does not enable: its calls are refused here (HTTP 400), with no receipt`)
     }
+    // From 7 days left, the doctor's RENEW_DAYS (it was 30 before 3.0, when the console signed 90 days) / 剩 7 天起，同 doctor 的 RENEW_DAYS
     const days = Math.floor((m.delegation.expires * 1000 - Date.now()) / 86_400_000)
-    if (days < 30) say(`RENEW    the delegation expires in ${days} days: renew it in step 4 of ${CONSOLE_URL}`)
+    if (days < 7) say(`RENEW    the delegation expires in ${days} days: renew it in step 4 of ${CONSOLE_URL}`)
   }
+  const site = sidecar.state.ok ? sidecar.state.config.operatorSiteUrl : null
+  if (site) say(`site     GET / answers 302 to ${site} (OPERATOR_SITE_URL)`)
   return {
     server, port: actual, url: `http://127.0.0.1:${actual}`, state, proxy: sidecar.proxy, handleRequest: sidecar.handleRequest,
     close: () => new Promise((resolve) => { server.closeAllConnections?.(); server.close(() => resolve()) }),

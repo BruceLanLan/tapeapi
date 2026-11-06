@@ -34,7 +34,7 @@ async function prices(args, io = {}) {
   return { code: r.exitCode, out, err }
 }
 /** The converter run as a program, the way its README runs it. / 按 README 的方式把转换器当作程序运行。 */
-const direct = (args, cwd) => spawnSync(process.execPath, [CONVERT, ...args], { encoding: 'utf8', cwd })
+const direct = (args, cwd) => spawnSync(process.execPath, [CONVERT, ...args], { encoding: 'utf8', cwd, timeout: 300_000, killSignal: 'SIGKILL' })
 const lastLine = (s) => s.trimEnd().split('\n').pop()
 const FORBIDDEN = /认证|合作伙伴|推荐|已审计|主网可用|成为标准|通过|采用|免费接入|零成本|certified|partner|recommend|audited|adopted|zero cost/i
 
@@ -150,10 +150,10 @@ test('prices show: the table, who fetched the list (取价身份), the unverifie
 
 test('tapeapi prices through the dispatcher: the converter is loaded from the checkout', async () => {
   const dir = await saved()
-  const r = spawnSync(process.execPath, [BIN, 'prices', 'convert', path.join(dir, 'pricing.json'), '--status', path.join(dir, 'status.json'), '--usd-exchange-rate', '7', '--fetched-as', 'anonymous'], { encoding: 'utf8' })
+  const r = spawnSync(process.execPath, [BIN, 'prices', 'convert', path.join(dir, 'pricing.json'), '--status', path.join(dir, 'status.json'), '--usd-exchange-rate', '7', '--fetched-as', 'anonymous'], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.stdout, direct(['pricing.json', '--status', 'status.json', '--usd-exchange-rate', '7', '--fetched-as', 'anonymous'], dir).stdout)
-  const h = spawnSync(process.execPath, [BIN, 'prices', '--help'], { encoding: 'utf8' })
+  const h = spawnSync(process.execPath, [BIN, 'prices', '--help'], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
   assert.equal(h.status, 0); assert.match(h.stdout, /prices convert <pricing\.json> --usd-exchange-rate <n>/)
 })
 

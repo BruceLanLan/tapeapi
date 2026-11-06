@@ -1,0 +1,1782 @@
+// AI usage receipts (the 2026 Q4 plan, "A1/A2"): the rules both sides share. A signing sidecar in front of an AI API
+// (@tapeapi/server/ai-proxy) signs every metered answer as a TAPI-21 envelope; the client keeps the bytes it sent and
+// received, hashes them the same way and checks the signature against the service's on-chain signer and the amounts
+// against the manifest's price table. The hashing, the event-stream scanner, the price arithmetic, the receipt codec and
+// the verifier live here, once, so the sidecar and every verifier compute exactly the same thing.
+// AI 用量回执：两端共用的规则。签名旁路把每个计量的回答签成 TAPI-21 信封；客户端保留自己发出和收到的字节，按同样的方法取哈希，
+// 对照链上 signer 核验签名、对照清单价目表核验金额。哈希、事件流扫描、价格运算、回执编解码与核验都只在这里写一次。
+//
+// THE MANIFEST FIELD (manifest.ai, TAPI-20 extension; validateAIField is normative):
+//   { endpoints: [ { format, baseUrl } ],                                1..16, one per format, https (http in dev only)
+//     models: [ { id, aliases?: [string] (<= 16), formats?: [format], prices: [ { currency, unit: "1M tokens", input,
+//                 output, cacheRead?, cacheWrite?, cacheWrite1h?, reasoning? } ] } ] }                    1..256 models
+//   `prices` holds 1..7 entries, one per currency, currencies unique among BEM, BNB, USDT, USDC, ETH, USD1, USD; every price
+//   is a decimal string (at most 18 integer digits and 8 decimals) per 1M tokens. Every id and alias is 1..256 characters
+//   without control characters and appears at most once in the whole table. `formats`, when given, names formats among the
+//   endpoints and limits the entry to them.
+//
+// MODEL MATCHING: the entry used is the one whose `id` or one of whose `aliases` equals, exactly and case-sensitively,
+//   the model the upstream REPORTED, among the entries allowed for the answer's format. Only when the upstream reported no
+//   model is the model the REQUEST asked for (the format's requestModel) matched the same way; the receipt then carries
+//   that requested model as `model` and says modelMatchedBy "request". No prefix matching, no case folding.
+//
+// USAGE, one convention for every format:
+//   { prompt_tokens      ALL input tokens, cache reads and writes included
+//     completion_tokens  ALL output tokens, reasoning included (0 when the format has none, e.g. embeddings)
+//     total_tokens       as reported, else prompt + completion
+//     cache_read_tokens?  cache_write_tokens?  cache_write_1h_tokens?  reasoning_tokens?     subsets, only when reported
+//     other?: { name: count } }                          per-use counts above 0 (e.g. web_search_requests), sorted by name
+//   Keys in exactly this order. cache_read + cache_write <= prompt, cache_write_1h <= cache_write, reasoning <= completion.
+//
+// AMOUNT, per currency entry, over disjoint buckets, per 1M tokens:
+//     input × (prompt − cache_read − cache_write) + cacheRead × cache_read + cacheWrite × (cache_write − cache_write_1h)
+//   + cacheWrite1h × cache_write_1h + output × (completion − reasoning) + reasoning × reasoning_tokens
+//   cacheRead and cacheWrite default to input; cacheWrite1h to cacheWrite, then input; without `reasoning` the reasoning
+//   tokens stay in output. Per-use counts (`other`) add 0 and are listed in `unpriced`. The sum is divided by 1 000 000 and
+//   rounded UP once to 8 decimals; the amount is a string with exactly 8 decimals. Integer (BigInt) arithmetic only.
+//
+// THE RECEIPT: a TAPI-21 envelope { id, ok: true, container, ts, method, params, result, sig } signed by the manifest's
+//   signer, where method is the format's receipt method (openai_chat, openai_responses, anthropic_messages,
+//   openai_embeddings), id is the answer's id (or one the sidecar generated when the answer has none), and
+//     params = { path, requestSha256 }       the API path from the service root (no query), sha256 of the request body
+//                                            bytes exactly as the client sent them
+//     result = { model, usage, responseSha256, stream, complete, status, prices, modelMatchedBy?, unpriced?, usageInjected? }
+//       model           the model the upstream reported, or the requested one when modelMatchedBy is "request"; null if none
+//       usage           as above, or null (no usage reported, or status not 2xx)
+//       responseSha256  see below
+//       stream          whether the answer was an event stream (a streaming format answered with text/event-stream)
+//       complete        true for a 2xx whole answer that is not itself marked unfinished, and for a stream that reached
+//                       its format's final success event (Chat: a choice with a finish_reason and no error chunk;
+//                       Responses: response.completed; Anthropic: message_stop and no error event); false otherwise.
+//                       An incomplete answer is still priced from the usage it reported.
+//       status          the upstream's HTTP status; a status outside 2xx carries usage null and prices null
+//       prices          [ { currency, amount } ], one per entry of the matched model's `prices`, in the same order; null
+//                       when no model matched or there is no usage
+//       modelMatchedBy  "response" | "request", present exactly when a price-table entry matched
+//       unpriced        the names in usage.other (billed per use, no token price), present only with prices
+//       usageInjected   true when the sidecar asked the upstream for usage the client did not ask for (and removed
+//                       from the client's copy what that request added)
+//
+// RESPONSE HASH (responseSha256). A whole answer: sha256 of the body bytes exactly as the client received them. An event
+//   stream: parse the bytes the client received as server-sent events (WHATWG: lines end at CRLF, LF or CR; one leading
+//   U+FEFF is skipped; lines starting with ":" are comments and ignored, which includes the receipt comment; a line
+//   "field: value" drops one space after the colon; a line without a colon is a field with an empty value; the values
+//   of all `data` fields of an event are joined with "\n"; an event is dispatched only at a blank line, and only if it
+//   had a `data` field; an unfinished event at the end is discarded). For each dispatched event in order take its data
+//   as UTF-8 bytes; leave out every event whose data is exactly the format's sentinel ("[DONE]" for Chat and Responses,
+//   none for Anthropic); hash the concatenation of each remaining data followed by one "\n" byte. Event names, ids and
+//   comments are not hashed.
+//
+// DELIVERY: a whole answer carries the receipt in the `x-tapeapi-receipt` header (base64url of the envelope JSON). A
+//   stream carries it as one SSE comment block ": tapeapi-receipt <base64url>\n\n" inserted right before the format's
+//   final event (data: [DONE], event: response.completed|incomplete|failed, event: message_stop); with no final event
+//   the line ": tapeapi-receipt <base64url>\n" is appended at the end (after a line end when the stream stopped mid-line).
+//   The free manifest method `receipt` returns a stored envelope by id for an hour.
+// 清单字段、模型匹配、用量、金额、回执、响应哈希与送达规则见上（英文为准）。
+//
+// API formats are adapters, one small module each (ai-openai-chat.js, ai-openai-responses.js, ai-anthropic-messages.js,
+// ai-openai-embeddings.js). Nothing in this file knows a vendor's JSON; it knows server-sent events, bytes, prices and
+// signatures. An adapter is
+//   { name, method, baseSuffix, match({ verb, path }), headers?, exposeHeaders?, requestModel(body),
+//     stream: { framing: 'sse', sentinel, final: { event?: [...], data?: [...] } } | null,
+//     prepareUpstream?(body) -> { body, strip } | null, isInjectedEvent?(json),
+//     response(json) -> { id, model, usage, complete? },
+//     streamState() -> { event(json, eventName), result() -> { id, model, usage, complete } } }
+// - `name` is the format ('openai-chat'), `method` the receipt method ('openai_chat');
+// - `path` is the API path from the service root ('/v1/chat/completions'); `baseSuffix` is what a client's base URL adds
+//   to that root ('/v1' for OpenAI's SDKs, '' for Anthropic's);
+// - `headers` are the caller headers the format needs upstream (its auth, its version and beta flags);
+// - `sentinel` is a data payload left out of the hash; `final` names the stream's last event by its first line;
+// - `prepareUpstream` may change the body sent upstream (e.g. to ask for usage); events it caused are stripped
+//   (`isInjectedEvent`), so the client receives, and the hash covers, exactly what it asked for.
+// API 格式是适配器（每种一个小模块）。本文件不认识任何厂商的 JSON，只认识 SSE、字节、价格与签名。
+//
+// Only leaf modules are imported, no node: imports: this file runs in Workers, browsers and Node.
+// 只引用叶子模块、不引用 node:，可在 Workers、浏览器与 Node 中运行。
+import { sha256 } from '@noble/hashes/sha256'
+import { bytesToHex } from '@noble/hashes/utils'
+import { TapeAPIError } from './errors.js'
+import { recoverResponseSigner } from './sig.js'
+import { canonicalJSON } from './canon.js'
+import { isAddress, eqAddr } from './abi.js'
+import { toBase64Url, fromBase64Url } from './mcp.js'
+import { openaiChat } from './ai-openai-chat.js'
+import { openaiResponses } from './ai-openai-responses.js'
+import { anthropicMessages } from './ai-anthropic-messages.js'
+import { openaiEmbeddings } from './ai-openai-embeddings.js'
+import { createBudget } from './budget.js'
+// @experimental (3.0) the client-side budget, re-exported for @tapeapi/sdk/ai / 实验性：客户端预算，经 @tapeapi/sdk/ai 公开
+export { createBudget, budgetFileStore, memoryBudgetStore } from './budget.js'
+
+/**
+ * The manifest field that carries { endpoints: [{ format, baseUrl }], models: [{ id, formats?, price }] } (TAPI-20
+ * extension A1). One constant, so a rename is one line. / 携带 AI 端点与价目表的清单字段。只有这一个常量，改名只改一行。
+ */
+export const MANIFEST_FIELD = 'ai'
+/** Response header carrying a non-stream receipt. / 非流式回执所在的响应头。 */
+export const RECEIPT_HEADER = 'x-tapeapi-receipt'
+/** SSE comment that carries a stream's receipt (the line is `: tapeapi-receipt <base64url>`). / 流式回执所在的 SSE 注释。 */
+export const SSE_RECEIPT_PREFIX = ': tapeapi-receipt '
+/** Response header marking an error the sidecar made itself (no upstream answer, no receipt, no signature): a transport
+ *  failure to the client. Informative: anyone on the path can set or strip it, so it never makes an answer verified.
+ *  标记旁路自己产生的错误（没有上游回答、没有回执、没有签名）的响应头：对客户端是传输失败。仅供参考，不会让回答变成已核验。 */
+export const SIDECAR_ERROR_HEADER = 'x-tapeapi-sidecar-error'
+/** Response header of the HTTP 502 a strict createVerifyingFetch answers in place of a whole answer whose receipt fails
+ *  (value RECEIPT_INVALID), next to `x-should-retry: false`. / strict 的核验 fetch 代替核验不过的整体回答返回的 HTTP 502 所带的头。 */
+export const VERIFY_ERROR_HEADER = 'x-tapeapi-verify-error'
+/** The free manifest method that returns a stored receipt by response id. / 按响应 id 取回回执的免费清单方法。 */
+export const RECEIPT_METHOD = 'receipt'
+export const PRICE_UNIT = '1M tokens'
+/** BEM first (the network's token); BNB, USDT, USDC, ETH as BSC tokens; USD for display only. / 价目币种。 */
+export const CURRENCIES = Object.freeze(['BEM', 'BNB', 'USDT', 'USDC', 'ETH', 'USD1', 'USD'])
+export const MODELS_MAX = 256
+export const MODEL_ID_MAX = 256
+/** At most this many aliases per model entry. / 每个模型条目至多这么多别名。 */
+export const ALIASES_MAX = 16
+/** At most this many price entries (one per currency) per model. / 每个模型至多这么多价格条目（每币种一个）。 */
+export const PRICES_MAX = 7
+/** Prices carry at most, amounts exactly, this many decimals. / 价格至多、金额恰好这么多位小数。 */
+export const AMOUNT_DECIMALS = 8
+/** A decoded event's data is parsed as JSON (for the adapter) up to this size, the same bound as a whole non-stream
+ *  answer (a final event such as response.completed repeats the whole output); larger events are hashed as they arrive
+ *  and not parsed, so a usage inside one is not read. / 解码后的事件数据在此大小以内才按 JSON 解析（与整体回答上限相同：
+ *  response.completed 这类最终事件会重复整个输出）；更大的事件边到边哈希、不解析，其中的 usage 读不到。 */
+export const EVENT_PARSE_LIMIT = 16 * 1024 * 1024
+export const ENDPOINTS_MAX = 16
+/** The built-in formats. Gemini follows as a further adapter. / 内置格式。 */
+export const FORMATS = Object.freeze([openaiChat, openaiResponses, anthropicMessages, openaiEmbeddings])
+
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
+const HEX64 = /^[0-9a-f]{64}$/
+const SIG_RE = /^0x[0-9a-fA-F]{130}$/
+const PRICE_RE = /^(0|[1-9]\d{0,17})(\.\d{1,8})?$/
+const METHOD_RE = /^[a-z][a-z0-9_]{0,63}$/
+const FORMAT_RE = /^[a-z][a-z0-9-]{0,63}$/
+const PRICE_KEYS = ['input', 'output', 'cacheRead', 'cacheWrite', 'cacheWrite1h', 'reasoning']
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/
+const enc = new TextEncoder()
+const toBytes = (v) => (typeof v === 'string' ? enc.encode(v) : v instanceof Uint8Array ? v : v instanceof ArrayBuffer ? new Uint8Array(v) : ArrayBuffer.isView(v) ? new Uint8Array(v.buffer, v.byteOffset, v.byteLength) : null)
+const NL = new Uint8Array([0x0a])
+
+/** The adapter a request goes to, or null (then it passes through without a receipt). / 请求对应的适配器，没有则为 null。 */
+export const formatFor = (verb, path, formats = FORMATS) => (typeof path === 'string' && formats.find((f) => f.match({ verb: String(verb).toUpperCase(), path }))) || null
+/**
+ * Caller headers a proxy passes upstream, verbatim: content-type and accept; the client's identity and session headers
+ * (user-agent, x-app, x-claude-code-session-id, session-id, thread-id, originator, x-client-request-id,
+ * anthropic-dangerous-direct-browser-access, every x-codex-* and x-stainless-*); and each format's own `headers` (auth,
+ * version and beta flags). Never: cookies, forwarding and client-address headers (forwarded, x-forwarded-*, x-real-ip,
+ * cf-*), hop-by-hop headers, host and content-length. One rule for the sidecar and tapeapi-verify.
+ * 代理原样转发到上游的调用方请求头：content-type、accept；客户端身份与会话头；以及各格式自己声明的头。永不转发：Cookie、
+ * 转发与客户端地址头、逐跳头、host 与 content-length。旁路与 tapeapi-verify 共用这一条规则。
+ */
+export const FORWARD_HEADERS = Object.freeze(['content-type', 'accept', 'user-agent', 'x-app', 'x-claude-code-session-id', 'session-id', 'thread-id', 'originator', 'x-client-request-id', 'anthropic-dangerous-direct-browser-access', 'content-encoding'])
+export const FORWARD_PREFIXES = Object.freeze(['x-codex-', 'x-stainless-'])
+/**
+ * The session headers among those: they tie a caller's requests into one conversation for whoever receives them (Claude
+ * Code's x-claude-code-session-id, Codex's session-id, thread-id). Forwarded by default, as the clients expect; the
+ * sidecar (forwardSessionHeaders: false) and tapeapi-verify (--strip-session-headers) can leave them out.
+ * 其中的会话头：把同一个调用方的请求串成一段对话。默认转发（客户端期望如此）；旁路与 tapeapi-verify 可以不转发。
+ */
+export const SESSION_HEADERS = Object.freeze(['x-claude-code-session-id', 'session-id', 'thread-id'])
+/** Is this one of SESSION_HEADERS? / 是否为会话头。 */
+export const isSessionHeader = (name) => SESSION_HEADERS.includes(String(name).toLowerCase())
+const NEVER_FORWARD = new Set(['cookie', 'cookie2', 'forwarded', 'x-real-ip', 'host', 'content-length', 'connection', 'keep-alive', 'proxy-connection', 'proxy-authorization', 'proxy-authenticate', 'te', 'trailer', 'transfer-encoding', 'upgrade'])
+/** Does a proxy pass this caller header upstream (for these formats)? / 代理是否把这个调用方请求头转发到上游？ */
+export function forwardsHeader(name, formats = FORMATS) {
+  const k = String(name).toLowerCase()
+  if (NEVER_FORWARD.has(k) || k.startsWith('x-forwarded-') || k.startsWith('cf-')) return false
+  return FORWARD_HEADERS.includes(k) || FORWARD_PREFIXES.some((p) => k.startsWith(p)) || formats.some((f) => Array.isArray(f.headers) && f.headers.some((h) => String(h).toLowerCase() === k))
+}
+/**
+ * Is this an answer id a sidecar uses as the receipt id (TAPI-21 §3.5: 1 to 128 characters in U+0021–U+007E)? Otherwise
+ * the sidecar generates one, and a verifier does not compare them. / 旁路是否把它用作回执 id；否则旁路自己生成，核验方不比较。
+ */
+export const isAnswerId = (v) => typeof v === 'string' && /^[\x21-\x7e]{1,128}$/.test(v)
+/** The adapter that signs receipts of `method`, or null. / 签发该方法回执的适配器。 */
+export const formatOfMethod = (method, formats = FORMATS) => formats.find((f) => f.method === method) || null
+/**
+ * The API path a request names: its URL path with the service root's path taken off (the URL path '/relay/v1/messages'
+ * under the root '/relay' names '/v1/messages'), or null when it is not under the root. One rule for the sidecar and the
+ * verifiers. / 请求所指的 API 路径：URL 路径去掉服务根路径（根为 '/relay' 时，'/relay/v1/messages' 所指的是 '/v1/messages'）；
+ * 不在根之下则为 null。旁路与核验方共用这一条规则。
+ */
+export function apiPath(pathname, rootPath) {
+  const rp = String(rootPath).replace(/\/+$/, '')
+  return typeof pathname === 'string' && pathname.startsWith(rp + '/') ? pathname.slice(rp.length) : null
+}
+/**
+ * A URL path as a lenient server reads it: percent-encoded unreserved characters decoded ('%63' -> 'c'), an encoded '/'
+ * or backslash ('%2F', '%5C') read as '/', runs of '/' collapsed, a trailing '/' dropped. OpenAI and Anthropic serve
+ * '/v1//chat/completions' and '/v1/chat/%63ompletions';
+ * a metered path must still be written exactly, so a path that only matches a format this way is refused, never signed
+ * or verified as if it did (review P2-O1). / 宽松服务器眼中的路径：解码百分号编码的非保留字符、把编码的 '/' 与反斜杠读作 '/'、
+ * 合并连续斜杠、去掉结尾斜杠。
+ * 计量路径必须按原样书写：只有这样才能匹配某个格式的路径会被拒绝，而不是当作匹配来签名或核验。
+ */
+export function loosePath(path) {
+  const p = String(path).replace(/%([0-9A-Fa-f]{2})/g, (m, h) => { const c = String.fromCharCode(parseInt(h, 16)); return c === '/' || c === '\\' ? '/' : /[A-Za-z0-9._~-]/.test(c) ? c : m }).replace(/\/{2,}/g, '/')
+  return p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p
+}
+/** The service root of an endpoint's baseUrl (the baseUrl minus the format's suffix), or null. / 端点 baseUrl 对应的服务根。 */
+export function rootOf(baseUrl, format) {
+  const b = String(baseUrl).replace(/\/+$/, ''), suf = format?.baseSuffix ?? ''
+  if (!b.endsWith(suf)) return null
+  return b.slice(0, b.length - suf.length)
+}
+/** The stream sentinel of a receipt method ('[DONE]' for openai_chat), null when it has none. / 回执方法的流结束标记。 */
+export const sentinelOf = (method, formats = FORMATS) => formatOfMethod(method, formats)?.stream?.sentinel ?? null
+
+// ---------------------------------------------------------------------------------------------------------------
+// Hashing / 哈希
+// ---------------------------------------------------------------------------------------------------------------
+/** sha256 of bytes (a string is hashed as UTF-8), lowercase hex without 0x. / 字节的 sha256，小写十六进制、无 0x。 */
+export function sha256Hex(data) {
+  const b = toBytes(data ?? new Uint8Array(0))
+  if (!b) throw new TapeAPIError('BAD_REQUEST', 'sha256Hex takes bytes or a string')
+  return bytesToHex(sha256(b))
+}
+
+const same = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true }
+
+/**
+ * A stream's responseSha256 from its data payloads, in order: sha256 of each payload followed by one "\n", every event
+ * whose data is exactly the format's sentinel left out. Strings are UTF-8.
+ * 按顺序拼接每个 data 载荷并各加一个 "\n"（数据恰为结束标记的事件除外），取 sha256。
+ * @param {Array<string|Uint8Array>} payloads
+ * @param {{ sentinel?: string|null }} [o]  e.g. '[DONE]' (sentinelOf(method)) / 例如 '[DONE]'
+ */
+export function sseDigestOfPayloads(payloads, { sentinel = null } = {}) {
+  if (!Array.isArray(payloads)) throw new TapeAPIError('BAD_REQUEST', 'payloads must be an array')
+  const end = sentinel == null ? null : enc.encode(sentinel)
+  const h = sha256.create()
+  for (const p of payloads) {
+    const b = toBytes(p)
+    if (!b) throw new TapeAPIError('BAD_REQUEST', 'each payload must be a string or bytes')
+    if (end && same(b, end)) continue
+    h.update(b); h.update(NL)
+  }
+  return bytesToHex(h.digest())
+}
+
+/**
+ * An incremental, byte-level parser of a server-sent event stream (the WHATWG rules: LF, CR or CRLF line ends, a CR at a
+ * chunk end waits for a possible LF, one leading U+FEFF skipped, comment lines ignored, `data` lines joined with "\n",
+ * an event dispatched on a blank line only, an unfinished event at the end discarded). It hashes each dispatched event's
+ * data by the receipt rule, hands each event's JSON to `onEvent(json, eventName)` (an adapter's streamState), and
+ * collects `: tapeapi-receipt` comments. Memory is O(1) in the stream's length: an event larger than eventParseLimit is
+ * hashed as it arrives and not parsed. Vendor-neutral: the proxy and every verifier run this same code.
+ * 增量的、字节级的 SSE 解析器（WHATWG 规则）。按回执规则对每个已分派事件的数据取哈希，把每个事件的 JSON 交给 onEvent
+ * （适配器的 streamState），并收集 `: tapeapi-receipt` 注释。内存与流长无关。与厂商无关：旁路与各核验方运行同一份代码。
+ * @param {{ sentinel?: string|null, onEvent?: (json: any, eventName: string) => void, eventParseLimit?: number, final?: { data?: string[], event?: string[] }|null }} [o]
+ * @returns {{ push(chunk: Uint8Array|ArrayBuffer|string): number, end(): void, digest(): string, state(): object, info: { events: number, done: boolean, receipts: string[], final: boolean, receiptsAtEnd: number|null, eventsAtEnd: number|null, digestAtEnd: string|null, endOffset: number|null, ambiguous: number, ambiguousAtEnd: number|null } }}
+ *   info: see below (the end of the stream, FIXED SSE-END; lines led by U+FEFF, FIXED SSE-BOM). / info 见下。
+ */
+// `final` (a format's stream.final: { data?, event? }) sets info.final once the format's final event has been dispatched, so
+// a verifier can hold that event back until the receipt is checked (review G1 M14). info.receiptsAtEnd is the number of
+// receipt comments seen when the stream first ended, by its final event or its sentinel (review RC-2), null before;
+// info.eventsAtEnd and info.digestAtEnd are the event count and the receipt hash at that same point, and info.endOffset is
+// where that point lies in the bytes of the push() that reached it (just after the blank line that dispatched the ending
+// event), so a verifier can pass on exactly the stream up to its end (FIXED SSE-END). info.ambiguous counts the lines that
+// start with U+FEFF other than at the very start of the stream: this parser reads such a line as an unknown field, but
+// parsers that strip a byte order mark from every line (the official OpenAI and Anthropic SDKs) read it as the field after
+// it, so a stream that has one says different things to different clients and cannot be verified (FIXED SSE-BOM);
+// info.ambiguousAtEnd is that count at the end.
+// 格式的最终事件分派后置 info.final。info.receiptsAtEnd：流第一次结束（最终事件或 sentinel）时已见到的回执注释数，之前为 null；
+// info.eventsAtEnd 与 info.digestAtEnd 是同一点的事件数与回执哈希，info.endOffset 是这一点在到达它的那次 push() 的字节中的位置
+// （分派结束事件的空行之后），核验方据此恰好转交到结束为止的流。info.ambiguous 统计流最开头之外以 U+FEFF 开头的行：本解析器把它
+// 读作未知字段，而逐行去掉字节序标记的解析器（OpenAI 与 Anthropic 官方 SDK）把它读作其后的字段，含这种行的流对不同客户端说的
+// 不是同一回事，无法核验；info.ambiguousAtEnd 是结束处的这个计数。
+export function createSseScanner({ sentinel = null, onEvent, eventParseLimit = EVENT_PARSE_LIMIT, final = null } = {}) {
+  const LF = 0x0a, CR = 0x0d, COLON = 0x3a, SPACE = 0x20
+  const COMMENT_LIMIT = 64 * 1024
+  const RECEIPTS_MAX = 16
+  const BOM = [0xef, 0xbb, 0xbf]
+  const end = sentinel == null ? null : enc.encode(sentinel)
+  const hash = sha256.create()
+  const info = { events: 0, done: false, receipts: [], final: false, receiptsAtEnd: null, eventsAtEnd: null, digestAtEnd: null, endOffset: null, ambiguous: 0, ambiguousAtEnd: null }
+  const finalData = (final?.data ?? []).map((d) => enc.encode(d))
+  const finalEvents = final?.event ?? []
+  let bomMatched = 0, bomDone = false
+  let lastCR = false
+  // the line / 当前行
+  let lineLen = 0, comment = false, commentParts = [], commentLen = 0, colon = false, field = [], fieldLen = 0, fieldOver = false
+  let lineBom = 0   // bytes of U+FEFF matched at the start of the line; -1 once it cannot be one / 行首已匹配的 U+FEFF 字节数；不可能时为 -1
+  let isData = false, isEvent = false, eventParts = [], eventLen = 0, skipSpace = false
+  // the event / 当前事件
+  let evData = false, evFields = false, evName = '', pieces = [], size = 0, over = false
+
+  const concat = (parts, n) => { const out = new Uint8Array(n); let o = 0; for (const p of parts) { out.set(p, o); o += p.length } return out }
+  const fieldName = () => (fieldOver ? null : String.fromCharCode(...concat(field, fieldLen)))
+  function appendData(b) {
+    if (over) { hash.update(b); return }
+    if (size + b.length > eventParseLimit) {
+      over = true
+      for (const p of pieces) hash.update(p)
+      pieces = []; size = 0
+      hash.update(b)
+      return
+    }
+    pieces.push(b.slice()); size += b.length
+  }
+  function startDataLine() { if (evData) appendData(NL); evData = true }
+  function dispatch() {
+    if (evData && !info.final && ((evName && finalEvents.includes(evName)) || (!over && finalData.some((d) => same(concat(pieces, size), d))))) info.final = true
+    if (evData) {
+      if (over) { hash.update(NL); info.events++ } else {
+        const data = concat(pieces, size)
+        if (end && same(data, end)) info.done = true
+        else {
+          hash.update(data); hash.update(NL); info.events++
+          if (onEvent) { let v; try { v = JSON.parse(new TextDecoder().decode(data)) } catch { v = undefined } if (v !== undefined) onEvent(v, evName) }
+        }
+      }
+      // The end is a point in the stream, not the chunk that carried it: what a verifier checks there is the event count
+      // and hash as they stood at that point (the final event included, the sentinel never hashed), whatever arrived after
+      // it in the same chunk (FIXED SSE-END). / 结束是流中的一点，而不是承载它的那一块：核验方在此核对的是那一点的事件数与哈希
+      // （含最终事件；sentinel 从不计入），同一块中其后到达的内容不算在内。
+      if (info.receiptsAtEnd === null && (info.final || info.done)) {
+        info.receiptsAtEnd = info.receipts.length; info.eventsAtEnd = info.events; info.digestAtEnd = bytesToHex(hash.clone().digest()); info.ambiguousAtEnd = info.ambiguous
+      }
+    }
+    evData = false; evFields = false; evName = ''; pieces = []; size = 0; over = false
+  }
+  function value(b) {
+    if (skipSpace && b.length) { skipSpace = false; if (b[0] === SPACE) b = b.subarray(1) }
+    if (!b.length) return
+    if (isData) appendData(b)
+    else if (isEvent && eventLen < 256) { const t = b.subarray(0, 256 - eventLen); eventParts.push(t.slice()); eventLen += t.length }
+  }
+  function lineBytes(b) {
+    if (lineLen === 0) comment = b[0] === COLON
+    if (lineBom >= 0) {
+      for (let x = 0; x < b.length && lineBom < 3; x++) { if (b[x] === BOM[lineBom]) lineBom++; else { lineBom = -1; break } }
+      if (lineBom === 3) { info.ambiguous++; lineBom = -1 }
+    }
+    lineLen += b.length
+    if (comment) {
+      if (commentLen < COMMENT_LIMIT) { const take = b.subarray(0, COMMENT_LIMIT - commentLen); commentParts.push(take.slice()); commentLen += take.length }
+      return
+    }
+    if (!colon) {
+      const k = b.indexOf(COLON)
+      const head = k < 0 ? b : b.subarray(0, k)
+      if (!fieldOver) { if (fieldLen + head.length > 8) fieldOver = true; else { field.push(head.slice()); fieldLen += head.length } }
+      if (k < 0) return
+      colon = true
+      const name = fieldName()
+      isData = name === 'data'; isEvent = name === 'event'
+      if (isData) startDataLine()
+      skipSpace = true
+      b = b.subarray(k + 1)
+    }
+    value(b)
+  }
+  function endLine() {
+    if (lineLen === 0) dispatch()
+    else if (comment) {
+      if (commentLen < COMMENT_LIMIT && info.receipts.length < RECEIPTS_MAX) {
+        const m = /^: ?tapeapi-receipt ([A-Za-z0-9_-]+)$/.exec(new TextDecoder().decode(concat(commentParts, commentLen)))
+        if (m) info.receipts.push(m[1])
+      }
+    } else {
+      evFields = true
+      const name = colon ? null : fieldName()
+      if (name === 'data') startDataLine()
+      if (isEvent || name === 'event') evName = new TextDecoder().decode(concat(eventParts, eventLen))
+    }
+    lineLen = 0; comment = false; commentParts = []; commentLen = 0; colon = false; field = []; fieldLen = 0; fieldOver = false; lineBom = 0
+    isData = false; isEvent = false; eventParts = []; eventLen = 0; skipSpace = false
+  }
+  let boundary = -1
+  function scan(chunk, i, own = true) {
+    const n = chunk.length
+    if (lastCR && i < n) { if (chunk[i] === LF) i++; lastCR = false }
+    // Next CR / LF positions, cached so a chunk of many lines is scanned once, not once per line.
+    // 缓存下一个 CR / LF 的位置：多行的块只扫描一遍，而不是每行扫一遍。
+    let nextLF = -2, nextCR = -2
+    while (i < n) {
+      if (nextLF !== -1 && nextLF < i) nextLF = chunk.indexOf(LF, i)
+      if (nextCR !== -1 && nextCR < i) nextCR = chunk.indexOf(CR, i)
+      const j = nextLF < 0 ? (nextCR < 0 ? n : nextCR) : nextCR < 0 ? nextLF : Math.min(nextLF, nextCR)
+      if (j > i) lineBytes(chunk.subarray(i, j))
+      if (j === n) break
+      const blank = lineLen === 0, open = info.receiptsAtEnd === null
+      endLine()
+      let k = j + 1
+      if (chunk[j] === CR) { if (k < n) { if (chunk[k] === LF) k++ } else lastCR = true }
+      if (blank && own) { boundary = k; if (open && info.receiptsAtEnd !== null) info.endOffset = k }
+      i = k
+    }
+  }
+  // Returns the offset in the chunk's bytes just after its last blank line (an event boundary: what came before it is
+  // whole events and comments), or -1 when it has none (review RC-2). / 返回块中最后一个空行之后的偏移（事件边界），没有时为 -1。
+  function push(chunk) {
+    const b = toBytes(chunk)
+    if (!b) throw new TapeAPIError('BAD_REQUEST', 'push takes bytes')
+    boundary = -1
+    let i = 0
+    if (!bomDone) {
+      while (i < b.length && bomMatched < 3 && b[i] === BOM[bomMatched]) { bomMatched++; i++ }
+      if (bomMatched === 3) bomDone = true
+      else if (i < b.length) { bomDone = true; if (bomMatched) scan(Uint8Array.from(BOM.slice(0, bomMatched)), 0, false) }
+      else return -1
+    }
+    scan(b, i)
+    return boundary
+  }
+  function finish() { if (!bomDone && bomMatched) { bomDone = true; scan(Uint8Array.from(BOM.slice(0, bomMatched)), 0) } }
+  return {
+    push, end: finish, info,
+    /** The receipt hash of the events dispatched so far. / 到目前为止已分派事件的回执哈希。 */
+    digest: () => bytesToHex(hash.clone().digest()),
+    /** Where the parser stands, for a writer that must insert a line at an event boundary. / 解析位置，供需要在事件边界插入行的写入方使用。 */
+    state: () => ({ atLineStart: lineLen === 0, pendingCR: lastCR, eventHasData: evData, eventHasFields: evFields }),
+  }
+}
+
+// What a verifier reports about the shapes of a stream that no receipt covers (FIXED SSE-END, SSE-EOF, SSE-BOM), streaming or offline.
+// 核验方对不受任何回执覆盖的流形态的报告。
+const LATE_EVENT = 'an event after the end of the stream is not covered by its receipt'
+const UNFINISHED_EVENT = 'an unfinished event at the close of the stream (no blank line after it) is not covered by its receipt, and some clients dispatch it'
+const AMBIGUOUS_LINE = 'a line that starts with U+FEFF (a byte order mark) is read differently by different clients: the stream cannot be verified'
+const NO_USAGE_ASKED = 'the request asked for the usage (requestUsage), but the stream carries none: the upstream did not send it, or something on the way took it out'
+const WHOLE_AS_STREAM = 'the receipt says the answer was a stream, but the response is one whole JSON value, not an event stream: read as a stream it reports no usage, so the receipt cannot be checked against it (pass `stream` from the response\'s content type)'
+/**
+ * Are these bytes one whole JSON object or array (whitespace around it allowed)? Such bytes hold no event-stream event (no
+ * line of a JSON text starts with `data:`), so a receipt that calls them a stream would be checked against nothing: a
+ * verifier with no content type of its own (the verify page, verifyUsageReceipt without `stream`) refuses that pairing
+ * (FIXED AI-WHOLE). / 这些字节是否是一个完整的 JSON 对象或数组？它不含任何事件流事件，所以说它是流的回执等于什么都没核对：
+ * 没有自己的 content-type 的核验方（核验页、不传 stream 的 verifyUsageReceipt）拒绝这种搭配。
+ */
+export function isWholeJson(bytes) {
+  const b = toBytes(bytes)
+  const v = b ? jsonOf(b) : undefined
+  return !!v && typeof v === 'object'
+}
+
+/**
+ * A whole event stream at once: its receipt hash, what the adapter read from it (when `format` is given), and its
+ * receipt comments. / 一次处理整段事件流：回执哈希、适配器读出的内容（给了 format 时）与回执注释。
+ * @param {Uint8Array|ArrayBuffer|string} body
+ * @param {{ format?: object, sentinel?: string|null }} [o]  the adapter (its sentinel and streamState), or just a sentinel
+ */
+export function scanSse(body, { format, sentinel } = {}) {
+  const b = toBytes(body)
+  if (!b) throw new TapeAPIError('BAD_REQUEST', 'scanSse takes bytes or a string')
+  const st = format?.streamState ? format.streamState() : null
+  const s = createSseScanner({ sentinel: sentinel !== undefined ? sentinel : format?.stream?.sentinel ?? null, onEvent: st ? (j, n) => st.event(j, n) : undefined })
+  s.push(b); s.end()
+  const read = st ? st.result() : { id: null, model: null, usage: null, complete: false }
+  // ambiguous: lines that clients read differently (FIXED SSE-BOM); unfinished: an event the stream closes on before its
+  // blank line, which some clients dispatch (FIXED SSE-EOF). / ambiguous：客户端读法不同的行；unfinished：流在空行之前关闭的事件。
+  const t = s.state()
+  return { responseSha256: s.digest(), id: read.id ?? null, model: read.model ?? null, usage: usageOf(read.usage), complete: read.complete === true, events: s.info.events, done: s.info.done, receipts: s.info.receipts.slice(), ambiguous: s.info.ambiguous, unfinished: t.eventHasData || t.eventHasFields || !t.atLineStart }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Usage and price / 用量与价格
+// ---------------------------------------------------------------------------------------------------------------
+const safeCount = (n) => Number.isSafeInteger(n) && n >= 0
+const given = (v) => v !== undefined && v !== null
+const USAGE_SUBSETS = ['cache_read_tokens', 'cache_write_tokens', 'cache_write_1h_tokens', 'reasoning_tokens']
+/**
+ * Counts an adapter read -> the receipt's usage, in a fixed key order: { prompt_tokens, completion_tokens, total_tokens,
+ * cache_read_tokens?, cache_write_tokens?, cache_write_1h_tokens?, reasoning_tokens?, other? }, or null when they do not
+ * say how many prompt tokens or do not add up (cache reads plus writes above prompt_tokens, 1-hour cache writes above
+ * cache writes, reasoning above completion_tokens). completion_tokens defaults to 0 (embeddings have none) and
+ * total_tokens to prompt + completion. `other` keeps the per-use counts above zero, sorted by name. A count of -0 (JSON
+ * allows it) is 0: canonical JSON has no -0, and a receipt carrying one could not be signed (FIXED AI-NZ: HTTP 500).
+ * 适配器读出的计数 -> 回执的 usage（键顺序固定）；没有 prompt_tokens 或数目对不上时为 null。-0 按 0 计（规范 JSON 没有 -0）。
+ */
+export function usageOf(u) {
+  const z = (n) => (Object.is(n, -0) ? 0 : n)
+  if (!isObj(u) || !safeCount(u.prompt_tokens)) return null
+  const prompt = z(u.prompt_tokens)
+  const completion = given(u.completion_tokens) ? z(u.completion_tokens) : 0
+  if (!safeCount(completion)) return null
+  const total = given(u.total_tokens) ? z(u.total_tokens) : prompt + completion
+  if (!safeCount(total)) return null
+  const out = { prompt_tokens: prompt, completion_tokens: completion, total_tokens: total }
+  for (const k of USAGE_SUBSETS) {
+    if (!given(u[k])) continue
+    if (!safeCount(u[k])) return null
+    out[k] = z(u[k])
+  }
+  if ((out.cache_read_tokens ?? 0) + (out.cache_write_tokens ?? 0) > out.prompt_tokens || (out.cache_write_1h_tokens ?? 0) > (out.cache_write_tokens ?? 0) ||
+    (out.reasoning_tokens ?? 0) > out.completion_tokens) return null
+  if (given(u.other)) {
+    if (!isObj(u.other)) return null
+    const o = Object.entries(u.other).filter(([k, v]) => METHOD_RE.test(k) && safeCount(v) && v > 0).sort(([a], [b]) => (a < b ? -1 : 1))
+    if (o.length) out.other = Object.fromEntries(o)
+  }
+  return out
+}
+
+const SCALE = 10n ** BigInt(AMOUNT_DECIMALS)
+const PER = 1_000_000n   // prices are per 1M tokens / 价格按每百万 token
+function units(price) {
+  const [i, f = ''] = price.split('.')
+  return BigInt(i) * SCALE + BigInt((f + '0'.repeat(AMOUNT_DECIMALS)).slice(0, AMOUNT_DECIMALS))
+}
+function formatAmount(u) { const s = u.toString().padStart(AMOUNT_DECIMALS + 1, '0'); return `${s.slice(0, -AMOUNT_DECIMALS)}.${s.slice(-AMOUNT_DECIMALS)}` }
+
+/**
+ * The amount for one call in one currency, per 1M tokens, over disjoint buckets:
+ *   input × (prompt − cache_read − cache_write) + cacheRead × cache_read + cacheWrite × (cache_write − cache_write_1h)
+ *   + cacheWrite1h × cache_write_1h + output × (completion − reasoning) + reasoning × reasoning_tokens
+ * cacheRead and cacheWrite fall back to `input`, cacheWrite1h to cacheWrite and then `input`; without a `reasoning` price,
+ * reasoning tokens stay in output. Per-use counts (`other`) have no token price and add 0. Divided by 1 000 000 and rounded
+ * UP once, on the sum, to 8 decimals; exactly 8 decimals out. BigInt only: no floating point.
+ * 一次调用在一个币种下的金额（每百万 token 计价，分桶互不重叠）。缓存读写价缺省按 input，1 小时缓存写缺省按 cacheWrite 再按
+ * input；没有 reasoning 价时推理 token 计入 output；按次计费的计数计 0。对总和向上取整一次到 8 位小数。只用 BigInt。
+ * @param {{ input: string, output: string, cacheRead?: string, cacheWrite?: string, cacheWrite1h?: string, reasoning?: string }} price
+ */
+export function amountOf(price, usage) {
+  const dec = (v) => typeof v === 'string' && PRICE_RE.test(v)
+  if (!isObj(price) || !dec(price.input) || !dec(price.output) || PRICE_KEYS.some((k) => given(price[k]) && !dec(price[k]))) throw new TapeAPIError('BAD_REQUEST', 'prices must be decimal strings')
+  const u = usageOf(usage)
+  if (!u) throw new TapeAPIError('BAD_REQUEST', 'usage needs prompt_tokens')
+  const cr = BigInt(u.cache_read_tokens ?? 0), cw = BigInt(u.cache_write_tokens ?? 0), cw1h = BigInt(u.cache_write_1h_tokens ?? 0)
+  const rs = given(price.reasoning) ? BigInt(u.reasoning_tokens ?? 0) : 0n
+  const cacheWrite = given(price.cacheWrite) ? price.cacheWrite : price.input
+  const num = (BigInt(u.prompt_tokens) - cr - cw) * units(price.input)
+    + cr * units(given(price.cacheRead) ? price.cacheRead : price.input)
+    + (cw - cw1h) * units(cacheWrite)
+    + cw1h * units(given(price.cacheWrite1h) ? price.cacheWrite1h : cacheWrite)
+    + (BigInt(u.completion_tokens) - rs) * units(price.output)
+    + (given(price.reasoning) ? rs * units(price.reasoning) : 0n)
+  return formatAmount((num + PER - 1n) / PER)
+}
+
+/**
+ * @experimental (2.5) The most one call can cost in one currency when it uses at most `promptTokens` prompt tokens and
+ * at most `completionTokens` completion tokens, for a billing layer that holds funds before forwarding:
+ *   promptTokens × max(input, cacheRead, cacheWrite, cacheWrite1h) + completionTokens × max(output, reasoning)
+ * per 1M tokens, rounded up once to 8 decimals, so it is never below amountOf for any usage within those counts (a cache
+ * write may cost more than input, so no bucket is assumed cheaper). The bound is only as good as the counts: a model
+ * that ignores max_tokens, a hidden system prompt, images or tool definitions can make the real usage larger, and the
+ * receipt's amount then exceeds this. Settle on the receipt; enforce a hard cap of your own.
+ * 实验性：一次调用在一个币种下的最高金额（提示 token 至多 promptTokens、补全 token 至多 completionTokens），供转发前冻结额度用；
+ * 每个提示 token 按 input / cacheRead / cacheWrite / cacheWrite1h 中最高的价，每个补全 token 按 output / reasoning 中最高的价，
+ * 对总和向上取整一次到 8 位小数，因此不低于这些计数以内任何用量的 amountOf。上限只在计数可靠时成立：无视 max_tokens 的模型、
+ * 隐藏系统提示词、图片或工具定义都会让实际用量更大，回执金额就会超过它。按回执结算，并自己设硬上限。
+ * @param {{ input: string, output: string, cacheRead?: string, cacheWrite?: string, cacheWrite1h?: string, reasoning?: string }} price
+ * @param {{ promptTokens: number, completionTokens: number }} bounds
+ */
+export function maxAmountOf(price, { promptTokens, completionTokens } = {}) {
+  const dec = (v) => typeof v === 'string' && PRICE_RE.test(v)
+  if (!isObj(price) || !dec(price.input) || !dec(price.output) || PRICE_KEYS.some((k) => given(price[k]) && !dec(price[k]))) throw new TapeAPIError('BAD_REQUEST', 'prices must be decimal strings')
+  if (!safeCount(promptTokens) || !safeCount(completionTokens)) throw new TapeAPIError('BAD_REQUEST', 'promptTokens and completionTokens must be whole numbers of tokens (0 or more)')
+  const top = (keys) => keys.filter((k) => given(price[k])).map((k) => units(price[k])).reduce((a, b) => (b > a ? b : a), 0n)
+  const num = BigInt(promptTokens) * top(['input', 'cacheRead', 'cacheWrite', 'cacheWrite1h']) + BigInt(completionTokens) * top(['output', 'reasoning'])
+  return formatAmount((num + PER - 1n) / PER)
+}
+
+/** @experimental (2.5) maxAmountOf for every price of a price-table entry: [{ currency, amount }] in the entry's order, or
+ *  null for an entry without prices. / 实验性：对价目表条目的每个价格求 maxAmountOf，按条目顺序；条目没有价格时为 null。 */
+export function maxPricesOf(entry, bounds) {
+  if (!isObj(entry) || !Array.isArray(entry.prices)) return null
+  return entry.prices.map((p) => ({ currency: p.currency, amount: maxAmountOf(p, bounds) }))
+}
+
+/**
+ * @experimental (2.5) The completion-token limit a request body declares, by format, or null when it declares none (then
+ * only the model's own ceiling bounds the answer, and a billing layer should set one or refuse the call). openai-chat:
+ * the larger of max_completion_tokens and max_tokens, times n (each of n choices is billed); openai-responses:
+ * max_output_tokens; anthropic-messages: max_tokens (it includes any thinking budget); openai-embeddings: 0. This is
+ * what the request asks for, not what an upstream does: some models ignore it.
+ * 实验性：请求正文按格式声明的补全 token 上限；没有声明时为 null（此时只有模型自身的上限，计费层应自己设定或拒绝）。这是请求的
+ * 要求，不是上游的行为：有的模型会无视它。
+ * @param {unknown} body  the parsed JSON request body / 解析后的 JSON 请求正文
+ * @param {string|{ name: string }} format
+ * @returns {number|null}
+ */
+export function completionLimitOf(body, format) {
+  const name = typeof format === 'string' ? format : format?.name
+  if (name === 'openai-embeddings') return 0
+  if (!isObj(body)) return null
+  const n = (v) => (safeCount(v) ? v : null)
+  if (name === 'openai-chat') {
+    const a = n(body.max_completion_tokens), b = n(body.max_tokens)
+    const lim = a === null ? b : b === null ? a : Math.max(a, b)
+    if (lim === null) return null
+    const choices = Number.isSafeInteger(body.n) && body.n > 1 ? body.n : 1
+    return Number.isSafeInteger(lim * choices) ? lim * choices : null
+  }
+  if (name === 'openai-responses') return n(body.max_output_tokens)
+  if (name === 'anthropic-messages') return n(body.max_tokens)
+  return null
+}
+
+/**
+ * The price-table entry for a model id: the one whose `id` or one of whose `aliases` equals it exactly (case-sensitive),
+ * among the entries allowed for `format` (no `formats`, or `formats` listing it); null when none. No prefix matching.
+ * 某个模型 id 对应的价目表条目：id 或某个别名与之精确相等（区分大小写），且允许用于该格式；没有则为 null。不做前缀匹配。
+ */
+export function modelEntryOf(models, model, format) {
+  if (typeof model !== 'string' || !model || !Array.isArray(models)) return null
+  return models.find((m) => isObj(m) && (m.id === model || (Array.isArray(m.aliases) && m.aliases.includes(model))) && (!Array.isArray(m.formats) || format === undefined || m.formats.includes(format))) || null
+}
+
+/** The `prices` of a receipt for a matched entry and a usage: [{ currency, amount }] in the entry's order. / 回执的 prices。 */
+export function pricesOf(entry, usage) {
+  if (!isObj(entry) || !Array.isArray(entry.prices)) return null
+  const u = usageOf(usage)
+  if (!u) return null
+  return entry.prices.map((p) => ({ currency: p.currency, amount: amountOf(p, u) }))
+}
+
+/**
+ * Everything price-related a receipt carries, from what the upstream reported and what the request asked for:
+ *   { model, prices, modelMatchedBy?, unpriced? }
+ * The reported model is matched first; only when the upstream reported none is the requested model matched, and then it
+ * becomes the receipt's `model` with modelMatchedBy "request". `prices` is null when no entry matched or there is no
+ * usage; `modelMatchedBy` is present exactly when an entry matched; `unpriced` lists usage.other's names, with prices.
+ * 回执里与价格有关的全部内容：先匹配上游报告的模型；上游没报时才匹配请求的模型，此时它成为回执的 model，modelMatchedBy 为
+ * "request"。没匹配到条目或没有 usage 时 prices 为 null；匹配到条目时才有 modelMatchedBy；有 prices 时 unpriced 列出按次计费项。
+ */
+export function pricingOf(models, { reported = null, requested = null, usage = null, format } = {}) {
+  const rep = typeof reported === 'string' && reported ? reported : null
+  let model = rep, by = null, entry = null
+  if (rep) { entry = modelEntryOf(models, rep, format); if (entry) by = 'response' }
+  else if (typeof requested === 'string' && requested) { entry = modelEntryOf(models, requested, format); if (entry) { model = requested; by = 'request' } }
+  const out = { model, prices: entry ? pricesOf(entry, usage) : null }
+  if (by) out.modelMatchedBy = by
+  const u = usageOf(usage)
+  if (out.prices && u?.other) out.unpriced = Object.keys(u.other)
+  return out
+}
+
+/**
+ * Validate a manifest's AI field (manifest[MANIFEST_FIELD], TAPI-20 extension) and return a normalised copy (only the
+ * known keys, in a fixed order). See the header of this file for the shape. Unknown format names are accepted (a later
+ * adapter may know them). Throws MANIFEST_INVALID.
+ * 校验清单的 AI 字段并返回规范化副本（只保留已知键，顺序固定）；不合规抛 MANIFEST_INVALID。
+ * @param {unknown} o
+ * @param {{ allowHttp?: boolean }} [opts]
+ */
+export function validateAIField(o, { allowHttp = false } = {}) {
+  const fail = (m) => { throw new TapeAPIError('MANIFEST_INVALID', `${MANIFEST_FIELD}: ${m}`) }
+  if (!isObj(o)) fail('must be an object')
+  if (!Array.isArray(o.endpoints) || o.endpoints.length < 1 || o.endpoints.length > ENDPOINTS_MAX) fail(`endpoints must hold 1 to ${ENDPOINTS_MAX} entries`)
+  const names = new Set()
+  const endpoints = o.endpoints.map((e, i) => {
+    if (!isObj(e) || typeof e.format !== 'string' || !FORMAT_RE.test(e.format)) fail(`endpoints[${i}].format must be a format name`)
+    if (names.has(e.format)) fail(`format ${e.format} appears twice`)
+    names.add(e.format)
+    if (typeof e.baseUrl !== 'string') fail(`endpoints[${i}].baseUrl must be a URL`)
+    let url
+    try { url = new URL(e.baseUrl) } catch { fail(`endpoints[${i}].baseUrl must be a URL`) }
+    if (url.protocol !== 'https:' && !(allowHttp && url.protocol === 'http:')) fail(`endpoints[${i}].baseUrl must be https (http only in dev)`)
+    if (url.search || url.hash || url.username || url.password) fail(`endpoints[${i}].baseUrl must not carry a query, fragment or credentials`)
+    return { format: e.format, baseUrl: url.href.replace(/\/+$/, '') }
+  })
+  if (!Array.isArray(o.models) || o.models.length < 1 || o.models.length > MODELS_MAX) fail(`models must hold 1 to ${MODELS_MAX} entries`)
+  const seen = new Set()
+  const goodId = (v) => typeof v === 'string' && v.length >= 1 && v.length <= MODEL_ID_MAX && !CONTROL.test(v)
+  const claim = (v, what) => { if (seen.has(v)) fail(`${what} ${v.slice(0, 64)} appears twice in the table (ids and aliases must be unique)`); seen.add(v) }
+  const models = o.models.map((m, i) => {
+    if (!isObj(m)) fail(`models[${i}] must be an object`)
+    if (!goodId(m.id)) fail(`models[${i}].id must be 1 to ${MODEL_ID_MAX} characters, no control characters`)
+    claim(m.id, 'model')
+    const out = { id: m.id }
+    if (m.aliases !== undefined) {
+      if (!Array.isArray(m.aliases) || m.aliases.length < 1 || m.aliases.length > ALIASES_MAX || !m.aliases.every(goodId)) fail(`models[${i}].aliases must list 1 to ${ALIASES_MAX} model ids`)
+      for (const a of m.aliases) claim(a, 'alias')
+      out.aliases = [...m.aliases]
+    }
+    if (m.formats !== undefined) {
+      if (!Array.isArray(m.formats) || !m.formats.length || !m.formats.every((f) => typeof f === 'string' && names.has(f)) || new Set(m.formats).size !== m.formats.length) fail(`models[${i}].formats must list formats among the endpoints`)
+      out.formats = [...m.formats]
+    }
+    if (m.price !== undefined) fail(`models[${i}].price is not a field: use prices, a list with one entry per currency`)
+    if (!Array.isArray(m.prices) || m.prices.length < 1 || m.prices.length > PRICES_MAX) fail(`models[${i}].prices must hold 1 to ${PRICES_MAX} entries, one per currency`)
+    const currencies = new Set()
+    out.prices = m.prices.map((p, j) => {
+      const at = `models[${i}].prices[${j}]`
+      if (!isObj(p)) fail(`${at} must be an object`)
+      if (!CURRENCIES.includes(p.currency)) fail(`${at}.currency must be one of ${CURRENCIES.join(', ')}`)
+      if (currencies.has(p.currency)) fail(`${at}: currency ${p.currency} appears twice`)
+      currencies.add(p.currency)
+      if (p.unit !== PRICE_UNIT) fail(`${at}.unit must be "${PRICE_UNIT}"`)
+      const price = { currency: p.currency, unit: PRICE_UNIT }
+      for (const k of PRICE_KEYS) {
+        if (!given(p[k])) { if (k === 'input' || k === 'output') fail(`${at}.${k} is required`); continue }
+        if (typeof p[k] !== 'string' || !PRICE_RE.test(p[k])) fail(`${at}.${k} must be a decimal string with at most ${AMOUNT_DECIMALS} decimals`)
+        price[k] = p[k]
+      }
+      return price
+    })
+    return out
+  })
+  return { endpoints, models }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Receipt codec / 回执编解码
+// ---------------------------------------------------------------------------------------------------------------
+/** envelope -> base64url of its JSON (the header value and the SSE comment's payload). / 信封 -> 其 JSON 的 base64url。 */
+export const encodeReceipt = (envelope) => toBase64Url(JSON.stringify(envelope))
+/** The SSE comment line carrying an envelope, without its line end. / 携带信封的 SSE 注释行（不含行尾）。 */
+export const receiptComment = (envelope) => SSE_RECEIPT_PREFIX + encodeReceipt(envelope)
+
+/** `x-tapeapi-receipt` header value -> envelope object. Throws BAD_REQUEST. / 响应头的值 -> 信封对象。 */
+export function decodeReceiptHeader(value) {
+  if (typeof value !== 'string' || !value.trim()) throw new TapeAPIError('BAD_REQUEST', 'no receipt')
+  if (value.length > 256 * 1024) throw new TapeAPIError('BAD_REQUEST', 'receipt too large')
+  let v
+  try { v = JSON.parse(fromBase64Url(value.trim())) } catch { throw new TapeAPIError('BAD_REQUEST', 'the receipt is not base64url JSON') }
+  if (!isObj(v)) throw new TapeAPIError('BAD_REQUEST', 'the receipt is not a JSON object')
+  return v
+}
+
+/**
+ * The receipt in an event-stream text (the last `: tapeapi-receipt` comment), as an envelope object, or null when there
+ * is none. A stream that passed through two sidecars carries two; the outer one is last.
+ * 事件流文本里的回执（最后一个 `: tapeapi-receipt` 注释），没有则为 null。经过两层旁路的流带两个，外层的在最后。
+ */
+export function readSseReceipt(text) {
+  const all = scanSse(typeof text === 'string' ? text : toBytes(text) ?? '').receipts
+  return all.length ? decodeReceiptHeader(all[all.length - 1]) : null
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Receipt references and the price basis (a proposal, experimental: not part of TAPI-21 or of any TAP; see the CHANGELOG, 3.0)
+// 回执引用与价格依据（提案，实验性：不属于 TAPI-21 或任何 TAP；见更新日志 3.0）
+// ---------------------------------------------------------------------------------------------------------------
+const utf8Bytes = (s) => new TextEncoder().encode(s)
+
+/**
+ * @experimental (3.0, proposal) The price basis of a receipt: SHA-256 (64 lowercase hex) of the canonical JSON (TAPI-21 §3.3)
+ * of the price table `models` of a manifest's `ai` field, reduced to the members TAPI-20 §3.9 defines (validateAIField's
+ * copy: id, aliases, formats, prices; and per price currency, unit and the price members it has). A sidecar created with
+ * `priceRef: true` signs it into every receipt's result as `priceRef`. Throws MANIFEST_INVALID for a field that does not
+ * validate. / 回执的价格依据：清单 ai 字段的价目表 models（只保留 TAPI-20 §3.9 定义的成员）的规范 JSON 的 SHA-256。
+ * @param {object} field  manifest[MANIFEST_FIELD]
+ */
+export function priceRefOf(field) {
+  return sha256Hex(utf8Bytes(canonicalJSON(validateAIField(field, { allowHttp: true }).models)))
+}
+
+/**
+ * @experimental (3.0, proposal) The receipt reference: SHA-256 (64 lowercase hex) of the canonical JSON of the envelope's eight
+ * members (id, ok, container, ts, method, params, result, sig), with `container` and `sig` in lowercase and the
+ * signature's v as 27 or 28. Any other top-level member is not part of the receipt and is left out, so the same signed
+ * receipt has one reference however it was serialised or carried (header, SSE comment, the `receipt` method). It
+ * identifies a receipt; it proves nothing until the receipt itself is verified (verifyUsageReceipt). Throws
+ * RECEIPT_INVALID for an envelope that is not shaped as a usage receipt. / 回执引用：信封八个成员的规范 JSON 的 SHA-256；
+ * 同一份签名回执无论如何序列化、经哪条路径送达，引用都相同。它只是标识，回执本身核验成功之前什么也不证明。
+ */
+export function receiptRef(envelope) {
+  const p = envelopeProblems(envelope)
+  if (p.length) throw new TapeAPIError('RECEIPT_INVALID', `not a usage receipt: ${p[0]}`)
+  let s = envelope.sig.toLowerCase()
+  const v = s.slice(130)
+  if (v === '00' || v === '01') s = s.slice(0, 130) + (v === '00' ? '1b' : '1c')
+  const { id, ok, ts, method, params, result } = envelope
+  return sha256Hex(utf8Bytes(canonicalJSON({ id, ok, container: envelope.container.toLowerCase(), ts, method, params, result, sig: s })))
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Verification / 核验
+// ---------------------------------------------------------------------------------------------------------------
+const sameJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+const jsonOf = (bytes) => { try { return JSON.parse(new TextDecoder().decode(bytes)) } catch { return undefined } }
+const AMOUNT_RE = /^\d+\.\d{8}$/
+
+/**
+ * Is the answer complete? A whole answer: a 2xx status and the adapter does not mark it unfinished. A stream: a 2xx
+ * status and the adapter saw the format's final success event. / 回答是否完整：整体回答为 2xx 且适配器未标记为未完成；流为 2xx
+ * 且适配器看到了格式的最终成功事件。
+ */
+export function completeOf({ status, stream, read }) {
+  if (!(status >= 200 && status < 300)) return false
+  return stream ? read?.complete === true : read?.complete !== false
+}
+
+/** The shape problems of a usage-receipt envelope ([] when it is well-formed). / 用量回执信封的结构问题（合规为 []）。 */
+export function envelopeProblems(env) {
+  const p = []
+  if (!isObj(env)) return ['the receipt is not an object']
+  if (typeof env.id !== 'string' || !env.id || env.id.length > 128) p.push('id must be a string of 1 to 128 characters')
+  if (env.ok !== true) p.push('ok must be true')
+  if (typeof env.method !== 'string' || !METHOD_RE.test(env.method)) p.push('method must be a receipt method name')
+  if (!isObj(env.params) || typeof env.params.path !== 'string' || typeof env.params.requestSha256 !== 'string' || !HEX64.test(env.params.requestSha256)) p.push('params must be { path, requestSha256 (64 hex) }')
+  if (typeof env.container !== 'string' || !isAddress(env.container)) p.push('container must be an address')
+  if (!Number.isSafeInteger(env.ts) || env.ts < 0) p.push('ts must be a unix time')
+  if (typeof env.sig !== 'string' || !SIG_RE.test(env.sig)) p.push('sig must be 65 bytes of hex')
+  const r = env.result
+  if (!isObj(r)) { p.push('result must be an object'); return p }
+  if (r.model !== null && typeof r.model !== 'string') p.push('result.model must be a string or null')
+  if (r.usage !== null && !(isObj(r.usage) && sameJSON(usageOf(r.usage), r.usage))) p.push('result.usage must be { prompt_tokens, completion_tokens, total_tokens, cache_read_tokens?, cache_write_tokens?, cache_write_1h_tokens?, reasoning_tokens?, other? } in that order, or null')
+  if (typeof r.responseSha256 !== 'string' || !HEX64.test(r.responseSha256)) p.push('result.responseSha256 must be 64 hex')
+  if (typeof r.stream !== 'boolean') p.push('result.stream must be a boolean')
+  if (typeof r.complete !== 'boolean') p.push('result.complete must be a boolean')
+  if (!(Number.isInteger(r.status) && r.status >= 100 && r.status <= 599)) p.push('result.status must be an HTTP status')
+  if (r.prices !== null) {
+    const ok = Array.isArray(r.prices) && r.prices.length >= 1 && r.prices.length <= PRICES_MAX &&
+      r.prices.every((x) => isObj(x) && Object.keys(x).join() === 'currency,amount' && CURRENCIES.includes(x.currency) && typeof x.amount === 'string' && AMOUNT_RE.test(x.amount)) &&
+      new Set(r.prices.map((x) => x.currency)).size === r.prices.length
+    if (!ok) p.push(`result.prices must be null or 1 to ${PRICES_MAX} entries { currency, amount (8 decimals) }, currencies unique`)
+    else if (r.usage === null) p.push('result.prices needs a usage')
+  }
+  if (r.modelMatchedBy !== undefined && r.modelMatchedBy !== 'response' && r.modelMatchedBy !== 'request') p.push('result.modelMatchedBy must be "response" or "request" when present')
+  if (r.prices !== null && r.modelMatchedBy === undefined) p.push('result.prices needs modelMatchedBy')
+  if (r.modelMatchedBy !== undefined && typeof r.model !== 'string') p.push('result.modelMatchedBy needs a model')
+  if (r.unpriced !== undefined && !(Array.isArray(r.unpriced) && r.unpriced.length && r.unpriced.every((k) => typeof k === 'string' && METHOD_RE.test(k)) && r.prices !== null)) p.push('result.unpriced must be a non-empty list of names, only with prices')
+  if (r.usageInjected !== undefined && r.usageInjected !== true) p.push('result.usageInjected must be true when present')
+  // Proposal (experimental): the price basis, priceRefOf. / 提案：价格依据。
+  if (r.priceRef !== undefined && (typeof r.priceRef !== 'string' || !HEX64.test(r.priceRef))) p.push('result.priceRef must be 64 lowercase hex when present')
+  if (!(r.status >= 200 && r.status < 300) && (r.usage !== null || r.prices !== null)) p.push('a failed call (status outside 2xx) carries usage null and prices null')
+  return p
+}
+
+const showPrices = (ps) => (ps ? ps.map((x) => `${x.amount} ${x.currency}`).join(' / ') : 'nothing')
+/**
+ * Are the receipt's prices what the manifest's table says for the model and usage it reports? [] when they are.
+ * 回执的价格是否就是清单价目表对它所报 model 与 usage 给出的价格？一致则为 []。
+ * @param {{ models: Array<object> }} field  manifest[MANIFEST_FIELD]
+ * @param {object} result  the receipt's result / 回执的 result
+ * @param {string} [format]  the receipt's format name (for models listed with `formats`) / 回执的格式名
+ */
+export function priceProblems(field, result, format) {
+  if (!isObj(field) || !Array.isArray(field.models)) return ['the manifest has no AI price table']
+  if (!isObj(result)) return ['the receipt has no result']
+  const entry = modelEntryOf(field.models, result.model, format)
+  const model = String(result.model).slice(0, 80)
+  if (!entry) {
+    if (result.prices) return [`the receipt charges ${showPrices(result.prices)}, but the manifest lists no price for model ${model}`]
+    if (result.modelMatchedBy) return [`the receipt says model ${model} matched the price table, but the manifest lists no such model`]
+    return []
+  }
+  const want = pricesOf(entry, result.usage)
+  const p = []
+  if (!result.modelMatchedBy) p.push(`the manifest prices model ${model}, but the receipt does not say it matched`)
+  if (!sameJSON(want, result.prices ?? null)) {
+    if (!want) p.push(`the receipt charges ${showPrices(result.prices)}, but there is no usage to price`)
+    else if (!result.prices) p.push(`the receipt carries no prices, but the manifest prices model ${model} (${showPrices(want)} for this usage)`)
+    else p.push(`the receipt charges ${showPrices(result.prices)}; the manifest gives ${showPrices(want)}`)
+  }
+  const u = usageOf(result.usage)
+  const wantUnpriced = want && u?.other ? Object.keys(u.other) : undefined
+  if (!sameJSON(wantUnpriced, result.unpriced)) p.push(`the receipt lists unpriced ${JSON.stringify(result.unpriced ?? [])}, the usage says ${JSON.stringify(wantUnpriced ?? [])}`)
+  return p
+}
+
+/**
+ * Does the sidecar change this request to obtain the usage (TAPI-21 §3.5, usage injection)? The sidecar's own rule: a
+ * non-empty body for which the format's prepareUpstream returns a change. / 旁路会不会为了拿到用量而改动这个请求：与旁路
+ * 同一条规则（非空请求体，且格式的 prepareUpstream 给出改动）。
+ */
+function injectsUsage(format, bytes) {
+  if (typeof format?.prepareUpstream !== 'function' || !bytes.length) return false
+  try { return !!format.prepareUpstream(jsonOf(bytes)) } catch { return false }
+}
+
+/**
+ * TAPI-21 §3.5 check 4, the part that compares the receipt with the client's own reading of the answer: its id (only
+ * when it is one the sidecar would use), model and usage. `read` is { id, model, usage } as the format's adapter reads the
+ * answer the client received (a stream: scanSse's result). The usage is left unchecked only where the client's copy can
+ * lack it: a stream, of a format that injects, for a request that did not itself ask for usage. A whole answer is always
+ * compared (nothing is taken out of it), and so is any other stream, where `usageInjected` is itself a problem: nothing
+ * was injected. Without `requestBytes` a stream's flag cannot be checked, and its usage is listed in `unchecked`, like
+ * the request itself (FIXED AI-INJ: the flag alone used to switch the comparison off).
+ * 第 4 项核验中与客户端自己读到的回答对比的部分：id（仅当旁路会采用它）、model 与 usage。只有客户端副本可能缺用量时才不比较
+ * usage：流式、格式会注入、且请求本身没有要用量。整体回答总是比较（其中没有被去掉任何东西）；其它流也比较，此时 usageInjected
+ * 本身就是问题（什么也没有注入）。没有 requestBytes 时流的这个标记无法核对，usage 与请求一样列入 unchecked
+ * （FIXED AI-INJ：过去仅凭这个标记就会关掉比较）。
+ * @returns {{ problems: string[], unchecked: string[] }}
+ */
+export function answerProblems({ envelope, read, format, requestBytes }) {
+  const r = envelope.result, problems = [], unchecked = []
+  if (isAnswerId(read.id) && read.id !== envelope.id) problems.push(`the receipt is for response ${envelope.id.slice(0, 80)}, the response's id is ${read.id.slice(0, 80)}`)
+  const said = typeof read.model === 'string' && read.model.length >= 1 && read.model.length <= MODEL_ID_MAX ? read.model : null
+  if (said !== null && r.model !== said) problems.push(`the receipt says model ${String(r.model).slice(0, 80)}, but the answer reports ${said.slice(0, 80)}`)
+  if (said === null && r.model !== null && r.modelMatchedBy !== 'request') problems.push(`the receipt says model ${String(r.model).slice(0, 80)}, but the answer reports none`)
+  // A whole answer keeps the usage chunk even when the sidecar asked for it (a stream request answered as JSON): the flag
+  // is honest there and the usage is compared. / 整体回答即使旁路要过用量也保留着它（流式请求以 JSON 作答）：标记如实，照常比较。
+  const injecting = r.stream === true && typeof format?.prepareUpstream === 'function'
+  const b = injecting && requestBytes !== undefined ? toBytes(requestBytes) : null
+  const injects = injecting ? (b ? injectsUsage(format, b) : null) : false   // null: not known (no request bytes) / 不知道
+  if (r.usageInjected && injects !== false) unchecked.push('usage (usageInjected: the answer the client received lacks the usage chunk the sidecar read)')
+  else {
+    if (r.usageInjected && r.stream === true) problems.push(injecting ? 'the receipt says usageInjected, but the request already asked for the usage: nothing was taken out of the stream' : `the receipt says usageInjected, but ${format?.name ?? 'this format'} never injects`)
+    const u = r.status >= 200 && r.status < 300 ? usageOf(read.usage) : null
+    if (!sameJSON(u, r.usage)) problems.push(`the receipt says usage ${JSON.stringify(r.usage)}, but the answer reports ${JSON.stringify(u)}`)
+  }
+  return { problems, unchecked }
+}
+
+/**
+ * Check one AI usage receipt. Pure: no network. `manifest` must be a manifest you trust (api.resolve() checked its
+ * delegation, which is what makes `manifest.signer` the service's key).
+ * 核验一份 AI 用量回执。纯函数、不联网。`manifest` 必须可信（api.resolve() 核验过委托，signer 才是服务的密钥）。
+ *
+ * The two hashes bind the exact bytes: pass `requestBytes` (what you sent) and either `responseBytes` (what you received;
+ * for a stream, the raw event-stream bytes), `sseDataPayloads` (a stream's data payloads, in order) or `responseSha256`
+ * (if you hashed them yourself). What you do not pass is not checked and is listed in `unchecked`.
+ * Holding the answer, the client re-reads it with the format's adapter (TAPI-21 §3.5, check 4): its id (compared only when
+ * it is one the sidecar would use, isAnswerId), model, usage and completeness must be what the receipt says. From
+ * `responseBytes` this reading is done here; with only a hash, pass it as `answer` ({ id, model, usage, complete }, e.g.
+ * an adapter's streamState().result()). The usage cannot be compared only for a stream whose request did not ask for it
+ * and whose receipt says usageInjected (the client's copy lacks the usage chunk; answerProblems): listed in `unchecked`,
+ * like every check that could not be made.
+ * 持有回答时，客户端用格式适配器重读它：id（仅当旁路会用它时才比较）、model、usage 与完整性必须与回执一致。只有请求没要用量、
+ * 回执又标了 usageInjected 的流无法比较 usage，列入 unchecked；做不了的检查一律列入 unchecked，绝不算通过。
+ * 两个哈希绑定确切字节：传入 requestBytes 与 responseBytes / sseDataPayloads / responseSha256 之一；没传的不核验，列在 unchecked。
+ *
+ * @returns {{ ok: boolean, problems: string[], warnings: string[], unchecked: string[], receipt: object|null }}
+ */
+export function verifyUsageReceipt({ envelope, manifest, requestBytes, responseBytes, sseDataPayloads, responseSha256, answer, stream, path, status, complete, now, maxSkewS, formats = FORMATS } = {}) {
+  const problems = [], warnings = [], unchecked = []
+  const out = () => ({ ok: problems.length === 0 && !!envelope, problems, warnings, unchecked, receipt: isObj(envelope) ? envelope : null })
+  if (!envelope) { problems.push('no receipt'); return out() }
+  problems.push(...envelopeProblems(envelope))
+  if (problems.length) return out()
+  const r = envelope.result
+  const format = formatOfMethod(envelope.method, formats)
+  if (!format) problems.push(`unknown receipt method ${envelope.method}`)
+  else if (!format.match({ verb: 'POST', path: envelope.params.path })) problems.push(`method ${envelope.method} does not belong to path ${envelope.params.path.slice(0, 80)}`)
+  let field = null
+  if (!isObj(manifest)) problems.push('no manifest to check against')
+  else {
+    try { field = validateAIField(manifest[MANIFEST_FIELD], { allowHttp: true }) } catch (e) { problems.push(`the manifest's ${MANIFEST_FIELD} field: ${e.message}`) }
+    if (!isAddress(manifest.container) || !eqAddr(manifest.container, envelope.container)) problems.push(`the receipt names container ${envelope.container}, the manifest ${manifest.container}`)
+    let signer = null
+    try { signer = recoverResponseSigner({ container: envelope.container, id: envelope.id, method: envelope.method, params: envelope.params, ok: true, body: r, ts: envelope.ts }, envelope.sig) } catch (e) { problems.push(`the signature does not hold: ${e.message}`) }
+    if (signer && !eqAddr(signer, manifest.signer)) problems.push(`signed by ${signer}, but the manifest's signer is ${manifest.signer}`)
+  }
+  if (path !== undefined && path !== envelope.params.path) problems.push(`the receipt is for ${envelope.params.path.slice(0, 80)}, the request went to ${String(path).slice(0, 80)}`)
+  if (status !== undefined && r.status !== status) problems.push(`the receipt says HTTP ${r.status}, the response was ${status}`)
+  // Request / 请求
+  if (requestBytes === undefined) unchecked.push('request')
+  else {
+    const b = toBytes(requestBytes)
+    if (!b) problems.push('requestBytes must be bytes or a string')
+    else {
+      if (sha256Hex(b) !== envelope.params.requestSha256) problems.push('requestSha256 does not match the request that was sent')
+      const asked = typeof format?.requestModel === 'function' ? format.requestModel(jsonOf(b)) : null
+      if (r.modelMatchedBy === 'request') {
+        if (asked !== r.model) problems.push(`the receipt prices the requested model ${String(r.model).slice(0, 80)}, but the request asked for ${String(asked).slice(0, 80)}`)
+      } else if (asked && typeof r.model === 'string' && asked !== r.model) {
+        // The same entry under an alias is the same model as far as the price table goes. / 同一条目的别名在价目表看来是同一个模型。
+        const a = field && modelEntryOf(field.models, asked, format?.name), m = field && modelEntryOf(field.models, r.model, format?.name)
+        if (!a || a !== m) warnings.push(`asked for model ${asked.slice(0, 80)}, the upstream reported ${r.model.slice(0, 80)}`)
+      }
+    }
+  }
+  // Response / 回应
+  if (stream !== undefined && r.stream !== stream) problems.push(`the receipt says stream ${r.stream}, the response was ${stream ? '' : 'not '}a stream`)
+  let got = null, read = isObj(answer) ? answer : null
+  const sentinel = format?.stream?.sentinel ?? null
+  if (responseSha256 !== undefined) got = String(responseSha256)
+  else if (sseDataPayloads !== undefined) got = sseDigestOfPayloads(sseDataPayloads, { sentinel })
+  else if (responseBytes !== undefined) {
+    const b = toBytes(responseBytes)
+    if (!b) problems.push('responseBytes must be bytes or a string')
+    else if (r.stream) {
+      const s = scanSse(b, format ? { format } : { sentinel }); got = s.responseSha256
+      if (format) read = s
+      // Shapes that clients parse differently from the hash rule: the bytes cannot say what a client showed (FIXED SSE-BOM,
+      // SSE-EOF). Events after the end are hashed as §3.5 says, and not flagged here. / 客户端与哈希规则解析不一致的形态。
+      if (s.ambiguous) problems.push(AMBIGUOUS_LINE)
+      if (s.unfinished) problems.push(UNFINISHED_EVENT)
+      // Only when the caller did not say: one that read the content type (createVerifyingFetch) passes `stream`.
+      // 只在调用方没有说明时检查：读过 content-type 的调用方（createVerifyingFetch）会传 stream。
+      if (stream === undefined && isWholeJson(b)) problems.push(WHOLE_AS_STREAM)
+    } else {
+      got = sha256Hex(b)
+      if (format) read = format.response(jsonOf(b)) ?? null
+    }
+  }
+  if (got === null) unchecked.push('response')
+  else if (got !== r.responseSha256) problems.push('responseSha256 does not match the response that was received')
+  // The client's own reading of the answer (check 4). / 客户端自己对回答的读取。
+  if (!read) unchecked.push('id', 'model', 'usage', ...(complete === undefined ? ['complete'] : []))
+  else {
+    const a = answerProblems({ envelope, read, format, requestBytes })
+    problems.push(...a.problems); unchecked.push(...a.unchecked)
+  }
+  const seenComplete = complete !== undefined ? complete : read ? completeOf({ status: r.status, stream: r.stream, read }) : undefined
+  if (seenComplete !== undefined && seenComplete !== r.complete) problems.push(`the receipt says complete ${r.complete}, but the answer ${seenComplete ? 'is' : 'is not'} complete`)
+  if (r.complete === false && r.status >= 200 && r.status < 300) warnings.push(`the answer did not complete (no final success event); it is ${r.prices ? 'priced from the usage it reported' : 'not priced'}`)
+  // Amount / 金额
+  if (field) problems.push(...priceProblems(field, r, format?.name))
+  // Proposal (experimental): a receipt that names its price basis says whether this manifest's table is the one that priced
+  // it. A different basis explains an amount problem; it never excuses one. / 提案：回执写明价格依据时，说明本清单的价目表
+  // 是不是给它定价的那一版。依据不同可以解释金额问题，但绝不抵消它。
+  if (field && r.priceRef !== undefined) {
+    const here = priceRefOf(field)
+    if (here !== r.priceRef) warnings.push(`the receipt was priced under another version of the price table (priceRef ${r.priceRef.slice(0, 16)}…, this manifest's table ${here.slice(0, 16)}…): check it against the manifest of its time`)
+  }
+  if (field && r.prices === null && r.usage && typeof r.model === 'string' && !modelEntryOf(field.models, r.model, format?.name)) warnings.push(`model ${r.model.slice(0, 80)} is not in the manifest's price table`)
+  if (r.unpriced) warnings.push(`billed per use and not priced by the table: ${r.unpriced.join(', ')}`)
+  // Freshness / 时效
+  if (maxSkewS !== undefined) {
+    const t = now ?? Math.floor(Date.now() / 1000)
+    if (Math.abs(t - envelope.ts) > maxSkewS) problems.push(`signed at ${envelope.ts}, outside ±${maxSkewS} s of now (${t})`)
+  } else unchecked.push('freshness')
+  return out()
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Request salt / 请求加盐
+// ---------------------------------------------------------------------------------------------------------------
+/** How many whitespace characters saltRequestBody appends: 64, two random bits each, 128 bits. / 追加的空白字符数。 */
+export const SALT_LENGTH = 64
+// The four characters JSON allows between tokens (RFC 8259 §2): space, tab, line feed, carriage return.
+// JSON 允许出现在记号之间的四个字符：空格、制表、换行、回车。
+const JSON_WS = Object.freeze([0x20, 0x09, 0x0a, 0x0d])
+const isWs = (b) => b === 0x20 || b === 0x09 || b === 0x0a || b === 0x0d
+/**
+ * A JSON request body with SALT_LENGTH random whitespace characters appended, or null when the body is left alone.
+ *
+ * Why: a receipt carries `requestSha256`, the SHA-256 of the exact request bytes, and the official SDKs serialise a
+ * request deterministically, so a short prompt ("yes", one word to embed, a question from a known list) can be confirmed
+ * from a receipt by hashing guesses (TAPI-21 §8). 128 random bits after the JSON text make the hash unguessable. What the
+ * upstream parses is unchanged: RFC 8259 allows whitespace after the value, so the parsed request (every field,
+ * `user` and `metadata.user_id` included) is identical, no token is added, and prompt caching, which keys on the
+ * parsed prompt's tokens (OpenAI's prefix cache, Anthropic's `cache_control`), sees the same prompt. No field is added
+ * or changed, since `user` and `metadata.user_id` steer cache routing and abuse tracking upstream. `requestSha256` is
+ * the hash of the salted bytes, which are the bytes actually sent. That every upstream accepts the trailing whitespace
+ * is what the JSON grammar says; it has not been measured against the live APIs of the three formats here.
+ *
+ * Left alone (null): an empty body; a body with a Content-Encoding other than identity (compressed bytes are not JSON
+ * text, and appending would corrupt them); a Content-Type that is not JSON; bytes that are not a JSON text in UTF-8.
+ *
+ * 为什么：回执带 requestSha256，即确切请求字节的 SHA-256；官方 SDK 的序列化是确定的，所以短提示词（"是"、一个要做嵌入的词、
+ * 已知问题清单里的一问）可以通过对猜测取哈希、从回执上确认（TAPI-21 §8）。JSON 文本之后的 128 个随机比特让哈希无法猜测。上游解析
+ * 出来的内容不变：RFC 8259 允许值之后出现空白，所以解析出的请求（每个字段，包括 user 与 metadata.user_id）完全相同，不增加任何
+ * token；提示词缓存按解析后提示词的 token 取键（OpenAI 的前缀缓存、Anthropic 的 cache_control），看到的是同一个提示词。不增加也
+ * 不修改任何字段：user 与 metadata.user_id 在上游影响缓存路由与滥用追踪。requestSha256 是加盐后字节的哈希，也就是实际发出的字节。
+ * 各上游都接受尾随空白是 JSON 语法所规定的；这里没有对三种格式的线上接口实测过。
+ * 不处理（返回 null）：空正文；Content-Encoding 不是 identity 的正文（压缩后的字节不是 JSON 文本，追加会破坏它）；Content-Type 不是
+ * JSON；不是 UTF-8 JSON 文本的字节。
+ *
+ * @param {Uint8Array} bytes  the request body as it would be sent / 原本要发出的请求正文
+ * @param {Headers|Record<string, string>} [headers]  the request's headers / 请求头
+ * @returns {Uint8Array|null}
+ */
+export function saltRequestBody(bytes, headers) {
+  if (!(bytes instanceof Uint8Array) || !bytes.length) return null
+  const h = headers instanceof Headers ? headers : new Headers(headers || {})
+  const coding = (h.get('content-encoding') || '').trim().toLowerCase()
+  if (coding && coding !== 'identity') return null
+  const type = h.get('content-type')
+  if (type && !/(^|[/+])json\b/i.test(type)) return null
+  let i = 0
+  while (i < bytes.length && isWs(bytes[i])) i++
+  if (bytes[i] !== 0x7b && bytes[i] !== 0x5b) return null   // an object or an array / 对象或数组
+  try { JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) } catch { return null }
+  const r = new Uint8Array(SALT_LENGTH / 4)
+  crypto.getRandomValues(r)
+  const out = new Uint8Array(bytes.length + SALT_LENGTH)
+  out.set(bytes)
+  for (let k = 0; k < SALT_LENGTH; k++) out[bytes.length + k] = JSON_WS[(r[k >> 2] >> ((k & 3) * 2)) & 3]
+  return out
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Asking for the usage in the request's bytes / 在请求字节里要用量
+// ---------------------------------------------------------------------------------------------------------------
+// A minimal reader of a JSON text the caller has already parsed with JSON.parse: it finds the members of one object
+// (their keys decoded, the byte ranges of their values) and nothing else. Byte-level, since every structural character is
+// ASCII and every byte of a multi-byte UTF-8 character is >= 0x80; iterative, so depth costs no stack. Out of range
+// throws, which the caller treats as a refusal. / 一个最小的 JSON 读取器，输入已经过 JSON.parse：只找出一个对象的成员（解码后的键、
+// 值的字节区间）。按字节读（结构字符都是 ASCII，多字节 UTF-8 的每个字节都 >= 0x80）；迭代实现，深度不占栈。越界即抛出，调用方按拒绝处理。
+const QUOTE = 0x22, BSL = 0x5c, COMMA = 0x2c, COLON_B = 0x3a, LBRACE = 0x7b, RBRACE = 0x7d, LBRACK = 0x5b, RBRACK = 0x5d
+const at = (b, i) => { if (i >= b.length) throw new RangeError('past the end of the JSON text'); return b[i] }
+const skipWs = (b, i) => { while (i < b.length && isWs(b[i])) i++; return i }
+function skipString(b, i) {   // b[i] is '"'; returns the offset after the closing '"' / 返回结束引号之后的偏移
+  i++
+  for (;;) { const c = at(b, i); if (c === BSL) i += 2; else if (c === QUOTE) return i + 1; else i++ }
+}
+function skipValue(b, i) {    // returns the offset after the value / 返回值之后的偏移
+  const c = at(b, i)
+  if (c === QUOTE) return skipString(b, i)
+  if (c !== LBRACE && c !== LBRACK) { while (i < b.length && !isWs(b[i]) && b[i] !== COMMA && b[i] !== RBRACE && b[i] !== RBRACK) i++; return i }
+  let depth = 0
+  for (;;) {
+    const x = at(b, i)
+    if (x === QUOTE) { i = skipString(b, i); continue }
+    if (x === LBRACE || x === LBRACK) depth++
+    else if (x === RBRACE || x === RBRACK) { if (--depth === 0) return i + 1 }
+    i++
+  }
+}
+const utf8 = (b) => new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(b)
+// The members of the object whose '{' is at b[i]: [{ key, vs, ve }] (the value's bytes are b[vs..ve)) and the offset of
+// its '}'. / b[i] 处 '{' 开始的对象的成员（值的字节为 b[vs..ve)）及其 '}' 的偏移。
+function membersOf(b, i) {
+  const members = []
+  i = skipWs(b, i + 1)
+  if (at(b, i) === RBRACE) return { members, close: i }
+  for (;;) {
+    const ks = i, ke = skipString(b, i)
+    i = skipWs(b, ke)
+    if (at(b, i) !== COLON_B) throw new RangeError('no colon after a key')
+    const vs = skipWs(b, i + 1), ve = skipValue(b, vs)
+    members.push({ key: JSON.parse(utf8(b.subarray(ks, ke))), vs, ve })
+    i = skipWs(b, ve)
+    const c = at(b, i)
+    if (c === COMMA) { i = skipWs(b, i + 1); continue }
+    if (c !== RBRACE) throw new RangeError('no comma or brace after a value')
+    return { members, close: i }
+  }
+}
+const twice = (members) => new Set(members.map((m) => m.key)).size !== members.length
+// A key that is the member's name in another case (after its escapes are decoded): parsers that match keys without
+// regard to case, the last one winning (Go's encoding/json, in gateways such as new-api and one-api), read it as the
+// member, so `{"include_usage":true,"INCLUDE_USAGE":false}` would mean false upstream (Fable review F1). Folded through
+// upper then lower case, so the Unicode letters Go folds onto ASCII ones (U+017F long s, U+212A Kelvin sign) count too.
+// 与成员名只差大小写的键（解码转义之后）：不区分大小写、后者覆盖的解析器（Go 的 encoding/json，new-api、one-api 等网关）把它读作
+// 该成员。先转大写再转小写，Go 折叠到 ASCII 字母的 Unicode 字母（U+017F 长 s、U+212A 开尔文符号）也算在内。
+const fold = (k) => k.toUpperCase().toLowerCase()
+const caseTwin = (members, name) => members.some((m) => m.key !== name && fold(m.key) === fold(name))
+function splice(b, from, to, text) {
+  const t = enc.encode(text), out = new Uint8Array(b.length - (to - from) + t.length)
+  out.set(b.subarray(0, from)); out.set(t, from); out.set(b.subarray(to), from + t.length)
+  return out
+}
+// Set b's top-level member `top`, an object, to have `inner: true`, touching one place: a new member is appended after
+// the last member's value (a new `top` holding only `inner`; `inner` added to an existing object), a value that is not an
+// object is replaced by `{"inner":true}`, an existing `inner` has its value replaced by `true`. Every other byte stays.
+// This is the key order of `{ ...body, [top]: { ...(isObj(so) ? so : {}), [inner]: true } }`, so the parsed result can be
+// compared with prepareUpstream's exactly. A key that appears twice in the top-level object, or in `top`'s object, is a
+// refusal ('duplicate-member'): parsers disagree on which one counts (the rule reads those members); so is a key that
+// is `top` at the top level, or `inner` in its object, in another case (caseTwin above). A duplicate deeper down is never
+// touched and stays as it was. / 让 b 的顶层成员 top（对象）带上 inner: true，只动一处：新成员追加在最后一个成员
+// 的值之后，不是对象的值整体替换为 {"inner":true}，已有的 inner 只替换其值。其余字节不变。键序与 prepareUpstream 的结果相同，
+// 可以逐字比较。顶层或 top 对象里出现两次的键：拒绝（解析器对哪个算数看法不一，而规则读的正是这些成员）；更深处的重复键不被触碰，原样保留。
+function setUsageMember(b, [top, inner]) {
+  const root = membersOf(b, skipWs(b, 0))
+  if (twice(root.members) || caseTwin(root.members, top)) return 'duplicate-member'
+  const it = J(inner) + ':true'
+  const so = root.members.find((m) => m.key === top)
+  if (!so) {
+    const last = root.members[root.members.length - 1]
+    return last ? splice(b, last.ve, last.ve, `,${J(top)}:{${it}}`) : splice(b, root.close, root.close, `${J(top)}:{${it}}`)
+  }
+  if (b[so.vs] !== LBRACE) return splice(b, so.vs, so.ve, `{${it}}`)
+  const obj = membersOf(b, so.vs)
+  if (twice(obj.members) || caseTwin(obj.members, inner)) return 'duplicate-member'
+  const u = obj.members.find((m) => m.key === inner)
+  if (u) return splice(b, u.vs, u.ve, 'true')
+  const last = obj.members[obj.members.length - 1]
+  return last ? splice(b, last.ve, last.ve, `,${it}`) : splice(b, so.vs + 1, so.vs + 1, it)
+}
+const J = (v) => JSON.stringify(v)
+const JSON_TYPE = /(^|[/+])json\b/i
+/**
+ * Why requestUsageBody left a request alone although the sidecar would change it (TAPI-21 §3.5, usage injection), in
+ * the order the gates are checked. / requestUsageBody 没有改写一个旁路本会改动的请求的原因（按检查顺序）。
+ *   content-encoding  a Content-Encoding other than identity: the bytes are not JSON text
+ *   content-type      a Content-Type that is not JSON (the sidecar does not look at it, so it still injects)
+ *   not-utf8          not UTF-8
+ *   not-object        the first byte after whitespace is not '{' (a byte order mark, an array)
+ *   no-member         the format has prepareUpstream but no usageMember (a custom adapter)
+ *   duplicate-member  a key appears twice at the top level, or in the object the member goes in; or a key there is the
+ *                     member's name in another case (case-insensitive parsers would read it as the member)
+ *   self-check        the bytes with the member set do not parse to exactly prepareUpstream's body, or the sidecar would
+ *                     still change them
+ */
+export const USAGE_REQUEST_SKIPS = Object.freeze(['content-encoding', 'content-type', 'not-utf8', 'not-object', 'no-member', 'duplicate-member', 'self-check'])
+const SKIP_WHY = {
+  'content-encoding': 'the body is compressed (a Content-Encoding other than identity), so its bytes are not JSON text',
+  'content-type': 'its Content-Type is not JSON',
+  'not-utf8': 'the body is not UTF-8',
+  'not-object': 'the body does not start with a JSON object (a byte order mark, an array, ...)',
+  'no-member': 'the format changes the request but names no usageMember, so the member to set is not known',
+  'duplicate-member': 'a key appears twice at the top level of the body, or in the object the member goes in, or a key there is the member\'s name in another case, and parsers disagree on which counts',
+  'self-check': 'setting the member in the bytes did not give exactly the body the sidecar would send',
+}
+/**
+ * The request with its format's usage member set in its bytes, when the sidecar would otherwise change it to obtain the
+ * usage (TAPI-21 §3.5, usage injection: today, a stream OpenAI Chat request that did not set
+ * stream_options.include_usage). The sidecar's own rule decides whether it applies (the format's prepareUpstream gives a
+ * change for the body as the sidecar parses it); null when it does not (nothing to do, nothing to report).
+ * The change is one splice in the bytes (setUsageMember above): no re-serialising, so every other byte, number, escape
+ * and the trailing whitespace stay as they were. It is checked before it is used: the new bytes must parse to exactly
+ * what prepareUpstream gives (JSON.stringify of both equal, key order included) and prepareUpstream must give nothing for
+ * them (the sidecar then sends them on unchanged). Otherwise, and for the gates in USAGE_REQUEST_SKIPS, the result is
+ * { skipped: reason } and the bytes are not touched. Used by createVerifyingFetch({ requestUsage }) and
+ * tapeapi-verify --request-usage before the salt, and by the reference sidecar in place of JSON.stringify (falling back
+ * to it when skipped).
+ * 旁路本会为了拿到用量而改动请求时（目前：没设 stream_options.include_usage 的流式 OpenAI Chat 请求），返回在字节里设好格式的用量
+ * 成员的请求。是否适用由旁路自己的规则决定；不适用时为 null（无事可做，也不报告）。改动是字节里的一次拼接，不重新序列化：其余字节、
+ * 数字、转义与尾随空白原样保留。使用前先自检：新字节解析后必须与 prepareUpstream 的结果完全相同（两者的 JSON.stringify 相等，含键序），
+ * 且 prepareUpstream 对新字节不再给出改动。否则，以及 USAGE_REQUEST_SKIPS 的各项门槛，结果为 { skipped: 原因 }，字节不动。
+ * @param {Uint8Array|ArrayBuffer|string} bytes  the request body / 请求正文
+ * @param {{ format: object, headers?: Headers|Record<string, string> }} o
+ * @returns {{ bytes: Uint8Array } | { skipped: string } | null}
+ */
+export function requestUsageBody(bytes, { format, headers } = {}) {
+  const b = toBytes(bytes)
+  if (!b || !b.length || typeof format?.prepareUpstream !== 'function') return null
+  let prepared = null
+  try { prepared = format.prepareUpstream(jsonOf(b)) } catch { prepared = null }
+  if (!prepared) return null
+  const skip = (reason) => ({ skipped: reason })
+  const h = headers instanceof Headers ? headers : new Headers(headers || {})
+  const coding = (h.get('content-encoding') || '').trim().toLowerCase()
+  if (coding && coding !== 'identity') return skip('content-encoding')
+  const type = h.get('content-type')
+  if (type && !JSON_TYPE.test(type)) return skip('content-type')
+  try { utf8(b) } catch { return skip('not-utf8') }
+  if (b[skipWs(b, 0)] !== LBRACE) return skip('not-object')
+  const member = format.usageMember
+  if (!Array.isArray(member) || member.length !== 2 || !member.every((k) => typeof k === 'string')) return skip('no-member')
+  let out
+  try { out = setUsageMember(b, member) } catch { return skip('self-check') }
+  if (out === 'duplicate-member') return skip('duplicate-member')
+  try {
+    const after = JSON.parse(utf8(out))
+    if (J(after) !== J(prepared.body) || format.prepareUpstream(after)) return skip('self-check')
+  } catch { return skip('self-check') }
+  return { bytes: out }
+}
+/** The words for a USAGE_REQUEST_SKIPS reason. / 跳过原因的说明。 */
+export const usageRequestSkipWhy = (reason) => SKIP_WHY[reason] ?? String(reason)
+
+// ---------------------------------------------------------------------------------------------------------------
+// A verifying fetch for official SDKs / 给官方 SDK 用的核验 fetch
+// ---------------------------------------------------------------------------------------------------------------
+// In place of a whole answer whose receipt fails (strict, review RC-5): an HTTP 502 in the request format's error shape,
+// with code RECEIPT_INVALID, and `x-should-retry: false`, which the official SDKs obey: they throw an APIError and do not
+// send, and possibly pay for, the request again. / 代替核验不过的整体回答：按请求格式的错误结构返回 HTTP 502，code 为
+// RECEIPT_INVALID，并带 x-should-retry: false（官方 SDK 遵守：抛 APIError，不再重发、不再付费）。
+function verifyErrorResponse(format, message) {
+  const error = format.name === 'anthropic-messages'
+    ? { type: 'error', error: { type: 'api_error', message, code: 'RECEIPT_INVALID' } }
+    : { error: { message, type: 'tapeapi_verify_error', param: null, code: 'RECEIPT_INVALID' } }
+  return new Response(JSON.stringify(error), { status: 502, statusText: 'Bad Gateway', headers: { 'content-type': 'application/json', 'x-should-retry': 'false', [VERIFY_ERROR_HEADER]: 'RECEIPT_INVALID' } })
+}
+
+async function bodyBytes(url, init) {
+  const b = init?.body
+  if (b == null) return new Uint8Array(0)
+  const direct = toBytes(b)
+  if (direct) return direct
+  if (b instanceof URLSearchParams) return enc.encode(b.toString())
+  // A stream, Blob or FormData: materialised once so the bytes sent are exactly the bytes hashed.
+  // 流、Blob 或 FormData：先物化一次，发出的字节与参与哈希的字节才完全相同。
+  const req = new Request(url, { method: init.method || 'POST', headers: init.headers, body: b, duplex: 'half' })
+  return { bytes: new Uint8Array(await req.arrayBuffer()), contentType: req.headers.get('content-type') }
+}
+
+// What the budget needs to know of a call before it is sent (3.0): the names its requested model goes by, its worst
+// case per currency (maxAmountOf, every price of the model's entry) with the request's size in bytes as the prompt bound
+// and its declared output limit, and the hash of the bytes sent (the receipt that answers it carries it).
+// 预算在发出前需要知道的：请求模型的各个名字、按币种的最坏情况（提示 token 上界取请求字节数，补全取声明的输出上限）、发出字节的哈希。
+/** @internal (3.0) used by tapeapi-verify --policy. */
+export function budgetCallOf(s, format, bytes) {
+  const base = { kind: 'ai', container: s.container ?? s.manifest?.container ?? null, format: format.name, promptTokens: bytes.length, requestSha256: sha256Hex(bytes) }
+  let body = null
+  try { body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) } catch { body = null }
+  if (!isObj(body)) return { ...base, models: null, worstCase: null, completionTokens: null }
+  let models = []
+  try { models = validateAIField(s.manifest?.[MANIFEST_FIELD], { allowHttp: s.verified?.dev === true }).models ?? [] } catch { models = [] }
+  const entry = modelEntryOf(models, body.model, format.name)
+  let completion = completionLimitOf(body, format)
+  // Fail closed where the declared limit is not one an upstream is sure to apply (review BR-3): a limit of 0 (a relay
+  // written in Go drops a zero max_tokens as unset, so the upstream answers without a limit), and an `n` that is not a
+  // whole number of at least 1 (completionLimitOf counts it as 1). / 声明的上限上游未必照办时失败即拒绝：上限为 0、n 不是 ≥1 的整数。
+  if (format.name !== 'openai-embeddings' && completion === 0) completion = null
+  if (format.name === 'openai-chat' && body.n !== undefined && body.n !== null && !(Number.isSafeInteger(body.n) && body.n >= 1)) completion = null
+  // A Responses call that continues stored state: the earlier turns are billed as input but are not in the bytes, so
+  // the bytes bound nothing (review BR-3). / 接着服务端状态的 Responses 调用：先前的轮次计入输入却不在字节里。
+  const promptTokens = format.name === 'openai-responses' && ((body.previous_response_id ?? null) !== null || (body.conversation ?? null) !== null) ? null : bytes.length
+  const names = [...new Set([body.model, entry?.id, ...(entry?.aliases ?? [])].filter((x) => typeof x === 'string' && x))]
+  const worstCase = !entry || !Array.isArray(entry.prices) ? null
+    : completion === null || promptTokens === null ? {} : Object.fromEntries(entry.prices.map((p) => [p.currency, maxAmountOf(p, { promptTokens, completionTokens: completion })]))
+  return { ...base, promptTokens, models: names, worstCase, completionTokens: completion }
+}
+
+/**
+ * A fetch for an official SDK that takes one (e.g. `new OpenAI({ baseURL, fetch })`, baseURL an `ai` endpoint of the
+ * manifest). Strict: a whole answer whose receipt fails becomes an HTTP 502 in the request format's error shape (code
+ * RECEIPT_INVALID) with `x-should-retry: false` and VERIFY_ERROR_HEADER: RECEIPT_INVALID, so the official SDKs throw an
+ * APIError and do not send, and maybe pay for, the request again; a caller of this fetch itself checks `res.ok`
+ * (review RC-5). Retrying a paid call after other 5xx errors is the caller's choice. / strict：核验不过的整体回答变成
+ * HTTP 502（按请求格式的错误结构，code 为 RECEIPT_INVALID），带 x-should-retry: false，官方 SDK 抛 APIError 且不重试；
+ * 直接调用者检查 res.ok。付费调用在其它 5xx 上是否重试由调用方决定。
+ *
+ * requests on a receipt path are sent as they are, their bytes kept; every answer is checked with verifyUsageReceipt
+ * against the resolved manifest. A stream is passed on chunk by chunk as it arrives and checked when it ends; a problem
+ * then errors the stream (strict) so the SDK's iterator throws. Everything else passes through untouched.
+ * 给接受自定义 fetch 的官方 SDK 用：回执路径上的请求原样发送并保留字节；每个回答都按已解析的清单核验。流按到达逐块转交，
+ * 结束时核验；有问题时（strict）让流出错，SDK 的迭代器随之抛出。其余请求不做任何处理。
+ *
+ * @param {object} o
+ * @param {object} o.service  from api.resolve() (or a target api.resolve accepts, resolved on first use) / 来自 api.resolve()
+ * @param {object} [o.api]    the createTapeAPI instance: resolves `service` if needed and re-reads the manifest once when
+ *                            a receipt is signed by another key (the service may have rotated) / 用于解析与换钥后重读
+ * @param {Function} [o.fetch]
+ * @param {(report: object) => void} [o.onReport]  every check: { ok, problems, warnings, unchecked, receipt, url, stream, status,
+ *        sidecarError?, code? }
+ * An answer the sidecar made itself (SIDECAR_ERROR_HEADER, no receipt) is a transport failure, reported with
+ * sidecarError: true and thrown (strict) as PROVIDER_UNAVAILABLE, or RATE_LIMITED for its 429; it is never verified.
+ * 旁路自己产生的回答（带 SIDECAR_ERROR_HEADER、没有回执）是传输失败：报告 sidecarError，严格模式下抛 PROVIDER_UNAVAILABLE
+ * （429 为 RATE_LIMITED）；它永远不算已核验。
+ * @param {boolean} [o.salt=true]  append SALT_LENGTH random whitespace characters to a JSON request body on a receipt path
+ *        (saltRequestBody: the parsed request is unchanged, the request hash becomes unguessable); compressed and
+ *        non-JSON bodies are sent as they are. false: send the bytes exactly as given. Reports carry `salted`.
+ *        在回执路径上的 JSON 请求正文末尾追加随机空白（解析出的请求不变，请求哈希无法猜测）；压缩或非 JSON 正文原样发送。
+ *        false：完全按给定字节发送。报告带 salted。
+ * @param {boolean} [o.strict=true]  on any problem: an HTTP 502 RECEIPT_INVALID for a whole answer, an error for a stream,
+ *        a throw before sending for an endpoint mismatch; false: report only / 有问题时：整体回答返回 502，流出错，端点不符在发送前抛出；false 只报告
+ * @param {number} [o.maxSkewS=300]  the receipt's ts must be this close to now / 回执时间与当前时间的最大偏差
+ * @param {object[]} [o.formats]  the adapters (default FORMATS); each that streams must name its final event (stream.final):
+ *        strict refuses one without it with INVALID_ARGUMENT, otherwise it is reported once / 适配器；会流式的必须有 stream.final
+ * @param {boolean} [o.requestUsage=false]  (1.6) only true turns it on. A request the sidecar would change to obtain the
+ *        usage (TAPI-21 §3.5, usage injection; today a stream OpenAI Chat request without stream_options.include_usage)
+ *        is sent with that member set to true in its bytes (requestUsageBody: one splice, checked against the sidecar's
+ *        own change), before the salt. The sidecar then injects and strips nothing, the usage chunk is part of the signed
+ *        stream the application receives (it sees one more chunk, `choices: []`, as when it sets include_usage itself),
+ *        and the receipt's usage is compared with it like a whole answer's. A body that cannot be changed that way
+ *        (USAGE_REQUEST_SKIPS): strict throws INVALID_ARGUMENT before sending; otherwise it is sent as it is and the
+ *        report says usageRequestSkipped. Reports then carry usageRequested (true when this fetch set the member).
+ *        It does not prove the upstream's own count: the signer also produces the stream.
+ *        只有 true 开启。旁路本会为拿到用量而改动的请求（目前：没设 stream_options.include_usage 的流式 OpenAI Chat 请求），在加盐之前
+ *        于字节里把该成员设为 true 再发出。旁路随之不注入、不剥离，用量块成为应用收到的、被签名的流的一部分（应用多看到一个
+ *        choices: [] 的块，与它自己设 include_usage 时相同），回执的用量像整体回答一样与之比对。不能这样改写的正文：strict 在发送前抛
+ *        INVALID_ARGUMENT；否则原样发出，报告写 usageRequestSkipped。报告随之带 usageRequested。它不证明上游自己的计数：签名方同时产出流。
+ * @param {object} [o.policy]  @experimental (3.0) a local policy file's value ({ tapeapiPolicy: 1, rules }, the file
+ *        `tapeapi reconcile --policy` reads): a call to an endpoint of the manifest is refused BEFORE it is sent when its
+ *        worst case (maxAmountOf over completionLimitOf and the request's size in bytes) would take a covering rule over
+ *        its cap, counting what the verified receipts already claim and the worst case of calls sent without one
+ *        (budget.js, createBudget): BUDGET_EXCEEDED, or INVALID_ARGUMENT when the call cannot be bounded (no output
+ *        limit, no price-table entry, no price in the rule's currency); whatever `strict` says. Verified receipts are
+ *        recorded in `budgetStore`. A client-side convenience: nobody else can rely on it, and it bounds the prices the
+ *        receipts claim, not what anyone pays. Off unless given.
+ *        实验性：本地策略文件；发往清单端点的调用在发出之前按最坏情况核对上限，超出即拒绝（不论 strict）。只是客户端的便利，
+ *        别人无法依赖它；它限制回执声称的价格，不是任何人实际付的钱。不给就不开启。
+ * @param {object} [o.budgetStore]  @experimental (3.0) with `policy`: where the calls are recorded ({ read(), append(text) };
+ *        budgetFileStore(path, fs) for a file, mode 600); default memory (a restart forgets) / 记录调用的存储，默认内存
+ * @param {object} [o.budget]  @experimental (3.0) a createBudget(...) shared with other fetches or the agent kit's limiter,
+ *        in place of `policy` / 与其它 fetch 或 agent 套件限额器共用的预算，代替 policy
+ */
+export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport, strict = true, maxSkewS = 300, formats = FORMATS, salt = true, requestUsage = false, policy, budgetStore, budget } = {}) {
+  const doFetch = fetchImpl || ((...a) => globalThis.fetch(...a))
+  // The client-side budget (3.0, experimental; off unless policy or budget is given). / 客户端预算（默认关闭）。
+  if (policy !== undefined && budget !== undefined) throw new TapeAPIError('INVALID_ARGUMENT', 'createVerifyingFetch: give policy or budget, not both')
+  if (budgetStore !== undefined && policy === undefined) throw new TapeAPIError('INVALID_ARGUMENT', 'createVerifyingFetch: budgetStore applies with policy only')
+  const bud = budget !== undefined ? budget : policy !== undefined ? createBudget({ policy, store: budgetStore }) : null
+  if (bud && (typeof bud.admit !== 'function' || typeof bud.receipt !== 'function')) throw new TapeAPIError('INVALID_ARGUMENT', 'createVerifyingFetch: budget must come from createBudget()')
+  // Only true turns it on (1.6; off by default, so 1.x sends and reports exactly what it did). / 只有 true 开启（默认关）。
+  const askUsage = requestUsage === true
+  let svc = isObj(service) && isObj(service.manifest) ? service : null
+  let resolving = null
+  async function current() {
+    if (svc) return svc
+    if (!api || typeof api.resolve !== 'function' || service == null) throw new TapeAPIError('INVALID_ARGUMENT', 'createVerifyingFetch needs a resolved service, or api and a target to resolve')
+    resolving ??= api.resolve(service).then((s) => { svc = s; return s }).finally(() => { resolving = null })
+    return resolving
+  }
+  const reportTo = (r) => {
+    if (onReport) { try { onReport(r) } catch { /* the reporter's own failure is not the call's / 回调自己的错误不影响调用 */ } }
+    else if (!r.ok && !strict && r.problems.length) console.warn('[tapeapi/ai] usage receipt problem:', r.problems.join('; '))
+  }
+  // A format that streams must name its final event (stream.final): without it the end of its stream is only [DONE] or
+  // the upstream closing, and an SDK may stop reading at the final event before the receipt is checked (review RC-3).
+  // Strict refuses such a format here; otherwise it is reported once. / 会流式的格式必须给出最终事件（stream.final）；否则认不出流
+  // 在哪里结束，SDK 可能在回执核验之前就停止读取。strict 在此拒绝；否则报告一次。
+  for (const f of formats) {
+    const fin = f?.stream?.final
+    if (!f?.stream || (isObj(fin) && ((Array.isArray(fin.data) && fin.data.length) || (Array.isArray(fin.event) && fin.event.length)))) continue
+    const why = `format ${JSON.stringify(f.name)} streams but has no stream.final ({ data?: [...], event?: [...] }, the first line of its final event): the end of its stream cannot be recognised, so an SDK may stop reading before the receipt is checked`
+    if (strict) throw new TapeAPIError('INVALID_ARGUMENT', `createVerifyingFetch: ${why}`, { data: { format: f.name } })
+    const r = { ok: false, problems: [], warnings: [why], unchecked: [], receipt: null, url: null, stream: true, status: 0, salted: false, format: f.name }
+    if (onReport) { try { onReport(r) } catch { /* the reporter's own failure / 回调自己的错误 */ } } else console.warn('[tapeapi/ai]', why)
+  }
+  const failure = (r) => (r.sidecarError
+    ? new TapeAPIError(r.code, r.problems.join('; '), { data: { status: r.status, problems: r.problems } })
+    : new TapeAPIError('RECEIPT_INVALID', `usage receipt: ${r.problems.join('; ')}`, { data: { problems: r.problems, receipt: r.receipt } }))
+  // Only a validated `ai` field is used (TAPI-20 §3.9); an endpoint of an unknown format, or without its format's suffix,
+  // is ignored. / 只使用校验过的 ai 字段；未知格式、或缺少格式后缀的端点被忽略。
+  const endpointsOf = (s) => {
+    if (Array.isArray(s.aiProblems) && s.aiProblems.length) throw new TapeAPIError('MANIFEST_INVALID', `${s.container}: its ${MANIFEST_FIELD} field is invalid and was dropped: ${s.aiProblems.join('; ')}`)
+    const raw = s.manifest?.[MANIFEST_FIELD]
+    if (raw === undefined) throw new TapeAPIError('MANIFEST_INVALID', `${s.container} publishes no ${MANIFEST_FIELD} field`)
+    return validateAIField(raw, { allowHttp: s.verified?.dev === true }).endpoints
+  }
+
+  async function check(s, args) {
+    let r = verifyUsageReceipt({ ...args, manifest: s.manifest, maxSkewS, formats })
+    // Another key: the service may have rotated since we resolved it. Re-read once, then decide.
+    // 另一把密钥：解析之后服务可能换了钥。重读一次再下结论。
+    if (!r.ok && api && typeof api.refresh === 'function' && s.target !== undefined && r.problems.some((p) => p.startsWith('signed by '))) {
+      try { await api.refresh(s); r = verifyUsageReceipt({ ...args, manifest: s.manifest, maxSkewS, formats }) } catch { /* keep the first verdict / 保留第一次的结论 */ }
+    }
+    return r
+  }
+
+  return async function verifyingFetch(input, init = {}) {
+    // The budget's open call (its request hash): the first report that verifies its receipt records it, once.
+    // 预算里这次调用（按请求哈希）：第一份核验成功的报告记下它的回执，只记一次。
+    let owed = null
+    const report = (r) => {
+      reportTo(r)
+      if (owed && r.ok === true && isObj(r.receipt) && String(r.receipt.params?.requestSha256 ?? '').toLowerCase() === owed) {
+        owed = null
+        bud.receipt(r.receipt).catch(() => { /* the budget warns itself / 预算自己会提示 */ })
+      }
+    }
+    const s = await current()
+    if (!s.verified || (s.verified.delegation !== true && s.verified.dev !== true)) throw new TapeAPIError('DELEGATION_INVALID', 'the service must come from api.resolve(): its signer is only trustworthy once the delegation has been verified')
+    const endpoints = endpointsOf(s)
+    const isRequest = typeof Request !== 'undefined' && input instanceof Request
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input?.url
+    const verb = String(init.method || (isRequest ? input.method : 'GET')).toUpperCase()
+    // The request's format: an endpoint of the manifest whose root the URL is under, and whose adapter matches the path.
+    // 请求的格式：URL 位于清单某个端点的根之下，且该端点格式的适配器认得这个路径。
+    let rel = null, format = null
+    // A request that looks like a metered call (its path, taken under an endpoint's root path or as it stands, is one a
+    // format meters) but is not addressed to an endpoint of the manifest: 'localhost' for '127.0.0.1', another port or
+    // host, a root path left out (review G1 M15); or a metered path written loosely ('//', '%63', a trailing '/'), which
+    // OpenAI and Anthropic still serve (review P2-O1). Passing it on unverified would be silent: strict refuses it with
+    // INVALID_ARGUMENT before anything is sent; otherwise it goes on and onReport says it was not verified. A path that
+    // meters nothing under any spelling (a base URL without its /v1, a path in another case) passes through.
+    // 看起来是计量调用（其路径在某端点的根路径之下、或按原样，是某格式会计量的路径），却没有发往清单里的端点：localhost 对 127.0.0.1、
+    // 端口或主机不同、漏了根路径；或者计量路径的宽松写法（'//'、'%63'、结尾斜杠），OpenAI 与 Anthropic 照样回答。不核验就放行是静默的：
+    // strict 在发出任何请求之前以 INVALID_ARGUMENT 拒绝；否则照常发出，并由 onReport 说明未核验。怎么写都不计量的路径（缺 /v1 的
+    // base URL、大小写不同的路径）照旧透传。
+    let near = null
+    try {
+      const u = new URL(url)
+      for (const ep of endpoints) {
+        const f = formats.find((x) => x.name === ep?.format)
+        const root = f && rootOf(ep.baseUrl, f)
+        if (!root) continue
+        const r = new URL(root)
+        const p = r.origin === u.origin ? apiPath(u.pathname, r.pathname) : null
+        if (p && f.match({ verb, path: p })) { rel = p; format = f; break }
+        if (!near) {
+          const q = apiPath(u.pathname, r.pathname)
+          if ((q && f.match({ verb, path: q })) || f.match({ verb, path: u.pathname })) near = { format: f.name, baseUrl: ep.baseUrl }
+          else {
+            const lq = apiPath(loosePath(u.pathname), r.pathname)
+            if ((lq && f.match({ verb, path: lq })) || f.match({ verb, path: loosePath(u.pathname) })) near = { format: f.name, baseUrl: ep.baseUrl, loose: loosePath(u.pathname) }
+          }
+        }
+      }
+    } catch { /* not a URL: not ours / 不是 URL：不是我们的 */ }
+    // A metered path of a built-in format (or one of `formats`) for which the manifest declares no endpoint, under one of
+    // its endpoint roots (same origin and root path; another host is left alone): a sidecar that does not serve that
+    // format refuses it or, an older one, passes it through without a receipt. Either way nothing can be verified, so it
+    // is never silent: strict refuses before sending, otherwise onReport says so (FIXED F-1).
+    // 清单没有声明端点的格式（内置格式或 formats 之一）的计量路径，且位于清单某端点的根之下（同源同根路径；别的主机不管）：不提供
+    // 该格式的旁路会拒绝它，旧版旁路则无回执透传。两种情况都无从核验，所以绝不静默：strict 在发出前拒绝，否则由 onReport 说明。
+    let undeclared = null
+    if (!format && !near) {
+      try {
+        const u = new URL(url)
+        const declared = endpoints.map((e) => e?.format)
+        const known = [...formats, ...FORMATS.filter((f) => !formats.some((x) => x.name === f.name))]
+        const others = known.filter((f) => !declared.includes(f.name))
+        for (const ep of endpoints) {
+          const f = formats.find((x) => x.name === ep?.format)
+          const root = f && rootOf(ep.baseUrl, f)
+          if (!root || !others.length) continue
+          const r = new URL(root)
+          const p = r.origin === u.origin ? apiPath(u.pathname, r.pathname) : null
+          const hit = p ? others.find((o) => o.match({ verb, path: p }) || o.match({ verb, path: loosePath(p) })) : null
+          if (hit) { undeclared = { format: hit.name, declared: declared.filter(Boolean) }; break }
+        }
+      } catch { /* not a URL: not ours / 不是 URL：不是我们的 */ }
+    }
+    if (undeclared) {
+      let origin = String(url)
+      try { const u = new URL(url); origin = u.origin + u.pathname } catch { /* keep it as given */ }
+      const why = `${verb} ${origin} is a metered ${undeclared.format} call, but the service's manifest declares no ${undeclared.format} endpoint (it declares ${undeclared.declared.join(', ')}): the call gets no receipt and cannot be verified (not verified: format not declared)`
+      if (strict) throw new TapeAPIError('INVALID_ARGUMENT', why, { data: { format: undeclared.format, declared: undeclared.declared } })
+      report({ ok: false, mismatch: true, problems: [`not verified: format not declared: ${why}`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: 0, salted: false })
+      return doFetch(input, init)
+    }
+    if (!format && near) {
+      let origin = String(url)
+      try { const u = new URL(url); origin = u.origin + u.pathname } catch { /* keep it as given */ }
+      const why = near.loose
+        ? `${verb} ${origin} looks like a metered ${near.format} call written loosely (a lenient server reads the path as ${near.loose}); a metered path must be written exactly, under the manifest's ${near.format} endpoint ${near.baseUrl} (not verified: path mismatch)`
+        : `${verb} ${origin} looks like a metered ${near.format} call, but the manifest's ${near.format} endpoint is ${near.baseUrl}: point the client's base URL at exactly that endpoint (not verified: endpoint mismatch)`
+      if (strict) throw new TapeAPIError('INVALID_ARGUMENT', why, { data: { expected: near.baseUrl, actual: origin, format: near.format } })
+      report({ ok: false, mismatch: true, problems: [`not verified: ${near.loose ? 'path' : 'endpoint'} mismatch: ${why}`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: 0, salted: false, expected: near.baseUrl })
+      return doFetch(input, init)
+    }
+    if (!format) return doFetch(input, init)
+    // A Request object: its body is read here, once, and sent as those bytes. / Request 对象：在此读出正文一次，按这些字节发送。
+    if (isRequest) {
+      const req = new Request(input, init)
+      init = { method: req.method, headers: req.headers, body: new Uint8Array(await req.arrayBuffer()), signal: req.signal }
+    }
+    const got = await bodyBytes(url, init)
+    let requestBytes = got instanceof Uint8Array ? got : got.bytes
+    const sendInit = { ...init, body: requestBytes }
+    if (!(got instanceof Uint8Array) && got.contentType) {
+      const h = new Headers(init.headers); if (!h.has('content-type')) h.set('content-type', got.contentType); sendInit.headers = h
+    }
+    // requestUsage: the member is set in the bytes before the salt (which goes after the JSON text), and the request
+    // hash is checked over the bytes finally sent. `asked` is spread into every report, and only exists when it is on.
+    // requestUsage：在加盐之前于字节里设好成员（盐加在 JSON 文本之后），请求哈希按最终发出的字节核对。asked 只在开启时存在，并入每份报告。
+    let asked = null
+    if (askUsage) {
+      const h = new Headers(sendInit.headers)
+      const u = requestUsageBody(requestBytes, { format, headers: h })
+      asked = { usageRequested: !!u?.bytes }
+      if (u?.bytes) { requestBytes = u.bytes; h.delete('content-length'); sendInit.headers = h; sendInit.body = u.bytes }
+      else if (u?.skipped) {
+        const why = `requestUsage: the usage of this ${format.name} request cannot be asked for in its bytes (${u.skipped}: ${usageRequestSkipWhy(u.skipped)}), so the sidecar would ask for it itself and its usage could not be checked; send the body as a UTF-8 JSON object without such keys, or turn requestUsage or strict off`
+        if (strict) throw new TapeAPIError('INVALID_ARGUMENT', why, { data: { reason: u.skipped, format: format.name } })
+        asked.usageRequestSkipped = u.skipped
+      }
+    }
+    // The salt goes on the bytes that are sent, and the request hash is checked over exactly those bytes.
+    // 盐加在实际发出的字节上，请求哈希也按这些字节核对。
+    let salted = false
+    if (salt) {
+      const h = new Headers(sendInit.headers)
+      const more = saltRequestBody(requestBytes, h)
+      if (more) { requestBytes = more; salted = true; h.delete('content-length'); sendInit.headers = h; sendInit.body = more }
+    }
+    // The budget (3.0): the call is checked against the policy's caps on the bytes about to be sent, and written down
+    // as sent, before anything leaves; a refusal is thrown whatever `strict` says (it is the caller's own cap).
+    // 预算：按即将发出的字节核对策略上限并记为已发出，然后才发送；拒绝时不论 strict 都抛出（这是调用方自己的上限）。
+    let admitted = null
+    // A definite failure that claims nothing (an HTTP 4xx or 5xx with no receipt) releases the call's worst case; a
+    // timeout, a broken connection or a receipt that does not verify does not. / 确定的、不声称任何数的失败才撤下最坏情况。
+    const release = (why, status) => { if (admitted) { const a = admitted; admitted = null; bud.release(a, { why, status }).catch(() => { /* the budget warns itself */ }) } }
+    if (bud) {
+      const call = budgetCallOf(s, format, requestBytes)
+      try { admitted = await bud.admit(call) } catch (e) {
+        report({ ok: false, budget: e?.data ?? null, problems: [`not sent: ${e?.message ?? e}`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: 0, salted, ...asked })
+        throw e
+      }
+      owed = call.requestSha256
+    }
+    const res = await doFetch(url, sendInit)
+    const type = (res.headers.get('content-type') || '').toLowerCase()
+    const common = { requestBytes, path: rel, status: res.status }
+    // The same rule as the sidecar: a stream only for a format that streams, answered as an event stream.
+    // 与旁路相同的规则：只有会流式的格式、且以事件流作答时才算流。
+    if (!format.stream || !type.includes('text/event-stream') || !res.body) {
+      const bytes = new Uint8Array(await res.arrayBuffer())
+      if (res.headers.get(SIDECAR_ERROR_HEADER) === '1' && !res.headers.get(RECEIPT_HEADER)) {
+        let why = ''
+        try { why = String(JSON.parse(new TextDecoder().decode(bytes))?.error?.message ?? '').slice(0, 200) } catch { /* not JSON */ }
+        const rep = { ok: false, sidecarError: true, code: res.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_UNAVAILABLE', problems: [`the sidecar answered HTTP ${res.status} itself${why ? ` (${why})` : ''}: no upstream answer, no receipt`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: res.status, salted, ...asked }
+        if (res.status >= 400) release('sidecar-error', res.status)
+        report(rep)
+        if (strict) throw failure(rep)
+        return new Response(bytes, { status: res.status, statusText: res.statusText, headers: res.headers })
+      }
+      let envelope = null, headerError = null
+      try { envelope = decodeReceiptHeader(res.headers.get(RECEIPT_HEADER)) } catch (e) { headerError = e.message }
+      if (!envelope && !res.headers.get(RECEIPT_HEADER) && res.status >= 400) release('http-error-no-receipt', res.status)
+      const r = await check(s, { ...common, envelope, responseBytes: bytes, stream: false })
+      if (headerError && !envelope) r.problems.splice(0, r.problems.length, headerError === 'no receipt' ? `no ${RECEIPT_HEADER} header` : headerError)
+      const rep = { ...r, url, stream: false, status: res.status, salted, ...asked }
+      report(rep)
+      if (!rep.ok && strict) return verifyErrorResponse(format, `usage receipt: ${rep.problems.join('; ')}`)
+      return new Response(res.status === 204 || res.status === 205 || res.status === 304 ? null : bytes, { status: res.status, statusText: res.statusText, headers: res.headers })
+    }
+    // A stream (review G1 M14, RC-2, RC-4). It ends at the format's final event (response.completed, message_stop, ...), at its
+    // sentinel ([DONE]) or when the upstream closes, whichever comes first: the official SDKs stop reading at [DONE] (openai
+    // does so for every format) and cancel the body, so nothing after the end can be relied on to be read. What is checked
+    // at the end is the stream as it stood there, whatever else came in the same chunk (FIXED SSE-END).
+    // Strict: every chunk goes on as it arrives until the one in which the stream ends; that chunk is held while the
+    // receipts that came before the end are checked. Once one verifies, the chunk goes on up to the end only, and the stream
+    // closes there: nothing after the end reaches the application, however the bytes were cut. No receipt, or none that
+    // verifies: the stream errors with RECEIPT_INVALID instead and the SDK's iterator throws. Two shapes fail it as well,
+    // since clients disagree on them: a line that starts with U+FEFF (the SDKs strip it from every line, the receipt rule
+    // does not; FIXED SSE-BOM), before it is passed on; and, when the upstream closes before the end, an event left without
+    // its blank line (the receipt rule discards it, the openai SDK dispatches it; FIXED SSE-EOF).
+    // Not strict: nothing is held or cut. The receipts that came before the end are checked right after it is passed on
+    // (with none, when the upstream closes) and reported; an event after the end, an unfinished event at the close and a
+    // line that starts with U+FEFF are each reported once as a failure; an upstream that breaks off after the end does not
+    // fail the call.
+    // 流：在格式的最终事件、sentinel（[DONE]）或上游关闭时结束（先到者为准）：官方 SDK 读到 [DONE]（openai 对所有格式都如此）就停止
+    // 读取并取消正文，结束之后的内容不能指望被读到。结束处核验的是流在那一点的样子，与同一块里还有什么无关。
+    // strict：结束之前逐块立即转交；流在其中结束的那一块被扣住，核验结束之前到达的回执；一旦通过，只转交这一块到结束点为止的部分，
+    // 流随即关闭：无论字节怎样切分，结束之后的内容都不会到达应用。没有回执或都不通过：以 RECEIPT_INVALID 结束流，SDK 的迭代器抛出。
+    // 另有两种客户端之间理解不一致的形态同样让流失败：以 U+FEFF 开头的行（SDK 逐行去掉它，回执规则不去），在它转交之前；以及上游在
+    // 结束之前关闭时，缺少空行的未结束事件（回执规则丢弃它，openai SDK 却分派它）。
+    // 非 strict：不扣留、不截断。结束处放出之后立即核验结束之前到达的回执（没有时等上游关闭）并报告；结束之后的事件、关闭时未结束的
+    // 事件、以 U+FEFF 开头的行，各报告一次失败；上游在结束之后断开不算失败。
+    const st = format.streamState()
+    // The adapter reads the answer up to its end only, the final event included (onEvent runs before receiptsAtEnd is set;
+    // it is called from scanner.push only, so never before `scanner` is initialised): the answer checked is the one an SDK
+    // that stops at the end has read (FIXED SSE-END). / 适配器只读到结束处（含最终事件；onEvent 在 receiptsAtEnd 设置之前运行，
+    // 且只由 scanner.push 调用，不会早于 scanner 初始化）：核对的回答就是在结束处停止读取的 SDK 读到的那个。
+    const scanner = createSseScanner({ sentinel: format.stream.sentinel ?? null, final: format.stream.final ?? null, onEvent: (j, n) => { if (scanner.info.receiptsAtEnd === null) st.event(j, n) } })
+    const reader = res.body.getReader()
+    const base = { url, stream: true, status: res.status, salted, ...asked }
+    let settled = false, verdict = null
+    const ended = () => scanner.info.receiptsAtEnd !== null
+    // Shapes no receipt covers, each reported once (FIXED SSE-END, SSE-EOF, SSE-BOM). / 不受任何回执覆盖的形态，各报告一次。
+    const flagged = new Set()
+    const flag = (problem) => {
+      const rep = { ok: false, problems: [problem], warnings: [], unchecked: [], receipt: verdict?.receipt ?? null, ...base }
+      if (!flagged.has(problem)) { flagged.add(problem); report(rep) }
+      return rep
+    }
+    const late = () => ended() && scanner.info.events > scanner.info.eventsAtEnd
+    const unfinished = () => { const t = scanner.state(); return t.eventHasData || t.eventHasFields || !t.atLineStart }
+    // The last receipt first (the outermost sidecar's); an earlier one only if the last does not verify.
+    // 先看最后一个回执（最外层旁路的）；它核验不过时才看更早的。
+    async function verify(receipts, atEnd) {
+      settled = true
+      let rep = null
+      for (let i = receipts.length - 1; i >= 0; i--) {
+        let envelope = null
+        try { envelope = decodeReceiptHeader(receipts[i]) } catch { continue }
+        // The hash where the stream first ended (FIXED SSE-END); the whole stream's only when it never ended (upstream closed).
+        // 流第一次结束处的哈希；只有流从未结束（上游关闭）时才用整条流的。
+        const r = await check(s, { ...common, envelope, responseSha256: scanner.info.digestAtEnd ?? scanner.digest(), stream: true, answer: st.result() })
+        if (r.ok || !rep) rep = r
+        if (r.ok) break
+      }
+      if (!rep) rep = { ok: false, problems: [atEnd ? 'no tapeapi-receipt comment before the end of the event stream' : 'no tapeapi-receipt comment in the event stream'], warnings: [], unchecked: [], receipt: null }
+      // Asked for, and none came: the upstream ignored the member, or something on the way took the chunk out (then the
+      // receipt's usage, if any, is already a problem). / 要了却没有：上游没理会，或途中有人去掉了这一块。
+      if (asked?.usageRequested && usageOf(st.result().usage) === null) rep = { ...rep, warnings: [...rep.warnings, NO_USAGE_ASKED] }
+      verdict = { ...rep, ...base }
+      report(verdict)
+      return verdict
+    }
+    const stop = () => { reader.cancel().catch(() => {}) }
+    const fail = (controller, rep) => { settled = true; stop(); controller.error(failure(rep)) }
+    const body = new ReadableStream({
+      // One pull reads until it has something to hand on: a pull that enqueues nothing is not called again.
+      // 一次 pull 读到有东西可转交为止：什么都没放入的 pull 不会再被调用。
+      async pull(controller) { for (;;) {
+        let got
+        try { got = await reader.read() } catch (e) {
+          // After the end the answer is whole: the upstream breaking off then is not a failure (strict never reads past it).
+          // 结束之后回答已完整：此时上游断开不算失败（strict 不会读到结束之后）。
+          if (ended() && !strict) {
+            if (!settled) await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
+            if (unfinished()) flag(UNFINISHED_EVENT)
+            return controller.close()
+          }
+          if (!settled) { settled = true; report({ ok: false, incomplete: true, problems: [], warnings: ['the upstream broke off before the stream ended; its receipt was not checked'], unchecked: ['request', 'response'], receipt: null, ...base }) }
+          return controller.error(e)
+        }
+        if (got.done) {
+          scanner.end()
+          if (!settled) {
+            const rep = await verify(scanner.info.receipts, false)
+            if (!rep.ok && strict) return controller.error(failure(rep))
+          }
+          // An event left without its blank line: discarded by the receipt rule, dispatched by some clients (FIXED SSE-EOF).
+          // 缺少空行的未结束事件：回执规则丢弃它，一些客户端却分派它。
+          if (unfinished()) { const rep = flag(UNFINISHED_EVENT); if (strict) return controller.error(failure(rep)) }
+          return controller.close()
+        }
+        const chunk = got.value
+        const wasEnded = ended()
+        scanner.push(chunk)
+        if (!strict) {
+          controller.enqueue(chunk)
+          if (scanner.info.ambiguous) flag(AMBIGUOUS_LINE)
+          // Just ended, with receipts before the end: check now (the SDK may stop reading here). / 刚结束且之前有回执：立即核验。
+          if (!wasEnded && ended() && scanner.info.receiptsAtEnd > 0) await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
+          // Passed on, but said, once: an event after the end (in this chunk or a later one). / 已转交，但要报告一次：结束之后的事件。
+          if (late()) flag(LATE_EVENT)
+          return
+        }
+        if (!ended()) {
+          // A line read differently by different clients: this chunk does not go on (FIXED SSE-BOM). / 各客户端理解不一致的行：这一块不转交。
+          if (scanner.info.ambiguous) return fail(controller, flag(AMBIGUOUS_LINE))
+          return controller.enqueue(chunk)
+        }
+        // This chunk ends the stream: once a receipt that came before the end verifies, it goes on up to the end and the
+        // stream closes (FIXED SSE-END). / 流在这一块中结束：结束之前到达的回执核验通过后，只放出到结束点为止，随即关闭流。
+        if (scanner.info.ambiguousAtEnd) return fail(controller, flag(AMBIGUOUS_LINE))
+        const rep = await verify(scanner.info.receipts.slice(0, scanner.info.receiptsAtEnd), true)
+        if (!rep.ok) { stop(); return controller.error(failure(rep)) }
+        // A blank line that is a CR at the end of the chunk ends the stream there: the LF that may follow is not waited for
+        // (the upstream may send nothing more), and every client dispatches the event without it.
+        // 块末的 CR 作为空行时流就在那里结束：不等可能随后的 LF（上游可能不再发送任何字节），没有它各客户端也会分派该事件。
+        controller.enqueue(chunk.subarray(0, scanner.info.endOffset))
+        controller.close(); return stop()
+      } },
+      // The consumer stopped reading (break, abort): nothing to verify, which is not a receipt problem.
+      // 消费方停止读取（break、abort）：没有可核验的内容，这不是回执问题。
+      cancel(reason) {
+        if (!settled) { settled = true; report({ ok: false, incomplete: true, problems: [], warnings: ['the stream was not read to the end; its receipt was not checked'], unchecked: ['request', 'response'], receipt: null, ...base }) }
+        return reader.cancel(reason)
+      },
+    }, { highWaterMark: 0 })
+    const headers = new Headers(res.headers)
+    headers.delete('content-length')
+    return new Response(body, { status: res.status, statusText: res.statusText, headers })
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Client settings (@experimental) / 客户端配置（实验性）
+// ---------------------------------------------------------------------------------------------------------------
+/**
+ * @experimental The tools a settings snippet is written for, and the API formats each one needs. A tool gets a snippet
+ * only for a format the service's manifest declares in ai.endpoints.
+ * @experimental 每种工具对应的 API 格式；只有清单 ai.endpoints 声明了该格式，才为该工具生成配置。
+ */
+export const SNIPPET_TOOLS = Object.freeze({ 'openai-sdk': Object.freeze(['openai-chat', 'openai-embeddings']), curl: Object.freeze(['openai-chat']), codex: Object.freeze(['openai-responses']), 'claude-code': Object.freeze(['anthropic-messages']) })
+const js = (s) => `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+// Built with js(): the packages test reads every quoted package name after the word "from" in src/ as an import.
+// 用 js() 拼出：打包测试把 src/ 里 from 之后带引号的包名都当作 import。
+const OPENAI_IMPORT = `import OpenAI from ${js('openai')}`
+const sh = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`)
+
+/**
+ * @experimental Client settings for an AI service, in the order of its manifest's ai.endpoints, only for the formats it
+ * declares (openai-chat: the OpenAI SDK through createVerifyingFetch, any OpenAI-compatible tool through the local proxy,
+ * curl; openai-responses: Codex; anthropic-messages: Claude Code; openai-embeddings: the OpenAI SDK). The token is
+ * never asked for and never written: the snippets read the environment variable API_KEY. Pure: no I/O, the same
+ * strings for the command line and a web page.
+ * @experimental AI 服务的客户端配置，按清单 ai.endpoints 的顺序，只为它声明的格式生成。令牌从不索要也从不写出：配置读取环境变量
+ * API_KEY。纯函数：不做 I/O，命令行与网页得到同样的字符串。
+ * @param {object} manifest  a resolved service's manifest (its `ai` field is read)
+ * @param {{ target?: string, dev?: string|null, port?: number, proxyCommand?: string, tool?: string, format?: string }} [o]
+ *   target: the name the snippets resolve (default '<name>'); dev: a development sidecar URL instead (testing only);
+ *   port: the local proxy's port (default 8790); proxyCommand: the command that starts the proxy (default
+ *   `tapeapi connect <target> --proxy`); tool / format: keep only these ('all' / undefined: every one)
+ * @returns {{ tool: string, format: string, via: 'sdk'|'proxy'|'direct', verifies: boolean, title: { en: string, zh: string }, text: string }[]}
+ */
+export function snippetsFor(manifest, { target = '<name>', dev = null, port = 8790, proxyCommand, tool = 'all', format } = {}) {
+  const eps = Array.isArray(manifest?.[MANIFEST_FIELD]?.endpoints) ? manifest[MANIFEST_FIELD].endpoints : []
+  const models = Array.isArray(manifest?.[MANIFEST_FIELD]?.models) ? manifest[MANIFEST_FIELD].models : []
+  const local = `http://127.0.0.1:${port}`
+  const start = proxyCommand ?? `tapeapi connect ${dev ? `--dev ${sh(dev)}` : sh(target)} --proxy`
+  const modelOf = (f) => (models.find((m) => !m.formats || m.formats.includes(f))?.id ?? '<model>')
+  const sdkHead = dev
+    ? [`import { createTapeAPI, ai } from ${js('@tapeapi/sdk')}`, 'const api = createTapeAPI({ dev: true })   // testing only: the identity is not checked on chain', `const service = await api.resolve({ dev: ${js(dev)} })`]
+    : [`import { createTapeAPI, rpcUrlsFor, ai } from ${js('@tapeapi/sdk')}`, 'const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })', `const service = await api.resolve(${js(target)})`]
+  const out = []
+  const add = (t, f, via, en, zh, lines) => out.push({ tool: t, format: f, via, verifies: via !== 'direct', title: { en, zh }, text: lines.join('\n') })
+  for (const ep of eps) {
+    const f = ep?.format, base = typeof ep?.baseUrl === 'string' ? ep.baseUrl.replace(/\/+$/, '') : null
+    if (!base || (format && format !== f)) continue
+    const m = modelOf(f)
+    if (f === 'openai-chat') {
+      add('openai-sdk', f, 'sdk', 'OpenAI SDK, each receipt checked in your process', 'OpenAI SDK，在你的进程里核验每份回执',
+        [OPENAI_IMPORT, ...sdkHead, 'const fetch = ai.createVerifyingFetch({ api, service })', `const client = new OpenAI({ baseURL: ${js(base)}, apiKey: process.env.API_KEY, fetch })`])
+      add('openai-sdk', f, 'proxy', 'any OpenAI-compatible tool, through the local verifying proxy', '任何 OpenAI 兼容工具，经本地核验代理',
+        [start, `OPENAI_BASE_URL=${local}/v1`])
+      add('curl', f, 'direct', 'curl, direct: not checked here (the receipt is in the x-tapeapi-receipt header)', 'curl 直连：这里不核验（回执在 x-tapeapi-receipt 响应头里）',
+        [`curl -sS -D - ${sh(base + '/chat/completions')} -H "authorization: Bearer $API_KEY" -H 'content-type: application/json' -d ${sh(JSON.stringify({ model: m, messages: [{ role: 'user', content: 'Hi' }] }))}`])
+    } else if (f === 'openai-responses') {
+      add('codex', f, 'proxy', 'Codex (OpenAI Responses), through the local verifying proxy', 'Codex（OpenAI Responses），经本地核验代理',
+        [start, '# ~/.codex/config.toml', '[model_providers.tapeapi]', 'name = "tapeapi-verify (local)"', `base_url = "${local}/v1"`, 'wire_api = "responses"', 'env_key = "API_KEY"'])
+      add('codex', f, 'direct', 'Codex, direct: not checked', 'Codex 直连：不核验', [`OPENAI_BASE_URL=${base}`])
+    } else if (f === 'anthropic-messages') {
+      add('claude-code', f, 'proxy', 'Claude Code (Anthropic Messages), through the local verifying proxy', 'Claude Code（Anthropic Messages），经本地核验代理',
+        [start, `ANTHROPIC_BASE_URL=${local} ANTHROPIC_AUTH_TOKEN="$API_KEY" claude`])
+      add('claude-code', f, 'direct', 'Claude Code, direct: not checked', 'Claude Code 直连：不核验', [`ANTHROPIC_BASE_URL=${base} ANTHROPIC_AUTH_TOKEN="$API_KEY" claude`])
+    } else if (f === 'openai-embeddings') {
+      add('openai-sdk', f, 'sdk', 'OpenAI SDK embeddings, each receipt checked in your process', 'OpenAI SDK 向量，在你的进程里核验每份回执',
+        [OPENAI_IMPORT, ...sdkHead, 'const fetch = ai.createVerifyingFetch({ api, service })', `const client = new OpenAI({ baseURL: ${js(base)}, apiKey: process.env.API_KEY, fetch })`, `await client.embeddings.create({ model: ${js(m)}, input: 'hello' })`])
+    }
+  }
+  return tool && tool !== 'all' ? out.filter((s) => s.tool === tool) : out
+}

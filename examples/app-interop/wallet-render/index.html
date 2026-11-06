@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Wallet render test (experimental)</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --bg: #fafafa; --muted: #5f6368; --line: #d0d4d9; --warn-bg: #fff4d6; --warn-fg: #6b4a00; --card: #ffffff; --ok: #1a7f37; --bad: #b42318; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #e8eaed; --bg: #17181a; --muted: #9aa0a6; --line: #3c4043; --warn-bg: #3d3214; --warn-fg: #f6d58e; --card: #202124; --ok: #6fdc8c; --bad: #ff8a80; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 16px; }
+  .banner { background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-weight: 600; }
+  .banner p { margin: 4px 0; }
+  .banner small { font-weight: 400; }
+  h1 { font-size: 20px; margin: 18px 0 6px; }
+  h2 { font-size: 16px; margin: 0 0 8px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin: 14px 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  label.variant { display: block; padding: 6px 0; cursor: pointer; }
+  button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; margin: 4px 8px 4px 0; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  pre { white-space: pre-wrap; word-break: break-all; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 480px; overflow: auto; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 14px; }
+  .kv span:nth-child(odd) { color: var(--muted); }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  textarea { width: 100%; min-height: 120px; font: 12px ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <div class="banner" role="note">
+    <p>实验性原型，不是 TAP，不发送任何交易。</p>
+    <p>Experimental prototype. Not a TAP. Sends no transaction.</p>
+    <p><small>本页只用 <code>window.ethereum</code> 的三个方法：<code>eth_requestAccounts</code>（只取地址）、<code>eth_chainId</code>（只读链 ID）、<code>eth_signTypedData_v4</code>（签一份类型数据）。不查余额、不发交易、不切换网络、不联网请求任何东西。请只用新建的空钱包。名字 12.7.tape、13.7.tape 是示例，不是真实服务；签出的东西不会被任何服务接受。<br>
+    This page calls three methods of <code>window.ethereum</code> only: <code>eth_requestAccounts</code> (the address), <code>eth_chainId</code> (read), <code>eth_signTypedData_v4</code> (one typed-data signature). No balance, no transaction, no network switch, no network request. Use a new, empty wallet. 12.7.tape and 13.7.tape are example names, not real services; no service accepts what is signed here.</small></p>
+  </div>
+
+  <h1>钱包显示测试：访客授权 v1 / Wallet render test: visitor grant v1</h1>
+  <p class="muted">目的：看钱包怎样显示这份 EIP-712 类型数据——第一行 <code>statement</code> 是否被截断、长字符串与 <code>string[]</code> 数组如何显示、域（name / version / chainId / verifyingContract）是否完整、有没有安全警告。签名本身不用于任何地方。<br>
+  Purpose: see how a wallet shows this EIP-712 typed data — whether the first line (<code>statement</code>) is cut, how long strings and the <code>string[]</code> array are shown, whether the domain is shown in full, and any security warning. The signature is used for nothing.</p>
+
+  <section>
+    <h2>1. 钱包 / Wallet</h2>
+    <div class="kv" id="wallet-facts"><span>window.ethereum</span><span id="has-eth">—</span></div>
+    <p><button id="connect" type="button">连接（只取地址）/ Connect (address only)</button></p>
+    <div class="kv"><span>account</span><span id="account">—</span><span>eth_chainId</span><span id="chain">—</span></div>
+    <p class="muted" id="chain-hint"></p>
+  </section>
+
+  <section>
+    <h2>2. 选择要签的数据 / Choose what to sign</h2>
+    <div id="variants"></div>
+  </section>
+
+  <section>
+    <h2>3. 将要签的完整 JSON / The full JSON about to be signed</h2>
+    <p class="muted">下面就是原样交给钱包的字符串（<code>eth_signTypedData_v4</code> 的第二个参数），<code>message.user</code> 已换成上面连接的账户。签名前请先对照它，再看钱包里显示了什么。<br>
+    Below is the exact string handed to the wallet (the second parameter of <code>eth_signTypedData_v4</code>), with <code>message.user</code> set to the account connected above. Compare it with what the wallet shows.</p>
+    <div class="kv" id="summary"></div>
+    <pre id="json">先连接钱包并选择一项。/ Connect a wallet and choose one first.</pre>
+    <p><button id="sign" type="button" disabled>请钱包签名 / Ask the wallet to sign</button></p>
+  </section>
+
+  <section>
+    <h2>4. 结果 / Result</h2>
+    <p id="status" class="muted">还没有结果。/ No result yet.</p>
+    <textarea id="result" readonly aria-label="result JSON"></textarea>
+    <p><button id="copy" type="button" disabled>复制结果 / Copy result</button> <span id="copied" class="muted"></span></p>
+    <p class="muted">结果里有：页面版本、所选数据、钱包标识（isMetaMask 等）、链 ID、账户、签名或错误、签出的完整字符串。把它和截图一起存档；<code>node examples/app-interop/wallet-render/check-result.mjs 结果文件.json</code>（在仓库根目录） 可在本机核对签名。<br>
+    The result holds the page version, the choice, the wallet's flags, the chain id, the account, the signature or the error, and the exact string signed. Keep it with the screenshots; <code>node examples/app-interop/wallet-render/check-result.mjs result.json</code> (from the repository root) checks the signature locally.</p>
+  </section>
+</main>
+<script src="payloads.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

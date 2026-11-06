@@ -140,9 +140,10 @@ client codes are raised by the SDK (§3.4).
 | `TAPESEND_INVALID` | client | A TAP-10 payload is invalid | no |
 | `COMPARE_PATH_INVALID` | client | One provider's result has no number at a `compare` path | no |
 | `RECEIPT_INVALID` | client | An AI usage receipt is missing or fails a check | no |
-| `BUDGET_EXCEEDED`, `USER_DECLINED` | client | WebMCP spending budget; the user said no | no |
+| `BUDGET_EXCEEDED` | client | WebMCP spending budget. Since 3.0 (experimental) also the client-side budget of your own policy file (`createVerifyingFetch({ policy })`, `tapeapi-verify --policy`, the agent kit's `payer({ budget })`): `data.reason` `budget-cap` with `rule`, `period`, `window`, `limit`, `cap`, `spent`, `worstCase`. Nothing was sent | not until the window moves on or the policy changes |
+| `USER_DECLINED` | client | The user said no | no |
 | `UNSUPPORTED_PAYMENT_TOKEN` | client | Experimental payments only: the escrow's token cannot be used for this payment. `data.reason`: `token-unreadable` (the escrow answers no `token()`), `decimals-unreadable` or `decimals-out-of-range` (no valid `decimals()`, or outside 8 to 18), `not-bem` (manifest prices are in BEM, and this escrow holds another token), `token-mismatch` (not the token you named); `data.escrow`, `data.token` | no |
-| `INVALID_ARGUMENT` | client | Your own options or arguments are wrong | **never** |
+| `INVALID_ARGUMENT` | client | Your own options or arguments are wrong. Since 3.0 (experimental) also a call a client-side budget cannot bound (`data.reason` `budget-no-limit`, `budget-no-price`, `budget-no-currency`, `budget-unreadable-request`, `budget-store-unwritable`); nothing was sent | **never** |
 | `METHOD_NOT_ALLOWED` | provider route, unsigned | HTTP 405: a request other than POST to `/tapeapi/v1/<method>`. The SDK always POSTs; a client that meets it treats it as a transport failure (`PROVIDER_UNAVAILABLE`) | no |
 | `NAME_TAKEN` | WebMCP | In `handle.skipped[].code`: `registerTool` failed, usually because another script on the page already registered that tool name (`reason` says why). Not thrown | after the other tool is gone (`refresh()`) |
 

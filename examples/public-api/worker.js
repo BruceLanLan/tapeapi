@@ -23,7 +23,7 @@ const REQUIRED = ['CIRCUITS', 'TOKEN_ID', 'CONTAINER', 'DELEGATION_EXPIRES', 'DE
 const DEFAULT_RPC_URLS = rpcUrlsFor(56).join(',')
 const configured = (env) => REQUIRED.every((k) => env[k]) && !!env.SIGNER_KEY
 // The MCP endpoint the manifest declares (2.4, experimental): only the tool methods, whose signed results are MCP tool
-// results (TAPI-20 §3.8, TAPs #16 §4.2). /mcp stays the eight REST methods as tools, as before, and is not declared.
+// results (TAPI-20 §3.8, TAP-15 §4.2). /mcp stays the eight REST methods as tools, as before, and is not declared.
 // 清单声明的 MCP 端点（2.4，实验性）：只列工具方法，它们的签名结果就是 MCP 工具结果。/mcp 仍是八个 REST 方法的工具外观，不声明。
 export const MCP_PINNED_PATH = '/mcp/pinned'
 const TOOL_NAMES = new Set(TOOL_MANIFEST_METHODS.map((m) => m.name))
@@ -114,7 +114,7 @@ export function build(env) {
   const timeoutMs = Number(env.RPC_TIMEOUT_MS || 3000)
   const chain = createChainReader({ name: 'bsc', urls: rpcUrls, quorum: 2, lag: 1, timeoutMs })
   const manifest = manifestOf(env)
-  // With MCP_TOOLS_SHA256 set, the tool methods are added and held to it (TAPI-20 §3.8; TAPs #16 §5.1): if a deploy
+  // With MCP_TOOLS_SHA256 set, the tool methods are added and held to it (TAPI-20 §3.8; TAP-15 §5.1): if a deploy
   // changes their tool text (a tool method description, SERVICE_NAME, the case of CONTAINER, the wording of
   // @tapeapi/server or the SDK), they answer a signed TOOLS_CHANGED (409), on /tapeapi/v1 and /mcp/pinned alike, until
   // the holder publishes the new digest; while their tool list cannot be built, they answer TOOLS_CHANGED with current

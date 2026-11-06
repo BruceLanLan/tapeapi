@@ -8,7 +8,7 @@
 # 代码；npm 只下载 SDK 固定版本的三个 @noble 依赖。
 #
 # Without compose / 不用 compose 时:
-#   docker build --build-context sdk=../../sdk --build-context server=../../server -t tapeapi-new-api-sidecar:2.5.0 .
+#   docker build --build-context sdk=../../sdk --build-context server=../../server -t tapeapi-new-api-sidecar:3.0.0 .
 FROM node:22-alpine
 WORKDIR /app
 RUN printf '{"private":true,"type":"module","workspaces":["sdk","server"]}\n' > package.json
@@ -19,6 +19,9 @@ COPY --from=server package.json ./server/package.json
 COPY --from=server src ./server/src
 RUN npm install --omit=dev --no-audit --no-fund --ignore-scripts && npm cache clean --force
 COPY server.mjs ./server.mjs
+# /keys: where a key made on the server is kept (SIGNER_KEY_GENERATE=1; docker-compose.sidecar.yml mounts a volume here),
+# owned by the user the sidecar runs as and readable by it only. / 在服务器上生成的密钥放在这里，只有旁路的运行用户可读。
+RUN mkdir -p /keys && chown node:node /keys && chmod 700 /keys
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080
 USER node
 EXPOSE 8080

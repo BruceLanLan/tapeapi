@@ -80,7 +80,7 @@ test('an independent Python implementation, written from the spec alone, agrees'
   // 这条失败意味着规范有歧义：两个诚实的实现者读了它却得出不同结果。
   // fileURLToPath, not .pathname: a path containing a space arrives percent-encoded otherwise.
   // 用 fileURLToPath 而不是 .pathname：带空格的路径会被百分号编码。
-  const out = execFileSync('python3', [fileURLToPath(new URL('../../spec/vectors/verify.py', import.meta.url))], { encoding: 'utf8' })
+  const out = execFileSync('python3', [fileURLToPath(new URL('../../spec/vectors/verify.py', import.meta.url))], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
   assert.match(out, /^ok: \d+ checks/, out)
 })
 

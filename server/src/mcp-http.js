@@ -62,20 +62,25 @@ function claimedRefusal(h, msg, mismatch, fail) {
   return fail(mcp.JSONRPC.INVALID_PARAMS, `_meta["${mcp.PROTOCOL_VERSION_META}"] is required: the MCP-Protocol-Version header is ${v}`)
 }
 
-// ---- Origin (FIXED MR-8; opt-in) / Origin 校验（选用）----
+// ---- Origin (FIXED MR-8) / Origin 校验 ----
 // Streamable HTTP "Security & Endpoint" 1: servers MUST validate Origin; an invalid one is 403, whose body MAY be a
-// JSON-RPC error without id. Opt-in, so the default (any origin, CORS *) answers byte for byte as before.
-// 选用：默认（任何来源、CORS *）与以前逐字节相同。
+// JSON-RPC error without id. createMcpEndpoint: opt-in, so its default (any origin, CORS *) answers byte for byte as
+// before. createMcpProxy (3.0): on by default, every browser Origin refused until listed; '*' is the 2.x behaviour.
+// createMcpEndpoint 选用：默认（任何来源、CORS *）与以前逐字节相同。createMcpProxy（3.0）默认开启：未列出的浏览器来源一律拒绝；'*' 即 2.x 行为。
 
 /**
- * The `allowedOrigins` option as a Set, or null when it is not given (every origin allowed, as before). Each entry is
+ * The `allowedOrigins` option as a Set, or null for every origin (CORS *): `'*'`, or not given when `byDefault` is
+ * null (createMcpEndpoint). Not given with a `byDefault` Set (createMcpProxy: an empty one) is that Set. Each entry is
  * an exact origin: scheme, host and port, no path (`https://app.example`, `http://localhost:5173`).
+ * / allowedOrigins 选项转成 Set；'*' 或（byDefault 为 null 时）未给出即 null：任何来源。
  * @param {unknown} v
+ * @param {Set<string> | null} [byDefault=null]
  * @returns {Set<string> | null}
  */
-export function allowedOriginsOf(v) {
-  if (v === undefined || v === null) return null
-  if (!Array.isArray(v) || !v.length) throw new TapeAPIError('INVALID_ARGUMENT', 'allowedOrigins must be a non-empty array of origins, e.g. ["https://app.example"]')
+export function allowedOriginsOf(v, byDefault = null) {
+  if (v === undefined || v === null) return byDefault
+  if (v === '*') return null
+  if (!Array.isArray(v) || !v.length) throw new TapeAPIError('INVALID_ARGUMENT', 'allowedOrigins must be \'*\' or a non-empty array of origins, e.g. ["https://app.example"]')
   for (const o of v) {
     let ok = false
     try { ok = typeof o === 'string' && new URL(o).origin === o } catch { /* below / 见下 */ }

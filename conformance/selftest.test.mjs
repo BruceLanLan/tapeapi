@@ -229,7 +229,7 @@ test('CLI: exit 0 + JUnit for a conformant provider, exit 1 for a broken one', a
   const run = (url, junit) => new Promise((resolve) => {
     // spawnSync would block this process's event loop, and with it the in-process provider. / 同步子进程会阻塞本进程里的提供者。
     import('node:child_process').then(({ spawn }) => {
-      const p = spawn(process.execPath, [RUN, '--url', url, '--quiet', '--junit', junit, '--paid-method', 'circuitHolder', '--consumer-key', CONSUMER_KEY, '--session-key', SESSION_KEY])
+      const p = spawn(process.execPath, [RUN, '--url', url, '--quiet', '--junit', junit, '--paid-method', 'circuitHolder', '--consumer-key', CONSUMER_KEY, '--session-key', SESSION_KEY], { timeout: 300_000, killSignal: 'SIGKILL' })
       let out = ''; p.stdout.on('data', (d) => { out += d }); p.stderr.on('data', (d) => { out += d })
       p.on('close', (code) => resolve({ code, out }))
     })
@@ -241,7 +241,7 @@ test('CLI: exit 0 + JUnit for a conformant provider, exit 1 for a broken one', a
   const b = await run(bad, join(dir, 'bad.xml'))
   assert.equal(b.code, 1, b.out); assert.match(b.out, /FAIL  MUST   tapi21\.envelope\.sig-recovers/)
   assert.match(readFileSync(join(dir, 'bad.xml'), 'utf8'), /<failure type="MUST"/)
-  assert.equal(spawnSync(process.execPath, [RUN]).status, 2) // no --url: usage error / 缺 --url：用法错误
+  assert.equal(spawnSync(process.execPath, [RUN], { timeout: 300_000, killSignal: 'SIGKILL' }).status, 2) // no --url: usage error / 缺 --url：用法错误
 })
 
 // Local helpers for the JSON.stringify-canon broken provider. / 供"JSON.stringify 规范化"坏实现使用的本地工具。

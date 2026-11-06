@@ -12,6 +12,9 @@
 //                                       operator does and checks it read-only: no key asked for, nothing paid or sent
 //   tapeapi prices convert|check|show   an entry for examples/new-api-sidecar/pricing-convert.mjs (a checkout only) and
 //                                       a view of a price table and its source record (sdk/src/prices-cli.js)
+//   tapeapi passport <agentId|name|processor#ID>   (3.0) an Agent Passport, read-only (sdk/src/passport-cli.js), with
+//                                       the separate package @tapeapi/passport, loaded here only (also for connect and
+//                                       init with --passport); src/ never imports it
 // tapeapi（实验性）：TapeAPI 命令行的统一入口，不受兼容承诺约束。doctor|verify|mcp 以子进程原样运行现有命令（参数、输出、退出码、
 // 标准输入都不变；分发器自己不写任何字节），原命令名保留。connect 解析一个 AI 服务、显示它，并只为其清单声明的格式给出客户端配置。
 // receipts 列出、查看（离线重放核验）与导出本机回执；reconcile 把回执与账单文件逐行对账。两者只读本机文件、不联网。
@@ -19,7 +22,7 @@
 //
 //   node sdk/bin/tapeapi.js connect 42.1013.tape          (from a checkout / 从检出运行; 42.1013.tape is an example name)
 import { spawn } from 'node:child_process'
-import { readFileSync, realpathSync, existsSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { readFileSync, realpathSync, existsSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join, relative, isAbsolute } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -60,10 +63,12 @@ Usage: tapeapi <command> [arguments]
                        解析一个 AI 服务并显示它，只为其清单声明的格式给出客户端配置；--proxy 随后为它启动 tapeapi-verify
                        an MCP tool service (mcp field): MCP settings, and --proxy starts tapeapi-mcp (experimental)
                        MCP 工具服务（mcp 字段）：给出 MCP 配置，--proxy 启动 tapeapi-mcp（实验性）
-  receipts tail|show|export
+  receipts tail|show|export|statement
                        the receipts saved on this machine: list them, show one and replay its checks offline (against
-                       a manifest snapshot), export them as CSV or JSON. tapeapi receipts --help for the options
-                       本机保存的回执：列出、查看一张并离线重放核验（依据清单快照）、导出为 CSV 或 JSON
+                       a manifest snapshot), export them as CSV or JSON, and (statement, experimental) sum what they
+                       claim per service, model and day, with your caps alongside. tapeapi receipts --help for the options
+                       本机保存的回执：列出、查看一张并离线重放核验（依据清单快照）、导出为 CSV 或 JSON，以及（statement，实验性）
+                       按服务、模型、日期汇总它们声称的数，并列出你的上限
   reconcile            the usage and prices your receipts claim, set row by row against a bill file: match, missing,
                        mismatch, each with its lines; with --requests, --mandate or --policy (experimental) also facts
                        about each request, a mandate's caps and your own limits. tapeapi reconcile --help for the options
@@ -74,6 +79,10 @@ Usage: tapeapi <command> [arguments]
   init                 the operator's wizard, step by step from nothing to live: what you do, where, who pays (you),
                        and a read-only check of it. FORMATS has no default. tapeapi init --help for the steps
                        运营者向导，从零到上线逐步进行：你做什么、在哪里做、谁付钱（你自己），并只读地检查。FORMATS 没有默认值
+  passport <agentId | name | processor#ID>
+                       experimental (3.0): an Agent Passport, read-only, as the open draft TAPs #83 says (needs the
+                       separate package @tapeapi/passport). tapeapi passport --help for its options
+                       实验性：只读地解析 Agent 护照（按未合并的 TAPs #83 草案；需要独立包 @tapeapi/passport）
   prices convert|check|show
                        new-api's price list into the price table (convert, check: the converter in a checkout, as it
                        is) and a view of the table with its source record (show). tapeapi prices --help
@@ -120,9 +129,16 @@ async function main(argv) {
   const [sub, ...rest] = argv
   if (sub && Object.hasOwn(ALIASES, sub)) return exitLike(await runChild(join(BIN_DIR, ALIASES[sub]), rest))
   const cmd = tapeapiCommand()
+  // @tapeapi/passport, only when a passport is asked for (null: not installed). / 只在需要护照时加载（未安装为 null）。
+  const passport = sub === 'passport' || rest.includes('--passport') ? await (await import('./tapeapi-doctor.js')).loadPassport(BIN_DIR) : undefined
+  if (sub === 'passport') {
+    const r = await (await import('../src/passport-cli.js')).runPassport(rest, { cmd, version: VERSION, passport })
+    await new Promise((ok) => process.stdout.write('', ok))
+    return process.exit(r.exitCode)
+  }
   if (sub === 'connect') {
     const { runConnect } = await import('../src/connect-cli.js')
-    const r = await runConnect(rest, { cmd, version: VERSION, verifyBin: join(BIN_DIR, ALIASES.verify), mcpBin: join(BIN_DIR, ALIASES.mcp), runChild })
+    const r = await runConnect(rest, { cmd, version: VERSION, verifyBin: join(BIN_DIR, ALIASES.verify), mcpBin: join(BIN_DIR, ALIASES.mcp), runChild, passport })
     if (r.child) return exitLike(r.child)
     // stdout may be a pipe written asynchronously: let the card reach it before leaving. / stdout 可能是异步写的管道：先让卡片写完再退出。
     await new Promise((ok) => process.stdout.write('', ok))
@@ -138,7 +154,7 @@ async function main(argv) {
     return process.exit(r.exitCode)
   }
   if (sub === 'init' || sub === 'prices') {
-    const host = { readFileSync, readdirSync, statSync, writeFileSync, join, dirname, relative, isAbsolute }
+    const host = { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, join, dirname, relative, isAbsolute }
     let r
     if (sub === 'prices') {
       // The converter is part of a checkout (examples/), not of the package: loaded only when it is there and needed.
@@ -156,7 +172,7 @@ async function main(argv) {
         const rl = createInterface({ input: process.stdin, output: process.stderr })
         try { return await rl.question(q) } finally { rl.close() }
       } : null
-      r = await (await import('../src/init-cli.js')).runInit(rest, { cmd, version: VERSION, host, ask, commands: doctorCommands(howRun(join(BIN_DIR, 'tapeapi-doctor.js'))) })
+      r = await (await import('../src/init-cli.js')).runInit(rest, { cmd, version: VERSION, host, ask, commands: doctorCommands(howRun(join(BIN_DIR, 'tapeapi-doctor.js'))), passport })
     }
     await new Promise((ok) => process.stdout.write('', ok))
     return process.exit(r.exitCode)

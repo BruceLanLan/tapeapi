@@ -3,13 +3,13 @@
 # 调用服务
 
 本指南介绍应用如何找到一个 TapeAPI 服务、调用它，并确认回答是真实的。它使用 `@tapeapi/sdk`，可运行于
-Node 20+、浏览器、DeWEB 站点和 Cloudflare Workers。
+Node 22+、浏览器、DeWEB 站点和 Cloudflare Workers。
 
 ## 1. 试用
 
 ### 一次性准备
 
-这些包尚未发布到 npm，所以要在仓库的克隆里操作（Node.js 20 或更高版本）：
+这些包尚未发布到 npm，所以要在仓库的克隆里操作（Node.js 22 或更高版本）：
 
 ```bash
 git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm install
@@ -18,7 +18,7 @@ git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi && npm instal
 或者只把 SDK 装进你自己的项目，从 GitHub 版本发布页安装（不是 npm 仓库）：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz
 ```
 
 把下面的脚本保存为 `.mjs` 文件，放在能解析到 `@tapeapi/sdk` 的地方，然后用 `node <文件>.mjs` 运行：用克隆时，**放在 `tapeapi`
@@ -98,7 +98,7 @@ TapeOut 名称 `<#ID>.<processor>.tape` 同样从链上读取：处理器编号�
 
 解析出的服务会被缓存；SDK 大约每小时重读一次，并在签名或价格不再匹配时立即重读。`api.refresh(svc)` 可强制重读。
 
-对 AI 服务还有一条命令做同样的解析并把结果展示出来：`tapeapi connect <名字>`（实验性，2.1 新增，不受 2.x 兼容承诺约束）打印服务卡片，
+对 AI 服务还有一条命令做同样的解析并把结果展示出来：`tapeapi connect <名字>`（实验性，2.1 新增，不受兼容承诺约束）打印服务卡片，
 并只为其清单声明的 API 格式给出客户端配置；它不索要任何密钥，也不付款。见
 [接入 AI 服务的“你的用户要做什么”](ai-providers.md#你的用户要做什么)。
 
@@ -120,6 +120,7 @@ try {
 | 错误码 | 含义 | 应对 |
 |---|---|---|
 | `INVALID_ARGUMENT` | 你自己的选项或参数有误（没配 `rpcUrls`、不支持的目标、选项不合法）。没有发出任何请求。 | 改正调用；绝不重试。 |
+| `BUDGET_EXCEEDED` | 你自己的花费预算在发出之前拒绝了这次调用：WebMCP 的，或（3.0，实验性）本地策略文件的（[回执对账](reconcile.md#每次调用之前读同一个文件客户端预算实验性30)）。 | 等窗口过去，或改你的策略。 |
 | `RPC_UNAVAILABLE` | 作答的 RPC 节点少于法定人数。 | 重试；增加节点。 |
 | `RPC_DISAGREE` | 节点返回了不同的字节。 | 重试；若持续出现，说明某个节点落后或在说谎。 |
 | `MANIFEST_INVALID` | 没有清单、清单有误，或其字节与链上不符。 | 该服务没有（正确地）发布。 |
@@ -149,7 +150,7 @@ console.log(q.result, 'agreed by', q.agreed)                  // 否则抛出 Ta
 
 ## 5. 为调用付费
 
-> **实验性。** 付费功能（TAPI-22 付费通道与托管合约）尚未部署、未经审计，不在 1.0 的稳定承诺之内：下面的名字可能在 1.x 的次版本里改变。见[升级到 1.0](upgrade-1.0.md#10-承诺什么)。
+> **实验性。** 付费功能（TAPI-22 付费通道与托管合约）尚未部署、未经审计，不在兼容承诺之内：下面的名字可能在次版本里改变。见[升级到 1.0](upgrade-1.0.md#10-承诺什么)。
 
 免费方法无需任何东西。付费方法需要一张由消费者签名的凭证（[TAPI-22](../../../spec/TAPI-22.md)）：
 
@@ -170,6 +171,11 @@ expires)`），然后改为传入 `{ consumer, sessionKey, sessionExpiry }`。�
 读取代币（小数位从代币读取，绝不假设），用 `formatPaymentAmount(amount, token)` 显示金额。清单价格是 `priceBEM`，所以 SDK 拒绝为托管持有其它代币的服务充值或付费（`UNSUPPORTED_PAYMENT_TOKEN`，`reason` 为 `not-bem`）：
 托管合约本身支持任意准入代币，但清单的多币种定价规范尚未规定，所以 `fund` 对持有 BEM 以外代币的托管一律不构造，无论你声明什么代币，
 即使你已把该托管加入 `allowEscrows`。
+
+没有确认自己托管代币的提供者，以未签名的 HTTP 503 `UNSUPPORTED_PAYMENT_TOKEN` 拒绝付费调用。它没有签名，所以 SDK 报
+`PROVIDER_UNAVAILABLE`（消息里写 `unsigned claim: UNSUPPORTED_PAYMENT_TOKEN`），释放这次调用的预留，不转交回答里的 `data.reason`。
+直接用 HTTP 的客户端能看到原因：`escrow-token-mismatch` 在该提供者实例内一直如此（不要重试），`escrow-no-token` 与
+`escrow-token-unreadable` 在下一次付费调用时重读（[TAPI-22](../../../spec/TAPI-22.md) §3.2 的说明性段落）。
 
 你只付提供者标明的价格：TapeAPI 不在消费者这一侧加任何费用。维护贡献（如果提供者保留它）从提供者的所得中划出
 （[`docs/FEES.md`](../../FEES.md)）。一次付费调用以它所用的托管实例的代币结算：下一版托管计划在 BNB Smart Chain 上首先支持 BEM，USDT 锚定币（Binance-Peg）与 WBNB（包装的 BNB）按需、用同一份字节码（见 [`docs/FEES.md`](../../FEES.md)）。清单里的价格在规范其它代币的写法之前仍以 BEM（`priceBEM`）书写，所以本 SDK 只为持有 BEM 的托管构造付费调用。

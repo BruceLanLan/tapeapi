@@ -562,7 +562,7 @@ test('FIXED L-9: an onError that throws cannot kill the loop or the process', ()
     const link = relayTransport({ api, service: {}, inbound: '${ROOM(1)}', outbound: '${ROOM(2)}', retryMs: 5 })
     link.start(() => {}, { onError: () => { throw new Error('logger failed') } })
     setTimeout(() => { console.log('still alive after ' + calls + ' polls'); link.stop(); process.exit(0) }, 300)`
-  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', cwd: fileURLToPath(new URL('..', import.meta.url)) })
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', cwd: fileURLToPath(new URL('..', import.meta.url)), timeout: 300_000, killSignal: 'SIGKILL' })
   assert.equal(r.status, 0, r.stderr)
   assert.match(r.stdout, /still alive after ([2-9]|\d{2,}) polls/, 'the loop kept retrying')
 })

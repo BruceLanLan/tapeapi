@@ -21,7 +21,8 @@ const container = args.container || process.env.CONTAINER
 const signer = args.signer || process.env.SIGNER
 const hub = args.hub || process.env.HUB || MAINNET.hub
 const chainId = Number(args['chain-id'] || process.env.CHAIN_ID || 56)
-const expires = Number(args.expires || process.env.DELEGATION_EXPIRES || Math.floor(Date.now() / 1000) + 365 * 86400)
+// Without --expires: 30 days from now, as the holder console proposes since 3.0 (it was 365 here) / 不给 --expires：30 天后，同操作台
+const expires = Number(args.expires || process.env.DELEGATION_EXPIRES || Math.floor(Date.now() / 1000) + 30 * 86400)
 
 const die = (m) => { console.error(`error: ${m}`); process.exit(1) }
 for (const [k, v] of Object.entries({ container, signer, hub })) if (!abi.isAddress(v)) die(`--${k} must be a 0x address`)

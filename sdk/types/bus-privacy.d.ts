@@ -1,6 +1,6 @@
 // Read privacy for ChannelBus: busReader with contract-wide reads (default), cover rooms, or plain. See
 // docs/guides/channels.md, "Read privacy". It lowers how easily a node links your IP to your rooms; it does not hide them.
-// The whole subpath is Experimental in 1.0 (review RC-7): options, defaults and stats().privacy may change in a 1.x minor.
+// The whole subpath is Experimental in 1.0 (review RC-7): options, defaults and stats().privacy are outside the compatibility promise and may change in a minor release.
 import type { Address } from './common.js'
 import type { Rpc } from './rpc.js'
 import type { BusOptions, RandomBytes } from './channel.js'

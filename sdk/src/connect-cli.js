@@ -4,6 +4,7 @@
 import { createTapeAPI, rpcUrlsFor, operatorOf, parseTapeName, CHAINS, chainByKey } from './index.js'
 import { redactSecret } from './doctor.js'
 import { connectReport, renderConnect, NOTES, MCP_NOTES, SNIPPET_TOOLS, MCP_SNIPPET_TOOLS, FORMAT_NAMES } from './connect.js'
+import { PASSPORT_MISSING } from './passport-view.js'
 
 const DEFAULT_PORT = 8790
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
@@ -33,12 +34,15 @@ Usage: ${cmd} connect <name> [options]
   --proxy              after the card, run tapeapi-verify for this service (its output as it is; Ctrl-C stops it);
                        for an MCP tool service, tapeapi-mcp instead (stdio; the card goes to stderr, stdout is its JSON-RPC)
   --port <n>           with --proxy: the local port (default ${DEFAULT_PORT})
-  --strict, --log <file>, --request-usage
+  --no-strict, --strict, --log <file>, --request-usage
                        with --proxy: passed to tapeapi-verify as they are
   --rpc <url,url,...>  BNB Chain nodes, at least 2 operators (default: ${rpcUrlsFor(56).length} public nodes of distinct operators)
   --rpc-xlayer <urls>  X Layer nodes      --rpc-base <urls>  Base nodes
   --dev <url>          TESTING ONLY: a local sidecar's manifest, no on-chain identity check (as tapeapi-verify --dev)
   --json               one JSON object on stdout (no --proxy)
+  --passport           experimental (3.0): also show the service's Agent Passport (the open draft TAPs #83; needs the
+                       separate package @tapeapi/passport). It changes nothing about whether the service can be used
+                       实验性：同时显示该服务的 Agent 护照（按未合并的 TAPs #83 草案；需要独立包 @tapeapi/passport）；不改变服务能否使用的判断
   --lang <en|zh|both>  language of the text (default both)
   --no-color           no colors (also: NO_COLOR set, or stdout not a terminal)
   --help
@@ -58,7 +62,7 @@ format the manifest does not declare); 3 could not be read (the chain, or the --
 
 const usage = (en, zh) => Object.assign(new Error(en), { zh })
 export function parseConnectArgs(argv) {
-  const o = { target: null, dev: null, tool: 'all', format: undefined, proxy: false, port: null, strict: false, log: null, requestUsage: false, rpc: null, chainRpc: {}, json: false, lang: 'both', color: true, help: false }
+  const o = { target: null, dev: null, tool: 'all', format: undefined, proxy: false, port: null, strict: false, noStrict: false, log: null, requestUsage: false, rpc: null, chainRpc: {}, json: false, lang: 'both', color: true, help: false, passport: false }
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i], v
     const eq = a.startsWith('--') ? a.indexOf('=') : -1
@@ -73,8 +77,11 @@ export function parseConnectArgs(argv) {
       case '--help': case '-h': o.help = true; break
       case '--proxy': o.proxy = true; break
       case '--strict': o.strict = true; break
+      // 3.0: tapeapi-verify is strict by default; --no-strict is passed on for the 2.x behaviour. / 3.0：tapeapi-verify 默认严格。
+      case '--no-strict': o.noStrict = true; break
       case '--request-usage': o.requestUsage = true; break
       case '--json': o.json = true; break
+      case '--passport': o.passport = true; break
       case '--no-color': o.color = false; break
       case '--log': o.log = value(); break
       case '--dev': o.dev = value(); break
@@ -95,7 +102,8 @@ export function parseConnectArgs(argv) {
   if (!o.target && !o.dev) throw usage('no service: give its TapeOut name, which you get from the provider. The directory https://tapeapi.fun/directory/ lists the providers that registered themselves, in file order: no ranking, no picks', '没有服务：请给出它的 TapeOut 名字，名字从服务方处取得。目录 https://tapeapi.fun/directory/ 按文件顺序列出自己登记的服务方：不排序、不挑选')
   if (o.target && !isTarget(o.target)) throw usage(`${o.target} is not a TapeOut name (42.1013.tape, 1.2.344.tape) or a container address`, `${o.target} 不是 TapeOut 名字（42.1013.tape、1.2.344.tape）或容器地址`)
   if (o.proxy && o.json) throw usage('--json describes the service and starts nothing; --proxy runs tapeapi-verify, whose --log file is the machine-readable output', '--json 只描述服务、不启动任何东西；--proxy 运行 tapeapi-verify，机器可读的输出是它的 --log 文件')
-  for (const [flag, on] of [['--port', o.port !== null], ['--strict', o.strict], ['--log', o.log !== null], ['--request-usage', o.requestUsage]]) {
+  if (o.strict && o.noStrict) throw usage('--strict and --no-strict: give one', '--strict 与 --no-strict 只能给一个')
+  for (const [flag, on] of [['--port', o.port !== null], ['--strict', o.strict], ['--no-strict', o.noStrict], ['--log', o.log !== null], ['--request-usage', o.requestUsage]]) {
     if (on && !o.proxy) throw usage(`${flag} applies with --proxy only`, `${flag} 只与 --proxy 一起使用`)
   }
   for (const [what, list] of [['--rpc', o.rpc], ...Object.entries(o.chainRpc).map(([id, l]) => [`--rpc-${CHAINS[id].key}`, l])]) {
@@ -163,6 +171,14 @@ export const redactOutput = (text, env = process.env, keep = null) => {
  * (write functions), env, isTTY, apiOptions (merged into createTapeAPI's options: tests pass a fake chain's fetch).
  * 运行 tapeapi connect。io 注入打印用的命令写法、版本、verify 路径、子进程运行器、输出、环境与 createTapeAPI 的附加选项（测试用假链）。
  */
+// The passport of the service connect resolved, on BNB Smart Chain, read with connect's own client. / 用 connect 自己的客户端读取。
+async function passportOf(r, mod, api, o) {
+  if (!mod) return { skipped: { en: `not checked: ${PASSPORT_MISSING.en}`, zh: `未检查：${PASSPORT_MISSING.zh}` } }
+  const name = r.service?.tapeName
+  if (o.dev || r.service?.chainId !== 56 || typeof name !== 'string' || !/^[1-9][0-9]*\.(0|[1-9][0-9]*)\.tape$/.test(name)) return { skipped: { en: 'not checked: a passport is read for a TapeOut name on BNB Smart Chain (not --dev)', zh: '未检查：护照只针对 BNB 链上的 TapeOut 名字读取（--dev 不读）' } }
+  return { result: await mod.resolvePassport({ name }, { api }) }
+}
+
 export async function runConnect(argv, io = {}) {
   const { cmd = 'tapeapi', version = '', verifyBin, mcpBin, runChild, env = process.env, apiOptions = {} } = io
   const stdout = io.stdout ?? ((s) => process.stdout.write(s))
@@ -183,9 +199,12 @@ export async function runConnect(argv, io = {}) {
   const api = o.dev ? createTapeAPI({ dev: true, ...apiOptions }) : createTapeAPI({ rpcUrls: o.rpc ?? rpcUrlsFor(56), quorum: 2, chains, conform: 'tap10', ...apiOptions })
   const r = await connectReport(o.target, { api, dev: o.dev, tool: o.tool, format: o.format, port, proxyCommand, version: version || undefined })
   if (r.kind === 'mcp') keep = r.service.mcp.toolsSha256
-  // --port, --strict, --log and --request-usage are tapeapi-verify's: with an MCP tool service they are a usage mistake.
-  // --port、--strict、--log、--request-usage 属于 tapeapi-verify：用于 MCP 工具服务即为用法错误。
-  const verifyOnly = [['--port', o.port !== null], ['--strict', o.strict], ['--log', o.log !== null], ['--request-usage', o.requestUsage]].filter(([, on]) => on).map(([f]) => f)
+  // --passport (3.0, experimental): io.passport is the separate package, loaded by the bin (null: not installed). Shown
+  // beside the card only: the exit code and the snippets stay as the resolution decided. / 只在卡片旁显示，退出码与配置片段不变。
+  if (o.passport) r.passport = await passportOf(r, io.passport, api, o)
+  // --port, --strict, --no-strict, --log and --request-usage are tapeapi-verify's: with an MCP tool service they are a usage mistake.
+  // --port、--strict、--no-strict、--log、--request-usage 属于 tapeapi-verify：用于 MCP 工具服务即为用法错误。
+  const verifyOnly = [['--port', o.port !== null], ['--strict', o.strict], ['--no-strict', o.noStrict], ['--log', o.log !== null], ['--request-usage', o.requestUsage]].filter(([, on]) => on).map(([f]) => f)
   if (r.kind === 'mcp' && verifyOnly.length) {
     say(stderr, `tapeapi connect: ${verifyOnly.join(', ')}: tapeapi-verify's options; this is an MCP tool service, whose --proxy runs tapeapi-mcp\ntapeapi connect: ${verifyOnly.join('、')} 是 tapeapi-verify 的选项；这是 MCP 工具服务，其 --proxy 运行 tapeapi-mcp\nnext: / 下一条命令: ${cmd} connect ${o.dev ? `--dev ${shellWord(o.dev)}` : shellWord(o.target)} --proxy\n`)
     return { exitCode: 2 }
@@ -204,6 +223,7 @@ export async function runConnect(argv, io = {}) {
       tool: 'tapeapi', command: 'connect', version, experimental: true, target, resolution: r.resolution, ok: r.ok, exitCode: r.exitCode, status: r.status,
       reason: L(r.reason), detail: r.detail, service: r.service, formats: r.formats, snippets: r.snippets.map((s) => ({ ...s, title: L(s.title) })),
       notes: Object.fromEntries(Object.entries(r.kind === 'mcp' ? MCP_NOTES : NOTES).map(([k, t]) => [k, L(t)])), next, kind: r.kind,
+      ...(r.passport ? { passport: r.passport.result ? { ...r.passport.result, snapshot: undefined } : { checked: false, why: L(r.passport.skipped) } } : {}),
     }, null, 2) + '\n')
     return { exitCode: r.exitCode }
   }
@@ -211,7 +231,11 @@ export async function runConnect(argv, io = {}) {
   // (where tapeapi-mcp logs) and stdout carries its protocol only. / MCP 工具服务的 --proxy：tapeapi-mcp 在 stdout 上说 JSON-RPC，
   // 所以卡片与启动行写到 stderr（tapeapi-mcp 也在那里记日志），stdout 只有它的协议。
   const mcpProxy = o.proxy && r.kind === 'mcp' && r.exitCode === 0
-  say(mcpProxy ? stderr : stdout, renderConnect(r, { lang: o.lang, color, version, next, nextHint }) + '\n')
+  // The card's day count reads the same clock as the resolution (apiOptions.clock, Unix seconds) when one is given, so
+  // "delegation until ... (N days)" never mixes two clocks (FIXED flaky "89 vs 90 days"); otherwise Date.now as before.
+  // 卡片上的天数与解析用同一个时钟（给了 apiOptions.clock 时），"委托到 ……（N 天）"不再混用两个时钟；否则照旧用 Date.now。
+  const now = typeof apiOptions.clock === 'function' ? apiOptions.clock() : undefined
+  say(mcpProxy ? stderr : stdout, renderConnect(r, { lang: o.lang, color, version, next, nextHint, now }) + '\n')
   if (!o.proxy || r.exitCode !== 0) return { exitCode: r.exitCode }
   if (mcpProxy) {
     const margs = [...(o.rpc ? ['--rpc', o.rpc.join(',')] : []), ...Object.entries(o.chainRpc).flatMap(([id, urls]) => [`--rpc-${CHAINS[id].key}`, urls.join(',')]), ...(o.dev ? ['--dev', o.dev] : [o.target])]
@@ -221,7 +245,7 @@ export async function runConnect(argv, io = {}) {
   }
   // --proxy: tapeapi-verify as it is (the options given, in a fixed order); nothing is written to stderr before it.
   // --proxy：原样运行 tapeapi-verify（按固定顺序传入给出的选项）；在它之前不向 stderr 写任何字节。
-  const args = [...(o.dev ? ['--dev', o.dev] : [o.target]), ...(o.port !== null ? ['--port', String(o.port)] : []), ...(o.strict ? ['--strict'] : []), ...(o.log !== null ? ['--log', o.log] : []), ...(o.requestUsage ? ['--request-usage'] : []),
+  const args = [...(o.dev ? ['--dev', o.dev] : [o.target]), ...(o.port !== null ? ['--port', String(o.port)] : []), ...(o.strict ? ['--strict'] : []), ...(o.noStrict ? ['--no-strict'] : []), ...(o.log !== null ? ['--log', o.log] : []), ...(o.requestUsage ? ['--request-usage'] : []),
     ...(o.rpc ? ['--rpc', o.rpc.join(',')] : []), ...Object.entries(o.chainRpc).flatMap(([id, urls]) => [`--rpc-${CHAINS[id].key}`, urls.join(',')])]
   say(stdout, `\n${o.lang === 'en' ? 'starting tapeapi-verify (Ctrl-C stops it):' : o.lang === 'zh' ? '启动 tapeapi-verify（Ctrl-C 停止）：' : 'starting tapeapi-verify (Ctrl-C stops it) / 启动 tapeapi-verify（Ctrl-C 停止）:'} tapeapi-verify ${args.map(shellWord).join(' ')}\n`)
   return { child: await runChild(verifyBin, args) }

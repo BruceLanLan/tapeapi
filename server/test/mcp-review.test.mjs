@@ -85,30 +85,39 @@ test('FIXED MCP-R5: the logged caller tag is a keyed HMAC of IP|day that brute f
   const lines = []
   const orig = console.log
   console.log = (...a) => lines.push(a.join(' '))
+  // The worker reads the UTC day while it answers; the days just before and just after the request bound it, so a run
+  // that crosses a midnight checks against both days instead of failing (FIXED, flaky day boundary).
+  // worker 在作答时读取 UTC 日期；请求前后各取一次，跨午夜的运行对两天都核对，而不是失败。
+  const dayOf = () => new Date().toISOString().slice(0, 10)
+  const dayBefore = dayOf()
+  let dayAfter
   try {
     const res = await worker.fetch(new Request('https://api.tapeapi.fun/mcp', { method: 'POST', headers: { 'content-type': 'application/json', 'cf-connecting-ip': IP }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) }), env)
     assert.equal(res.status, 200)
     for (let i = 0; i < 20 && !lines.some((l) => l.includes('"evt":"mcp"')); i++) await new Promise((r) => setTimeout(r, 5))
+    dayAfter = dayOf()
   } finally { console.log = orig }
   const caller = JSON.parse(lines.find((l) => l.includes('"evt":"mcp"'))).caller
+  const days = [...new Set([dayBefore, dayAfter])]
   // Whoever reads the logs knows the day and the constant; a /16 takes about a second, all of IPv4 hours on one core.
-  const day = new Date().toISOString().slice(0, 10)
   const enc = new TextEncoder()
-  const tag = async (ip) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(`${ip}|${day}|tapeapi-mcp`))).slice(0, 6), (b) => b.toString(16).padStart(2, '0')).join('')
   let found = null
-  for (let a = 0; a < 256 && !found; a++) {
-    const batch = []
-    for (let b = 0; b < 256; b++) batch.push(`203.0.${a}.${b}`)
-    const tags = await Promise.all(batch.map(tag))
-    const k = tags.indexOf(caller)
-    if (k >= 0) found = batch[k]
+  for (const day of days) {
+    const tag = async (ip) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(`${ip}|${day}|tapeapi-mcp`))).slice(0, 6), (b) => b.toString(16).padStart(2, '0')).join('')
+    for (let a = 0; a < 256 && !found; a++) {
+      const batch = []
+      for (let b = 0; b < 256; b++) batch.push(`203.0.${a}.${b}`)
+      const tags = await Promise.all(batch.map(tag))
+      const k = tags.indexOf(caller)
+      if (k >= 0) found = batch[k]
+    }
   }
   assert.notEqual(found, IP, `the "never the IP itself" caller tag ${caller} was reversed to ${found}`)
   // The tag is exactly HMAC-SHA256(SHA-256("tapeapi-mcp-caller|" + SIGNER_KEY), `${ip}|${day}`), 12 hex characters.
   // 标签正是 HMAC-SHA256(SHA-256("tapeapi-mcp-caller|" + SIGNER_KEY), `${ip}|${day}`) 的前 12 个十六进制字符。
   const k = await crypto.subtle.importKey('raw', await crypto.subtle.digest('SHA-256', enc.encode(`tapeapi-mcp-caller|${key}`)), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const want = Array.from(new Uint8Array(await crypto.subtle.sign('HMAC', k, enc.encode(`${IP}|${day}`))).slice(0, 6), (b) => b.toString(16).padStart(2, '0')).join('')
-  assert.equal(caller, want)
+  const want = await Promise.all(days.map(async (day) => Array.from(new Uint8Array(await crypto.subtle.sign('HMAC', k, enc.encode(`${IP}|${day}`))).slice(0, 6), (b) => b.toString(16).padStart(2, '0')).join('')))
+  assert.ok(want.includes(caller), `caller tag ${caller} is the HMAC of IP|day for ${days.join(' or ')}`)
   assert.match(caller, /^[0-9a-f]{12}$/)
   assert.equal(await callerTag(IP, undefined), undefined, 'no SIGNER_KEY, no caller tag')
 })

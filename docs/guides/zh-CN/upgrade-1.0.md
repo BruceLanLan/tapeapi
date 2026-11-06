@@ -132,9 +132,10 @@
 | `TAPESEND_INVALID` | 客户端 | TAP-10 载荷不合格 | 否 |
 | `COMPARE_PATH_INVALID` | 客户端 | 某个提供者的结果在 `compare` 路径上不是数字 | 否 |
 | `RECEIPT_INVALID` | 客户端 | AI 用量回执缺失或未通过核验 | 否 |
-| `BUDGET_EXCEEDED`、`USER_DECLINED` | 客户端 | WebMCP 花费预算；用户拒绝 | 否 |
+| `BUDGET_EXCEEDED` | 客户端 | WebMCP 花费预算。3.0 起（实验性）也用于你自己策略文件的客户端预算（`createVerifyingFetch({ policy })`、`tapeapi-verify --policy`、agent 套件的 `payer({ budget })`）：`data.reason` 为 `budget-cap`，带 `rule`、`period`、`window`、`limit`、`cap`、`spent`、`worstCase`。没有发出任何请求 | 窗口过去或策略改变之前不要重试 |
+| `USER_DECLINED` | 客户端 | 用户拒绝 | 否 |
 | `UNSUPPORTED_PAYMENT_TOKEN` | 客户端 | 仅限实验性的付费功能：托管合约的代币不能用于这笔付款。`data.reason`：`token-unreadable`（托管没有 `token()`）、`decimals-unreadable` 或 `decimals-out-of-range`（没有有效的 `decimals()`，或不在 8 到 18 之间）、`not-bem`（清单价格以 BEM 计，而这个托管持有别的代币）、`token-mismatch`（不是你指定的代币）；另有 `data.escrow`、`data.token` | 否 |
-| `INVALID_ARGUMENT` | 客户端 | 你自己的选项或参数有误 | **绝不** |
+| `INVALID_ARGUMENT` | 客户端 | 你自己的选项或参数有误。3.0 起（实验性）也包括客户端预算无法给出上界的调用（`data.reason` 为 `budget-no-limit`、`budget-no-price`、`budget-no-currency`、`budget-unreadable-request`、`budget-store-unwritable`）；没有发出任何请求 | **绝不** |
 | `METHOD_NOT_ALLOWED` | 提供者路由，不签名 | HTTP 405：对 `/tapeapi/v1/<方法>` 发了 POST 以外的请求。SDK 总是用 POST；客户端遇到它按传输失败处理（`PROVIDER_UNAVAILABLE`） | 否 |
 | `NAME_TAKEN` | WebMCP | 出现在 `handle.skipped[].code`：`registerTool` 失败，通常是页面上别的脚本已经注册了同名工具（原因见 `reason`）。不抛出 | 那个工具移除后（`refresh()`） |
 

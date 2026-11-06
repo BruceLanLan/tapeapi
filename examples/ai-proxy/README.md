@@ -16,7 +16,7 @@ Test vectors: `sdk/test/fixtures/ai-receipt-vectors.json`.
    可选的 `aliases`（上游报告的其它名称，如带日期的版本）与 `formats`，以及一个 `prices` 列表，每个币种一项（BEM、BNB、USDT、USDC、ETH、
    USD1，或仅作展示的 USD），每项按每百万 token 给出 `input`、`output`，可选 `cacheRead`、`cacheWrite`、`cacheWrite1h`、`reasoning`。
    **价格只是公示，现在不结算**（按 token 结算属于 TAPI-22 的下一个托管版本）。
-3. **每次调用一份签名的用量回执**：模型、各类 token 数、各币种金额、回答是否完整、请求字节的哈希、回应字节的哈希，由链上委托的密钥签成
+3. **每次调用一份签名的用量回执**：模型、各类 token 数、各币种金额、回答是否完整、请求字节的哈希、回答的哈希（流式回答取其事件数据），由链上委托的密钥签成
    TAPI-21 信封（TAPI-21 §3.5）。
 4. **调用方不用改代码**：照旧用官方 SDK（OpenAI、Anthropic），只把 base URL 换成清单里对应格式的端点。`/v1/*` 逐字节透传，流式照常逐块到达。
 
@@ -121,7 +121,7 @@ const claude = new Anthropic({ baseURL: base('anthropic-messages'), apiKey: '<�
 官方 SDK 抛出 `APIError` 且不重试；流式在流结束时让迭代器抛出 `RECEIPT_INVALID`），不静默吞掉；流的每一块照常到达，
 不被延迟。命令行工具（Claude Code 设 `ANTHROPIC_BASE_URL`，Codex 在 `config.toml` 里设 `base_url`）不需要任何改动就能用；它们自己不核验回执：
 可以把它们指向本地核验代理 `tapeapi-verify`，或者事后按 id 取回回执再核验。
-手里只有一份回执时，可以贴到核验页 `https://tapeapi.fun/verify/`：它核对签名、身份和金额；两个哈希绑定的是确切的请求和回应字节，
+手里只有一份回执时，可以贴到核验页 `https://tapeapi.fun/verify/`：它核对签名、身份和金额；两个哈希绑定的是确切的请求字节和回答（回答的字节；流式回答取其事件数据），
 页面没有这些字节，除非你一起贴进去。
 
 ### 局限（请如实对外说明）
@@ -171,7 +171,7 @@ const claude = new Anthropic({ baseURL: base('anthropic-messages'), apiKey: '<�
    display), each giving `input` and `output` per 1M tokens and optionally `cacheRead`, `cacheWrite`, `cacheWrite1h` and
    `reasoning`. **Prices are published, not settled** (per-token settlement belongs to TAPI-22's next escrow version).
 3. **A signed usage receipt for every call**: model, token counts by kind, an amount per currency, whether the answer
-   completed, and the hashes of the request bytes and of the response bytes, signed as a TAPI-21 envelope by the on-chain
+   completed, and the hashes of the request bytes and of the answer (its bytes; for a stream, its event data), signed as a TAPI-21 envelope by the on-chain
    delegated key (TAPI-21 §3.5).
 4. **No code change for callers**: they keep the official SDKs (OpenAI, Anthropic) and only change the base URL to the
    manifest's endpoint for their format. `/v1/*` passes through byte for byte; streams arrive chunk by chunk as before.
@@ -247,7 +247,7 @@ that `complete` is true to the answer, and that the amounts follow the price tab
 are not delayed. Command-line agents (Claude Code with `ANTHROPIC_BASE_URL`, Codex with `base_url` in `config.toml`)
 work unchanged but do not check receipts themselves: point them at the local verifying proxy `tapeapi-verify`, or fetch
 receipts by id and check them later. A single receipt can be pasted into `https://tapeapi.fun/verify/`, which checks the
-signature, the identity and the amounts; the two hashes bind the exact request and response bytes, which the page does
+signature, the identity and the amounts; the two hashes bind the exact request bytes and the answer (its bytes; for a stream, its event data), which the page does
 not have unless you paste them too.
 
 ### Limits (say them plainly)

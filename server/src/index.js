@@ -1,15 +1,17 @@
 // @tapeapi/server：Provider 运行时 / Provider runtime: manifest, health, paid+free method dispatch, signed envelopes.
-import { createRpc, TapeAPIError, validateManifest, safeParseJSON, canonicalJSON, parseUnits, BEM_DECIMALS, METHOD_NAME_RE, abi, sig, usdPricing as UP } from '@tapeapi/sdk'
+import { createRpc, TapeAPIError, validateManifest, safeParseJSON, canonicalJSON, parseUnits, BEM_DECIMALS, METHOD_NAME_RE, abi, sig, usdPricing as UP, MAINNET } from '@tapeapi/sdk'
 
 const { encodeCall, decodeReturn, isAddress, eqAddr, checksumAddress } = abi
-const { voucherDigest, recoverAddress, signResponse, privateKeyToAddress, recoverVoucherSigner } = sig
+const { voucherDigest, recoverAddress, signResponse, privateKeyToAddress, recoverVoucherSigner, recoverResponseSigner } = sig
 // A literal, not a package.json read: `createRequire` is a node:module import, and importing it at module scope
 // would stop this runtime loading on Cloudflare Workers, Deno or a browser. A test asserts the two agree.
 // 写成字面量而不是读 package.json：`createRequire` 属于 node:module，在模块顶层导入会让这套运行时无法在
 // Cloudflare Workers、Deno 或浏览器里加载。有测试断言两者一致。
-export const VERSION = '2.5.0'
+export const VERSION = '3.0.0'
 const now = () => Math.floor(Date.now() / 1000)
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
+// @experimental the marker of ctx.resend(env) / ctx.resend 的标记
+const RESEND = Symbol('tapeapi.resend')
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 // The address a configured client-IP header names, one spelling per address, so one client is one rate-limit key
 // (FIXED IP-CANON: '::FFFF:1.2.3.4', '0:0::ffff:102:304' and '1.2.3.4' were three keys). IPv4 in dotted decimal (no leading
@@ -83,6 +85,9 @@ export function memoryQuoteStore() {
 //                                  某轮只因网络故障且很快失败的链读再问几轮（默认取 SDK 的 2；0 关闭）
 //   dev / allowHttp                接受 http:// 端点（仅开发）/ accept http:// endpoints (development only)
 //   escrow, chainId                覆盖清单里的托管合约与链 / override the manifest's escrow and chain
+//   escrowToken                    托管 token() 的预期值，默认 BSC 上为 BEM；listen() 在不一致时拒绝启动（托管代币核对）
+//                                  the token() the escrow must hold, BEM on BNB Smart Chain by default; listen() refuses to
+//                                  start when it differs (the escrow token check); checkEscrowToken() for a Worker
 //   store                          凭证存储，默认进程内存 / voucher store, in-process memory by default
 //   allowMemoryStore, warn         非 dev 的收费服务用默认内存 store 时会 console.warn（或 warn）；allowMemoryStore: true 表示有意为之
 //                                  a non-dev priced service on the default in-memory store console.warns (or calls
@@ -147,6 +152,7 @@ export function createProvider(opts = {}) {
     }
   }
   const escrow = opts.escrow ?? normalized.payment.escrow
+  if (opts.escrowToken !== undefined && !isAddress(opts.escrowToken)) throw new TapeAPIError('INVALID_ARGUMENT', `opts.escrowToken ${opts.escrowToken} is not an address`)
   const anyPriced = normalized.methods.some((x) => x.priceBEM !== '0')
   const hasEscrow = escrow != null && !eqAddr(escrow, '0x0000000000000000000000000000000000000000')
   if (anyPriced && !hasEscrow && !devMode) throw new TapeAPIError('MANIFEST_INVALID', 'priced methods need a real escrow (payment.escrow or opts.escrow), or createProvider({ dev: true }) for local testing')
@@ -251,6 +257,18 @@ export function createProvider(opts = {}) {
   // `usdPricing` 无效即拒绝启动：那是运营者的清单。
   const tap = UP.validateUsdPricing(manifest, { usdTokens: null })
   const usdMethods = tap ? tap.methods : {}
+  // @experimental (phase 1) opts.enforcement: another backend's payment acceptance ({ name, verifyVoucher(voucher, price) }
+  // returning a lease { consumer, signer, cumulative, commit(), release() }), for a manifest without usdPricing
+  // 另一执行后端的收款核验，只用于不带 usdPricing 的清单
+  if (opts.enforcement !== undefined) {
+    if (typeof opts.enforcement?.name !== 'string' || typeof opts.enforcement.verifyVoucher !== 'function') throw new TapeAPIError('INVALID_ARGUMENT', 'enforcement must be a payment acceptance { name, verifyVoucher(voucher, price) }')
+    if (tap) throw new TapeAPIError('INVALID_ARGUMENT', `enforcement ${opts.enforcement.name} does not apply to a manifest with usdPricing`)
+    // its terms (when it states them) must be this manifest's: payment.escrow names its settlement, it pays this container
+    // 它的条款（若给出）必须与本清单一致：payment.escrow 写的是它的结算合约，收款方是本容器
+    const t = typeof opts.enforcement.terms === 'function' ? opts.enforcement.terms() : null
+    if (t && (!hasEscrow || !eqAddr(t.settlement, escrow))) throw new TapeAPIError('INVALID_ARGUMENT', `enforcement ${opts.enforcement.name} settles on ${t.settlement}; the manifest's payment.escrow must name it (it names ${escrow ?? 'none'})`)
+    if (t && !eqAddr(t.receiver, container)) throw new TapeAPIError('INVALID_ARGUMENT', `enforcement ${opts.enforcement.name} pays ${t.receiver}, not this container ${container}`)
+  }
   const anyUsd = Object.keys(usdMethods).length > 0
   const quoteStore = opts.quoteStore || memoryQuoteStore()
   if (opts.quoteStore && (typeof quoteStore.put !== 'function' || typeof quoteStore.get !== 'function')) throw new TapeAPIError('INVALID_ARGUMENT', 'quoteStore needs put(quote, container) and get(rate, container)')
@@ -325,6 +343,72 @@ export function createProvider(opts = {}) {
   // ---- 链读带缓存 / cached chain reads ----
   const needRpc = () => { if (!rpc) throw new TapeAPIError('INVALID_ARGUMENT', `rpcUrls not configured: pass createProvider({ rpcUrls: rpcUrlsFor(${chainId}) }) (from @tapeapi/sdk) for the default nodes, or your own`); return rpc }
   async function view(to, name, args) { return decodeReturn(name, await needRpc().ethCall(to, encodeCall(name, args))) }
+  // The escrow token check: the escrow's token() must be the token this manifest prices in. A manifest prices in
+  // BEM (payment.unit 'BEM'), so the expected token is BEM on BNB Smart Chain (MAINNET.bem) unless opts.escrowToken names
+  // another (a local chain); on any other chain there is no default and the check is skipped until escrowToken is given.
+  // An escrow of another token would settle every voucher for priceBEM in that token. listen() refuses to start on a
+  // mismatch (dev: a warning in the log); from 3.0 every paid call also waits for it, on any path (paidRefusal below).
+  // Read once per call, strictly; an unreadable token() is reported, never taken for a match.
+  // 托管代币核对：托管的 token() 必须是清单计价的代币。清单以 BEM 计价，BSC 上预期为 BEM，除非 opts.escrowToken 另给（本地链）；其它链没有默认值，
+  // 不给 escrowToken 就跳过。不一致时 listen() 拒绝启动（dev 只在日志里警告）；3.0 起每个付费调用也先等它（见下面的 paidRefusal）。读不到绝不当作一致。
+  const expectedToken = opts.escrowToken ?? (chainId === 56 ? MAINNET.bem : null)
+  async function readEscrowToken() {
+    const base = { escrow: hasEscrow ? checksumAddress(escrow) : null, expected: expectedToken ? checksumAddress(expectedToken) : null, token: null }
+    const skipped = (why) => ({ ...base, status: 'skipped', message: `escrow token() not checked: ${why}` })
+    if (!anyPriced) return skipped('no priced method, nothing is paid')
+    if (!hasEscrow) return skipped('no escrow configured')
+    if (opts.settlementFacts) return skipped('settlementFacts are configured: the settlement contract is not read')
+    if (opts.enforcement) return skipped(`enforcement ${opts.enforcement.name} checks its own channels and token`)
+    if (!rpc) return skipped('no rpcUrls')
+    if (!expectedToken) return skipped(`chain ${chainId} has no default payment token; pass createProvider({ escrowToken })`)
+    let token
+    try { token = await view(escrow, 'escrowToken', []) } catch (e) {
+      const reverted = e instanceof TapeAPIError && e.code === 'RPC_ERROR' && /execution reverted/i.test(e.message)
+      const node = e instanceof TapeAPIError && /^RPC_/.test(e.code) && !reverted
+      if (node) return { ...base, status: 'unreadable', message: `token() of escrow ${base.escrow} could not be read (${e.message}): not checked; it is read again at the next check` }
+      return { ...base, status: 'no-token', message: `escrow ${base.escrow} answers no token() (${reverted ? 'the call reverts' : 'no address came back'}): not a v3 TapeAPIEscrow, so the token it settles in cannot be checked` }
+    }
+    token = checksumAddress(token)
+    if (!eqAddr(token, expectedToken)) return { ...base, token, status: 'mismatch', message: `escrow ${base.escrow} holds ${token}, but this manifest prices its methods in BEM (${base.expected}): a voucher for priceBEM would settle in another token. Name the escrow that holds ${base.expected}, or pass createProvider({ escrowToken }) on a local chain` }
+    return { ...base, token, status: 'ok', message: `escrow ${base.escrow} holds ${token}, the token this manifest prices in` }
+  }
+  // 3.0: the check guards every paid call, on any path (listen(), handleRequest(), invoke()), not only listen(). A definite
+  // answer (ok, skipped, mismatch) is kept for this instance; 'unreadable' and 'no-token' are read again at the next paid
+  // call, so a node outage refuses only while it lasts and a failed read is never kept as ok. Concurrent calls share one read.
+  // 3.0：每个付费调用都受这项核对约束，任何路径都一样（listen()、handleRequest()、invoke()），不只是 listen()。确定的答案（ok、
+  // skipped、mismatch）在本实例内保留；'unreadable' 与 'no-token' 在下一次付费调用时重读：节点故障只在持续期间拒绝，读失败绝不留作 ok。
+  // 同时到达的调用共用一次读取。
+  let tokenKnown = null, tokenReading = null
+  async function readAndKeepEscrowToken() {
+    const r = await readEscrowToken()
+    if (r.status === 'ok' || r.status === 'skipped' || r.status === 'mismatch') tokenKnown = r
+    return r
+  }
+  // The public provider.checkEscrowToken() (and listen()) return the kept answer once there is one, so an explicit call
+  // never replaces it; it reads only while none is kept. / 公开的 checkEscrowToken()（与 listen()）在已有保留的
+  // 答案时直接返回它，显式调用不会替换它；只有尚无保留答案时才读取。
+  const checkEscrowToken = async () => tokenKnown ?? readAndKeepEscrowToken()
+  const escrowTokenNow = () => tokenKnown ?? (tokenReading ??= readAndKeepEscrowToken()
+    .catch((e) => ({ status: 'unreadable', escrow: hasEscrow ? checksumAddress(escrow) : null, token: null, expected: expectedToken ? checksumAddress(expectedToken) : null, message: `escrow token() check failed: ${e?.message ?? e}` }))
+    .then((r) => { tokenDoubt = r.status !== 'ok' && r.status !== 'skipped'; if (tokenDoubt) log(`${r.message}; paid calls are refused until a check succeeds`); return r })
+    .finally(() => { tokenReading = null }))
+  // The last check refused: a call with a voucher is then unverified work, paid for out of the free budget.
+  // 上一次核对是拒绝：此时带凭证的调用是未经验证的工作，从免费预算里扣。
+  let tokenDoubt = false
+  const tokenRefusing = () => !devMode && tokenDoubt && tokenKnown?.status !== 'ok' && tokenKnown?.status !== 'skipped'
+  const TOKEN_REASON = { mismatch: 'escrow-token-mismatch', 'no-token': 'escrow-no-token', unreadable: 'escrow-token-unreadable' }
+  // null: the paid call may go on; otherwise an unsigned 503 to answer (nothing signed, nothing billed). Not in dev, as before.
+  // The message is generic (a node error can name a node URL); the details are in the log.
+  // null 表示付费调用可以继续；否则返回未签名的 503（不签名、不计费）。dev 下不检查，与以前相同。对外消息不带细节（节点错误可能含节点地址），细节在日志里。
+  async function paidRefusal() {
+    if (devMode) return null
+    const tok = await escrowTokenNow()
+    if (tok.status === 'ok' || tok.status === 'skipped') return null
+    const message = tok.status === 'mismatch'
+      ? `this provider's escrow ${tok.escrow} holds ${tok.token}, not the token its manifest prices in (${tok.expected}): it takes no payment`
+      : `this provider could not confirm the token its escrow ${tok.escrow} holds (${tok.status}): it takes no payment until it can`
+    return { status: 503, unsigned: { ok: false, error: { code: 'UNSUPPORTED_PAYMENT_TOKEN', message, data: { reason: TOKEN_REASON[tok.status], escrow: tok.escrow, token: tok.token, expected: tok.expected } } }, paid: false, refused: 'escrow-token' }
+  }
   const cache = new Map()
   function sweep() { // 过期淘汰，避免随 consumer 数无限增长（M-14）/ evict expired entries so the map cannot grow unbounded
     if (cache.size < cacheMax) return
@@ -514,6 +598,10 @@ export function createProvider(opts = {}) {
     })
   }
 
+  // @experimental (phase 1) The payment acceptance: the enforcement backend whose vouchers this provider takes. Without
+  // opts.enforcement it is the TAPI-22 escrow channel above, unchanged. / 本服务接受哪种执行后端的凭证；不给即上面的托管通道，不变
+  const acceptance = opts.enforcement ?? { name: 'escrow-channel', verifyVoucher }
+
   // ---- @experimental voucher checks of the TAP draft §5.2, for a service with `usdPricing` ----
   // The 1.8.1 verifyVoucher above stays as it is for every other manifest. Same serialisation, reservations, store and
   // reconciliation with the amount paid; in addition: the checks run in the draft's order and each refusal names its
@@ -646,6 +734,28 @@ export function createProvider(opts = {}) {
     return { req: { id, method, params }, paramsError }
   }
 
+  // @experimental ctx.resend(env): only an ok envelope this provider signed over this very request (id, method, params),
+  // and never on a call that carries a voucher lease. Anything else is INTERNAL (generic outward).
+  // 只重发本服务对同一请求签过的成功信封，且不用于带凭证的调用；否则 INTERNAL。
+  function resendable(env, { id, method, params }, lease) {
+    const bad = (why) => new TapeAPIError('INTERNAL', `ctx.resend: ${why}`)   // invoke()'s catch releases any lease / 由 invoke 的 catch 释放租约
+    if (lease) throw bad('a priced call is never answered with a saved envelope')
+    if (!isPlainObject(env) || env.ok !== true || env.id !== id || !eqAddr(env.container, container) || !Number.isInteger(env.ts) || typeof env.sig !== 'string') throw bad('not an ok envelope of this provider for this id')
+    let who = null
+    try { who = recoverResponseSigner({ container, id, method, params, ok: true, body: env.result, ts: env.ts }, env.sig) } catch { /* below */ }
+    if (!who || !eqAddr(who, signerAddr)) throw bad('the envelope is not this provider\'s signature over this request')
+    return env
+  }
+  function deepFreeze(v) { if (v && typeof v === 'object') { for (const x of Object.values(v)) deepFreeze(x); Object.freeze(v) } return v }
+
+  // @experimental see ctx.request in invoke() / 见 invoke() 里的 ctx.request
+  function requestView(body) {
+    const rest = {}
+    for (const [k, v] of Object.entries(isPlainObject(body) ? body : {})) if (k !== 'method' && k !== 'params') rest[k] = v
+    const freeze = (v) => { if (v && typeof v === 'object') { for (const x of Object.values(v)) freeze(x); Object.freeze(v) } return v }
+    return freeze(JSON.parse(JSON.stringify(rest)))
+  }
+
   // 执行一次调用（不含 HTTP）/ Execute one call (transport-agnostic).
   // `ip` is the caller identity the HTTP layer vouches for. A return of { rateLimited: seconds } means "answer with an
   // unsigned 429", never an envelope. / `ip` 由 HTTP 层给出；返回 { rateLimited } 表示回未签名的 429，而不是信封。
@@ -679,7 +789,20 @@ export function createProvider(opts = {}) {
       const price = def ? parseUnits(def.priceBEM || '0', BEM_DECIMALS) : 0n
       if (price === 0n) { const w = spendFree(); if (w) return { rateLimited: w } }
       if (!def) throw new TapeAPIError('METHOD_NOT_FOUND', `unknown method ${method.slice(0, 64)}`)
-      const ctx = { consumer: null, block, manifest, method: def, price, clientIp: ip }
+      // @experimental ctx.request: a frozen JSON copy of the request's top-level members other than
+      // `method` and `params` (its `id`, a `voucher` if sent, and any member TAP-13 does not define, such as `grant`), for
+      // the experimental package @tapeapi/interop. Read-only for the handler; nothing the provider signs or bills changes.
+      // ctx.request：请求顶层成员（method、params 之外）的冻结 JSON 副本，供 @tapeapi/interop 使用；签名与计费不变。
+      const ctx = { consumer: null, block, manifest, method: def, price, clientIp: ip, request: requestView(body) }
+      // @experimental for @tapeapi/interop (a lost answer retried with the same id): ctx.onSigned(fn) is told the
+      // signed envelope of THIS call (a frozen JSON copy) once it has passed every check and is about to be sent;
+      // ctx.resend(env) answers with an envelope this provider signed earlier for this very request (same id, method,
+      // params), byte for byte: not signed again, not billed again, and only on a free call.
+      // ctx.onSigned(fn)：本次调用的已签信封各项检查都成功、即将发出时告知（冻结副本）；ctx.resend(env)：原样重发本服务此前对同一请求
+      // （同 id、method、params）签过的信封，不重签、不再计费，只用于免费调用。
+      const signedHooks = []
+      ctx.onSigned = (fn) => { if (typeof fn === 'function') signedHooks.push(fn) }
+      ctx.resend = (env) => ({ [RESEND]: env })
       if (price > 0n) {
         // An IP that has spent its free budget AND keeps presenting vouchers that fail is refused before the costly
         // part (signature recovery, uncached chain reads). A paying consumer whose vouchers verify is never affected.
@@ -687,12 +810,21 @@ export function createProvider(opts = {}) {
         if (rl && overBudget(`fail:${ip}`, FAIL_BUDGET) && overBudget(`free:${ip}`, rl.free)) return { rateLimited: retryAfter(`fail:${ip}`) }
         if (!body.voucher) {
           const w = tap ? (rl ? rateLimited(`quote:${ip}`, rl.quote) : 0) : spendFree(); if (w) return { rateLimited: w }
+          // 3.0: no price is offered while the escrow's token is not confirmed / 托管代币未确认时不报价
+          const refused = await paidRefusal(); if (refused) return refused
           if (!tap) throw new TapeAPIError('PAYMENT_REQUIRED', `${def.name} costs ${def.priceBEM} BEM per call`, { data: { price: price.toString() } })
           // @experimental draft §6: price (at the current quote), priceUSD and quote, and minVoucherLifeS when this provider has one
           const usd = usdOf(def)
           throw new TapeAPIError('PAYMENT_REQUIRED', usd ? `${def.name} costs ${usd} USD per call, at most ${def.priceBEM} BEM` : `${def.name} costs ${def.priceBEM} BEM per call`, { data: { ...(await priceHints(def, price)), ...(minVoucherLifeS > 0 ? { minVoucherLifeS } : {}) } })
         }
-        try { lease = tap ? await verifyVoucherTap(body.voucher, def, price) : await verifyVoucher(body.voucher, price) }
+        // A call with a voucher refused for the escrow token is unverified work like any other (TAPI-21 §3.4): it spends the
+        // free budget, and once that is spent no further token() read is made for it. The first paid call of
+        // an instance is never held back by it. / 因托管代币被拒的带凭证调用同样是未经验证的工作：扣免费预算，预算用完后不再为它读 token()。
+        // 实例的第一个付费调用不受此影响。
+        if (rl && tokenRefusing() && overBudget(`free:${ip}`, rl.free)) return { rateLimited: retryAfter(`free:${ip}`) }
+        const refused = await paidRefusal()   // 3.0, before any voucher is checked / 在验凭证之前
+        if (refused) { const w = spendFree(); return w ? { rateLimited: w } : refused }
+        try { lease = tap ? await verifyVoucherTap(body.voucher, def, price) : await acceptance.verifyVoucher(body.voucher, price) }
         catch (e) { if (rl) { rateLimited(`fail:${ip}`, Infinity); rateLimited(`free:${ip}`, Infinity) } throw e }
         verified = true
         ctx.consumer = lease.consumer; ctx.voucherSigner = lease.signer; ctx.cumulative = lease.cumulative
@@ -711,6 +843,7 @@ export function createProvider(opts = {}) {
       try { result = await Promise.race([methods[def.name](params, ctx), timeout]) } finally { clearTimeout(timer) }
       // Lapsed while the handler ran: sign nothing and bill nothing (arch A3) / 处理期间过期：不签名、不计费
       if (delegationLapsed()) { if (lease) lease.release(); return { status: 503, unsigned: lapsedError(), paid: false } }
+      if (result !== null && typeof result === 'object' && hasOwn(result, RESEND)) return { status: 200, env: resendable(result[RESEND], req, lease), paid: false }
       // @experimental draft §5.3 / §7: a priced result is an object and carries the charge record; a method that returns
       // anything else, or uses the member `charge` itself, is answered INTERNAL and charges nothing.
       // 计价结果是对象并带计费记录；返回别的、或自己用了 `charge` 成员的方法答 INTERNAL，不收费。
@@ -725,6 +858,10 @@ export function createProvider(opts = {}) {
       // Nor is a result too large to send (TAPI-21 §3.2, 1 MiB) / 超过 1 MiB 发不出去的结果也不收钱
       if (utf8Length(JSON.stringify(env)) > RESPONSE_LIMIT) throw new TapeAPIError('INTERNAL', `response of ${def.name} exceeds ${RESPONSE_LIMIT} bytes`)
       if (lease) await lease.commit()   // bill only for a delivered result / 交付了结果才计费
+      if (signedHooks.length) {
+        const copy = deepFreeze(JSON.parse(JSON.stringify(env)))
+        for (const fn of signedHooks) { try { await fn(copy) } catch (e) { log('ctx.onSigned hook failed (the answer is sent anyway)', e) } }
+      }
       return { status: 200, env, paid: verified }
     } catch (e) {
       if (lease) lease.release()        // the caller is not charged for a failed call / 失败的调用不计费
@@ -809,7 +946,7 @@ export function createProvider(opts = {}) {
   }
   const overBudget = (key, budget) => { const b = buckets.get(key); return !!b && Date.now() < b.reset && b.n >= budget }
   const retryAfter = (key) => { const b = buckets.get(key); return b ? Math.max(1, Math.ceil((b.reset - Date.now()) / 1000)) : 1 }
-  const stats = { singleInstance, started: Math.floor(Date.now() / 1000), calls: 0, ok: 0, failed: 0, free: 0, paid: 0, rateLimited: 0, delegationLapsed: 0, byMethod: Object.create(null), byCode: Object.create(null) }
+  const stats = { singleInstance, started: Math.floor(Date.now() / 1000), calls: 0, ok: 0, failed: 0, free: 0, paid: 0, rateLimited: 0, delegationLapsed: 0, escrowTokenRefused: 0, byMethod: Object.create(null), byCode: Object.create(null) }
   // health 只暴露 signer、版本与服务参数；委托过期后 ok 为 false（arch A3）/ signer, version and serving parameters; ok is false once the delegation lapsed
   const health = () => ({ ok: !delegationLapsed(), signer: signerAddr, version: VERSION, minVoucherLifeS, delegationExpires: delegationExpires(), rateLimit: rl ? { windowMs: rl.windowMs, free: rl.free, paid: rl.paid, ip: rl.ip } : null })
   const bump = (o, k) => { o[k] = (o[k] || 0) + 1 }
@@ -884,7 +1021,7 @@ export function createProvider(opts = {}) {
       out = { status: 500, env: envelope(bindingOf(body, m[1]).req, false, { code: 'INTERNAL', message: 'internal error' }, lastBlock), paid: false }
     }
     if (out.rateLimited) return tooMany(out.rateLimited)
-    if (out.unsigned) { stats.delegationLapsed++; return json(out.status, out.unsigned) }   // lapsed mid-request / 请求途中过期
+    if (out.unsigned) { if (out.refused) stats.escrowTokenRefused++; else stats.delegationLapsed++; return json(out.status, out.unsigned) }   // lapsed mid-request, or (3.0) the escrow token unconfirmed / 请求途中过期，或托管代币未确认
     const { status, env } = out
     stats.calls++
     bump(stats.byMethod, m[1])
@@ -899,6 +1036,11 @@ export function createProvider(opts = {}) {
   // `node:http` 在这里导入而不是在模块顶层，因此运行时的其余部分在任何有 fetch 的地方都能加载。
   // listen() 是唯一的 Node 专用入口；Workers 用 handleRequest()。
   async function listen(port = 0, host = '127.0.0.1') {
+    // The escrow token check: refuse to start on an escrow of another token; anything else that kept the check from answering is said
+    // 托管代币核对：托管代币不对就拒绝启动；其它没能核对的情况写进日志
+    const tok = await checkEscrowToken()
+    if (tok.status === 'mismatch' && !devMode) throw new TapeAPIError('UNSUPPORTED_PAYMENT_TOKEN', tok.message, { reason: 'escrow-token-mismatch', escrow: tok.escrow, token: tok.token, expected: tok.expected })
+    if (tok.status !== 'ok' && tok.status !== 'skipped') log(`${tok.message}${tok.status === 'mismatch' ? ' (dev: starting anyway)' : ''}`)
     const { default: http } = await import('node:http')
     server = http.createServer(handler)
     // A request gets 30 s end to end, headers 15 s, instead of Node's 300 s default: a drip-fed body otherwise holds a
@@ -953,5 +1095,5 @@ export function createProvider(opts = {}) {
   }
   const settleTx = (v) => ({ to: escrow, data: encodeCall('settle', [v.consumer, v.provider, BigInt(v.cumulative), BigInt(v.expires), v.sig]), value: '0x0' })
 
-  return { handler, handleRequest, listen, close, invoke, stats: () => ({ ...stats, byMethod: { ...stats.byMethod }, byCode: { ...stats.byCode }, uptimeS: Math.floor(Date.now() / 1000) - stats.started, delegationExpires: delegationExpires() }), pendingSettlements, dueSettlements, settleTx, contribution, currentBlock, manifest, container, signer: signerAddr, escrow, chainId, store, rpc, version: VERSION, get server() { return server } }
+  return { handler, handleRequest, listen, close, invoke, stats: () => ({ ...stats, byMethod: { ...stats.byMethod }, byCode: { ...stats.byCode }, uptimeS: Math.floor(Date.now() / 1000) - stats.started, delegationExpires: delegationExpires() }), pendingSettlements, dueSettlements, settleTx, contribution, currentBlock, checkEscrowToken, manifest, container, signer: signerAddr, escrow, chainId, store, rpc, version: VERSION, get server() { return server } }
 }

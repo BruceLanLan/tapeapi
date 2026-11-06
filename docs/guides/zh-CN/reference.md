@@ -8,11 +8,11 @@
 
 ## 2.0 新增
 
-**DEFAULT SINCE 2.0** · TAP-10 v1.1 §3–§7 · TAP-11 §2（Draft）· `conform: false` 弃用，2.x 内保留
+**DEFAULT SINCE 2.0** · TAP-10 v1.1 §3–§7 · TAP-11 §2（Draft）· `conform: false` 弃用，3.x 内保留
 
 2.0 只有一个主题：我们向 TapeOut 官方 TAP 流程提交的规则，以及 TapeOut 自己规定的规则，就是你什么都不传时 SDK 的行为。1.4 起这些规则以可选的 `conform: 'tap10'` 提供；2.0 把它变成默认。**线上格式一个字节都不变：**2.0 的客户端照样核验所有 1.x 的清单、委托、签名回答和回执。TAP-10 与 TAP-11 还是 Draft，默认按一条规则跟随它们的文本：放宽与新增状态名在 2.x 次版本里生效，收紧先作为可选 profile、默认到 3.0 才切。**一个已知例外：**不开 `allChains` 时，形如 `0x…#4246` 的"处理器合约#ID"会被拒绝（`data.status: 'unsupported'`，这是 TapeAPI 自己的名字），而 TAP-11 §2.1 要求接受它；传 `allChains: true` 即按 TAP-10 §4.1 读遍所有链解析（会同时访问 Base 与 X Layer 的节点）。
 
-TAP-11（服务清单与持有人委托）和 TAP-13（签名响应）是我们起草、提交的草稿，编辑已把两份合并进官方仓库，状态是 Draft；合并为 Draft 不等于被采纳。另有 5 份针对 TapeAPI 规范部分内容的草稿（TAP-14 至 TAP-18）也已合并为 Draft，还有 7 份已提交（评审中）。要 1.x 的行为，传 `conform: false`（已弃用，整个 2.x 保留）。
+TAP-11（服务清单与持有人委托）和 TAP-13（签名响应）是我们起草、提交的草稿，编辑已把两份合并进官方仓库，状态是 Draft；合并为 Draft 不等于被采纳。另有 5 份草稿在 2026-11-03 合并为 Draft（TAP-14 至 TAP-18），7 份已提交（评审中）。要 1.x 的行为，传 `conform: false`（已弃用，整个 3.x 保留，最早 4.0 才移除）。
 
 ```js
 const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })                  // 2.0：TAP-10 / TAP-11 §2
@@ -51,7 +51,7 @@ const local = createTapeAPI({ rpcUrls: ['http://127.0.0.1:8545'], allowSingleNod
 
 ### 2.0 的其它变化
 
-- **私密通道与群聊用新标签**：默认使用 TAPI-26 v2 与 TAPI-27 v2：标签以 `tape-channel/`、`tape-group/` 开头，这是 TAPs 编辑在合并草稿 #12、#20 之前提出的要求。`labels: 'v1'` 选用第 1 版（2.x 内弃用、不删除）。两版不互通，不一致时超时或报出明确的版本不一致，绝不失败放行。
+- **私密通道与群聊用新标签**：默认使用 TAPI-26 v2 与 TAPI-27 v2：标签以 `tape-channel/`、`tape-group/` 开头，这是 TAPs 编辑在评审草稿 #12（现为 TAP-14）、#20 时提出的要求。`labels: 'v1'` 选用第 1 版（2.x 内弃用、不删除）。两版不互通，不一致时超时或报出明确的版本不一致，绝不失败放行。
 - **命令行跟着变**：`tapeapi-verify`、`tapeapi-mcp`、`tapeapi-doctor` 写明用了哪种解析，加 `--no-conform` 回到 1.x；默认下 doctor 对未激活的名字判为失败。
 - **代理工具包按 TAP-11 §2 解析**：不给 `resolve` 时，`createAgentKit`（实验性）按 TAP-11 §2 解析代理与服务方。
 - **清理 1.0 的遗留**：`TapeAPIError` 去掉弃用的顶层别名（读 `e.data.*`）；通道模块把调用方自己的参数错误报为 `INVALID_ARGUMENT`。
@@ -66,11 +66,11 @@ const local = createTapeAPI({ rpcUrls: ['http://127.0.0.1:8545'], allowSingleNod
 
 ## 实验性功能
 
-**EXPERIMENTAL · NOT DEPLOYED。**2.0 首次公开三项实验性功能：有界代理、美元报价、容器间评价。**边界：**它们依赖的托管合约（TAPI-22）未经审计、未部署，主网不可用，今天只在本地链与测试中可以验证，也不收任何费用。它们不受 2.x 兼容承诺约束。
+**EXPERIMENTAL · NOT DEPLOYED。**2.0 首次公开三项实验性功能：有界代理、美元报价、容器间评价。**边界：**它们依赖的托管合约（TAPI-22）未经审计、未部署，主网不可用，今天只在本地链与测试中可以验证，也不收任何费用。它们不受兼容承诺约束。
 
 ### 有界代理
 
-`@tapeapi/sdk/agent` · 托管合约未审计、未部署 · 主网不可用 · 只在本地链与测试中验证 · 今天不收费 · 不受 2.x 兼容承诺约束
+`@tapeapi/sdk/agent` · 托管合约未审计、未部署 · 主网不可用 · 只在本地链与测试中验证 · 今天不收费 · 不受兼容承诺约束
 
 1.7 的阶段 0 只记录谁可以替哪个容器做哪件任务，什么都不强制执行。有界代理是阶段 1：代理可以替容器花钱，而容器最多会亏多少，由托管合约算死、可在链上核对。电路持有人为代理可以付费的每个服务各充值一条托管通道，把一把只为这份授权书生成的钥匙授权为这些通道上的会话钥匙，有效期到授权书到期。**钥匙泄露或代理作恶，损失最多是放进这些通道的钱，而且只能付给授权书点名的服务。**
 
@@ -87,7 +87,7 @@ node --test examples/agent-service/agent-service-spend.test.mjs
 cd contracts && forge test --match-path 'test/Phase1*'
 ```
 
-**如实说明。**它依赖的托管合约（TAPI-22）未经审计、未在任何链上部署，SDK 内置的可信托管合约列表是空的，所以在主网上不可用，今天也不收费。阶段 1 的 TAP 草稿已提交为 TapeOutProtocol/TAPs#60（目前转为 draft PR），规定托管接口的 Standards 草稿已提交为 #59（评审中）。
+**如实说明。**它依赖的托管合约（TAPI-22）未经审计、未在任何链上部署，SDK 内置的可信托管合约列表是空的，所以在主网上不可用，今天也不收费。阶段 1 的 TAP 草稿已提交为 TapeOutProtocol/TAPs#60（已提交，目前转为 draft PR），规定托管接口的 Standards 草稿已提交为 #59（评审中）。
 
 ### 美元报价、BEM 结算
 
@@ -97,7 +97,7 @@ TAP 草稿 #52（已提交，评审中）的参考实现。清单可以用美元
 
 ### 容器之间的评价
 
-`@tapeapi/sdk/review` · 实验性，边界同上：托管合约未审计、未部署，主网不可用，只在本地链与测试中可以验证；今天不收费；不受 2.x 兼容承诺约束。
+`@tapeapi/sdk/review` · 实验性，边界同上：托管合约未审计、未部署，主网不可用，只在本地链与测试中可以验证；今天不收费；不受兼容承诺约束。
 
 TAP 草稿 #54（已提交，评审中）的参考实现。评价由评价方的持有人或其委托的密钥签名，有证据才计入：评价方收到过的签名回答，或两个容器之间的任务线程。汇总只数不同的评价方与持有人，从不按金额加权；`tapeapi-verify review <名字>` 打印出来。
 
@@ -107,7 +107,7 @@ TAP 草稿 #54（已提交，评审中）的参考实现。评价由评价方的
 - **MCP 工具 · 1.0**：结果带签名和回执，工具定义的哈希钉在链上。[MCP 指南](mcp.md)
 - **对 TapeOut 官方 TAP-10 的一致模式 · 1.4–1.5**：以可选的 `conform: 'tap10'` 提供，2.0 起成为默认。
 - **流式 AI 回执与可核验的用量 · 1.5–1.6**：被截断或被追加内容的流不再被判为已核验；可选的 `requestUsage` 让流式 Chat 的用量也进入签名。[流式用量](ai-providers.md#流式-chat-的用量三条路)
-- **容器代理，阶段 0 · 1.7–1.8**：授权书、任务线程、只读的付款核验；1.8 按草稿 #47 收紧核验，钉块读取。[容器代理指南](container-agents.md)
+- **容器代理，阶段 0 · 1.7–1.8**：授权书、任务线程、只读的付款核验；1.8 按草稿 #47（现为 TAP-18）收紧核验，钉块读取。[容器代理指南](container-agents.md)
 - **标准即默认 · 2.0**：按 TAP-10 与 TAP-11 §2 解析成为默认；通道与群聊默认用新标签（1.8.1 起可选）；有界代理首次公开（实验性：托管合约未审计、未部署，主网不可用，只在本地链与测试中可用，今天不收费）。
 
 完整记录见[更新日志](../../../CHANGELOG.md)。
@@ -146,7 +146,7 @@ TAPI-26 v2 · TAPI-27 v2。两个容器之间的端到端加密通道：双方�
 
 ### 容器代理与有界代理
 
-实验性。阶段 0（1.7）：持有人签授权书，代理接任务、交付，委托方验收，付款是一笔任何人都能核验的普通转账，不强制执行。有界代理（2.0）：写了金额的授权书由托管通道限住，代理最多能花多少可在链上核对；托管合约未审计、未部署，主网不可用，只在本地链与测试中可用，今天不收费。`@tapeapi/sdk/agent` 不受 2.x 兼容承诺约束。[有界代理](#有界代理)
+实验性。阶段 0（1.7）：持有人签授权书，代理接任务、交付，委托方验收，付款是一笔任何人都能核验的普通转账，不强制执行。有界代理（2.0）：写了金额的授权书由托管通道限住，代理最多能花多少可在链上核对；托管合约未审计、未部署，主网不可用，只在本地链与测试中可用，今天不收费。`@tapeapi/sdk/agent` 不受兼容承诺约束。[有界代理](#有界代理)
 
 ## 多链
 
@@ -229,7 +229,7 @@ console.log(r.result.bnbUsd, r.agreed)
 
 ## 实验性：付费通道
 
-**EXPERIMENTAL · NOT DEPLOYED** · TAPI-22 · 未审计 · 不在 2.x 的稳定承诺内 · 部署前须经独立审计 · 主网不可用，只在本地链与测试中可以验证 · 今天不收费
+**EXPERIMENTAL · NOT DEPLOYED** · TAPI-22 · 未审计 · 不在兼容承诺内 · 部署前须经独立审计 · 主网不可用，只在本地链与测试中可以验证 · 今天不收费
 
 付费调用的设计：调用方离线签发累计凭证，钱进一条只属于这个服务的托管通道，服务方攒够了再上链结算一次，调用本身不花 gas。合约代码和测试在仓库里，但**没有部署**；下面的数字是本地实测，只说明这个设计的成本。送审的托管合约计划首先托管 BEM（USDT 锚定币与 WBNB 按需）；2.0 另有实验性的美元报价、BEM 结算（TAPI-22 §3.6，草稿 #52），同样不收任何费用。
 
@@ -245,7 +245,7 @@ gas 为本地实测；法币按 BNB 753 美元、BSC 0.05 gwei 换算。
 
 **关于摊销。**一次结算 0.0034 美元。若每 1000 次调用结算一次，单价 0.001 BEM 时 gas 占收入 3.35%，0.01 BEM 时占 0.34%。gas 不是定价的约束，服务方的边际成本才是。
 
-[2.0 承诺什么（稳定、实验性、内部），以及从 1.x 升级](upgrade-2.0.md)
+[3.0 改了什么、保留什么，以及从 2.x 升级](upgrade-3.0.md) · [2.0 承诺过什么（稳定、实验性、内部），以及从 1.x 升级](upgrade-2.0.md)
 
 ## 路线图
 
@@ -255,10 +255,10 @@ gas 为本地实测；法币按 BNB 753 美元、BSC 0.05 gwei 换算。
 |---|---|---|
 | DONE | 1.0：接口稳定 | SDK 与规范的接口冻结：TAPI-20、21、23、26、27 为 Stable (v1)，测试数据由独立的 Python 验证器核对。1.0 起遵循语义化版本，破坏性修改只在大版本。 |
 | DONE | 1.4–1.6：对齐官方 TAP，核验收紧 | 可选的 TAP-10 一致模式；规范改名 TAPI，向官方 TAP 流程提交草稿；修了 1.0 至 1.4 里流式 AI 回执核验可被截断绕过的缺陷（AI 辅助的对抗式审查，不是第三方审计）；流式用量可核验。 |
-| DONE | 1.7–1.8：容器代理，阶段 0 | 实验性的 `@tapeapi/sdk/agent`、`tapeapi-verify task` 与 `examples/agent-service`，不强制执行、不需要新合约；1.8 按草稿 #47 收紧核验；1.8.1 把通道与群聊的新标签作为选项提供。 |
-| DONE | 2.0：标准即默认 | 不传选项就按 TAP-10 与 TAP-11 §2 解析；通道与群聊默认用 `tape-channel/`、`tape-group/` 标签；`conform: false` 与 `labels: 'v1'` 整个 2.x 保留。同一版首次公开有界代理、美元报价与评价（都是实验性的：托管合约未审计、未部署，主网不可用，只在本地链与测试中可用，今天不收费）。 |
-| NEXT | 官方 TAP 评审 | 7 份草稿已合并为 Draft（TAP-11、TAP-13、TAP-14 至 TAP-18）；合并为 Draft 不等于被采纳。另有 7 份已提交（评审中）：#20、#28、#49、#52、#54、#59、#60（目前转为 draft PR）。后续修改 #51、#53、#55、#56 已合并；#89 至 #101 已提交（评审中）。编辑给其余草稿分配编号后我们改引用。 |
-| NEXT | 托管接口的 Standards TAP 与有界代理草稿 | 两份都已提交：规定托管接口的 Standards 草稿为 TapeOutProtocol/TAPs#59，有界代理（阶段 1）的草稿为 #60；#59 在评审中，#60 目前转为 draft PR。 |
+| DONE | 1.7–1.8：容器代理，阶段 0 | 实验性的 `@tapeapi/sdk/agent`、`tapeapi-verify task` 与 `examples/agent-service`，不强制执行、不需要新合约；1.8 按草稿 #47（现为 TAP-18）收紧核验；1.8.1 把通道与群聊的新标签作为选项提供。 |
+| DONE | 2.0：标准即默认 | 不传选项就按 TAP-10 与 TAP-11 §2 解析；通道与群聊默认用 `tape-channel/`、`tape-group/` 标签；`conform: false` 与 `labels: 'v1'` 整个 2.x 保留（`conform: false` 整个 3.x 也保留）。同一版首次公开有界代理、美元报价与评价（都是实验性的：托管合约未审计、未部署，主网不可用，只在本地链与测试中可用，今天不收费）。 |
+| NEXT | 官方 TAP 评审 | 7 份草稿已合并为 Draft（TAP-11、TAP-13、TAP-14 至 TAP-18；合并为 Draft 不等于被采纳），7 份已提交（评审中：#20、#28、#49、#52、#54、#59、#60，#60 目前转为 draft PR），后续修改 #51、#53、#55（TAP-11）与 #56（TAP-13）已于 2026-11-03 合并，另有 13 份小修改（#89 至 #101）已提交（评审中）。拿到编号的草稿按编号称呼，其余仍按拉取请求号称呼，直到编辑给它们编号。 |
+| NEXT | 托管接口的 Standards TAP 与有界代理草稿 | 两份都已提交：规定托管接口的 Standards 草稿为 TapeOutProtocol/TAPs#59，有界代理（阶段 1）的草稿为 #60，均已提交，#60 目前转为 draft PR。 |
 | NEXT | npm 包 | `@tapeapi/sdk` 与 `@tapeapi/server`。今天 SDK 与服务端包都从 GitHub Release 安装。 |
 | AFTER AUDIT | 有界代理与付费调用上主网 | 两者都依赖托管合约（TAPI-22）。托管合约要先完成独立审计才会部署，首个实例计划托管 BEM。在此之前所有调用都免费，有界代理只在本地链与测试中可用。 |
 | LATER | 容器代理阶段 2：支出金库 | 让代理在限额内调用白名单上的合约，并能立即撤销。需要新合约和独立审计。 |
@@ -278,8 +278,9 @@ gas 为本地实测；法币按 BNB 753 美元、BSC 0.05 gwei 换算。
 | [TAPI-27 v2](../../../spec/TAPI-27-v2.md) | 容器间的私密群聊，`tape-group/` 标签；2.0 起为默认 | Stable (v2) |
 | [TAPI-26](../../../spec/TAPI-26.md) | 私密通道第 1 版，冻结的 `TAP-26/` 标签；2.x 中用 `labels: 'v1'` | Stable (v1) |
 | [TAPI-27](../../../spec/TAPI-27.md) | 私密群聊第 1 版，冻结的 `TAP-27/` 标签；2.x 中用 `labels: 'v1'` | Stable (v1) |
+| [TAPI-28](../../../spec/TAPI-28.md) | 容器应用之间的访客授权：互通原型的格式，供独立实现被调用方一侧；不是 TAP，不在兼容承诺之内，不在已发布的包里 | Experimental |
 
-**这些是 TapeAPI 自己的规范，不是 TAP。**TAPI-1 与 TAPI-20 至 TAPI-27 是 TapeAPI 自己的文档名；TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 编号。我们就其中部分内容提交了 14 份 TAP 草稿。其中 7 份已合并为 Draft（合并不等于被采纳）：服务身份与清单为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)），签名响应为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（Draft，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)），以及 2026-11-03 合并的私密通道 [TAP-14](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-14.md)（[#12](https://github.com/TapeOutProtocol/TAPs/pull/12)）、MCP 工具绑定 [TAP-15](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-15.md)（[#16](https://github.com/TapeOutProtocol/TAPs/pull/16)）、多家交叉验证读取 [TAP-16](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-16.md)（[#18](https://github.com/TapeOutProtocol/TAPs/pull/18)）、AI 用量回执 [TAP-17](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-17.md)（[#26](https://github.com/TapeOutProtocol/TAPs/pull/26)）、容器代理阶段 0 [TAP-18](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-18.md)（[#47](https://github.com/TapeOutProtocol/TAPs/pull/47)）。其余 7 份已提交（评审中），尚无编号：私密群聊 [#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、证明核验读取 [#28](https://github.com/TapeOutProtocol/TAPs/pull/28)、清单里的代理成员 [#49](https://github.com/TapeOutProtocol/TAPs/pull/49)、付费凭证 [#52](https://github.com/TapeOutProtocol/TAPs/pull/52)、容器间评价 [#54](https://github.com/TapeOutProtocol/TAPs/pull/54)、托管通道 [#59](https://github.com/TapeOutProtocol/TAPs/pull/59)、容器代理阶段 1 [#60](https://github.com/TapeOutProtocol/TAPs/pull/60)（目前转为 draft PR）。另有 1 份 Information 草稿 [#61](https://github.com/TapeOutProtocol/TAPs/pull/61)（隐私地图），已提交（评审中）。对 TAP-11 的 [#51](https://github.com/TapeOutProtocol/TAPs/pull/51)、[#53](https://github.com/TapeOutProtocol/TAPs/pull/53)、[#55](https://github.com/TapeOutProtocol/TAPs/pull/55) 与对 TAP-13 的 [#56](https://github.com/TapeOutProtocol/TAPs/pull/56) 已合并；另外 13 个修改 [#89](https://github.com/TapeOutProtocol/TAPs/pull/89) 至 [#101](https://github.com/TapeOutProtocol/TAPs/pull/101) 已提交（评审中）。编辑审的是格式而不是方案本身。TAPI-20 至 TAPI-27（含 TAPI-26、TAPI-27 的第 2 版）仍是 2.x 兼容性承诺的依据。规范中英双语，以英文为准。
+**这些是 TapeAPI 自己的规范，不是 TAP。**TAPI-1 与 TAPI-20 至 TAPI-28 是 TapeAPI 自己的文档名；TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑按 TAP-01 编号。我们就其中部分内容提交了 14 份 TAP 草稿。7 份已合并为 Draft（合并不等于被采纳）：服务身份与清单 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)）、签名响应 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)），以及 2026-11-03 合并的私密通道 [TAP-14](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-14.md)（[#12](https://github.com/TapeOutProtocol/TAPs/pull/12)）、MCP 工具绑定 [TAP-15](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-15.md)（[#16](https://github.com/TapeOutProtocol/TAPs/pull/16)）、多家交叉验证读取 [TAP-16](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-16.md)（[#18](https://github.com/TapeOutProtocol/TAPs/pull/18)）、AI 用量回执 [TAP-17](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-17.md)（[#26](https://github.com/TapeOutProtocol/TAPs/pull/26)）、容器代理阶段 0 [TAP-18](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-18.md)（[#47](https://github.com/TapeOutProtocol/TAPs/pull/47)）。其余 7 份已提交（评审中）：私密群聊 [#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、证明核验读取 [#28](https://github.com/TapeOutProtocol/TAPs/pull/28)、清单里的代理成员 [#49](https://github.com/TapeOutProtocol/TAPs/pull/49)、付费凭证 [#52](https://github.com/TapeOutProtocol/TAPs/pull/52)、容器间评价 [#54](https://github.com/TapeOutProtocol/TAPs/pull/54)、托管通道 [#59](https://github.com/TapeOutProtocol/TAPs/pull/59)、容器代理阶段 1 [#60](https://github.com/TapeOutProtocol/TAPs/pull/60)（目前转为 draft PR）。另有 1 份 Information 草稿 [#61](https://github.com/TapeOutProtocol/TAPs/pull/61)（隐私地图），已提交（评审中）。后续修改已于 2026-11-03 合并：对 TAP-11 的 [#51](https://github.com/TapeOutProtocol/TAPs/pull/51)（删去对 `TAP-26/` 标签的提及）、[#53](https://github.com/TapeOutProtocol/TAPs/pull/53)（两句澄清）、[#55](https://github.com/TapeOutProtocol/TAPs/pull/55)（参考实现更新，加一条以 `resolved` 结束的主网向量），对 TAP-13 的 [#56](https://github.com/TapeOutProtocol/TAPs/pull/56)（参考实现一节里一句过时的话）。另有 13 份小修改 [#89](https://github.com/TapeOutProtocol/TAPs/pull/89) 至 [#101](https://github.com/TapeOutProtocol/TAPs/pull/101) 已提交（评审中）。编辑审的是格式而不是方案本身。TAPI-20 至 TAPI-27（含 TAPI-26、TAPI-27 的第 2 版）仍是兼容承诺的依据。规范中英双语，以英文为准。
 
 ## 状态
 

@@ -333,7 +333,7 @@ for f in sys.argv[1:]:
     on = d.get('on', d.get(True))
     out[f] = {'jobs': sorted(d['jobs']), 'on': sorted(on), 'permissions': d['permissions'], 'cron': [c['cron'] for c in (on.get('schedule') or [])]}
 print(json.dumps(out))
-`, join(ROOT, '.github/workflows/directory-recheck.yml'), join(ROOT, '.github/workflows/ci.yml')], { encoding: 'utf8' })
+`, join(ROOT, '.github/workflows/directory-recheck.yml'), join(ROOT, '.github/workflows/ci.yml')], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
   if (py.status !== 0) { t.skip(`PyYAML not available: ${(py.stderr || '').trim().split('\n').pop()}`); return }
   const out = Object.values(JSON.parse(py.stdout))
   assert.deepEqual(out[0], { jobs: ['recheck'], on: ['schedule', 'workflow_dispatch'], permissions: { contents: 'write' }, cron: ['17 3 * * *'] })

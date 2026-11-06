@@ -97,12 +97,16 @@ import { sha256 } from '@noble/hashes/sha256'
 import { bytesToHex } from '@noble/hashes/utils'
 import { TapeAPIError } from './errors.js'
 import { recoverResponseSigner } from './sig.js'
+import { canonicalJSON } from './canon.js'
 import { isAddress, eqAddr } from './abi.js'
 import { toBase64Url, fromBase64Url } from './mcp.js'
 import { openaiChat } from './ai-openai-chat.js'
 import { openaiResponses } from './ai-openai-responses.js'
 import { anthropicMessages } from './ai-anthropic-messages.js'
 import { openaiEmbeddings } from './ai-openai-embeddings.js'
+import { createBudget } from './budget.js'
+// @experimental (3.0) the client-side budget, re-exported for @tapeapi/sdk/ai / 实验性：客户端预算，经 @tapeapi/sdk/ai 公开
+export { createBudget, budgetFileStore, memoryBudgetStore } from './budget.js'
 
 /**
  * The manifest field that carries { endpoints: [{ format, baseUrl }], models: [{ id, formats?, price }] } (TAPI-20
@@ -737,6 +741,43 @@ export function readSseReceipt(text) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Receipt references and the price basis (a proposal, experimental: not part of TAPI-21 or of any TAP; see the CHANGELOG, 3.0)
+// 回执引用与价格依据（提案，实验性：不属于 TAPI-21 或任何 TAP；见更新日志 3.0）
+// ---------------------------------------------------------------------------------------------------------------
+const utf8Bytes = (s) => new TextEncoder().encode(s)
+
+/**
+ * @experimental (3.0, proposal) The price basis of a receipt: SHA-256 (64 lowercase hex) of the canonical JSON (TAPI-21 §3.3)
+ * of the price table `models` of a manifest's `ai` field, reduced to the members TAPI-20 §3.9 defines (validateAIField's
+ * copy: id, aliases, formats, prices; and per price currency, unit and the price members it has). A sidecar created with
+ * `priceRef: true` signs it into every receipt's result as `priceRef`. Throws MANIFEST_INVALID for a field that does not
+ * validate. / 回执的价格依据：清单 ai 字段的价目表 models（只保留 TAPI-20 §3.9 定义的成员）的规范 JSON 的 SHA-256。
+ * @param {object} field  manifest[MANIFEST_FIELD]
+ */
+export function priceRefOf(field) {
+  return sha256Hex(utf8Bytes(canonicalJSON(validateAIField(field, { allowHttp: true }).models)))
+}
+
+/**
+ * @experimental (3.0, proposal) The receipt reference: SHA-256 (64 lowercase hex) of the canonical JSON of the envelope's eight
+ * members (id, ok, container, ts, method, params, result, sig), with `container` and `sig` in lowercase and the
+ * signature's v as 27 or 28. Any other top-level member is not part of the receipt and is left out, so the same signed
+ * receipt has one reference however it was serialised or carried (header, SSE comment, the `receipt` method). It
+ * identifies a receipt; it proves nothing until the receipt itself is verified (verifyUsageReceipt). Throws
+ * RECEIPT_INVALID for an envelope that is not shaped as a usage receipt. / 回执引用：信封八个成员的规范 JSON 的 SHA-256；
+ * 同一份签名回执无论如何序列化、经哪条路径送达，引用都相同。它只是标识，回执本身核验成功之前什么也不证明。
+ */
+export function receiptRef(envelope) {
+  const p = envelopeProblems(envelope)
+  if (p.length) throw new TapeAPIError('RECEIPT_INVALID', `not a usage receipt: ${p[0]}`)
+  let s = envelope.sig.toLowerCase()
+  const v = s.slice(130)
+  if (v === '00' || v === '01') s = s.slice(0, 130) + (v === '00' ? '1b' : '1c')
+  const { id, ok, ts, method, params, result } = envelope
+  return sha256Hex(utf8Bytes(canonicalJSON({ id, ok, container: envelope.container.toLowerCase(), ts, method, params, result, sig: s })))
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // Verification / 核验
 // ---------------------------------------------------------------------------------------------------------------
 const sameJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b)
@@ -784,6 +825,8 @@ export function envelopeProblems(env) {
   if (r.modelMatchedBy !== undefined && typeof r.model !== 'string') p.push('result.modelMatchedBy needs a model')
   if (r.unpriced !== undefined && !(Array.isArray(r.unpriced) && r.unpriced.length && r.unpriced.every((k) => typeof k === 'string' && METHOD_RE.test(k)) && r.prices !== null)) p.push('result.unpriced must be a non-empty list of names, only with prices')
   if (r.usageInjected !== undefined && r.usageInjected !== true) p.push('result.usageInjected must be true when present')
+  // Proposal (experimental): the price basis, priceRefOf. / 提案：价格依据。
+  if (r.priceRef !== undefined && (typeof r.priceRef !== 'string' || !HEX64.test(r.priceRef))) p.push('result.priceRef must be 64 lowercase hex when present')
   if (!(r.status >= 200 && r.status < 300) && (r.usage !== null || r.prices !== null)) p.push('a failed call (status outside 2xx) carries usage null and prices null')
   return p
 }
@@ -959,6 +1002,13 @@ export function verifyUsageReceipt({ envelope, manifest, requestBytes, responseB
   if (r.complete === false && r.status >= 200 && r.status < 300) warnings.push(`the answer did not complete (no final success event); it is ${r.prices ? 'priced from the usage it reported' : 'not priced'}`)
   // Amount / 金额
   if (field) problems.push(...priceProblems(field, r, format?.name))
+  // Proposal (experimental): a receipt that names its price basis says whether this manifest's table is the one that priced
+  // it. A different basis explains an amount problem; it never excuses one. / 提案：回执写明价格依据时，说明本清单的价目表
+  // 是不是给它定价的那一版。依据不同可以解释金额问题，但绝不抵消它。
+  if (field && r.priceRef !== undefined) {
+    const here = priceRefOf(field)
+    if (here !== r.priceRef) warnings.push(`the receipt was priced under another version of the price table (priceRef ${r.priceRef.slice(0, 16)}…, this manifest's table ${here.slice(0, 16)}…): check it against the manifest of its time`)
+  }
   if (field && r.prices === null && r.usage && typeof r.model === 'string' && !modelEntryOf(field.models, r.model, format?.name)) warnings.push(`model ${r.model.slice(0, 80)} is not in the manifest's price table`)
   if (r.unpriced) warnings.push(`billed per use and not priced by the table: ${r.unpriced.join(', ')}`)
   // Freshness / 时效
@@ -1214,6 +1264,34 @@ async function bodyBytes(url, init) {
   return { bytes: new Uint8Array(await req.arrayBuffer()), contentType: req.headers.get('content-type') }
 }
 
+// What the budget needs to know of a call before it is sent (3.0): the names its requested model goes by, its worst
+// case per currency (maxAmountOf, every price of the model's entry) with the request's size in bytes as the prompt bound
+// and its declared output limit, and the hash of the bytes sent (the receipt that answers it carries it).
+// 预算在发出前需要知道的：请求模型的各个名字、按币种的最坏情况（提示 token 上界取请求字节数，补全取声明的输出上限）、发出字节的哈希。
+/** @internal (3.0) used by tapeapi-verify --policy. */
+export function budgetCallOf(s, format, bytes) {
+  const base = { kind: 'ai', container: s.container ?? s.manifest?.container ?? null, format: format.name, promptTokens: bytes.length, requestSha256: sha256Hex(bytes) }
+  let body = null
+  try { body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) } catch { body = null }
+  if (!isObj(body)) return { ...base, models: null, worstCase: null, completionTokens: null }
+  let models = []
+  try { models = validateAIField(s.manifest?.[MANIFEST_FIELD], { allowHttp: s.verified?.dev === true }).models ?? [] } catch { models = [] }
+  const entry = modelEntryOf(models, body.model, format.name)
+  let completion = completionLimitOf(body, format)
+  // Fail closed where the declared limit is not one an upstream is sure to apply (review BR-3): a limit of 0 (a relay
+  // written in Go drops a zero max_tokens as unset, so the upstream answers without a limit), and an `n` that is not a
+  // whole number of at least 1 (completionLimitOf counts it as 1). / 声明的上限上游未必照办时失败即拒绝：上限为 0、n 不是 ≥1 的整数。
+  if (format.name !== 'openai-embeddings' && completion === 0) completion = null
+  if (format.name === 'openai-chat' && body.n !== undefined && body.n !== null && !(Number.isSafeInteger(body.n) && body.n >= 1)) completion = null
+  // A Responses call that continues stored state: the earlier turns are billed as input but are not in the bytes, so
+  // the bytes bound nothing (review BR-3). / 接着服务端状态的 Responses 调用：先前的轮次计入输入却不在字节里。
+  const promptTokens = format.name === 'openai-responses' && ((body.previous_response_id ?? null) !== null || (body.conversation ?? null) !== null) ? null : bytes.length
+  const names = [...new Set([body.model, entry?.id, ...(entry?.aliases ?? [])].filter((x) => typeof x === 'string' && x))]
+  const worstCase = !entry || !Array.isArray(entry.prices) ? null
+    : completion === null || promptTokens === null ? {} : Object.fromEntries(entry.prices.map((p) => [p.currency, maxAmountOf(p, { promptTokens, completionTokens: completion })]))
+  return { ...base, promptTokens, models: names, worstCase, completionTokens: completion }
+}
+
 /**
  * A fetch for an official SDK that takes one (e.g. `new OpenAI({ baseURL, fetch })`, baseURL an `ai` endpoint of the
  * manifest). Strict: a whole answer whose receipt fails becomes an HTTP 502 in the request format's error shape (code
@@ -1263,9 +1341,28 @@ async function bodyBytes(url, init) {
  *        于字节里把该成员设为 true 再发出。旁路随之不注入、不剥离，用量块成为应用收到的、被签名的流的一部分（应用多看到一个
  *        choices: [] 的块，与它自己设 include_usage 时相同），回执的用量像整体回答一样与之比对。不能这样改写的正文：strict 在发送前抛
  *        INVALID_ARGUMENT；否则原样发出，报告写 usageRequestSkipped。报告随之带 usageRequested。它不证明上游自己的计数：签名方同时产出流。
+ * @param {object} [o.policy]  @experimental (3.0) a local policy file's value ({ tapeapiPolicy: 1, rules }, the file
+ *        `tapeapi reconcile --policy` reads): a call to an endpoint of the manifest is refused BEFORE it is sent when its
+ *        worst case (maxAmountOf over completionLimitOf and the request's size in bytes) would take a covering rule over
+ *        its cap, counting what the verified receipts already claim and the worst case of calls sent without one
+ *        (budget.js, createBudget): BUDGET_EXCEEDED, or INVALID_ARGUMENT when the call cannot be bounded (no output
+ *        limit, no price-table entry, no price in the rule's currency); whatever `strict` says. Verified receipts are
+ *        recorded in `budgetStore`. A client-side convenience: nobody else can rely on it, and it bounds the prices the
+ *        receipts claim, not what anyone pays. Off unless given.
+ *        实验性：本地策略文件；发往清单端点的调用在发出之前按最坏情况核对上限，超出即拒绝（不论 strict）。只是客户端的便利，
+ *        别人无法依赖它；它限制回执声称的价格，不是任何人实际付的钱。不给就不开启。
+ * @param {object} [o.budgetStore]  @experimental (3.0) with `policy`: where the calls are recorded ({ read(), append(text) };
+ *        budgetFileStore(path, fs) for a file, mode 600); default memory (a restart forgets) / 记录调用的存储，默认内存
+ * @param {object} [o.budget]  @experimental (3.0) a createBudget(...) shared with other fetches or the agent kit's limiter,
+ *        in place of `policy` / 与其它 fetch 或 agent 套件限额器共用的预算，代替 policy
  */
-export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport, strict = true, maxSkewS = 300, formats = FORMATS, salt = true, requestUsage = false } = {}) {
+export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport, strict = true, maxSkewS = 300, formats = FORMATS, salt = true, requestUsage = false, policy, budgetStore, budget } = {}) {
   const doFetch = fetchImpl || ((...a) => globalThis.fetch(...a))
+  // The client-side budget (3.0, experimental; off unless policy or budget is given). / 客户端预算（默认关闭）。
+  if (policy !== undefined && budget !== undefined) throw new TapeAPIError('INVALID_ARGUMENT', 'createVerifyingFetch: give policy or budget, not both')
+  if (budgetStore !== undefined && policy === undefined) throw new TapeAPIError('INVALID_ARGUMENT', 'createVerifyingFetch: budgetStore applies with policy only')
+  const bud = budget !== undefined ? budget : policy !== undefined ? createBudget({ policy, store: budgetStore }) : null
+  if (bud && (typeof bud.admit !== 'function' || typeof bud.receipt !== 'function')) throw new TapeAPIError('INVALID_ARGUMENT', 'createVerifyingFetch: budget must come from createBudget()')
   // Only true turns it on (1.6; off by default, so 1.x sends and reports exactly what it did). / 只有 true 开启（默认关）。
   const askUsage = requestUsage === true
   let svc = isObj(service) && isObj(service.manifest) ? service : null
@@ -1276,7 +1373,7 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
     resolving ??= api.resolve(service).then((s) => { svc = s; return s }).finally(() => { resolving = null })
     return resolving
   }
-  const report = (r) => {
+  const reportTo = (r) => {
     if (onReport) { try { onReport(r) } catch { /* the reporter's own failure is not the call's / 回调自己的错误不影响调用 */ } }
     else if (!r.ok && !strict && r.problems.length) console.warn('[tapeapi/ai] usage receipt problem:', r.problems.join('; '))
   }
@@ -1315,6 +1412,16 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
   }
 
   return async function verifyingFetch(input, init = {}) {
+    // The budget's open call (its request hash): the first report that verifies its receipt records it, once.
+    // 预算里这次调用（按请求哈希）：第一份核验成功的报告记下它的回执，只记一次。
+    let owed = null
+    const report = (r) => {
+      reportTo(r)
+      if (owed && r.ok === true && isObj(r.receipt) && String(r.receipt.params?.requestSha256 ?? '').toLowerCase() === owed) {
+        owed = null
+        bud.receipt(r.receipt).catch(() => { /* the budget warns itself / 预算自己会提示 */ })
+      }
+    }
     const s = await current()
     if (!s.verified || (s.verified.delegation !== true && s.verified.dev !== true)) throw new TapeAPIError('DELEGATION_INVALID', 'the service must come from api.resolve(): its signer is only trustworthy once the delegation has been verified')
     const endpoints = endpointsOf(s)
@@ -1431,6 +1538,21 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
       const more = saltRequestBody(requestBytes, h)
       if (more) { requestBytes = more; salted = true; h.delete('content-length'); sendInit.headers = h; sendInit.body = more }
     }
+    // The budget (3.0): the call is checked against the policy's caps on the bytes about to be sent, and written down
+    // as sent, before anything leaves; a refusal is thrown whatever `strict` says (it is the caller's own cap).
+    // 预算：按即将发出的字节核对策略上限并记为已发出，然后才发送；拒绝时不论 strict 都抛出（这是调用方自己的上限）。
+    let admitted = null
+    // A definite failure that claims nothing (an HTTP 4xx or 5xx with no receipt) releases the call's worst case; a
+    // timeout, a broken connection or a receipt that does not verify does not. / 确定的、不声称任何数的失败才撤下最坏情况。
+    const release = (why, status) => { if (admitted) { const a = admitted; admitted = null; bud.release(a, { why, status }).catch(() => { /* the budget warns itself */ }) } }
+    if (bud) {
+      const call = budgetCallOf(s, format, requestBytes)
+      try { admitted = await bud.admit(call) } catch (e) {
+        report({ ok: false, budget: e?.data ?? null, problems: [`not sent: ${e?.message ?? e}`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: 0, salted, ...asked })
+        throw e
+      }
+      owed = call.requestSha256
+    }
     const res = await doFetch(url, sendInit)
     const type = (res.headers.get('content-type') || '').toLowerCase()
     const common = { requestBytes, path: rel, status: res.status }
@@ -1442,12 +1564,14 @@ export function createVerifyingFetch({ api, service, fetch: fetchImpl, onReport,
         let why = ''
         try { why = String(JSON.parse(new TextDecoder().decode(bytes))?.error?.message ?? '').slice(0, 200) } catch { /* not JSON */ }
         const rep = { ok: false, sidecarError: true, code: res.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_UNAVAILABLE', problems: [`the sidecar answered HTTP ${res.status} itself${why ? ` (${why})` : ''}: no upstream answer, no receipt`], warnings: [], unchecked: ['request', 'response'], receipt: null, url, stream: false, status: res.status, salted, ...asked }
+        if (res.status >= 400) release('sidecar-error', res.status)
         report(rep)
         if (strict) throw failure(rep)
         return new Response(bytes, { status: res.status, statusText: res.statusText, headers: res.headers })
       }
       let envelope = null, headerError = null
       try { envelope = decodeReceiptHeader(res.headers.get(RECEIPT_HEADER)) } catch (e) { headerError = e.message }
+      if (!envelope && !res.headers.get(RECEIPT_HEADER) && res.status >= 400) release('http-error-no-receipt', res.status)
       const r = await check(s, { ...common, envelope, responseBytes: bytes, stream: false })
       if (headerError && !envelope) r.problems.splice(0, r.problems.length, headerError === 'no receipt' ? `no ${RECEIPT_HEADER} header` : headerError)
       const rep = { ...r, url, stream: false, status: res.status, salted, ...asked }

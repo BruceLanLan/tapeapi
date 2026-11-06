@@ -403,8 +403,17 @@ test('A2-04: an RPC failure on pendingWithdraw alone fails CLOSED; only a revert
   c2.setSession(consumer, ADDR.container, sessionAddr, 1900000000)
   const p2 = createProvider({ minVoucherLifeS: 0, manifest, signerKey: SIGNER_KEY, rpcUrls: RPC, quorum: 2, chainId: 56, fetch: async (url, init) => {
       let body = null; try { body = JSON.parse(init?.body) } catch {}
-      const isPending = typeof body?.params?.[0]?.data === 'string' && body.params[0].data.startsWith(selector('pendingWithdraw'))
-      if (isPending) return new Response('', { status: 503 })     // only this view is unreachable / 只有这个视图不可达
+      // Found in 3.0: the bare `selector` here was never defined, so EVERY eth_call failed, and the three escrow views go
+      // in one batch, which a single-call check never saw. Now only the pendingWithdraw entry fails, single or batched.
+      // 3.0 发现：这里原先的 `selector` 从未定义，于是每个 eth_call 都失败；而且三个托管视图是一次批量请求，单个请求的判断从未看到它。
+      // 现在只有 pendingWithdraw 这一项失败，单个或批量都一样。
+      const isPending = (b) => typeof b?.params?.[0]?.data === 'string' && b.params[0].data.startsWith(abi.selector('pendingWithdraw'))
+      if (isPending(body)) return new Response('', { status: 503 })     // only this view is unreachable / 只有这个视图不可达
+      if (Array.isArray(body) && body.some(isPending)) {
+        const out = await (await c2.fetch(url, init)).json()
+        const down = new Set(body.filter(isPending).map((b) => b.id))
+        return Response.json(out.map((x) => (down.has(x.id) ? { jsonrpc: '2.0', id: x.id, error: { code: -32603, message: 'upstream unavailable' } } : x)))
+      }
       return c2.fetch(url, init)
     }, escrowCacheMs: 0, sessionCacheMs: 0, allowHttp: true, log: () => {},
     methods: { blockNumber: () => ({ n: 1 }), circuitHolder: () => ({ holder: ADDR.treasury }), leak: () => ({}) } })

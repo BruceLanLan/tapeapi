@@ -1,0 +1,1860 @@
+{
+  "note": "Visitor grants (experimental prototype, TAPI-28; not a TAP): requests a service must refuse at the steps that need no chain read (TAPI-28 §3.10 steps 1-8, the order of the review branch 2026-10-22: 6 call proof, 7 replay, 8 visitor signature), each with its reason; reason null = passes steps 1-8. Fake keys (repeated bytes); 12.7.tape and 13.7.tape are example names. Companion of interop-visitor-grant.json, whose bytes are unchanged.",
+  "chainId": 56,
+  "hub": "0xe61A9C7213a6Aa616C246a2B569e555B417b25ee",
+  "me": {
+    "container": "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+    "name": "13.7.tape"
+  },
+  "manifest": {
+    "methods": [
+      {
+        "name": "history",
+        "grant": "required",
+        "priceBEM": "0"
+      },
+      {
+        "name": "notes",
+        "grant": "optional",
+        "priceBEM": "0"
+      },
+      {
+        "name": "profile",
+        "priceBEM": "0"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "control: passes steps 1-8",
+      "reason": null,
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "v is 2",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 2,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "chainId is another chain",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 8453,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "a sixth member in grant",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          },
+          "extra": 1
+        }
+      }
+    },
+    {
+      "name": "message has a 15th member",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101",
+            "extra": "x"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "message lacks nonce",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "method \"*\" (no wildcard)",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "*"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "method repeated",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "history"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "nine methods",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "m0",
+              "m1",
+              "m2",
+              "m3",
+              "m4",
+              "m5",
+              "m6",
+              "m7",
+              "m8"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "maxCalls 0",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 0,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "maxCalls 10001",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 10001,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "maxCalls true (a JSON boolean, not a number)",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": true,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "maxCalls \"1\" (a string)",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": "1",
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "life of 7 days + 1 s",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791604801,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "callerKey equals user",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "nonce with upper-case hex",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0xABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "nonce zero",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "callerName with a leading zero",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.07.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "callerName in upper case",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.TAPE",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "user is the zero address",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x0000000000000000000000000000000000000000",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "userSig of 64 bytes",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "proof.ts negative",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": -1,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "proof with a third member",
+      "reason": "malformed",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b",
+            "x": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "another audience container",
+      "reason": "wrong-audience",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5f5f5f5f5f5F5f5F5F5F5F5f5F5f5f5F5F5F5F5f",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0xd7e8eebe47607010cb0525230367ab7d1fdeb316e5e4b0f59b5727788d1f8d2535afd73a078e67c8e2c6db5903f66a2f75bb91544b59cd3ad04a03d30edde7f71c",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0x8f679f4072db92739e14065f96db2dea6705c3f5ace2d0c93e224a15294140c30e1d2b9d4c658b553b8c11ef61723e8041f115c4683142e1afac346a8d4d15a41c"
+          }
+        }
+      }
+    },
+    {
+      "name": "another audience name",
+      "reason": "wrong-audience",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 14.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 14.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "14.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x54a4a885f35d2366d448ecd88a7822cf58f819ad80a1ebdb25e39f77a2f18c221511f6d9c0e73641e37234ea2558d820bc5e580d444cd70b68492e6c9fb0c7a41c",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0x218338242152c4ccbe6e73a58eaa72261bbb4ebf982e3b54df5efb020483cd630bdbb119d708788aef4d8995be97ab75dcf498b0a092f5804a39fc5a3155bcdf1b"
+          }
+        }
+      }
+    },
+    {
+      "name": "called method not in the grant",
+      "reason": "method-out-of-scope",
+      "request": {
+        "id": "n-1",
+        "method": "profile",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "a granted method that takes no grant here",
+      "reason": "method-out-of-scope",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, profile. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "profile"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0xa55b5b7f77f98c887547a217f05483ba282ba5612d7eaabf3e5b1ad7206fe67579914447a3e139790f6cde242f0e5a67265052ee1dd19ed4ab9dfd4598d021131c",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe9cc45ddd6420e833ecc51d86fa8966c42eddeca9f41ced78eb7d1fce6c7136e74aad67d9770875c366b1fa885e1ba9cebf52bc5ab6bf33663f59f69ecd55a011c"
+          }
+        }
+      }
+    },
+    {
+      "name": "method name in another case",
+      "reason": "method-out-of-scope",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: History. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "History"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x7dc025254d3da1a3bb3719aa6bea10037b0916a2ae84ae1e4004db4d9662b4367e4acc0ff97f67ef76408da67ec6b1da2bcb39147b94e690f004b81b68591ddf1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xc67dd9d7f2e108cccf827a43c56c70a6c281fd9f9630789b762f0900bd529b694cf08c73cb54e69709654fdac9a853921934e6ba8cf6e6befdf15d7de29c97691c"
+          }
+        }
+      }
+    },
+    {
+      "name": "now = expires",
+      "reason": "expired",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791003600,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "notBefore = now + 301",
+      "reason": "expired",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1790999999,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:05:00 to 2026-10-03 05:05:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000300,
+            "expires": 1791003900,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x7b0d373c7d645b91cd5f663ae0bf34d36403efda2245a1bbb4f81c5a3bd4ae9a0df5c4641b6f029a22d2881bbb6b9116dfabb1c48482bed1609917c2f51e04b41b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0x3c56711bef35ca87e1222b2e55cb5dcc5487cf15e4b27059532e3014f9a9582973ba47037eeb11f99493fbe14e0703b51a67b25d0c71f46a55e6373a229d538b1b"
+          }
+        }
+      }
+    },
+    {
+      "name": "notBefore = now + 300 (boundary, valid)",
+      "reason": null,
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:05:00 to 2026-10-03 05:05:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000300,
+            "expires": 1791003900,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x7b0d373c7d645b91cd5f663ae0bf34d36403efda2245a1bbb4f81c5a3bd4ae9a0df5c4641b6f029a22d2881bbb6b9116dfabb1c48482bed1609917c2f51e04b41b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0x3c56711bef35ca87e1222b2e55cb5dcc5487cf15e4b27059532e3014f9a9582973ba47037eeb11f99493fbe14e0703b51a67b25d0c71f46a55e6373a229d538b1b"
+          }
+        }
+      }
+    },
+    {
+      "name": "statement with a trailing space",
+      "reason": "statement-mismatch",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape. ",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x5e2d17e1ad84c08056fcc9ad01b12586228483d4b22df938adc25f1da1320ce87a05d74852c13716009e2dfb93b22cfc655b7713e2482a70b5de37d63a8364651b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xc3482adb01bd1392bc3735a1453373ed7f4bed6a91998ffcf7a6627e95abedf73d9436078adea6c83303e9c063a21d222bb268d37f1f289e917c3ae104abcb391c"
+          }
+        }
+      }
+    },
+    {
+      "name": "statement \"1 calls\" for maxCalls 1",
+      "reason": "statement-mismatch",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 calls, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0xf354764dca6d24c5e641406d32f5937703e3833eaaa66c5aa2f7673ce7dc559457be763d7d30cb2f6decd75593cb212f6b2d05852fe2a2f3d5e49ca6537037711c",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0x0d125d773d8ad8ff5b53a9a08790fc86b2b6a66653f221de0f0bd2922384072b713fe7aad0067395245c1caf9afb49a0501a310eb04dfac467bc64b550bda83d1b"
+          }
+        }
+      }
+    },
+    {
+      "name": "statement in local time, not UTC",
+      "reason": "statement-mismatch",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 12:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x21179d43c8e979c13877f5af32a2121a7dba13cba4a3849c088660ed486f3e1a2a6c9f54b887fe69c6533112dcd51ee55f998131e531fcdc2c29b77810c9bbaa1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0x34478c7177d31f0685da84cca01af58b13f832d5793f1962ed9849db4932fc232df1d1a4e5ec792101fc621c1eb6dbd7655f7747486c04f564cd10c8babb1c4a1b"
+          }
+        }
+      }
+    },
+    {
+      "name": "statement of the other language with these members swapped",
+      "reason": "statement-mismatch",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "允许 13.7.tape 代表我调用 12.7.tape 的方法：history, notes。最多 1 次，2026-10-03 04:00:00 至 2026-10-03 05:00:00 UTC 有效。本授权不含任何付款。可随时向 12.7.tape 撤销。",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x0476d9ab6ed86755cd0959d1f94cbb19e3fe5fe642c0464694b87925987712ce66a7f053ab37870ba867dfd429d6fb7619d9da2a5d896e548572675e9c381e511b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0x6248d995e0d16314f8eb1d513ab6e8610d38a63fc0e1bdc153766e7c6fb2a9130c0302fd7c44f0cb102fa671037b6ac536f9e02c80a8cd2cf6252af5eae0c8a61b"
+          }
+        }
+      }
+    },
+    {
+      "name": "proof ts 301 s old",
+      "reason": "bad-proof",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1790999699,
+            "sig": "0x4fe2f75c3cae34a5df0b3ca0e9a79bc4c7f53ea496f88ca03968477578c6acf733569ea2e6061d6d5f077b9b4d5fb54e04aa64da126051731e235b11a618e8211c"
+          }
+        }
+      }
+    },
+    {
+      "name": "proof ts 300 s old (boundary, valid)",
+      "reason": null,
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1790999700,
+            "sig": "0x70f88db5246ecb661707b3cd929626b1e53bce0b5ec59cb0e325117ce46c8bd84beee7e2080962e2bbc2b76bb9129d501f4fa92d59226c9c6740dd798463783a1c"
+          }
+        }
+      }
+    },
+    {
+      "name": "proof v 0/1",
+      "reason": "bad-proof",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e7300"
+          }
+        }
+      }
+    },
+    {
+      "name": "proof high s",
+      "reason": "bad-proof",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5dbe8fc26f01de52d19ed1dfca5711f9e525db9ec9fe3e5dafeb134dc178a02ce1c"
+          }
+        }
+      }
+    },
+    {
+      "name": "proof over other params",
+      "reason": "bad-proof",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0x728d5fe1575613086bef8973d93251bd1bc29735530c61476ea47909cb2566fb791607430a9d7fd7312b216bb1bf409f7acaad3b8ccea159852e9bf58e2ebac11c"
+          }
+        }
+      }
+    },
+    {
+      "name": "proof over another id",
+      "reason": "bad-proof",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xaaec6529ae1198ed7612df6793b292ad8e1667b38c00bca88f15d929892045923bfb9d28e9ada947a8ee02e294e2274b778d57e20dbc5c94805f72957b8401471b"
+          }
+        }
+      }
+    },
+    {
+      "name": "proof for another audience",
+      "reason": "bad-proof",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe000b85a5f2f73ed53b7dbaab37ef971a6074f0e31a6dfe8d9d9de438de3aa6771f2341abef9bb77b0c4e33e27e48cb4dd9ef8e65820edcf1663b4367bb3837c1c"
+          }
+        }
+      }
+    },
+    {
+      "name": "proof.sig of 64 bytes",
+      "reason": "bad-proof",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0x11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"
+          }
+        }
+      }
+    },
+    {
+      "name": "id with a lone surrogate",
+      "reason": "bad-proof",
+      "request": {
+        "id": "n-\ud800",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b1b",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xf7ce5938e0c6ed9bc7fd7eb9db08faa0b9d0b63b0b954c594144130db4aad4944ec1e8286a621931ebd70ae3028d4813c72bcd01ec24ea8b428258ef685428a91b"
+          }
+        }
+      }
+    },
+    {
+      "name": "userSig over the grant on chain 8453",
+      "reason": "bad-user-signature",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x8dce92cd6e8a70cba746c511736eaf7dff8a1c6eb3c50dd43bb3b2720f12229f3a7f83b9215fe2a859f8f01e589dbc73a5a03e149301ed5289c4f7c777f891491c",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "userSig high s",
+      "reason": "bad-user-signature",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f190e2cbb62c5f71cabb65bb8e14cf43cd7462d9945395e0aec9d5c6f6f2cf14b61c",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "userSig by the caller key",
+      "reason": "bad-user-signature",
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0xe1509a451e47f890b726050746ed125cac25e63efc9d734779d15d353d86375f722c078d7b587a8345c764a4fead93eb9e50d86f52c1a4eb6f8cc34c04a5b83c1c",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    },
+    {
+      "name": "userSig v 0/1 (accepted for the visitor's signature)",
+      "reason": null,
+      "request": {
+        "id": "n-1",
+        "method": "history",
+        "params": {},
+        "now": 1791000000,
+        "grant": {
+          "v": 1,
+          "chainId": 56,
+          "message": {
+            "statement": "Allow 12.7.tape to call these methods of 13.7.tape on my behalf: history, notes. At most 1 call, valid from 2026-10-03 04:00:00 to 2026-10-03 05:00:00 UTC. This grant includes no payment. Revocable at any time with 13.7.tape.",
+            "user": "0x6cEEE2D764EE8BdeE737e53e5F02a8275AFe0456",
+            "caller": "0xa6a6A6a6a6a6A6A6A6a6A6a6a6a6a6a6a6a6a6A6",
+            "callerName": "12.7.tape",
+            "callerHolder": "0x4444444444444444444444444444444444444444",
+            "callerKey": "0x504e4FbaB7bC2962b361E3730B965E61F289d0cC",
+            "audience": "0x5e5E5e5e5E5e5E5E5e5E5E5e5e5E5E5E5e5E5E5e",
+            "audienceName": "13.7.tape",
+            "audienceHolder": "0x6666666666666666666666666666666666666666",
+            "methods": [
+              "history",
+              "notes"
+            ],
+            "maxCalls": 1,
+            "notBefore": 1791000000,
+            "expires": 1791003600,
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "userSig": "0x6deafb4b9da9aee9e7b7ffb5cae66eb71213c86be3d3a14da01cf60c3c96d2f16f1d3449d3a08e35449a4471eb30bc31464c03525bb2bf8cf5fc9795dd672c8b00",
+          "proof": {
+            "ts": 1791000000,
+            "sig": "0xe7bd374a120ac94403b1aa6ac5ab975e193d357fcccb662cfd5a99cb5c5495c5241703d90fe21ad2e612e2035a8ee060685122fa0f64ba60c12129b0b8ac3e731b"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -146,7 +146,7 @@
   @media (max-width: 420px) { dl { grid-template-columns: 1fr; gap: 0 0; } dd { margin-bottom: 6px; } }
 </style>
 <script src="./lang.js?v=5f71b1c280"></script>
-<script type="module" src="./console.js?v=71376ca5d7"></script>
+<script type="module" src="./console.js?v=0225cbaa65"></script>
 </head>
 <body>
 <header class="hd-bar">
@@ -230,9 +230,13 @@
   <section id="s-deleg">
     <h2><span lang="zh">4. 签委托</span><span lang="en">4. Sign the delegation</span></h2>
     <p class="muted">
-      <span lang="zh">设好 SIGNER_KEY 和上面的变量、服务重新部署后，本页从服务读出它的签名地址，你用钱包签一个委托（EIP-712，只授权这把服务密钥代表你的容器回答，不涉及任何资金，90 天后到期）。</span>
-      <span lang="en">Once SIGNER_KEY and the variables above are set and the service has redeployed, this page reads the service's signing address and you sign a delegation with your wallet (EIP-712: it only lets this service key answer for your container, moves no funds, and expires in 90 days).</span>
+      <span lang="zh">设好 SIGNER_KEY 和上面的变量、服务重新部署后，本页从服务读出它的签名地址，你用钱包签一个委托（EIP-712，只授权这把服务密钥代表你的容器回答，不涉及任何资金；默认 30 天后到期，下面可以改成 1 到 366 之间的任意天数，例如 7 或 90）。</span>
+      <span lang="en">Once SIGNER_KEY and the variables above are set and the service has redeployed, this page reads the service's signing address and you sign a delegation with your wallet (EIP-712: it only lets this service key answer for your container, moves no funds, and expires in 30 days by default; below you can choose any number of days from 1 to 366, such as 7 or 90).</span>
     </p>
+    <div class="row">
+      <label for="deleg-days"><span lang="zh">委托有效天数（1–366，默认 30）</span><span lang="en">Days the delegation lasts (1–366, default 30)</span></label>
+      <input id="deleg-days" type="number" inputmode="numeric" min="1" max="366" step="1" value="30" aria-label="delegation days" data-zh-aria-label="委托有效天数" data-en-aria-label="delegation days">
+    </div>
     <input id="svc-url" value="https://api.tapeapi.fun" spellcheck="false" autocomplete="off" aria-label="service URL" placeholder="https://api.tapeapi.fun or https://relay.tapeapi.fun"
       data-zh-aria-label="服务网址" data-en-aria-label="service URL" data-zh-placeholder="https://api.tapeapi.fun 或 https://relay.tapeapi.fun" data-en-placeholder="https://api.tapeapi.fun or https://relay.tapeapi.fun">
     <button id="btn-deleg" type="button" disabled><span lang="zh">读取签名地址并签名</span><span lang="en">Read the signing address and sign</span></button>

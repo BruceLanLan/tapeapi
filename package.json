@@ -4,7 +4,10 @@
   "type": "module",
   "workspaces": [
     "sdk",
-    "server"
+    "server",
+    "interop",
+    "passport",
+    "policy-circuit"
   ],
   "scripts": {
     "test": "node scripts/test.mjs",

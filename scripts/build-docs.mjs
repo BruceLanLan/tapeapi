@@ -38,8 +38,8 @@ export const LANGS = {
 }
 export const GROUPS = [
   { en: 'Getting started', zh: '开始', pages: ['index', 'public-api', 'mcp', 'consume', 'provide', 'ai-providers', 'billing-layer'] },
-  { en: 'Features', zh: '功能', pages: ['channels', 'groups', 'agents', 'container-agents', 'reconcile'] },
-  { en: 'Help', zh: '帮助', pages: ['faq', 'reference', 'upgrade-1.0', 'upgrade-2.0', 'changelog'] },
+  { en: 'Features', zh: '功能', pages: ['channels', 'groups', 'agents', 'container-agents', 'reconcile', 'receipts-and-payment-protocols', 'interop', 'passport', 'policy-circuit', 'circuit-jobs'] },
+  { en: 'Help', zh: '帮助', pages: ['faq', 'reference', 'upgrade-1.0', 'upgrade-2.0', 'upgrade-3.0', 'changelog'] },
 ]
 const SOURCES = {
   index: { en: 'docs/guides/introduction.md', zh: 'docs/guides/zh-CN/introduction.md' },
@@ -54,10 +54,16 @@ const SOURCES = {
   agents: { en: 'docs/guides/agents.md', zh: 'docs/guides/zh-CN/agents.md' },
   'container-agents': { en: 'docs/guides/container-agents.md', zh: 'docs/guides/zh-CN/container-agents.md' },
   reconcile: { en: 'docs/guides/reconcile.md', zh: 'docs/guides/zh-CN/reconcile.md' },
+  'receipts-and-payment-protocols': { en: 'docs/guides/receipts-and-payment-protocols.md', zh: 'docs/guides/zh-CN/receipts-and-payment-protocols.md' },   // 3.0, experimental / 实验性
+  interop: { en: 'docs/guides/interop.md', zh: 'docs/guides/zh-CN/interop.md' },   // experimental (2.5) / 实验性
+  passport: { en: 'docs/guides/passport.md', zh: 'docs/guides/zh-CN/passport.md' },   // experimental (3.0), TAPs #83 draft / 实验性
+  'policy-circuit': { en: 'docs/guides/policy-circuit.md', zh: 'docs/guides/zh-CN/policy-circuit.md' },   // experimental (3.0 candidate) / 实验性
+  'circuit-jobs': { en: 'docs/guides/circuit-jobs.md', zh: 'docs/guides/zh-CN/circuit-jobs.md' },   // documentation only (3.0), TAPs #85 draft / 只有文档
   faq: { en: 'docs/guides/faq.md', zh: 'docs/guides/zh-CN/faq.md' },
   reference: { en: 'docs/guides/reference.md', zh: 'docs/guides/zh-CN/reference.md' },   // the datasheet appendix, once on the home page / 数据手册附录，原在首页
   'upgrade-1.0': { en: 'docs/guides/upgrade-1.0.md', zh: 'docs/guides/zh-CN/upgrade-1.0.md' },
-  'upgrade-2.0': { en: 'docs/guides/upgrade-2.0.md', zh: 'docs/guides/zh-CN/upgrade-2.0.md' },   // draft until 2.0 / 2.0 发布前为草稿
+  'upgrade-2.0': { en: 'docs/guides/upgrade-2.0.md', zh: 'docs/guides/zh-CN/upgrade-2.0.md' },
+  'upgrade-3.0': { en: 'docs/guides/upgrade-3.0.md', zh: 'docs/guides/zh-CN/upgrade-3.0.md' },   // 3.0.0
   changelog: { en: 'CHANGELOG.md', zh: 'CHANGELOG.md' },
 }
 const ORDER = GROUPS.flatMap((g) => g.pages)

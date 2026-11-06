@@ -12,6 +12,9 @@
 //   paidUntil       containerPaidUntil, seconds (0: never paid)
 //   fee             monthlyFee, wei; null: the call reverts
 //   failure         null | 'http500' | 'rpcerror': every DomainBinding read fails at the node (a network failure), nothing else
+//   notLive         [container, ...] for which isContainerLive is false whatever containerLive says
+// activationLayer(fetch, { chainId }) is the same DomainBinding in front of any fake chain's fetch (examples/app-interop
+// uses it on the agent chain). / activationLayer 把同一个 DomainBinding 放在任意假链的 fetch 前面。
 import { createFakeChain, eachCall } from './fake-chain.mjs'
 import { functionBySelector, decodeCall, encodeReturn } from '../../src/abi.js'
 import { CHAINS } from '../../src/chains.js'
@@ -21,28 +24,37 @@ const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, 
 
 export function createActivationChain(opts = {}) {
   const chain = createFakeChain(opts)
-  const chainId = opts.chainId ?? 56
+  const layer = activationLayer(chain.fetch, { chainId: opts.chainId ?? 56, faulty: (url) => chain.state.faults.has(url) })
+  chain.activation = layer.activation
+  chain.binding = layer.binding
+  chain.setActivation = layer.setActivation
+  chain.setUnactivated = layer.setUnactivated
+  chain.fetch = layer.fetch
+  chain.fetchWith = (real = globalThis.fetch.bind(globalThis)) => (url, init) => (String(url).startsWith('http://rpc') ? chain.fetch(String(url), init) : real(url, init))
+  return chain
+}
+
+/** The DomainBinding reads in front of `inner` (a fake chain's fetch). / 把 DomainBinding 读取放在 inner 前面。 */
+export function activationLayer(inner, { chainId = 56, faulty = () => false } = {}) {
   const binding = CHAINS[chainId].binding.toLowerCase()
-  const act = { names: new Set(), containerLive: true, isLiveReverts: false, paidUntil: Math.floor(Date.now() / 1000) + 30 * 86_400, fee: 10n ** 16n, failure: null, calls: [] }
+  const act = { names: new Set(), containerLive: true, notLive: new Set(), isLiveReverts: false, paidUntil: Math.floor(Date.now() / 1000) + 30 * 86_400, fee: 10n ** 16n, failure: null, calls: [] }
   const key = (name, container) => `${name}\n${container.toLowerCase()}`
-  chain.activation = act
-  chain.binding = binding
-  chain.setActivation = ({ names, ...rest } = {}) => {
+  const setActivation = ({ names, notLive, ...rest } = {}) => {
     if (names) act.names = new Set(names.map(([n, c]) => key(n, c)))
+    if (notLive) act.notLive = new Set(notLive.map((c) => c.toLowerCase()))
     Object.assign(act, rest)
   }
   /** Not activated: both reads false, the fee 0.01 coin. / 未激活：两个读取都为假。 */
-  chain.setUnactivated = (rest = {}) => chain.setActivation({ names: [], containerLive: false, paidUntil: 0, ...rest })
+  const setUnactivated = (rest = {}) => setActivation({ names: [], containerLive: false, paidUntil: 0, ...rest })
 
   const revert = (req) => json({ jsonrpc: '2.0', id: req.id, error: { code: 3, message: 'execution reverted' } })
   const reply = (req, result) => json({ jsonrpc: '2.0', id: req.id, result })
-  const inner = chain.fetch
   async function one(url, init) {
     const req = JSON.parse(init.body)
     const call = req.method === 'eth_call' ? req.params?.[0] : null
     const fn = call && String(call.to).toLowerCase() === binding ? functionBySelector(call.data) : null
     // A node fault of the fake chain (timeout, disagree, ...) applies as to any read: the fake chain answers it / 节点故障照旧由假链处理
-    if (!fn || !FNS.has(fn) || chain.state.faults.has(url)) return inner(url, init)
+    if (!fn || !FNS.has(fn) || faulty(url)) return inner(url, init)
     const args = Array.from(decodeCall(fn, call.data))
     act.calls.push({ url, fn, args })
     if (act.failure === 'http500') return new Response('boom', { status: 500 })
@@ -53,7 +65,7 @@ export function createActivationChain(opts = {}) {
         return reply(req, encodeReturn('isLive', [act.names.has(key(args[0], args[1]))]))
       case 'isContainerLive':
         if (act.containerLive === 'revert') return revert(req)
-        return reply(req, encodeReturn('isContainerLive', [act.containerLive === true]))
+        return reply(req, encodeReturn('isContainerLive', [act.containerLive === true && !act.notLive.has(String(args[0]).toLowerCase())]))
       case 'containerPaidUntil': return reply(req, encodeReturn('containerPaidUntil', [BigInt(act.paidUntil)]))
       case 'monthlyFee':
         if (act.fee === null) return revert(req)
@@ -61,7 +73,6 @@ export function createActivationChain(opts = {}) {
       default: return revert(req)
     }
   }
-  chain.fetch = async (url, init = {}) => (Array.isArray(JSON.parse(init.body)) ? eachCall(url, init, one) : one(url, init))
-  chain.fetchWith = (real = globalThis.fetch.bind(globalThis)) => (url, init) => (String(url).startsWith('http://rpc') ? chain.fetch(String(url), init) : real(url, init))
-  return chain
+  const fetch = async (url, init = {}) => (Array.isArray(JSON.parse(init.body)) ? eachCall(url, init, one) : one(url, init))
+  return { fetch, activation: act, binding, setActivation, setUnactivated }
 }

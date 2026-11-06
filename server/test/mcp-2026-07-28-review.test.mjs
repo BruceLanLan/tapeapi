@@ -458,14 +458,51 @@ test('CONFIRMED MR-7c: a malformed MCP_TOOLS_SHA256 keeps the Worker in setup mo
 // ---------------------------------------------------------------------------------------------------------------
 // MR-8: Origin (pre-existing, 2.0+) / Origin（2.0 起就有）
 // ---------------------------------------------------------------------------------------------------------------
-for (const t of TARGETS) {
-  test(`CONFIRMED MR-8 (${t[0]}): by default any Origin is answered (CORS *, no credentials, no session), as before`, async () => {
+// createMcpEndpoint (the public api.tapeapi.fun/mcp): by default any Origin is answered, as before; this must not change.
+// createMcpEndpoint（公共的 api.tapeapi.fun/mcp）：默认任何来源都作答，与以前相同；这一点不能变。
+const proxyAny = proxyOver({ call: (m) => core.handle(m) }, { allowedOrigins: '*' })
+await proxyAny.ready
+const epAny = createMcpEndpoint({ provider, manifest, name: '11.1013.tape', version: '0.3.0', allowedOrigins: '*' })
+for (const t of [TARGETS[0], ['endpoint, allowedOrigins *', (req) => epAny.handleRequest(req, { clientIp: '1.1.1.1' }), 'https://echo.example/mcp'], ['proxy, allowedOrigins *', (req) => proxyAny.handleRequest(req, { clientIp: '1.1.1.1' }), 'https://x.example/mcp']]) {
+  test(`CONFIRMED MR-8 (${t[0]}): any Origin is answered (CORS *, no credentials, no session), as before`, async () => {
     const r = await send(t, callMsg('echo'), { ...H('tools/call', 'echo'), origin: 'https://evil.example' })
     assert.equal(r.status, 200)
     assert.equal(r.headers.get('access-control-allow-origin'), '*')
     assert.equal(r.headers.get('access-control-allow-credentials'), null)
+    const pre = await t[1](new Request(t[2], { method: 'OPTIONS', headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' } }))
+    assert.equal(pre.status, 204); assert.equal(pre.headers.get('access-control-allow-origin'), '*')
   })
 }
+
+// 3.0: createMcpProxy refuses every browser Origin it was not given (Streamable HTTP "servers MUST validate Origin");
+// a request without Origin (a desktop client, curl) is answered. / 3.0：createMcpProxy 默认拒绝未列出的浏览器来源；不带 Origin 的照常。
+test('3.0 (proxy): by default an Origin is 403 before anything runs, preflight too; no Origin is answered, without CORS *', async () => {
+  upCalls.length = 0; calls.length = 0
+  const t = TARGETS[1]
+  for (const origin of ['https://evil.example', 'http://localhost:5173', 'null']) {
+    const r = await send(t, callMsg('wipe'), { ...H('tools/call', 'wipe'), origin })
+    assert.equal(r.status, 403, origin)
+    assert.deepEqual(r.json, { jsonrpc: '2.0', error: { code: -32600, message: 'Origin not allowed' } })
+    assert.equal(r.headers.get('access-control-allow-origin'), null)
+  }
+  assert.deepEqual(upCalls, []); assert.deepEqual(calls, [])
+  const pre = await t[1](new Request(t[2], { method: 'OPTIONS', headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' } }))
+  assert.equal(pre.status, 403)
+  const none = await send(t, callMsg('echo'), H('tools/call', 'echo'))
+  assert.equal(none.status, 200); assert.equal(none.json.result.isError, false)
+  assert.equal(none.headers.get('access-control-allow-origin'), null)
+})
+
+test('3.0: the proxy Worker template keeps any origin unless ALLOWED_ORIGINS lists some (the holder console reads tools/list from the browser)', async () => {
+  const { build } = await import('../../examples/mcp-proxy/worker.js')
+  const env = { SIGNER_KEY: KEY, UPSTREAM_URL: 'https://up.example/mcp', PUBLIC_URL: 'https://x.example' }
+  const over = (e) => build({ ...env, ...e }, { upstream: { call: (m) => core.handle(m) }, manifestBase: BASE_P, log: () => {}, rateLimit: false })
+  for (const [vars, origin, status, acao] of [[{}, 'https://tapeapi.fun', 200, '*'], [{ ALLOWED_ORIGINS: '*' }, 'https://evil.example', 200, '*'], [{ ALLOWED_ORIGINS: 'https://tapeapi.fun, https://app.example' }, 'https://tapeapi.fun', 200, 'https://tapeapi.fun'], [{ ALLOWED_ORIGINS: 'https://app.example' }, 'https://evil.example', 403, null]]) {
+    const p = over(vars); await p.ready
+    const r = await send(['worker', (req) => p.handleRequest(req, { clientIp: '1.1.1.1' }), 'https://x.example/mcp'], callMsg('echo'), { ...H('tools/call', 'echo'), origin })
+    assert.equal(r.status, status, JSON.stringify(vars)); assert.equal(r.headers.get('access-control-allow-origin'), acao, JSON.stringify(vars))
+  }
+})
 
 // FIXED MR-8: allowedOrigins (opt-in). Streamable HTTP "Security & Endpoint" 1: an invalid Origin is 403.
 const OK_ORIGIN = 'http://localhost:5173'

@@ -2,7 +2,7 @@
 <html lang="zh-CN" data-lang="zh">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-3Ag+QzdkWJYQcYiSpCYMehWF70UdKLkIRLVoZihERxY='; style-src 'self'; font-src 'self'; img-src 'self'; connect-src https:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-VTdXOiYy3JRNkTmzrqX5Tk+NvV3GxgznQ+IoU5UyyRg='; style-src 'self'; font-src 'self'; img-src 'self'; connect-src https:; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <title>TapeAPI 核验回执 · Verify a receipt</title>
@@ -35,22 +35,22 @@
 <script type="importmap">
 {
   "imports": {
-    "@noble/ciphers/chacha": "../playground/vendor/8c7733d2ff/noble-ciphers/chacha.js",
-    "@noble/curves/ed25519": "../playground/vendor/8c7733d2ff/noble-curves/ed25519.js",
-    "@noble/curves/secp256k1": "../playground/vendor/8c7733d2ff/noble-curves/secp256k1.js",
-    "@noble/hashes/crypto": "../playground/vendor/8c7733d2ff/noble-hashes/crypto.js",
-    "@noble/hashes/hkdf": "../playground/vendor/8c7733d2ff/noble-hashes/hkdf.js",
-    "@noble/hashes/hmac": "../playground/vendor/8c7733d2ff/noble-hashes/hmac.js",
-    "@noble/hashes/hmac.js": "../playground/vendor/8c7733d2ff/noble-hashes/hmac.js",
-    "@noble/hashes/sha2.js": "../playground/vendor/8c7733d2ff/noble-hashes/sha2.js",
-    "@noble/hashes/sha256": "../playground/vendor/8c7733d2ff/noble-hashes/sha256.js",
-    "@noble/hashes/sha3": "../playground/vendor/8c7733d2ff/noble-hashes/sha3.js",
-    "@noble/hashes/utils": "../playground/vendor/8c7733d2ff/noble-hashes/utils.js",
-    "@noble/hashes/utils.js": "../playground/vendor/8c7733d2ff/noble-hashes/utils.js"
+    "@noble/ciphers/chacha": "../playground/vendor/5757353e7d/noble-ciphers/chacha.js",
+    "@noble/curves/ed25519": "../playground/vendor/5757353e7d/noble-curves/ed25519.js",
+    "@noble/curves/secp256k1": "../playground/vendor/5757353e7d/noble-curves/secp256k1.js",
+    "@noble/hashes/crypto": "../playground/vendor/5757353e7d/noble-hashes/crypto.js",
+    "@noble/hashes/hkdf": "../playground/vendor/5757353e7d/noble-hashes/hkdf.js",
+    "@noble/hashes/hmac": "../playground/vendor/5757353e7d/noble-hashes/hmac.js",
+    "@noble/hashes/hmac.js": "../playground/vendor/5757353e7d/noble-hashes/hmac.js",
+    "@noble/hashes/sha2.js": "../playground/vendor/5757353e7d/noble-hashes/sha2.js",
+    "@noble/hashes/sha256": "../playground/vendor/5757353e7d/noble-hashes/sha256.js",
+    "@noble/hashes/sha3": "../playground/vendor/5757353e7d/noble-hashes/sha3.js",
+    "@noble/hashes/utils": "../playground/vendor/5757353e7d/noble-hashes/utils.js",
+    "@noble/hashes/utils.js": "../playground/vendor/5757353e7d/noble-hashes/utils.js"
   }
 }
 </script>
-<script type="module" src="verify.js?v=93c5383f2f"></script>
+<script type="module" src="verify.js?v=31e14bfd5b"></script>
 </head>
 <body>
 <header class="hd-bar">
@@ -100,7 +100,7 @@
   <section class="panel" id="s-result" aria-labelledby="h-result" hidden>
     <h2 id="h-result"><span class="num">2</span><span class="t" lang="zh">结论</span><span class="t" lang="en">Verdict</span></h2>
     <div id="verdict" class="vd"></div>
-    <p class="note" id="ai-note" hidden><span class="t" lang="zh">这是一份 AI 用量回执。它的两个哈希绑定确切的请求与回应字节，本页没有这些字节（除非你在上面粘贴），所以默认只核对签名、服务身份与金额。签名证明的是谁回答的、声称了什么，不证明实际运行的是哪个模型；这类替换靠回执与抽检变得可追责。</span><span class="t" lang="en">This is an AI usage receipt. Its two hashes bind the exact request and response bytes, which this page does not have (unless you paste them above), so by default it checks the signature, the service's identity and the amount only. A signature proves who answered and what was claimed, not which model actually ran; receipts and spot checks make such a substitution attributable.</span></p>
+    <p class="note" id="ai-note" hidden><span class="t" lang="zh">这是一份 AI 用量回执。它的两个哈希绑定确切的请求字节与回答（回答的字节；流式回答取其事件数据），本页没有这些字节（除非你在上面粘贴），所以默认只核对签名、服务身份与金额。签名证明的是谁回答的、声称了什么，不证明实际运行的是哪个模型；这类替换靠回执与抽检变得可追责。</span><span class="t" lang="en">This is an AI usage receipt. Its two hashes bind the exact request bytes and the answer (its bytes; for a stream, its event data), which this page does not have (unless you paste them above), so by default it checks the signature, the service's identity and the amount only. A signature proves who answered and what was claimed, not which model actually ran; receipts and spot checks make such a substitution attributable.</span></p>
     <p class="note" id="content-note" hidden><span class="t" lang="zh">这份回执带原文：请求参数与结果（或拒绝内容）就在回执里，也就在它的核验链接里，也就是这段对话本身。链接转给谁，谁就看得到问了什么、答了什么；只在愿意分享这些内容的场合分享它。</span><span class="t" lang="en">This receipt carries the content: the request params and the result (or refusal) are in the receipt, and so in its verify link; that is the conversation itself. Whoever the link is passed to sees what was asked and answered; share it only where you would share those.</span></p>
     <p class="note" id="hashed-note" hidden><span class="t" lang="zh">这是只带哈希的回执：它用签名所依据的两个哈希代替请求参数与结果，所以能核对谁在何时签了什么，但本页看不到问了什么、答了什么。哈希只能藏住猜不到的内容：取自小集合的参数（地址、token id、交易对）或简短的结果，别人可以通过对候选取哈希确认出来。</span><span class="t" lang="en">This is a hash-only receipt: the two hashes the signature is computed over stand in for the request params and the result, so it shows who signed what and when, but this page does not see what was asked or answered. Hashes hide only what cannot be guessed: params from a small set (an address, a token id, a price pair) or a short result can be confirmed by anyone who hashes the candidates.</span></p>
     <p><button class="ctl" id="retry-btn" type="button" hidden><span class="t" lang="zh">重新读链</span><span class="t" lang="en">Read the chain again</span></button></p>

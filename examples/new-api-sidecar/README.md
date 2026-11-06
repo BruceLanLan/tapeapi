@@ -31,7 +31,7 @@ new-api:3000            渠道、令牌、额度、倍率、计费全部照旧
 
 还没准备好花钱？先在本机跑一遍本地试跑（不需要密钥、电路，也不花钱）：先在仓库根目录运行 `npm ci --no-audit --no-fund`，再运行
 `node examples/relay-trial/trial.mjs`。下面每一步做完都可以用 `tapeapi-doctor`（实验性）检查，它会说清缺什么、去哪做、下一条命令。
-它随 SDK 发布包提供，在任何目录都能运行：`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-doctor <你的名字或旁路地址>`；
+它随 SDK 发布包提供，在任何目录都能运行：`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-doctor <你的名字或旁路地址>`；
 在本目录（`examples/new-api-sidecar`）里也可以用检出自带的 `node ../../sdk/bin/tapeapi-doctor.js`。逐步清单见 [AI 服务方指南 · 从零到上线](../../docs/guides/zh-CN/ai-providers.md#从零到上线)。
 
 前提：一台装了 Docker 与 Docker Compose 2.17 或更高版本的服务器；一个域名和你已有的 HTTPS 反向代理（Nginx、Caddy、1Panel、宝塔都行）；
@@ -96,6 +96,7 @@ api.example.com {
 已经在跑 new-api（官方 compose，带 PostgreSQL、Redis）？不必用这里的 `new-api` 服务：把 `tapeapi-sidecar` 这一段加进你现有的
 compose 文件，放在同一个网络里，`UPSTREAM_BASE_URL` 指向你的 new-api 服务（如 `http://new-api:3000/v1`），再把反向代理的 API 主机名
 改指旁路即可。只用这里的 compose 从零开始时，new-api 用 SQLite，数据在 `./data`；要用 MySQL 或 PostgreSQL 就设 `SQL_DSN`。
+另一种做法是现有主机名完全不动、旁路用单独的主机名（如 `tape.example.com`），见 [`OPERATOR-KIT.md`](OPERATOR-KIT.md)。
 
 **3. 身份与发布清单：持有人操作台 https://tapeapi.fun/console/**
 
@@ -103,7 +104,7 @@ compose 文件，放在同一个网络里，`UPSTREAM_BASE_URL` 指向你的 new
 2. 第 3 步“生成服务密钥”：把密钥填进 `.env` 的 `SIGNER_KEY`，页面给出的 `CIRCUITS`、`TOKEN_ID`、`CONTAINER` 也填进去；
    `docker compose up -d`（改了 `.env` 会重建旁路）。
 3. 第 4 步输入 `PUBLIC_URL`，页面从 `PUBLIC_URL/tapeapi/v1/health` 读出签名地址（设置模式就是为这一步准备的），你用钱包签委托
-   （EIP-712，不涉及资金，90 天到期）。把 `DELEGATION_EXPIRES`、`DELEGATION_SIG` 填进 `.env`，再 `docker compose up -d`。
+   （EIP-712，不涉及资金，默认 30 天到期，页面上可改为 1 到 366 天）。把 `DELEGATION_EXPIRES`、`DELEGATION_SIG` 填进 `.env`，再 `docker compose up -d`。
    日志里出现 `signer …, container …, delegation until …` 和四个端点，旁路就开始签回执了。
 4. 第 5 步把清单写上链。
 
@@ -125,11 +126,11 @@ compose 文件，放在同一个网络里，`UPSTREAM_BASE_URL` 指向你的 new
 回执"：不要把那一行告诉用户。
 
 想自己核验每次调用的用户（Claude Code、Codex 只限上面所需格式已启用时），在本机运行核验代理 `tapeapi-verify`（需要清单已上链，
-见上面的现状说明），把客户端指向它；它认得全部四种格式，清单没有声明的格式的调用会记为 FAIL（加 `--strict` 时直接回 400，不转发）。`tapeapi-verify` 会一直在前台运行，客户端要在第二个终端里启动：
+见上面的现状说明），把客户端指向它；它认得全部四种格式，清单没有声明的格式的调用直接回 400、不转发（3.0 起默认严格；加 `--no-strict` 时只记为 FAIL）。`tapeapi-verify` 会一直在前台运行，客户端要在第二个终端里启动：
 
 ```sh
 # 终端 1。42.1013.tape 是示例名：换成你的 TapeOut 名字（即 .env 里的 TAPE_NAME）
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -158,7 +159,7 @@ SSE 注释 `: tapeapi-receipt …`（官方 SDK、Claude Code、Codex 都忽略�
 
 ### 续期
 
-操作台签的委托 90 天到期。旁路在剩下不到 30 天时每次启动都会在日志里打 `RENEW`；建议在最后 30 天内续期：
+操作台签的委托默认 30 天到期（3.0 之前为 90 天）。旁路在剩下不到 7 天时每次启动都会在日志里打 `RENEW`；最迟在最后 7 天内续期：
 
 1. 操作台第 4 步选“续期”（为链上已授权的签名地址重签；服务密钥不变）；
 2. 把新的 `DELEGATION_EXPIRES`、`DELEGATION_SIG` 填进 `.env`，`docker compose up -d`；
@@ -242,12 +243,16 @@ node --test examples/new-api-sidecar/new-api-sidecar.test.mjs
 用一次性身份（随机持有人签的真实 EIP-712 委托，但不在链上），并用 SDK 的 `ai.verifyUsageReceipt` 按确切的收发字节核验每一份回执。
 
 整条路径（假链）：`node examples/new-api-sidecar/chain-demo.mjs`，每一步都通过时退出码 0。它启动**模拟** new-api（`fake-new-api.mjs`，
-独立进程，提供 `/v1`、`/api/pricing`、`/api/status`），把它的价目存下来用 `pricing-convert.mjs` 转换（汇率显式确认），启动只声明
+独立进程，提供 `/v1`、`/api/pricing`、`/api/status`，以及按 `tapeapi reconcile --preset new-api` 期待的形状记录每次回答的用量日志 `/api/log/self` 与 `/api/log/token`），把它的价目存下来用 `pricing-convert.mjs` 转换（汇率显式确认），启动只声明
 `openai-chat` 的旁路（`FORMATS=openai-chat`），把清单写进进程内的**假链**（SDK 自己的 TAP-10 测试链）、挂在名字 `42.7.tape` 下，然后：`tapeapi-doctor` 按名字
 通过（TAP-10 / TAP-11 解析与 1.x 解析各一次）；SDK 按名字解析（核对委托）并核验普通与流式调用的回执（价格是转换出的 USD）；改动一个字节被拒绝；没启用的格式不出回执；
 `tapeapi-verify` 的结论行为 OK（它只从真实链读名字，所以这一步用 `--dev` 地址模式）；转换器的 `--check` 先无漂移，站点改价后退出码 1。
 它证明的是这些组件在本机接得上；不证明真实 new-api 的任何行为（鉴权、跨源、兑换、日志都要在真实实例上核实），不涉及真实链，
 回执也从不证明实际运行的是哪个模型。
+
+对账的那一段路（`reconcile-new-api.test.mjs`）：同样的模拟 new-api、旁路与 `tapeapi-verify --log`，四次调用后像买家那样拉取模拟的 `GET /api/log/self`，
+用真实二进制跑 `tapeapi reconcile --preset new-api --amount-scale <quota_per_unit>`：全部按 `upstream_request_id` 对上并比较金额（退出码 0）；再把导出改一改：缺 id 的行按时间、模型与 token 数对上，
+一行不一致、一张回执没有行、一次绕过旁路的调用只有账单行（退出码 1）；网页端 CSV 的表头预设对不上（退出码 2）。字段名取自 new-api 源码，未用真实实例核对，见[回执对账 · 与 new-api 对账](../../docs/guides/zh-CN/reconcile.md#与-new-api-对账)。
 
 ### 文件
 
@@ -260,7 +265,12 @@ node --test examples/new-api-sidecar/new-api-sidecar.test.mjs
 | `env.example` | `.env` 模板，只有占位符（文件名不带前导点，是为了能随示例公开） |
 | `smoke.mjs`、`new-api-sidecar.test.mjs`、`formats.test.mjs` | 不需要 Docker 的演练与测试（`formats.test.mjs`：`FORMATS` 开关） |
 | `pricing-convert.mjs`、`pricing-convert.test.mjs`、`fixtures/` | 实验性价目转换器、测试与夹具（夹具是 new-api 价目回答的结构副本，名字都是占位） |
-| `chain-demo.mjs`、`fake-new-api.mjs`、`chain-demo.test.mjs` | 假链上的整条路径演示、模拟 new-api 与测试 |
+| `chain-demo.mjs`、`fake-new-api.mjs`、`chain-demo.test.mjs`、`reconcile-new-api.test.mjs` | 假链上的整条路径演示、模拟 new-api（含用量日志）与测试；对账端到端测试 |
+| `OPERATOR-KIT.md` | 运营者工具包：把旁路加进你**现有的** new-api compose 并用单独的主机名、`GET /` 与 `OPERATOR_SITE_URL`、在服务器上生成的密钥、Worker 版、每日检查 |
+| `docker-compose.sidecar.yml`、`tapeapi-sidecar.env.example`、`add-sidecar.sh` | 加进现有 compose 的旁路片段、它的设置模板（只有占位符）与文件准备脚本 |
+| `wrangler.toml` | Worker 版（`../ai-proxy/worker.js`，你的 Cloudflare 账号） |
+| `templates/` | 每日检查：放进**你自己的** GitHub 仓库的工作流模板与 `daily-check.mjs`（实验性） |
+| `operator-kit.test.mjs`、`templates/daily-check.test.mjs`、`fixtures/doctor-report.sample.json` | 工具包的测试（不需要 Docker、不联网）；夹具是假链演示的一份 doctor 报告 |
 
 镜像为什么从本仓库构建，而不是从发布包安装：GitHub 发布里只有 SDK 的安装包，没有 `@tapeapi/server` 的；从检出构建也保证镜像里
 运行的就是你读过的代码。npm 只下载 SDK 固定版本的三个 `@noble` 依赖。
@@ -297,7 +307,7 @@ Not ready to pay for anything yet? Run the local trial on your machine first (no
 `npm ci --no-audit --no-fund` at the repository root, then `node examples/relay-trial/trial.mjs`. After each step below,
 `tapeapi-doctor` (experimental) checks it and says what is missing, where to fix it and the next command. It ships in
 the SDK's release package and runs from any directory:
-`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-doctor <your name or sidecar URL>`; in this directory (`examples/new-api-sidecar`)
+`npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-doctor <your name or sidecar URL>`; in this directory (`examples/new-api-sidecar`)
 the checkout's own is `node ../../sdk/bin/tapeapi-doctor.js`. The step-by-step checklist is [AI providers · From zero to live](../../docs/guides/ai-providers.md#from-zero-to-live).
 
 You need a server with Docker and Docker Compose 2.17 or later; a domain and your existing HTTPS reverse proxy (Nginx,
@@ -340,13 +350,14 @@ repository (the image is built from it): `git clone https://github.com/BruceLanL
    (the Caddy block is above). Already running new-api with its official compose (PostgreSQL, Redis)? Skip this file's
    `new-api` service: add the `tapeapi-sidecar` service to your compose on the same network with `UPSTREAM_BASE_URL` set
    to your new-api service, and point the API hostname at the sidecar. From scratch, new-api uses SQLite in `./data`;
-   set `SQL_DSN` for MySQL or PostgreSQL.
+   set `SQL_DSN` for MySQL or PostgreSQL. Or leave your API hostname exactly as it is and give the sidecar a hostname
+   of its own (such as `tape.example.com`): see [`OPERATOR-KIT.md`](OPERATOR-KIT.md).
 3. **Identity and the manifest, in the holder console at https://tapeapi.fun/console/.** Connect the wallet that holds
    the circuit and pick the circuit (steps 1 and 2). Step 3, "Generate a service key": put the key in `.env` as
    `SIGNER_KEY`, with the `CIRCUITS`, `TOKEN_ID` and `CONTAINER` the page shows, and `docker compose up -d` (a changed
    `.env` recreates the sidecar). Step 4: enter `PUBLIC_URL`; the page reads the signing address from
    `PUBLIC_URL/tapeapi/v1/health` (setup mode exists for this step) and you sign the delegation with your wallet
-   (EIP-712, no funds move, expires in 90 days). Put `DELEGATION_EXPIRES` and `DELEGATION_SIG` in `.env` and
+   (EIP-712, no funds move, expires in 30 days by default; the page takes 1 to 366 days). Put `DELEGATION_EXPIRES` and `DELEGATION_SIG` in `.env` and
    `docker compose up -d` again; once the log shows `signer …, container …, delegation until …` and the four endpoints,
    the sidecar signs receipts. Step 5 publishes the manifest on chain.
 
@@ -363,8 +374,8 @@ repository (the image is built from it): `git clone https://github.com/BruceLanL
    client gets an error, not answers without receipts), so do not hand out that line. Users who want every call
    checked (Claude Code and Codex only when their format is enabled) run the local
    verifying proxy `tapeapi-verify <your TapeOut name>` (it needs the manifest on chain, see the note above; it knows
-   all four formats and logs a call to a format the manifest does not declare as FAIL, or answers 400 without
-   forwarding it under `--strict`) and point
+   all four formats and answers a call to a format the manifest does not declare with 400 without forwarding it, strict
+   being the default since 3.0, or only logs it as FAIL under `--no-strict`) and point
    their client at it from a second terminal, since `tapeapi-verify` keeps running in the foreground
    (`ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude`, or `OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex`; in Windows
    PowerShell `$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8790"; claude` and `$env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex`); set
@@ -382,8 +393,8 @@ receipt. Failures new-api returns (401, 429, quota exhausted, ...) are signed to
 
 ### Renewing the delegation
 
-The console signs delegations for 90 days. With fewer than 30 days left the sidecar logs `RENEW` at every start; renew
-within those last 30 days: step 4 of the console, "Renew" (re-signs for the signing address already on chain; same
+The console signs delegations for 30 days by default (90 before 3.0). With fewer than 7 days left the sidecar logs
+`RENEW` at every start; renew within those last 7 days at the latest: step 4 of the console, "Renew" (re-signs for the signing address already on chain; same
 service key); put the new `DELEGATION_EXPIRES` and `DELEGATION_SIG` in `.env` and `docker compose up -d`; step 5 with
 "Already published; publish again" ticked. An expired delegation puts the sidecar back in setup mode and every API call
 answers 503 until it is renewed. If you think `SIGNER_KEY` leaked, do not renew: generate a new key in step 3 and redo
@@ -497,7 +508,8 @@ real EIP-712 delegation, but nothing is on chain), makes Chat, Responses, Anthro
 checks every receipt with the SDK's `ai.verifyUsageReceipt` over the exact bytes sent and received.
 
 The whole path, on a fake chain: `node examples/new-api-sidecar/chain-demo.mjs` exits 0 when every step passed. It starts
-a **fake** new-api (`fake-new-api.mjs`, its own process, serving `/v1`, `/api/pricing` and `/api/status`), saves its
+a **fake** new-api (`fake-new-api.mjs`, its own process, serving `/v1`, `/api/pricing`, `/api/status`, and the usage log of
+every answer as `/api/log/self` and `/api/log/token`, in the shape `tapeapi reconcile --preset new-api` expects), saves its
 price list and converts it with `pricing-convert.mjs` (the rate confirmed explicitly), starts the sidecar declaring
 `openai-chat` only (`FORMATS=openai-chat`), writes the manifest to an in-process **fake chain** under the name
 `42.7.tape` (the SDK's own TAP-10 test chain), and then: `tapeapi-doctor` passes by name (once with the TAP-10 /
@@ -507,6 +519,13 @@ gets no receipt; `tapeapi-verify` prints an OK verdict (it reads names from the 
 `--dev` URL mode); and the converter's `--check` is clean, then exits 1 once the site changes a price. It shows that the
 parts fit together on one machine; it shows nothing about the real new-api (its auth, CORS, redemption and logs must be
 checked on a real instance), touches no real chain, and a receipt never proves which model ran.
+
+The reconciliation leg (`reconcile-new-api.test.mjs`): the same fake new-api, sidecar and `tapeapi-verify --log`; after four calls
+the mock's `GET /api/log/self` is pulled as a buyer would and `tapeapi reconcile --preset new-api --amount-scale <quota_per_unit>` runs
+through the real binary: every row matched by `upstream_request_id`, amounts compared (exit 0); then the export edited: a row
+without the id joined by time, model and tokens, a differing row, a receipt with no row, a call that bypassed the sidecar with a row
+and no receipt (exit 1); the dashboard CSV's headers refused by the preset (exit 2). The field names are read in new-api's source,
+not checked against a real instance: [Reconcile your receipts · With new-api](../../docs/guides/reconcile.md#with-new-api).
 
 ### Files
 
@@ -518,7 +537,12 @@ Node's HTTP server and the sidecar), `models.example.json`, `env.example` (place
 dot so that it is published with the example), `smoke.mjs`, `new-api-sidecar.test.mjs` and `formats.test.mjs` (the
 `FORMATS` switch), and `pricing-convert.mjs` with `pricing-convert.test.mjs` and `fixtures/` (the experimental price
 converter; the fixture is a structural copy of a new-api pricing answer, with placeholder names), and `chain-demo.mjs`
-with `fake-new-api.mjs` and `chain-demo.test.mjs` (the whole path on a fake chain).
+with `fake-new-api.mjs` (the mock, usage log included), `chain-demo.test.mjs` (the whole path on a fake chain) and
+`reconcile-new-api.test.mjs` (reconcile against the mock's log, end to end). The operator's kit,
+[`OPERATOR-KIT.md`](OPERATOR-KIT.md): `docker-compose.sidecar.yml`, `tapeapi-sidecar.env.example` and `add-sidecar.sh`
+(the sidecar added to your EXISTING new-api compose, on a hostname of its own, with a key made on the server),
+`wrangler.toml` (the Worker in your Cloudflare account), `templates/` (a daily check for your own GitHub repository),
+and their tests `operator-kit.test.mjs` and `templates/daily-check.test.mjs` (fixture: a doctor report of the chain demo).
 
 Why the image is built from this repository rather than installed from a release: the GitHub release carries the SDK's
 package only, not `@tapeapi/server`'s; and building from the checkout means the image runs exactly the code you have

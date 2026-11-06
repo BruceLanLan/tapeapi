@@ -5,7 +5,7 @@ them. The sidecar signs; your billing layer charges. This page says how the two 
 forwarding a call, what to log, and what to tell your users. It is about TapeAPI's tools only: TapeAPI does not run,
 host, list or vouch for any such service, and no part of this page takes or makes a payment.
 
-Everything new here is **experimental** (2.5, outside the 2.x compatibility promise): the SDK helpers `ai.amountOf`,
+Everything new here is **experimental** (2.5, outside the compatibility promise): the SDK helpers `ai.amountOf`,
 `ai.pricesOf`, `ai.maxAmountOf`, `ai.maxPricesOf` and `ai.completionLimitOf`, the sidecar option
 `upstreamResponseHeaders` (`UPSTREAM_RESPONSE_HEADERS`) and the new-api sidecar's `RECEIPT_LOOKUPS_PER_MIN`. All are off
 or unused unless you call or set them; nothing changes for a sidecar that does not.
@@ -139,7 +139,7 @@ name. That is allowed by the format, but it must not be invisible:
 - **Log both names** for every call in your own records: the model requested and the model the upstream reported
   before any rewriting, so that an audit or a dispute can see both.
 - **Never claim that a receipt proves which model ran upstream.** A receipt proves who signed, over exactly which
-  request and response bytes, and what usage and price were claimed. It does not prove the upstream model or channel.
+  request bytes and which answer (its bytes; for a stream, its event data), and what usage and price were claimed. It does not prove the upstream model or channel.
 
 ## What to tell your users
 

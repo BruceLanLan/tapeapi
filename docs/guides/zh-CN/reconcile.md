@@ -4,11 +4,11 @@
 
 你向一个对每次回答都签用量回执的服务购买了 AI 调用，`tapeapi-verify --log` 把这些回执留在了你的机器上。本篇把它们与
 你手里的其它材料逐项对照：服务方的账单、你发出的请求、你为代理签的授权书、你自己的花费限额。这里的一切都是
-`tapeapi reconcile`，属实验性，不受 2.x 兼容承诺约束，任何 2.x 版本都可能改变或移除。
+`tapeapi reconcile`，属实验性，不受兼容承诺约束，任何次版本都可能改变或移除。
 
 **它做什么，绝不做什么。**只读本机文件：不联网、不需要密钥、不上传、没有遥测。它只列事实，每条带出处的回执行（用到账单行
-或请求文件时也带上）。它不下结论：差异是可以拿着出处行去问服务方的问题。**回执只证明签名方说了什么**：谁签了哪些请求与
-回答字节、声称了多少用量与价格。它不证明实际运行的是哪个模型，这里的任何检查也无法判断实际运行的是哪个模型。
+或请求文件时也带上）。它不下结论：差异是可以拿着出处行去问服务方的问题。**回执只证明签名方说了什么**：谁签了哪些请求字节与
+哪个回答（回答的字节；流式回答取其事件数据）、声称了多少用量与价格。它不证明实际运行的是哪个模型，这里的任何检查也无法判断实际运行的是哪个模型。
 
 ```sh
 # 装好 SDK 之后；在检出里用 node sdk/bin/tapeapi.js reconcile … 效果相同
@@ -35,7 +35,34 @@ tapeapi reconcile --receipts receipts.jsonl --bill bill.csv \
 
 `model`、`prompt`、`completion` 必须指定，另需 `id` 或 `time`。只有给了 `--amount-scale`（多少个账单单位等于回执币种的
 1 个单位）才比较 `amount`。`--preset new-api` 指的是 new-api 的 `GET /api/log/self` 返回的 JSON 字段名，它是什么、
-不是什么见 [AI 服务方指南](ai-providers.md)。没有为任何其它服务方准备预设：请自己指定列。
+不是什么见 [AI 服务方指南](ai-providers.md)。没有为任何其它服务方准备预设：请自己指定列。不带时区的时间（`2026-10-22 10:00:00`）一律按 UTC 读，账单与 `--since` / `--until` 都是如此。
+
+## 与 new-api 对账
+
+如果服务方用的是 [new-api](https://github.com/QuantumNous/new-api)（前面有没有[签名旁路](../../../examples/new-api-sidecar/README.md)都一样），
+它的接口返回的用量日志就是 `--preset new-api` 能直接读的账单。用你自己的凭据把它导出成文件，再对账：
+
+```sh
+# 你自己的行：用控制台的凭据（控制台请求所带的令牌；较新版本是带 usage:read 作用域的 `nap_` 访问令牌）；转发密钥（sk-…）在这条路由上会被拒绝
+curl -sS -H "Authorization: Bearer <你的控制台令牌>" "https://<服务方>/api/log/self" -o newapi-log.json
+# 或者只有转发密钥时：该密钥最近的行，字段相同
+curl -sS -H "Authorization: Bearer sk-…" "https://<服务方>/api/log/token" -o newapi-log.json
+# quota_per_unit 在 GET /api/status 里（data.quota_per_unit；new-api 默认 500000，站点可以改）
+tapeapi reconcile --receipts receipts.jsonl --bill newapi-log.json --preset new-api --amount-scale 500000
+```
+
+`quota` 是原始整数；`--amount-scale <quota_per_unit>` 把回执的币种折算成它，默认容差是不到 1 个额度。日志是分页的：用那个控制台日志页
+发出的日期参数缩小范围（从浏览器开发者工具里复制它的请求；各版本不同），让要对的行放进一次回答里，或者每存一页就跑一次
+`reconcile`。`--since` 与 `--until` 对两个文件都生效。
+
+这依据什么、不依据什么：字段名（`data.items` 里的 `upstream_request_id`、`model_name`、`prompt_tokens`、`completion_tokens`、
+`quota`、`created_at`，或裸的 `data` 数组）取自 new-api 的源码，**尚未用真实实例核对**；`upstream_request_id` 是不是回执里的回答
+id 并不知道，按它对不上的行会在 `--window`（默认 120 秒）内按时间、模型与 token 数对应。**控制台的 CSV 导出（日志页的"导出"）是另一份
+文件**：表头是本地化的显示标题、`Cost` 是格式化后的字符串而不是可比较的数、id 列是 `request_id` 而不是 `upstream_request_id`，所以
+预设对它匹配不上（退出码 2，并显示它的表头）；和其它账单一样，用 `--map` 指定它的列。仓库里的模拟 new-api
+（`examples/new-api-sidecar/fake-new-api.mjs`）提供这种日志形状，`reconcile-new-api.test.mjs` 在 127.0.0.1 上走完整条路径
+（旁路、`tapeapi-verify --log`、导出、`reconcile`：全部按 id 对上、缺 id 的行、不一致的行、两边各缺一行）；它只是模拟，
+不说明真实实例会返回什么。
 
 ## 每个请求的事实
 
@@ -85,7 +112,7 @@ JSON 形式的授权书，可以是裸对象，也可以是 `{ "mandate": { … 
 
 ## 你自己的限额
 
-`--policy <文件>` 读取你为自己写的限额。它不是平台规则，调用时也没有执行；`reconcile` 列出回执声称超过它的时间窗口。
+`--policy <文件>` 读取你为自己写的限额。它不是平台规则，`reconcile` 也不执行任何限制：只列出回执声称超过它的时间窗口。（同一个文件也可以在你自己的进程里、在调用发出之前拒绝调用：见下文。）
 
 ```json
 {
@@ -102,6 +129,57 @@ JSON 形式的授权书，可以是裸对象，也可以是 `{ "mandate": { … 
 `service` 是容器地址或 `"*"`，`model` 是回执里写的模型名或 `"*"`，`period` 是 `call`、`day`、`month`（UTC）或 `total`
 之一。每条规则至少设 `maxAmount`（至多 8 位小数的十进制字符串，需带 `currency`）、`maxCalls`、`maxPromptTokens`、
 `maxCompletionTokens` 中的一项。未知的键是错误（退出 2），拼错的限额不会被悄悄忽略。
+
+### 每次调用之前读同一个文件（客户端预算，实验性，3.0）
+
+`createVerifyingFetch({ policy })` 读同一份策略，当一次调用的最坏情况会让覆盖它的某条规则超出限额时，**在发出之前**拒绝它。规则按
+服务（容器）与模型（请求的名字、价目表条目的 id 或别名，或 `"*"`）覆盖调用。
+
+```js
+import { readFileSync, appendFileSync, chmodSync } from 'node:fs'
+import { ai } from '@tapeapi/sdk'
+
+const policy = JSON.parse(readFileSync('my-limits.json', 'utf8'))
+const fetch = ai.createVerifyingFetch({ api, service, policy,
+  budgetStore: ai.budgetFileStore('spend.jsonl', { readFileSync, appendFileSync, chmodSync }) })
+```
+
+- **最坏情况**：对模型条目的每个币种求 `ai.maxAmountOf`，提示 token 上界取请求的字节数，补全取请求声明的输出上限
+  （`ai.completionLimitOf`）。与之相加的是：规则窗口里核验无误的回执已经声称的数，以及每个已记为发出、却没有核验无误回执的调用
+  （上游失败、回执核验不符、中途崩溃）的最坏情况。
+- **拒绝**（不论 `strict`）：`BUDGET_EXCEEDED`，`data: { reason: 'budget-cap', rule, period, window, limit, currency, cap,
+  spent, worstCase }`。覆盖该调用的规则无法给出上界时一律拒绝，`INVALID_ARGUMENT` 加 `data.reason`：`budget-no-limit`（请求没设
+  `max_tokens` / `max_completion_tokens` / `max_output_tokens`）、`budget-no-price`（价目表没有该模型）、`budget-no-currency`
+  （没有规则币种的价格）、`budget-unreadable-request`（正文不是 JSON 对象）、`budget-store-unwritable`（记不下来，所以不发送）。
+- **存储**（`budgetFileStore`）是一个只追加的 JSON 行文件，权限 600：核验无误的回执信封（`tapeapi receipts` 与
+  `tapeapi reconcile --receipts` 原样读取），每次调用在发出之前写下的一行 `{"tapeapiSent": 1, …}`，以及调用以确定的、不声称任何数的
+  失败结束（不带回执的 HTTP 4xx 或 5xx）时写下的一行 `{"tapeapiReleased": 1, …}`，它撤下该调用的最坏情况（回执读取器跳过这两种行）。
+  超时、连接断开、回执核验不符都不算确定：调用继续计入。
+  重启后重新读文件，计数仍在。不给 `budgetStore` 时存在内存里：重启即忘。
+
+**它不是什么。** 它只是你自己进程里的便利，不是任何别人可以依赖的执行：你可以关掉它、改文件，或在一个文件上放两个预算（两个进程，或同一进程里两个带 `policy` 的 fetch：
+每次调用之前各自读取对方新追加的行；给 `budgetFileStore` 传了 `writeFileSync` 与 `unlinkSync` 时（`tapeapi-verify --budget-store` 就是这样）还在锁文件 `<存储>.lock` 之内依次判定；同一进程里请用 `budget:` 共用一个 `ai.createBudget()`），服务方也不受它约束。它限制的是回执**声称**的价格，不是任何人实际付的钱。最坏情况只在计数可靠时成立：隐藏的系统提示、
+图片、工具定义、无视 `max_tokens` 的模型、按另一个上报模型计价的回答，都可能让回执声称的数超过最坏情况；下一次调用会看到它并被拒绝。
+只有发往清单端点的调用会被计入（默认的 strict 本来就拒绝其它调用）。
+
+本地代理读同一个文件：`tapeapi-verify <服务> --policy my-limits.json --budget-store spend.jsonl`。被拒绝的调用得到 HTTP 400（code 为
+`budget_exceeded`；无法给出上界时为 `budget_no_limit` 等），带 `x-should-retry: false`，与代理其它转发前的拒绝一致，不转发。
+
+## 花费声明（实验性，3.0）
+
+`tapeapi receipts statement` 按服务、模型、UTC 日汇总一段期间内回执声称的数，并把你的策略与授权书的上限并列：
+
+```sh
+tapeapi receipts statement --receipts spend.jsonl --from 2026-10-01 --to 2026-11-01 --policy my-limits.json \
+  --mandate mandate.json --token-decimals 18 [--json] [--lang en|zh]
+```
+
+它的计法与 `reconcile` 相同（一张回执只计一次，`--from` / `--to` 就是 `--since` / `--until`），同样的文件，合计与 reconcile
+一致：授权书的 `spent`、每个策略窗口的合计。预算记为已发出、却没有核验无误回执的调用，按最坏情况列在合计旁边，不计入合计。
+
+**它没有签名。** 这是你对本机回执的自己的汇总；你给谁看，谁就只能凭你的话。其中每张回执由各自的服务签名，只证明该服务声称了什么。
+它不是 agent 套件的 `spendStatement` / `spendEvidence`（阶段 1）：那两者是写在签名交付结果里的托管通道 `claimedOf`，需要托管；
+这里只读回执。
 
 ## 给运营者：给用户能对账的行
 

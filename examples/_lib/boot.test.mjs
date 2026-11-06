@@ -22,6 +22,7 @@ function boot(name) {
       cwd: join(EXAMPLES, name),
       env: { PATH: process.env.PATH, HOME: process.env.HOME, PORT: '0', HOST: '127.0.0.1' },
       stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 300_000, killSignal: 'SIGKILL',
     })
     let out = ''
     const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error(`${name} did not print its manifest URL in 15 s:\n${out}`)) }, 15_000)

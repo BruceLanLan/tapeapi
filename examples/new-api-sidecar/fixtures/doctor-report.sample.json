@@ -1,0 +1,150 @@
+{
+  "tool": "tapeapi-doctor",
+  "target": "42.7.tape",
+  "mode": "name",
+  "chainId": 56,
+  "resolution": "tap10",
+  "exitCode": 0,
+  "counts": {
+    "pass": 13,
+    "warn": 1,
+    "fail": 0,
+    "skip": 0,
+    "error": 0
+  },
+  "checks": [
+    {
+      "id": "name",
+      "status": "pass",
+      "title": {
+        "en": "Name resolves to a processor",
+        "zh": "名字能解析到处理器"
+      },
+      "detail": "42.7.tape -> processor 7 = 0x5050505050505050505050505050505050505050 on BNB Smart Chain"
+    },
+    {
+      "id": "circuit",
+      "status": "pass",
+      "title": {
+        "en": "Circuit exists (has a holder)",
+        "zh": "电路存在（有持有人）"
+      },
+      "detail": "holder 0xE3c483B59Ff3188Cb4d5F437E7d8e9B88F649f71"
+    },
+    {
+      "id": "container",
+      "status": "pass",
+      "title": {
+        "en": "Container is opened",
+        "zh": "容器已开通"
+      },
+      "detail": "0xA3fC7008A4165f94Fb32133661c060859Be63e0d on BNB Smart Chain"
+    },
+    {
+      "id": "activation",
+      "status": "pass",
+      "title": {
+        "en": "Name is activated (TAP-10 §6.3)",
+        "zh": "名字已激活（TAP-10 §6.3）"
+      },
+      "detail": "activated: isContainerLive(container) is true",
+      "detailZh": "已激活：isContainerLive(容器) 为真"
+    },
+    {
+      "id": "manifest-file",
+      "status": "pass",
+      "title": {
+        "en": "Manifest file on chain",
+        "zh": "链上有清单文件"
+      },
+      "detail": "2004 bytes, SHA-256 matches the SiteRegistry index"
+    },
+    {
+      "id": "manifest-format",
+      "status": "pass",
+      "title": {
+        "en": "Manifest format (TAPI-20)",
+        "zh": "清单格式合规（TAPI-20）"
+      },
+      "detail": "\"Local demo relay\", signer 0x6153c1387C121ca7ec81137e5Af7a50fABb3a9DF, 1 method(s)"
+    },
+    {
+      "id": "delegation",
+      "status": "pass",
+      "title": {
+        "en": "Delegation valid",
+        "zh": "委托有效"
+      },
+      "detail": "90 days left, until 2027-01-11; signed by the holder 0xE3c483B59Ff3188Cb4d5F437E7d8e9B88F649f71",
+      "detailZh": "还剩 90 天，到 2027-01-11；由持有人 0xE3c483B59Ff3188Cb4d5F437E7d8e9B88F649f71 签名"
+    },
+    {
+      "id": "ai-field",
+      "status": "pass",
+      "title": {
+        "en": "ai field (TAPI-20 §3.9)",
+        "zh": "ai 字段（TAPI-20 §3.9）"
+      },
+      "detail": "1 endpoint(s), 9 model(s)"
+    },
+    {
+      "id": "prices",
+      "status": "warn",
+      "title": {
+        "en": "Price table",
+        "zh": "价目表"
+      },
+      "detail": "vendor-a-flash-4: the USD output price 0.14285 is below the input price 0.28571: swapped?; vendor-b/model-b-max-3.7: the USD output price 1.71428 is below the input price 5.14285: swapped?; vendor-c/model-c-3: the USD output price 0.3 is below the input price 1.2: swapped?; model-c-2.5: the USD output price 0.3 is below the input price 1.2: swapped?",
+      "detailZh": "vendor-a-flash-4 的 USD 输出价 0.14285 低于输入价 0.28571：是不是填反了？；vendor-b/model-b-max-3.7 的 USD 输出价 1.71428 低于输入价 5.14285：是不是填反了？；vendor-c/model-c-3 的 USD 输出价 0.3 低于输入价 1.2：是不是填反了？；model-c-2.5 的 USD 输出价 0.3 低于输入价 1.2：是不是填反了？",
+      "fix": {
+        "en": "Check these prices in models.json (hints only; nothing is refused): vendor-a-flash-4: the USD output price 0.14285 is below the input price 0.28571: swapped?; vendor-b/model-b-max-3.7: the USD output price 1.71428 is below the input price 5.14285: swapped?; vendor-c/model-c-3: the USD output price 0.3 is below the input price 1.2: swapped?; model-c-2.5: the USD output price 0.3 is below the input price 1.2: swapped?",
+        "zh": "核对 models.json 里的这些价格（只是提示，不会被拒绝）：vendor-a-flash-4 的 USD 输出价 0.14285 低于输入价 0.28571：是不是填反了？；vendor-b/model-b-max-3.7 的 USD 输出价 1.71428 低于输入价 5.14285：是不是填反了？；vendor-c/model-c-3 的 USD 输出价 0.3 低于输入价 1.2：是不是填反了？；model-c-2.5 的 USD 输出价 0.3 低于输入价 1.2：是不是填反了？"
+      }
+    },
+    {
+      "id": "endpoints",
+      "status": "pass",
+      "title": {
+        "en": "AI endpoints",
+        "zh": "AI 端点"
+      },
+      "detail": "openai-chat http://127.0.0.1:8080/v1"
+    },
+    {
+      "id": "reach",
+      "status": "pass",
+      "title": {
+        "en": "Endpoint reachable (TLS, sidecar ready)",
+        "zh": "端点可访问（TLS、旁路就绪）"
+      },
+      "detail": "http://127.0.0.1:8080 sidecar ready"
+    },
+    {
+      "id": "cors",
+      "status": "pass",
+      "title": {
+        "en": "CORS for browser clients",
+        "zh": "浏览器跨域（CORS）"
+      },
+      "detail": "preflight allowed from https://example.org; x-tapeapi-receipt exposed"
+    },
+    {
+      "id": "receipt",
+      "status": "pass",
+      "title": {
+        "en": "A real request gets a verifiable receipt",
+        "zh": "真实请求拿到可核验的回执"
+      },
+      "detail": "openai-chat: HTTP 401 to an invalid key, receipt verified (signer 0x6153c1387C121ca7ec81137e5Af7a50fABb3a9DF; no tokens used)"
+    },
+    {
+      "id": "receipt-lookup",
+      "status": "pass",
+      "title": {
+        "en": "Receipt lookup by id (free method)",
+        "zh": "按 id 取回执（免费方法）"
+      },
+      "detail": "receipt tapeapi-559e00d42474b3cc7adf7e3e returned, same signature"
+    }
+  ]
+}

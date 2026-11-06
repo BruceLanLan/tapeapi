@@ -21,7 +21,7 @@ Version 1.7 ships **phase 0**, through the subpath `@tapeapi/sdk/agent`:
 - **Enforced limits are a later phase.** Caps that an agent cannot exceed need contracts that are not deployed (see
   [What comes next](#what-comes-next)).
 - **Experimental.** The whole subpath is Experimental under [what 1.0 promises](upgrade-1.0.md), which 2.0 keeps: it may
-  change in a 2.x minor release, and it is outside the 2.x compatibility promise. The formats follow two public discussions in
+  change in a 2.x minor release, and it is outside the compatibility promise. The formats follow two public discussions in
   TapeOutProtocol/TAPs, the Ideas [#40](https://github.com/TapeOutProtocol/TAPs/issues/40) (the mandate) and
   [#41](https://github.com/TapeOutProtocol/TAPs/issues/41) (the task protocol and agent listings), and may change with
   them. Neither has a TAP number.
@@ -371,7 +371,7 @@ tapeapi-verify task thread.json --payment <agent container> <inbox index>
 tapeapi-verify task thread.json --rpc https://node-a.example,https://node-b.example
 ```
 
-Without installing anything, use `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-verify task thread.json`;
+Without installing anything, use `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-verify task thread.json`;
 in a checkout, `node sdk/bin/tapeapi-verify.js task thread.json`.
 
 - `--payment <recipient> <index>` also checks the TapeSend message at that index in the recipient's inbox. The recipient
@@ -406,6 +406,101 @@ payment:     message 0 in the inbox of 0xa6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a
 The `revocation` line gives the thread's revocation time, when a revocation applies: agent messages signed after it
 are refused, and nothing else. It does not say the thread was cancelled; the `state` line does. A thread delivered and
 accepted before a revocation reads `result: ok` with `revocation: at <issued> (site); ...`.
+
+## A budget of your own, and a spend statement (experimental, 3.0)
+
+None of this needs an escrow. An agent can keep its own spending inside a policy file it writes for itself (the same
+file `tapeapi reconcile --policy` reads, see [Reconcile your receipts](reconcile.md#your-own-limits)), and keep its
+receipts on its own machine:
+
+```js
+import { readFileSync, appendFileSync, chmodSync } from 'node:fs'
+import { ai } from '@tapeapi/sdk'
+import { createSpendLimiter } from '@tapeapi/sdk/agent'
+
+const budget = ai.createBudget({ policy: JSON.parse(readFileSync('agent-limits.json', 'utf8')),
+  store: ai.budgetFileStore('agent-spend.jsonl', { readFileSync, appendFileSync, chmodSync }) })
+// AI calls: refused before they are sent when their worst case would go over a rule
+const fetch = ai.createVerifyingFetch({ api, service, budget })
+// phase 1 only, if you use it: each voucher's price is admitted by the same budget before it is handed out
+const payer = createSpendLimiter({ store }).payer({ chainId, payer: api.payer({ consumer, sessionKey }), budget, tokenDecimals: 18 })
+```
+
+- The fetch counts what the verified receipts claim and, for a call with no verified receipt, its worst case. The
+  limiter's `payer({ budget, tokenDecimals })` admits each voucher's price, read in the token's label (BEM, USDT) and
+  rounded up to 8 places, against the rules on its service with model `"*"`; over a rule it throws `BUDGET_EXCEEDED`
+  and releases the voucher. A voucher released before it is accepted (its lease not committed) gets an offsetting
+  released line; the payer signs that cumulative again next time, and that voucher is counted then. It sits next to
+  the limiter's own cap (`claimedAtCheck + cap`) and per-call ceiling (the lower of `maxCallPrice`, or 10% of the cap, and
+  the method's listed `priceBEM`), which it does not replace: a voucher must fit both, the limiter's rules are checked
+  first (a limiter refusal writes no budget line), and the budget counts the voucher's price, not the listed one.
+- The store file (mode 600) is the agent's receipt store: `tapeapi receipts tail|show|export` and `tapeapi reconcile`
+  read it as it is. It is on the agent's machine only; nothing is uploaded or kept by anyone else. Unlike a spend key,
+  a receipt store may be backed up and restored.
+- `tapeapi receipts statement --receipts agent-spend.jsonl --from … --to … [--policy …] [--mandate …]` sums it per
+  service, model and day, with the caps alongside ([A spend statement](reconcile.md#a-spend-statement-experimental-30)).
+
+**What this is not.** The budget is a convenience in the agent's own process: the principal cannot rely on it (the agent
+can turn it off or edit its file), a provider is not bound by it, and it bounds the prices the receipts claim, not what
+is paid. The statement is the agent's own word, signed by nothing. The kit's `spendStatement` / `spendEvidence` (phase
+1, M7) are not reused for it: they state an escrow channel's `claimedOf` at delivery, inside the signed deliver result,
+and need an escrow; the statement reads receipts only.
+
+## Experimental: x402 batch-settlement channels as the enforcement (experimental)
+
+A prototype, not in any release: the phase-1 checks, the spend limiter and the budget can also run
+on **x402 batch-settlement channels** instead of the TAPI-22 escrow, with `{ enforcement: 'x402-batch' }`. Read what it
+is before anything else:
+
+- **It uses contracts that are already deployed and that we did not write.** `x402BatchSettlement`
+  (`0x4020074e9dF2ce1deE5A9C1b5c3f541D02a10003`), `Permit2DepositCollector` (`0x4020425FAf3B746C082C2f942b4E5159887B0005`)
+  and Permit2 (`0x000000000022D473030F116dDEE9F6B43aC78BA3`), as the x402 `batch-settlement` EVM binding names them
+  (spec commit `c2a8924e`). The settlement contract has no owner, no fee and no upgrade path in its source. **We have not
+  reviewed these contracts;** their repository carries external review reports, which we have not assessed. We ran them
+  on a local fork of BNB Smart Chain only. Nothing here says anything about their safety.
+- **Payers are plain EOAs only.** The channel's payer is the principal's holder (funding path `holder`). A TapeOut
+  container cannot pay: its `isValidSignature` answers `0x00000000` for every input (read on a fork at block
+  129,111,153), so Permit2 refuses its deposit whatever key signs the vouchers. An EOA carrying EIP-7702 delegation code is
+  refused too. The check reports `x402-payer-not-eoa`; `x402CheckPayer(address, code)` says the same before any
+  transaction.
+- **No contribution and no treasury.** Nobody takes a share of anything on this path.
+- **The service sets the withdraw delay** (15 minutes to 30 days, the contract's range). The client refuses a service
+  whose delay is above its own cap: 48 hours by default, `maxWithdrawDelayS` to change it (`x402-withdraw-delay-too-long`).
+- **The contract has no session expiry.** The SDK's payer stops signing at `sessionExpiry` (default: one hour after it is
+  made). A voucher signed before stays claimable on chain until the channel is withdrawn or refunded, and the session key
+  itself can start and finish a withdrawal (the funds go to the payer only). Keep channels small, one key per channel,
+  and close them when the task ends.
+- **Each party sends and pays for its own transactions.** The payer sends `approve(Permit2)` once, then a deposit it signs
+  (anyone may relay it) and, at the end, its withdrawal. The provider sends its own `claim` and `settle`. The SDK only
+  builds unsigned transactions (`x402Tx`); it sends nothing and pays no gas for anyone.
+- **What a receipt proves is unchanged.** This changes who holds the funds, not what a provider's signed answer is.
+
+```js
+import { createAgentKit, createSpendLimiter, x402Payer, x402Acceptance, x402Tx } from '@tapeapi/sdk/agent'
+
+// the service's terms (no manifest field carries them yet: they are configuration; its manifest's payment.escrow
+// names the settlement contract)
+const terms = { [provider]: { receiver: provider, receiverAuthorizer, token: BEM, withdrawDelay: 3600 } }
+const check = await kit.verifyMandate(signed, { enforcement: 'x402-batch', x402: { terms } })   // read at one pinned block
+const limiter = createSpendLimiter({ store })
+await limiter.accept({ chainId: 56, agentKey }); await limiter.start({ chainId: 56, check })
+const payer = limiter.payer({ chainId: 56, payer: x402Payer({ chainId: 56, consumer: holder, sessionKey, terms }), budget, tokenDecimals: 8 })
+
+// the provider: createProvider({ ..., enforcement: x402Acceptance({ chainId: 56, container, receiverAuthorizer,
+// token, withdrawDelay, read }) }); later, from its own key: x402Tx via acceptance.claimTx(await acceptance.claimRows())
+```
+
+- The limiter pins each provider's **channel id** as well as the settlement address; a voucher or a check on another
+  channel stops the order (`spend-voucher-mismatch`, `spend-escrow-changed`). The cap, the per-call ceiling and the budget
+  work as with `escrow-channel`.
+- The provider charges `last + price` and claims only that, even when a voucher's ceiling is higher; the ceiling is what
+  the key signed, and what the limiter counts. A claim of what was already claimed is a silent no-op on chain (no
+  revert, no `Claimed` log): read the logs. Only what is claimed holds against a withdrawal, so a provider claims inside
+  the service's delay.
+- Not covered: the fee channel (`feeCap` above 0 is `x402-fee-unsupported`), the holder's plan and close-out
+  (`escrowPlan`, `closeOutPlan`, escrow-channel only), cooperative refunds by signature, payers through EIP-1271.
+- Tested on a fake contract that ports the contract's rules, against values read from the deployed contracts, and once
+  on a local fork (`BSC_FORK_RPC`, skipped by default). Never on mainnet.
 
 ## What a check proves, and what it does not
 
@@ -512,6 +607,7 @@ Thrown errors (`TapeAPIError`, details in `data`):
 |---|---|
 | `AGENT_INVALID` | `mandateTypedData` or `signMandate` refuses a mandate with an amount, an asset or sub-delegation (`data.reason` `phase0-no-funds` or `subdelegate-not-allowed`); `forWallet` refuses a payload; a task text does not match its hash; a field has the wrong shape; `identityOf` is given an address that is not a container (`data.reason` is the problem code). |
 | `INVALID_ARGUMENT` | A check needs nodes of at least two operators and the client has fewer, or no `rpcUrls`; `nonces` is neither a `Map` nor a `setIfAbsent` store; a payment builder refuses (`data.reason` `recipient-not-from-chain`, `no-such-token`, `not-tapeout`, `only-transfer`, `native-via-container-unverifiable`); `revocationFileBytes` gets a list over 4,096 bytes or a malformed signature. |
+| `BUDGET_EXCEEDED` | (3.0, experimental) `payer({ budget, tokenDecimals })`: the voucher's price would take a rule of your own policy file over its limit; the voucher is released and not returned (`data.reason` `budget-cap`). `INVALID_ARGUMENT` with `data.reason` `budget-no-currency` when the token has no label (BEM, USDT) the policy can price. |
 | `NOT_FOUND` | `readMessage` is given an inbox index that does not exist. |
 | `RPC_STALE`, `RPC_UNAVAILABLE`, `RPC_DISAGREE`, and `INVALID_ARGUMENT` with `data.status` `wrong-chain` | The chain could not be read for a check: the pinned block is too far behind (`data.status` `stale-block`), nodes failed or disagreed, the processor number was not found within the scan budget (at most 256 `cpuAt` reads per processor looked up, per check; `unavailable`, and the next check goes on), or the nodes are on another chain. |
 
@@ -551,7 +647,9 @@ Thrown errors (`TapeAPIError`, details in `data`):
 Phase 0 is what this guide describes. Since 2.0 the SDK also has phase 1 as an experimental subpath feature, bounded
 agents (`{ enforcement: 'escrow-channel' }`, the holder's plan, the agent's spend limiter): it relies on the escrow
 contract of TAPI-22, which is **not audited and not deployed**, so it is checked on local chains and in tests only and
-does not work on mainnet. See [Bounded agents](https://github.com/BruceLanLan/tapeapi#bounded-agents-experimental-not-usable-on-mainnet)
+does not work on mainnet. No escrow address is configured for any chain and the SDK's list of audited escrows is
+empty, so nothing in phase 1 (the plan, the close-out, the checks before funding) can move money on mainnet; those
+checks only refuse or report, and none of them can end a session key before it expires. See [Bounded agents](https://github.com/BruceLanLan/tapeapi#bounded-agents-experimental-not-usable-on-mainnet)
 and the [changelog](../../CHANGELOG.md). Idea [#40](https://github.com/TapeOutProtocol/TAPs/issues/40) sketches the two
 further phases:
 

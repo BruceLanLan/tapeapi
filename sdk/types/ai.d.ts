@@ -120,6 +120,18 @@ export declare function maxPricesOf(entry: Pick<ModelPrice, 'prices'>, bounds: T
  * max_tokens, openai-embeddings 0. What the request asks for, not what the upstream does.
  */
 export declare function completionLimitOf(body: unknown, format: string | { name: string }): number | null
+/**
+ * @experimental (3.0, a proposal, not part of TAPI-21 or of any TAP; see the CHANGELOG) SHA-256 (64 lowercase hex) of the
+ * canonical JSON of a manifest `ai` field's price table (`models`, the members TAPI-20 §3.9 defines): the value a sidecar
+ * created with `priceRef: true` signs into each receipt as `result.priceRef`. Throws MANIFEST_INVALID.
+ */
+export declare function priceRefOf(field: unknown): string
+/**
+ * @experimental (3.0, a proposal, not part of TAPI-21 or of any TAP; see the CHANGELOG) A stable reference to one usage receipt:
+ * SHA-256 (64 lowercase hex) of the canonical JSON of its eight members (container and sig lowercase, v as 27/28; other
+ * top-level members left out). It identifies a receipt and proves nothing until the receipt is verified. Throws RECEIPT_INVALID.
+ */
+export declare function receiptRef(envelope: UsageReceipt | Record<string, unknown>): string
 
 /** An AI usage receipt: a TAPI-21 envelope, with the method and params it is signed over. */
 export interface UsageReceipt {
@@ -143,6 +155,8 @@ export interface UsageReceipt {
     unpriced?: string[]
     /** The sidecar asked the upstream for usage the client did not ask for (and stripped what that added). */
     usageInjected?: true
+    /** @experimental (3.0, proposal, not normative) The price basis: priceRefOf of the table that priced it; only from a sidecar created with priceRef: true. */
+    priceRef?: string
   }
   container: string
   ts: number
@@ -281,7 +295,7 @@ export declare function createVerifyingFetch(o: {
    * usageRequested (@since 1.6, only with requestUsage): this fetch set the usage member in the request; usageRequestSkipped:
    * it could not (not strict), and the sidecar asks for the usage itself.
    */
-  onReport?: (report: VerifyReport & { url: string; stream: boolean; status: number; salted: boolean; incomplete?: boolean; sidecarError?: true; code?: 'PROVIDER_UNAVAILABLE' | 'RATE_LIMITED'; mismatch?: true; expected?: string; usageRequested?: boolean; usageRequestSkipped?: UsageRequestSkip }) => void
+  onReport?: (report: VerifyReport & { url: string; stream: boolean; status: number; salted: boolean; incomplete?: boolean; sidecarError?: true; code?: 'PROVIDER_UNAVAILABLE' | 'RATE_LIMITED'; mismatch?: true; expected?: string; usageRequested?: boolean; usageRequestSkipped?: UsageRequestSkip; /** @experimental (3.0) a call the budget refused before sending: the error's data */ budget?: Record<string, unknown> | null }) => void
   /** Append 64 random JSON whitespace characters to a JSON request body on a receipt path (the request hash becomes unguessable); default true. */
   salt?: boolean
   /**
@@ -298,4 +312,69 @@ export declare function createVerifyingFetch(o: {
   maxSkewS?: number
   /** Default FORMATS. A format that streams must have `stream.final`: strict throws INVALID_ARGUMENT here without it; not strict reports it once. */
   formats?: readonly AIFormat[]
+  /**
+   * @experimental (3.0) A local policy file's value (the file `tapeapi reconcile --policy` reads). A call to an endpoint
+   * of the manifest is refused BEFORE it is sent, whatever `strict` says, when its worst case (maxAmountOf over the
+   * request's declared output limit and its size in bytes) would take a covering rule over its cap: BUDGET_EXCEEDED
+   * (`data: { reason: 'budget-cap', rule, period, window, limit, currency?, cap, spent, worstCase }`), or
+   * INVALID_ARGUMENT when it cannot be bounded (`data.reason`: budget-no-limit, budget-no-price, budget-no-currency,
+   * budget-unreadable-request, budget-store-unwritable). Verified receipts are recorded in `budgetStore`. A client-side
+   * convenience: nobody else can rely on it, and it bounds the prices the receipts claim, not what anyone pays. Off
+   * unless given.
+   */
+  policy?: PolicyFile
+  /** @experimental (3.0) With `policy`: where calls are recorded (budgetFileStore for a file, mode 600); default memory. */
+  budgetStore?: BudgetStore
+  /** @experimental (3.0) A createBudget() shared with other fetches or the agent kit's limiter, in place of `policy`. */
+  budget?: Budget
 }): (input: any, init?: any) => Promise<Response>
+
+/** @experimental (3.0) A policy file: { tapeapiPolicy: 1, rules } (tapeapi reconcile --policy reads the same file). */
+export interface PolicyFile {
+  tapeapiPolicy: 1
+  note?: string
+  rules: Array<{ name?: string; service?: string; model?: string; period: 'call' | 'day' | 'month' | 'total'; currency?: string; maxAmount?: string; maxCalls?: number; maxPromptTokens?: number; maxCompletionTokens?: number }>
+}
+/** @experimental (3.0) Where a budget writes: one append-only JSON-lines text (receipt envelopes and sent lines). */
+export interface BudgetStore {
+  read(): string | Promise<string>
+  append(text: string): void | Promise<void>
+  /** Optional: taken around each admit's read, decision and append; returns the release. */
+  lock?(): Promise<() => void>
+}
+/** @experimental (3.0) A call as the budget sees it before it is sent. */
+export interface BudgetCall {
+  kind: 'ai' | 'voucher'
+  container: string | null
+  format?: string | null
+  /** The names the requested model goes by; [] for a voucher; null when the request could not be read. */
+  models: string[] | null
+  /** Per currency, the most the call can claim; null when the price table has no entry. */
+  worstCase: Record<string, string> | null
+  promptTokens: number | null
+  completionTokens: number | null
+  requestSha256: string | null
+}
+/** @experimental (3.0) A client-side budget (createBudget). */
+export interface Budget {
+  rules: readonly any[]
+  ready(): Promise<void>
+  admit(call: BudgetCall): Promise<any>
+  receipt(envelope: any): Promise<any>
+  /** The admitted call no longer counts: a definite failure that claims nothing, or a voucher released before it was accepted. */
+  release(admitted: any, o: { why: 'http-error-no-receipt' | 'sidecar-error' | 'voucher-released'; status?: number }): Promise<boolean>
+  state(): { rules: readonly any[]; receipts: number; sent: number; released: number; open: number; windows: Array<{ rule: string; period: string; window: string | null; claimed: any; worstCase: any }> }
+}
+/**
+ * @experimental (3.0) A client-side budget over a local policy file: admit(call) refuses a call whose worst case would
+ * take a covering rule over its cap (BUDGET_EXCEEDED), or that cannot be bounded (INVALID_ARGUMENT), and writes it down
+ * as sent; receipt(envelope) records what a verified receipt claims. Counts as `tapeapi reconcile --policy` does. A
+ * convenience for the caller's own process, not an enforcement anyone else can rely on; it bounds claimed prices only.
+ */
+export declare function createBudget(o: { policy: PolicyFile; store?: BudgetStore; clock?: () => number; onWarning?: (message: string) => void }): Budget
+/** @experimental (3.0) A budget store in a file: append-only JSON lines, mode 600. `fs` from node:fs. With writeFileSync
+ *  and unlinkSync the store also has lock(): a `<path>.lock` file (wx) around each admit, so budgets in two processes on
+ *  one file decide one after the other (stale after staleMs, default 30 s; waitMs, default 10 s). */
+export declare function budgetFileStore(path: string, fs: { readFileSync: any; appendFileSync: any; chmodSync?: any; writeFileSync?: any; unlinkSync?: any }, o?: { staleMs?: number; waitMs?: number }): BudgetStore & { path: string; lock?: () => Promise<() => void> }
+/** @experimental (3.0) A budget store in memory (the default): a restart forgets every call. */
+export declare function memoryBudgetStore(initial?: string): BudgetStore

@@ -54,10 +54,13 @@ proxy = createMcpProxy({
   allowHttp: /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(live),
   name: process.env.TAPE_NAME || undefined,
   toolsSha256: process.env.TOOLS_SHA256 || undefined,
-  // ALLOWED_ORIGINS (2.5, experimental): comma-separated origins a browser may call /mcp from; unset, any origin (CORS *).
-  // Set it when this runs on your machine in front of tools with side effects. / 浏览器可调用 /mcp 的来源；本机运行且工具有
-  // 副作用时请设置。
-  ...(process.env.ALLOWED_ORIGINS ? { allowedOrigins: process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
+  // ALLOWED_ORIGINS (2.5, experimental): comma-separated origins a browser may call /mcp from, or * for any (CORS *).
+  // Unset (3.0): createMcpProxy's default, every browser refused, so a web page cannot reach tools with side effects on
+  // your machine; desktop clients send no Origin. The holder console reads tools/list from your browser: for that step
+  // set ALLOWED_ORIGINS=https://tapeapi.fun. / 浏览器可调用 /mcp 的来源，逗号分隔，或 * 表示任何来源。不设（3.0）：
+  // createMcpProxy 的默认，浏览器一律拒绝；桌面客户端不带 Origin。持有人操作台在浏览器里读 tools/list：那一步请设
+  // ALLOWED_ORIGINS=https://tapeapi.fun。
+  ...(process.env.ALLOWED_ORIGINS ? { allowedOrigins: process.env.ALLOWED_ORIGINS.trim() === '*' ? '*' : process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
 })
 let m
 try { m = await proxy.ready } catch (e) {

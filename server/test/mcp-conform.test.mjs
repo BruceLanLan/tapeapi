@@ -1,9 +1,9 @@
 // TAPI-20 §3.8 for the provider's own MCP endpoint (2.3, experimental): the toolsSha256 it publishes is the SDK's digest
-// of exactly what its tools/list serves, the shared vectors of the MCP tools draft (TapeOutProtocol/TAPs #16) agree on
+// of exactly what its tools/list serves, the shared vectors of the MCP tools draft (TAP-15, TapeOutProtocol/TAPs pull request #16) agree on
 // all three implementations, and holdToToolsSha256 refuses bound methods with a signed TOOLS_CHANGED once the tools
 // differ from the published digest, passing everything else through. No network.
 // 提供者自己的 MCP 端点的 TAPI-20 §3.8（2.3，实验性）：它发布的 toolsSha256 就是 SDK 对其 tools/list 内容的摘要；MCP 工具草案
-// （TAPs #16）的共享向量在三份实现上一致；工具与已发布摘要不符时，holdToToolsSha256 以签名的 TOOLS_CHANGED 拒绝绑定的方法，
+// （TAP-15 (#16)）的共享向量在三份实现上一致；工具与已发布摘要不符时，holdToToolsSha256 以签名的 TOOLS_CHANGED 拒绝绑定的方法，
 // 其余原样通过。不联网。
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -33,11 +33,11 @@ const call = (provider, method, params, id = `t-${method}`) => provider.handleRe
   method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, params }),
 }), { clientIp: '1.1.1.1' })
 
-// The vectors of the MCP tools draft (TapeOutProtocol/TAPs pull request #16, head 648dd6a, assets/tap-draft-mcp-tools/
+// The vectors of the MCP tools draft (TapeOutProtocol/TAPs pull request #16, now TAP-15, head 648dd6a, assets/tap-draft-mcp-tools/
 // tools-digest.json), copied byte for byte. / MCP 工具草案的向量，逐字节复制。
 const VECTORS = JSON.parse(readFileSync(new URL('./fixtures/tap-draft-mcp-tools-digest.json', import.meta.url), 'utf8'))
 
-test('shared vectors (TAPs #16 tools-digest.json): the SDK, the holder console and the provider endpoint give every digest, and refuse every list that has none', async () => {
+test('shared vectors (TAP-15 (#16) tools-digest.json): the SDK, the holder console and the provider endpoint give every digest, and refuse every list that has none', async () => {
   assert.equal(VECTORS.positive.length, 9)
   for (const v of VECTORS.positive) {
     const tools = safeParseJSON(v.toolsJson)
@@ -139,7 +139,7 @@ test('holdToToolsSha256: a published value is required and checked; the handler 
 
 // Review S-1: a tool list that cannot be built is not remembered. Meanwhile no method is known to be a tool or not, so
 // every method is refused (TOOLS_CHANGED, current null); the next call reads the list again. A list once read is kept
-// (TAPs #16 §5.1: a failed read leaves the state as it was).
+// (TAP-15 §5.1: a failed read leaves the state as it was).
 // 审查 S-1：建不出来的工具列表不被记住。期间不知道哪些方法是工具，所以每个方法都被拒绝（TOOLS_CHANGED，current 为 null）；下一次调用
 // 重新读取。读到的列表一直保留（#16 §5.1：读取失败不改变状态）。
 test('holdToToolsSha256: a tool list that cannot be built is not cached: every method is refused meanwhile, and the next call reads it again', async () => {
@@ -162,7 +162,7 @@ test('holdToToolsSha256: a tool list that cannot be built is not cached: every m
   manifest.methods = methods
 })
 
-test('holdToToolsSha256: tools that match the published digest but carry text a person cannot see are refused with a signed INTERNAL (TAP draft #16 §3.4)', async () => {
+test('holdToToolsSha256: tools that match the published digest but carry text a person cannot see are refused with a signed INTERNAL (TAP-15 §3.4)', async () => {
   const hidden = manifestOf({ echoText: 'Says it back.\u200b' })
   const published = await mcpToolsSha256(hidden)
   assert.ok(mcp.invisibleProblems(await listedMcpTools(hidden)).length > 0)

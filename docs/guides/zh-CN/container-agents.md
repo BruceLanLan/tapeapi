@@ -18,7 +18,7 @@
 - **要付钱，就是一笔普通转账。** SDK 帮你构造转给代理容器的未签名交易，事后再从链上只读地核验。它从不签名、不发送、
   不代付 gas，也不经手资金。
 - **有约束力的额度是以后的阶段。** 让代理无法超支的上限，需要尚未部署的合约（见[接下来](#接下来)）。
-- **实验性。** 整个子路径按 [1.0 的承诺](upgrade-1.0.md)（2.0 沿用）属于"实验性"：可能在 2.x 的次版本里改动，不在 2.x 兼容承诺之内。
+- **实验性。** 整个子路径按 [1.0 的承诺](upgrade-1.0.md)（2.0 沿用）属于"实验性"：可能在次版本里改动，不在兼容承诺之内。
   格式跟随 TapeOutProtocol/TAPs 里的两个公开讨论：Idea [#40](https://github.com/TapeOutProtocol/TAPs/issues/40)（授权书）
   与 [#41](https://github.com/TapeOutProtocol/TAPs/issues/41)（任务协议与代理上架），讨论有变化，格式也会跟着变。两者都还
   没有 TAP 编号。
@@ -333,7 +333,7 @@ tapeapi-verify task thread.json --payment <代理容器> <收件箱序号>
 tapeapi-verify task thread.json --rpc https://node-a.example,https://node-b.example
 ```
 
-不想安装，可以用 `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-verify task thread.json`；
+不想安装，可以用 `npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-verify task thread.json`；
 在仓库里则是 `node sdk/bin/tapeapi-verify.js task thread.json`。
 
 - `--payment <收款容器> <序号>` 另外核验该收件箱里那个序号的 TapeSend 消息。收款容器必须是线程里的代理，发件方必须是
@@ -364,6 +364,83 @@ payment:     message 0 in the inbox of 0xa6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a
 
 `revocation` 一行给出线程的撤销时间（有撤销适用时）：签名晚于它的代理消息被拒，仅此而已。它不表示线程被取消，是否取消看
 `state` 一行。一条在撤销之前已经交付并验收的线程，会显示 `result: ok` 和 `revocation: at <issued> (site); ...`。
+
+## 自己的预算与花费声明（实验性，3.0）
+
+这些都不需要托管。代理可以用一份自己写的策略文件约束自己的花费（就是 `tapeapi reconcile --policy` 读的那个文件，见
+[回执对账](reconcile.md#你自己的限额)），并把回执留在自己的机器上：
+
+```js
+import { readFileSync, appendFileSync, chmodSync } from 'node:fs'
+import { ai } from '@tapeapi/sdk'
+import { createSpendLimiter } from '@tapeapi/sdk/agent'
+
+const budget = ai.createBudget({ policy: JSON.parse(readFileSync('agent-limits.json', 'utf8')),
+  store: ai.budgetFileStore('agent-spend.jsonl', { readFileSync, appendFileSync, chmodSync }) })
+// AI 调用：最坏情况会让某条规则超出时，在发出之前拒绝
+const fetch = ai.createVerifyingFetch({ api, service, budget })
+// 只在用阶段 1 时：每张凭证的价格在交出之前也由同一个预算核对
+const payer = createSpendLimiter({ store }).payer({ chainId, payer: api.payer({ consumer, sessionKey }), budget, tokenDecimals: 18 })
+```
+
+- fetch 计入核验无误的回执所声称的数；没有核验无误回执的调用按最坏情况计。限额器的 `payer({ budget, tokenDecimals })` 把每张凭证的
+  价格按代币标签（BEM、USDT）读出、向上取整到 8 位小数，与该服务、模型为 `"*"` 的规则核对；超出即抛 `BUDGET_EXCEEDED` 并释放凭证。
+  被接受之前就释放的凭证（租约未提交）会写一行 released 抵消；payer 下次会再签同一累计额，那张凭证届时再计入。
+  它与限额器自己的上限（`claimedAtCheck + cap`）和单次调用上限（`maxCallPrice` 或 cap 的 10%，与方法公布的 `priceBEM` 取较小者）并存，
+  不代替它：一张凭证两边都要满足；先核对限额器的规则（限额器拒绝时不写预算行），预算计的是凭证的价格，不是方法公布的价格。
+- 存储文件（权限 600）就是代理的回执库：`tapeapi receipts tail|show|export` 与 `tapeapi reconcile` 原样读取。它只在代理自己的机器上，
+  不上传，也不由任何别人保存。与花费钥匙不同，回执库可以备份、可以从备份恢复。
+- `tapeapi receipts statement --receipts agent-spend.jsonl --from … --to … [--policy …] [--mandate …]` 按服务、模型、日期汇总它，
+  并列出上限（[花费声明](reconcile.md#花费声明实验性30)）。
+
+**它不是什么。** 预算只是代理自己进程里的便利：委托人不能依赖它（代理可以关掉它、改它的文件），服务方不受它约束，它限制的是回执声称的
+价格，不是实际付的钱。声明是代理自己的话，没有任何签名。套件的 `spendStatement` / `spendEvidence`（阶段 1，M7）没有被复用：
+那两者是交付时写在签名交付结果里的托管通道 `claimedOf`，需要托管；声明只读回执。
+
+## 实验：以 x402 批量结算通道作执行层（实验性）
+
+这是原型，不在任何发布版本里：阶段 1 的核验、花费限额器与预算也可以跑在 **x402 批量结算通道**上，代替 TAPI-22
+托管，开关是 `{ enforcement: 'x402-batch' }`。先读清楚它是什么：
+
+- **它用的是已经部署、不是我们编写的合约。** `x402BatchSettlement`（`0x4020074e9dF2ce1deE5A9C1b5c3f541D02a10003`）、
+  `Permit2DepositCollector`（`0x4020425FAf3B746C082C2f942b4E5159887B0005`）与 Permit2（`0x000000000022D473030F116dDEE9F6B43aC78BA3`），
+  即 x402 `batch-settlement` EVM 绑定列出的地址（规范提交 `c2a8924e`）。结算合约的源码里没有 owner、没有费率、没有升级途径。
+  **我们没有审查这些合约**；其仓库附有外部审查报告，我们没有评估。我们只在 BNB Smart Chain 的本机分叉上跑过它们。这里的任何内容
+  都不说明它们安全。
+- **付款方只能是普通 EOA。** 通道的付款方是委托方的持有人（资金路径 `holder`）。TapeOut 容器不能付款：它的 `isValidSignature`
+  对任何输入都返回 `0x00000000`（分叉块 129,111,153 上读到），所以无论由哪把钥匙签凭证，Permit2 都拒绝它的存款。带 EIP-7702
+  委托代码的 EOA 同样被拒。核验报 `x402-payer-not-eoa`；`x402CheckPayer(address, code)` 在任何交易之前给出同样的结论。
+- **没有贡献，没有金库。** 这条路上没有任何一方抽成。
+- **提现延迟由服务方定**（15 分钟到 30 天，合约的范围）。客户端拒绝延迟高于自己上限的服务：默认 48 小时，用 `maxWithdrawDelayS`
+  修改（`x402-withdraw-delay-too-long`）。
+- **合约没有会话到期。** SDK 的付款器到 `sessionExpiry`（默认：创建后一小时）就不再签名。之前签出的凭证在链上一直可以 claim，
+  直到通道提现或退款；会话钥匙自己也能发起并完成提现（钱只回付款方）。通道要小，一把钥匙一条通道，任务结束就收尾。
+- **各方自己发交易、自己付 gas。** 付款方发一次 `approve(Permit2)`，再发一笔它签名的存款（任何人可代交），最后发它自己的提现。
+  服务方发自己的 `claim` 与 `settle`。SDK 只构造未签名交易（`x402Tx`）；它什么都不发送，也不替任何人付 gas。
+- **回执能证明什么，不变。** 变的是钱由谁保管，不是服务方签名回答的含义。
+
+```js
+import { createAgentKit, createSpendLimiter, x402Payer, x402Acceptance, x402Tx } from '@tapeapi/sdk/agent'
+
+// 服务方的条款（目前没有清单字段承载它们，所以是配置；它清单里的 payment.escrow 写的是结算合约）
+const terms = { [provider]: { receiver: provider, receiverAuthorizer, token: BEM, withdrawDelay: 3600 } }
+const check = await kit.verifyMandate(signed, { enforcement: 'x402-batch', x402: { terms } })   // 在同一个钉块上读
+const limiter = createSpendLimiter({ store })
+await limiter.accept({ chainId: 56, agentKey }); await limiter.start({ chainId: 56, check })
+const payer = limiter.payer({ chainId: 56, payer: x402Payer({ chainId: 56, consumer: holder, sessionKey, terms }), budget, tokenDecimals: 8 })
+
+// 服务方：createProvider({ ..., enforcement: x402Acceptance({ chainId: 56, container, receiverAuthorizer, token,
+// withdrawDelay, read }) })；之后用它自己的钥匙发 acceptance.claimTx(await acceptance.claimRows())
+```
+
+- 限额器除了结算合约地址，还钉住每个 provider 的**通道 id**；凭证或核验落在另一条通道上即停工（`spend-voucher-mismatch`、
+  `spend-escrow-changed`）。上限、单次调用上限与预算的用法与 `escrow-channel` 相同。
+- 服务方按 `last + price` 收费、只 claim 这么多，即使凭证的上限更高；上限是钥匙签出的额度，也是限额器计的额度。对已 claim 的额度
+  再 claim 在链上是静默无操作（不回滚、没有 `Claimed` 日志）：要看日志。只有已 claim 的部分能挡住提现，所以服务方要在服务方定的延迟
+  之内 claim。
+- 不覆盖：费用通道（`feeCap` 大于 0 报 `x402-fee-unsupported`）、持有人的计划与收尾（`escrowPlan`、`closeOutPlan`，只适用于
+  escrow-channel）、凭签名的协作退款、经 EIP-1271 的付款方。
+- 测试方式：在移植合约规则的假合约上测，对拍从已部署合约读到的值，并在本机分叉上跑过一次（`BSC_FORK_RPC`，默认跳过）。从未在主网上跑。
 
 ## 核验能证明什么，不能证明什么
 
@@ -460,6 +537,7 @@ const putFile = {                                    // 交给持有人的钱包
 |---|---|
 | `AGENT_INVALID` | `mandateTypedData` 或 `signMandate` 拒绝写了金额、资产或转委托的授权书（`data.reason` 为 `phase0-no-funds` 或 `subdelegate-not-allowed`）；`forWallet` 拒绝载荷；任务原文与哈希对不上；字段形状不对；交给 `identityOf` 的地址不是容器（`data.reason` 为对应的问题码）。 |
 | `INVALID_ARGUMENT` | 核验需要至少两家运营方的节点而客户端不够，或者没有 `rpcUrls`；`nonces` 既不是 `Map` 也不是 `setIfAbsent` 存储；付款构造被拒（`data.reason` 为 `recipient-not-from-chain`、`no-such-token`、`not-tapeout`、`only-transfer`、`native-via-container-unverifiable`）；`revocationFileBytes` 收到超过 4,096 字节的清单或形状不对的签名。 |
+| `BUDGET_EXCEEDED` | （3.0，实验性）`payer({ budget, tokenDecimals })`：凭证价格会让你自己策略文件的某条规则超出限额；凭证被释放、不返回（`data.reason` 为 `budget-cap`）。代币没有策略能计价的标签（BEM、USDT）时为 `INVALID_ARGUMENT`，`data.reason` 为 `budget-no-currency`。 |
 | `NOT_FOUND` | `readMessage` 收到一个不存在的收件箱序号。 |
 | `RPC_STALE`、`RPC_UNAVAILABLE`、`RPC_DISAGREE`，以及 `data.status` 为 `wrong-chain` 的 `INVALID_ARGUMENT` | 核验读不了链：钉块落后太多（`data.status` 为 `stale-block`）、节点失败或不一致、在扫描额度内没找到处理器号（每个待查处理器、每次核验至多 256 次 `cpuAt` 读取；`unavailable`，下一次核验接着扫），或者节点在别的链上。 |
 
@@ -490,7 +568,9 @@ const putFile = {                                    // 交给持有人的钱包
 ## 接下来
 
 本指南讲的是阶段 0。2.0 起 SDK 另有阶段 1 的实验性实现，即有界代理（`{ enforcement: 'escrow-channel' }`、持有人的计划、代理的
-累计限额器）：它依赖 TAPI-22 的托管合约，而该合约**未经审计、未部署**，所以只在本地链与测试中验证，主网上不可用。见
+累计限额器）：它依赖 TAPI-22 的托管合约，而该合约**未经审计、未部署**，所以只在本地链与测试中验证，主网上不可用。SDK 没有为
+任何链配置托管地址，SDK 的审计名单为空，所以阶段 1 的任何部分（计划、收尾、出资前的检查）都不能在主网上动用资金；这些检查
+只会拒绝或报告，没有一项能让会话钥匙提前失效。见
 [有界代理](https://github.com/BruceLanLan/tapeapi/blob/main/README.zh-CN.md#有界代理实验性主网不可用)与[更新日志](../../../CHANGELOG.md)。
 Idea [#40](https://github.com/TapeOutProtocol/TAPs/issues/40) 设想的两个后续阶段是：
 

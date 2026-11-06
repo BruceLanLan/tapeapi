@@ -64,8 +64,8 @@ Pass `store: { get, set }` (e.g. a localStorage wrapper) to keep the cumulative 
 ## 2. Node 后端 / Node backend
 
 ```js
-// node >= 20, ESM. 在 tapeapi/ 工作区内用 '@tapeapi/sdk'，否则用相对路径 '<repo>/sdk/src/index.js'
-// node >= 20, ESM. Inside the tapeapi/ workspace import '@tapeapi/sdk'; elsewhere use a relative path to sdk/src/index.js
+// node >= 22, ESM. 在 tapeapi/ 工作区内用 '@tapeapi/sdk'，否则用相对路径 '<repo>/sdk/src/index.js'
+// node >= 22, ESM. Inside the tapeapi/ workspace import '@tapeapi/sdk'; elsewhere use a relative path to sdk/src/index.js
 import { createTapeAPI, TapeAPIError, formatUnits } from '@tapeapi/sdk'
 
 const api = createTapeAPI({ dev: true })                              // mainnet: { rpcUrls: [>= 2 urls], quorum: 2, directory, escrow } (fewer urls than quorum throws unless allowSingleNode: true)

@@ -27,7 +27,7 @@ test('tapeapi-mcp: the 2026-07-28 fields go to a request of that revision only; 
   const srv = await provider.listen(0)
   const url = `http://127.0.0.1:${srv.address().port}`
   manifest.endpoints.live = [`${url}/tapeapi/v1`]
-  child = spawn(process.execPath, [BIN, '--dev', url, '--no-pin'], { stdio: ['pipe', 'pipe', 'pipe'] })
+  child = spawn(process.execPath, [BIN, '--dev', url, '--no-pin'], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   let out = '', err = '', seq = 0
   const waiters = new Map()
   child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
@@ -56,7 +56,7 @@ test('tapeapi-mcp: the 2026-07-28 fields go to a request of that revision only; 
   assert.deepEqual(Object.keys(legacy), ['tools'])
   const { _meta: info, ...rest } = modern
   assert.deepEqual(rest, { ...legacy, resultType: 'complete', ttlMs: 0, cacheScope: 'public' })
-  assert.equal(info['io.modelcontextprotocol/serverInfo'].name, 'tapeapi-mcp', '2.6: serverInfo in _meta')
+  assert.equal(info['io.modelcontextprotocol/serverInfo'].name, 'tapeapi-mcp', '2.5: serverInfo in _meta')
   assert.equal(toolsDigest(modern.tools), toolsDigest(legacy.tools))
   const name = legacy.tools[0].name
   const cl = (await request('tools/call', { name, arguments: { text: 'hi' } })).result

@@ -1,6 +1,6 @@
 {
   "name": "@tapeapi/server",
-  "version": "2.5.0",
+  "version": "3.0.0",
   "description": "TapeAPI provider runtime: serve signed, optionally paid methods from Node or any fetch runtime (TapeOut protocol on BNB Smart Chain)",
   "keywords": [
     "tapeapi",
@@ -54,13 +54,13 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
-    "test": "node --test test"
+    "test": "node --test \"test/*.test.mjs\""
   },
   "dependencies": {
-    "@tapeapi/sdk": "^2.5.0"
+    "@tapeapi/sdk": "^3.0.0"
   },
   "publishConfig": {
     "access": "public"

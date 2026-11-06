@@ -129,7 +129,7 @@ Copyright and related rights waived via CC0-1.0.
 
 > **实现状态（2026-09-27）：** 未实现：`verifier` 支持、比特编码、本地重算与争议合约均不存在。SDK 原样透传 `verifier` 字段，符合 §5 对忽略它的客户端的要求。
 
-> **状态：** Experimental（实验性，见 [TAPI-1](TAPI-1.md) §4.1）：不在 TapeAPI 1.0 的稳定承诺之内，可能不兼容地修改或撤回。
+> **状态：** Experimental（实验性，见 [TAPI-1](TAPI-1.md) §4.1）：不在 TapeAPI 的兼容承诺之内，可能不兼容地修改或撤回。
 
 本文档中的关键词 "MUST"（必须）、"MUST NOT"（禁止）、"REQUIRED"（必需）、"SHALL"、"SHOULD"（应当）、"SHOULD NOT"（不应）、"RECOMMENDED"（推荐）、"MAY"（可以）、"OPTIONAL"（可选）按 RFC 2119 解释。
 

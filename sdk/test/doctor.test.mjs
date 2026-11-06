@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { createTapeAPI, CHAINS, MAINNET } from '../src/index.js'
-import { diagnose, formatReport, DOCTOR_CHECKS, INVALID_KEY, doctorCommands, releaseTgz } from '../src/doctor.js'
+import { diagnose, formatReport, DOCTOR_CHECKS, INVALID_KEY, RENEW_DAYS, doctorCommands, releaseTgz } from '../src/doctor.js'
 import { howRun } from '../bin/tapeapi-doctor.js'
 import { privateKeyToAddress, signDigest, delegationDigest } from '../src/sig.js'
 import { ADDR } from './helpers/fake-chain.mjs'
@@ -162,7 +162,7 @@ test('broken: a manifest that is not valid fails "manifest-format"', async () =>
   failsExactlyAt(await run(api2), 'manifest-format')
 })
 
-test('broken: the delegation expired, signed by someone else, or too far ahead fails "delegation"; under 30 days warns', async () => {
+test('broken: the delegation expired, signed by someone else, or too far ahead fails "delegation"; under 7 days warns (RENEW_DAYS, 30 before 3.0)', async () => {
   reset()
   const expired = { ...proxy.manifest(), delegation: delegation(nowS() - 60) }
   assert.match(failsExactlyAt(await run(world({ manifest: expired }).api), 'delegation').detail, /^expired on/)
@@ -170,7 +170,15 @@ test('broken: the delegation expired, signed by someone else, or too far ahead f
   assert.match(failsExactlyAt(await run(world({ manifest: stranger }).api), 'delegation').detail, /holder is/)
   const far = { ...proxy.manifest(), delegation: delegation(nowS() + 400 * 86_400) }
   assert.match(failsExactlyAt(await run(world({ manifest: far }).api), 'delegation').detail, /366 days/)
-  makeProxy(SIGNER_KEY, delegation(nowS() + 10 * 86_400))
+  // 3.0 candidate: the console signs 30 days by default, so a fresh delegation (29 days) and one with 10 days left pass;
+  // under 7 days it warns. / 3.0 候选：操作台默认签 30 天，新签的（29 天）与剩 10 天的都通过；不到 7 天才警告。
+  assert.equal(RENEW_DAYS, 7)
+  for (const d of [29, 10, 7]) {
+    makeProxy(SIGNER_KEY, delegation(nowS() + d * 86_400 + 3600))
+    const ok = await run(world().api)
+    assert.equal(byId(ok, 'delegation').status, 'pass', `${d} days: ${formatReport(ok, { lang: 'en' })}`)
+  }
+  makeProxy(SIGNER_KEY, delegation(nowS() + 5 * 86_400))
   const rep = await run(world().api)
   assert.equal(byId(rep, 'delegation').status, 'warn', formatReport(rep, { lang: 'en' }))
   assert.match(byId(rep, 'delegation').fix.zh, /续期/)
@@ -305,7 +313,7 @@ test('URL mode: a freshly started new-api sidecar in setup mode is reported as s
 // ---- the command / 命令行 ----
 function cli(args, env = {}, cwd = ROOT) {
   return new Promise((ok) => {
-    const child = spawn(process.execPath, [BIN, ...args], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(process.execPath, [BIN, ...args], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
     let out = '', err = ''
     child.stdout.on('data', (d) => { out += d }); child.stderr.on('data', (d) => { err += d })
     child.on('exit', (code) => ok({ code, out, err }))

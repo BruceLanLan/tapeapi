@@ -4,11 +4,11 @@
 // TapeAPI AI service it was started for (resolved on chain from its TapeOut name, the delegation checked), passes the
 // bytes both ways unchanged, and checks each answer's signed usage receipt against the resolved manifest (signer, price
 // table) and the exact bytes sent and received. One verdict line per call on stderr; --log appends the receipts as JSON
-// lines; --strict turns a receipt that fails into an error the client sees.
+// lines. A receipt that fails is an error the client sees (strict, the default since 3.0); --no-strict only logs it.
 // tapeapi-verify：本地核验代理，给自己读不到用量回执的 AI 客户端用（Claude Code、Codex、任何能设 base URL 的工具）。把
 // ANTHROPIC_BASE_URL / OPENAI_BASE_URL 指向它；它把每个请求转给启动时指定的 TapeAPI AI 服务（按 TapeOut 名字在链上解析并核对
 // 委托），双向字节原样不变，并按解析到的清单（signer、价目表）与确切的收发字节核验每个回答的签名用量回执。每次调用在 stderr
-// 打一行结论；--log 把回执按 JSON 行追加到文件；--strict 让核验失败变成客户端看得到的错误。
+// 打一行结论；--log 把回执按 JSON 行追加到文件。核验失败是客户端看得到的错误（严格模式，3.0 起为默认）；--no-strict 只记录。
 //
 //   npx -y --package=<release tgz> tapeapi-verify 11.1013.tape
 //   ANTHROPIC_BASE_URL=http://127.0.0.1:8790 claude          OPENAI_BASE_URL=http://127.0.0.1:8790/v1 codex
@@ -32,16 +32,16 @@
 // forwarded with that member set in its bytes (ai.requestUsageBody: one splice, checked against the sidecar's own
 // change), before the salt. The sidecar then injects and strips nothing, the client receives the usage chunk (one more
 // chunk, `choices: []`) inside the signed stream, and the receipt's usage is compared with it. A body that cannot be
-// changed that way: --strict answers HTTP 400 (usage_request_skipped) without forwarding it; otherwise it is forwarded as
-// it is and the verdict says usage-request-skipped. Only OpenAI Chat clients are concerned: Claude Code (Anthropic
-// Messages) and Codex (Responses) streams carry their usage already.
+// changed that way: strict (the default) answers HTTP 400 (usage_request_skipped) without forwarding it; with
+// --no-strict it is forwarded as it is and the verdict says usage-request-skipped. Only OpenAI Chat clients are
+// concerned: Claude Code (Anthropic Messages) and Codex (Responses) streams carry their usage already.
 // --request-usage（默认关，与 createVerifyingFetch({ requestUsage: true }) 同一规则）：旁路本会为拿到用量而改动的请求（没设
 // stream_options.include_usage 的流式 OpenAI Chat 请求），在加盐之前于字节里设好该成员再转发。旁路随之不注入、不剥离，客户端在被签名的
-// 流里收到用量块（多一个 choices: [] 的块），回执的用量与之比对。不能这样改写的正文：--strict 回 HTTP 400（usage_request_skipped）且不转发；
-// 否则原样转发，结论行注明 usage-request-skipped。只与 OpenAI Chat 客户端有关：Claude Code 与 Codex 的流本来就带用量。
+// 流里收到用量块（多一个 choices: [] 的块），回执的用量与之比对。不能这样改写的正文：严格模式（默认）回 HTTP 400（usage_request_skipped）且不转发；
+// --no-strict 时原样转发，结论行注明 usage-request-skipped。只与 OpenAI Chat 客户端有关：Claude Code 与 Codex 的流本来就带用量。
 
 import http from 'node:http'
-import { appendFileSync, readFileSync, realpathSync, statSync, mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, readFileSync, realpathSync, statSync, mkdirSync, writeFileSync, chmodSync, unlinkSync } from 'node:fs'
 import { join as joinPath, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createTapeAPI, rpcUrlsFor, operatorOf, parseTapeName, CHAINS, chainByKey } from '../src/index.js'
@@ -80,8 +80,9 @@ Usage: tapeapi-verify [options] <service>
   --port <n>           local port (default ${DEFAULT_PORT}; 0 = any free port)
   --host <addr>        local address (default 127.0.0.1)
   --log <file>         append one JSON line per verified call (verdict and signed receipt; no prompts, no keys)
-  --strict             a receipt that does not verify becomes an error to the client (HTTP 502, or an error
-                       event in place of a stream's final event)
+  --no-strict          only log a receipt that does not verify, and pass the answer on (the 2.x default). By default
+                       (3.0) it becomes an error to the client (HTTP 502, or an error event in place of a stream's final
+                       event); --strict is still accepted and changes nothing
   --max-skew <s>       a receipt's time must be within this many seconds of now (default 300)
   --no-salt            send request bodies exactly as the client wrote them (default: 64 random whitespace
                        characters are appended to a JSON body, so the request hash cannot be guessed)
@@ -93,15 +94,32 @@ Usage: tapeapi-verify [options] <service>
                        each file 600; delete them when they are no longer needed
                        把每个计量请求实际发出的字节（含盐）写入 <dir>，供 tapeapi reconcile --requests 使用。隐私：这些文件
                        含明文的提示词、文件与工具输出；目录 700、文件 600，用完请删除
+  --policy <file>      EXPERIMENTAL (3.0), off by default: your own policy file (the one tapeapi reconcile --policy
+                       reads). A metered call whose worst case would take a rule that covers it over its limit is
+                       refused before it is sent (HTTP 400, code budget_exceeded), and so is one that cannot be
+                       bounded (no max_tokens, a model without a price, ...: code budget_no_limit, budget_no_price, ...).
+                       A convenience in this process only, not an enforcement anyone else can rely on; it bounds the
+                       prices the receipts claim, not what you pay
+                       实验性，默认关闭：你自己的策略文件（tapeapi reconcile --policy 读的那个）。最坏情况会让覆盖它的规则
+                       超出限额的计量调用，在发出之前被拒绝（HTTP 400，code budget_exceeded）；无法给出上界的调用同样拒绝
+                       （没设 max_tokens、模型没有价格……）。只是本进程里的便利，不是别人可以依赖的执行；它限制的是回执声称的
+                       价格，不是你实际付的钱
+  --budget-store <file>
+                       with --policy: the file the calls are written to (JSON lines, mode 600: the verified receipts and
+                       one line per call sent), read again at start, so the count survives a restart; tapeapi receipts
+                       and tapeapi reconcile read it. Without it the count is in memory and a restart forgets it.
+                       Use one tapeapi-verify per file
+                       与 --policy 一起：记录调用的文件（JSON 行，权限 600：核验无误的回执与每次发出的一行），启动时重读，
+                       重启后计数仍在；tapeapi receipts 与 reconcile 能读。不给时计数在内存里，重启即忘。一个文件只给一个 tapeapi-verify 用
   --strip-session-headers
                        do not pass the client's session headers (x-claude-code-session-id, session-id,
                        thread-id) to the service; they let it tie your requests into one session
   --request-usage      ask for the usage of a streamed OpenAI Chat request that does not ask for it
                        (stream_options.include_usage, set in the request's bytes), so the receipt's usage
                        is checked against the stream; the client then sees one more chunk, choices: [].
-                       A body that cannot be changed that way: refused with --strict, else sent as is
+                       A body that cannot be changed that way: refused, or sent as is with --no-strict
                        替未要用量的流式 OpenAI Chat 请求在字节里要用量，回执的用量因此可与流比对；客户端会多收到
-                       一个 choices: [] 的块。无法这样改写的正文：--strict 时拒绝，否则原样发送
+                       一个 choices: [] 的块。无法这样改写的正文：拒绝；--no-strict 时原样发送
   --rpc <url,url,...>  BNB Chain nodes; each chain read needs 2 to agree (default: ${DEFAULT_RPC.length} public nodes of distinct operators)
   --rpc-xlayer <urls>  X Layer nodes, for a name with area code 2 (default: ${rpcUrlsFor(196).length} public nodes of 2 operators, no spare)
   --rpc-base <urls>    Base nodes, for a name with area code 3 (default: ${rpcUrlsFor(8453).length} public nodes of distinct operators)
@@ -129,7 +147,7 @@ or a verification link made with its content, contains that conversation.
 `
 
 function parseArgs(argv) {
-  const o = { target: null, dev: null, rpc: null, chainRpc: {}, port: DEFAULT_PORT, host: '127.0.0.1', log: null, strict: false, maxSkew: 300, quiet: false, salt: true, stripSession: false, requestUsage: false, noConform: false, saveRequests: null }
+  const o = { target: null, dev: null, rpc: null, chainRpc: {}, port: DEFAULT_PORT, host: '127.0.0.1', log: null, strict: true, maxSkew: 300, quiet: false, salt: true, stripSession: false, requestUsage: false, noConform: false, saveRequests: null, policy: null, budgetStore: null }
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i], v
     const eq = a.startsWith('--') ? a.indexOf('=') : -1
@@ -145,11 +163,17 @@ function parseArgs(argv) {
       case '--port': o.port = Number(value()); if (!Number.isInteger(o.port) || o.port < 0 || o.port > 65535) throw new Error('--port must be 0 to 65535'); break
       case '--host': o.host = value(); break
       case '--log': o.log = value(); break
+      // 3.0: strict is the default; --strict stays accepted (saved client settings name it), --no-strict is the 2.x behaviour.
+      // 3.0：严格是默认；--strict 仍接受（已保存的客户端配置里有它），--no-strict 即 2.x 的行为。
       case '--strict': o.strict = true; break
+      case '--no-strict': o.strict = false; break
       case '--quiet': o.quiet = true; break
       case '--no-salt': o.salt = false; break
       // 2.5, experimental, off by default: the request bytes on disk (a privacy trade-off) / 2.5，实验性，默认关闭
       case '--save-requests': o.saveRequests = value(); if (!o.saveRequests) throw new Error('--save-requests needs a directory'); break
+      // 3.0, experimental, off by default: the client-side budget / 3.0，实验性，默认关闭：客户端预算
+      case '--policy': o.policy = value(); if (!o.policy) throw new Error('--policy needs a file'); break
+      case '--budget-store': o.budgetStore = value(); if (!o.budgetStore) throw new Error('--budget-store needs a file'); break
       case '--strip-session-headers': o.stripSession = true; break
       case '--request-usage': o.requestUsage = true; break
       // 2.0: the 1.x resolution (conform: false, deprecated) / 2.0：1.x 的解析（conform: false，已弃用）
@@ -166,6 +190,7 @@ function parseArgs(argv) {
     }
   }
   if (o.target && o.dev) throw new Error('name a service or --dev, not both')
+  if (o.budgetStore && !o.policy) throw new Error('--budget-store applies with --policy only')
   if (o.target && !isTapeName(o.target) && !ADDRESS_RE.test(o.target)) throw new Error(`${o.target} is not a TapeOut name (11.1013.tape, 1.2.344.tape) or a container address`)
   return o
 }
@@ -291,6 +316,18 @@ async function main() {
     try { opts.saveRequests = prepareSaveDir(opts.saveRequests) } catch (e) { process.stderr.write(`tapeapi-verify: --save-requests: ${e.message}\n`); process.exit(1) }
     log(`--save-requests: the bytes of every metered request (your prompts, in clear) are written to ${opts.saveRequests} (files 600); delete them when they are no longer needed`)
   }
+  // --policy (3.0): read and checked before anything else, so a misspelt limit stops here (exit 2)
+  // --policy：最先读取并校验，拼错的限额在这里就停下（退出 2）
+  let budget = null
+  if (opts.policy) {
+    let value
+    try { value = JSON.parse(readFileSync(opts.policy, 'utf8').replace(/^\uFEFF/, '')) } catch (e) { process.stderr.write(`tapeapi-verify: cannot read --policy ${opts.policy}: ${e.code ?? e.message}\n`); process.exit(2) }
+    try { budget = ai.createBudget({ policy: value, store: opts.budgetStore ? ai.budgetFileStore(resolvePath(opts.budgetStore), { readFileSync, appendFileSync, chmodSync, writeFileSync, unlinkSync }) : undefined, onWarning: (m) => log(`--policy: ${m}`) }) } catch (e) { process.stderr.write(`tapeapi-verify: --policy ${opts.policy}: ${e.message}\n`); process.exit(2) }
+    try { await budget.ready() } catch (e) { process.stderr.write(`tapeapi-verify: --budget-store ${opts.budgetStore}: ${e.message}\n`); process.exit(1) }
+    const st = budget.state()
+    log(`--policy: ${budget.rules.length} rule(s) from ${opts.policy}; a metered call over one of them is refused before it is sent (client-side, this process only; it bounds the prices the receipts claim)`)
+    log(`--policy: ${opts.budgetStore ? `calls are written to ${resolvePath(opts.budgetStore)} (mode 600): ${st.receipts} receipt(s), ${st.open} call(s) at their worst case so far` : 'no --budget-store: the count is in memory, a restart forgets it'}`)
+  }
   if (opts.dev) {
     log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
     log('!! --dev is for TESTING ONLY: the service identity is NOT checked on chain.          !!')
@@ -327,7 +364,7 @@ async function main() {
   const stats = { calls: 0, ok: 0, failed: 0, passThrough: 0, sidecarErrors: 0 }
   const writeLog = (rep) => {
     if (!opts.log) return
-    const line = { ts: new Date().toISOString(), method: rep.method, path: rep.path, status: rep.status, stream: rep.stream, format: rep.format, ok: rep.ok, ...(rep.sidecarError ? { sidecarError: true, code: rep.code } : {}), ...(rep.usageRequested !== undefined ? { usageRequested: rep.usageRequested } : {}), ...(rep.usageRequestSkipped ? { usageRequestSkipped: rep.usageRequestSkipped } : {}), problems: rep.problems, warnings: rep.warnings, unchecked: rep.unchecked, receipt: rep.receipt }
+    const line = { ts: new Date().toISOString(), method: rep.method, path: rep.path, status: rep.status, stream: rep.stream, format: rep.format, ok: rep.ok, ...(rep.budget ? { budget: rep.budget } : {}), ...(rep.sidecarError ? { sidecarError: true, code: rep.code } : {}), ...(rep.usageRequested !== undefined ? { usageRequested: rep.usageRequested } : {}), ...(rep.usageRequestSkipped ? { usageRequestSkipped: rep.usageRequestSkipped } : {}), problems: rep.problems, warnings: rep.warnings, unchecked: rep.unchecked, receipt: rep.receipt }
     try { appendFileSync(opts.log, JSON.stringify(line) + '\n', { mode: 0o600 }) } catch (e) { log(`cannot write ${opts.log}: ${e.message}`) }
   }
   // Check one receipt; once more after re-reading the manifest when another key signed it (the service may have
@@ -341,6 +378,9 @@ async function main() {
     return r
   }
   function report(rep) {
+    // --policy: the first verdict that verifies records the call's receipt, once / 第一份核验无误的结论记下本次调用的回执，只记一次
+    const bc = rep.budgetCall
+    if (bc && !bc.done && rep.ok && rep.receipt) { bc.done = true; budget.receipt(rep.receipt).catch(() => { /* the budget warns itself */ }) }
     if (rep.sidecarError) { stats.sidecarErrors++; log(`ERR   ${rep.method} ${rep.path}  ${rep.status}  sidecar error (${rep.code}): ${rep.problems.join('; ')}`) }
     else { if (rep.ok) stats.ok++; else stats.failed++; log(verdictLine(rep)) }
     writeLog(rep)
@@ -375,7 +415,7 @@ async function main() {
     if (r.undeclared) {
       const why = `${verb} ${url.pathname} is a metered ${r.undeclared.name} call, but the service's manifest declares no ${r.undeclared.name} endpoint (it declares ${routes.map((x) => x.format.name).join(', ')}): it gets no receipt and cannot be verified`
       stats.failed++
-      if (opts.strict) { log(`FAIL ${why}; not forwarded (--strict)`); return sendError(400, anthropic || r.undeclared.name === 'anthropic-messages', 'format_not_declared', why) }
+      if (opts.strict) { log(`FAIL ${why}; not forwarded (strict)`); return sendError(400, anthropic || r.undeclared.name === 'anthropic-messages', 'format_not_declared', why) }
       log(`FAIL ${why}: passed on, not verified`)
     }
     let body
@@ -391,14 +431,31 @@ async function main() {
       if (u?.bytes) body = u.bytes
       else if (u?.skipped) {
         const why = `requestUsage: the usage of this ${r.format.name} request cannot be asked for in its bytes (${u.skipped}: ${ai.usageRequestSkipWhy(u.skipped)}), so the sidecar would ask for it itself and its usage could not be checked`
-        if (opts.strict) { stats.failed++; log(`FAIL ${verb} ${url.pathname}: ${why}; not forwarded (--strict)`); return sendError(400, anthropic, 'usage_request_skipped', `${why}; send the body as a UTF-8 JSON object without such keys, or run without --request-usage or --strict`) }
+        if (opts.strict) { stats.failed++; log(`FAIL ${verb} ${url.pathname}: ${why}; not forwarded (strict)`); return sendError(400, anthropic, 'usage_request_skipped', `${why}; send the body as a UTF-8 JSON object without such keys, or run without --request-usage, or with --no-strict`) }
         asked.usageRequestSkipped = u.skipped
       }
     }
     // The salt goes on the bytes forwarded, and the receipt is checked over exactly those. / 盐加在转发的字节上，回执按这些字节核验。
     if (r.metered && opts.salt && body && body.length) { const more = ai.saltRequestBody(body, headers); if (more) body = more }
-    // --save-requests: exactly those bytes, before they are sent. / 正是这些字节，发出之前写下。
+    // --policy (3.0): checked on exactly those bytes and written down as sent, before they are sent; a refusal is an HTTP
+    // 400 as the other refusals before forwarding are (x-should-retry: false), strict or not
+    // --policy：按正是这些字节核对并记为已发出，然后才发送；拒绝与其它转发前的拒绝一样是 HTTP 400，不论是否严格
+    let budgetCall = null
+    if (r.metered && budget) {
+      const call = ai.budgetCallOf({ container: svc.container, manifest: svc.manifest, verified: svc.verified }, r.format, body ?? new Uint8Array(0))
+      try { budgetCall = { admitted: await budget.admit(call), done: false } } catch (e) {
+        stats.failed++
+        log(`FAIL ${verb} ${url.pathname}: ${e.message}`)
+        writeLog({ method: verb, path: url.pathname, status: 400, stream: false, format: r.format.name, ok: false, budget: e.data ?? null, problems: [`not sent: ${e.message}`], warnings: [], unchecked: ['request', 'response'], receipt: null })
+        return sendError(400, anthropic, e.code === 'BUDGET_EXCEEDED' ? 'budget_exceeded' : String(e.data?.reason ?? 'invalid_argument').replace(/-/g, '_'), e.message)
+      }
+    }
+    // --save-requests: exactly those bytes, before they are sent; after the budget, so a call it refuses (never sent)
+    // leaves no copy of its prompt (review BR-9). / 正是这些字节，发出之前写下；在预算之后，被拒绝（未发出）的调用不留提示词副本。
     if (r.metered && opts.saveRequests && body && body.length) saveRequest(opts.saveRequests, body)
+    // A definite failure that claims nothing (an HTTP 4xx or 5xx with no receipt) releases the call's worst case; a
+    // timeout, a broken connection or a receipt that does not verify does not. / 确定的失败才撤下最坏情况。
+    const releaseBudget = (why, status) => { if (budgetCall && !budgetCall.done) { budgetCall.done = true; budget.release(budgetCall.admitted, { why, status }).catch(() => {}) } }
     const target = r.root + url.pathname + url.search
     let up
     try { up = await fetch(target, { method: verb, headers, body: body && body.length ? body : verb === 'POST' ? body : undefined, redirect: 'manual', signal: ac.signal }) } catch (e) {
@@ -419,7 +476,7 @@ async function main() {
     }
     const format = r.format
     const common = { requestBytes: body ?? new Uint8Array(0), path: url.pathname, status: up.status }
-    const base = { method: verb, path: url.pathname, status: up.status, format: format.name, ...asked }
+    const base = { method: verb, path: url.pathname, status: up.status, format: format.name, ...asked, ...(budgetCall ? { budgetCall } : {}) }
     const stream = !!format.stream && (up.headers.get('content-type') || '').toLowerCase().includes('text/event-stream') && !nullBody
     if (!stream) {
       let bytes
@@ -429,6 +486,7 @@ async function main() {
       // An answer the sidecar made itself: no upstream answer and no receipt, a transport failure passed on as it is.
       // 旁路自己产生的回答：没有上游回答也没有回执，是传输失败，原样转交。
       if (up.headers.get(ai.SIDECAR_ERROR_HEADER) === '1' && !up.headers.get(ai.RECEIPT_HEADER)) {
+        if (up.status >= 400) releaseBudget('sidecar-error', up.status)
         let why = ''
         try { why = String(JSON.parse(new TextDecoder().decode(bytes))?.error?.message ?? '').slice(0, 200) } catch { /* not JSON */ }
         report({ ...base, ok: false, sidecarError: true, code: up.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_UNAVAILABLE', problems: [`the sidecar answered HTTP ${up.status} itself${why ? ` (${why})` : ''}: no upstream answer, no receipt`], warnings: [], unchecked: ['request', 'response'], receipt: null, stream: false })
@@ -437,6 +495,7 @@ async function main() {
       }
       let envelope = null, headerError = null
       try { envelope = ai.decodeReceiptHeader(up.headers.get(ai.RECEIPT_HEADER)) } catch (e) { headerError = e.message }
+      if (!envelope && !up.headers.get(ai.RECEIPT_HEADER) && up.status >= 400) releaseBudget('http-error-no-receipt', up.status)
       const v = await check({ ...common, envelope, responseBytes: bytes, stream: false })
       if (!envelope) v.problems.splice(0, v.problems.length, headerError === 'no receipt' ? `no ${ai.RECEIPT_HEADER} header` : headerError)
       const rep = { ...base, ...v, stream: false }
@@ -578,7 +637,7 @@ async function main() {
   log(`service ${short(m.name, 80)}  ${svc.chainId && svc.chainId !== 56 ? `on ${CHAINS[svc.chainId]?.name ?? `chain ${svc.chainId}`}  ` : ''}container ${svc.container}  signer ${m.signer}${svc.verified.dev ? '  (DEV: not checked on chain)' : `  holder ${svc.verified.holder}`}`)
   for (const r of routes) log(`  ${r.format.name.padEnd(18)} -> ${r.root}${r.format.baseSuffix}`)
   log(`models priced: ${m[ai.MANIFEST_FIELD].models.map((x) => x.id).slice(0, 12).join(', ')}${m[ai.MANIFEST_FIELD].models.length > 12 ? ', ...' : ''}`)
-  log(`listening on ${local}${opts.strict ? '  (strict)' : ''}${opts.salt ? '' : '  (no salt)'}${opts.stripSession ? '  (session headers stripped)' : ''}${opts.requestUsage ? '  (usage requested)' : ''}${opts.log ? `  log ${opts.log}` : ''}${opts.saveRequests ? `  requests saved to ${opts.saveRequests}` : ''}`)
+  log(`listening on ${local}${opts.strict ? '  (strict)' : '  (--no-strict: failures are only logged)'}${opts.salt ? '' : '  (no salt)'}${opts.stripSession ? '  (session headers stripped)' : ''}${opts.requestUsage ? '  (usage requested)' : ''}${opts.log ? `  log ${opts.log}` : ''}${opts.saveRequests ? `  requests saved to ${opts.saveRequests}` : ''}`)
   log(`  ANTHROPIC_BASE_URL=${local}    OPENAI_BASE_URL=${local}/v1`)
   const stop = (sig) => { log(`${sig}: ${stats.ok} verified, ${stats.failed} failed, ${stats.sidecarErrors} sidecar errors, ${stats.passThrough} passed through; exiting`); process.exit(0) }
   process.on('SIGTERM', () => stop('SIGTERM'))
@@ -586,14 +645,14 @@ async function main() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// `tapeapi-verify task <thread.json>` (EXPERIMENTAL, 1.7, outside the 2.x compatibility promise): check a container-agent task
+// `tapeapi-verify task <thread.json>` (EXPERIMENTAL, 1.7, outside the compatibility promise): check a container-agent task
 // thread with createAgentKit(...).verifyTaskThread (@tapeapi/sdk/agent), and optionally the payment that belongs to it. It reads the
 // chain; it signs nothing, sends nothing and pays for nothing. Phase 0 has no enforcement: every result says `enforcement: none`.
-// `task`（实验性，1.7，不受 2.x 兼容承诺约束）：用 createAgentKit(...).verifyTaskThread 核验容器代理的任务线程，可选再核验对应的付款。
+// `task`（实验性，1.7，不受兼容承诺约束）：用 createAgentKit(...).verifyTaskThread 核验容器代理的任务线程，可选再核验对应的付款。
 // 只读链；不签名、不发送、不付款。阶段 0 没有强制执行：每个结果都写 `enforcement: none`。
 // ---------------------------------------------------------------------------------------------------------------
 const TASK_USAGE = `
-tapeapi-verify task (experimental, 1.7; not covered by the 2.x compatibility promise): check a container-agent task thread.
+tapeapi-verify task (experimental, 1.7; not covered by the compatibility promise): check a container-agent task thread.
 
 Usage: tapeapi-verify task <thread.json> [--payment <recipient> <index>] [--rpc <url,url,...>]
 
@@ -612,7 +671,7 @@ the chain cannot be read), 2 a usage mistake (an unknown option, no file, a file
 than 2 operators). The revocation floor and nonce store of one run start empty: a one-shot check cannot see an older list put back or a
 reused nonce. A receipt proves who answered which call, not that the work is right.
 
-tapeapi-verify task（实验性，1.7；不受 2.x 兼容承诺约束）：核验容器代理的任务线程。
+tapeapi-verify task（实验性，1.7；不受兼容承诺约束）：核验容器代理的任务线程。
 用法：tapeapi-verify task <thread.json> [--payment <收款容器> <序号>] [--rpc <url,url,...>]
 <thread.json> 是按收到顺序排列的消息 JSON 数组；打印状态、问题、是否自雇自、双方身份（容器地址与链上名字；清单给的名字标 untrusted）与
 enforcement: none（阶段 0 的授权书只是签名声明，没有任何东西强制执行）。--payment 另核验付款：收款容器必须是线程里的代理，发件方必须是线程里的
@@ -744,13 +803,13 @@ async function taskMain(argv) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// `tapeapi-verify review <reviewee>` (EXPERIMENTAL, internal, outside the 2.x compatibility promise): the reviews of one
+// `tapeapi-verify review <reviewee>` (EXPERIMENTAL, internal, outside the compatibility promise): the reviews of one
 // container under the draft "Evidence-Backed Reviews between Containers" (TapeOutProtocol/TAPs pull request #54), with
 // createReviewKit (@tapeapi/sdk/review). It reads the chain; it signs nothing, sends nothing and pays for nothing.
 // `review`（实验性，内部）：按 TAPs PR #54 草稿读取并核验一个容器收到的评价，打印逐条结果与汇总。只读链。
 // ---------------------------------------------------------------------------------------------------------------
 const REVIEW_USAGE = `
-tapeapi-verify review (experimental, internal; not covered by the 2.x compatibility promise): the reviews of one container.
+tapeapi-verify review (experimental, internal; not covered by the compatibility promise): the reviews of one container.
 
 Usage: tapeapi-verify review <reviewee> [--reviewer <container>]... [--records <file.json>] [--inbox <start>:<count>] [--rpc <url,url,...>]
 

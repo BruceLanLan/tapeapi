@@ -1,0 +1,56 @@
+{
+  "name": "@tapeapi/policy-circuit",
+  "version": "0.1.0",
+  "description": "TapeAPI policy circuits (experimental): re-run a spending rule written as a tapnet/1 circuit and check its PolicyBinding, after the Policy Circuit Gate TAP draft (TAPs pull request #84, not merged); off-chain only, it binds only the parties that check it",
+  "keywords": [
+    "tapeapi",
+    "tapeout",
+    "bnb",
+    "bsc",
+    "web3",
+    "eip-712",
+    "policy-circuit",
+    "experimental"
+  ],
+  "homepage": "https://tapeapi.fun/docs/",
+  "bugs": {
+    "url": "https://github.com/BruceLanLan/tapeapi/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BruceLanLan/tapeapi.git",
+    "directory": "policy-circuit"
+  },
+  "license": "MIT",
+  "author": "Bruce (@BruceLanLan)",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/policy-circuit-public.js",
+  "types": "./types/policy-circuit.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/policy-circuit.d.ts",
+      "default": "./src/policy-circuit-public.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "@noble/hashes": "1.8.0",
+    "@tapeapi/sdk": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

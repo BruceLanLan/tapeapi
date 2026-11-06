@@ -3,12 +3,12 @@
 You bought AI calls through a service that signs a usage receipt for every answer, and `tapeapi-verify --log` kept
 those receipts on your machine. This guide sets them against what else you have: the provider's bill, the requests you
 sent, a mandate you signed for an agent, and your own spending limits. Everything here is `tapeapi reconcile`,
-experimental and outside the 2.x compatibility promise: it may change or go away in any 2.x release.
+experimental and outside the compatibility promise: it may change or go away in any minor release.
 
 **What it does, and what it never does.** It reads local files only: no network, no key, nothing uploaded, no
 telemetry. It lists facts, each with the receipt line it comes from (and the bill line or request file it uses). It
 decides nothing: a difference is a question to put to the provider, with the lines to point at. **A receipt proves
-only what its signer said**: who signed which request and response bytes, and what usage and price were claimed. It
+only what its signer said**: who signed which request bytes and which answer (its bytes; for a stream, its event data), and what usage and price were claimed. It
 does not prove which model ran, and none of these checks can tell which model ran.
 
 ```sh
@@ -38,7 +38,40 @@ tapeapi reconcile --receipts receipts.jsonl --bill bill.csv \
 `model`, `prompt` and `completion` are needed, and `id` or `time`. `amount` is compared only with `--amount-scale`
 (how many bill units make one unit of the receipt's currency). `--preset new-api` names the fields of the JSON new-api's
 `GET /api/log/self` returns; see [For AI API providers](ai-providers.md) for what that preset is and is not. There is
-no preset for any other provider: name the columns.
+no preset for any other provider: name the columns. A time with no offset (`2026-10-22 10:00:00`) is read as UTC, in the
+bill and in `--since` / `--until` alike.
+
+## With new-api
+
+If the provider runs [new-api](https://github.com/QuantumNous/new-api) (with or without the
+[signing sidecar](../../examples/new-api-sidecar/README.md) in front of it), the usage log its API returns is a bill
+`--preset new-api` reads as it is. Export it to a file with your own credential, then reconcile:
+
+```sh
+# your rows, with the dashboard's credential (the token the dashboard uses, or on recent versions a `nap_` access
+# token with the usage:read scope); a relay key (sk-…) is refused on this route
+curl -sS -H "Authorization: Bearer <your dashboard token>" "https://<provider>/api/log/self" -o newapi-log.json
+# or, with the relay key only: the most recent rows of that key, the same fields
+curl -sS -H "Authorization: Bearer sk-…" "https://<provider>/api/log/token" -o newapi-log.json
+# quota_per_unit is in GET /api/status (data.quota_per_unit; new-api's default is 500000, a site may change it)
+tapeapi reconcile --receipts receipts.jsonl --bill newapi-log.json --preset new-api --amount-scale 500000
+```
+
+`quota` is a raw integer; `--amount-scale <quota_per_unit>` turns the receipts' currency into it, and the default
+tolerance is under one quota. The log is paged: narrow it with the date parameters the Logs page of that dashboard sends
+(copy its request from your browser's developer tools; they differ between versions) so that the rows you want fit one
+answer, or run `reconcile` once per saved page. `--since` and `--until` bound both files.
+
+What this rests on, and does not: the field names (`upstream_request_id`, `model_name`, `prompt_tokens`,
+`completion_tokens`, `quota`, `created_at` in `data.items`, or a bare `data` array) were read in new-api's source code
+and are **not checked against a real instance**; whether `upstream_request_id` holds the answer id a receipt carries is
+not known, and a row it does not join is joined by time, model and tokens within `--window` (default 120 s). **The
+dashboard's CSV export ("Export" on the Logs page) is another file**: localized display headers, a formatted `Cost`
+that is not a comparable amount, `request_id` rather than `upstream_request_id`, so the preset does not match it
+(exit 2, the header shown); name its columns with `--map`, as for any other bill. The repository's fake new-api
+(`examples/new-api-sidecar/fake-new-api.mjs`) serves this log shape, and `reconcile-new-api.test.mjs` runs the whole
+path on 127.0.0.1 (the sidecar, `tapeapi-verify --log`, the export, `reconcile`: every row matched by id, a row without
+the id, a differing row, a row missing on each side); it is a mock, and says nothing about what a real instance answers.
 
 ## Facts about each request
 
@@ -99,8 +132,9 @@ signer claimed.
 
 ## Your own limits
 
-`--policy <file>` reads limits you write for yourself. It is not a platform rule and was not enforced when the calls
-were made; `reconcile` lists the windows whose receipts claim more than it says.
+`--policy <file>` reads limits you write for yourself. It is not a platform rule, and `reconcile` enforces nothing: it
+lists the windows whose receipts claim more than it says. (The same file can also refuse calls before they are sent, in
+your own process: see below.)
 
 ```json
 {
@@ -118,6 +152,71 @@ were made; `reconcile` lists the windows whose receipts claim more than it says.
 `day`, `month` (UTC) or `total`. Each rule sets at least one of `maxAmount` (a decimal string of at most 8 places,
 with `currency`), `maxCalls`, `maxPromptTokens`, `maxCompletionTokens`. An unknown key is an error (exit 2), so a
 misspelt limit does not pass silently.
+
+### The same file before each call (client-side budget, experimental, 3.0)
+
+`createVerifyingFetch({ policy })` reads the same policy value and refuses a call **before it is sent** when its worst
+case would take a rule that covers it over its limit. A rule covers a call by service (the container) and model (the
+requested name, its price-table entry's id or an alias, or `"*"`).
+
+```js
+import { readFileSync, appendFileSync, chmodSync } from 'node:fs'
+import { ai } from '@tapeapi/sdk'
+
+const policy = JSON.parse(readFileSync('my-limits.json', 'utf8'))
+const fetch = ai.createVerifyingFetch({ api, service, policy,
+  budgetStore: ai.budgetFileStore('spend.jsonl', { readFileSync, appendFileSync, chmodSync }) })
+```
+
+- **The worst case** of a call is `ai.maxAmountOf` per currency of the model's entry, with the request's size in bytes
+  as the prompt bound and its declared output limit (`ai.completionLimitOf`) as the completion bound. Against it: what
+  the verified receipts in the rule's window already claim, plus the worst case of every call written down as sent
+  that has no verified receipt (an upstream failure, a receipt that did not verify, a crash in between).
+- **Refusals**, whatever `strict` says: `BUDGET_EXCEEDED` with `data: { reason: 'budget-cap', rule, period, window,
+  limit, currency, cap, spent, worstCase }`. A covering rule that cannot be bounded fails closed with
+  `INVALID_ARGUMENT` and `data.reason`: `budget-no-limit` (the request sets no `max_tokens` /
+  `max_completion_tokens` / `max_output_tokens`), `budget-no-price` (no price-table entry for the model),
+  `budget-no-currency` (no price in the rule's currency), `budget-unreadable-request` (the body is not a JSON object),
+  `budget-store-unwritable` (nothing could be written down, so nothing is sent).
+- **The store** (`budgetFileStore`) is one append-only JSON-lines file, mode 600: the verified receipt envelopes,
+  which `tapeapi receipts` and `tapeapi reconcile --receipts` read as they are, one `{"tapeapiSent": 1, …}` line
+  per call, written before it leaves, and a `{"tapeapiReleased": 1, …}` line when a call ends in a definite failure
+  that claims nothing (an HTTP 4xx or 5xx with no receipt), which drops its worst case (the receipt readers skip both
+  kinds). A timeout, a broken connection or a receipt that does not verify is not definite: the call keeps counting. A restart reads the file again, so the count
+  survives it. Without `budgetStore` the store is memory: a restart forgets.
+
+**What it is not.** It is a convenience in your own process, not an enforcement anyone else can rely on: you can turn
+it off, edit the file, or put two budgets on one file (two processes, or two `policy` fetches in one process: each
+reads the other's new lines before every call, under a lock file `<store>.lock` when `budgetFileStore` is given
+`writeFileSync` and `unlinkSync` (`tapeapi-verify --budget-store` does), so they decide one after the other; share one
+`ai.createBudget()` with `budget:` in one process), and a service
+is not bound by it. It bounds the prices the receipts **claim**, not what anyone pays. The worst case is only as good
+as its counts: a hidden system prompt, images, tool definitions, a model that ignores `max_tokens` or an answer priced
+on another reported model can make a receipt claim more than the worst case; the next call then sees it and is
+refused. Only calls to an endpoint of the manifest are counted (strict, the default, refuses the others anyway).
+
+The local proxy takes the same file: `tapeapi-verify <service> --policy my-limits.json --budget-store spend.jsonl`. A
+refused call gets HTTP 400 (code `budget_exceeded`, or `budget_no_limit`, ... when it cannot be bounded) with
+`x-should-retry: false`, as the proxy's other refusals before forwarding, and is not forwarded.
+
+## A spend statement (experimental, 3.0)
+
+`tapeapi receipts statement` sums what the receipts claim per service, model and UTC day for a period, with your
+policy's caps and a mandate's caps alongside:
+
+```sh
+tapeapi receipts statement --receipts spend.jsonl --from 2026-10-01 --to 2026-11-01 --policy my-limits.json \
+  --mandate mandate.json --token-decimals 18 [--json] [--lang en|zh]
+```
+
+It counts as `reconcile` counts (one receipt once, the same `--since` / `--until`, which `--from` / `--to` are), so on
+the same files its totals are reconcile's: the mandate's `spent` and each policy window's sum. Calls a budget wrote down
+as sent with no verified receipt are listed beside the totals at their worst case, not in them.
+
+**Nothing signs it.** It is your own summary of the receipts on your machine; whoever you show it to has your word for
+the sums. Each receipt in it was signed by its service and proves only what that service claimed. It is not the agent
+kit's `spendStatement` / `spendEvidence` (phase 1), which state an escrow channel's `claimedOf` inside a signed deliver
+result: those need an escrow, this reads receipts only.
 
 ## For operators: give your users rows they can reconcile
 

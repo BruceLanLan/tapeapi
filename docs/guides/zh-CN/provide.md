@@ -117,7 +117,8 @@ const svc = await createTapeAPI({ rpcUrls: [/* ... */], quorum: 2 }).resolve('0x
 
 ## 4. 续期
 
-委托默认有效 90 天。客户端从链上清单中读取委托，所以续期既要重新签名，**也要**重新发布清单。签名密钥保持不变。
+委托默认有效 30 天（3.0 之前为 90 天）；在操作台第 4 步也可以改填 1 到 366 之间的任意整数天，例如 7 或 90。剩不到 7 天时
+`tapeapi-doctor` 会警告。客户端从链上清单中读取委托，所以续期既要重新签名，**也要**重新发布清单。签名密钥保持不变。
 在[持有者控制台](https://tapeapi.fun/console/)中：
 
 1. **第 2 步：** 读取你的电路。控制台同时读取链上已有的清单，以及它授权的签名地址。
@@ -130,7 +131,7 @@ const svc = await createTapeAPI({ rpcUrls: [/* ... */], quorum: 2 }).resolve('0x
 
 ## 5. 付费方法
 
-> **实验性。** 付费功能（TAPI-22 付费通道与托管合约）尚未部署、未经审计，不在 1.0 的稳定承诺之内：下面的名字可能在 1.x 的次版本里改变。见[升级到 1.0](upgrade-1.0.md#10-承诺什么)。
+> **实验性。** 付费功能（TAPI-22 付费通道与托管合约）尚未部署、未经审计，不在兼容承诺之内：下面的名字可能在次版本里改变。见[升级到 1.0](upgrade-1.0.md#10-承诺什么)。
 
 在方法上设置 `priceBEM`，并在 `payment` 中指定一个托管合约。运行时会验证每张凭证、按消费者计量，并拒绝低于价格的
 任何凭证。同一个付费服务的所有端点必须共享同一个原子计量存储（在 Cloudflare 上为 D1，见
@@ -138,6 +139,21 @@ const svc = await createTapeAPI({ rpcUrls: [/* ... */], quorum: 2 }).resolve('0x
 分批提交给托管合约。（实验性、未部署：计划送审的托管一个实例只托管一种代币，首个是 BEM，所以首个实例的单位就是 `priceBEM` 用的单位（10⁻⁸ BEM）；
 USDT 锚定币与 WBNB 按需。托管金额按代币合约自己的 `decimals()` 读取，不把 BEM 的 8 位硬编码进去；`priceBEM` 保持不变，仍是目前唯一的按次价格字段。哪些代币、为什么：[`docs/FEES.md`](../../FEES.md)。）在清单能以其它代币定价之前，SDK 拒绝为托管持有 BEM 以外代币的服务充值或付费
 （`UNSUPPORTED_PAYMENT_TOKEN`；托管合约本身支持任意准入代币，清单的多币种定价规范尚未规定），并且只为已审计的托管或消费者显式添加的托管构造 `approve` 与 `fund`。
+
+**首个付费调用之前核对托管的代币（3.0）。** 运行时读取托管的 `token()`，与清单计价的代币比较（BNB 智能链上为 BEM，本地链用
+`createProvider({ escrowToken })` 指定）。每条路径都一样：`listen()` 在启动时核对，Cloudflare Workers（`handleRequest`）在首个付费调用之前核对，
+所以 Worker 不再需要自己调用 `checkEscrowToken()`。托管持有别的代币、托管没有 `token()`、节点读不出来，这三种情况都以未签名的 HTTP 503
+拒绝付费调用（`UNSUPPORTED_PAYMENT_TOKEN`，`data.reason` 为 `escrow-token-mismatch`、`escrow-no-token` 或 `escrow-token-unreadable`）：
+不签名、不计费，免费方法照常回答。被拒的调用属于未经验证的流量，计入调用方的免费预算。确定的答案（一致、不一致或跳过）在实例存续期间保留，你自己调用
+`provider.checkEscrowToken()` 得到的也是它，不会重读；读取失败的，在下一次付费调用时重读，绝不当作一致。所以三种原因对调用方的意义不同：
+`escrow-token-mismatch` 对该实例是永久的（重试不会重读，只会得到同样的 503，不值得重试；只有用正确的托管或配置重新部署才会改变），
+`escrow-no-token` 与 `escrow-token-unreadable` 则在下一次付费调用时重读。这个回答没有签名，什么也证明不了：SDK 把它报为
+`PROVIDER_UNAVAILABLE`（`unsigned claim: UNSUPPORTED_PAYMENT_TOKEN`），并释放这次调用的预留（[TAPI-22](../../../spec/TAPI-22.md) §3.2 的说明性段落）。代币不一致时
+`listen()` 仍然拒绝启动，`dev: true` 仍然跳过这项核对，`provider.stats().escrowTokenRefused` 记录被拒的次数。以下情况同样跳过这项核对，
+付费调用不经核对照常进行：没有任何方法收费；没有配置托管；配置了 `settlementFacts`（不读结算合约）或 `enforcement`（由执行后端自己核对通道与代币）；
+没有 `rpcUrls`；不在 BNB 智能链上又没传 `createProvider({ escrowToken })`（那里没有默认代币）。这时 `checkEscrowToken()` 回答 `skipped`
+并写明原因。托管合约未经审计、未部署，
+所以今天没有任何线上服务收费。
 
 结算时，维护贡献从你的所得中划出，不会加到消费者的价格上。默认是 1%（100 bps，托管合约里的常量）。你可以用电路持有者
 的钱包发送 `api.tx.setContribution({ circuits, tokenId, bps })`，为自己的服务把它设为 0（关闭），或最高 20% 的任意值。

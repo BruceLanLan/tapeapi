@@ -60,7 +60,7 @@ async function cliWorld(flags, { edit = null } = {}) {
   await new Promise((ok) => srv.listen(0, '127.0.0.1', ok))
   const url = `http://127.0.0.1:${srv.address().port}`
   w = await cannedWorld({ live: `${url}/tapeapi/v1` })
-  const child = spawn(process.execPath, [CLI, '--dev', url, '--port', '0', '--log', logFile, ...flags], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const child = spawn(process.execPath, [CLI, '--dev', url, '--port', '0', '--log', logFile, ...flags], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   let err = ''; child.stderr.setEncoding('utf8'); child.stderr.on('data', (d) => { err += d })
   const local = await new Promise((ok, fail) => {
     const t = setTimeout(() => fail(new Error(`tapeapi-verify did not start: ${err}`)), 20_000)
@@ -98,8 +98,8 @@ async function viaSdk(c, opts) {
 // 两者都报告的结论字段，回执按 result 比较。
 const verdict = (r) => ({ ok: r.ok, problems: r.problems, warnings: r.warnings, unchecked: r.unchecked, result: r.receipt?.result ?? null, usageRequested: r.usageRequested, usageRequestSkipped: r.usageRequestSkipped })
 
-test('tapeapi-verify --request-usage --no-salt is createVerifyingFetch({ requestUsage: true, salt: false, strict: false }): the same bytes forwarded, the same bytes delivered, the same verdicts', { timeout: 120_000 }, async () => {
-  const cli = await cliWorld(['--request-usage', '--no-salt'])
+test('tapeapi-verify --request-usage --no-salt --no-strict is createVerifyingFetch({ requestUsage: true, salt: false, strict: false }): the same bytes forwarded, the same bytes delivered, the same verdicts', { timeout: 120_000 }, async () => {
+  const cli = await cliWorld(['--request-usage', '--no-salt', '--no-strict'])
   try {
     for (const [name, c] of Object.entries(CASES)) {
       const a = await cli.send(c)
@@ -120,7 +120,7 @@ test('tapeapi-verify --request-usage --no-salt is createVerifyingFetch({ request
     // The verdict line says it. / 结论行注明。
     assert.match(cli.stderr(), /OK {4}POST \/v1\/chat\/completions {2}stream {2}200 {2}usage=asked {2}model=demo-chat/)
     assert.match(cli.stderr(), /OK {4}POST \/v1\/chat\/completions {2}stream {2}200 {2}usage-request-skipped=duplicate-member {2}model=demo-chat/)
-    assert.match(cli.stderr(), /listening on \S+ {2}\(no salt\) {2}\(usage requested\)/)
+    assert.match(cli.stderr(), /listening on \S+ {2}\(--no-strict: failures are only logged\) {2}\(no salt\) {2}\(usage requested\)/)
   } finally { await cli.close() }
 })
 
@@ -154,7 +154,7 @@ test('tapeapi-verify --request-usage --strict: a body the gates refuse gets HTTP
     }
     const ok = await cli.send(CASES['chat-stream-formatted'])
     assert.deepEqual([ok.status, ok.log[0].ok, ok.log[0].usageRequested], [200, true, true])
-    assert.match(cli.stderr(), /FAIL POST \/v1\/chat\/completions: requestUsage: .*\(duplicate-member: .*not forwarded \(--strict\)/)
+    assert.match(cli.stderr(), /FAIL POST \/v1\/chat\/completions: requestUsage: .*\(duplicate-member: .*not forwarded \(strict\)/)
   } finally { await cli.close() }
 })
 
@@ -187,7 +187,7 @@ test('FIXED AI-ASK-1 through tapeapi-verify: a raised, re-signed usage fails wit
 })
 
 test('tapeapi-verify --help lists --request-usage, in English and Chinese', () => {
-  const out = spawnSync(process.execPath, [CLI, '--help'], { encoding: 'utf8' }).stdout
+  const out = spawnSync(process.execPath, [CLI, '--help'], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' }).stdout
   assert.match(out, /--request-usage +ask for the usage of a streamed OpenAI Chat request/)
   assert.match(out, /替未要用量的流式 OpenAI Chat 请求在字节里要用量/)
 })

@@ -117,7 +117,9 @@ test('the manifest: methods generated from inputSchema, toolsSha256 over the ups
 
 test('a signed call: the envelope verifies and its result is the upstream CallToolResult minus _meta', async () => {
   const up = inProcess()
-  const p = make(up.upstream)
+  // upstreamNegotiation 'legacy': this test reads the 2.x upstream conversation (3.0 negotiates by default).
+  // 本测试读的是 2.x 的上游对话（3.0 默认协商）。
+  const p = make(up.upstream, { upstreamNegotiation: 'legacy' })
   await p.ready
   const { status, env } = await call(p, 'add', { a: 2, b: 3 })
   assert.equal(status, 200)
@@ -185,7 +187,9 @@ test('/mcp lifecycle: initialize, notifications, tools/list (pinned fields), too
   const g = await p.handleRequest(req(MCP_PATH, { method: 'GET' }))
   assert.equal(g.status, 405)
   const o = await p.handleRequest(req(MCP_PATH, { method: 'OPTIONS' }))
-  assert.equal(o.status, 204); assert.equal(o.headers.get('access-control-allow-origin'), '*')
+  // 3.0: no origin is listed by default, so no CORS * either (a request without Origin is answered as usual).
+  // 3.0：默认不列任何来源，因此也没有 CORS *（不带 Origin 的请求照常作答）。
+  assert.equal(o.status, 204); assert.equal(o.headers.get('access-control-allow-origin'), null)
   const batch = await (await p.handleRequest(req(MCP_PATH, { body: [{ jsonrpc: '2.0', id: 1, method: 'ping' }, { jsonrpc: '2.0', method: 'notifications/initialized' }, { jsonrpc: '2.0', id: 2, method: 'tools/list' }] }))).json()
   assert.deepEqual(batch.map((x) => x.id), [1, 2]); assert.ok(Array.isArray(batch[1].result.tools))
   assert.equal((await p.handleRequest(req(MCP_PATH, { body: '{nope' }))).status, 400)
@@ -276,12 +280,18 @@ test('upstream failures are signed refusals: down, too slow, oversized; a boot w
   const r = await dead.handleRequest(req('/tapeapi/v1/echo', { body: { id: 'x', params: {} } }))
   assert.equal(r.status, 503)
   assert.equal((await r.json()).sig, undefined, 'nothing is signed before the proxy has a manifest')
-  await assert.rejects(make({ call: async (m) => (m.method === 'tools/list' ? { jsonrpc: '2.0', id: m.id, result: { tools: [{ name: 'x-y', inputSchema: {} }] } } : { jsonrpc: '2.0', id: m.id, result: {} }) }).ready, /no tool this proxy can serve/)
+  // An upstream that answers every other method with an empty result: with the 2.x handshake it boots into "no tool";
+  // with the 3.0 default its empty answer to server/discover offers no revision, and the boot says so.
+  // 对其它方法都回空结果的上游：2.x 握手下启动报"没有工具"；3.0 默认下它对 server/discover 的空回答不含任何版本，启动时如实报错。
+  const sloppy = { call: async (m) => (m.method === 'tools/list' ? { jsonrpc: '2.0', id: m.id, result: { tools: [{ name: 'x-y', inputSchema: {} }] } } : { jsonrpc: '2.0', id: m.id, result: {} }) }
+  await assert.rejects(make(sloppy, { upstreamNegotiation: 'legacy' }).ready, /no tool this proxy can serve/)
+  await assert.rejects(make(sloppy).ready, /the upstream offers no MCP revision this proxy speaks/)
 })
 
 test('HTTP upstream (JSON): session id carried, protocol version sent, caller headers never forwarded, oversized answer refused', async () => {
   const up = httpUpstream()
-  const p = make({ url: 'https://upstream.example/mcp', headers: { authorization: 'Bearer operator-token' } }, { fetch: up.fetch })
+  // upstreamNegotiation 'legacy': the 2.x session handshake this test reads (3.0 negotiates by default). / 2.x 的会话握手。
+  const p = make({ url: 'https://upstream.example/mcp', headers: { authorization: 'Bearer operator-token' } }, { fetch: up.fetch, upstreamNegotiation: 'legacy' })
   const m = await p.ready
   assert.equal(m.mcp.toolsSha256, mcp.toolsDigest(await upstreamList(up.server)))
   const secret = { authorization: 'Bearer caller-secret', cookie: 'session=caller', 'x-api-key': 'caller-key' }

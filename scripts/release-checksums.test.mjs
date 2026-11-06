@@ -16,7 +16,7 @@ const SCRIPT = fileURLToPath(new URL('./release-checksums.mjs', import.meta.url)
 const sha = (s) => createHash('sha256').update(s).digest('hex')
 const ABC = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad' // SHA-256("abc"), FIPS 180-2 example
 const tmp = () => mkdtempSync(join(tmpdir(), 'tapeapi-sums-'))
-const run = (...args) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' })
+const run = (...args) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
 
 test('hashes are SHA-256 of the file bytes, listed by name in code-point order', () => {
   const dir = tmp()
@@ -107,19 +107,19 @@ test('a file name GNU would have to escape is refused', () => {
 // The reader's side: the file this script writes is what `shasum -a 256 -c` (or sha256sum -c) accepts, and a changed byte fails.
 // 读者这一侧：本脚本写出的文件能被 `shasum -a 256 -c`（或 sha256sum -c）接受，改一个字节就失败。
 test('the written SHA256SUMS passes the system checker, and a tampered file fails it', (t) => {
-  const probe = spawnSync('shasum', ['-a', '256', '--version'], { encoding: 'utf8' })
+  const probe = spawnSync('shasum', ['-a', '256', '--version'], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
   const [cmd, args] = probe.status === 0 ? ['shasum', ['-a', '256', '-c', 'SHA256SUMS']] : ['sha256sum', ['-c', 'SHA256SUMS']]
-  if (spawnSync(cmd, ['--version'], { encoding: 'utf8' }).error) { t.skip('neither shasum nor sha256sum is installed'); return }
+  if (spawnSync(cmd, ['--version'], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' }).error) { t.skip('neither shasum nor sha256sum is installed'); return }
   const dir = tmp()
   try {
     writeFileSync(join(dir, 'tapeapi-sdk-1.6.0.tgz'), Buffer.alloc(100000, 7))
     writeFileSync(join(dir, 'tapeapi-server-1.6.0.tgz'), 'second file')
     assert.equal(run(dir).status, 0)
-    const ok = spawnSync(cmd, args, { cwd: dir, encoding: 'utf8' })
+    const ok = spawnSync(cmd, args, { cwd: dir, encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
     assert.equal(ok.status, 0, ok.stdout + ok.stderr)
     assert.equal((ok.stdout.match(/: OK$/gm) || []).length, 2)
     writeFileSync(join(dir, 'tapeapi-server-1.6.0.tgz'), 'second filE')
-    const bad = spawnSync(cmd, args, { cwd: dir, encoding: 'utf8' })
+    const bad = spawnSync(cmd, args, { cwd: dir, encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
     assert.notEqual(bad.status, 0)
     assert.match(bad.stdout, /tapeapi-server-1\.6\.0\.tgz: FAILED/)
   } finally { rmSync(dir, { recursive: true, force: true }) }

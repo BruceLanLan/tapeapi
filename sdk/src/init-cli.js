@@ -19,6 +19,7 @@ import { redactOutput } from './connect-cli.js'
 import { connectReport, NOTES, FORMAT_NAMES } from './connect.js'
 import { T, hostOf, at, shown, clean, shellWord, usage, parseOptions, commonOptions, ui, table, usageExit } from './receipts-cli.js'
 import { readPriceTable, sourceFacts, CONVERTER_PATH } from './prices-cli.js'
+import { PASSPORT_MISSING, passportLines } from './passport-view.js'
 
 export const STATE_FILE = 'tapeapi-init.json'
 export const ENV_FILE = '.env'
@@ -102,6 +103,15 @@ ${STEPS.map((s, i) => `    [${i}/${LAST}] ${s.title.en} / ${s.title.zh}`).join('
   --rpc-xlayer <urls>  X Layer nodes      --rpc-base <urls>  Base nodes
   --json               one JSON object on stdout (no questions)     --lang <en|zh|both>  (default both)     --no-color
   --help
+  --passport --agent-id <n> [--name <name>] [--gateway-domain <domain>]
+                       experimental (3.0), a step of its own: the Agent Passport registration file of the open draft
+                       TAPs #83. After read-only checks (the identity's owner is your circuit's holder, its tap.passport
+                       key names this circuit) it writes .well-known/agent-registration.json in --dir and prints what you
+                       do next in your own wallet (putFile in the holder console, at your cost). It registers nothing,
+                       sends nothing and writes nothing on chain. Needs the separate package @tapeapi/passport
+                       实验性，单独一步：按未合并的 TAPs #83 草案生成 Agent 护照登记文件。只读检查之后在 --dir 写出
+                       .well-known/agent-registration.json，并打印你接下来在自己钱包里做的事（在持有人操作台 putFile，费用自付）。
+                       它不登记、不发送、不往链上写任何东西。需要独立包 @tapeapi/passport
 
 Questions are asked only on a terminal without --yes, --answers or --json; none of them is a key, a password, a token
 or a wallet secret. Output redaction as tapeapi connect's.
@@ -120,6 +130,7 @@ const INIT_SPEC = {
   '--dir': 'value', '--step': 'value', '--renew': 'bool', '--name': 'value', '--sidecar-url': 'value', '--formats': 'value', '--confirm-all-formats': 'bool',
   '--upstream': 'value', '--answers': 'value', '--yes': 'bool', '-y': '--yes', '--rpc': 'value', '--rpc-xlayer': 'value', '--rpc-base': 'value',
   '--json': 'bool', '--lang': 'value', '--no-color': 'bool', '--help': 'bool', '-h': '--help',
+  '--passport': 'bool', '--agent-id': 'value', '--gateway-domain': 'value',
 }
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
 const yes = (s) => /^\s*(y|yes|是)\s*$/i.test(String(s ?? ''))
@@ -294,6 +305,9 @@ export async function runInit(argv, io = {}) {
     return fail2(e)
   }
 
+  if (o['--passport']) return passportStep({ io, o, common, h, dir, state, cmd, version, env, apiOptions, chainRpc, say, stdout, stderr, fail2, isTTY })
+  for (const f of ['--agent-id', '--gateway-domain']) if (o[f] !== undefined) return fail2(usage(`${f} goes with --passport`, `${f} 要与 --passport 一起用`))
+
   // Answers: the flags, then --answers, then what the state file kept. / 答案：命令行参数优先，其次 --answers，再次状态文件。
   const A = { ...state.answers, ...fileAnswers }
   if (o['--name'] !== undefined) A.name = o['--name']
@@ -438,6 +452,84 @@ export async function runInit(argv, io = {}) {
   out.push(`  ${U.next(r.next)}`)
   say(stdout, out.join('\n') + '\n')
   return { exitCode: r.exitCode }
+}
+
+// `tapeapi init --passport` (3.0, experimental): a step of its own, outside STEPS and the state file. Read-only checks
+// through io.passport (the separate package @tapeapi/passport, loaded by the bin), then the file written locally, the
+// holder's own next steps, and one more resolution: DONE (CONFIRMED), TODO (waiting for the holder), FAIL, or ERR.
+// tapeapi init --passport（3.0，实验性）：单独一步，不在 STEPS 与状态文件里。经 io.passport 只读检查，然后在本地写文件、打印持有人
+// 自己的下一步，并再解析一次：DONE、TODO（等持有人去做）、FAIL 或 ERR。
+const WAITING = new Set(['registration-file-missing', 'not-listed', 'registration-file-incomplete', 'wallet-unset', 'stale-agent-wallet'])
+async function passportStep(c) {
+  const { io, o, common, h, dir, state, cmd, version, say, stdout, stderr, fail2 } = c
+  let agentId, name, gatewayDomain
+  try {
+    if (o['--step'] !== undefined || o['--renew']) throw usage('--passport is a step of its own: it goes without --step and --renew', '--passport 是单独的一步：不与 --step、--renew 同用')
+    agentId = o['--agent-id']
+    if (agentId === undefined || !/^(0|[1-9][0-9]{0,77})$/.test(agentId)) throw usage('--passport needs --agent-id <n>: the agentId your own register transaction gave you (init registers nothing for you)', '--passport 需要 --agent-id <n>：你自己的 register 交易得到的 agentId（init 不替你登记）')
+    name = o['--name'] ?? state.answers?.name
+    if (!name) throw usage('--passport needs --name <#ID>.<processor>.tape (BNB Smart Chain), or a name kept by an earlier step', '--passport 需要 --name <#ID>.<处理器>.tape（BNB 链），或之前步骤保存的名字')
+    name = checkName(name)
+    if (!/^[1-9][0-9]*\.(0|[1-9][0-9]*)\.tape$/.test(name)) throw usage('the passport draft defines passports on BNB Smart Chain only: a name <#ID>.<processor>.tape', '护照草案只在 BNB 链上定义护照：名字须为 <#ID>.<处理器>.tape')
+    gatewayDomain = o['--gateway-domain']
+    if (gatewayDomain !== undefined && !/^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/.test(gatewayDomain)) throw usage('--gateway-domain takes a domain name, such as gateway.example', '--gateway-domain 接收一个域名，例如 gateway.example')
+  } catch (e) {
+    if (!e.usage) throw e
+    return fail2(e)
+  }
+  if (!io.passport) { say(stderr, `${cmd} init: ${PASSPORT_MISSING.en}\n${cmd} init: ${PASSPORT_MISSING.zh}\n`); return { exitCode: 2 } }
+  const api = createTapeAPI({ rpcUrls: c.chainRpc.bsc ?? rpcUrlsFor(56), quorum: 2, quiet: true, conform: 'tap10', ...c.apiOptions })
+  // INVALID_ARGUMENT comes before any read (an agentId above 2^256 - 1): a usage mistake, exit 2 (FIXED R30-S1)
+  // INVALID_ARGUMENT 在任何读取之前抛出（agentId 超过 2^256 - 1）：用法错误，退出码 2
+  let plan
+  try { plan = await io.passport.preparePassportRegistration({ api, agentId, name, ...(gatewayDomain ? { gatewayDomain } : {}) }) } catch (e) {
+    if (e?.code !== 'INVALID_ARGUMENT') throw e
+    return fail2(usage(e.message, e.message))
+  }
+  let written = null, after = null
+  if (plan.status === 'ready') {
+    const folder = h.join(dir, '.well-known')
+    if (typeof h.mkdirSync === 'function') h.mkdirSync(folder, { recursive: true })
+    written = h.join(folder, 'agent-registration.json')
+    h.writeFileSync(written, plan.file.text)
+    after = await io.passport.resolvePassport({ agentId }, { api })
+  }
+  const status = plan.status === 'unavailable' || after?.state === 'UNAVAILABLE' ? 'ERR' : plan.status === 'fail' ? 'FAIL' : after.state === 'CONFIRMED' ? 'DONE' : WAITING.has(after.reasons[0]) ? 'TODO' : 'FAIL'
+  const exitCode = { DONE: 0, TODO: 0, FAIL: 1, ERR: 3 }[status]
+  const again = `${cmd} init --passport --agent-id ${agentId} --name ${name}${gatewayDomain ? ` --gateway-domain ${gatewayDomain}` : ''}${o['--dir'] !== undefined ? ` --dir ${shellWord(o['--dir'])}` : ''}`
+  const next = status === 'DONE' ? `${cmd} passport ${agentId}` : again
+  const verdict = status === 'DONE' ? T(`passport confirmed for agent ${agentId}`, `agent ${agentId} 的护照已成立`)
+    : status === 'TODO' ? T(`the file is written here; the passport resolves as ${after.state} (${after.reasons[0]}) until you do the steps above`, `文件已在本地写出；在你完成上面的步骤之前，护照解析为 ${after.state}（${after.reasons[0]}）`)
+      : status === 'FAIL' ? T(`not ready: ${plan.reason ?? after?.reasons[0]}`, `尚不能生成：${plan.reason ?? after?.reasons[0]}`)
+        : T(`could not be read under strict agreement: ${plan.reason ?? after?.reasons[0]}; run it again`, `未能在严格共识下读到：${plan.reason ?? after?.reasons[0]}；请重试`)
+  const notes = [io.passport.PASSPORT_NOTES.experimental, INOTES.boundary, INOTES.money]
+  const uri = plan.agentUri ?? plan.agentUriForm ?? null
+  const uriNote = T(`agentURI in the canonical form (R-3): ${uri}; any other form only gives the warning agent-uri-not-canonical`, `规范形式（R-3）的 agentURI：${uri}；其它形式只会得到警告 agent-uri-not-canonical`)
+  if (common.json) {
+    const P = (t) => (t ? (common.lang === 'en' ? t.en : common.lang === 'zh' ? t.zh : t) : null)
+    say(stdout, JSON.stringify({
+      tool: 'tapeapi', command: 'init', mode: 'passport', version, experimental: true, ok: exitCode === 0, exitCode, status, agentId, name,
+      checks: plan.checks.map((x) => ({ ...x, detail: P(x.detail) })), written: written ? [shown(written, h)] : [], agentUri: uri,
+      you: (plan.steps ?? []).map(P), passport: after ? { ...after, snapshot: undefined } : null, verdict: P(verdict), notes: notes.map(P), next,
+    }, null, 2) + '\n')
+    return { exitCode }
+  }
+  const U = ui({ lang: common.lang, color: !common.noColor && c.isTTY && !common.json && (c.env.NO_COLOR === undefined || c.env.NO_COLOR === '') })
+  const mark = { DONE: U.green('DONE'), TODO: U.yellow('TODO'), FAIL: U.red('FAIL'), ERR: U.red('ERR ') }[status]
+  const out = [`${cmd} init --passport${version ? ` ${version}` : ''} ${U.experimental}   dir ${clean(shown(dir, h))}`]
+  for (const n of notes) out.push(...U.say(n))
+  out.push('')
+  for (const x of plan.checks) { const [first, ...more] = U.say(x.detail); out.push(`  ${x.ok ? 'ok  ' : U.red('FAIL')}  ${x.id}: ${first}`, ...more.map((m) => `        ${m}`)) }
+  if (written) out.push('', `  ${U.lab(T('written', '已写出'))}: ${clean(shown(written, h))} (${plan.file.bytes.length} ${U.lab(T('bytes', '字节'))})`, ...U.say(uriNote, '  '))
+  if (plan.steps?.length) {
+    out.push('', `  ${U.yellow('TODO')}  ${U.lab(T('You, in your own wallet (init sends nothing)', '你自己在钱包里做（init 不发送任何东西）'))}:`)
+    plan.steps.forEach((t, i) => { const [first, ...more] = U.say(t); out.push(`        ${i + 1}. ${first}`, ...more.map((m) => `           ${m}`)) })
+  }
+  if (after) out.push('', ...passportLines(after, { lang: common.lang }).map((l) => `  ${l}`))
+  const [v1, ...vMore] = U.say(verdict)
+  out.push('', `  ${mark}  ${v1}`, ...vMore.map((m) => `        ${m}`), `  ${U.next(next)}`)
+  say(stdout, out.join('\n') + '\n')
+  return { exitCode }
 }
 
 function rethrowFormats() { try { chooseFormats(undefined) } catch (e) { return e } }
@@ -636,7 +728,7 @@ const STEP_RUN = [
     const you = [
       T('Stop screen sharing before you open console step 3: it shows the service key once.', '打开操作台第 3 步之前先停止屏幕共享：它会把服务密钥明文显示一次。'),
       T(`Console step 3: put the service key in ${ENV_FILE} as SIGNER_KEY yourself (or in a file named by SIGNER_KEY_FILE, chmod 600), with the CIRCUITS, TOKEN_ID and CONTAINER the page shows. We never see the key; do not send it to anyone.`, `操作台第 3 步：自己把服务密钥填进 ${ENV_FILE} 的 SIGNER_KEY（或放进 SIGNER_KEY_FILE 指向的文件，chmod 600），连同页面显示的 CIRCUITS、TOKEN_ID、CONTAINER。我们不看这个密钥；不要发给任何人。`),
-      T(`Console step 4: service URL ${url}; sign the delegation with your wallet (no gas, 90 days); put DELEGATION_EXPIRES and DELEGATION_SIG in ${ENV_FILE}; docker compose up -d.`, `操作台第 4 步：服务地址填 ${url}；用钱包签委托（不花 gas，90 天）；把 DELEGATION_EXPIRES 与 DELEGATION_SIG 填进 ${ENV_FILE}；docker compose up -d。`),
+      T(`Console step 4: service URL ${url}; sign the delegation with your wallet (no gas, 30 days by default; the page takes 1 to 366); put DELEGATION_EXPIRES and DELEGATION_SIG in ${ENV_FILE}; docker compose up -d.`, `操作台第 4 步：服务地址填 ${url}；用钱包签委托（不花 gas，默认 30 天，页面上可填 1 到 366 天）；把 DELEGATION_EXPIRES 与 DELEGATION_SIG 填进 ${ENV_FILE}；docker compose up -d。`),
     ]
     const report = await doctor(ctx, url, { api: ctx.apiUrl() })
     const base = { who, you, checks: [{ command: ctx.commands.doctor(url), note: T('(it reads the signer from /tapeapi/v1/health, never your .env)', '（它从 health 读签名地址，从不读你的 .env）'), exitCode: report.exitCode, failing: report.checks.filter((c) => c.status === 'fail').map((c) => c.id) }], quote: doctorLines(report, { ids: ran(report), lang: quoteLang(ctx) }) }
@@ -696,8 +788,8 @@ const STEP_RUN = [
     const name = ctx.A.name
     const who = T(`Who does it, who pays: you, in your own GitHub account or on your own server; alerts go to you only. Renewing the delegation (one transaction to publish again) and the activation (months x monthlyFee()) cost gas and fees: ${PAY.en}. We do not run your checks, receive your alerts or renew anything for you.`,
       `谁做、谁付钱：你，在你自己的 GitHub 账号或服务器上；告警只发给你。续委托（重新发布的一笔交易）与续激活（月数 × monthlyFee()）要花 gas 与费用：${PAY.zh}。我们不替你跑检查、不接收你的告警、不替你续任何东西。`)
-    const renew = T(`Renew the delegation every 90 days (the doctor warns with fewer than 30 days left): console step 4 "Renew", put the new DELEGATION_EXPIRES and DELEGATION_SIG in ${ENV_FILE}, docker compose up -d, then console step 5 "publish again". If you think SIGNER_KEY leaked, do not renew: generate a new key in console step 3 and redo steps 3 to 5.`,
-      `每 90 天续一次委托（剩不到 30 天时 doctor 会警告）：操作台第 4 步"续期"，把新的 DELEGATION_EXPIRES 与 DELEGATION_SIG 填进 ${ENV_FILE}，docker compose up -d，再在操作台第 5 步"重新发布"。若怀疑 SIGNER_KEY 泄露，不要续期：在操作台第 3 步生成新密钥，重做第 3 到 5 步。`)
+    const renew = T(`Renew the delegation before it expires (30 days by default; the doctor warns with fewer than 7 days left): console step 4 "Renew", put the new DELEGATION_EXPIRES and DELEGATION_SIG in ${ENV_FILE}, docker compose up -d, then console step 5 "publish again". If you think SIGNER_KEY leaked, do not renew: generate a new key in console step 3 and redo steps 3 to 5.`,
+      `在委托到期前续期（默认 30 天；剩不到 7 天时 doctor 会警告）：操作台第 4 步"续期"，把新的 DELEGATION_EXPIRES 与 DELEGATION_SIG 填进 ${ENV_FILE}，docker compose up -d，再在操作台第 5 步"重新发布"。若怀疑 SIGNER_KEY 泄露，不要续期：在操作台第 3 步生成新密钥，重做第 3 到 5 步。`)
     const you = [
       ...(ctx.renew ? [renew] : []),
       T(`Daily: ${ctx.cmd} doctor ${name} --json --strict   (exit 0, or look at it)`, `每天：${ctx.cmd} doctor ${name} --json --strict   （退出码 0，否则去看一下）`),

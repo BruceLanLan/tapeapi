@@ -13,7 +13,7 @@
 旁路，也不代付电路、容器或 gas。本指南里的 `42.1013.tape` 是示例名，链上没有以它发布的服务。命令里请换成你自己的 TapeOut 名字和
 旁路地址。
 
-第 0 步需要本仓库的检出，并在它的根目录安装一次依赖（Node.js 20 或以上）：
+第 0 步需要本仓库的检出，并在它的根目录安装一次依赖（Node.js 22 或以上）：
 
 ```sh
 git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi
@@ -24,7 +24,7 @@ npm ci --no-audit --no-fund
 在任何目录都能运行，不需要克隆仓库：
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-doctor <你的名字>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-doctor <你的名字>
 ```
 
 在检出的根目录里，`node sdk/bin/tapeapi-doctor.js <你的名字>` 效果相同。两种方式下，报告给出的下一条命令都按你的运行方式书写。
@@ -39,9 +39,9 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0
 | 4 | 服务密钥与委托；把值填进 `.env` 并重启旁路 | [持有人操作台](https://tapeapi.fun/console/)第 3、4 步（不收费、不花 gas） | `tapeapi-doctor https://api.example.com` | `delegation`、`reach`、`receipt` 通过；`manifest-file` 警告“尚未发布上链” |
 | 5 | 发布清单（含价目表） | 操作台第 5 步（一笔交易，gas 由你支付） | `tapeapi-doctor <你的名字>` | 全部通过：退出码 0 |
 | 6 | 告诉你的用户 | [你的用户要做什么](#你的用户要做什么) | 在用户机器上运行 `tapeapi-verify <你的名字>` | 每次调用一行 `OK` |
-| 7 | 每 90 天续期委托，并让激活保持有效 | 操作台第 4 步“续期”；按第 2b 步再次付费 | `tapeapi-doctor <你的名字>`，在你的 CI 里每天跑 | 到期前 30 天起 `delegation` 警告；名字不再有效时 `activation` 警告 |
+| 7 | 在委托到期前续期（默认 30 天），并让激活保持有效 | 操作台第 4 步“续期”；按第 2b 步再次付费 | `tapeapi-doctor <你的名字>`，在你的 CI 里每天跑 | 到期前 7 天起 `delegation` 警告；名字不再有效时 `activation` 警告 |
 
-**同样的步骤也可以用向导走：`tapeapi init`（实验性，2.3 起，不受 2.x 兼容承诺约束）。** 在检出里运行
+**同样的步骤也可以用向导走：`tapeapi init`（实验性，2.3 起，不受兼容承诺约束）。** 在检出里运行
 `node sdk/bin/tapeapi.js init --dir <旁路 docker-compose.yml 所在的文件夹>`，一次一步：你做什么、在哪里做、谁付钱（每次都是你自己），
 然后只读地运行上表里这一步的检查，并给出下一条命令。它不索要任何密钥、密码或令牌，从不读你的 `.env`，不付款、不发交易。第 3 步起
 `--formats` 必填且没有默认值：写你的网关真正提供、且你实测过的格式；选四种要加 `--confirm-all-formats`，因为它们都会写进链上清单。
@@ -77,8 +77,8 @@ DNS：请重试）；`--json` 输出供 CI 使用的报告；`--lang en` 或 `--
 - **链上身份。** 服务就是一枚 TapeOut 电路的容器。谁在回答，查链就知道；换域名、换服务器，用户按链上记录自动跟随。
 - **钉在链上的价目表。** 清单的 `ai` 字段（[TAPI-20 §3.9](../../../spec/TAPI-20.md)）列出每种 API 格式一个端点，以及你的价目表：
   每个模型、每个币种一个价格，按每百万 token 计，需要时再加缓存价与推理价。任何人都能重算一次调用应当多少钱。
-- **每次调用一份签名的用量回执**（[TAPI-21 §3.5](../../../spec/TAPI-21.md)）：模型、token 数、各币种金额、回答是否完整，以及确切的
-  请求字节与回应字节的哈希，由电路持有人委托的密钥签名。回执随回答一起送达（一个响应头，或官方 SDK 会忽略的 SSE 注释），
+- **每次调用一份签名的用量回执**（[TAPI-21 §3.5](../../../spec/TAPI-21.md)）：模型、token 数、各币种金额、回答是否完整，以及确切请求字节的哈希
+  与回答的哈希（整体回答取其确切字节，流式回答取其事件数据），由电路持有人委托的密钥签名。回执随回答一起送达（一个响应头，或官方 SDK 会忽略的 SSE 注释），
   不读回执的客户端什么都不受影响。唯一的例外：在旁路签名点之前出现以 U+FEFF 开头的行的流不会得到回执，因为各客户端对这种行的
   读法不同，没有哪份回执能说明它们看到了什么。
 - **不托管任何东西。** TapeAPI 不持有你的密钥、资金或流量。旁路跑在你自己的机器上；身份和价目表在链上，不经过我们的任何服务器就能读取。
@@ -87,7 +87,7 @@ DNS：请重试）；`--json` 输出供 CI 使用的报告；`--lang en` 或 `--
 
 ## 回执证明什么，不证明什么
 
-回执证明的是：**谁回答的**（链上 signer）、**针对哪些确切的请求字节**、**给出了哪些确切的回应字节**、**声称了多少用量与价格**。
+回执证明的是：**谁回答的**（链上 signer）、**针对哪些确切的请求字节**、**给出了哪个确切的回答**（回答的字节；流式回答取其事件数据）、**声称了多少用量与价格**。
 它**不**证明实际运行的是哪个模型：服务方可以把便宜模型的回答标成贵模型。签名带来的是这种替换**可追责**：回执不可抵赖，
 抽检（任何人发测试题、公开结果）会留下证据。请对你的用户如实说明这一点。
 
@@ -154,7 +154,7 @@ new-api 取下，不带 cookie 或令牌。
 
 身份的步骤与任何 TapeAPI 服务相同（见[运行服务](provide.md)），在持有人操作台 [tapeapi.fun/console](https://tapeapi.fun/console/)
 完成：连接持有电路的钱包，生成服务密钥（它就是旁路的 `SIGNER_KEY`），签委托（操作台从旁路设置模式的健康检查里读出签名地址；
-委托有效 90 天），然后把清单发布上链。
+委托默认有效 30 天，页面上可以填 1 到 366 之间的任意天数），然后把清单发布上链。
 
 ### 用控制台发布价目表
 
@@ -177,7 +177,7 @@ new-api 取下，不带 cookie 或令牌。
 价格在所有链上都只是公示，不结算。操作台可以在 BNB Chain、X Layer 与 Base 上发布；X Layer 与 Base 上支付暂不开放，页面会写明：
 那里的价目表只作展示。按 TAPI-20 §3.9，币种 `BNB`、`USDT`、`USDC`、`ETH`、`USD1` 指 BNB Chain 上的代币。
 
-**续期。** 在委托的最后 30 天内续期：操作台第 4 步选“续期”（服务密钥不变），设置新的 `DELEGATION_EXPIRES` 与 `DELEGATION_SIG`，
+**续期。** 最迟在委托的最后 7 天内续期：操作台第 4 步选“续期”（服务密钥不变），设置新的 `DELEGATION_EXPIRES` 与 `DELEGATION_SIG`，
 重启旁路，再发布一次清单。委托过期后服务会停止，直到续期。
 
 ## 你的用户要做什么
@@ -222,7 +222,7 @@ const client = new OpenAI({ baseURL, apiKey: process.env.API_KEY, fetch })  // �
 
 ```sh
 # 终端 1。42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -240,12 +240,12 @@ $env:OPENAI_BASE_URL="http://127.0.0.1:8790/v1"; codex
 照原样用示例名运行会停在 “no file at /.well-known/tapeapi.json”：链上没有以 `42.1013.tape` 发布的服务。还没有自己的服务？
 先跑本地试跑（[从零到上线](#从零到上线)第 0 步）：它会让这个代理对着本地旁路跑一遍。
 
-**在那之前，可以先用 `tapeapi connect`（实验性，2.1 新增，不受 2.x 兼容承诺约束）**：它按链上的样子把你的服务展示给用户，并且只为你的
+**在那之前，可以先用 `tapeapi connect`（实验性，2.1 新增，不受兼容承诺约束）**：它按链上的样子把你的服务展示给用户，并且只为你的
 清单声明了的格式给出客户端配置（没有 `anthropic-messages` 就不给 Claude Code 的配置，没有 `openai-responses` 就不给 Codex 的配置）：
 
 ```sh
 # 任何目录都能运行，不需要克隆仓库；42.1013.tape 是示例名
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi connect 42.1013.tape            # 服务卡片与配置
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi connect 42.1013.tape            # 服务卡片与配置
 # 装好 SDK 之后命令就是 tapeapi connect …
 tapeapi connect 42.1013.tape --proxy    # 然后为它运行 tapeapi-verify
 ```
@@ -257,12 +257,12 @@ tapeapi connect 42.1013.tape --proxy    # 然后为它运行 tapeapi-verify
 3 为读不到。代码里同样的功能是 `@tapeapi/sdk/connect`（`snippetsFor`、`connectReport`、`renderConnect`），同样是实验性。没有 `ai`
 字段的清单不是 AI 服务：`connect` 显示为不可用（`not-ai`），除非它声明了 MCP 工具（`mcp`，见 [MCP](mcp.md#用-tapeapi-connect-查看服务)）。
 
-**之后，用户可以查看自己的回执，并与你的账单对账**：`tapeapi receipts` 与 `tapeapi reconcile`（实验性，2.2 起，不受 2.x 兼容承诺约束）。
+**之后，用户可以查看自己的回执，并与你的账单对账**：`tapeapi receipts` 与 `tapeapi reconcile`（实验性，2.2 起，不受兼容承诺约束）。
 两者只读用户本机的文件：不联网、不需要密钥。
 
 ```sh
 # 任何目录都能运行，不需要克隆仓库
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi receipts tail --receipts ~/.tapeapi/receipts.jsonl   # tapeapi-verify --log 写下的内容
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi receipts tail --receipts ~/.tapeapi/receipts.jsonl   # tapeapi-verify --log 写下的内容
 # 装好 SDK 之后命令就是 tapeapi receipts … 与 tapeapi reconcile …
 tapeapi receipts show <id> --receipts ~/.tapeapi/receipts.jsonl         # 一张回执，离线重放核验
 tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # 与账单文件对账
@@ -278,7 +278,8 @@ tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # 与账
 
 给运营者的导出列名、请求事实检查、与授权书和本地限额的对照，见 [回执对账](reconcile.md)（实验性）。
 
-`tapeapi-verify` 在链上解析你的服务，回答原样透传，每次调用打印一行结论；加 `--strict` 时，核验失败会变成客户端看得到的错误。单份回执也可以贴到
+`tapeapi-verify` 在链上解析你的服务，回答原样透传，每次调用打印一行结论；核验失败会变成客户端看得到的错误（HTTP 502，流则以错误事件代替最终事件）。
+这是 3.0 起的默认，与 `createVerifyingFetch` 相同；`--no-strict` 只记录失败、照常转交回答，即 2.x 不加 `--strict` 时的行为（`--strict` 仍接受，不起作用）。单份回执也可以贴到
 [核验页](https://tapeapi.fun/verify/)。这些都需要你的清单已经上链（操作台第 5 步，见上文）。
 
 **请求加盐（两者默认开启）。** 回执带 `requestSha256`，即确切请求字节的 SHA-256，而官方 SDK 每次都用同样的方式序列化请求。于是
@@ -299,6 +300,19 @@ tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # 与账
 - 如果客户端与旁路之间有代理重新序列化请求，字节本来就会变；这时回执核验会在 `requestSha256` 上失败，这样的代理因此会暴露出来。
 - **尚未实测：** 按 JSON 语法，所有上游都必须接受尾随空白，测试也对参考旁路验证过；对 OpenAI Chat、OpenAI Responses、
   Anthropic Messages 线上接口的实测还没有做。
+
+### 用户自己的预算（实验性，3.0）
+
+用户还可以用自己写的策略文件，在发出之前拒绝自己的调用（[回执对账](reconcile.md#每次调用之前读同一个文件客户端预算实验性30)）：
+
+```sh
+tapeapi-verify 11.1013.tape --policy my-limits.json --budget-store spend.jsonl
+```
+
+最坏情况会让某条规则超出限额的计量调用，得到 HTTP 400、code 为 `budget_exceeded`（无法给出上界的调用，例如没设 `max_tokens`，为
+`budget_no_limit` 等），带 `x-should-retry: false`，不转发；是否严格都一样。存储文件（权限 600）保存核验无误的回执与每次
+调用的一行，重启后计数仍在；不带回执的 HTTP 4xx 或 5xx 会被撤下，连接断开则继续按最坏情况计。这只是用户这一侧的便利：不约束任何别人，
+限制的是回执声称的价格，不是用户实际付给你的钱。对服务方没有任何变化。
 
 ## 流式 Chat 的用量：三条路
 
@@ -361,8 +375,8 @@ tapeapi-verify --request-usage 42.1013.tape        # 启动方式见“你的用
   自检。然后加盐、发出；`requestSha256` 是最终发出的字节的哈希。
 - **改不安全时不改：** 压缩过的正文；Content-Type 不是 JSON；正文不是 UTF-8 或以字节序标记开头；自定义格式没有给出要设的成员；顶层或
   `stream_options` 里有重复的键；改写结果没通过自检。在 `strict` 下（`createVerifyingFetch` 的默认），SDK 在发送任何东西之前抛
-  `INVALID_ARGUMENT`（`data.reason` 写明原因），`tapeapi-verify --strict` 回 HTTP 400（`usage_request_skipped`，带 `x-should-retry: false`）且不转发。
-  非 strict 时请求原样发出，报告写 `usageRequestSkipped: <原因>`，用量与第 1 条一样是 `unchecked`。
+  `INVALID_ARGUMENT`（`data.reason` 写明原因），`tapeapi-verify`（3.0 起默认严格）回 HTTP 400（`usage_request_skipped`，带 `x-should-retry: false`）且不转发。
+  非 strict 时（`strict: false`、`--no-strict`）请求原样发出，报告写 `usageRequestSkipped: <原因>`，用量与第 1 条一样是 `unchecked`。
 - **报告。** 选项开启时每份报告带 `usageRequested`：这个 fetch 设了成员为 `true`，没设为 `false`（应用自己要了、不是 Chat 流，或改写被跳过）。
   选项关闭时没有这个字段。`tapeapi-verify` 把同样的字段写进 `--log`，并在结论行打印 `usage=asked` 或 `usage-request-skipped=<原因>`。
   要了用量而流里没有（上游没发，或途中有人去掉了），会有一条相应的警告。
@@ -396,6 +410,8 @@ tapeapi-verify --request-usage 42.1013.tape        # 启动方式见“你的用
 - 回执证明谁回答的、声称了什么，不证明运行的是哪个模型（见上）。
 - 流式 OpenAI Chat 回答的用量，只有请求要了用量（`stream_options.include_usage`，由应用或由 `requestUsage` 设置）才会被核验；默认情况下它只是旁路的一句陈述（见[上文](#流式-chat-的用量三条路)）。
 - 带回执的格式：OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、OpenAI Embeddings。`/v1` 下的其它路径原样透传、不带回执。
+  这几种格式里你的旁路不提供的（`FORMATS` 或 `createAIProxy` 的 `formats` 没列出的），其计量路径答 HTTP 400 `bad_path`、不转发；
+  3.0 起这也是 `createAIProxy` 的默认（`refuseOtherFormats: false` 则像 2.x 一样无回执透传）。
   暂不支持：Gemini 原生接口、WebSocket 模式（Realtime、Responses WebSocket）、Batch。
 - 回执在旁路内存里保留一小时（可配置）；随回答送达的那一份才是主要的。免费的 `receipt` 方法按 IP 单独限流。如果你的上游回答 id
   可以猜（Ollama 的是 `chatcmpl-` 加一个小于 999 的数，旁路日志会提示），请打开 `requireRequestHash`（`RECEIPT_REQUIRE_HASH=1`），

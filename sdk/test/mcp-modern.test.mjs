@@ -1,6 +1,6 @@
 // MCP revision 2026-07-28, the purely additive part: `resultType` on results and `ttlMs` / `cacheScope` on list
 // results, given only to a request that declares that revision in `_meta`. A request of an earlier revision (no such
-// key) gets byte-for-byte the answer it got before. Spec checked on 2026-10-14 (and again on 2026-10-21 for 2.6, which
+// key) gets byte-for-byte the answer it got before. Spec checked on 2026-10-14 (and again on 2026-10-21 for 2.5, which
 // adds serverInfo in a modern result's _meta, server/discover and the refusals; see server/test/mcp-2026-07-28-compat):
 //   https://modelcontextprotocol.io/specification/2026-07-28/basic/index (resultType)
 //   https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching (ttlMs, cacheScope)
@@ -38,8 +38,8 @@ test('MCP 2026-07-28: a request that declares the revision gets resultType, and 
   assert.deepEqual(call, { ...before, resultType: 'complete', _meta: { ...before._meta, ...SI } }, 'tools/call: resultType and serverInfo, no cache hints')
   assert.equal('ttlMs' in call, false); assert.equal('cacheScope' in call, false)
   assert.deepEqual(call._meta['fun.tapeapi/receipt'], before._meta['fun.tapeapi/receipt'], 'the receipt in _meta is untouched')
-  // CHANGED 2.6: a later dated revision is not served as 2026-07-28 any more; it is refused with -32022, which lists the
-  // versions this server has. / 2.6 起，更晚日期的版本不再按 2026-07-28 回答，而以 -32022 拒绝并列出支持的版本。
+  // CHANGED 2.5: a later dated revision is not served as 2026-07-28 any more; it is refused with -32022, which lists the
+  // versions this server has. / 2.5 起，更晚日期的版本不再按 2026-07-28 回答，而以 -32022 拒绝并列出支持的版本。
   const later = await ask('tools/list', { _meta: META('2027-01-01') })
   assert.equal(later.error.code, -32022); assert.deepEqual(later.error.data, { supported: ['2026-07-28', '2025-11-25', '2025-06-18', '2025-03-26'], requested: '2027-01-01' })
 })
@@ -52,9 +52,9 @@ test('MCP 2026-07-28: requests of earlier revisions get exactly the old answers 
     { _meta: 'not an object' }, { _meta: ['2026-07-28'] }]) {
     await exact('tools/list', params, tools)
   }
-  // CHANGED 2.6: values of the key that are not a revision were answered as legacy; no client of 2025-11-25 or earlier
+  // CHANGED 2.5: values of the key that are not a revision were answered as legacy; no client of 2025-11-25 or earlier
   // sends the key, and 2026-07-28 asks for a refusal: -32022 for an unknown string, -32602 for a value not a string.
-  // 2.6 起：不是任何版本的键值以前按旧版回答；旧版客户端不发这个键，2026-07-28 要求拒绝。
+  // 2.5 起：不是任何版本的键值以前按旧版回答；旧版客户端不发这个键，2026-07-28 要求拒绝。
   for (const [v, code] of [['latest', -32022], ['2026-7-28', -32022], [20260728, -32602]]) {
     assert.equal((await ask('tools/list', { _meta: { 'io.modelcontextprotocol/protocolVersion': v } })).error.code, code, String(v))
   }
@@ -67,8 +67,8 @@ test('MCP 2026-07-28: requests of earlier revisions get exactly the old answers 
 test('MCP 2026-07-28: initialize and errors are never changed; the gate is per message', async () => {
   const init = { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 't', version: '1' } }
   assert.deepEqual(await ask('initialize', { ...init, _meta: META() }), await ask('initialize', init), 'initialize selects the earlier revisions; it gets no resultType')
-  // CHANGED 2.6: server/discover answers a modern request; a legacy one still gets "not supported".
-  // 2.6 起：server/discover 回答新版请求；旧版请求仍得到 "not supported"。
+  // CHANGED 2.5: server/discover answers a modern request; a legacy one still gets "not supported".
+  // 2.5 起：server/discover 回答新版请求；旧版请求仍得到 "not supported"。
   const discover = await ask('server/discover', { _meta: META() })
   assert.equal(discover.result.resultType, 'complete'); assert.deepEqual(discover.result._meta, SI)
   assert.deepEqual(await ask('server/discover', {}), { jsonrpc: '2.0', id: 1, error: { code: -32601, message: 'method server/discover is not supported' } })

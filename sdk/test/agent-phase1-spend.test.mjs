@@ -552,3 +552,47 @@ test('FIXED L1 (payment-voucher draft, final re-check): a draft reserve that wai
   await assert.rejects(b, (e) => e.code === 'AGENT_SPEND_REFUSED')
   assert.equal(t.payer.inflightOf(s1), 0, 'nothing of the stopped order is in flight')
 })
+
+// ---- 3.0: the per-call ceiling also takes the method's listed price: min(maxCallPrice or 10% of the cap,
+// priceBEM); a method listed free is never paid ----
+// 3.0：单次上限也取方法公布的价格：min(maxCallPrice 或 cap 的 10%, priceBEM)；公布为免费的方法绝不付钱
+test('FIXED P1CP-04: spendDecision takes the method\'s listed price as a second ceiling: the lower one bounds a call, a listed 0 is never paid, nothing stops', () => {
+  const rec = spendPin(checkOf({ claimed: ['1000', '0'] }), { chainId: 56 })
+  const ask = (o) => spendDecision(rec, { chainId: 56, provider: S, escrow: E1, consumer: HOLDER, now: NOW, cumulative: 1000n + BigInt(o.price), ...o })
+  // cap 100: default ceiling 10; listed 4 is lower: 5 refused, 4 signed / cap 100：默认上限 10；公布价 4 更低：5 拒、4 签
+  assert.equal(ask({ price: 5n, listedPrice: '4' }).refused, 'spend-call-price-above-ceiling')
+  assert.match(ask({ price: 5n, listedPrice: '4' }).message, /listed at \(priceBEM\)/)
+  assert.equal(ask({ price: 4n, listedPrice: '4' }).ok, true)
+  // an explicit maxCallPrice above the listed price does not lift it / 显式的 maxCallPrice 高于公布价也抬不过它
+  assert.equal(ask({ price: 30n, maxPrice: '60', listedPrice: '20' }).refused, 'spend-call-price-above-ceiling')
+  assert.equal(ask({ price: 20n, maxPrice: '60', listedPrice: '20' }).ok, true)
+  // a listed price above the ceiling: the ceiling still bounds / 公布价高于上限：仍按上限
+  assert.equal(ask({ price: 11n, listedPrice: '50' }).refused, 'spend-call-price-above-ceiling')
+  assert.match(ask({ price: 11n, listedPrice: '50' }).message, /10% of the cap 100/)
+  assert.equal(ask({ price: 10n, listedPrice: '50' }).ok, true)
+  // listed free: never paid, and it does not stop the order / 公布为免费：绝不付钱，也不停工
+  const free = ask({ price: 1n, listedPrice: '0' })
+  assert.equal(free.refused, 'spend-call-price-above-ceiling'); assert.equal(free.stop, false); assert.match(free.message, /listed free/)
+  // left out (or null): the 1.x-shaped ceiling alone / 不给（或 null）：只用原来的上限
+  assert.equal(ask({ price: 10n }).ok, true)
+  assert.equal(ask({ price: 10n, listedPrice: null }).ok, true)
+  assert.throws(() => ask({ price: 1n, listedPrice: '-1' }), (e) => e.code === 'INVALID_ARGUMENT')
+  // the refusal codes are unchanged / 拒绝码不变
+  assert.equal(SPEND_REFUSALS.length, 13)
+})
+
+test('FIXED P1CP-06: the limiter\'s payer reads the method\'s priceBEM from the manifest when extra.method names it; an unlisted method is bounded at 0; without extra.method nothing changes', async () => {
+  const t = await started({ claimed: ['1000', '0'], maxPrice: null })
+  // read lists 0.00000004 BEM = 4 units; free lists 0 / read 公布 4 个最小单位；free 公布 0
+  const s1 = { container: S, manifest: { payment: { escrow: E1 }, methods: [{ name: 'read', priceBEM: '0.00000004' }, { name: 'free', priceBEM: '0' }] } }
+  await refusedWith(t.payer.reserve(s1, 5n, { method: 'read' }), 'spend-call-price-above-ceiling')
+  const a = await t.payer.reserve(s1, 4n, { method: 'read' })
+  assert.equal(a.voucher.cumulative, '4'); await a.commit()
+  await refusedWith(t.payer.reserve(s1, 1n, { method: 'free' }), 'spend-call-price-above-ceiling')
+  await refusedWith(t.payer.reserve(s1, 1n, { method: 'not-listed' }), 'spend-call-price-above-ceiling')
+  // no extra.method (a direct caller): the default ceiling, 10 / 不带 extra.method：默认上限 10
+  const b = await t.payer.reserve(s1, 10n)
+  assert.equal(b.voucher.cumulative, '14'); await b.commit()
+  assert.equal((await t.lim.record({ chainId: 56, agentKey: AGENT })).stopped, null, 'none of these stops the order')
+  assert.equal(t.payer.cumulativeOf(s1), 14n, 'the refused calls were never signed or counted')
+})

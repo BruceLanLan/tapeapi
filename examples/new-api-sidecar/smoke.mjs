@@ -22,7 +22,7 @@ const DEWEB_HUB = '0xe61A9C7213a6Aa616C246a2B569e555B417b25ee'   // BNB Chain De
 const randomAddress = () => sig.privateKeyToAddress(sig.randomPrivateKey())
 
 /** A complete, throwaway identity (no chain): the environment the holder console would give. / 一次性的完整身份（不上链）。 */
-export function throwawayIdentity({ days = 90 } = {}) {
+export function throwawayIdentity({ days = 30 } = {}) {   // 30: the console's default since 3.0 / 操作台 3.0 起的默认
   const holderKey = sig.randomPrivateKey(), signerKey = sig.randomPrivateKey()
   const container = randomAddress(), signer = sig.privateKeyToAddress(signerKey)
   const expires = Math.floor(Date.now() / 1000) + days * 86_400

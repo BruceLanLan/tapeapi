@@ -234,14 +234,14 @@ test('litellm-sidecar: with litellmFormats an event-framed Responses stream veri
 
 test('litellm-sidecar: the smoke script runs as a program and every receipt verifies', async () => {
   const { spawnSync } = await import('node:child_process')
-  const r = spawnSync(process.execPath, [here('smoke.mjs')], { encoding: 'utf8' })
+  const r = spawnSync(process.execPath, [here('smoke.mjs')], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
   assert.equal(r.status, 0, r.stdout + r.stderr)
 })
 
 test('litellm-sidecar: e2e.mjs without LiteLLM says what it needs and exits 2', async () => {
   const { spawnSync } = await import('node:child_process')
   const env = { ...process.env }; delete env.LITELLM_URL; delete env.LITELLM_BIN
-  const r = spawnSync(process.execPath, [here('e2e.mjs')], { encoding: 'utf8', env })
+  const r = spawnSync(process.execPath, [here('e2e.mjs')], { encoding: 'utf8', env, timeout: 300_000, killSignal: 'SIGKILL' })
   if (noSdks) return
   assert.equal(r.status, 2, r.stdout + r.stderr)
   assert.match(r.stderr, /set LITELLM_BIN .* or LITELLM_URL and LITELLM_KEY/)

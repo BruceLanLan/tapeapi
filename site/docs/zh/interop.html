@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>应用与容器之间的互通（实验性） · TapeAPI 手册</title>
+<meta name="description" content="两个本地演示和一个实验性的包，展示一个 TapeOut 应用或容器怎样调用另一个、并自己核对回答。 这里的一切都是实验性的 ：不受兼容承诺约束，任何次版本都可能改动或移除。示例只在 SDK 的假链上和测试里运行，不在 npm 包里。 任何跨应用调用都是链下请求，站点因此不再是&quot;100% 链上&quot;；授权与撤销由被调用方执行">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../docs.css?v=62ad162ee6">
+<link rel="alternate" hreflang="en" href="../en/interop">
+<script src="../docs.js?v=dee763d4ca"></script>
+</head>
+<body data-page="interop" data-other="../en/interop" data-l-copy="复制" data-l-copied="已复制" data-l-none="没有结果" data-l-light="浅色" data-l-dark="深色" data-l-theme="主题">
+<header class="hd-bar top"><div class="hd">
+  <button class="hd-btn menu" id="menu-btn" type="button" aria-controls="side" aria-expanded="false">目录</button>
+  <a class="hd-brand" href="/" aria-label="TapeAPI"><svg class="hd-mark" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M9 6h4v4h-3v12h3v4H6V9zM19 6h7v20h-7v-4h3V10h-3zM2 12h4v2H2zM2 18h4v2H2zM26 12h4v2h-4zM26 18h4v2h-4zM13 13h6v6h-6z"/></svg><svg class="hd-word" width="99" height="11" viewBox="0 0 896 100" aria-hidden="true" focusable="false"><path d="M44.1 100V21.1H0.05V-0.18H113.32V21.1H69.27V100ZM136.08 100 185.88 -0.18H214.12L263.92 100H236.47L227.75 81.94H170.64L161.96 100ZM179.86 62.49H218.53L207.88 39.65Q207.22 38.14 205.98 35.26Q204.73 32.38 203.46 29.28Q202.19 26.17 201.16 23.75Q200.13 21.33 199.85 20.77H198.72Q197.5 23.59 195.94 27.25Q194.37 30.92 192.94 34.32Q191.5 37.72 190.51 39.76ZM296.36 100V-0.18H371.38Q381.18 -0.18 388.47 4.1Q395.77 8.37 399.82 15.86Q403.88 23.35 403.88 33.13Q403.88 42.86 399.75 50.48Q395.62 58.09 388.21 62.35Q380.8 66.61 370.92 66.61H321.52V100ZM321.52 46.7H363.94Q371.24 46.7 375.17 43.16Q379.1 39.61 379.1 33.26Q379.1 28.98 377.34 25.97Q375.58 22.96 372.21 21.34Q368.84 19.73 363.94 19.73H321.52ZM437.46 100V-0.18H540.04V19.73H462.66V39.32H531.07V58.94H462.66V80.09H541.21V100ZM569.17 100 618.97 -0.18H647.21L697.01 100H669.56L660.84 81.94H603.73L595.05 100ZM612.95 62.49H651.62L640.97 39.65Q640.31 38.14 639.07 35.26Q637.82 32.38 636.55 29.28Q635.28 26.17 634.25 23.75Q633.22 21.33 632.94 20.77H631.81Q630.59 23.59 629.03 27.25Q627.46 30.92 626.03 34.32Q624.59 37.72 623.6 39.76ZM729.45 100V-0.18H804.47Q814.27 -0.18 821.56 4.1Q828.86 8.37 832.91 15.86Q836.97 23.35 836.97 33.13Q836.97 42.86 832.84 50.48Q828.71 58.09 821.3 62.35Q813.89 66.61 804.01 66.61H754.61V100ZM754.61 46.7H797.03Q804.33 46.7 808.26 43.16Q812.19 39.61 812.19 33.26Q812.19 28.98 810.43 25.97Q808.67 22.96 805.3 21.34Q801.93 19.73 797.03 19.73H754.61ZM870.55 100V-0.18H895.72V100Z"/></svg></a><a class="hd-sec" href="./">手册</a>
+  <div class="search"><input id="q" type="search" placeholder="搜索手册" aria-label="搜索手册" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <nav class="hd-nav" aria-label="TapeAPI"><a href="./" aria-current="true">手册</a><a href="https://tapeapi.fun/playground/">调试台</a><a href="https://tapeapi.fun/dashboard/">我的服务</a><a href="https://tapeapi.fun/status/">状态</a><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></nav>
+  <div class="hd-tools"><button class="hd-btn" id="lang-btn" type="button" lang="en">English</button><button class="hd-btn" id="theme-btn" type="button">主题</button></div>
+</div></header>
+<div class="layout">
+<nav class="side" id="side" aria-label="手册"><div class="group"><p class="gtitle">开始</p><ul><li><a href="./">简介</a></li><li><a href="public-api">公共 API</a></li><li><a href="mcp">在 Claude、Cursor 等 MCP 客户端中使用 TapeAPI</a></li><li><a href="consume">调用服务</a></li><li><a href="provide">运行服务</a></li><li><a href="ai-providers">接入 AI 服务</a></li><li><a href="billing-layer">旁路前面的计费层</a></li></ul></div><div class="group"><p class="gtitle">功能</p><ul><li><a href="channels">私密通道</a></li><li><a href="groups">群聊</a></li><li><a href="agents">AI 智能体</a></li><li><a href="container-agents">容器代理（实验性）</a></li><li><a href="reconcile">回执对账（实验性）</a></li><li><a href="receipts-and-payment-protocols">回执与支付协议（实验性）</a></li><li><a href="interop" aria-current="page">应用与容器之间的互通（实验性）</a></li><li><a href="passport">Agent 护照（实验性）</a></li><li><a href="policy-circuit">策略电路（实验性）</a></li><li><a href="circuit-jobs">Circuit Jobs（草案；TapeAPI 不提供代码）</a></li></ul></div><div class="group"><p class="gtitle">帮助</p><ul><li><a href="faq">常见问题与排障</a></li><li><a href="reference">参考</a></li><li><a href="upgrade-1.0">从 0.x 升级到 1.0</a></li><li><a href="upgrade-2.0">从 1.x 升级到 2.0</a></li><li><a href="upgrade-3.0">从 2.x 升级到 3.0</a></li><li><a href="changelog">更新日志</a></li></ul></div><div class="group site"><p class="gtitle">TapeAPI</p><ul><li><a href="/">首页</a></li><li><a href="https://tapeapi.fun/playground/">调试台</a></li><li><a href="https://tapeapi.fun/dashboard/">我的服务</a></li><li><a href="https://tapeapi.fun/status/">状态</a></li><li><a href="https://github.com/BruceLanLan/tapeapi" rel="noopener">GitHub</a></li></ul></div></nav>
+<main class="doc">
+<article>
+<h1 id="应用与容器之间的互通实验性">应用与容器之间的互通（实验性）</h1>
+<p>两个本地演示和一个实验性的包，展示一个 TapeOut 应用或容器怎样调用另一个、并自己核对回答。<strong>这里的一切都是实验性的</strong>：不受兼容承诺约束，任何次版本都可能改动或移除。示例只在 SDK 的假链上和测试里运行，不在 npm 包里。</p>
+<blockquote><p>任何跨应用调用都是链下请求，站点因此不再是&quot;100% 链上&quot;；授权与撤销由被调用方执行，合约层到来前只约束读到它的人，对恶意服务无效；回执证明对方签了什么，不证明数据正确，也不证明上游模型；外壳把关之前用户要自己比对钱包里&quot;请求来自&quot;与授权里的调用方名字；授权书不含任何付款；付费调用依赖的托管合约未审计、未部署，主网不可用；访客授权今天没有任何 TAP，这是原型；TAP-11、TAP-13、TAP-14 至 TAP-18 已合并为 Draft（合并不等于被采纳）。</p></blockquote>
+<h2 id="1-容器对容器只用现有-api"><a class="anchor" href="#1-容器对容器只用现有-api" aria-hidden="true">#</a>1. 容器对容器：只用现有 API</h2>
+<p><a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/container-interop" rel="noopener"><code>examples/container-interop/</code></a> 只用 SDK 已有的东西（没有新格式）：</p>
+<ul><li><strong>(a) 在授权书上限内付费调用</strong>：容器 A 的代理用会话钥匙调用容器 B 的收费方法，超过上限的调用被拒。背后的托管合约未审计、未部署。</li><li><strong>(b) 任务线程</strong>：两个容器之间的报价、接单、交付与裁决，加上 A 自己的验收核对（签名有效的交付里也可能有错的数字，只有 A 的核对能发现）。</li><li><strong>(c) 私密通道</strong>：经只存密文的中继收发加密消息，以及对一次请求的签名回执。</li></ul>
+<div class="code"><pre data-lang="bash"><code>node examples/container-interop/run.mjs all</code></pre></div>
+<p>它的 README 末尾有一张缺口表：今天容器还分辨不了、拒绝不了、撤销不了的事。</p>
+<h2 id="2-应用对应用访客授权原型"><a class="anchor" href="#2-应用对应用访客授权原型" aria-hidden="true">#</a>2. 应用对应用：访客授权（原型）</h2>
+<p><a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/app-interop" rel="noopener"><code>examples/app-interop/</code></a> 里有两个应用：A 按名字找到 B，从链上读 B 的清单，调用一个免费方法和一个收费方法，并核对每个回答。实验性的包 <code>@tapeapi/interop</code>（独立的包，不属于 SDK）增加了<strong>访客授权</strong>：访客的钱包按 EIP-712 签名（独立的域 &quot;TapeAPI Visitor Grant&quot;，不是 TAP-11 的域），允许应用 A 在短时间内（默认 1 小时，最长 7 天）、有限次数地调用服务 B 的几个指定方法。第一个字段是由其它字段生成的一句人话。</p>
+<ul><li>A 在请求顶层加 <code>grant</code>，附上用它的一次性钥匙签的调用证明（<code>withGrant</code>）。</li><li>B 按固定顺序核验，便宜的在前、读链的在后（<code>verifyVisitorGrant</code>、<code>grantMethods</code>），计数，接受撤销（免费方法 <code>grant_revoke</code>），并在签名回答里写入 <code>result.grant</code>。</li><li>拒绝一律是 <code>BAD_REQUEST</code>，message 前缀 <code>grant: &lt;原因&gt;</code>，不带 <code>error.data</code>。</li><li>回答丢失后用同一个 id 重试：只要 B 还保留着，就原样拿到 B 第一次签好的信封，逐字节相同（服务端实验性的 <code>ctx.onSigned</code> / <code>ctx.resend</code>）；否则答 <code>grant: replayed</code>。</li><li>自测向量：<code>spec/vectors/interop-visitor-grant.json</code>，由 <code>spec/vectors/verify.py</code> 复算。</li><li>格式说明，供独立实现 B 一侧的核验：<a href="https://github.com/BruceLanLan/tapeapi/blob/main/spec/TAPI-28.md" rel="noopener">TAPI-28</a>（实验性，不是 TAP，任何次版本都可能改动；以代码为准）。</li></ul>
+<div class="code"><pre data-lang="bash"><code>node examples/app-interop/demo.mjs
+node --test examples/app-interop/*.test.mjs</code></pre></div>
+<p>钱包怎样显示这份授权<strong>还没有实测</strong>。实测用的本机测试页在 <a href="https://github.com/BruceLanLan/tapeapi/tree/main/examples/app-interop/wallet-render" rel="noopener"><code>examples/app-interop/wallet-render/</code></a>（空钱包、不发交易，页面不向任何地方发送数据）。</p>
+<h2 id="它不是什么"><a class="anchor" href="#它不是什么" aria-hidden="true">#</a>它不是什么</h2>
+<ul><li>不是登录、账户，也不是任何形式的凭据。</li><li>不是 TAP，也不是其它服务认识的格式。</li><li>不进首页、目录和调试台。</li><li>这里没有任何东西付款，也没有任何东西能在主网上带着钱使用。</li></ul>
+</article>
+<nav class="pn"><a class="prev" href="receipts-and-payment-protocols"><span>上一篇</span>回执与支付协议（实验性）</a><a class="next" href="passport"><span>下一篇</span>Agent 护照（实验性）</a></nav>
+<p class="edit"><a href="https://github.com/BruceLanLan/tapeapi/blob/main/docs/guides/zh-CN/interop.md" rel="noopener">在 GitHub 上编辑此页</a></p>
+</main>
+<aside class="toc"><p class="gtitle">本页内容</p><ul><li class="l2"><a href="#1-容器对容器只用现有-api">1. 容器对容器：只用现有 API</a></li><li class="l2"><a href="#2-应用对应用访客授权原型">2. 应用对应用：访客授权（原型）</a></li><li class="l2"><a href="#它不是什么">它不是什么</a></li></ul></aside>
+</div>
+</body>
+</html>

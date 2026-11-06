@@ -38,7 +38,7 @@ test.after(async () => { for (const c of closers.reverse()) await c(); rmSync(TM
  */
 function run(args, { until = null, then = null, input = null, env = process.env } = {}) {
   return new Promise((ok, fail) => {
-    const child = spawn(process.execPath, args, { stdio: ['pipe', 'pipe', 'pipe'], env })
+    const child = spawn(process.execPath, args, { stdio: ['pipe', 'pipe', 'pipe'], env, timeout: 300_000, killSignal: 'SIGKILL' })
     closers.push(() => new Promise((r) => { if (child.exitCode !== null || child.signalCode !== null) return r(); child.once('exit', r); child.kill('SIGKILL') }))
     const out = [], err = []
     let errText = '', outLines = 0, fired = false
@@ -177,11 +177,12 @@ const ALL_MODELS = [
 ]
 function world({ formats = ['openai-chat'], name = 'Example relay', extraModels = [] } = {}) {
   const holderKey = SIG.randomPrivateKey(), signerKey = SIG.randomPrivateKey()
-  // Root cause of the flaky "89 days vs 90 days" (review T-1): renderConnect reads Date.now() itself, so with expires a
-  // whole number of days ahead, two runs a second apart could floor to different day counts. Half a day more keeps the
-  // count at 90 for any run inside the next 12 hours. / 偶发根因：renderConnect 自己读 Date.now()，expires 恰好整天时，
-  // 相隔一秒的两次运行会向下取整到不同天数；多加半天，12 小时内任何一次运行都是 90 天。
-  const now = Math.floor(Date.now() / 1000), expires = now + 90 * 86_400 + 43_200
+  // Root cause of the flaky "89 days vs 90 days" (review T-1): renderConnect read Date.now() itself while the resolution
+  // read apiOptions.clock, so a run that crossed a second floored to 89. runConnect now hands the card the same clock,
+  // and the expiry is exactly 90 days ahead: the count is 90 on every run, however slow the machine (no half-day margin).
+  // 偶发根因：renderConnect 自己读 Date.now()，而解析读 apiOptions.clock，跨过一秒的运行就向下取整成 89。现在 runConnect 把同一个
+  // 时钟交给卡片，到期时间正好是 90 天后：无论机器多慢，每次都是 90 天（不再靠多加半天）。
+  const now = Math.floor(Date.now() / 1000), expires = now + 90 * 86_400
   const chain = createConformChain()
   chain.state.headTime = now
   const c = chain.circuit(42, { holder: SIG.privateKeyToAddress(holderKey) })
@@ -233,7 +234,7 @@ test('connect: a service that declares openai-chat only gets the OpenAI SDK, pro
   const j = keep(await connect(w, [NAME, ...RPC_ARGS, '--json']))
   assert.doesNotMatch(j.out, /\*\*\*/)
 })
-const AI_NOTE_RECEIPT = 'A receipt proves who signed which request and response bytes'
+const AI_NOTE_RECEIPT = 'A receipt proves who signed which request bytes and which answer'
 
 test('connect: four declared formats give Claude Code, Codex, embeddings and chat settings, in manifest order; --tool and --format narrow them', async () => {
   const w = world({ formats: ['openai-chat', 'openai-responses', 'anthropic-messages', 'openai-embeddings'] })
@@ -365,6 +366,17 @@ test('connect colors: only on a terminal without NO_COLOR or --no-color, and rem
   assert.equal(a.out.replace(/\x1b\[[0-9;]*m/g, ''), b.out)
 })
 
+test('FIXED T-1 (flaky "89 vs 90 days"): the card counts days on the resolution\'s clock, not on Date.now, however late the run', async () => {
+  const w = world()
+  const real = Date.now
+  // the real clock an hour past world()'s: a slow or loaded run, made certain / 真实时钟比 world() 的晚一小时：把慢运行变成必然
+  Date.now = () => real() + 3_600_000
+  try {
+    const out = (await connect(w, [NAME, ...RPC_ARGS, '--lang', 'en'])).out
+    assert.match(out, /delegation until \d{4}-\d{2}-\d{2} \(90 days\)/)
+  } finally { Date.now = real }
+})
+
 test('connect: no value of a secret-looking environment variable is printed, even when the manifest carries it (text and --json)', async () => {
   const SENTINEL = 'sk-SENTINEL-0123456789abcdef'
   const w = world({ name: `relay ${SENTINEL}` })
@@ -414,7 +426,7 @@ test('FIXED C-1: key-shaped strings in the manifest are redacted wherever they c
 })
 
 test('connect usage mistakes: exit 2 on stderr, nothing on stdout, last line the next command', async () => {
-  for (const args of [[], ['not a name'], [NAME, '--proxy', '--json'], [NAME, '--strict'], [NAME, '--log', 'x.jsonl'], [NAME, '--tool', 'vim'], [NAME, '--format', 'grpc'], [NAME, '--rpc', 'http://a.example,http://a.example/2'], [NAME, NAME], [NAME, '--dev', 'http://127.0.0.1:1'], ['--bogus']]) {
+  for (const args of [[], ['not a name'], [NAME, '--proxy', '--json'], [NAME, '--strict'], [NAME, '--no-strict'], [NAME, '--proxy', '--strict', '--no-strict'], [NAME, '--log', 'x.jsonl'], [NAME, '--tool', 'vim'], [NAME, '--format', 'grpc'], [NAME, '--rpc', 'http://a.example,http://a.example/2'], [NAME, NAME], [NAME, '--dev', 'http://127.0.0.1:1'], ['--bogus']]) {
     const r = keep(await connect(null, args))
     assert.equal(r.code, 2, args.join(' '))
     assert.equal(r.out, '')
@@ -433,6 +445,10 @@ test('connect --proxy: an available service starts tapeapi-verify with the optio
   assert.deepEqual(r.calls, [['/x/tapeapi-verify.js', [NAME, '--port', '0', '--strict', '--log', '/tmp/r.jsonl', '--request-usage', '--rpc', 'http://rpc1,http://rpc2,http://rpc3']]])
   assert.equal(r.err, '', 'nothing on stderr before tapeapi-verify')
   assert.match(lastLine(r.out), /^starting tapeapi-verify \(Ctrl-C stops it\): tapeapi-verify 42\.7\.tape --port 0 --strict/)
+  // 3.0: tapeapi-verify is strict by default; --no-strict is passed on for the 2.x behaviour. / 3.0：--no-strict 原样传给 tapeapi-verify。
+  const lax = keep(await connect(w, [NAME, ...RPC_ARGS, '--proxy', '--no-strict', '--lang', 'en']))
+  assert.equal(lax.code, 0)
+  assert.deepEqual(lax.calls, [['/x/tapeapi-verify.js', [NAME, '--no-strict', '--rpc', 'http://rpc1,http://rpc2,http://rpc3']]])
   // the child's exit is passed back as it is / 子进程的退出原样返回
   const failed = await connect(w, [NAME, ...RPC_ARGS, '--proxy'], { runChild: async () => ({ code: 1, signal: null }) })
   assert.deepEqual(failed.child, { code: 1, signal: null })
@@ -535,8 +551,8 @@ async function mcpWorld({ name = 'Example tools', edit = null } = {}) {
   chain.state.headTime = w.now
   const c = chain.circuit(42, { holder: SIG.privateKeyToAddress(holderKey) })
   chain.setAccount('42', c.container); chain.setCode(c.container)
-  // world()'s expiry: half a day past 90 days (review T-1), so the card's day count is the same for every run of a test.
-  // / 沿用 world() 的到期时间：90 天再加半天（审查 T-1），卡片上的天数在一个测试的各次运行中相同。
+  // world()'s expiry, exactly 90 days past world()'s clock, which the card reads too (review T-1).
+  // / 沿用 world() 的到期时间：world() 时钟之后正好 90 天，卡片读的也是这个时钟（审查 T-1）。
   const expires = w.expires
   const delegationSig = SIG.signDigest(SIG.delegationDigest(56, MAINNET.hub, { container: c.container, signer: SIG.privateKeyToAddress(signerKey), expires }), holderKey)
   const core = MCP.createMcpServer({ info: { name: 'demo', version: '1' }, listTools: async () => DEMO_TOOLS, callTool: async () => ({ content: [] }) })
@@ -575,7 +591,7 @@ test('connect, MCP tool service: a manifest with mcp and no ai gets a usable car
   assert.doesNotMatch(r.out, /\*\*\*/)
   // The two direct settings are marked as not checked; the two through tapeapi-mcp are not. / 两个直连配置标为不核验。
   assert.equal(r.out.match(/^ {2}! /gm).length, 2)
-  // Review M-1, TAPs #16 §4.2: a direct answer is not a signed envelope; no title claims receipts or a verify link for it.
+  // Review M-1, TAP-15 §4.2: a direct answer is not a signed envelope; no title claims receipts or a verify link for it.
   // 审查 M-1：直连的回答不是签名信封；任何标题都不声称直连带回执或核验链接。
   for (const t of ['Claude Code, the declared endpoint direct (MCP Streamable HTTP): not checked here; a direct answer is not a signed envelope, do not treat it as signed or verified (only tapeapi-mcp, above, checks answers)',
     'Claude Code，直连声明的端点（MCP Streamable HTTP）：这里不核验；直连的回答不是签名信封，不要当作已签名或已核验（只有经上面的 tapeapi-mcp 才核验回答）',
@@ -629,7 +645,7 @@ test('connect, MCP tool service: a manifest with mcp and no ai gets a usable car
   assert.deepEqual(JSON.parse(keep(await connectMcp(priced, [NAME, ...RPC_ARGS, '--json'])).out).service.tools, ['add', 'shout'])
 })
 
-test('connect, MCP tool service (2.4): a manifest that binds only some of its methods (TAPs #16 §4.1) gets a card that lists the free methods as methods and never states a tool count it cannot know', async () => {
+test('connect, MCP tool service (2.4): a manifest that binds only some of its methods (TAP-15 §4.1) gets a card that lists the free methods as methods and never states a tool count it cannot know', async () => {
   // A free method that is not a tool of the endpoint (its tools/list has add and shout only): the card cannot tell, since
   // it does not contact the endpoint, so the row says methods, not tools; --json keeps service.tools (2.3) as the same
   // candidate list. / 一个不是端点工具的免费方法：卡片不访问端点、分不出来，所以那一行写“方法”而不是“工具”；--json 仍是 service.tools。
@@ -668,8 +684,8 @@ test('connect, MCP tool service: settings appear only as declared (gating), --to
   // An invalid mcp field: unavailable (mcp-invalid, exit 1), the detail says why, no settings. / mcp 字段无效：不可用。
   for (const [edit, detail] of [
     [(m) => { m.mcp.toolsSha256 = 'abc' }, 'mcp.toolsSha256 must be 64 lowercase hex characters'],
-    // 2.3: only lowercase, as TAPI-20 §3.8, TAPs #16 §2 and the holder console (the same digest in capitals is refused).
-    // 2.3：只收小写，与 TAPI-20 §3.8、TAPs #16 §2 和持有人操作台一致（同一摘要写成大写也拒绝）。
+    // 2.3: only lowercase, as TAPI-20 §3.8, TAP-15 §2 and the holder console (the same digest in capitals is refused).
+    // 2.3：只收小写，与 TAPI-20 §3.8、TAP-15 §2 和持有人操作台一致（同一摘要写成大写也拒绝）。
     [(m) => { m.mcp.toolsSha256 = m.mcp.toolsSha256.toUpperCase() }, 'mcp.toolsSha256 must be 64 lowercase hex characters'],
     [(m) => { m.mcp.endpoint = 'http://mcp.example.com/mcp' }, 'mcp.endpoint must be https'],
     [(m) => { m.mcp.endpoint = 'https://mcp.example.com/mcp?x=1' }, 'mcp.endpoint must have no query or fragment'],
@@ -740,7 +756,7 @@ test('connect --proxy, MCP tool service: runs tapeapi-mcp with the nodes and the
   assert.ok(!r.calls[0][1].includes('--no-conform'))
   assert.match(r.err, /usable: an MCP tool service/)
   assert.match(lastLine(r.err), /^starting tapeapi-mcp \(stdio; it waits for an MCP client on stdin; Ctrl-C stops it\): tapeapi-mcp --rpc /)
-  for (const extra of [['--port', '9'], ['--strict'], ['--log', '/tmp/r.jsonl'], ['--request-usage']]) {
+  for (const extra of [['--port', '9'], ['--strict'], ['--no-strict'], ['--log', '/tmp/r.jsonl'], ['--request-usage']]) {
     const bad = keep(await connectMcp(w, [NAME, ...RPC_ARGS, '--proxy', ...extra]))
     assert.equal(bad.code, 2, extra.join(' ')); assert.equal(bad.out, ''); assert.equal(bad.calls.length, 0)
     assert.match(bad.err, /tapeapi-verify's options; this is an MCP tool service/)

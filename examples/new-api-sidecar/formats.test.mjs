@@ -222,7 +222,7 @@ test('FIXED E14-7 / F-1: a metered path of a format FORMATS leaves out is refuse
   assert.notEqual((await all.handleRequest(new Request('https://api.example.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }), { clientIp: '127.0.0.1' })).status, 400)
 })
 
-test('FIXED F-1: the Worker sidecar refuses a format FORMATS leaves out the same way; createAIProxy keeps passing it through unless refuseOtherFormats is set', async () => {
+test('FIXED F-1: the Worker sidecar refuses a format FORMATS leaves out the same way; createAIProxy refuses it by default since 3.0, refuseOtherFormats: false passes it through as 2.x did', async () => {
   const seen = []
   const upstream = async (url) => { seen.push(String(url)); return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }) }
   const id = throwawayIdentity()
@@ -231,16 +231,21 @@ test('FIXED F-1: the Worker sidecar refuses a format FORMATS leaves out the same
   assert.equal(r.status, 400); assert.equal(r.headers.get(ai.SIDECAR_ERROR_HEADER), '1')
   assert.match((await r.json()).error.message, /anthropic-messages path, a format this sidecar does not serve \(it serves openai-chat\).*FORMATS does not enable it/)
   assert.deepEqual(seen, [])
-  // The package default is unchanged (experimental option, off by default). / 包的默认行为不变（实验性选项，默认关闭）。
+  // The package default (3.0): refused, with no hint, never forwarded; refuseOtherFormats: false is the 2.x pass-through.
+  // 包的默认行为（3.0）：拒绝、不带提示、不转发；refuseOtherFormats: false 即 2.x 的透传。
   const s = readConfig(complete({ FORMATS: 'openai-chat' }))
   const base = { formats: s.config.formats, upstream: { baseUrl: 'https://up.example/v1' }, manifestBase: s.config.manifestBase, signerKey: s.config.signerKey, models: s.config.models, fetch: upstream, log: () => {} }
   const { createAIProxy } = await import('@tapeapi/server/ai-proxy')
-  const plain = createAIProxy(base)
-  assert.equal((await plain.handleRequest(new Request('https://api.example.com/v1/messages', { method: 'POST', body: '{}' }), { clientIp: '1.1.1.1' })).status, 200)
+  for (const bare of [createAIProxy(base), createAIProxy({ ...base, refuseOtherFormats: true })]) {
+    const b = await bare.handleRequest(new Request('https://api.example.com/v1/embeddings', { method: 'POST', body: '{}' }), { clientIp: '1.1.1.1' })
+    assert.equal(b.status, 400); assert.equal(b.headers.get(ai.SIDECAR_ERROR_HEADER), '1')
+    assert.equal((await b.json()).error.message, 'POST /v1/embeddings is a openai-embeddings path, a format this sidecar does not serve (it serves openai-chat): refused, not forwarded, no receipt')
+  }
+  assert.deepEqual(seen, [])
+  const old = createAIProxy({ ...base, refuseOtherFormats: false })
+  const o = await old.handleRequest(new Request('https://api.example.com/v1/messages', { method: 'POST', body: '{}' }), { clientIp: '1.1.1.1' })
+  assert.equal(o.status, 200); assert.equal(o.headers.get(ai.RECEIPT_HEADER), null, 'passed through without a receipt, as in 2.x')
   assert.equal(seen.length, 1)
-  const bare = createAIProxy({ ...base, refuseOtherFormats: true })
-  const b = await bare.handleRequest(new Request('https://api.example.com/v1/embeddings', { method: 'POST', body: '{}' }), { clientIp: '1.1.1.1' })
-  assert.equal(b.status, 400); assert.equal((await b.json()).error.message, 'POST /v1/embeddings is a openai-embeddings path, a format this sidecar does not serve (it serves openai-chat): refused, not forwarded, no receipt')
   for (const bad of ['yes', 1, { hint: 2 }, []]) assert.throws(() => createAIProxy({ ...base, refuseOtherFormats: bad }), /refuseOtherFormats must be true, false or \{ hint\?: string \}/, JSON.stringify(bad))
 })
 
@@ -274,8 +279,8 @@ test('FIXED F-1: the verifying side knows every built-in format: createVerifying
     assert.equal(reports.length, 1); assert.equal(reports[0].ok, false); assert.equal(reports[0].mismatch, true)
     assert.match(reports[0].problems[0], /^not verified: format not declared: /)
 
-    // tapeapi-verify: route() names the undeclared format; --strict answers 400 without forwarding, otherwise it logs FAIL.
-    // tapeapi-verify：route() 点名未声明的格式；--strict 回 400 不转发，否则记 FAIL。
+    // tapeapi-verify: route() names the undeclared format; strict (--strict, the default since 3.0) answers 400 without
+    // forwarding, --no-strict logs FAIL. / tapeapi-verify：route() 点名未声明的格式；严格（3.0 起默认）回 400 不转发，--no-strict 记 FAIL。
     const { routesOf, route } = await import('../../sdk/bin/tapeapi-verify.js')
     const routes = routesOf(stack.manifest)
     assert.equal(route(routes, 'POST', '/v1/messages', new Headers()).undeclared.name, 'anthropic-messages')
@@ -283,7 +288,7 @@ test('FIXED F-1: the verifying side knows every built-in format: createVerifying
     assert.equal(route(routes, 'GET', '/v1/models', new Headers()).undeclared, undefined)
     assert.equal(route(routes, 'POST', '/v1/chat/completions', new Headers()).metered, true)
     const v = await startVerify(root, ['--strict'])
-    const loose = await startVerify(root)
+    const loose = await startVerify(root, ['--no-strict'])
     try {
       const before = stack.sidecar.proxy.stats().requests
       const a = await fetch(`${v.url}/v1/messages`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${DEMO_KEY}` }, body })
@@ -301,7 +306,7 @@ test('FIXED F-1: the verifying side knows every built-in format: createVerifying
 // tapeapi-verify as a child process, in its --dev URL mode. / 以 --dev 地址模式启动 tapeapi-verify 子进程。
 function startVerify(url, extra = []) {
   const bin = fileURLToPath(new URL('../../sdk/bin/tapeapi-verify.js', import.meta.url))
-  const child = spawn(process.execPath, [bin, '--dev', url, '--port', '0', ...extra], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const child = spawn(process.execPath, [bin, '--dev', url, '--port', '0', ...extra], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   let text = ''
   child.stderr.setEncoding('utf8')
   child.stderr.on('data', (d) => { text += d })

@@ -103,12 +103,12 @@ async function readSse(body, id, limit) {
  * scratch here, so nothing a caller of the proxy sent can reach the upstream.
  * 面向单个上游的小型 MCP 客户端：Streamable HTTP（{ url }）或进程内（{ call }）。请求头在这里从零构造，代理调用方发来的任何东西都到不了上游。
  */
-function createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall, negotiation = 'legacy' }) {
+function createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall, negotiation = 'auto' }) {
   let seq = 0
   // The upstream's era (MCP 2026-07-28 basic/versioning, "Backward Compatibility"): 'legacy' (initialize) or 'modern'
-  // (2026-07-28, per-request _meta). With negotiation 'legacy' (the default) it is legacy from the start and nothing
-  // below changes; with 'auto' a server/discover probe decides it once, before the first request.
-  // 上游属于哪一代：默认 'legacy'，一开始就是旧版，以下行为不变；'auto' 时在第一个请求前用 server/discover 探测一次。
+  // (2026-07-28, per-request _meta). With 'auto' (the default since 3.0) a server/discover probe decides it once, before
+  // the first request; with 'legacy' it is legacy from the start, as in 2.x.
+  // 上游属于哪一代：'auto'（3.0 起默认）在第一个请求前用 server/discover 探测一次；'legacy' 一开始就是旧版，与 2.x 相同。
   let era = negotiation === 'auto' ? null : 'legacy'
   let negotiating = null
   let session = null            // { id?: string, protocolVersion: string } once initialized / 初始化后
@@ -317,16 +317,20 @@ function methodOf(tool) {
  * @param {boolean} [o.linkContent=false]  verify links carry the params and result in clear; default: hashes only
  *        / 核验链接带明文参数与结果；默认只带哈希
  * @param {number} [o.upstreamTimeoutMs=20000]
- * @param {'legacy'|'auto'} [o.upstreamNegotiation='legacy']  @experimental (2.5) how the proxy talks to its upstream:
- *        'legacy' opens with initialize, as before; 'auto' first probes with server/discover and speaks MCP 2026-07-28
- *        (no initialize, per-request _meta and headers) to an upstream that offers it, else falls back to initialize
- *        / 代理怎样与上游通信：'legacy' 以 initialize 开场（与以前相同）；'auto' 先用 server/discover 探测，上游支持就说
+ * @param {'legacy'|'auto'} [o.upstreamNegotiation='auto']  @experimental (2.5) how the proxy talks to its upstream:
+ *        'auto' (the default since 3.0) first probes with server/discover and speaks MCP 2026-07-28 (no initialize,
+ *        per-request _meta and headers) to an upstream that offers it, else falls back to initialize; a network failure
+ *        of the probe is a failure, not a fallback. 'legacy' opens with initialize, as 2.x did.
+ *        / 代理怎样与上游通信：'legacy' 以 initialize 开场，与 2.x 相同；'auto'（3.0 起默认）先用 server/discover 探测（探测时
+ *        网络失败即失败，不退回），上游支持就说
  *        2026-07-28，否则退回 initialize
- * @param {string[]} [o.allowedOrigins]  @experimental (2.5) exact origins a browser may call /mcp from: a
- *        request to /mcp whose Origin is present and not listed is 403; default: every origin, as before. Set it when the
- *        proxy runs on a local machine in front of tools with side effects: with CORS `*` any web page the user opens can
- *        call them. / 浏览器可以从哪些来源调用 /mcp；默认任何来源。代理在本机运行、上游工具有副作用时应设置：CORS `*` 下用户打开的
- *        任何网页都能调用它们。
+ * @param {string[]|'*'} [o.allowedOrigins]  @experimental (2.5) exact origins a browser may call /mcp from: a
+ *        request to /mcp whose Origin is present and not listed is 403, a listed one is echoed instead of CORS `*`; a
+ *        request without Origin (a desktop client, curl) is answered as usual. Default since 3.0: no origin listed, so
+ *        every browser request is refused (a proxy on a local machine in front of tools with side effects is otherwise
+ *        callable from any web page the user opens). '*': every origin, CORS `*`, as 2.x did.
+ *        / 浏览器可以从哪些来源调用 /mcp：带 Origin 且不在名单内的请求 403；不带 Origin 的照常。3.0 起默认一个来源都不列，
+ *        浏览器请求一律拒绝（否则本机代理前面有副作用的工具，用户打开的任何网页都能调用）。'*'：任何来源、CORS `*`，即 2.x 行为。
  */
 export function createMcpProxy(opts = {}) {
   if (Object.prototype.hasOwnProperty.call(opts, 'identity')) throw new TapeAPIError('INVALID_ARGUMENT', 'createMcpProxy takes { name } (the TapeOut name shown in receipts): the option `identity` was renamed in 1.0 (https://tapeapi.fun/docs/en/upgrade-1.0)')
@@ -340,14 +344,15 @@ export function createMcpProxy(opts = {}) {
   const log = opts.log || ((...a) => console.error('[tapeapi/mcp-proxy]', ...a))
   const fetchImpl = opts.fetch || ((...a) => globalThis.fetch(...a))
   const timeoutMs = Math.min(Number(opts.upstreamTimeoutMs ?? MCP_UPSTREAM_TIMEOUT_MS), UPSTREAM_TIMEOUT_MAX_MS)
-  const allowed = allowedOriginsOf(opts.allowedOrigins)
+  // 3.0: browsers refused until listed (an empty Set); '*' restores CORS * for every origin. / 3.0：未列出即拒绝；'*' 恢复。
+  const allowed = allowedOriginsOf(opts.allowedOrigins, new Set())
 
   const st = {
     upstreamCalls: 0, upstreamFailures: 0, driftRefusals: 0, hiddenRefusals: 0, refreshes: 0, refreshFailures: 0,
     lastRefreshAt: 0, lastRefreshOk: null, skipped: [],
   }
   if (opts.upstreamNegotiation !== undefined && !['legacy', 'auto'].includes(opts.upstreamNegotiation)) throw new TapeAPIError('INVALID_ARGUMENT', "upstreamNegotiation must be 'legacy' or 'auto'")
-  const client = createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall: () => { st.upstreamCalls++ }, negotiation: opts.upstreamNegotiation })
+  const client = createUpstreamClient({ upstream, fetchImpl, timeoutMs, onCall: () => { st.upstreamCalls++ }, negotiation: opts.upstreamNegotiation ?? 'auto' })
 
   let manifest = null, provider = null
   let published = null          // the digest calls are held to / 调用被核对的摘要

@@ -21,6 +21,13 @@ import * as agentKit from '@tapeapi/sdk/agent'
 import { createAgentKit, createPaymentKit, paymentOrder, mandateTypedData, encodeContent, decodeContent, type Mandate, type ThreadCheck, type MandateCheck, type AttachmentCheck, type ThreadMessage } from '@tapeapi/sdk/agent'
 import * as reviews from '@tapeapi/sdk/review'
 import { createReviewKit, makeReview, signReview, summarizeReviews, type ReviewResult, type ReviewSummary, type ReviewRecord } from '@tapeapi/sdk/review'
+import * as interop from '@tapeapi/interop'
+import type { VisitorGrant, GrantReason, SignedGrant } from '@tapeapi/interop'
+import * as passport from '@tapeapi/passport'   // 3.0 candidate, experimental (TAPs #83 draft at cae25e6)
+import type { PassportResult, PassportState, PassportSnapshot } from '@tapeapi/passport'
+import { summariseFeedback, feedbackParams, FEEDBACK_DRAFT, type FeedbackSummary } from '@tapeapi/passport/feedback'
+import * as policyCircuit from '@tapeapi/policy-circuit'   // 3.0 candidate, experimental (0.1.0)
+import type { PolicyBinding, PolicyBindingResult, PolicyGateDecision, PolicyTables } from '@tapeapi/policy-circuit'
 import { snippetsFor, mcpSnippetsFor, connectReport, renderConnect, NOTES, MCP_NOTES, SNIPPET_TOOLS, MCP_SNIPPET_TOOLS, FORMAT_NAMES, type Snippet, type ConnectReport } from '@tapeapi/sdk/connect'
 import { voucherDigest } from '@tapeapi/sdk/sig'
 import { encodeCall } from '@tapeapi/sdk/abi'
@@ -29,6 +36,7 @@ import { createProvider, memoryStore, VERSION, type Provider } from '@tapeapi/se
 import { ai } from '@tapeapi/sdk'
 import { createVerifyingFetch, verifyUsageReceipt, FORMATS, type AIFormat, type UsageReceipt, type UsageRequestSkip } from '@tapeapi/sdk/ai'
 import { amountOf, maxPricesOf, completionLimitOf, type TokenBounds, type ReceiptPrice } from '@tapeapi/sdk/ai'
+import { createBudget, budgetFileStore, memoryBudgetStore, type Budget, type PolicyFile } from '@tapeapi/sdk/ai'   // 3.0, experimental
 import { createAIProxy, type AIProxy } from '@tapeapi/server/ai-proxy'
 import { createMcpServer, receiptOf, hashReceipt, verifyLink, toolResultOf, toolsDigest, invisibleProblems, quoteProvenance, RECEIPT_META_KEY, requestEra, MCP_MODERN_PROTOCOL_VERSIONS, MCP_SUPPORTED_PROTOCOL_VERSIONS, MCP_ERRORS, type McpRequestEra, type Receipt, type HashedReceipt, type McpTool, type CallToolResult } from '@tapeapi/sdk/mcp'
 import { CHAINS as CHAINS2, chainById, parseTapeName, formatTapeName, isNameShaped, type TapeOutChain, type ParsedTapeName } from '@tapeapi/sdk/chains'
@@ -123,6 +131,8 @@ async function provider(): Promise<void> {
     rpcRetries: 0,
     store: memoryStore(),
   })
+  const tok = await p.checkEscrowToken()
+  if (tok.status === 'mismatch') throw new Error(tok.message)
   const server = await p.listen(8787)
   server.close()
   const res: Response = await p.handleRequest(new Request('https://x/tapeapi/v1/bnbUsd', { method: 'POST', body: '{}' }), { clientIp: '1.2.3.4' })
@@ -134,7 +144,7 @@ async function provider(): Promise<void> {
 async function aiSidecar(): Promise<void> {
   const px: AIProxy = createAIProxy({
     upstream: { baseUrl: 'https://upstream.example/v1' }, manifestBase: { circuits: '0x', tokenId: '1', container: '0x', endpoints: { live: ['https://ai.example/tapeapi/v1'], async: false } },
-    signerKey: '0x' + '11'.repeat(32), models: [{ id: 'm', aliases: ['m-2026'], formats: ['openai-chat'], prices: [{ currency: 'BEM', unit: '1M tokens', input: '1', output: '2', cacheRead: '0.5', cacheWrite1h: '4' }, { currency: 'USD1', unit: '1M tokens', input: '0.1', output: '0.2' }] }],
+    signerKey: '0x' + '11'.repeat(32), models: [{ id: 'm', aliases: ['m-2026'], formats: ['openai-chat'], prices: [{ currency: 'BEM', unit: '1M tokens', input: '1', output: '2', cacheRead: '0.5', cacheWrite1h: '4' }, { currency: 'USD1', unit: '1M tokens', input: '0.1', output: '0.2' }] }], priceRef: false,
   })
   const chat: AIFormat = FORMATS[0]
   const base: string = px.manifest().ai.endpoints[0].baseUrl
@@ -149,6 +159,21 @@ async function aiSidecar(): Promise<void> {
   const bounds: TokenBounds = { promptTokens: 4096, completionTokens: limit ?? 4096 }
   const hold: ReceiptPrice[] | null = maxPricesOf({ prices: [{ currency: 'USDT', unit: '1M tokens', input: '1.25', output: '10' }] }, bounds)
   void [charged, hold?.[0]?.amount, ai.maxAmountOf({ input: '1', output: '2' }, bounds)]
+  // 3.0 (experimental): a client-side budget from a local policy file; the agent kit's limiter reads the same one.
+  // 3.0（实验性）：本地策略文件的客户端预算；agent 套件的限额器读同一个。
+  const policy: PolicyFile = { tapeapiPolicy: 1, rules: [{ name: 'per day', period: 'day', maxAmount: '2.5', currency: 'USD' }] }
+  const budget: Budget = createBudget({ policy, store: memoryBudgetStore() })
+  const budgeted = createVerifyingFetch({ service: {}, policy, budgetStore: budgetFileStore('spend.jsonl', { readFileSync: () => '', appendFileSync: () => {} }) })
+  const shared = createVerifyingFetch({ service: {}, budget })
+  const windows: number = budget.state().windows.length
+  const limited = agentKit.createSpendLimiter().payer({ chainId: 56, payer: { consumer: '0x', signer: '0x', reserve: () => null, cumulativeOf: () => 0n }, budget: agentKit.createBudget({ policy }), tokenDecimals: 18 })
+  void [budgeted, shared, windows, limited]
+  // 3.0 (experimental, a proposal, not normative): a receipt's reference and its price basis; the sidecar option.
+  // 3.0（实验性，提案，非规范）：回执引用与价格依据；旁路选项。
+  const ref: string | null = receipt ? ai.receiptRef(receipt) : null
+  const basis: string = ai.priceRefOf(px.manifest().ai)
+  const signedBasis: string | undefined = receipt?.result.priceRef
+  void [ref, basis, signedBasis]
   void [chat.method, base, fetch, asking, member, receipt?.result.prices?.[0]?.amount, receipt?.result.unpriced, receipt?.result.complete, receipt?.result.modelMatchedBy, receipt?.result.usage?.cache_write_1h_tokens, ai.MANIFEST_FIELD]
 }
 
@@ -223,6 +248,9 @@ async function mcpAll(): Promise<void> {
   void [pinned, listed.length, held.m]
   const base: ManifestBase = { circuits: '0x', tokenId: '1', container: '0x', endpoints: { live: ['https://m.example/tapeapi/v1'], async: false } }
   const px: McpProxy = createMcpProxy({ upstream: { url: 'https://up.example/mcp' }, manifestBase: base, signerKey: '0x', name: '11.1013.tape', upstreamTimeoutMs: MCP_UPSTREAM_TIMEOUT_MS, allowedOrigins: ['http://localhost:5173'] })
+  // 3.0: '*' restores the 2.x CORS * for every origin. / 3.0：'*' 恢复 2.x 的任何来源。
+  const pxAny: McpProxy = createMcpProxy({ upstream: { url: 'https://up.example/mcp' }, manifestBase: base, signerKey: '0x', allowedOrigins: '*' })
+  void pxAny
   const st: McpProxyStats = px.stats()
   const timeouts: number[] = [MCP_UPSTREAM_TIMEOUT_MS, AI_UPSTREAM_TIMEOUT_MS]
   void [answer, link, shown.isError, digest, bad, quoted, res.status, st.drift, px.tools().length, timeouts, RECEIPT_META_KEY]
@@ -489,6 +517,8 @@ async function agentPhase1() {
   const lim: agentKit.SpendLimiter = agentKit.createSpendLimiter({ store: casStore })
   const rec: agentKit.SpendRecord = await lim.start({ chainId: 56, check: r })
   const dec: agentKit.SpendDecision = agentKit.spendDecision(rec, { chainId: 56, provider: '0x' + '5e'.repeat(20), escrow: '0x' + 'e1'.repeat(20), consumer: '0x' + '11'.repeat(20), cumulative: 1n, price: '1', now: 1 })
+  const decListed: agentKit.SpendDecision = agentKit.spendDecision(rec, { chainId: 56, provider: '0x' + '5e'.repeat(20), escrow: '0x' + 'e1'.repeat(20), consumer: '0x' + '11'.repeat(20), cumulative: 1n, price: '1', now: 1, listedPrice: 0n })
+  void decListed
   if (!dec.ok) { const why: string = dec.refused; void why }
   const lp: agentKit.LimitedPayer = lim.payer({ chainId: 56, payer: api.payer({ consumer: '0x' + '11'.repeat(20), sessionKey: '0x' + '77'.repeat(32) }) })
   const seq: number = rec.seq
@@ -521,6 +551,16 @@ async function agentPhase1() {
   const feeAll: string | undefined = kp.fees?.total
   const fee: string | null | undefined = kp.facts.executeFee
   const kc = await kit.closeOut(m, { holder: '0x' + '11'.repeat(20), escrows: { ['0x' + '5e'.repeat(20)]: '0x' + 'e1'.repeat(20) }, history: kp.record, fullRequest: true })
+  const scan: agentKit.InheritedSessionScan = await kit.inheritedSessions(m, { path: 'container', history: hist.entries(), fromBlock: 1 })
+  const scanned = await kit.holderPlan(m, { holder: '0x' + '11'.repeat(20), path: 'container', history: hist.entries(), maxExecuteFee: 1n, sessionScan: { fromBlock: 1, refuse: false } })
+  void scan.sessions; void scanned.sessionScan
+  const kstep: agentKit.CloseOutNext = await kit.closeOutStep(m, { holder: '0x' + '11'.repeat(20), history: kp.record, state: null })
+  const kstep2 = await kit.closeOutStep(m, { holder: '0x' + '11'.repeat(20), history: kp.record, state: kstep.state, resendAfterS: 60 })
+  void kstep2.waitUntil; void kc.sendNow; void kc.sendLater
+  const pureNext: agentKit.CloseOutNext = agentKit.closeOutNext(m, { chainId: 56, holder: '0x' + '11'.repeat(20), now: 1, channels: [{ provider: '0x' + '5e'.repeat(20), escrow: '0x' + 'e1'.repeat(20), channel: '5', pending: null }], state: null })
+  void pureNext.phase
+  // @ts-expect-error closeOutStep needs state (null to begin)
+  void kit.closeOutStep(m, { holder: '0x' + '11'.repeat(20), history: [] }).catch(() => null)
   const replaced: { amount: string; requestedAt: number } | undefined = kc.items[0]?.replaces
   const bal: string | number | bigint | undefined = kp.facts.holderBalance
   const ka = await kit.afterPlan(kp, m)
@@ -610,6 +650,27 @@ async function reviews54() {
 }
 void reviews54
 
+// @experimental: visitor grants between apps; a prototype, not a TAP / 访客授权（实验性原型）
+async function interopGrants() {
+  const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })
+  const chain = interop.chainReadsFromApi(api, { chainId: 56 })
+  const m: VisitorGrant = await interop.prepareGrant({ chain, user: '0x' + '3a'.repeat(20), callerName: '12.7.tape', callerKey: '0x' + '4b'.repeat(20), audience: '0x' + '5e'.repeat(20), audienceName: '13.7.tape', methods: ['history'], maxCalls: 5, now: 1789000000, lang: 'zh' })
+  const { payload } = interop.grantForWallet(interop.grantTypedData(56, MAINNET.hub, m), { chainId: 56, hub: MAINNET.hub, callerName: '12.7.tape', audienceName: '13.7.tape' })
+  const g = interop.withGrant(fetch)
+  const signed: SignedGrant = { chainId: 56, hub: MAINNET.hub, message: m, userSig: '0x', callerKeyPk: '0x' + '4b'.repeat(32) }
+  const svc = await api.resolve('13.7.tape')
+  const r = await g.call(api, svc, 'history', {}, signed)
+  const used: number = r.grant.used
+  const store = interop.memoryGrantStore()
+  const methods = interop.grantMethods({ history: async () => ({}) }, { chainId: 56, hub: MAINNET.hub, name: '13.7.tape', store, chain })
+  const bounded = interop.grantMethods({ history: async () => ({}) }, { chainId: 56, hub: MAINNET.hub, name: '13.7.tape', store, chain, timeoutMs: interop.GRANT_HANDLER_TIMEOUT_MS, perGrantWindow: { calls: 10, windowS: 60 } })
+  const wait: number = store.take('grant:0x:0x', 10, 60)
+  const reason: GrantReason | null = interop.grantReasonOf(new Error('x'))
+  const limited: GrantReason = 'rate-limited'
+  void [payload.primaryType, used, methods, bounded, wait, reason, limited, interop.grantHashOf(56, MAINNET.hub, m)]
+}
+void interopGrants
+
 // @experimental: `tapeapi connect` as data and text (the card, client settings for the declared formats) / 实验性
 async function connectS1() {
   const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56), conform: 'tap10' })
@@ -630,3 +691,53 @@ async function connectMcp() {
   void [kind, report.service?.tools?.length, s.map((x) => [x.via === 'stdio', x.format]), MCP_NOTES.tools.zh, MCP_SNIPPET_TOOLS.length]
 }
 void connectMcp
+
+// @experimental prototype: enforcement 'x402-batch' (x402 batch-settlement channels) / 实验原型
+async function x402Batch(kit: ReturnType<typeof createAgentKit>, m: Mandate) {
+  const r = await kit.verifyMandate({ mandate: m, sig: '0x' }, { enforcement: 'x402-batch', x402: { terms: { ['0x' + '5e'.repeat(20)]: { receiverAuthorizer: '0x' + '15'.repeat(20), token: agentKit.X402_SETTLEMENT, withdrawDelay: 3600 } }, maxWithdrawDelayS: 172800 } })
+  const e: 'none' | 'x402-batch' | 'escrow-channel' = r.enforcement
+  const ids = r.phase === 1 ? r.scope.map((s) => s.channelId) : []
+  const payer: agentKit.X402Payer = agentKit.x402Payer({ chainId: 56, consumer: '0x' + '70'.repeat(20), sessionKey: '0x' + '11'.repeat(32), terms: {} })
+  const lim = agentKit.createSpendLimiter()
+  const limited = lim.payer({ chainId: 56, payer })
+  const acc = agentKit.x402Acceptance({ chainId: 56, container: '0x' + '5e'.repeat(20), receiverAuthorizer: '0x' + '15'.repeat(20), token: '0x' + 'b0'.repeat(20), withdrawDelay: 3600, read: async () => '0x' })
+  const p: Provider = createProvider({ manifest: {}, signerKey: '0x' + '22'.repeat(32), methods: {}, enforcement: acc })
+  const tx = agentKit.x402Tx.approvePermit2('0x' + 'b0'.repeat(20))
+  void [e, ids, limited.reserve, p, tx.data, agentKit.X402_EOA_ONLY, agentKit.enforcementBackend('x402-batch')?.name]
+}
+void x402Batch
+
+// @experimental (3.0 candidate) policy circuits: the Policy Circuit Gate TAP draft (TAPs #84, not merged) / 实验性：策略电路
+async function policyCircuits(api: TapeAPI, rpc: Rpc, file: Uint8Array, binding: PolicyBinding, sig: `0x${string}`, tables: PolicyTables) {
+  const c = policyCircuit.loadPolicyCircuit(file, { declaredStateful: true })
+  const req = { amount: '1000000000000000', asset: '0x' + 'aa'.repeat(20), counterparty: '0x' + '11'.repeat(20), kind: 1, ts: 1793008800n }
+  const e = policyCircuit.evaluatePolicyRequest(c, req, tables, c.zeroState())
+  const r: PolicyBindingResult = policyCircuit.checkPolicyBinding(56, binding, sig, tables, { now: 1793008800, policyFile: file, binder: '0x' + '7b'.repeat(20) })
+  const ladder: true | false | null | 'conditional' = r.enforceable
+  const binder = policyCircuit.policyBinderFromApi(api, { rpc, chainId: 56 })
+  const r2 = await policyCircuit.verifyPolicyBinding(56, binding, sig, tables, { now: 1793008800, policyFile: file, binder })
+  const gate = await policyCircuit.createPolicyGate({ chainId: 56, binding, sig, tables, policyFile: file, binder, revocations: () => [], store: policyCircuit.memoryPolicyTraceStore() })
+  const d: PolicyGateDecision = await gate.admit({ amount: '1', asset: req.asset, counterparty: req.counterparty, kind: 1 })
+  const td = policyCircuit.policyBindingTypedData(56, { netlistHash: c.netlistHash, ...policyCircuit.policySubject.account('0x' + '0c'.repeat(20)), tables })
+  void [e.verdict, e.newState, ladder, r2.eip1271, d.verdict === 'allow', td.bindingHash, gate.status().open, policyCircuit.POLICY_REASONS[1], policyCircuit.policyRequestWord(req, tables).length]
+}
+void policyCircuits
+// @tapeapi/passport (3.0 candidate, experimental): resolve, replay, the registration file, the card, §10 (conditional).
+async function passportSample() {
+  const api = createTapeAPI({ rpcUrls: rpcUrlsFor(56) })
+  const pin = await api.rpc!.tap10Block({ maxLag: 400 })
+  const n: string | null = await api.chain.processorNumber('0x' + '50'.repeat(20), { at: pin })
+  const r: PassportResult = await passport.resolvePassport({ name: '4246.0.tape' }, { api, logs: { urls: ['https://a.example/', 'https://b.example/'], fromBlock: 0 }, recordSnapshot: true })
+  const s: PassportState = r.state
+  const snap: PassportSnapshot | undefined = r.snapshot
+  const again = snap ? await passport.resolveFromSnapshot(snap) : r
+  const f = passport.buildRegistrationFile({ agentId: 1n, processor: '0x' + '50'.repeat(20), tokenId: 4246n, container: '0x' + '86'.repeat(20), name: '4246.0.tape', gatewayDomain: 'gateway.example' })
+  const ok: boolean = passport.checkRegistrationFile(f.bytes, { agentId: 1n }).ok
+  const plan = await passport.preparePassportRegistration({ api, agentId: '1', name: '4246.0.tape' })
+  const card = passport.agentCardFromPassport({ result: r, manifest: {}, manifestSha256: '0x' + '00'.repeat(32), a2aEndpoints: [] })
+  const key = passport.decodePassportKey(passport.encodePassportKey(56, '0x' + '50'.repeat(20), 4246n))
+  const fb: FeedbackSummary = await summariseFeedback(passport.snapshotReads(snap!), r, { clientAddresses: ['0x' + '11'.repeat(20)] })
+  const fp = feedbackParams({ review: { reviewer: '0x', reviewee: '0x', kind: 1, score: 5, subject: '0x', evidenceHash: '0x', textHash: '0x', issued: 1 } }, 1, '1.0.tape', 'gateway.example', 1)
+  void [n, s, again.display.en, again.draft.head, ok, plan.status, plan.steps?.[0]?.zh, card.card, key.tokenId, fb.computed, fp.tag2, FEEDBACK_DRAFT.pr, passport.DRAFT.vectorsSha256, passport.checkDelegationProposal(0, 1, true, true).ok]
+}
+void passportSample

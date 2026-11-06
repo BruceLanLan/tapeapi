@@ -83,7 +83,7 @@ export async function runDemo({ say = () => {} } = {}) {
     // openai-chat only, with that identity. / 假链（SDK 自己的测试链，按 TAP-10）：7 号处理器的 42 号电路归新持有人，容器已开通并激活；
     // 然后是只声明 openai-chat、使用该身份的旁路。
     const holderKey = sig.randomPrivateKey(), signerKey = sig.randomPrivateKey()
-    const now = Math.floor(Date.now() / 1000), expires = now + 90 * 86_400
+    const now = Math.floor(Date.now() / 1000), expires = now + 30 * 86_400
     const chain = createConformChain()
     chain.state.headTime = now
     const c = chain.circuit(42, { holder: sig.privateKeyToAddress(holderKey) })

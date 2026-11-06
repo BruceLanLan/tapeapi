@@ -17,6 +17,7 @@ import { createAIProxy } from '../../server/src/ai-proxy.js'
 import * as AI from '../src/ai.js'
 import { fromBase64Url } from '../src/mcp.js'
 import { runReconcile } from '../src/reconcile-cli.js'
+import { FIXED_MS } from './helpers/deterministic.mjs'
 import { requestFacts, units8, fromUnits8, policyOf, mandateSpend, patternChecks, CLASS_IGNORES } from '../src/reconcile-checks.js'
 
 const KEY = '0x' + '42'.repeat(32)
@@ -92,6 +93,13 @@ async function fixture() {
     { model: 'quirk-alias', messages: [{ role: 'user', content: 'name a tree for me' }] },
   ]
   const envelopes = []
+  // The receipts are signed at one fixed instant (2026-09-21T14:13:20Z, far from a UTC midnight), so the per-day policy
+  // window holds all nine on every run: signed with the real clock, a fixture that straddled midnight split them into
+  // two days and the "daily spend" assertions failed (FIXED, flaky day window). The mandate times below use the same
+  // instant. / 回执在同一固定时刻签出（离 UTC 午夜很远），按日窗口每次都装下全部九张；用真实时钟时，跨午夜的夹具会分到两天。
+  const realNow = Date.now
+  Date.now = () => FIXED_MS
+  try {
   for (const [i, body] of calls.entries()) {
     const bytes = JSON.stringify(body)
     const r = await proxy.handleRequest(new Request('http://127.0.0.1/v1/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer sk-test' }, body: bytes }), { clientIp: '127.0.0.1' })
@@ -105,6 +113,7 @@ async function fixture() {
     envelopes.push(env)
     writeFileSync(join(dir, 'requests', `call-${String(i + 1).padStart(2, '0')}.json`), bytes)
   }
+  } finally { Date.now = realNow }
   writeFileSync(join(dir, 'requests', 'unrelated.json'), JSON.stringify({ model: 'quirk-small', messages: [{ role: 'user', content: 'never sent' }] }))
   writeFileSync(join(dir, 'receipts.jsonl'), envelopes.map((e) => JSON.stringify(e)).join('\n') + '\n')
   writeFileSync(join(dir, 'manifest.json'), JSON.stringify(proxy.manifest(), null, 2))
@@ -293,7 +302,8 @@ test('completion-above-request-limit: n > 1 multiplies the limit (not listed wit
 })
 
 // ── mandate / 授权书 ─────────────────────────────────────────────────────────────────────────────────────────────
-const now = () => Math.floor(Date.now() / 1000)
+// the fixture's signing instant, not the real clock: a mandate's period is set against the receipts' ts / 夹具的签名时刻
+const now = () => Math.floor(FIXED_MS / 1000)
 const mandate = (scope, o = {}) => ({
   principal: '0x' + '11'.repeat(20), agent: '0x' + '22'.repeat(20), agentKey: '0x' + '33'.repeat(20), mode: 0, taskHash: '0x' + 'ab'.repeat(32), scope,
   feeToken: '0x0000000000000000000000000000000000000000', feeCap: '0', notBefore: now() - 3600, expires: now() + 3600, nonce: '1', subdelegate: false, ...o,
@@ -388,7 +398,7 @@ test('--policy: per call, day and total, the windows whose receipts claim more t
   const t = await run(['--receipts', 'receipts.jsonl', '--policy', file, '--lang', 'en'])
   assert.match(t.out, /POLICY policy\.json {3}4 rules/)
   assert.match(t.out, /daily spend: .* per day {2}maxAmount 0\.00001 USD {3}9 receipts, 1 windows, 1 over/)
-  assert.match(t.out, /it was not enforced when the calls were made/)
+  assert.match(t.out, /reconcile enforces nothing/)   // 3.0: a client-side budget may have read the same file
   assert.throws(() => policyOf({ tapeapiPolicy: 2, rules: [] }), /must be 1/)
   assert.throws(() => policyOf({ tapeapiPolicy: 1, rules: [{ period: 'week', maxCalls: 1 }] }), /period must be one of call, day, month, total/)
   assert.throws(() => policyOf({ tapeapiPolicy: 1, rules: [{ period: 'day', maxAmount: '0.000000001', currency: 'USD' }] }), /at most 8 places/)
@@ -405,7 +415,7 @@ test('--fail-on: the default exit status is unchanged with findings, a cap and a
   const p = writePolicy('p-fail.json', { tapeapiPolicy: 1, rules: [{ model: 'quirk-long', period: 'call', maxCompletionTokens: 100 }] })
   const pOk = writePolicy('p-fail-ok.json', { tapeapiPolicy: 1, rules: [{ period: 'total', maxCalls: 1000 }] })
   const all = ['--receipts', 'receipts.jsonl', '--requests', 'requests', '--mandate', m, '--token-decimals', '18', '--policy', p]
-  // Without --fail-on: 0, as in 2.4 and 2.7, and no failOn key. / 不给 --fail-on：0，JSON 没有 failOn 键。
+  // Without --fail-on: 0, as in 2.4, and no failOn key. / 不给 --fail-on：0，JSON 没有 failOn 键。
   const d = await run([...all, '--json'])
   assert.equal(d.code, 0)
   assert.ok(d.json.checks.findings.length > 0 && d.json.mandate.counts.aboveCap === 1 && d.json.policy.over > 0, 'all three are listed')

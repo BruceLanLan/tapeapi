@@ -43,10 +43,13 @@ const rpcFail = (status, code, message) => reply(status, { jsonrpc: '2.0', id: n
  *        batch or a batch holding a 2026-07-28 message), for usage counting; method and tool are cut to 64 characters; errors in it are ignored
  *        对实际处理的每条 JSON-RPC 消息调用一次（过大、无法解析、超长批量或含 2026-07-28 消息的批量不计），用于用量统计；method 和 tool 截到
  *        64 个字符；其中的错误被忽略
- * @param {string[]} [o.allowedOrigins]  @experimental (2.5) exact origins a browser may call from: a request
+ * @param {string[]|'*'} [o.allowedOrigins]  @experimental (2.5) exact origins a browser may call from: a request
  *        whose Origin header is present and not listed is 403 (Streamable HTTP "Security & Endpoint"), a listed one is
- *        echoed instead of CORS `*`; a request without Origin is answered as usual. Default: every origin, as before.
- *        浏览器可以从哪些来源调用：带 Origin 且不在名单内的请求 403，名单内的来源代替 `*` 回显；不带 Origin 的照常。默认：任何来源。
+ *        echoed instead of CORS `*`; a request without Origin is answered as usual. Default (or '*'): every origin, as
+ *        before. Unlike createMcpProxy, whose default refuses browsers since 3.0: this endpoint serves a provider's free
+ *        methods and is meant to be reachable from anywhere (the public api.tapeapi.fun/mcp is one).
+ *        浏览器可以从哪些来源调用：带 Origin 且不在名单内的请求 403，名单内的来源代替 `*` 回显；不带 Origin 的照常。默认（或 '*'）：
+ *        任何来源。与 createMcpProxy（3.0 起默认拒绝浏览器）不同：本端点提供服务方的免费方法，本来就要让任何地方都能调用。
  * @param {string} [o.pinnedToolsSha256]  @experimental (2.5) the toolsSha256 the holder published for this
  *        endpoint (TAPI-20 §3.8): while this endpoint's tools hash to anything else, or carry invisible characters,
  *        tools/list is refused as createMcpProxy refuses it (JSON-RPC -32603, data { code: 'TOOLS_CHANGED', published,
@@ -104,7 +107,7 @@ export function createMcpEndpoint(o = {}) {
     const note = signed.content[signed.content.length - 1]
     if (!env.ok) return { ...signed, content: [note, ...mcp.quoteProvenance(signed.content.slice(0, -1))] }
     const r = env.result
-    // The check tapeapi-mcp and TAPs #16 §6 step 7 make; a method of this server should never fail it.
+    // The check tapeapi-mcp and TAP-15 §6 step 7 make; a method of this server should never fail it.
     // 与 tapeapi-mcp、#16 §6 第 7 步相同的检查；本服务器的方法不应不通过。
     if (!isObj(r) || !Array.isArray(r.content) || !r.content.every((c) => isObj(c) && typeof c.type === 'string') || (r.isError !== undefined && typeof r.isError !== 'boolean')) {
       return { content: [note, { type: 'text', text: 'The service answered with a signed value that is not an MCP tool result ({ content: [...] }); it is not shown.' }], isError: true, _meta: signed._meta }
@@ -236,14 +239,14 @@ export async function mcpToolsSha256(manifest) {
 }
 
 /**
- * @experimental Holds a provider's methods to a published `toolsSha256` (TAPI-20 §3.8; TAP draft #16 §5.1), for a
+ * @experimental Holds a provider's methods to a published `toolsSha256` (TAPI-20 §3.8; TAP-15 §5.1), for a
  * service whose manifest declares `mcp` for the endpoint of createMcpEndpoint. Returns a new handler table for
  * createProvider: a bound method (one whose name is a tool in listedMcpTools(manifest)) is refused with a signed
  * TOOLS_CHANGED (HTTP 409, `error.data` exactly `{ published, current }`, `current` null when the list has no digest)
  * while those tools hash to anything but `published`, and with a signed INTERNAL while they match but carry text a
  * person cannot see (mcp.invisibleProblems); every other method is passed through as it is. `published` is the value
  * the holder published on chain, never one computed here: a provider holds calls to the manifest, not to itself. The
- * tools are generated from `manifest` in this process, so a list that was read is kept (TAP draft #16 §5.1: a failed
+ * tools are generated from `manifest` in this process, so a list that was read is kept (TAP-15 §5.1: a failed
  * read leaves the state as it was). A list that cannot be built (the manifest's methods unusable) is not remembered:
  * until a read succeeds no method is known to be a tool or not, so every method is refused with TOOLS_CHANGED
  * (`current` null), and the next call reads the list again.

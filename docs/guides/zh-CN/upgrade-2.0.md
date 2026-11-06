@@ -22,7 +22,7 @@ TapeAPI 2.0.0 于 2026-10-12 发布。本页列出它的破坏性修改，以及
 | 私密通道与私密群聊使用标签 `TAP-26/…`、`TAP-27/…`（TAPI-26、TAPI-27 第 1 版），除非传 `labels: 'v2'` | 使用标签 `tape-channel/…`、`tape-group/…`（[TAPI-26 v2](../../../spec/TAPI-26-v2.md)、[TAPI-27 v2](../../../spec/TAPI-27-v2.md)），除非传 `labels: 'v1'` | TapeOutProtocol/TAPs 的编辑要求在合并私密通道与私密群聊草稿之前，标签不要看起来像 TAP 编号。标签在 Stable (v1) 规范里是冻结的，所以改名作为两份规范各自的第 2 版。1.8.1 把它作为选项加入，2.0 把它改为默认。见下文"通道与群聊"。 |
 | `e.tooLarge`、`e.rpcCode`、`e.rpcRevert`、`e.rpcData`、`e.agreed`、`e.disagreed`、`e.failed`、`e.groups`、`e.quorum`、`e.reason`、`e.refusals`、`e.effectiveK`…… | `e.data.tooLarge`、`e.data.rpcCode`…… | `TapeAPIError` 的顶层字段自 1.0 起固定（`name`、`code`、`message`、`data`、`signed`、`httpStatus`、`cause`，签名的提供者错误另有 `ts`、`block`、`id`、`sig`、`error`），其余细节都在 `data` 里。1.x 还把旧名字留作只读的弃用别名。2.0 删除了这些别名：读取它们得到 `undefined`。 |
 | 传给通道模块（`channel.*`，TAPI-26）的选项或参数有误，报 `CHANNEL_INVALID` | `INVALID_ARGUMENT` | 这是其它模块自 1.0 起都遵守的规则：用一个错误码表示"你自己的选项或参数有误"，在发出任何东西之前报出，重试毫无意义。出错的 TAPI-26 数据仍报 `CHANNEL_INVALID`。见下表。 |
-| `createTapeAPI()` 不传 `conform` 时按 TapeAPI 自己的办法解析；`conform: 'tap10'`（实验性）才按 TAP-10 与 TAP-11 的规定解析 | 不传 `conform` 就按 TAP-10 / TAP-11 §2 的规定解析；`conform: false` 是 1.x 的行为（已弃用，整个 2.x 内保留） | 名字如何解析，官方 TAP 已有规定；2.0 默认遵循它们，除非你选择退出。见下文"一致模式成为默认"。 |
+| `createTapeAPI()` 不传 `conform` 时按 TapeAPI 自己的办法解析；`conform: 'tap10'`（实验性）才按 TAP-10 与 TAP-11 的规定解析 | 不传 `conform` 就按 TAP-10 / TAP-11 §2 的规定解析；`conform: false` 是 1.x 的行为（已弃用，整个 2.x 与 3.x 内保留） | 名字如何解析，官方 TAP 已有规定；2.0 默认遵循它们，除非你选择退出。见下文"一致模式成为默认"。 |
 
 ### 一致模式成为默认
 
@@ -40,8 +40,7 @@ const api = createTapeAPI({ rpcUrls, conform: false })
 
 不传 `conform`，客户端按 TAP-10 v1.1 §3 至 §7 与 TAP-11 §2 的规定解析，全部读取钉在一个 TAP-10 钉块上。传 `conform: false`
 （或 `null`）就回到 1.x 的默认行为。有一个测试固定住：`conform: false` 发出的请求、顺序与结果和 1.8 的默认逐一相同，除了 `chain.channelKeys` 报告的 v2 收件房间（标签默认，见"通道与群聊"）和弃用警告。
-`conform: false` 已弃用：每个这样建立的客户端在建立时通过 `onWarning` 报告一次警告（不抛错，也不改变任何行为；SDK 内部建的客户端，如 `forChain` 返回的，不重复报告），2.x 内保留。
-3.0 是否删除尚未决定。
+`conform: false` 已弃用：每个这样建立的客户端在建立时通过 `onWarning` 报告一次警告（不抛错，也不改变任何行为；SDK 内部建的客户端，如 `forChain` 返回的，不重复报告），2.x 内保留，3.x 也保留，最早 4.0 才删除。
 
 不变的：`allChains` 仍默认关闭（打开它会把查询发给其它链的公共节点），`sentinel` 仍是 `'warn'`，`siteStatus` 在两种模式下本来就一样，
 代理工具包本来就按 TAP-11 §2 解析。

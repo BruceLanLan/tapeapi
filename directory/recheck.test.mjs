@@ -29,7 +29,7 @@ test('the committed providers.json is valid, and status.json is keyed by its nam
 test('--validate reads the format only: no network, exit 0 on the committed file', () => {
   const script = fileURLToPath(new URL('./recheck.mjs', import.meta.url))
   // A fetch that throws proves no request is made. / 一旦发请求就抛错，证明不联网。
-  const r = spawnSync(process.execPath, ['--import', 'data:text/javascript,globalThis.fetch=()=>{throw new Error("network")}', script, '--validate'], { encoding: 'utf8' })
+  const r = spawnSync(process.execPath, ['--import', 'data:text/javascript,globalThis.fetch=()=>{throw new Error("network")}', script, '--validate'], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
   assert.equal(r.status, 0, r.stderr)
   assert.match(r.stdout, /format ok/)
 })

@@ -6,11 +6,11 @@
 // --key-env names the operator's own. Its own command, not a mode of tapeapi-verify, whose exit 0 means "stopped".
 // tapeapi-doctor（实验性）：服务方对自己 AI 服务的逐项检查，失败时用中英双语给出缺什么、去哪改、下一条命令；退出码供 CI 使用。只读。
 //
-//   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-doctor 42.1013.tape
+//   npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-doctor 42.1013.tape
 //   node sdk/bin/tapeapi-doctor.js --offline http://127.0.0.1:8080      (from a checkout / 从检出运行)
 import { readFileSync, realpathSync, existsSync } from 'node:fs'
 import { dirname, join, relative, isAbsolute } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createTapeAPI, rpcUrlsFor, operatorOf, CHAINS, chainByKey } from '../src/index.js'
 import { diagnose, formatReport, redactSecret, doctorCommands } from '../src/doctor.js'
 
@@ -27,6 +27,17 @@ export function howRun(file = self, cwd = process.cwd(), version = VERSION) {
   return { run: /[\\/]_npx[\\/]/.test(file) ? 'npx' : 'installed', version }
 }
 const CMDS = doctorCommands(howRun())
+
+/**
+ * @experimental (3.0) The separate package @tapeapi/passport, loaded only when a passport is asked for: installed, or
+ * next to this SDK in a checkout. null when it is not there. Only the bin layer (Node) loads it; src/ never imports it.
+ * 独立包 @tapeapi/passport，只在需要护照时加载：已安装，或检出里与 SDK 并列。没有时为 null。只有 bin 层加载它。
+ */
+export async function loadPassport(binDir = dirname(fileURLToPath(import.meta.url))) {
+  try { return await import('@tapeapi/passport') } catch (e) { if (e?.code !== 'ERR_MODULE_NOT_FOUND') throw e }
+  const file = join(binDir, '..', '..', 'passport', 'src', 'passport-public.js')
+  return existsSync(file) ? import(pathToFileURL(file).href) : null
+}
 
 const USAGE = `tapeapi-doctor ${VERSION} (experimental): check an AI service on TapeAPI, step by step, from the provider's side.
 检查 TapeAPI 上的 AI 服务（服务方视角），逐项给出结论与中英双语的修复提示。
@@ -67,6 +78,11 @@ say (the default of createTapeAPI()), so an unpaid name FAILS: a 2.0 client answ
                        （dev: true 视同 conform: false）
   --escrows <a,b,...>  experimental: escrow instances to compare your contribution across (read-only; a difference is
                        a note, never a failure)
+  --passport           experimental (3.0): one more check after manifest-format, the Agent Passport of this circuit as
+                       the open draft TAPs #83 says (needs @tapeapi/passport; not one of the 14; no passport published
+                       is a skip, not a failure)
+                       实验性：在清单格式之后多查一项 Agent 护照（按未合并的 TAPs #83 草案；需要 @tapeapi/passport；
+                       不属于 14 项；没有发布护照记为跳过，不算失败）
   --version, --help
 
 No service yet? Run the local trial first (no key, no circuit, no cost):
@@ -97,6 +113,7 @@ function parseArgs(argv) {
       case '--offline': o.offline = true; break
       case '--allow-http': o.allowHttp = true; break
       case '--json': o.json = true; break
+      case '--passport': o.passport = true; break
       case '--strict': o.strict = true; break
       // 2.0: the 1.x resolution (conform: false, deprecated) / 2.0：1.x 的解析（conform: false，已弃用）
       case '--no-conform': o.noConform = true; break
@@ -119,6 +136,7 @@ function parseArgs(argv) {
     try { h = new URL(o.target).hostname } catch { throw usage(`${o.target} is not a URL`, `${o.target} 不是网址`) }
     if (!/^(127\.0\.0\.1|localhost|\[::1\])$/.test(h)) throw usage('http is accepted only on 127.0.0.1 / localhost; a public sidecar must be https', '只有 127.0.0.1 / localhost 接受 http；公开的旁路必须用 https')
   }
+  if (o.passport && o.offline) throw usage('--passport reads the chain: it does not go with --offline', '--passport 要读链：不能与 --offline 同用')
   if (o.offline && o.target && !/^https?:\/\//i.test(o.target)) throw usage('--offline applies to a sidecar URL only: a name or a container is read on chain', '--offline 只用于旁路地址：名字或容器要读链')
   if (o.allowHttp && o.target && !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/i.test(o.target)) throw usage('--allow-http applies to a loopback sidecar URL only (http://127.0.0.1:PORT or http://localhost:PORT)', '--allow-http 只用于回环地址上的旁路（http://127.0.0.1:端口 或 http://localhost:端口）')
   return o
@@ -149,7 +167,7 @@ async function main() {
   const api = urlMode && opts.offline ? null : createTapeAPI({ rpcUrls, quorum: 2, chains, ...(urlMode ? { dev: true } : {}), ...(opts.noConform && !urlMode ? { conform: false } : {}) })
   let report
   try {
-    report = await diagnose(opts.target, { api, offline: opts.offline, key, ...(opts.allowHttp ? { allowHttp: true } : {}), model: opts.model ?? undefined, origin: opts.origin ?? undefined, timeoutMs: opts.timeout * 1000, commands: CMDS, ...(opts.escrows ? { escrows: opts.escrows } : {}) })
+    report = await diagnose(opts.target, { api, offline: opts.offline, key, ...(opts.allowHttp ? { allowHttp: true } : {}), model: opts.model ?? undefined, origin: opts.origin ?? undefined, timeoutMs: opts.timeout * 1000, commands: CMDS, ...(opts.escrows ? { escrows: opts.escrows } : {}), ...(opts.passport ? { passport: await passportOption(api) } : {}) })
   } catch (e) {
     process.stderr.write(`tapeapi-doctor: ${redactSecret(String(e?.message ?? e), key)}\n`)
     process.exit(e?.code === 'INVALID_ARGUMENT' ? 2 : 3)
@@ -164,6 +182,12 @@ async function main() {
     if (opts.strict && report.exitCode === 0 && exit === 1) process.stdout.write(`${opts.lang === 'zh' ? '--strict：警告按失败计' : opts.lang === 'en' ? '--strict: warnings count as failures' : '--strict: warnings count as failures / 警告按失败计'}\n`)
   }
   process.exit(exit)
+}
+
+// The doctor's passport check reads with the doctor's own client (its nodes, its processor table). / 用 doctor 自己的客户端读取。
+async function passportOption(api) {
+  const mod = await loadPassport()
+  return mod ? { resolve: (input) => mod.resolvePassport(input, { api: typeof api?.forChain === 'function' ? api.forChain(56) : api }) } : null
 }
 
 const argv1 = (() => { try { return process.argv[1] && realpathSync(process.argv[1]) } catch { return null } })()

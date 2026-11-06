@@ -61,6 +61,9 @@ test('FIXED F-01: unverified traffic to a PAID method (no voucher, junk voucher,
 
 test('F-01b: a fresh self-signed voucher per request buys 6 uncached eth_calls + ecrecover + a signature, outside every budget but the IP ceiling', async () => {
   const { p, chain } = mk({ rateLimit: { windowMs: 60_000, free: 2, paid: 3, ip: 1_000_000 } })
+  // 3.0: the escrow's token() is read once, before the first paid call, and kept; read it first so only the per-call cost is counted
+  // 3.0：托管的 token() 在首个付费调用前读一次并保留；先读掉，这里只数每次调用的成本
+  assert.equal((await p.checkEscrowToken()).status, 'ok')
   const before = chain.state.calls.length
   const K = 20
   for (let i = 0; i < K; i++) {

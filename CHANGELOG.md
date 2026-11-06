@@ -5,7 +5,311 @@ All notable changes to this project are listed here. The format follows
 From 1.0.0 on, a breaking change comes only in a new major version (2.0, then 3.0); before 1.0.0, a minor version could change
 interfaces.
 
-## [Unreleased]
+## [3.0.0] — 2026-11-06
+
+### Breaking changes (3.0)
+
+Five changes need action from some users; each but the first has an option that keeps the 2.x behaviour. What to
+change, who is affected and what does not change: [Upgrading to 3.0](docs/guides/upgrade-3.0.md).
+
+- **Node.js 22 or later**: every package declares `engines` `>=22`; CI tests Node.js 22 and 24. No opt-out: stay on 2.x.
+- **`createAIProxy` refuses a metered path of a format `formats` leaves out** (HTTP 400 `bad_path`, not forwarded)
+  instead of passing it on without a receipt (`refuseOtherFormats` defaults to `true`). Opt-out: `refuseOtherFormats: false`.
+- **`createMcpProxy` refuses a browser `Origin` not in `allowedOrigins`** (HTTP 403, preflight included); clients that
+  send no `Origin` are not affected, and `createMcpEndpoint` is unchanged. Opt-out: `allowedOrigins: '*'`.
+- **`tapeapi-verify` is strict by default**: a receipt that does not verify is an error to the client (HTTP 502, or an
+  error event at the end of a stream). Opt-out: `--no-strict`.
+- **`createMcpProxy` and `tapeapi-mcp` negotiate the upstream revision** (`upstreamNegotiation: 'auto'`: `server/discover`
+  first, then `initialize`). Opt-out: `upstreamNegotiation: 'legacy'`, `--upstream-negotiation legacy`.
+
+Not a change, a longer promise: `conform: false` (the 1.x resolution, deprecated since 2.0) is kept through all of 3.x and
+removed no earlier than 4.0; its one `DEPRECATED` warning per client now says so (it said "kept in 2.x").
+
+### Experimental changes
+
+Everything below is **experimental**, outside the compatibility promise; the 2.0
+default resolution (TAP-10 / TAP-11 §2) is unchanged. In eight groups: the Agent Passport and policy circuits (3.0); interop and the operator kit; the client-side
+budget and spend statement; bounded agents before any audit; hardening from internal reviews; an x402 batch-settlement
+enforcement backend; spec notes and receipt references (a proposal); docs. The escrow that paid calls rely on is
+still not audited and not deployed, so nothing below that pays works on mainnet.
+
+### 3.0: Agent Passport and policy circuits (experimental)
+
+- **`@tapeapi/passport` 0.1.0, a new package next to the SDK: a read-only resolver for Agent Passports**, following an
+  open draft, TapeOutProtocol/TAPs pull request #83 at head `cae25e6` (not merged; every result carries that head, and
+  the package records it with the SHA-256 `7720772c…fca4` of the draft's vectors). The draft has been updated since (now `cbf4e03`): the package implements the text at `cae25e6`, and a package that follows the new text is planned. It decides, at one pinned block under
+  strict agreement, chain first and files last, whether one wallet holds both an ERC-8004 agent identity and a TapeOut
+  circuit and published the link, and answers with one state word (CONFIRMED, BROKEN, AMBIGUOUS, wallet-unset,
+  stale-agent-wallet, UNAVAILABLE), one named reason and every warning. It interoperates by reading ERC-8004's deployed
+  public registry on BNB Smart Chain; it is not an extension of ERC-8004 and is not endorsed by its authors. Nothing on
+  mainnet is known to resolve to CONFIRMED yet. The registries are upgradeable (UUPS; the owner is a proxy shaped like
+  a 3-of-5 Safe): an unknown implementation makes every result UNAVAILABLE. Gifted identities and circuits do not resolve
+  as passports. Without log-capable nodes, site operators and the holder history are reported as not checked, never as
+  passed. Holders whose wallet signs EIP-712 only have no sealed inbox, which is not a passport failure. Also: the
+  registration file written from chain reads, an A2A card for CONFIRMED only (display only, never a source of signers),
+  and the optional `./feedback` subpath (§10, conditional on the unmerged review draft #54). The draft's 147 vectors pass
+  as a pinned test fixture (not in the package); TapeAPI's own extra cases (capital look-alikes, decimal literals in a
+  registration file) are kept apart. In the SDK: the experimental `api.chain.processorNumber`, and the commands
+  `tapeapi passport`, `tapeapi-doctor --passport` (one check after manifest-format, not one of the 14),
+  `tapeapi connect --passport` and `tapeapi init --passport` (writes `.well-known/agent-registration.json` locally after
+  read-only checks and prints the holder's own `putFile` steps; it sends nothing). They load the package only when asked
+  and say how to get it when it is missing. The holder console (the one `tapeapi init` points to) proposes a 30-day
+  delegation instead of 90 days, W-1's default limit; the holder can type any whole number of days from 1 to 366 (7 and
+  90 included). `tapeapi-doctor` warns from 7 days left instead of 30, and so do the new-api sidecar's `RENEW` line and
+  its daily check (new `--delegation-warn-days` / `--delegation-escalate-days`, 7 and 3). Guide:
+  [Agent Passport](docs/guides/passport.md).
+- **New package `@tapeapi/policy-circuit` 0.1.0 (experimental, next to the SDK, never part of it): policy circuits after
+  the Policy Circuit Gate TAP draft (TAPs pull request #84, a conditional draft, submitted, now a draft PR, not merged; followed at its head
+  `0b73174`: a class and a unit per asset in the tables, and an asset the tables do not list overflows).** A spending rule written as a `tapnet/1` circuit (128 input pins, 8 output pins, at most 49,152 bytes) is
+  re-run over a 128-bit request word built from the request and the signed tables (amounts counted in the request's own asset's unit, rounded up and saturated;
+  decimal strings for integers above 2^53, an unsafe JS number refused); `PolicyBinding` and its revocation are checked in
+  TAP-11's EIP-712 domain on the SDK's `sig` and `canon` (`checkPolicyBinding`, `verifyPolicyBinding`; revocation
+  signers recovered, not taken as given; contract binders only through an EIP-1271 reader at a TAP-10 pinned block,
+  otherwise `binderChecked: false`); and `createPolicyGate().admit()` gates a service's requests and keeps a trace that
+  replays, failing closed in every row of the draft's failure table. Fixed in code: bindings to a mandate (TAP-18, from #47,
+  merged as a Draft; merging is not adoption) or an escrow session (#59, #60) are `conditional` at best, never
+  enforceable (`enforceable` reports the signer's authority, never that anyone enforces the binding); labels are display only; no file, no verdict;
+  an x402 batch-settlement channel is never an escrow-session subject (`policy-subject-x402`), and a gate for an
+  escrow-session binding needs the session (`policy-session-required`). The gate reads the binder again before every
+  decision, so a transfer of the circuit ends the earlier holder's bindings at the next decision. It is an off-chain check
+  that binds only the parties that check it, not a signing guardrail; nothing is deployed for it and it sends no
+  transaction. Tests: all 188 cases of the draft's vectors (a copy pinned by SHA-256, not in the package), the checks
+  outside them, the enforceable ladder over every binding vector and random bindings, and a differential test against
+  the draft's Python TAP-02 reference (when `python3` is present). Not in it: a budget-to-circuit compiler and a server
+  hook. Guide: [Policy circuits](docs/guides/policy-circuit.md) (en, zh-CN).
+- **The 0.x packages' versions (release rule):** `@tapeapi/interop`, `@tapeapi/passport` and `@tapeapi/policy-circuit`
+  keep versions of their own, and one also takes a new 0.x version whenever its `@tapeapi/sdk` or `@tapeapi/server`
+  range changes, so two releases never carry a tgz of the same name and version with different contents.
+
+### Added: interop and the operator kit (experimental)
+
+Interop and the operator kit, both **experimental**: outside the 2.x compatibility promise, they may change or go away
+in any 2.x release, and the 2.0 default resolution (TAP-10 / TAP-11 §2) is unchanged. Experimental: visitor grants. A
+visitor can let site A call a few named methods of service B for a short time, and revoke it. B checks the grant;
+nothing in it moves money. This is a prototype in the SDK, not a TAP. Every cross-app call is an off-chain request, so
+the site is no longer "100% on-chain"; grants and revocations are enforced by the called service only and are useless
+against a malicious one; a receipt proves what was signed, not that the data is right, nor which upstream model ran;
+until shells check it, the visitor compares the caller named in the grant with the site the wallet names. The escrow
+that paid calls rely on is still not audited and not deployed, so nothing below that pays works on mainnet; the
+interop examples run on the SDK's fake chain and in tests only. TAP-11, TAP-13 and TAP-14 to TAP-18 are merged as Draft (merging is not
+adoption). The new guide page is [Interop between apps and containers](docs/guides/interop.md).
+
+- **`examples/container-interop/`: three kinds of container-to-container interop with the existing API**, with a
+  command-line entry (`run.mjs`) and a gaps table in its README: (a) an agent calls another container's paid method
+  inside the cap of a mandate (the escrow is not audited and not deployed: not usable on mainnet); (b) a task thread
+  from container A to container B, with A's own acceptance check; (c) two containers in a private channel (TAPI-26 v2
+  labels, the default since 2.0, passed explicitly) and a signed receipt for a request. A receipt proves only that the
+  container signed that answer to that request. Fake chain only, on the 1.x resolution path (its own client says
+  `dev: true`; the clients it takes from the agent-service demo world pass `conform: false`).
+- **`examples/app-interop/` (a local demo): one app calls another through TapeAPI.** App A finds app B by name, reads
+  its manifest, calls a free method with a visitor grant and a priced one with a voucher, and checks every answer.
+  Fake chain only; the escrow there is a model (the contract is not audited and not deployed). Its clients read the fake
+  chain the 1.x way and say so with `dev: true`: the 2.0 default refuses the fake chain's own hub and factory, so the
+  conformance mode is not exercised. `examples/app-interop/wallet-render/` is a local, static page for checking how a
+  wallet displays the grant before signing (`eth_requestAccounts`, `eth_chainId` and `eth_signTypedData_v4` only; no
+  transaction, no network request), with an offline checker of the copied result.
+- **Visitor grants between apps: new package `@tapeapi/interop` (experimental, a prototype), next to the SDK.** Not a
+  specification and not a TAP; no service knows the format, and the whole package is outside the compatibility promise.
+  A visitor's wallet signs a `VisitorGrant` (its own EIP-712 domain "TapeAPI Visitor Grant", never TAP-11's) that lets
+  one app call a few methods of another app's service for a short time (1 hour by default, 7 days at most), a bounded
+  number of times, with no payment; the first field is a statement generated from the other fields. The calling app
+  adds the top-level request member `grant` with a call proof signed by its one-off key (`withGrant`); the called
+  service checks it (`verifyVisitorGrant`, `grantMethods`), counts it, takes revocations (`grantRevokeHandler`, free
+  method `grant_revoke`) and writes `result.grant` into its signed answer; refusals are `BAD_REQUEST` with the message
+  prefix `grant: <reason>` and no `error.data`. Self-test vectors `spec/vectors/interop-visitor-grant.json`, reproduced
+  by `verify.py`.
+  Boundaries: a cross-app call is an off-chain request; revocation and the count are enforced by the called service
+  only; the reference store `memoryGrantStore` is in memory, one process, and loses revocations, counts and replay
+  records on restart (a production service persists them); its revocations are bounded (`maxRevocations`, 100 000 by
+  default), dropped once their grant has expired, and a full store refuses a new one. An answer lost after delivery
+  is counted once: when the SDK retries the same id (after a transport failure, on the next endpoint), the service
+  sends the envelope it signed the first time again, byte for byte (not signed or counted again), if it still keeps it
+  (bound to the grant, the id and the request, for at most 300 seconds after its `ts`; `memoryGrantStore`'s
+  `maxAnswers`, 1 000 by default, and `maxAnswerBytes`, 16 MiB); otherwise, as before, `grant: replayed`. Until shells check it, the visitor
+  compares the caller named in the grant with the site the wallet names; how wallets display it was not tested. The
+  grant check's chain reads (`chainReadsFromApi`) follow the 2.0 default resolution: `siteStatus` at a TAP-10 pinned
+  block, with opening and activation checked and a cache of at most 60 seconds, so a name the default `resolve`
+  refuses is refused by the grant check too (`grant: caller-not-opened`, `grant: caller-unpaid`, and
+  `audience-not-opened`, `audience-unpaid` for the called service itself).
+  The check reads the called service's holder and the caller's name only after its cheap steps and the visitor's
+  signature, so a grant that fails one of them costs no chain read. `grantMethods` gives a call with a grant its own
+  deadline (`timeoutMs`, 20 seconds by default, `GRANT_HANDLER_TIMEOUT_MS`; keep it below the provider's
+  `handlerTimeoutMs`): past it the call is answered `INTERNAL` and not counted, even if the handler finishes later.
+  An optional rate-limit window per (caller, visitor), keyed on what the check proved and shared by all their grants,
+  lives in the grant store (`grantMethods`' `perGrantWindow: { calls, windowS }`, off by default; `memoryGrantStore`'s
+  `take`); one more call is refused `grant: rate-limited` and not counted. The server's limiter is unchanged: a call
+  with a grant still spends the IP's free budget, and bad grants are not counted in its failure budget.
+- **`@tapeapi/server`: handlers get a read-only `ctx.request`** (experimental): a frozen JSON copy of the request's
+  top-level members other than `method` and `params` (its `id`, a `voucher` if sent, and any member TAP-13 does not
+  define, such as `grant`). Nothing the provider signs or bills changes. Two more experimental members serve a retry
+  of the same id: `ctx.onSigned(fn)` is told the envelope of this call once it has passed every check and is about to
+  be sent, and a handler may return `ctx.resend(env)` to send again an ok envelope this provider signed earlier over
+  this very request (same id, method and params; checked), on a free call only.
+- **`examples/new-api-sidecar`: the operator's kit** (experimental; `OPERATOR-KIT.md`, both languages). For a relay
+  that already runs new-api: `docker-compose.sidecar.yml`, `tapeapi-sidecar.env.example` (placeholders only) and
+  `add-sidecar.sh` add the sidecar to the existing compose under a hostname of its own (the API hostname stays as it
+  is; the script reads only the address in `/tapeapi/v1/health`, never a key). Two new optional variables, in the
+  sidecar (`server.mjs`) and in the Worker (`examples/ai-proxy/worker.js`, with `wrangler.toml`): `OPERATOR_SITE_URL`,
+  where `GET /` and `HEAD /` on the sidecar's host answer 302 (https, no credentials, query or fragment, not
+  tapeapi.fun, not the sidecar itself; anything else keeps the sidecar in setup mode, naming the variable); and
+  `SIGNER_KEY_GENERATE=1` with `SIGNER_KEY_FILE`, which makes the signing key on the operator's own server when the
+  file does not exist yet (mode 0600, created exclusively, never overwritten; only the address is printed; not when
+  `SIGNER_ADDRESS` is set). The holder console's first delegation still signs only for the key its step 3 makes, so a
+  key made on the server cannot be delegated from the console today; `OPERATOR-KIT.md` says so. A daily check for the
+  operator's **own** GitHub repository, `templates/tapeapi-daily-check.yml` with `templates/daily-check.mjs`: once a
+  day, `tapeapi-doctor` by name with the 2.0 default resolution and the price converter's `--check`; the activation's
+  end and the fee come from the doctor's structured `--json` fields (`paidUntilSeconds`, `monthlyFeeWei`); 30 days or
+  fewer left, or a `monthlyFee()` that is no longer 0, is a warning, and a failed check, no activation, 14 days or
+  fewer, or a price drift needs action; an alert is an issue in that repository, nothing else. It uses no secret and
+  pins every action to a commit; `TAPEAPI_COMMIT` is the commit of this repository the operator has read. Nothing in
+  the kit names an operator, and the rules are the same for every service.
+- **reconcile and new-api, end to end on a mock.** `examples/new-api-sidecar/fake-new-api.mjs` also serves the usage
+  log in the shape `tapeapi reconcile --preset new-api` expects (`GET /api/log/self`: `data.items` with
+  `upstream_request_id`, `model_name`, `prompt_tokens`, `completion_tokens`, `quota`, `created_at`; `GET /api/log/token`
+  for a relay key, a bare `data` array), one row per answered call, `quota` from its own ratios; the new
+  `reconcile-new-api.test.mjs` runs the sidecar (`FORMATS=openai-chat`), `tapeapi-verify --log`, the pulled export and
+  `tapeapi reconcile --preset new-api --amount-scale <quota_per_unit>` through the real binary: every row matched by
+  `upstream_request_id` with amounts compared (exit 0), then a row without that id joined by time, model and tokens, a
+  differing row, a receipt with no row and a row with no receipt (exit 1), and the dashboard CSV's headers refused
+  (exit 2). The reconcile guide gains a "With new-api" section with the export commands and the caveat that the
+  dashboard's CSV export is another file. The field names are still read from new-api's source, not checked against a
+  real instance, and the mock is not new-api.
+
+### Added: a client-side budget and a spend statement (experimental, 3.0)
+
+- **A client-side budget from your own policy file (experimental, 3.0): `createVerifyingFetch({ policy, budgetStore })`,
+  `ai.createBudget`, `ai.budgetFileStore`, `ai.memoryBudgetStore`.** The same `{ "tapeapiPolicy": 1, rules }` file that
+  `tapeapi reconcile --policy` reads now also refuses a call **before it is sent** when its worst case (`ai.maxAmountOf`
+  over the request's declared output limit and its size in bytes) would take a covering rule over its limit:
+  `BUDGET_EXCEEDED` (the code WebMCP's spending budget already used; here `data: { reason: 'budget-cap', rule, period,
+  window, limit, currency?, cap, spent, worstCase }`), or
+  `INVALID_ARGUMENT` with `data.reason` when the call cannot be bounded (no output limit, no price-table entry, no price
+  in the rule's currency, a body that is not JSON, a store that cannot be written). The store is an append-only
+  JSON-lines file (mode 600) of verified receipt envelopes and one "sent" line per call, so the count survives a
+  restart and a call with no verified receipt counts at its worst case, unless it ended in a definite failure that
+  claims nothing (an HTTP 4xx or 5xx with no receipt): then a "released" line drops it (a timeout or a broken connection
+  keeps counting). `tapeapi receipts` and `tapeapi reconcile` read the store as a receipt file (sent and released lines
+  are skipped, not listed as skipped). The agent kit's limiter takes the same
+  budget: `createSpendLimiter().payer({ budget, tokenDecimals })` admits each voucher's price before it is handed out,
+  and a voucher released before it is accepted gets an offsetting released line.
+- **`tapeapi-verify --policy <file> [--budget-store <file>]` (experimental, 3.0)**: the same budget in the local proxy
+  (Claude Code, Codex, OpenAI SDKs through it). A refused call gets HTTP 400 with `x-should-retry: false` (code
+  `budget_exceeded`, or `budget_no_limit`, `budget_no_price`, ... when it cannot be bounded), as the proxy's other
+  refusals before forwarding, and is not forwarded; its `--log` line carries `budget`. Off unless given.
+  A convenience in your own process, not an enforcement anyone else can rely on; it bounds the prices the receipts
+  claim, not what anyone pays, and needs no escrow. Off unless given: defaults are unchanged.
+- **`tapeapi receipts statement --receipts <file|dir> --from <t> --to <t> [--policy] [--mandate]` (experimental,
+  3.0): a spend statement** per service, model and UTC day, JSON or text (en, zh), with the policy's and the
+  mandate's caps alongside, counted as `reconcile` counts (its totals equal reconcile's on the same files). Signed by
+  nothing: it is the agent's or buyer's own summary. The agent kit's `spendStatement` / `spendEvidence` (phase 1) are
+  not reused: they state an escrow channel's `claimedOf` at delivery and need an escrow.
+- The policy-file code (`policyOf`, `policyCheck`, `claimOf`, the amount helpers) moved from `reconcile-checks.js` to
+  `sdk/src/policy.js` so the fetch can use it without an import cycle; `reconcile-checks.js` re-exports every name.
+  `tapeapi reconcile`'s policy note now reads "reconcile enforces nothing" instead of "it was not enforced when the
+  calls were made" (a client-side budget may have read the same file).
+
+### Changed: bounded agents before any audit (experimental, phase 1; the escrow is not audited and not deployed, so none of this works on mainnet)
+
+- **Spend limiter: one call is bounded by the method's listed price too**: the per-call ceiling is the lower of `maxCallPrice` (or 10% of the cap) and the method's `priceBEM` (`spendDecision({ listedPrice })`; `api.call` passes `extra.method` to the payer), and a method listed free is never paid. With the client-side budget above (`payer({ budget, tokenDecimals })`), the two compose as an AND in a fixed order: the limiter's own rules first (the per-call ceiling, the cap over `claimedAtCheck`, the stops; pure, in the token's smallest unit), then the budget's rules (the voucher's price in the token's label, per covering rule of the policy file). A limiter refusal writes no budget line; a budget refusal, or any later failure before the voucher leaves, releases the lease and offsets the line; the listed price never changes what the budget counts (the voucher's price, not the method's).
+- **Close-out in explicit, resumable steps (BEM drill F10)**: `closeOutPlan` adds `sendNow` / `sendLater` (a withdraw before its window reverts and wastes gas); new `closeOutNext` and `kit.closeOutStep` hand out requestWithdraw, then nothing through the 48-hour cooldown, then withdraw, each step once, from the chain at a pinned block and a JSON state the console keeps, so a restart in the window resumes.
+- **Buyer's scan before funding (session keys survive a circuit's transfer)**: new `kit.inheritedSessions` reads the `SessionAuthorized` logs of the mandate's channels from a block at least 30 days old and reports the live sessions the console's history does not record (on the container path, a previous holder's); `holderPlan({ sessionScan })` refuses on them (`inherited-session-live`), on logs it cannot read (`session-logs-unavailable`) and on a scan that starts too late (`session-scan-short`), or with `refuse: false` returns the facts. It makes the exposure visible; it cannot end a session. The scan needs `deployBlocks` (each escrow's deployment block): a node whose log window does not reach back answers an empty list rather than an error, so the escrow's own constructor log there must be served, or the scan is `session-logs-unavailable`; `fromBlock` must be strictly older than 30 days, and a session whose expiry is the current second counts as live, as `settle` reads it.
+- **Provider start-up checks the escrow's token**: `listen()` reads the escrow's `token()` and refuses to start when it is not the token the manifest prices in (BEM on BNB Smart Chain, or `createProvider({ escrowToken })`; `UNSUPPORTED_PAYMENT_TOKEN`, reason `escrow-token-mismatch`; with `dev` a log line); an escrow without `token()` or nodes that cannot answer are logged, never taken for a match; Workers call `checkEscrowToken()`.
+- **3.0: the escrow token check guards every paid call, on Workers too**: `handleRequest()` and `invoke()` run it before the first paid call, so a Worker no longer awaits `checkEscrowToken()` itself, and an escrow without `token()` or nodes that cannot read it now refuse paid calls as a mismatch does: an unsigned HTTP 503 `UNSUPPORTED_PAYMENT_TOKEN` (`data.reason` `escrow-token-mismatch`, `escrow-no-token` or `escrow-token-unreadable`), nothing signed or billed; a refused call counts against the caller's free budget, as unverified traffic does. A definite answer (match, mismatch, skipped) is kept for the instance, and `checkEscrowToken()` called directly returns it instead of reading again (review R30B-2); a failed read is tried again at the next paid call and never kept as a match. The check is skipped, and paid calls go on without it, with no priced method, no escrow, `settlementFacts` or `enforcement` configured, no `rpcUrls`, or a chain other than BNB Smart Chain without `escrowToken`. Free methods, `listen()` refusing to start on a mismatch, and `dev` are unchanged; `stats().escrowTokenRefused` is new. `api.tapeapi.fun` and `relay.tapeapi.fun` serve free methods only and configure no escrow, so they are not affected.
+- **The unsigned 503 `UNSUPPORTED_PAYMENT_TOKEN` is documented (docs only)**: [TAPI-22](spec/TAPI-22.md) §3.2 (en, zh;
+  an informative note, no rule changed; TAPI-21 is untouched) and the provide and consume guides say what its three
+  reasons mean to a caller: `escrow-token-mismatch` is kept for the provider instance (do not retry), while
+  `escrow-no-token` and `escrow-token-unreadable` are read again at the next paid call. The SDK reports the answer as
+  `PROVIDER_UNAVAILABLE`, as before.
+
+### Fixed: hardening from internal reviews (experimental features above)
+
+- **The client-side budget counts more conservatively (experimental, 3.0, internal review BR-1..BR-9).** A receipt that
+  answers a call now counts under the names the request went by as well as the reported model (an alias or a dated
+  snapshot no longer escapes a model rule), in the window of the call's own time (not the signer's clock), and at the
+  call's worst case where it claims nothing in the rule's currency (no usage, or a reported model the price table lacks);
+  each receipt answers one call. A model the price table does not know is covered by every model rule of its service.
+  Refused as unbounded (`budget-no-limit`): an output limit of 0, a Chat `n` that is not a whole number of at least 1,
+  and a Responses call with `previous_response_id` or `conversation`. A store whose last line was cut short no longer
+  swallows the next line; a receipt envelope carrying extra top-level keys is always read as a receipt; budgets on one
+  store file read each other's new lines before every admit, under a lock file `<store>.lock` (flag wx, stale after 30 s)
+  when `budgetFileStore` is given `writeFileSync` and `unlinkSync`, as `tapeapi-verify --budget-store` does. A call to a
+  model the price table lacks names that model and the rule's model in its refusal. `tapeapi-verify --save-requests` no longer
+  saves a call the budget refused. `tapeapi reconcile`: a time with no offset (`2026-10-22 10:00:00`) is read as UTC, in
+  the bill and in `--since` / `--until` alike (it was the machine's zone); `--map` naming a key twice or a column the header has twice is a usage mistake, and a row
+  whose id belongs to a receipt already joined (the same id billed twice) stays bill-only instead of being joined by time.
+- **Visitor grants hardened (experimental, internal review IR-1..IR-6, IR-12).** The check order is now call proof,
+  replay (a resend of a call still in flight is refused there too, before any read or the per-grant window), the
+  visitor's signature, then revocation, so a forged grant cannot probe a visitor's revocations, and a revoked grant is
+  never answered with a kept envelope; a positive EIP-1271 answer is cached for `cacheS`. `memoryGrantStore` keeps
+  revocations of grant hashes it never saw within a budget of their own (`maxUnseenRevocations`, half of
+  `maxRevocations` by default), so
+  throwaway keys cannot crowd out the revocations of grants it has seen. A call id that is not well-formed Unicode is
+  refused. `chainReadsFromApi` caches `eth_getCode` per address and bounds its cache (`maxCacheEntries`).
+  `grantManifestProblems(manifest, { methods })` names a grant method whose handler `grantMethods` did not wrap.
+  [spec/TAPI-28.md](spec/TAPI-28.md) (en, zh) states the new order and the limits that remain (a revocation names no
+  service; holder checks are point reads; a forged signature can cost one EIP-1271 read). New refusal vectors
+  `spec/vectors/interop-visitor-grant-negative.json`: 48 requests refused at TAPI-28 steps 1 to 8, each with its
+  reason, and control cases, rebuilt byte for byte by the SDK tests and recomputed independently by `verify.py`;
+  `interop-visitor-grant.json` is unchanged. Still a prototype, not a TAP.
+- **Close-out at the finalized block, by the chain's time, and replacing a stuck step**: `closeOut` / `closeOutStep` read their facts at the block the nodes call finalized, and a step is due only once that block's time says so (a clock ahead of the chain no longer hands out a withdraw that reverts); `inheritedSessions` judges liveness by the earlier of the clock and the pinned block's time. New `closeOutSent(state, { provider, nonce })` records the nonce a step was sent with; a step handed out again then carries `replaceNonce`, to be sent with that nonce so it replaces the stuck transaction instead of a second `requestWithdraw` restarting the 48 hours.
+- **Close-out state from the future**: a kept state whose `issuedAt` is after `now` (a clock set back, a file edited by hand) no longer holds a step back for good; the step is handed out again and logged (`state-from-future`).
+- **Tests (no change to shipped code):** property tests with a seeded PRNG and no new dependency (receipts, prices,
+  `toolsSha256`, reconcile, the voucher digest, grants); three timing-dependent tests made deterministic with an
+  injected clock instead of retried; the budget's UTC day windows and the MCP caller tag's day no longer depend on when
+  a run happens; every child process a test file starts itself is bounded (300 s, then SIGKILL; six that already had a
+  shorter bound keep it), while the children that an example script starts when a test runs it are not.
+- **Release check (no change to shipped code):** the SDK tarball's unpacked-size guard in `scripts/packages.test.mjs`
+  is 3 MiB (it was 2.5 MiB; the SDK unpacks to 2,593,875 bytes). It catches a file packed by mistake; it is not a budget.
+
+### Experimental: x402 batch-settlement enforcement backend
+
+- **Prototype, experimental: `{ enforcement: 'x402-batch' }`, x402
+  batch-settlement channels as the enforcement behind the phase-1 checks, the spend limiter and the budget.** The
+  enforcement is now a pluggable backend (`enforcementBackend`, `ENFORCEMENTS`; `createProvider({ enforcement })` on the
+  provider side); `escrow-channel` moved behind it with no change in behaviour. The new backend uses contracts already
+  deployed on BNB Smart Chain that we did not write and have not reviewed (`x402BatchSettlement`
+  `0x4020074e9dF2ce1deE5A9C1b5c3f541D02a10003`, `Permit2DepositCollector`, Permit2; their repository carries external
+  review reports we have not assessed): `verifyMandate(signed, { enforcement: 'x402-batch', x402: { terms } })` reads the
+  channel at one pinned block, `x402Payer` signs the agent key's vouchers and stops at its `sessionExpiry` (default one
+  hour: the contract has no expiry), `x402Acceptance` checks them for a provider and gives it its own `claim` and
+  `settle`, `x402Tx` builds every unsigned transaction. EOA payers only (a TapeOut container's `isValidSignature`
+  answers 0: `x402-payer-not-eoa`); no contribution, no treasury; the service sets the withdraw delay and the client
+  refuses one above its cap (48 hours by default); what a receipt proves is unchanged. The SDK sends nothing and pays
+  no gas for anyone. Tested on a fake contract and once on a local fork; never on mainnet. See
+  [Container agents](docs/guides/container-agents.md#experimental-x402-batch-settlement-channels-as-the-enforcement-experimental).
+
+### Spec notes and receipt references (proposal)
+
+Two kinds of change. The first three entries are editorial: specification and documentation wording only; no rule,
+field, digest or vector changed. The last three are a proposal, not normative: the two helpers and the sidecar option
+are experimental and change nothing unless called or set, and none of the three is part of TAPI-21 or of any TAP.
+
+- **TAPI-20 §3.8, two informative notes**: `toolsSha256` covers exactly `name`, `title`, `description`, `inputSchema`, `outputSchema` and `annotations` of each tool, and nothing else (not `icons`, not `_meta`, nothing outside the tools; pages merged first); the reference MCP proxy and `tapeapi-mcp` pass on only those members. A server whose `tools/list` depends on the caller's authorization (allowed by MCP 2026-07-28) cannot be pinned by one whole-list digest: callers that see another list are refused (`tapeapi-mcp` refuses the calls; the proxy answers `TOOLS_CHANGED`). Recorded in the `Revision` row.
+- **What a receipt's answer hash covers**: TAPI-21 §1 and §8 (with a new `Revision` row), the READMEs, the guides (AI providers, billing layer, reconcile, receipts and payment protocols, en and zh-CN), the AI sidecar example, the verify page and the notes of `tapeapi connect`, `tapeapi receipts` and the relay trial no longer say "exactly which response bytes": a whole answer is hashed as its exact bytes, a stream as its event data read by the §3.5 rule (not its comments, event names, line ends or chunking).
+- **Receipts and payment protocols: dated again**: the x402 and AP2 files were rechecked on 2026-10-27 (read-only) and each statement says which reading it comes from: x402's v2 specification changed on 2026-10-26 (an optional `errorMessage`; still no request or response hash), the batch-settlement directory now also holds EVM, SVM and Cloudflare network bindings (not summarised), AP2's latest tag is still `v0.2.0`.
+- **`ai.receiptRef(envelope)`** (`@experimental (3.0)`): one stable reference per signed usage receipt, the SHA-256 of the canonical JSON of its eight members (`container` and `sig` in lower case, `v` as 27/28, other top-level members left out), so the header form, the SSE comment and the `receipt` method's copy have the same name, for other records (a payment record, a review, an on-chain job) to cite. It identifies a receipt and proves nothing until the receipt is verified.
+- **`ai.priceRefOf(field)`** (`@experimental (3.0)`) and **`createAIProxy({ priceRef: true })`** (off by default): the SHA-256 of the canonical JSON of the manifest's `ai.models`, reduced to the members TAPI-20 §3.9 defines, signed into every receipt as `result.priceRef` when the option is on, so a verifier can tell which price table priced a receipt. `verifyUsageReceipt` reports a malformed `priceRef` as a shape problem and a different basis as a warning; a different basis never excuses an amount that does not match. Off (the default), receipts are byte for byte as before; turning it on changes the signed content of every receipt, which the reference verifiers of 3.0 accept and ignore, while the submitted AI-receipt TAP draft does not allow a sidecar to add a result member. Neither addition is part of TAPI-21 or of any TAP.
+- **Two new vector files**, made by the real code (`sdk/test/receipt-refs-vectors.test.mjs`) and checked independently by `spec/vectors/verify.py`: `spec/vectors/tapi-21-price-ref.json` (five price tables, four receipts signed with and without the option, a receipt checked against another table) and `spec/vectors/tapi-21-receipt-ref.json` (the references of eleven receipts, re-serialisations that keep one, changes that do not). No existing vector file changed.
+
+### Added: docs (experimental documents)
+
+- **Guide: [Interop between apps and containers](docs/guides/interop.md)** (en, zh-CN; experimental), with the boundary
+  paragraph above. Not on the home page, the directory or the playground.
+- **[Receipts and payment protocols](docs/guides/receipts-and-payment-protocols.md)** (en, zh-CN): where a TapeAPI usage receipt sits next to x402, AP2, ERC-8004, ERC-8183 and IETF attestation-receipt drafts, and how a bounded-agent mandate lines up with an AP2 Payment Mandate (direction only: no adapter, no payment bridge); primary sources dated, unverified points marked.
+- **[Circuit Jobs](docs/guides/circuit-jobs.md)** (en, zh-CN; 3.0, documentation only): what the draft TAPs #85 (submitted, now a draft PR) describes (an
+  ERC-8183 job settled by the #74 dispute game), why TapeAPI ships no code for it (its Solidity reference is not audited and not
+  deployed, nothing deployed, an upgradeable kernel, no demand evidence), and how it relates to receipts, the passport and policy
+  circuits. Also: one table of the delegation and binding windows of TAP-18 (#47), #84, #83 W-1, TAP-11 and what `tapeapi init`
+  and the console propose today ([Agent Passport](docs/guides/passport.md#windows-side-by-side)), and one sentence in
+  the receipts guide on the experimental x402 batch-settlement backend.
+- **Release candidates (release rule):** a 3.x RC is not published as a GitHub release unless the server and every 0.x
+  package first take the SDK by a range that accepts the pre-release (such as `^3.0.0-0`); `^3.0.0` does not, so npm
+  would look for `@tapeapi/sdk` on the registry. `scripts/packages.test.mjs` fails when the SDK is a pre-release and a
+  range does not match it.
+- **TAP status brought up to date (2026-11-06).** Seven of our drafts are merged as Draft (TAP-11, TAP-13, and, from 2026-11-03,
+  TAP-14 to TAP-18; merging is not adoption); seven are submitted (in review; #60 is now a draft PR). The README, the roadmap,
+  the guides and the code comments name the numbered drafts by number, with the pull request next to it. Text only; no behaviour
+  changed.
 
 ## [2.5.0] — 2026-11-06
 
@@ -2397,7 +2701,7 @@ third-party audit.
   ChannelBus from a phone wallet.
 - Test vectors with an independent Python verifier; about 630 JavaScript tests and 169 Foundry tests.
 
-[Unreleased]: https://github.com/BruceLanLan/tapeapi/compare/v2.5.0...HEAD
+[3.0.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.5.0...v3.0.0
 [2.5.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/BruceLanLan/tapeapi/compare/v2.2.0...v2.3.0

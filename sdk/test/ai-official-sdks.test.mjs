@@ -213,7 +213,7 @@ test('FIXED G1-M14: tapeapi-verify --strict: with the receipt stripped, the open
   const url = `http://127.0.0.1:${srv.address().port}`
   proxy = createAIProxy({ upstream: { baseUrl: 'http://fake.local/v1' }, fetch: fake.fetch, manifestBase: manifestBase(`${url}/tapeapi/v1`), signerKey: KEY, models: MODELS, allowHttp: true, rateLimit: false, log: () => {} })
   await proxy.ready
-  const child = spawn(process.execPath, [fileURLToPath(new URL('../bin/tapeapi-verify.js', import.meta.url)), '--dev', url, '--port', '0', '--strict'], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../bin/tapeapi-verify.js', import.meta.url)), '--dev', url, '--port', '0', '--strict'], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   let err = ''; child.stderr.setEncoding('utf8'); child.stderr.on('data', (d) => { err += d })
   try {
     const local = await new Promise((ok, fail) => {
@@ -343,7 +343,7 @@ async function verifyCli(args = ['--strict']) {
   const url = `http://127.0.0.1:${srv.address().port}`
   proxy = createAIProxy({ upstream: { baseUrl: 'http://fake.local/v1' }, fetch: fake.fetch, manifestBase: manifestBase(`${url}/tapeapi/v1`), signerKey: KEY, models: MODELS, allowHttp: true, rateLimit: false, log: () => {} })
   await proxy.ready
-  const child = spawn(process.execPath, [fileURLToPath(new URL('../bin/tapeapi-verify.js', import.meta.url)), '--dev', url, '--port', '0', ...args], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../bin/tapeapi-verify.js', import.meta.url)), '--dev', url, '--port', '0', ...args], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   let err = ''; child.stderr.setEncoding('utf8'); child.stderr.on('data', (d) => { err += d })
   const close = async () => {
     await new Promise((ok) => { if (child.exitCode !== null) return ok(); child.once('exit', ok); child.kill('SIGTERM') })
@@ -432,7 +432,7 @@ const upToEndOf = (which, text) => {
 }
 for (const strict of [true, false]) {
   test(`FIXED SSE-END, SSE-EOF, SSE-BOM: tapeapi-verify${strict ? ' --strict' : ''}, read raw: the logged verdict is the same one event per chunk, whole, and with the end and the rest in one chunk; ${strict ? 'the stream goes on up to its end only' : 'every byte goes on'}`, async () => {
-    const cli = await verifyCli(strict ? ['--strict'] : [])
+    const cli = await verifyCli(strict ? ['--strict'] : ['--no-strict'])
     const H = { 'content-type': 'application/json', authorization: 'Bearer sk-demo', 'x-api-key': 'sk-demo', 'anthropic-version': '2023-06-01' }
     const CALL = {
       responses: [`${cli.local}/v1/responses`, { model: 'demo-chat', stream: true, input: 'secret answer never' }],
@@ -547,8 +547,8 @@ test('FIXED SSE-END: tapeapi-verify --strict ends the answer at a bare CR that e
 // FIXED SSE-LOG：非严格模式下，openai SDK 在 [DONE] 处挂断，而旁路一直保持连接：CLI 原先只在上游关闭时核验回执，客户端先挂断就
 // 没有任何结论。现在流一结束就核验并记录。旁路的连接由一道门保持，测试在结论记录之后才打开（否则 `until` 的 10 秒上限让测试失败），
 // 不依赖时序。
-test('FIXED SSE-LOG: tapeapi-verify without --strict logs its verdict when the client hangs up at the end while the upstream keeps the connection open', { skip }, async () => {
-  const cli = await verifyCli([])
+test('FIXED SSE-LOG: tapeapi-verify --no-strict logs its verdict when the client hangs up at the end while the upstream keeps the connection open', { skip }, async () => {
+  const cli = await verifyCli(['--no-strict'])
   try {
     const oa = new OpenAI({ baseURL: `${cli.local}/v1`, apiKey: 'sk-demo', maxRetries: 0, fetch: cli.fetch })
     for (const cut of CUTS) {

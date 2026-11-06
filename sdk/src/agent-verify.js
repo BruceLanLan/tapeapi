@@ -14,7 +14,7 @@
 // Phase 1 (experimental, local chains only; internal design notes, phase 1): with
 // { enforcement: 'escrow-channel' } a mandate that names funds is checked against the escrow channels that enforce it.
 // 阶段 1（实验，仅本地链）：带 { enforcement: 'escrow-channel' } 时，带金额的授权书对照强制执行它的托管通道核验。
-// Designed in internal notes (container agents, phase 0). Not covered by the 2.x compatibility promise.
+// Designed in internal notes (container agents, phase 0). Not covered by the compatibility promise.
 import { sha256 } from '@noble/hashes/sha256'
 import { TapeAPIError } from './errors.js'
 import { safeParseJSON } from './canon.js'
@@ -30,7 +30,9 @@ import {
   WITHDRAW_COOLDOWN_S, WITHDRAW_WINDOW_S, withdrawRequestLive,
 } from './agent-sig.js'
 import { CONFORM_SIBLINGS } from './conform-sibling.js'
-import { escrowPlan, closeOutPlan, planApplied, sessionEntry, mandateChannelsElsewhere, requireHistory, spendEvidence, EXECUTE_SELECTOR, EXECUTE_FEE_SELECTOR } from './agent-pay.js'
+import { enforcementBackend } from './enforcement.js'
+import { ENFORCEMENT_X402_BATCH, X402_SETTLEMENT, X402_EOA_ONLY, x402Terms, x402ChannelConfig, x402ChannelId, x402ChannelState } from './x402-batch.js'
+import { escrowPlan, closeOutPlan, closeOutNext, planApplied, sessionEntry, MAX_SESSION_S, mandateChannelsElsewhere, requireHistory, spendEvidence, EXECUTE_SELECTOR, EXECUTE_FEE_SELECTOR } from './agent-pay.js'
 
 export const MANDATES_KEY = '.well-known/tapeapi-mandates.json'   // the principal's revocation list (site file)
 export const MANDATES_LIMIT = 4 * 1024
@@ -219,12 +221,17 @@ export function createAgentKit(api, opts = {}) {
   // one block is used at another.
   // 一次核验的上下文：钉块（首次用到时读取）以及在这个块上读到的东西，只在本次核验内复用：身份、实现槽、各委托方的撤销文件（线程两遍共用）。
   // 在一个块上读到的东西绝不用到另一个块上。
-  function context() {
+  // `finalized` (review decision 7): pin to the block nodes of `quorum` operators call finalized (rpc.confirmedBlock)
+  // instead of the TAP-10 pin (the Q-th highest head minus 2): for the close-out, whose steps a shallow reorg would
+  // otherwise hand out again. Either pin keeps its block's timestamp, the chain's time (decision 5).
+  // finalized（审查决定 7）：钉在 quorum 家运营方称为 finalized 的块上，而不是 TAP-10 钉块：用于收尾，免得浅重组让同一步再给一次。
+  // 两种钉块都保留区块时间戳，即链上时间（决定 5）。
+  function context({ finalized = false } = {}) {
     let pinP = null
     return {
       pin() {
-        pinP ??= Promise.all([needRpc().tap10Block({ maxLag: known.tap10MaxPinLag }), checkChain()])
-          .then(([b]) => ({ number: b.number, hash: b.hash, lag: b.lag, maxLag: b.maxLag, at: { blockHash: b.hash, requireCanonical: true } }))
+        pinP ??= Promise.all([finalized ? needRpc().confirmedBlock('finalized') : needRpc().tap10Block({ maxLag: known.tap10MaxPinLag }), checkChain()])
+          .then(([b]) => ({ number: b.number, hash: b.hash, timestamp: b.timestamp, lag: b.lag ?? null, maxLag: b.maxLag ?? null, tag: finalized ? 'finalized' : 'tap10', at: { blockHash: b.hash, requireCanonical: true } }))
         return pinP
       },
       identities: new Map(), revocations: new Map(),
@@ -505,7 +512,9 @@ export function createAgentKit(api, opts = {}) {
     // mandate that names funds, the static rules of §5.2 replace phase0-no-funds. Any other value of the option, or none,
     // is phase 0 exactly as in 1.8. A mandate that names no funds is checked by the phase-0 rules either way.
     // 阶段 1：只有调用方显式要求、且授权书带金额时，才以 §5.2 的静态规则代替 phase0-no-funds；否则与 1.8 完全相同。
-    const p1 = o.enforcement === ENFORCEMENT_ESCROW_CHANNEL && mandateNamesFunds(m)
+    // the enforcement backend asked for (enforcement.js); none is phase 0 / 所要求的执行后端；没有即阶段 0
+    const backend = enforcementBackend(o.enforcement)
+    const p1 = backend !== null && mandateNamesFunds(m)
     if (p1) {
       if (o.fundingPath !== undefined && !FUNDING_PATHS.includes(o.fundingPath)) throw new TapeAPIError('INVALID_ARGUMENT', `fundingPath must be one of ${FUNDING_PATHS.join(', ')} (default ${DEFAULT_FUNDING_PATH})`)
       if (o.feeDue !== undefined && (typeof o.feeDue !== 'string' || !/^(0|[1-9][0-9]{0,77})$/.test(o.feeDue))) throw new TapeAPIError('INVALID_ARGUMENT', 'feeDue must be a decimal string (the smallest unit of the fee token)')
@@ -557,9 +566,9 @@ export function createAgentKit(api, opts = {}) {
     out.revocation = rev
     // phase 1: what the static rules leave to the chain, at this verification's pinned block / 阶段 1：静态规则之外读链的部分
     if (p1 && statics.length === 0) {
-      await phase1Chain(m, id.identity, { ...o, now }, ctx, out)
+      await chainChecks[backend.name](m, id.identity, { ...o, now }, ctx, out)
       // escrow-channel only when every check, static and on chain, passed (draft §1.1, §5.1) / 全部通过才报 escrow-channel
-      if (problems.length === 0) out.enforcement = ENFORCEMENT_ESCROW_CHANNEL
+      if (problems.length === 0) out.enforcement = backend.name
     }
     out.ok = problems.length === 0
     return out
@@ -730,6 +739,47 @@ export function createAgentKit(api, opts = {}) {
     }
   }
 
+  // @experimental prototype, 'x402-batch': x402 channels (payer the holder EOA, payerAuthorizer the agent key, receiver
+  // the provider; its manifest's payment.escrow the settlement) at the pinned block. o.x402: { terms, maxWithdrawDelayS,
+  // allowSettlements }
+  async function x402Chain(m, principalId, o, ctx, out) {
+    await scopeIncludesAgent(m, ctx, out.warnings)
+    const x = o.x402 ?? {}
+    const fundingPath = o.fundingPath ?? DEFAULT_FUNDING_PATH
+    const consumer = fundingPath === 'container' ? m.principal : principalId.holder
+    Object.assign(out, { consumer, fundingPath, scope: [] })
+    const problems = out.problems
+    // EOA payers only (not the container path, not a holder with code) / 只收 EOA
+    if (fundingPath === 'container' || (await escrowRead(ctx, consumer, 'code', []))) { problems.push(problem('x402-payer-not-eoa', `${consumer}: ${X402_EOA_ONLY}`)); return }
+    if (m.feeCap !== '0') problems.push(problem('x402-fee-unsupported', 'a fee channel (feeCap above 0) has no x402-batch form in this prototype'))
+    const allowed = new Set([X402_SETTLEMENT, ...(x.allowSettlements ?? [])].map((a) => String(a).toLowerCase()))
+    const block = await blockOf(ctx)
+    const read = (to, data) => needRpc().ethCall(to, data, block, STRICT)
+    for (const s of m.scope.filter((y) => y.cap !== '0')) {
+      const item = { provider: s.provider, escrow: null, token: s.token, decimals: null, cap: s.cap, channel: null, available: null, pendingWithdraw: null, sessionExpiry: null, claimedAtCheck: null, channelId: null, withdrawDelay: null }
+      out.scope.push(item)
+      const esc = await escrowAtPin(s.provider, ctx)
+      if (!esc) { problems.push(problem('provider-unresolvable', `${s.provider} does not resolve, or names no payment.escrow at the pinned block`)); continue }
+      item.escrow = esc
+      if (!allowed.has(esc.toLowerCase())) { problems.push(problem('escrow-not-allowed', `${s.provider} names ${esc}, not ${X402_SETTLEMENT} (nor x402.allowSettlements)`)); continue }
+      if (!(await escrowRead(ctx, esc, 'code', []))) { problems.push(problem('escrow-other-chain', `${esc} has no code on chain ${chainId}, the mandate's chain`)); continue }
+      const t = Object.entries(x.terms ?? {}).find(([p]) => eqAddr(p, s.provider))?.[1]
+      if (!t) { problems.push(problem('x402-terms-missing', `no x402 terms for ${s.provider} (x402.terms)`)); continue }
+      let terms
+      try { terms = x402Terms({ ...t, settlement: esc, receiver: s.provider }, { container: s.provider, maxWithdrawDelayS: x.maxWithdrawDelayS }) } catch (e) { problems.push(problem(e.data?.reason ?? 'x402-terms-invalid', `${s.provider}: ${e.message}`)); continue }
+      if (!eqAddr(terms.token, s.token)) { problems.push(problem('escrow-token-mismatch', `${s.provider}'s terms are in ${terms.token}, the mandate names ${s.token}`)); continue }
+      const id = x402ChannelId(chainId, esc, x402ChannelConfig({ payer: consumer, payerAuthorizer: m.agentKey, receiver: s.provider, receiverAuthorizer: terms.receiverAuthorizer, token: s.token, withdrawDelay: terms.withdrawDelay, salt: terms.salt }))
+      const [st, decimals] = await Promise.all([x402ChannelState(read, esc, id), escrowRead(ctx, s.token, 'decimals', [])])
+      const live = st.pending.initiatedAt !== 0
+      Object.assign(item, { decimals, channelId: id, withdrawDelay: terms.withdrawDelay, channel: st.unclaimed.toString(), available: st.available.toString(), pendingWithdraw: { amount: st.pending.amount.toString(), requestedAt: st.pending.initiatedAt, live }, claimedAtCheck: st.totalClaimed.toString() })
+      if (live) problems.push(problem('withdraw-pending', `a withdrawal of ${st.pending.amount} on ${id} started at ${st.pending.initiatedAt} (+${terms.withdrawDelay} s)`))
+      if (st.available === 0n) problems.push(problem('channel-empty', `nothing is available on ${id}: balance ${st.balance}, claimed ${st.totalClaimed}`))
+      if (st.unclaimed > BigInt(s.cap)) problems.push(problem('channel-exceeds-cap', `${id} holds ${st.unclaimed} unclaimed, above the cap ${s.cap}: the key could spend all of it`))
+    }
+  }
+  // the chain part of phase 1, per enforcement backend / 阶段 1 读链的部分，按执行后端
+  const chainChecks = { [ENFORCEMENT_ESCROW_CHANNEL]: phase1Chain, [ENFORCEMENT_X402_BATCH]: x402Chain }
+
   // ---- phase 1, M3 (experimental): the holder's plan and its close-out, from facts read at ONE pinned block ----
   // Draft §6.1 S4/S4b. Every fact escrowPlan and closeOutPlan take is read here at one pinned block, strictly: the
   // principal's identity and current holder, each capped provider's manifest (its escrow) at that block, the escrow's
@@ -741,6 +791,9 @@ export function createAgentKit(api, opts = {}) {
   // 不签名、不发送；节点故障抛出。afterPlan 在计划发出后的新钉块上读。
   const ALLOWANCE_SELECTOR = selector('allowance(address,address)')
   const SESSION_AUTHORIZED_TOPIC = toHex(keccak256('SessionAuthorized(address,address,address,uint64)'))
+  // the escrow constructor's own log, TreasuryChanged(0, treasury) at its deployment block (TapeAPIEscrow.sol:143): the
+  // coverage probe of inheritedSessions / 托管构造函数自己的日志（部署块上的 TreasuryChanged(0, treasury)）：inheritedSessions 的覆盖探针
+  const TREASURY_CHANGED_TOPIC = toHex(keccak256('TreasuryChanged(address,address)'))
   const planPathOf = (o) => {
     const path = o.path ?? DEFAULT_FUNDING_PATH
     if (!FUNDING_PATHS.includes(path)) throw new TapeAPIError('INVALID_ARGUMENT', `path must be one of ${FUNDING_PATHS.join(', ')} (default ${DEFAULT_FUNDING_PATH})`)
@@ -912,7 +965,25 @@ export function createAgentKit(api, opts = {}) {
     const pin = await ctx.pin()
     const facts = { currentHolder: identity.holder, ...(signer !== undefined ? { signer } : {}), ...(cf ? { principalDeployed: cf.principalDeployed, principalOpened: cf.principalOpened, executeReverts: cf.executeReverts, ...(cf.holderBalance !== undefined ? { holderBalance: cf.holderBalance } : {}) } : {}) }
     const plan = escrowPlan(m, { chainId, path, holder: o.holder, providers, allowEscrows: [...allowedEscrows], now, hub, ...(path === 'container' ? { maxExecuteFee: o.maxExecuteFee } : {}), ...facts, ...(cf?.executeFee !== undefined ? { executeFee: cf.executeFee } : {}), history, pinBlock: pin.number })
-    return { ...plan, pin: { number: pin.number, hash: pin.hash }, facts: { ...facts, ...(cf ? { executeFee: cf.executeFee ?? null } : {}), providers } }
+    // session-key handover (d), B P-9: with sessionScan, the live sessions on these channels that the history does not
+    // record (a previous holder's, on the container path) refuse the plan, after the plan's own refusals; so do logs that
+    // cannot be read and a scan that starts too late. refuse: false returns the plan with the facts instead
+    // 会话钥匙转手 (d)：给了 sessionScan 时，历史里没有的存活会话（容器路径上前持有人的）拒绝计划，排在计划自身的拒绝之后；
+    // 日志读不到、扫描起点太晚也拒绝。refuse: false 则带着事实返回计划
+    let scan = null
+    if (o.sessionScan !== undefined) {
+      const sc = o.sessionScan
+      if (!sc || typeof sc !== 'object' || Array.isArray(sc)) throw new TapeAPIError('INVALID_ARGUMENT', 'sessionScan must be { fromBlock, deployBlocks, chunk?, refuse? } (see inheritedSessions)')
+      if (sc.refuse !== undefined && typeof sc.refuse !== 'boolean') throw new TapeAPIError('INVALID_ARGUMENT', 'sessionScan.refuse must be a boolean')
+      scan = await inheritedSessions(m, { path, holder: o.holder, history, now, fromBlock: sc.fromBlock, ...(sc.chunk !== undefined ? { chunk: sc.chunk } : {}), ...(sc.deployBlocks !== undefined ? { deployBlocks: sc.deployBlocks } : {}) })
+      if (!scan.ok && sc.refuse !== false) throw new TapeAPIError('INVALID_ARGUMENT', `${scan.message}: nothing was planned`, { reason: scan.reason, sessions: scan.sessions, scan })
+    }
+    const notes = [
+      ...plan.notes,
+      ...(scan === null && path === 'container' ? [`the SessionAuthorized logs of ${m.principal}'s channels were not scanned: a session a previous holder of the circuit authorised there lives until its expires and can spend what this plan funds (the escrow binds sessions to the container, not to its holder). Pass sessionScan: { fromBlock, deployBlocks } (a block more than ${MAX_SESSION_S / 86400} days old, and each escrow's deployment block), or call inheritedSessions first`] : []),
+      ...(scan && !scan.ok ? [`sessionScan (refuse: false): ${scan.message}`] : []),
+    ]
+    return { ...plan, notes, sessionScan: scan, pin: { number: pin.number, hash: pin.hash }, facts: { ...facts, ...(cf ? { executeFee: cf.executeFee ?? null } : {}), providers } }
   }
   /**
    * @experimental (phase 1, M3) The close-out (closeOutPlan) from facts read at one pinned block: each capped channel's
@@ -924,13 +995,35 @@ export function createAgentKit(api, opts = {}) {
    * fullRequest (replace a live partial request by a request for the whole channel, review p1m3 S5).
    */
   async function closeOut(mandate, o = {}) {
+    const { m, path, history, now, channels, facts, pin } = await closeOutReads(mandate, o, 'closeOut')
+    const plan = closeOutPlan(m, { chainId, path, holder: o.holder, now, channels, ...(path === 'container' ? { maxExecuteFee: o.maxExecuteFee } : {}), history, ...(o.fullRequest !== undefined ? { fullRequest: o.fullRequest } : {}), ...facts })
+    return { ...plan, pin: { number: pin.number, hash: pin.hash, timestamp: pin.timestamp, tag: pin.tag } }
+  }
+  /**
+   * @experimental (phase 1; BEM drill F10, B P-6) The close-out one step at a time (closeOutNext) from the facts closeOut
+   * reads at one pinned block: what to send now (requestWithdraw where no request is live, withdraw where the window is
+   * open), or until when to wait. `state` (REQUIRED: null to begin, then the `state` the previous call returned, kept by
+   * the caller BEFORE it sends `send`) makes it resumable: a restart anywhere in the 48 hours calls it again with the
+   * state, and a step handed out within resendAfterS (default CLOSE_OUT_RESEND_S) is not handed out again while the chain
+   * does not show it yet. Options and refusals as closeOut's.
+   * 收尾一次一步：按 closeOut 在同一钉块上读到的事实给出现在要发的（或等到何时）。state（必填：开始时 null，之后是上次返回的、
+   * 调用方在发送前保存的 state）使它可恢复：48 小时内重启后带着 state 再调一次即可。
+   */
+  async function closeOutStep(mandate, o = {}) {
+    if (!('state' in o)) throw new TapeAPIError('INVALID_ARGUMENT', 'closeOutStep needs state: null to begin a close-out, then the state the previous call returned (kept before sending its steps)')
+    const { m, path, history, now, channels, facts, pin } = await closeOutReads(mandate, o, 'closeOutStep')
+    const next = closeOutNext(m, { chainId, path, holder: o.holder, now, channels, ...(path === 'container' ? { maxExecuteFee: o.maxExecuteFee } : {}), history, ...(o.fullRequest !== undefined ? { fullRequest: o.fullRequest } : {}), ...facts, state: o.state, pinBlock: pin.number, ...(o.resendAfterS !== undefined ? { resendAfterS: o.resendAfterS } : {}) })
+    return { ...next, pin: { number: pin.number, hash: pin.hash, timestamp: pin.timestamp, tag: pin.tag } }
+  }
+  // closeOut's reads at one pinned block, shared by closeOut and closeOutStep / closeOut 与 closeOutStep 共用的钉块读取
+  async function closeOutReads(mandate, o, what) {
     const m = normalizeMandate(mandate)
     const path = planPathOf(o)
-    const history = requireHistory(o, 'closeOut')
-    const now = o.now ?? clock()
+    const history = requireHistory(o, what)
+    const asked = o.now ?? clock()
     if (o.escrows !== undefined && (typeof o.escrows !== 'object' || o.escrows === null || !Object.values(o.escrows).every(isAddress))) throw new TapeAPIError('INVALID_ARGUMENT', 'escrows must map providers to escrow addresses')
     const named = new Map(Object.entries(o.escrows ?? {}).map(([k, v]) => [k.toLowerCase(), v]))
-    const ctx = context()
+    const ctx = context({ finalized: true })
     const consumer = path === 'holder' ? checksumAddress(o.holder) : m.principal
     const capped = m.scope.filter((s) => s.cap !== '0')
     const channels = []
@@ -950,8 +1043,11 @@ export function createAgentKit(api, opts = {}) {
       if (!cf.principalDeployed || !cf.principalOpened) facts.executeReverts ??= `the principal is ${cf.principalDeployed ? 'not opened' : 'not deployed'}`
     }
     const pin = await ctx.pin()
-    const plan = closeOutPlan(m, { chainId, path, holder: o.holder, now, channels, ...(path === 'container' ? { maxExecuteFee: o.maxExecuteFee } : {}), history, ...(o.fullRequest !== undefined ? { fullRequest: o.fullRequest } : {}), ...facts })
-    return { ...plan, pin: { number: pin.number, hash: pin.hash } }
+    // decision 5: the chain's time bounds `now`: a step is due only once the pinned block's time says so, since what is sent
+    // lands in a later block (a clock ahead of the chain would otherwise hand out a withdraw that reverts, drill F10)
+    // 决定 5：now 不超过链上时间：钉块时间说到了才算到期，因为发出的交易落在更晚的块里（本机时钟快于链时会给出一个回滚的 withdraw）
+    const now = Number.isSafeInteger(pin.timestamp) ? Math.min(asked, pin.timestamp) : asked
+    return { m, path, history, now, channels, facts, pin }
   }
   /**
    * @experimental (phase 1, M3) After the holder sent a plan: allowance(consumer, escrow) of each check, and each capped
@@ -999,6 +1095,128 @@ export function createAgentKit(api, opts = {}) {
     return logs.map((l) => ({ ...sessionEntry({ chainId, escrow, consumer: '0x' + l.topics[1].slice(26), provider: '0x' + l.topics[2].slice(26), key: '0x' + l.topics[3].slice(26), expires: Number(BigInt(decodeParams(['uint64'], l.data)[0])), mandateHash: null }), block: l.block }))
   }
 
+
+  /**
+   * @experimental (phase 1; session-key handover (d), B P-9) Before funding: the live sessions on this mandate's channels
+   * that the console's session history does not record. On the container path the consumer is the principal container,
+   * and the escrow binds a session to that ADDRESS, not to whoever holds the circuit: every session a previous holder
+   * authorised there is still live until its expires (at most MAX_SESSION_S after it was authorised, extend-only), and
+   * funding the channel again exposes the new money to it (N9: the escrow has no view that lists them). A SessionAuthorized
+   * log names no holder, so a session is reported as "not in this console's history" (a previous holder's, or another
+   * console's), never as proven to be a previous holder's; its `block` lets the caller read who held the circuit then.
+   *   path ('holder' | 'container', default DEFAULT_FUNDING_PATH), holder (REQUIRED on the holder path: the consumer),
+   *   history (REQUIRED, [] when the console has none), fromBlock (REQUIRED: a block whose time is BEFORE
+   *   now − MAX_SESSION_S, so that every session that can still be live was authorised after it), deployBlocks
+   *   ({ [escrow]: its deployment block }; without the one of a scanned escrow the scan is unavailable: the nodes must
+   *   serve that escrow's constructor log there, proving their log window reaches back, since an out-of-window range is
+   *   answered with an EMPTY list, not an error), now (default the kit's clock), chunk (blocks per eth_getLogs, default
+   *   the whole range; public nodes serve 50 blocks or fewer, or none)
+   * Every capped provider's escrow at the pinned block and every escrow the history names for it is scanned for
+   * SessionAuthorized(consumer) from fromBlock to the pin (strict eth_getLogs, chunked), the latest expiry per key kept,
+   * and each session found live is read again at the pin (sessionExpiry, strict). Returns { ok, status, reason, message,
+   * consumer, fromBlock, fromTime, toBlock, escrows, sessions: [{ escrow, consumer, provider, key, expires, block }],
+   * pin }: status 'clear' (ok), 'inherited' (sessions found: inherited-session-live), 'unavailable' (the logs could not be
+   * read: session-logs-unavailable, with the node's message; never "no keys"), 'short' (fromBlock is too recent:
+   * session-scan-short). A malformed argument throws INVALID_ARGUMENT; nothing is signed or sent.
+   * 出资前：本授权书各通道上、控制台会话历史没有记录的存活会话。容器路径的 consumer 是委托方容器，托管把会话绑在这个地址上、
+   * 不看谁持有电路：前持有人授权的会话在到期前一直有效（授权时至多 30 天，只可延长），再充值就把新钱暴露给它。日志不写持有人，
+   * 所以只说"不在本控制台历史里"，不说"证明是前持有人的"；block 供调用方查当时谁持有电路。日志读不到是 unavailable（拒绝出资），
+   * 绝不是"没有钥匙"；fromBlock 太近是 short。
+   */
+  async function inheritedSessions(mandate, o = {}) {
+    const m = normalizeMandate(mandate)
+    const path = o.path ?? DEFAULT_FUNDING_PATH
+    if (!FUNDING_PATHS.includes(path)) throw new TapeAPIError('INVALID_ARGUMENT', `path must be one of ${FUNDING_PATHS.join(', ')} (default ${DEFAULT_FUNDING_PATH})`)
+    if (path === 'holder' && (!isAddress(o.holder) || eqAddr(o.holder, ZERO_ADDRESS))) throw new TapeAPIError('INVALID_ARGUMENT', 'the holder path needs holder: the wallet that is the consumer')
+    const history = requireHistory(o, 'inheritedSessions').map(sessionEntry)
+    const asked = o.now ?? clock()
+    if (!Number.isSafeInteger(asked) || asked < 0) throw new TapeAPIError('INVALID_ARGUMENT', 'now must be Unix seconds')
+    if (!Number.isSafeInteger(o.fromBlock) || o.fromBlock < 0) throw new TapeAPIError('INVALID_ARGUMENT', `fromBlock is required: a block whose time is before now − ${MAX_SESSION_S} s (MAX_SESSION), so that every session that can still be live was authorised after it`)
+    if (o.chunk !== undefined && (!Number.isSafeInteger(o.chunk) || o.chunk < 1)) throw new TapeAPIError('INVALID_ARGUMENT', 'chunk must be a positive number of blocks')
+    if (o.deployBlocks !== undefined && (!o.deployBlocks || typeof o.deployBlocks !== 'object' || Array.isArray(o.deployBlocks) || !Object.entries(o.deployBlocks).every(([k, v]) => isAddress(k) && Number.isSafeInteger(v) && v >= 0))) throw new TapeAPIError('INVALID_ARGUMENT', 'deployBlocks must map escrow addresses to their deployment blocks')
+    const deployOf = (e) => Object.entries(o.deployBlocks ?? {}).find(([k]) => eqAddr(k, e))?.[1]
+    const consumer = path === 'holder' ? checksumAddress(o.holder) : m.principal
+    const ctx = context()
+    const pin = await ctx.pin()
+    // decision 5: liveness and coverage at the earlier of the caller's clock and the pinned block's time (a clock ahead of
+    // the chain would call a live session ended) / 决定 5：存活与覆盖按调用方时钟与钉块时间中较早者判断
+    const now = Number.isSafeInteger(pin.timestamp) ? Math.min(asked, pin.timestamp) : asked
+    if (o.fromBlock > pin.number) throw new TapeAPIError('INVALID_ARGUMENT', `fromBlock ${o.fromBlock} is above the kit's pinned block ${pin.number}`)
+    const capped = m.scope.filter((s) => s.cap !== '0')
+    const isCapped = (p) => capped.some((s) => eqAddr(s.provider, p))
+    // the escrows: each capped provider's at the pin, and every one the history names for this consumer and a capped
+    // provider (a provider that moved its escrow) / 要扫的托管：钉块上各 provider 的，以及历史里为本 consumer 与带金额 provider 记下的
+    const escrows = new Map()
+    for (const s of capped) { const e = await escrowAtPin(s.provider, ctx); if (e) escrows.set(e.toLowerCase(), e) }
+    for (const h of history) if (h.chainId === chainId && eqAddr(h.consumer, consumer) && isCapped(h.provider)) escrows.set(h.escrow.toLowerCase(), h.escrow)
+    const withCode = []
+    for (const e of escrows.values()) if (await escrowRead(ctx, e, 'code', [])) withCode.push(checksumAddress(e))
+    const base = { consumer, fromBlock: o.fromBlock, toBlock: pin.number, escrows: withCode, pin: { number: pin.number, hash: pin.hash } }
+    const out = (status, reason, message, extra = {}) => ({ ok: status === 'clear', status, reason, message, ...base, sessions: [], ...extra })
+    // coverage: a session live now was authorised (or last extended) after now − MAX_SESSION / 覆盖：现在仍存活的会话授权于 now − MAX_SESSION 之后
+    let fromTime
+    try { fromTime = await needRpc().call('eth_getBlockByNumber', ['0x' + o.fromBlock.toString(16), false], { ...STRICT, project: (b) => (b == null ? null : Number(BigInt(b.timestamp))) }) } catch (e) {
+      if (String(e?.code ?? '').startsWith('RPC_')) return out('unavailable', 'session-logs-unavailable', `the time of block ${o.fromBlock} could not be read (${e.message}): the scan cannot say it covers the last ${MAX_SESSION_S / 86400} days; do not fund`)
+      throw e
+    }
+    if (fromTime == null) return out('unavailable', 'session-logs-unavailable', `block ${o.fromBlock} is not known to the nodes: do not fund`)
+    // review OPS-A4: settle accepts a key while sessionExpiry >= block.timestamp (TapeAPIEscrow.sol:284), so a session
+    // live at `now` was authorised at or after now − MAX_SESSION, possibly in a block of the very second of fromBlock
+    // that comes BEFORE it (several blocks share a second on BNB Chain): fromBlock must be strictly older
+    // 审查 OPS-A4：settle 在 sessionExpiry >= block.timestamp 时接受钥匙，所以 now 仍有效的会话授权于 now − MAX_SESSION 或之后，
+    // 可能在与 fromBlock 同一秒、却排在它之前的块里（BSC 上同一秒有多个块）：fromBlock 必须严格更早
+    if (fromTime >= now - MAX_SESSION_S) return out('short', 'session-scan-short', `block ${o.fromBlock} is from ${fromTime} (${new Date(fromTime * 1000).toISOString()}), not earlier than now − ${MAX_SESSION_S / 86400} days: a session authorised before it may still be live; scan from an older block before funding`, { fromTime })
+    // review OPS-A5: a node whose log window does not reach back answers an EMPTY list for the old blocks, not an error,
+    // and an empty answer every node agrees on reads as "no sessions". Coverage is proven per escrow by its own
+    // constructor log (TreasuryChanged(0, treasury) at its deployment block, deployBlocks): a node that serves it keeps
+    // the logs from there to its head (windows are cut by age), which covers the scan; without it: unavailable
+    // 审查 OPS-A5：日志窗口回不到那么远的节点对旧区块回空列表而不是报错，所有节点一致的空列表会被读成"没有会话"。按托管逐个证明覆盖：
+    // 部署块上它自己的构造函数日志（deployBlocks）；能给出它的节点保有从那里到其块头的日志（窗口按时间截断），扫描即被覆盖；否则 unavailable
+    for (const escrow of withCode) {
+      const d = deployOf(escrow)
+      if (d === undefined) return out('unavailable', 'session-logs-unavailable', `the coverage of the scan of ${escrow} is not proven: a node whose log window does not reach back answers an empty list, not an error, and that reads as "no sessions". Give deployBlocks: { [${escrow}]: its deployment block }, so the scan checks the nodes serve the escrow's own constructor log there; do not fund`, { fromTime })
+      if (d > pin.number) throw new TapeAPIError('INVALID_ARGUMENT', `deployBlocks: ${escrow} at block ${d} is above the kit's pinned block ${pin.number}`)
+      let probe
+      try {
+        probe = await needRpc().call('eth_getLogs', [{ fromBlock: '0x' + d.toString(16), toBlock: '0x' + d.toString(16), address: escrow, topics: [TREASURY_CHANGED_TOPIC, '0x' + '00'.repeat(32)] }], { ...STRICT, project: (ls) => { if (!Array.isArray(ls)) throw new Error('not an array'); return ls.filter((l) => eqAddr(l.address, escrow) && Number(BigInt(l.blockNumber)) === d && Array.isArray(l.topics) && String(l.topics[0]).toLowerCase() === TREASURY_CHANGED_TOPIC).length } })
+      } catch (e) {
+        if (String(e?.code ?? '').startsWith('RPC_')) return out('unavailable', 'session-logs-unavailable', `the constructor log of ${escrow} at block ${d} could not be read (${e.message}): the scan's coverage is not proven; do not fund`, { fromTime })
+        throw e
+      }
+      if (probe < 1) return out('unavailable', 'session-logs-unavailable', `the nodes answer no constructor log (TreasuryChanged from the zero address) for ${escrow} at its deployment block ${d}: their log window does not reach back that far (or the block is wrong), so an empty scan would not mean "no sessions"; do not fund (an archive node or an indexer is needed)`, { fromTime })
+    }
+    const latest = new Map()
+    const chunk = o.chunk ?? (pin.number - o.fromBlock + 1)
+    for (const escrow of withCode) {
+      for (let a = o.fromBlock; a <= pin.number; a += chunk) {
+        const b = Math.min(a + chunk - 1, pin.number)
+        let logs
+        try { logs = await sessionLogs({ escrow, consumer, fromBlock: a, toBlock: b }) } catch (e) {
+          if (String(e?.code ?? '').startsWith('RPC_')) return out('unavailable', 'session-logs-unavailable', `the SessionAuthorized logs of ${escrow} for blocks ${a}-${b} could not be read (${e.message}); public nodes keep logs for a short window, or refuse eth_getLogs (N9): without them the sessions on these channels are not known, so do not fund (an archive node or an indexer is needed)`, { fromTime })
+          throw e
+        }
+        for (const l of logs) {
+          if (!isCapped(l.provider)) continue
+          const k = `${l.escrow}:${l.provider}:${l.key}`.toLowerCase()
+          const cur = latest.get(k)
+          if (!cur || l.expires > cur.expires || (l.expires === cur.expires && l.block > cur.block)) latest.set(k, l)
+        }
+      }
+    }
+    const recorded = (l) => history.some((h) => h.chainId === chainId && eqAddr(h.escrow, l.escrow) && eqAddr(h.consumer, l.consumer) && eqAddr(h.provider, l.provider) && eqAddr(h.key, l.key))
+    const sessions = []
+    for (const l of latest.values()) {
+      if (l.expires < now || recorded(l)) continue   // live while expires >= now (settle: >= block.timestamp) / expires >= now 即有效
+      // read again at the pin: the session as the escrow holds it now (extend-only) / 在钉块上再读一次：托管现在保存的会话
+      const onChain = Number(await escrowRead(ctx, l.escrow, 'sessionExpiry', [consumer, l.provider, l.key]))
+      if (onChain < now) continue
+      sessions.push({ escrow: l.escrow, consumer, provider: l.provider, key: l.key, expires: onChain, block: l.block })
+    }
+    sessions.sort((a, b) => a.block - b.block)
+    if (sessions.length) return out('inherited', 'inherited-session-live', `${sessions.length} session(s) on ${consumer}'s channels that this console's history does not record are live (authorised by a previous holder of the circuit, or by another console): ${sessions.map((x) => `key ${x.key} toward ${x.provider} until ${x.expires} (${new Date(x.expires * 1000).toISOString()}), block ${x.block}`).join('; ')}. Anyone holding such a key can spend whatever the channel holds, including what you add; it cannot be revoked, only outlived. Do not fund these channels before they end`, { fromTime, sessions })
+    return out('clear', null, `no session this console does not know of is live on ${consumer}'s channels (SessionAuthorized logs from block ${o.fromBlock}, ${new Date(fromTime * 1000).toISOString()}, to the pin ${pin.number}; a session authorised after the pin is not seen)`, { fromTime })
+  }
+
   // ---- agent-side messages: TAPI-21 signed responses (v1 receipts) of the agent's own methods ----
   // The signer must be the agent's manifest signer as resolved on chain (TAP-11 §4.5); the receipt's service container
   // must be the agent; result.kind names the message. / 代理侧消息 = 代理方法的签名回执；签名者必须是链上解析出的签名者。
@@ -1031,7 +1249,7 @@ export function createAgentKit(api, opts = {}) {
    * 阶段 1 的 M7：带开关且授权书带金额时，交付结果的 spend 成员按 spendEvidence 对账；不带开关时照旧忽略。
    */
   function verifyEvidence(deliver, o = {}) {
-    const phase1 = o.enforcement === ENFORCEMENT_ESCROW_CHANNEL ? { readings: Array.isArray(o.scope) ? o.scope : null } : null
+    const phase1 = enforcementBackend(o.enforcement) ? { readings: Array.isArray(o.scope) ? o.scope : null } : null
     return verifyEvidenceIn(deliver, { mandate: o.mandate, phase1 }, context())
   }
   async function verifyEvidenceIn(deliver, { mandate, phase1 = null } = {}, ctx) {
@@ -1174,7 +1392,7 @@ export function createAgentKit(api, opts = {}) {
   // the phase-1 options a thread passes to its mandate's check / 线程传给授权书核验的阶段 1 选项
   function phase1Options(o) {
     const out = {}
-    for (const k of ['enforcement', 'fundingPath', 'feeDue']) if (o[k] !== undefined) out[k] = o[k]
+    for (const k of ['enforcement', 'fundingPath', 'feeDue', 'x402']) if (o[k] !== undefined) out[k] = o[k]
     return out
   }
 
@@ -1307,7 +1525,7 @@ export function createAgentKit(api, opts = {}) {
   const kit = {
     verifyMandate, verifyTaskThread, verifyEvidence,
     // @experimental phase 1, M3 / 阶段 1 的 M3
-    holderPlan, closeOut, afterPlan, sessionLogs,
+    holderPlan, closeOut, closeOutStep, afterPlan, sessionLogs, inheritedSessions,
     readRevocations: async (container) => { const ctx = context(); const id = await identityOf(container, ctx); if (id.problem) return { status: 'invalid', reason: id.problem.message }; return readRevocations(container, id.identity, ctx) },
     identityOf: async (container) => { const id = await identityOf(container, context()); if (id.problem) throw new TapeAPIError('AGENT_INVALID', id.problem.message, { reason: id.problem.code }); return id.identity },
     chainId, hub, resolution,

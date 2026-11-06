@@ -216,7 +216,7 @@ test('CLI: exit 0 + JUnit for the reference relay, exit 1 for a broken one', asy
   const dir = mkdtempSync(join(tmpdir(), 'tapeapi-relay-conf-'))
   // spawnSync would block this process's event loop, and with it the in-process relay. / 同步子进程会阻塞本进程里的中继。
   const run = (url, junit) => new Promise((resolve) => {
-    const p = spawn(process.execPath, [RELAY, '--url', url, '--quiet', '--junit', junit, '--json', junit + '.json'])
+    const p = spawn(process.execPath, [RELAY, '--url', url, '--quiet', '--junit', junit, '--json', junit + '.json'], { timeout: 300_000, killSignal: 'SIGKILL' })
     let out = ''; p.stdout.on('data', (d) => { out += d }); p.stderr.on('data', (d) => { out += d })
     p.on('close', (code) => resolve({ code, out }))
   })
@@ -227,5 +227,5 @@ test('CLI: exit 0 + JUnit for the reference relay, exit 1 for a broken one', asy
   const b = await run(bad, join(dir, 'bad.xml'))
   assert.equal(b.code, 1, b.out); assert.match(b.out, /FAIL  MUST   tapi26\.relay\.epoch\.mismatch-resets/)
   assert.match(readFileSync(join(dir, 'bad.xml'), 'utf8'), /<failure type="MUST"/)
-  assert.equal(spawnSync(process.execPath, [RELAY]).status, 2) // no --url: usage error / 缺 --url：用法错误
+  assert.equal(spawnSync(process.execPath, [RELAY], { timeout: 300_000, killSignal: 'SIGKILL' }).status, 2) // no --url: usage error / 缺 --url：用法错误
 })

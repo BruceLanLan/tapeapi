@@ -38,10 +38,11 @@ DeWEB 是网站，TapeSend 是消息，TapeAPI 是服务。
 
 ## 状态
 
-正式版，版本 2.5.0。遵循语义化版本：按 2.0 文档写的代码在所有 2.x 版本里都能继续工作，破坏性修改只在新的大版本里出现。
+最新发布的版本是 3.0.0（2026-11-06）。遵循语义化版本：按 3.0 文档写的代码在所有 3.x 版本里都能继续工作（按 2.0 文档写的代码
+在所有 2.x 版本里同样如此），破坏性修改只在新的大版本里出现。
 2.0 默认按 TapeOut 官方 TAP（TAP-10、TAP-11 §2）解析服务，有一个已知例外；2.0.0 发布后 1.x 继续获得 6 个月的安全修复
 （[升级到 2.0](upgrade-2.0.md)；[1.0 承诺什么](upgrade-1.0.md)）。免费层运行在 TapeOut 已部署的合约之上。我们自己的合约未经第三方审计；付费调用的
-托管合约尚未部署。TAPI-20 到 TAPI-27 是 TapeAPI 自己的规范，不是 TAP：TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑编号，其中服务清单（TAP-11）与签名回答（TAP-13）已合并为 Draft（合并不等于被采纳），另有 5 份针对 TapeAPI 规范部分内容的草稿（TAP-14 至 TAP-18）也已合并为 Draft，还有 7 份已提交（评审中），没有编号。
+托管合约尚未部署。TAPI-20 到 TAPI-27 是 TapeAPI 自己的规范，不是 TAP：TAP 由 [TapeOutProtocol/TAPs](https://github.com/TapeOutProtocol/TAPs) 的编辑编号，其中我们的 7 份草稿已合并为 Draft（TAP-11、TAP-13、TAP-14、TAP-15、TAP-16、TAP-17、TAP-18；合并不等于被采纳），另有 7 份已提交（评审中），没有编号。
 
 ## 链上地址
 
@@ -72,7 +73,7 @@ BNB Smart Chain，chainId 56。
 ## 规范
 
 协议以 TapeAPI 自己的规范（TAPI）写成，中英双语（以英文为准），采用 CC0。
-这些规范不是 TAP。我们就其中部分内容向 TapeOutProtocol/TAPs 提交了 14 份 TAP 草稿（8 份在 2026-09-30 至 10-01，2 份关于容器代理格式，在 2026-10-04 与 10-05，2 份在 2026-10-08，2 份在 2026-10-13）。其中 7 份已合并为 Draft（合并不等于被采纳）：服务身份与清单为 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（Draft，[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)），签名响应为 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（Draft，[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)），以及 2026-11-03 合并的 [TAP-14](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-14.md)（[#12](https://github.com/TapeOutProtocol/TAPs/pull/12)，私密通道）、[TAP-15](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-15.md)（[#16](https://github.com/TapeOutProtocol/TAPs/pull/16)，MCP 工具绑定）、[TAP-16](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-16.md)（[#18](https://github.com/TapeOutProtocol/TAPs/pull/18)，多家交叉验证读取）、[TAP-17](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-17.md)（[#26](https://github.com/TapeOutProtocol/TAPs/pull/26)，AI 用量回执）、[TAP-18](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-18.md)（[#47](https://github.com/TapeOutProtocol/TAPs/pull/47)，容器代理授权书，阶段 0）。另外 7 份已提交（评审中），尚无编号：[#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、[#28](https://github.com/TapeOutProtocol/TAPs/pull/28)、[#49](https://github.com/TapeOutProtocol/TAPs/pull/49)、[#52](https://github.com/TapeOutProtocol/TAPs/pull/52)、[#54](https://github.com/TapeOutProtocol/TAPs/pull/54)、[#59](https://github.com/TapeOutProtocol/TAPs/pull/59)、[#60](https://github.com/TapeOutProtocol/TAPs/pull/60)（#60 目前转为 draft PR）。另有 1 份 Information 草稿 [#61](https://github.com/TapeOutProtocol/TAPs/pull/61)（隐私地图），已提交（评审中）。TAPI-20 至 TAPI-27（含 TAPI-26、TAPI-27 的第 2 版）仍是 2.x 兼容性承诺的依据。
+这些规范不是 TAP。我们就其中部分内容向 TapeOutProtocol/TAPs 提交了 14 份 TAP 草稿（8 份在 2026-09-30 至 10-01，2 份关于容器代理格式，在 2026-10-04 与 10-05，2 份在 2026-10-08，2 份在 2026-10-13）：7 份已合并为 Draft（合并不等于被采纳）：服务身份与清单 [TAP-11](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-11.md)（[#8](https://github.com/TapeOutProtocol/TAPs/pull/8)，2026-10-01）、签名响应 [TAP-13](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-13.md)（[#10](https://github.com/TapeOutProtocol/TAPs/pull/10)，2026-10-04），以及 2026-11-03 合并的私密通道 [TAP-14](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-14.md)（[#12](https://github.com/TapeOutProtocol/TAPs/pull/12)）、MCP 工具作为服务方法 [TAP-15](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-15.md)（[#16](https://github.com/TapeOutProtocol/TAPs/pull/16)）、多家交叉验证读取 [TAP-16](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-16.md)（[#18](https://github.com/TapeOutProtocol/TAPs/pull/18)）、AI 用量回执 [TAP-17](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-17.md)（[#26](https://github.com/TapeOutProtocol/TAPs/pull/26)）、容器代理授权书与任务消息（阶段 0）[TAP-18](https://github.com/TapeOutProtocol/TAPs/blob/main/TAPs/TAP-18.md)（[#47](https://github.com/TapeOutProtocol/TAPs/pull/47)）；另 7 份已提交（评审中）：[#20](https://github.com/TapeOutProtocol/TAPs/pull/20)、[#28](https://github.com/TapeOutProtocol/TAPs/pull/28)、[#49](https://github.com/TapeOutProtocol/TAPs/pull/49)、[#52](https://github.com/TapeOutProtocol/TAPs/pull/52)、[#54](https://github.com/TapeOutProtocol/TAPs/pull/54)、[#59](https://github.com/TapeOutProtocol/TAPs/pull/59)、[#60](https://github.com/TapeOutProtocol/TAPs/pull/60)（#60 目前转为 draft PR）。另有 1 份 Information 草稿 [#61](https://github.com/TapeOutProtocol/TAPs/pull/61)（隐私地图），已提交（评审中）。TAPI-20 至 TAPI-27（含 TAPI-26、TAPI-27 的第 2 版）仍是兼容承诺的依据。
 
 | 规范 | 标题 |
 |---|---|

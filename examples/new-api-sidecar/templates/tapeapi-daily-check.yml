@@ -1,0 +1,145 @@
+# A TEMPLATE for YOUR OWN GitHub repository (copy it to .github/workflows/tapeapi-daily-check.yml there). It runs in
+# your GitHub account, on your schedule, and alerts YOU: nobody else is on call for your service, TapeAPI included.
+# 这是给**你自己的** GitHub 仓库用的模板（复制到那里的 .github/workflows/tapeapi-daily-check.yml）。它运行在你的 GitHub 账号里，
+# 按你的时间表运行，告警发给**你**：没有别人替你的服务值班，TapeAPI 也不。
+#
+# Once a day it runs examples/new-api-sidecar/templates/daily-check.mjs from a pinned TapeAPI commit:
+#   - tapeapi-doctor on your TapeOut name with the default resolution of 2.0 (TAP-10 / TAP-11): an unactivated name is a
+#     failure; the delegation or the activation ending within 30 days is a warning, within 14 days an alert;
+#   - the price converter's --check: your new-api's public price list (GET /api/pricing) against the table you published
+#     (models.json and models.newapi-source.json, committed in your repository).
+# 每天一次，从钉住的 TapeAPI 提交运行 daily-check.mjs：按你的 TapeOut 名字跑 tapeapi-doctor（2.0 默认解析：未激活即失败；委托或激活
+# 30 天内到期为预警、14 天内为告警）；再用价目转换器的 --check 把你 new-api 的公开价目与你已发布的价目表对照。
+#
+# The alert: an issue "TapeAPI daily check" in THIS repository (GitHub emails you; comment when it is already open,
+# closed when all is well again); "action needed" also turns the run red (a second email). A run that could not read
+# the chain or your site decides nothing and opens nothing.
+# 告警：在**本仓库**开一个 issue "TapeAPI daily check"（GitHub 会给你发邮件；已开着就追加评论；恢复正常时关闭）；"需要处理"时任务
+# 也会变红（第二封邮件）。读不到链或你的站点的那次运行不下结论、不开 issue。
+#
+# Setup, all in your repository / 设置（全部在你自己的仓库里）:
+#   1. Settings -> Secrets and variables -> Actions -> Variables (NOT secrets: nothing here is secret):
+#        TAPE_NAME             your TapeOut name, e.g. 42.1013.tape (an example name: put yours)
+#        NEW_API_PRICING_URL   optional: https://<your new-api>/api/pricing (unset: the price check is skipped)
+#      在仓库的 Actions 变量（不是机密：这里没有任何机密）里设 TAPE_NAME 与可选的 NEW_API_PRICING_URL。
+#   2. Commit models.json and models.newapi-source.json (what pricing-convert.mjs --out wrote, the table you published)
+#      at the root of your repository. / 把 models.json 与 models.newapi-source.json 提交到仓库根目录。
+#   3. Put the 40-hex commit of github.com/BruceLanLan/tapeapi you have read in TAPEAPI_COMMIT below: the check runs that
+#      code, and only that code. Move it on purpose, after reading what changed.
+#      把你读过的 tapeapi 仓库的 40 位提交号填进下面的 TAPEAPI_COMMIT：检查运行的就是那份代码。有意升级，先读改动。
+#
+# It never needs, and must never be given: your SIGNER_KEY, a new-api admin or user token, a wallet key, or any secret.
+# It reads public data only (the chain, your manifest, your public price list) and sends no transaction.
+# 它不需要、也绝不能给它：SIGNER_KEY、new-api 管理员或用户令牌、钱包密钥或任何机密。它只读公开数据，不发交易。
+name: tapeapi-daily-check
+
+on:
+  schedule:
+    - cron: '41 1 * * *'   # once a day, 01:41 UTC; pick your own minute / 每天一次；分钟可自选
+  workflow_dispatch:
+
+permissions:
+  contents: read            # check out this repository / 检出本仓库
+  issues: write             # the alert issue in this repository / 本仓库里的告警 issue
+
+concurrency:
+  group: tapeapi-daily-check
+  cancel-in-progress: false
+
+env:
+  # The TapeAPI commit whose code runs (40 hex digits). / 运行其代码的 TapeAPI 提交（40 位十六进制）。
+  TAPEAPI_COMMIT: REPLACE_WITH_A_40_HEX_COMMIT_OF_BRUCELANLAN_TAPEAPI
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TITLE: 'TapeAPI daily check'
+      TAPE_NAME: ${{ vars.TAPE_NAME }}
+      PRICING_URL: ${{ vars.NEW_API_PRICING_URL }}
+    steps:
+      - name: Check the settings
+        run: |
+          if ! printf '%s' "$TAPEAPI_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo 'Set TAPEAPI_COMMIT in this workflow to the 40-hex commit of github.com/BruceLanLan/tapeapi you have read.'
+            echo '请把本工作流里的 TAPEAPI_COMMIT 设为你读过的 tapeapi 仓库的 40 位提交号。'
+            exit 2
+          fi
+          if [ -z "$TAPE_NAME" ]; then
+            echo 'Set the repository variable TAPE_NAME to your TapeOut name (Settings -> Secrets and variables -> Actions -> Variables).'
+            echo '请在仓库的 Actions 变量里设置 TAPE_NAME（你的 TapeOut 名字）。'
+            exit 2
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: mine
+          persist-credentials: false
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: BruceLanLan/tapeapi
+          ref: ${{ env.TAPEAPI_COMMIT }}
+          path: tapeapi
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install (the lockfile of that commit, no install scripts)
+        working-directory: tapeapi
+        run: npm ci --no-audit --no-fund --ignore-scripts
+
+      - name: Daily check
+        id: run
+        run: |
+          set +e
+          if [ -n "$PRICING_URL" ]; then
+            node tapeapi/examples/new-api-sidecar/templates/daily-check.mjs --name "$TAPE_NAME" --pricing-url "$PRICING_URL" --models mine/models.json --meta mine/models.newapi-source.json > report.md
+          else
+            node tapeapi/examples/new-api-sidecar/templates/daily-check.mjs --name "$TAPE_NAME" > report.md
+          fi
+          code=$?
+          set -e
+          if [ ! -s report.md ]; then echo "The daily check exited with code $code and printed no report." > report.md; fi
+          printf '\n\nRun: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> report.md
+          cat report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          # 0 ok, 4 warning, 1 action needed, 3 undecided; anything else (2: a setting is wrong) fails the run here.
+          # 0 正常、4 预警、1 需要处理、3 未定；其它（2：设置不对）在这里让任务失败。
+          case "$code" in 0|1|3|4) ;; *) exit "$code" ;; esac
+
+      - name: Find the open alert issue
+        id: issue
+        run: |
+          n=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title --jq '[.[] | select(.title == "TapeAPI daily check")][0].number // empty')
+          echo "number=$n" >> "$GITHUB_OUTPUT"
+
+      - name: Alert (open the issue, or comment on it)
+        if: steps.run.outputs.code == '1' || steps.run.outputs.code == '4'
+        env:
+          NUMBER: ${{ steps.issue.outputs.number }}
+        run: |
+          if [ -n "$NUMBER" ]; then
+            gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body-file report.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file report.md
+          fi
+
+      - name: Resolve (close the issue)
+        if: steps.run.outputs.code == '0' && steps.issue.outputs.number != ''
+        env:
+          NUMBER: ${{ steps.issue.outputs.number }}
+        run: |
+          gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" --comment "All is well again: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      - name: Fail when action is needed
+        if: steps.run.outputs.code == '1'
+        run: |
+          echo 'Action needed: see the report above and the issue in this repository.'
+          echo '需要处理：见上面的报告与本仓库的 issue。'
+          exit 1

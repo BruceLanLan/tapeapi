@@ -1,0 +1,125 @@
+{
+  "vendored": {
+    "note": "test/vectors/ holds byte-identical copies of assets/tap-draft-policy-circuit-gate/ of TAPs pull request #84 at head 0b7317445be976cb750a979bb4ef7385eea245f6 (CC0-1.0): vectors.json (SHA-256 8a4659d8f157fdad7b4ebe9b6bc08d946f9f55b8ab688e3804bfe33b9970acd6, pinned in the vectors test), policies/*.tapnet (hashes in vectors.json), and reference/tapnft.py, reference/tap02_reference.py (SHA-256 in vectors.json `vendored`). They are test fixtures only and are not in the npm package. The private keys in vectors.json are the draft's published test keys, keccak256(\"tap-policy-gate test key <n>\"): never use them."
+  },
+  "note": "Side fixtures for test/vectors/vectors.json (Policy Circuit Gate TAP draft, TAPs pull request #84, head 0b7317445be976cb750a979bb4ef7385eea245f6). The binding vectors carry neither the policy file, nor the malformed tables (the changed-unit tables are in the vectors as `tablesUnitB`), nor the default `now`: those exist only in the draft's make_vectors.py, and are copied from it here. Each use is counted and printed by the vectors test.",
+  "bindingNow": 1793095200,
+  "bindingPolicyFile": {
+    "mandate binding, holder signed, file matches": "daily-cap",
+    "policy file is another policy": "allowlist",
+    "policy file declared combinational": "daily-cap",
+    "policy file invalid": "policyChecks:wrong-nIn",
+    "revokedBefore equal to issued does not cover": "daily-cap",
+    "revokedBefore 0 and no hashes covers nothing": "daily-cap",
+    "escrow-session binding by the consumer": "allowlist",
+    "account binding by the circuit holder, file at hand": "daily-cap",
+    "account binding signed by the account itself": "daily-cap",
+    "label binding with binder and file is still display only": "daily-cap"
+  },
+  "bindingTables": {
+    "tables changed: only the unit of asset 2": "tablesUnitB",
+    "tables malformed": {
+      "assets": {
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+          "class": 1,
+          "unit": "0"
+        },
+        "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+          "class": 2,
+          "unit": "1000000"
+        }
+      },
+      "counterparties": {
+        "0x1111111111111111111111111111111111111111": 1,
+        "0x2222222222222222222222222222222222222222": 2,
+        "0x3333333333333333333333333333333333333333": 3
+      }
+    }
+  },
+  "policyCheckFile": {
+    "too-large": "tooLargeGenerator",
+    "stateful-declared-combinational": "daily-cap",
+    "combinational-declared-stateful": "allowlist",
+    "ok-declared-stateful": "daily-cap"
+  },
+  "mandateDraft": {
+    "note": "Gate G4: the kind-1 subject is the mandate hash of TAPs pull request #47 at commit 50a5a6f92abfefb3cdde4af2c86a9b18c087a3d6 (assets/tap-draft-container-agent/vectors.json, CC0). Copied here: the type string, the mandates and their digests on chain 56, and one on chain 196.",
+    "mandateType": "Mandate(address principal,address agent,address agentKey,uint8 mode,bytes32 taskHash,Scope[] scope,address feeToken,uint256 feeCap,uint64 notBefore,uint64 expires,uint256 nonce,bool subdelegate)Scope(address provider,address token,uint256 cap)",
+    "hub": "0xe61A9C7213a6Aa616C246a2B569e555B417b25ee",
+    "mandates": [
+      {
+        "mandate": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            },
+            {
+              "provider": "0x00000000000000000000000000000000000005e2",
+              "token": "0x0000000000000000000000000000000000000000",
+              "cap": "0"
+            }
+          ]
+        },
+        "digest": "0x35eb4e7a6b9350682344107fac505300358ae1a1ab561c982f23f0c3844c223a"
+      },
+      {
+        "mandate": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 0,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x0000000000000000000000000000000000000000",
+          "feeCap": "0",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "1",
+          "subdelegate": false,
+          "scope": []
+        },
+        "digest": "0xd281706a18bd563a691f86b6dc508ae0e63f56a9ca9e740493e81f9388cc2fcf"
+      },
+      {
+        "mandate": {
+          "principal": "0x86DDaEF00401E3F10418398D67D7189fc458eA95",
+          "agent": "0x19366c3c69FFEB3b286D9fA6cC5e616375BAafd3",
+          "agentKey": "0xAe72A48c1a36bd18Af168541c53037965d26e4A8",
+          "mode": 1,
+          "taskHash": "0x7cd6a489238bf6b1b71d7136181de5b847fee4b200fc3a8d6532f4915dcf7ff0",
+          "feeToken": "0x5ce033B2bFCa3Af30b3e8C8457DeaF776A8b695a",
+          "feeCap": "5",
+          "notBefore": 1789000000,
+          "expires": 1789086400,
+          "nonce": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "subdelegate": false,
+          "scope": [
+            {
+              "provider": "0x00000000000000000000000000000000000005e1",
+              "token": "0x5ce033B2bFCa3Af30b3e8C8457DeaF776A8b695a",
+              "cap": "100000000"
+            }
+          ]
+        },
+        "digest": "0x5d74dfb3d5022455ad2c94b316b28f728447d3b51693fbf26e2dec507aaf8d32"
+      }
+    ],
+    "otherChain": {
+      "chainId": 196,
+      "mandate": 0,
+      "digest": "0x8949a6cb8c03096a1b4f993212e90ac3f3523852ad6e69540c4f23c79d20fa32"
+    }
+  }
+}

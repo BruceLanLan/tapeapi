@@ -11,6 +11,7 @@
 import { verifyUsageReceipt, formatOfMethod } from './ai.js'
 import { redactEnv, redactKeyShapes } from './connect-cli.js'
 import { NOTES } from './connect.js'
+import { sentOf, releasedOf } from './budget.js'
 
 export const T = (en, zh) => ({ en, zh })
 export const VERIFY_PAGE = 'https://tapeapi.fun/verify/'
@@ -52,7 +53,10 @@ export function parseTime(v) {
   if (typeof v !== 'string' || !v.trim()) return null
   const s = v.trim()
   if (/^\d+(\.\d+)?$/.test(s)) return parseTime(Number(s))
-  const t = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00Z` : s)
+  // A date, or a date and time with no offset, is UTC, as every window here is; JavaScript would read the second in the
+  // machine's own zone, so one bill gave different times on two machines (FIXED RC-1). / 不带时区的日期与时间按 UTC。
+  const naive = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(:\d{2}(\.\d+)?)?)$/.exec(s)
+  const t = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00Z` : naive ? `${naive[1]}T${naive[2]}Z` : s)
   return Number.isFinite(t) ? Math.floor(t / 1000) : null
 }
 
@@ -123,9 +127,18 @@ export const shown = (file, h) => { const r = h.relative(h.cwd, file); return r 
  * files 里的全部回执。tapeapi-verify --log 的一行给出 logged 与 envelope；裸信封只有 envelope；其它行记为跳过并给出位置。
  */
 export function readRecords(files, h) {
-  const records = [], skipped = []
+  const records = [], skipped = [], sent = [], released = []
   const take = (v, file, where) => {
     const source = `${shown(file, h)}:${where}`
+    // A budget store's sent line (3.0, budget.js): not a receipt, and not a line to report as skipped.
+    // 预算存储的 sent 行（3.0）：不是回执，也不算跳过的行。
+    // A bare envelope is a receipt whatever other keys it carries (FIXED BR-6: they are not signed).
+    // 裸信封无论另带什么键都是回执（那些键不在签名之内）。
+    if (isObj(v) && typeof v.sig === 'string' && isObj(v.result) && !('receipt' in v && 'ok' in v)) { records.push({ source, logged: null, envelope: v }); return }
+    const s = sentOf(v, source)
+    if (s) { sent.push(s); return }
+    const x = releasedOf(v, source)
+    if (x) { released.push(x); return }
     if (isObj(v) && 'receipt' in v && 'ok' in v) {
       const logged = { ts: typeof v.ts === 'string' ? v.ts : null, ok: v.ok === true, method: v.method, path: v.path, status: v.status, stream: v.stream, format: v.format,
         sidecarError: v.sidecarError === true, problems: Array.isArray(v.problems) ? v.problems.filter((p) => typeof p === 'string') : [] }
@@ -147,7 +160,7 @@ export function readRecords(files, h) {
       take(v, file, i + 1)
     })
   }
-  return { records, skipped }
+  return { records, skipped, sent, released }
 }
 
 /**
@@ -333,6 +346,10 @@ Usage:
   ${cmd} receipts tail   --receipts <file|dir> [-n 20] [--fail] [filters] [--json]
   ${cmd} receipts show   <id> --receipts <file|dir> [--manifest <file>] [--request <file>] [--response <file>] [--json]
   ${cmd} receipts export --receipts <file|dir> [filters] [--format csv|json] [--out <file>]
+  ${cmd} receipts statement --receipts <file|dir> --from <t> --to <t> [--policy <file>] [--mandate <file>] [--json]
+                       (3.0) a spend statement: what the receipts claim per service, model and UTC day, your caps
+                       alongside; signed by nothing. ${cmd} receipts statement --help
+                       花费声明：按服务、模型、UTC 日汇总回执声称的数并列出上限；没有签名
 
   --receipts <path>    the file tapeapi-verify --log wrote (JSON lines), or a directory of such files (*.jsonl, *.json);
                        bare receipt envelopes are read too. Also --log <path>
@@ -359,8 +376,10 @@ Usage:
 It reads files only: no network, no key asked for, nothing uploaded. Output redaction as tapeapi connect's (secret-named
 environment variables, key shapes); the hashes, ids and addresses a receipt carries are shown as they are.
 只读文件：不联网、不索要密钥、不上传。输出脱敏同 tapeapi connect；回执本身带的哈希、id 与地址原样显示。
-A receipt proves who signed which request and response bytes and what usage and price were claimed; it does not prove
-which model ran. 回执证明谁签了哪些请求与回答字节、声称了多少用量与价格；不证明实际运行的是哪个模型。
+A receipt proves who signed which request bytes and which answer (the exact bytes of a whole answer; the event data
+of a stream, read by a fixed rule) and what usage and price were claimed; it does not prove which model ran.
+回执证明谁签了哪些请求字节与哪个回答（整体回答取其确切字节；流式回答取按固定规则读出的事件数据）、声称了多少用量与价格；
+不证明实际运行的是哪个模型。
 Exit status: 0 done (show: the replayed checks passed); 1 show: a check failed; 2 a usage mistake (also an id not in the
 files); 3 show: no manifest snapshot for the receipt, nothing decided.
 退出码：0 完成（show：重放的核验通过）；1 show：有核验未通过；2 用法错误（id 不在文件里也算）；3 show：没有该回执的清单快照，无法判定。
@@ -381,8 +400,8 @@ export function loadSource(opts, h) {
   if (!path) throw usage(`--receipts <file|dir> is needed: the file tapeapi-verify --log wrote, or a directory of them`, `需要 --receipts <文件|目录>：tapeapi-verify --log 写的文件，或放这些文件的目录`)
   let src
   try { src = receiptFiles(at(path, h), h) } catch (e) { throw usage(`cannot read ${path}: ${e.code ?? e.message}`, `读不了 ${path}：${e.code ?? e.message}`) }
-  let records, skipped
-  try { ({ records, skipped } = readRecords(src.files, h)) } catch (e) { throw usage(`cannot read ${e.path ?? path}: ${e.code ?? e.message}`, `读不了 ${e.path ?? path}：${e.code ?? e.message}`) }
+  let records, skipped, sent, released
+  try { ({ records, skipped, sent, released } = readRecords(src.files, h)) } catch (e) { throw usage(`cannot read ${e.path ?? path}: ${e.code ?? e.message}`, `读不了 ${e.path ?? path}：${e.code ?? e.message}`) }
   if (opts['--manifest'] !== undefined) {
     try { h.statSync(at(opts['--manifest'], h)) } catch (e) { throw usage(`cannot read --manifest ${opts['--manifest']}: ${e.code ?? e.message}`, `读不了 --manifest ${opts['--manifest']}：${e.code ?? e.message}`) }
   }
@@ -402,7 +421,7 @@ export function loadSource(opts, h) {
     containers = containers ? new Set([...containers].filter((c) => set.has(c))) : set
   }
   const filters = { containers, model: opts['--model'] ?? null, ...timeOptions(opts) }
-  return { path, src, records, skipped, manifests, badManifests: bad, filters }
+  return { path, src, records, skipped, sent, released, manifests, badManifests: bad, filters }
 }
 
 /**
@@ -420,10 +439,12 @@ export async function runReceipts(argv, io = {}) {
   const say = (write, text) => write(redactKeeping(text, keep, env))
   const help = receiptsUsage(cmd)
   const [sub, ...rest] = argv
+  // statement (3.0, experimental): its own module, loaded here (it imports this one) / statement 在自己的模块里，在此加载
+  if (sub === 'statement') return (await import('./statement-cli.js')).runStatement(rest, io)
   let parsed, common, src
   try {
     if (sub === '--help' || sub === '-h' || sub === 'help') { say(stdout, help); return { exitCode: 0 } }
-    if (!['tail', 'show', 'export'].includes(sub)) throw usage(sub === undefined ? 'no subcommand: tail, show or export' : `unknown subcommand ${JSON.stringify(sub)}: tail, show or export`, sub === undefined ? '没有子命令：tail、show 或 export' : `未知子命令 ${JSON.stringify(sub)}：tail、show 或 export`)
+    if (!['tail', 'show', 'export'].includes(sub)) throw usage(sub === undefined ? 'no subcommand: tail, show, export or statement' : `unknown subcommand ${JSON.stringify(sub)}: tail, show, export or statement`, sub === undefined ? '没有子命令：tail、show、export 或 statement' : `未知子命令 ${JSON.stringify(sub)}：tail、show、export 或 statement`)
     parsed = parseOptions(rest, RECEIPTS_SPEC)
     if (parsed.opts['--help']) { say(stdout, help); return { exitCode: 0 } }
     common = commonOptions(parsed.opts)

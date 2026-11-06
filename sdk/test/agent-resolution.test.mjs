@@ -1,4 +1,4 @@
-// Container agents (@experimental), PLAN-1.8-2.0 §3.1 T-a: without a `resolve` option the kit resolves the agent and the
+// Container agents (@experimental), since 2.0: without a `resolve` option the kit resolves the agent and the
 // providers as TAP-11 §2 says (pinned block, strict reads) through the conformance mode made from its own client
 // (conform-sibling.js): the same nodes, RPC client, fetch and clock, never allChains, no other chain. With `resolve` the
 // caller's function is used unchanged. A client whose contracts TAP-10 does not list (the fake chain of agent.test.mjs)

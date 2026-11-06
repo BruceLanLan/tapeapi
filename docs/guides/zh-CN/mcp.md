@@ -96,7 +96,7 @@ not the params or result.)
 
 远程服务器、签名代理的 `/mcp` 和本地命令都支持四个 MCP 版本。其中三个使用 `initialize` 握手：2025-11-25、2025-06-18 和
 2025-03-26。第四个 2026-07-28 没有握手：每个请求在 `params._meta` 里自带版本和客户端能力。对 2026-07-28 的支持是**实验性**的
-（2.5）：不在 2.x 兼容承诺之内，任何 2.x 版本都可能改动它。两种情况下调用之间都不保存会话，也不发 `Mcp-Session-Id`。
+（2.5）：不在兼容承诺之内，任何次版本都可能改动它。两种情况下调用之间都不保存会话，也不发 `Mcp-Session-Id`。
 
 一个请求的 `params._meta` 里有键 `io.modelcontextprotocol/protocolVersion`、值不是三个旧版本之一、方法也不是
 `initialize` 时，就按 2026-07-28 处理。旧版本的客户端都不发这个键，所以它们得到的回答与 2.4 完全相同：测试集回放从
@@ -139,10 +139,11 @@ not the params or result.)
   过滤列表，就需要 `"private"`，这一版不提供。
 - 2.5 之前，版本键的值若不是任何版本（`"latest"`、`"2026-7-28"`、更晚的日期、数字），会被当作旧版本请求回答。现在按
   2026-07-28 的要求拒绝。
-- 签名代理连接上游时默认仍以 `initialize` 开场，与以前相同。设置 `upstreamNegotiation: 'auto'`（实验性）后，它先向上游发
-  `server/discover`，上游支持 2026-07-28 就用它通信，所以只支持 2026-07-28 的上游也能代理；其它回答都会让它退回
-  `initialize`。本地命令读取已 tape out 的 MCP 服务器的工具（从它的 `mcp.endpoint`）时，可以用
-  `tapeapi-mcp --upstream-negotiation auto`（实验性，2.5；默认 `legacy` 与以前一样以 `initialize` 开场）按同样的规则选择。
+- 3.0 起签名代理先向上游发 `server/discover`（`upstreamNegotiation: 'auto'`，实验性，现为默认），上游支持 2026-07-28 就用它
+  通信，所以只支持 2026-07-28 的上游也能代理；错误回答、HTTP 4xx 或超时没有回答都会让它退回 `initialize`。这第一个请求遇到
+  网络失败即为失败、不退回；对 `server/discover` 回一个不含任何版本的结果的上游，启动时被拒绝。`upstreamNegotiation: 'legacy'`
+  以 `initialize` 开场，即 2.x 的行为。本地命令读取已 tape out 的 MCP 服务器的工具（从它的 `mcp.endpoint`）时默认也这样选择
+  （`tapeapi-mcp --upstream-negotiation legacy` 即 2.x 的方式）。
   变的只是读取方式：工具仍须哈希到清单的 `mcp.toolsSha256`，钉住的是同一个摘要，每次调用仍走签名的 TapeAPI 路径。
   日志行会写明这次是怎样读取的。
 
@@ -164,11 +165,11 @@ not the params or result.)
 
 ## 本地核验命令
 
-`tapeapi-mcp` 是 SDK 发布包里的一个本地 MCP 服务器（stdio），需要 Node.js 20 或以上。`npx` 从 GitHub Release 取得它，
+`tapeapi-mcp` 是 SDK 发布包里的一个本地 MCP 服务器（stdio），需要 Node.js 22 或以上。`npx` 从 GitHub Release 取得它，
 不经过 npm 注册表：
 
 ```bash
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-mcp 11.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 它和远程服务器的不同之处：
@@ -197,7 +198,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -217,7 +218,7 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0
       "command": "npx",
       "args": [
         "-y",
-        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz",
+        "--package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz",
         "tapeapi-mcp",
         "11.1013.tape"
       ]
@@ -229,14 +230,14 @@ npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0
 ### Claude Code
 
 ```bash
-claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-mcp 11.1013.tape
+claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-mcp 11.1013.tape
 ```
 
 ### 远程还是本地
 
 | | 远程服务器 | 本地命令 |
 |---|---|---|
-| 安装 | 无 | Node.js 20 或以上 |
+| 安装 | 无 | Node.js 22 或以上 |
 | 谁核验签名 | 任何人，事后用链接核验 | 命令本身，在模型看到结果之前 |
 | 工具列表 | 以服务器列出的为准 | 从链上清单读取并钉住；有变化时拒绝调用，直到你接受 |
 | 服务 | `11.1013.tape` | 任何 TapeAPI 服务，按名称或容器地址指定 |
@@ -278,7 +279,7 @@ claude mcp add tapeapi -- npx -y --package=https://github.com/BruceLanLan/tapeap
 [调用服务](consume.md)里那样在仓库的克隆目录里操作：
 
 ```bash
-npm install https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz
+npm install https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz
 ```
 
 ```js
@@ -344,7 +345,7 @@ export default {
 - 每次工具调用都像普通调用一样经过 `provider.handleRequest`，所以结果是同样签名的信封，受同样的限流，并附带回执和核验链接。
 - `/mcp` 是你服务器上的一条路由。加上它不需要改清单，也不改变链上任何东西。
 - **公共服务不在清单里声明这条路由**（没有 `mcp` 字段），这是决定，不是还没做。清单的 `mcp` 字段（[TAPI-20 §3.8](../../../spec/TAPI-20.md)，
-  以及 MCP 工具草案 TAPs #16）是为另一个方向写的：签名代理在前、真正的 MCP 服务器在后（见下文“Tape out 你自己的 MCP 服务器”），
+  以及 MCP 工具草案，已合并为 Draft 的 TAP-15，即 #16）是为另一个方向写的：签名代理在前、真正的 MCP 服务器在后（见下文“Tape out 你自己的 MCP 服务器”），
   每个方法就是一个 MCP 工具，它的签名结果就是该工具的 MCP 结果（`{ content, ... }`）。`createMcpEndpoint` 方向相反：工具由方法生成，
   每个方法回答的是它自己的 JSON。若 `11.1013.tape` 声明了 `mcp`，`tapeapi connect` 会把它显示为 MCP 工具服务并给出 `tapeapi-mcp`
   的配置，而 `tapeapi-mcp` 会核验每个回答、然后拒绝把它当作工具结果展示。所以 `/mcp` 一直不声明。
@@ -430,12 +431,14 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
 代理的网址，签署委托，把 `CIRCUITS`、`TOKEN_ID`、`CONTAINER`、`DELEGATION_EXPIRES` 和 `DELEGATION_SIG` 设为变量，
 `SIGNER_KEY` 设为 secret。每一步见[运行服务](provide.md#2-从手机上线cloudflare-与持有者控制台)。
 
-**浏览器与 `Origin`（2.5，实验性）。** 默认情况下 `/mcp` 对任何来源都以 CORS `*` 作答：不涉及 cookie、会话或调用方密钥，网页
-得不到它直接调用拿不到的东西。但代理若在你自己的电脑（或内网）上运行，前面是有副作用的工具（文件、shell、数据库），情况就不同了：
-你打开的任何网页都能经 `http://127.0.0.1:.../mcp` 调用这些工具。请给 `createMcpProxy` 设置 `allowedOrigins: ['https://app.example']`
-（`examples/mcp-proxy/index.mjs` 里是变量 `ALLOWED_ORIGINS`，逗号分隔）：`Origin` 不在名单内的请求在执行任何东西之前就以 HTTP 403
-拒绝（Streamable HTTP 的要求）；名单内的来源代替 `*` 回显；不带 `Origin` 的请求（桌面客户端、`curl`）照常作答。`createMcpEndpoint`
-有同样的选项，公共 Worker 用变量 `MCP_ALLOWED_ORIGINS`。
+**浏览器与 `Origin`（2.5，实验性；3.0 改了默认）。** 代理若在你自己的电脑（或内网）上运行，前面是有副作用的工具（文件、shell、
+数据库），你打开的任何网页都能经 `http://127.0.0.1:.../mcp` 调用这些工具。所以 3.0 起 `createMcpProxy` 对带 `Origin` 头的请求
+（也就是所有浏览器请求）在执行任何东西之前就以 HTTP 403 拒绝（Streamable HTTP 的要求），除非你列出这个来源：
+`allowedOrigins: ['https://app.example']`（`examples/mcp-proxy/index.mjs` 里是变量 `ALLOWED_ORIGINS`，逗号分隔）。名单内的来源
+代替 `*` 回显；不带 `Origin` 的请求（桌面客户端、`curl`）照常作答。`allowedOrigins: '*'`（`ALLOWED_ORIGINS=*`）对任何来源以 CORS `*`
+作答，即 2.x 的行为。Worker 模板 `examples/mcp-proxy/worker.js` 在 `ALLOWED_ORIGINS` 没列来源时仍接受任何来源：公开主机名上的
+来源校验保护不了什么，而持有人操作台需要它（见下）。`createMcpEndpoint` 有同样的选项，但默认仍是任何来源；公共 Worker
+（`api.tapeapi.fun/mcp`）用变量 `MCP_ALLOWED_ORIGINS`，那里没有设置。
 
 ### 2. 用持有者控制台发布清单
 
@@ -456,12 +459,12 @@ UPSTREAM_URL=https://your-server.example/mcp UPSTREAM_AUTHORIZATION="Bearer ..."
 
   ```bash
   # 42.1013.tape 是示例名：换成你的服务的 TapeOut 名字
-  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-mcp 42.1013.tape
+  npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-mcp 42.1013.tape
   ```
 
 ### 用 `tapeapi connect` 查看服务
 
-`tapeapi connect <名字>`（实验性，对 MCP 工具服务 2.3 起，不受 2.x 兼容承诺约束）按链上的样子展示已 tape out 的 MCP 服务器。清单有 `mcp` 字段、
+`tapeapi connect <名字>`（实验性，对 MCP 工具服务 2.3 起，不受兼容承诺约束）按链上的样子展示已 tape out 的 MCP 服务器。清单有 `mcp` 字段、
 没有 `ai` 字段时，卡片写明“MCP 工具服务”，显示端点、清单里的免费方法（`tapeapi-mcp` 不提供收费方法；其中哪些是工具由端点的 `tools/list` 决定）与 `toolsSha256` 的前 8 位，再给出 Claude Code 与
 Claude Desktop 的配置：经 `tapeapi-mcp`（每个回答在你的机器上核验），以及标明不核验的、直连声明端点的写法（直连的回答不是签名信封，不要当作已签名或已核验）。它只读链与清单：不访问端点，
 任何配置都不含密钥。`--proxy` 为该服务运行 `tapeapi-mcp`（stdout 上是它的 JSON-RPC，卡片写到 stderr）。
@@ -517,7 +520,9 @@ node sdk/bin/tapeapi.js connect 42.1013.tape
   全部工具），但不能经代理调用。代理的启动日志会列出这些工具。
 - **目前只有免费工具。** 每个工具都成为一个免费方法。付费调用要等托管合约通过审计（[路线图](../../ROADMAP.md)）。
 - **控制台这一步需要 CORS。** 控制台在你的浏览器里从 `mcp.endpoint` 读取 `tools/list`，所以这个端点必须允许来自
-  `https://tapeapi.fun` 的跨域请求。代理的 `/mcp` 已经允许。不要在它前面放任何会拦截 `OPTIONS` 请求或去掉 CORS 响应头的东西。
+  `https://tapeapi.fun` 的跨域请求。Worker 模板的 `/mcp` 在你没设 `ALLOWED_ORIGINS` 时允许；用 `examples/mcp-proxy/index.mjs`
+  或自己的 `createMcpProxy` 时要把它列上（`ALLOWED_ORIGINS=https://tapeapi.fun`、`allowedOrigins: ['https://tapeapi.fun']`），
+  因为 3.0 起代理拒绝没给过的浏览器来源。不要在它前面放任何会拦截 `OPTIONS` 请求或去掉 CORS 响应头的东西。
 - **大小限制。** 你的服务器单次回答最多 1 MiB、20 秒。清单里每个方法的说明截到 256 个字符（Unicode 码点），完整文本由 `toolsSha256`
   钉住。控制台一笔交易最多发布 24 000 字节、64 个方法。
 - **限流**按进程计算（Worker 按隔离实例计算）：默认每个 IP 地址每分钟 600 次免费调用。

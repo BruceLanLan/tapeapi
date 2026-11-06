@@ -21,7 +21,7 @@ test('runTrial: every step passes, and the doctor ran its service checks for rea
 })
 
 test('the command exits 0 and prints both languages by default', async () => {
-  const child = spawn(process.execPath, [fileURLToPath(new URL('./trial.mjs', import.meta.url))], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./trial.mjs', import.meta.url))], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000, killSignal: 'SIGKILL' })
   let out = ''
   child.stdout.on('data', (d) => { out += d }); child.stderr.on('data', (d) => { out += d })
   const code = await new Promise((ok) => child.on('exit', ok))

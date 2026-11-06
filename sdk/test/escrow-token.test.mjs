@@ -324,7 +324,7 @@ test('FIXED T-b-B5: setContributionAll: escrows null is refused, saying it is no
   assert.deepEqual(mk(chain, { escrow: ESC2, allowEscrows: [ADDR.escrow] }).tx.setContributionAll({ circuits: ADDR.circuits, tokenId: 1, bps: 0 }).escrows, [checksumAddress(ADDR.escrow)])
 })
 
-// PLAN-1.0 "1.8" / PLAN-1.8-2.0 §1.2: setContributionAll, the doctor's --escrows warning made actionable
+// 1.8: setContributionAll, the doctor's --escrows warning made actionable
 test('tx.setContributionAll: one setContribution per escrow instance, the allowed ones by default, never an empty list', async () => {
   const chain = createFakeChain()
   const api = mk(chain, { allowEscrows: [ADDR.escrow, ESC2] })

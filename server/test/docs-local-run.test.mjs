@@ -40,7 +40,7 @@ for (const file of ['docs/guides/provide.md', 'docs/guides/zh-CN/provide.md', 's
       const run = code.replace('await provider.listen(8787)', 'const server = await provider.listen(0)') +
         '\nconsole.log("STARTED", server.address().port)\nserver.close()\n'
       writeFileSync(join(dir, 'run.mjs'), run)
-      const r = spawnSync(process.execPath, ['run.mjs'], { cwd: dir, env: { ...process.env, SIGNER_KEY: KEY }, encoding: 'utf8', timeout: 30_000 })
+      const r = spawnSync(process.execPath, ['run.mjs'], { cwd: dir, env: { ...process.env, SIGNER_KEY: KEY }, encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL' })
       assert.equal(r.status, 0, r.stderr)
       assert.match(r.stdout, /STARTED \d+/)
     } finally { rmSync(dir, { recursive: true, force: true }) }

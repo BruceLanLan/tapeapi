@@ -19,7 +19,7 @@ for t in json.loads(sys.stdin.read()):
     except Exception as e: out.append({'err': type(e).__name__})
 print(json.dumps(out, ensure_ascii=True))
 `
-const py = (texts) => JSON.parse(execFileSync('python3', ['-c', PY, VERIFY], { input: JSON.stringify(texts) }).toString())
+const py = (texts) => JSON.parse(execFileSync('python3', ['-c', PY, VERIFY], { input: JSON.stringify(texts), timeout: 300_000, killSignal: 'SIGKILL' }).toString())
 const js = (t) => { try { return { ok: canonicalJSON(safeParseJSON(t)) } } catch (e) { return { err: e.code } } }
 
 test('FIXED FZ-1: verify.py now writes numbers in [1e-6, 1e-4) exactly as ECMAScript does (0.00001)', () => {

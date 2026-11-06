@@ -27,7 +27,7 @@ const conv = (pricing = sample(), o = {}) => convertPricing(pricing, { usdExchan
 const Q = ['--quota-per-unit', '500000']
 const byId = (r, id) => r.models.find((m) => m.id === id)
 const refusal = (r, id) => r.refused.find((x) => x.id === id)
-const cli = (args) => spawnSync(process.execPath, [BIN, ...args], { encoding: 'utf8' })
+const cli = (args) => spawnSync(process.execPath, [BIN, ...args], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
 const model = (extra) => ({ model_name: 'model-x', vendor_id: 1, quota_type: 0, model_ratio: 1, model_price: 0, owner_by: '', completion_ratio: 2, enable_groups: ['1x'], supported_endpoint_types: ['openai'], ...extra })
 const withModels = (...extra) => { const p = sample(); p.data.push(...extra); return p }
 

@@ -2,7 +2,8 @@
 """A second, independent implementation of the TapeAPI digests, in pure Python with no dependencies.
 
 Its only job is to disagree with the reference SDK if the specification is ambiguous. Everything here was
-written from the specifications (TAPI-20, TAPI-21, TAPI-22, TAPI-23, TAPI-26 and TAPI-27 with its §3.8, both in v1 and v2) and checked against spec/vectors/*.json;
+written from the specifications (TAPI-20, TAPI-21, TAPI-22, TAPI-23, TAPI-26 and TAPI-27 with its §3.8, both in v1 and v2, and the
+receipt-reference proposal of 3.0, which is not normative and not part of any TAP) and checked against spec/vectors/*.json;
 nothing is imported from the JavaScript. X25519, HKDF, (X)ChaCha20-Poly1305 and Ed25519 follow their RFCs. If this file and the SDK ever disagree, the specification is the thing that is wrong.
 
 用纯 Python、零依赖写的第二个独立实现。它唯一的职责，是在规范存在歧义时与参考 SDK 产生分歧。
@@ -2181,6 +2182,296 @@ for c in rv['cases']:
 check('review/coverage (hashes, signers, level 1, level 2)', (rv_counts['hash'], rv_counts['signer'], rv_counts['l1'], rv_counts['l2']), (45, 39, 12, 4))
 allth.append(rv_th)
 check('review/the Review typehash differs from every other type of the hub domain', len(set(allth)), len(allth))
+
+# ---------- visitor grants (EXPERIMENTAL prototype; not a TAP): self-test vectors ----------
+# Written from the format's field table (VisitorGrant, GrantRevocation in their own EIP-712 domain "TapeAPI
+# Visitor Grant"), the call-proof layout (140 bytes) and the v1 statement templates; nothing from the JavaScript.
+# 访客授权（实验性原型，不是 TAP）的自测向量：按格式的字段表、调用证明布局与 v1 模板独立实现。
+import datetime
+vg = load_vec('interop-visitor-grant.json')
+VG_FIELDS = [('string', 'statement'), ('address', 'user'), ('address', 'caller'), ('string', 'callerName'), ('address', 'callerHolder'),
+             ('address', 'callerKey'), ('address', 'audience'), ('string', 'audienceName'), ('address', 'audienceHolder'),
+             ('string[]', 'methods'), ('uint32', 'maxCalls'), ('uint64', 'notBefore'), ('uint64', 'expires'), ('bytes32', 'nonce')]
+GR_FIELDS = [('address', 'user'), ('bytes32[]', 'grantHashes'), ('uint64', 'revokedBefore'), ('uint64', 'issued')]
+vg_types = {'VisitorGrant': 'VisitorGrant(%s)' % ','.join('%s %s' % f for f in VG_FIELDS),
+            'GrantRevocation': 'GrantRevocation(%s)' % ','.join('%s %s' % f for f in GR_FIELDS)}
+for n, t in vg_types.items():
+    check('grant/type ' + n, t, vg['types'][n])
+    check('grant/typehash ' + n, h(keccak256(t.encode())), vg['typeHashes'][n])
+check('grant/no money in the types', any(w in (vg_types['VisitorGrant'] + vg_types['GrantRevocation']).lower() for w in ('amount', 'token', 'fee', ' cap')), False)
+vd = vg['domain']
+check('grant/domain is its own, not TAP-11 "TapeAPI"', (vd['name'], vd['version']), ('TapeAPI Visitor Grant', '1'))
+vg_dsep = eip712_domain(vd['name'], vd['version'], vd['chainId'], vd['verifyingContract'])
+check('grant/domainSeparator', h(vg_dsep), vg['domainSeparator'])
+check('grant/domain differs from the TAP-11 domain on the same hub', vg_dsep != eip712_domain('TapeAPI', '1', vd['chainId'], vd['verifyingContract']), True)
+def vg_enc(t, v):
+    if t == 'string': return keccak256(v.encode('utf-8'))
+    if t == 'string[]': return keccak256(b''.join(keccak256(x.encode('utf-8')) for x in v))
+    if t == 'bytes32[]': return keccak256(b''.join(bytes.fromhex(x[2:]) for x in v))
+    if t == 'address': return addr32(v)
+    if t == 'bytes32': return bytes.fromhex(v[2:])
+    return int(v).to_bytes(32, 'big')
+def vg_struct(name, fields, m):
+    return keccak256(keccak256(vg_types[name].encode()) + b''.join(vg_enc(t, m[f]) for t, f in fields))
+def vg_utc(s):
+    return datetime.datetime.fromtimestamp(s, datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+def vg_statement(m, lang):
+    ms, n = ', '.join(m['methods']), m['maxCalls']
+    if lang == 'zh':
+        return '允许 %s 代表我调用 %s 的方法：%s。最多 %d 次，%s 至 %s UTC 有效。本授权不含任何付款。可随时向 %s 撤销。' % (
+            m['callerName'], m['audienceName'], ms, n, vg_utc(m['notBefore']), vg_utc(m['expires']), m['audienceName'])
+    return 'Allow %s to call these methods of %s on my behalf: %s. At most %d call%s, valid from %s to %s UTC. This grant includes no payment. Revocable at any time with %s.' % (
+        m['callerName'], m['audienceName'], ms, n, '' if n == 1 else 's', vg_utc(m['notBefore']), vg_utc(m['expires']), m['audienceName'])
+for c in vg['grants']:
+    m = c['message']
+    check('grant/statement en/' + c['name'], vg_statement(m, 'en'), c['statements']['en'])
+    check('grant/statement zh/' + c['name'], vg_statement(m, 'zh'), c['statements']['zh'])
+    check('grant/statement is a v1 rendering/' + c['name'], m['statement'] in (vg_statement(m, 'en'), vg_statement(m, 'zh')), True)
+    check('grant/statement names no address/' + c['name'], '0x' in m['statement'], False)
+    check('grant/methodsHash/' + c['name'], h(vg_enc('string[]', m['methods'])), c['methodsHash'])
+    sh = vg_struct('VisitorGrant', VG_FIELDS, m)
+    check('grant/structHash/' + c['name'], h(sh), c['structHash'])
+    dg = typed_digest(vg_dsep, sh)
+    check('grant/digest/' + c['name'], h(dg), c['digest'])
+    check('grant/user signer/' + c['name'], recover_address(dg, c['userSig']), vg['userAddress'].lower())
+    check('grant/bounds/' + c['name'], (1 <= len(m['methods']) <= 8, 1 <= m['maxCalls'] <= 10000, 0 < m['expires'] - m['notBefore'] <= 604800, m['callerKey'].lower() != m['user'].lower()), (True, True, True, True))
+oc = vg['otherChain']
+check('grant/another chain, another digest', h(typed_digest(eip712_domain(vd['name'], vd['version'], oc['chainId'], vd['verifyingContract']), vg_struct('VisitorGrant', VG_FIELDS, vg['grants'][0]['message']))), oc['digest'])
+for p in vg['proofs']:
+    pre = (vg['callProofPrefix'].encode() + bytes.fromhex(p['audience'][2:]) + bytes.fromhex(p['grantHash'][2:]) +
+           keccak256(p['id'].encode('utf-8')) + keccak256(canonical({'method': p['method'], 'params': p['params']}).encode('utf-8')) + u64(p['ts']))
+    check('grant/proof preimage is 140 bytes/' + p['name'], len(pre), 140)
+    check('grant/proof preimage/' + p['name'], h(pre), p['preimage'])
+    check('grant/proof digest/' + p['name'], h(keccak256(pre)), p['digest'])
+    check('grant/proof personal digest/' + p['name'], h(eip191(keccak256(pre))), p['personalDigest'])
+    check('grant/proof signer is the callerKey/' + p['name'], recover_address(eip191(keccak256(pre)), p['sig']), vg['callerKeyAddress'].lower())
+    check('grant/proof prefix is not TAP-13\'s/' + p['name'], pre[:14] != b'TAPI-1/resp/v2', True)
+for r in vg['revocations']:
+    sh = vg_struct('GrantRevocation', GR_FIELDS, r['revocation'])
+    check('grant/revocation structHash/' + r['name'], h(sh), r['structHash'])
+    check('grant/revocation digest/' + r['name'], h(typed_digest(vg_dsep, sh)), r['digest'])
+    check('grant/revocation signer/' + r['name'], recover_address(typed_digest(vg_dsep, sh), r['sig']), vg['userAddress'].lower())
+check('grant/the two typehashes differ from every other typehash checked here', len(set(allth + [keccak256(t.encode()) for t in vg_types.values()])), len(allth) + 2)
+
+# ---------- visitor grants: refusal vectors (review 2026-10-22; a second file, the first one's bytes unchanged) ----------
+# Steps 1-8 of TAPI-28 §3.10 written out again from the text (shape, audience, methods, window, statement, call proof,
+# replay [no state here], visitor's signature by ECDSA), and the reason of each case compared. Nothing from the JavaScript.
+# 拒绝向量：按文本重写第 1–8 步，逐条比对原因。
+import re as _re
+vgn = load_vec('interop-visitor-grant-negative.json')
+_ADDR = _re.compile(r'^0x[0-9a-fA-F]{40}$')
+_H32 = _re.compile(r'^0x[0-9a-f]{64}$')
+_METHOD = _re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$')
+_NAME = _re.compile(r'^([1-9][0-9]*)\.(0|[1-9][0-9]*)\.tape$')        # canonical, BNB Smart Chain (no area code)
+_SIG = _re.compile(r'^0x(?:[0-9a-fA-F]{2}){65,1024}$')
+_MAXT = 253402300799
+def _isint(v): return isinstance(v, int) and not isinstance(v, bool)
+def _u16len(x): return len(x.encode('utf-16-le', 'surrogatepass')) // 2
+def _addr_ok(v): return isinstance(v, str) and bool(_ADDR.match(v)) and int(v[2:], 16) != 0
+def vg_grant_reason(doc, c):
+    r = c['request']; w = r['grant']; now = r['now']; me = doc['me']
+    if not isinstance(w, dict) or sorted(w) != ['chainId', 'message', 'proof', 'userSig', 'v']: return 'malformed'
+    if not _isint(w['v']) or w['v'] != 1 or not _isint(w['chainId']) or w['chainId'] != doc['chainId']: return 'malformed'
+    m = w['message']
+    if not isinstance(m, dict) or sorted(m) != sorted(f for _, f in VG_FIELDS): return 'malformed'
+    if not isinstance(m['statement'], str) or _u16len(m['statement']) > 2048: return 'malformed'
+    for f in ('user', 'caller', 'callerHolder', 'callerKey', 'audience', 'audienceHolder'):
+        if not _addr_ok(m[f]): return 'malformed'
+    for f in ('callerName', 'audienceName'):
+        if not isinstance(m[f], str) or not _NAME.match(m[f]): return 'malformed'
+    if m['callerKey'].lower() == m['user'].lower(): return 'malformed'
+    ms = m['methods']
+    if not isinstance(ms, list) or not 1 <= len(ms) <= 8 or not all(isinstance(x, str) and _METHOD.match(x) for x in ms) or len(set(ms)) != len(ms): return 'malformed'
+    if not _isint(m['maxCalls']) or not 1 <= m['maxCalls'] <= 10000: return 'malformed'
+    for f in ('notBefore', 'expires'):
+        if not _isint(m[f]) or not 0 <= m[f] <= _MAXT: return 'malformed'
+    if not m['notBefore'] < m['expires'] <= m['notBefore'] + 604800: return 'malformed'
+    if not isinstance(m['nonce'], str) or not _H32.match(m['nonce']) or int(m['nonce'], 16) == 0: return 'malformed'
+    if not isinstance(w['userSig'], str) or not _SIG.match(w['userSig']): return 'malformed'
+    pf = w['proof']
+    if not isinstance(pf, dict) or sorted(pf) != ['sig', 'ts'] or not _isint(pf['ts']) or pf['ts'] < 0 or not isinstance(pf['sig'], str): return 'malformed'
+    # 2 audience / 受众
+    if m['audience'].lower() != me['container'].lower() or m['audienceName'] != me['name']: return 'wrong-audience'
+    # 3 methods / 方法
+    takes = {d['name'] for d in doc['manifest']['methods'] if d.get('grant') in ('required', 'optional')}
+    if r['method'] not in ms or r['method'] not in takes or any(x not in takes for x in ms): return 'method-out-of-scope'
+    # 4 window / 时间窗
+    if now + 300 < m['notBefore'] or now >= m['expires']: return 'expired'
+    # 5 statement / 那句话
+    if m['statement'] not in (vg_statement(m, 'en'), vg_statement(m, 'zh')): return 'statement-mismatch'
+    dsep = eip712_domain('TapeAPI Visitor Grant', '1', doc['chainId'], doc['hub'])
+    gh = typed_digest(dsep, vg_struct('VisitorGrant', VG_FIELDS, m))
+    # 6 call proof: 65 bytes, v 27 or 28 only, low s (recover_address checks s) / 调用证明：只收 v 27/28
+    sg = pf['sig']
+    if abs(pf['ts'] - now) > 300 or not _re.match(r'^0x[0-9a-fA-F]{130}$', sg) or int(sg[-2:], 16) not in (27, 28): return 'bad-proof'
+    try: idb = r['id'].encode('utf-8')                       # a lone surrogate has no UTF-8 form / 孤立代理项无 UTF-8 形式
+    except UnicodeEncodeError: return 'bad-proof'
+    pre = (b'TAPI-grant/call1' + bytes.fromhex(me['container'][2:]) + gh + keccak256(idb) +
+           keccak256(canonical({'method': r['method'], 'params': r['params']}).encode('utf-8')) + u64(pf['ts']))
+    if len(pre) != 140 or recover_address(eip191(keccak256(pre)), sg) != m['callerKey'].lower(): return 'bad-proof'
+    # 7 replay: no state in a vector / 重放：向量里没有状态
+    # 8 visitor's signature, ECDSA (v 0/1 read as 27/28; no contract code at `user` here) / 访客签名
+    us = w['userSig']
+    if len(us) != 132 or recover_address(gh, us) != m['user'].lower(): return 'bad-user-signature'
+    return None
+for c in vgn['cases']:
+    check('grant-neg/' + c['name'], vg_grant_reason(vgn, c), c['reason'])
+check('grant-neg/at least 40 refusals and a control', (sum(1 for c in vgn['cases'] if c['reason']) >= 40, any(c['reason'] is None for c in vgn['cases'])), (True, True))
+
+# ======================================================= PROPOSAL (not normative): priceRef and receiptRef ====
+# A proposal, not part of TAPI-21 or of any TAP (see the CHANGELOG, 3.0): the price basis result.priceRef and the receipt
+# reference, checked from the rules below alone (spec/vectors/tapi-21-price-ref.json, spec/vectors/tapi-21-receipt-ref.json).
+# 提案（非规范）：价格依据与回执引用，只按下面写出的规则核对。
+PRICE_MEMBERS = ('currency', 'unit', 'input', 'output', 'cacheRead', 'cacheWrite', 'cacheWrite1h', 'reasoning')
+def models_basis(models):
+    """ai.models reduced to the members TAPI-20 §3.9 defines, in their published order. / 只留 §3.9 定义的成员。"""
+    out = []
+    for m in models:
+        e = {k: m[k] for k in ('id', 'aliases', 'formats') if k in m}
+        e['prices'] = [{k: p[k] for k in PRICE_MEMBERS if k in p} for p in m['prices']]
+        out.append(e)
+    return out
+def price_ref(ai_field):
+    return hashlib.sha256(canonical(models_basis(ai_field['models'])).encode('utf-8')).hexdigest()
+def receipt_ref(e):
+    sig = e['sig'].lower()
+    if sig[130:] in ('00', '01'): sig = sig[:130] + ('1b' if sig[130:] == '00' else '1c')
+    m = {'id': e['id'], 'ok': e['ok'], 'container': e['container'].lower(), 'ts': e['ts'], 'method': e['method'],
+         'params': e['params'], 'result': e['result'], 'sig': sig}
+    return hashlib.sha256(canonical(m).encode('utf-8')).hexdigest()
+def receipt_shaped(e):
+    return (isinstance(e, dict) and e.get('ok') is True and isinstance(e.get('sig'), str) and re.fullmatch(r'0x[0-9a-fA-F]{130}', e['sig']) is not None
+            and isinstance(e.get('id'), str) and isinstance(e.get('result'), dict) and isinstance(e.get('params'), dict))
+
+PRV = load_vec('tapi-21-price-ref.json')
+tabs = {t['name']: t for t in PRV['tables']}
+for t in PRV['tables']:
+    check('priceRef/canonical/' + t['name'], canonical(models_basis(t['ai']['models'])), t['canonicalModels'])
+    check('priceRef/hash/' + t['name'], price_ref(t['ai']), t['priceRef'])
+check('priceRef/an undefined member is not part of the basis', tabs['A-unknown-member']['priceRef'], tabs['A']['priceRef'])
+check('priceRef/endpoints are not part of the basis', tabs['A-endpoints-moved']['priceRef'], tabs['A']['priceRef'])
+check('priceRef/a respelled decimal is another basis', tabs['A-respelled']['priceRef'] != tabs['A']['priceRef'], True)
+check('priceRef/a changed price is another basis', tabs['B']['priceRef'] != tabs['A']['priceRef'], True)
+for c in PRV['cases']:
+    name, envl = 'priceRef/' + c['name'], c['envelope']
+    res, off = envl['result'], c['withoutPriceRef']['envelope']
+    check(name + '/the basis is table A', res['priceRef'], tabs['A']['priceRef'])
+    check(name + '/off: the same result without the member', {k: v for k, v in res.items() if k != 'priceRef'}, off['result'])
+    for label, e, dg in (('on', envl, c['digest']), ('off', off, c['withoutPriceRef']['digest'])):
+        d = response_digest(AI_PREFIX, e['container'], e['id'], e['method'], e['params'], True, e['result'], e['ts'])
+        check(name + '/digest ' + label, h(d), dg)
+        check(name + '/signer ' + label, recover_address(eip191(d), e['sig']), PRV['signer'].lower())
+    check(name + '/the signed content changes only with the member', c['digest'] != c['withoutPriceRef']['digest'], True)
+    fmt = FORMAT_OF[envl['method']]
+    req, body = base64.b64decode(c['requestBase64']), base64.b64decode(c['responseBase64'])
+    check(name + '/requestSha256', hashlib.sha256(req).hexdigest(), envl['params']['requestSha256'])
+    check(name + '/responseSha256', sse_digest(body, SENTINEL[fmt]) if res['stream'] else hashlib.sha256(body).hexdigest(), res['responseSha256'])
+    entry = match_entry(tabs['A']['ai']['models'], res['model'], fmt)
+    want = [{'currency': p['currency'], 'amount': amount(p, res['usage'])} for p in entry['prices']] if entry and res['usage'] else None
+    check(name + '/prices under table A', json.dumps(want), json.dumps(res['prices']))
+    check(name + '/receiptRef', receipt_ref(envl), c['receiptRef'])
+    check(name + '/receiptRef off', receipt_ref(off), c['withoutPriceRef']['receiptRef'])
+xt = PRV['crossTable']
+r0 = next(c for c in PRV['cases'] if c['name'] == xt['case'])['envelope']['result']
+eB = match_entry(tabs['B']['ai']['models'], r0['model'], 'openai-chat')
+underB = [{'currency': p['currency'], 'amount': amount(p, r0['usage'])} for p in eB['prices']]
+check('priceRef/cross-table: B prices it otherwise', json.dumps(underB), json.dumps(xt['againstB']['expectedPricesUnderB']))
+check('priceRef/cross-table: the amounts differ under B', underB != r0['prices'], True)
+check('priceRef/cross-table: the basis differs under B', price_ref(tabs['B']['ai']) != r0['priceRef'], xt['againstB']['priceRefMatches'] is False)
+
+RRV = load_vec('tapi-21-receipt-ref.json')
+for r in RRV['receipts']:
+    e = r['envelope']
+    check('receiptRef/canonical/' + r['name'], canonical({'id': e['id'], 'ok': e['ok'], 'container': e['container'].lower(), 'ts': e['ts'], 'method': e['method'], 'params': e['params'], 'result': e['result'], 'sig': e['sig'].lower()}), r['canonical'])
+    check('receiptRef/' + r['name'], receipt_ref(e), r['receiptRef'])
+    check('receiptRef/sha256 of the canonical text/' + r['name'], hashlib.sha256(r['canonical'].encode('utf-8')).hexdigest(), r['receiptRef'])
+    d = response_digest(AI_PREFIX, e['container'], e['id'], e['method'], e['params'], True, e['result'], e['ts'])
+    check('receiptRef/the receipt verifies/' + r['name'], h(d) == r['digest'] and recover_address(eip191(d), e['sig']) == AIV['signer'].lower(), True)
+check('receiptRef/every receipt its own reference', len({r['receiptRef'] for r in RRV['receipts']}), len(RRV['receipts']))
+ref0 = RRV['receipts'][0]['receiptRef']
+for x in RRV['sameReceipt']:
+    e = json.loads(x['json'], parse_int=_no_negative_zero_int)
+    check('receiptRef/same receipt/' + x['name'], receipt_ref(e), ref0)
+    check('receiptRef/same receipt, as the file says/' + x['name'], x['receiptRef'], ref0)
+for x in RRV['otherReceipt']:
+    e = json.loads(x['json'], parse_int=_no_negative_zero_int)
+    check('receiptRef/another receipt/' + x['name'], receipt_ref(e) != ref0 and receipt_ref(e) == x['receiptRef'], True)
+for x in RRV['refused']:
+    check('receiptRef/refused/' + x['name'], receipt_shaped(json.loads(x['json'], parse_int=_no_negative_zero_int)), False)
+
+# ---------- policy circuits (3.0, experimental; Policy Circuit Gate TAP draft, TAPs pull request #84, not merged) ----------
+# The two EIP-712 types of @tapeapi/policy-circuit (PolicyBinding, PolicyBindingRevocation) in TAP-11's domain "TapeAPI"
+# on the hub. Read from the package's own copy of the draft's vectors (policy-circuit/test/vectors/vectors.json, CC0,
+# pinned by the same SHA-256 as the JS test), not from a second copy. The type strings are written here from the
+# draft's field table (§5.1, §5.4); the struct hashes, digests and recovered signers are computed here, nothing from the
+# JavaScript. contracts/test/PolicyBindingTypehash.t.sol computes the same values a third time.
+# 策略电路（3.0，实验性；TAPs #84 草稿，未合并）：两个 EIP-712 类型，在 TAP-11 的 "TapeAPI" 域里。直接读本包的向量副本（按与 JS 测试
+# 相同的 SHA-256 钉住），类型串按草稿字段表在这里写，结构哈希、摘要与签名者都在这里算；Solidity 测试第三次计算同样的值。
+PC_PATH = HERE.parent.parent / 'policy-circuit' / 'test' / 'vectors' / 'vectors.json'
+PC_SHA256 = '8a4659d8f157fdad7b4ebe9b6bc08d946f9f55b8ab688e3804bfe33b9970acd6'   # = VECTORS_SHA256 in policy-circuit-vectors.test.mjs
+pc_raw = PC_PATH.read_bytes()   # missing: a failure, never a skip / 缺文件即失败，不跳过
+check('policy/vectors.json is the pinned copy', hashlib.sha256(pc_raw).hexdigest(), PC_SHA256)
+pcv = json.loads(pc_raw.decode('utf-8'), parse_int=_no_negative_zero_int)
+pcc = pcv['constants']
+PB_FIELDS = [('bytes32', 'netlistHash'), ('uint8', 'subjectKind'), ('bytes32', 'subject'), ('bytes32', 'tablesHash'),
+             ('uint64', 'notBefore'), ('uint64', 'expires'), ('uint64', 'issued')]
+PR_FIELDS = [('bytes32[]', 'bindingHashes'), ('uint64', 'revokedBefore'), ('uint64', 'issued')]
+pb_type = 'PolicyBinding(%s)' % ','.join('%s %s' % f for f in PB_FIELDS)
+pr_type = 'PolicyBindingRevocation(%s)' % ','.join('%s %s' % f for f in PR_FIELDS)
+check('policy/binding type string', pb_type, pcc['bindingType'])
+check('policy/revocation type string', pr_type, pcc['revocationType'])
+check('policy/binding typehash', h(keccak256(pb_type.encode())), pcc['bindingTypehash'])
+check('policy/revocation typehash', h(keccak256(pr_type.encode())), pcc['revocationTypehash'])
+check('policy/no money in the types', any(w in (pb_type + pr_type).lower() for w in ('amount', 'token', 'fee', ' cap')), False)
+check('policy/domain is TAP-11 "TapeAPI" version 1', (pcc['domain']['name'], pcc['domain']['version']), ('TapeAPI', '1'))
+check('policy/domain hub is the TAP-11 hub', pcc['domain']['verifyingContract'].lower(), HUB)
+for cid, dsep in sorted(pcc['domainSeparator'].items()):
+    check('policy/domain separator %s' % cid, h(eip712_domain('TapeAPI', '1', int(cid), HUB)), dsep)
+
+def pc_struct(typ, fields, m):
+    out = keccak256(typ.encode())
+    for ft, name in fields:
+        x = m[name]
+        if ft == 'bytes32': out += bytes.fromhex(x[2:])
+        elif ft == 'bytes32[]': out += keccak256(b''.join(bytes.fromhex(y[2:]) for y in x))   # empty: keccak256("")
+        else: out += int(x).to_bytes(32, 'big')   # uint8 / uint64, one word; JSON numbers or decimal strings
+    return keccak256(out)
+def pc_digest(chain_id, typ, fields, m):
+    return typed_digest(eip712_domain('TapeAPI', '1', int(chain_id), HUB), pc_struct(typ, fields, m))
+
+# tablesHash: keccak256 of the tables' canonical JSON (TAPI-21 §3.3 canonicalJSON, as above) / 表哈希
+check('policy/tables canonical JSON', canonical(pcv['tables']['tables']), pcv['tables']['canonicalJSON'])
+check('policy/tablesHash', h(keccak256(pcv['tables']['canonicalJSON'].encode())), pcv['tables']['tablesHash'])
+
+pc_hashes = set()
+for b in pcv['bindings']:
+    if 'error' in b: continue   # a form error (§5.2): no digest to compare / 形式错误的用例没有摘要可比
+    name = 'policy/binding/' + b['name']
+    d = pc_digest(b['chainId'], pb_type, PB_FIELDS, b['binding'])
+    pc_hashes.add(h(d))
+    check(name + '/bindingHash', h(d), b['result']['bindingHash'])
+    check(name + '/signer', recover_address(d, b['sig']) if b.get('sig') else None, b['result']['signer'])
+    for x in b.get('revocations') or []:
+        if not x.get('sig'): continue   # "revoked by time" carries no signature (F2) / 无签名的撤销
+        rd = pc_digest(b['chainId'], pr_type, PR_FIELDS, x['revocation'])
+        check(name + '/revocation signer', recover_address(rd, x['sig']), x['signer'].lower())
+bh = pcv['bindingHashes']
+b0 = next(b for b in pcv['bindings'] if 'error' not in b and b['result']['bindingHash'] == bh['mandate'])
+check('policy/bindingHashes.mandateStructHash', h(pc_struct(pb_type, PB_FIELDS, b0['binding'])), bh['mandateStructHash'])
+check('policy/bindingHashes.mandateOnChain97 (another chain, another hash)', h(pc_digest(97, pb_type, PB_FIELDS, b0['binding'])), bh['mandateOnChain97'])
+check('policy/bindingHashes.escrowSession is a computed binding hash', bh['escrowSession'] in pc_hashes, True)
+for r in pcv['revocations']:
+    if 'hash' not in r: continue   # form errors and coverage-only cases / 形式错误与只测覆盖的用例
+    d = pc_digest(56, pr_type, PR_FIELDS, r['revocation'])
+    check('policy/revocation/%s/hash' % r['name'], h(d), r['hash'])
+    if r.get('sig'): check('policy/revocation/%s/signer' % r['name'], recover_address(d, r['sig']), r['signer'].lower())
+# subjects (§5.1): an account is left-padded, a label is keccak256 of its UTF-8, an escrow session keccak256 of the four
+# addresses packed / 主体值
+ps = pcv['subjects']
+check('policy/subject account', ps['account']['subject'], '0x' + '00' * 12 + ps['account']['account'][2:].lower())
+check('policy/subject label', h(keccak256(ps['label']['label'].encode('utf-8'))), ps['label']['subject'])
+es = ps['escrowSession']
+check('policy/subject escrow session', h(keccak256(b''.join(bytes.fromhex(es[k][2:]) for k in ('escrow', 'consumer', 'provider', 'key')))), es['subject'])
 
 if fail:
     print('FAIL: %d of %d checks disagreed with the reference implementation\n' % (len(fail), checked))

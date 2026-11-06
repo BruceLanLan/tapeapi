@@ -260,13 +260,17 @@ test('the fact cache lasts at most 300 s, and never crosses chains: the same (ci
   const chain = service()
   const m = meter(chain.fetch)
   const api = client(m.fetch)
-  await api.resolve(NAME)
+  // The clock is held still from the first read, so a slow machine cannot move the entry past 300 s before the check.
+  // 时钟从第一次读取起就固定，机器慢也不会让缓存条目在核对前越过 300 秒。
   const real = Date.now
+  const T = real()
   try {
-    Date.now = () => real() + 299_000
+    Date.now = () => T
+    await api.resolve(NAME)
+    Date.now = () => T + 299_000
     m.reset(); await api.resolve(NAME)
     assert.ok(!m.http.some((h) => h.fns.includes('cpuAt') || h.fns.includes('accountOf')), 'within 300 s: cached')
-    Date.now = () => real() + 301_000
+    Date.now = () => T + 301_000
     m.reset(); await api.resolve(NAME)
     assert.ok(m.http.some((h) => h.fns.includes('cpuAt')) && m.http.some((h) => h.fns.includes('accountOf')), 'after 300 s: read again')
   } finally { Date.now = real }

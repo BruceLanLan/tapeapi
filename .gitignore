@@ -22,3 +22,6 @@ examples/litellm-sidecar/pgdata/
 # The new-api package: new-api's SQLite data and logs (bind mounts of its compose file).
 examples/new-api-sidecar/data/
 examples/new-api-sidecar/logs/
+# The operator kit (docker-compose.sidecar.yml), when copied here instead of next to an existing new-api compose.
+examples/new-api-sidecar/tapeapi-sidecar.env
+examples/new-api-sidecar/tapeapi-models.json

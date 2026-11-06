@@ -1,0 +1,70 @@
+# The signing sidecar for a new-api relay as a Cloudflare Worker in YOUR Cloudflare account (no server of yours runs
+# it): the Worker examples/ai-proxy/worker.js on a hostname of its own, calling your new-api over https.
+# 在**你自己的** Cloudflare 账号里以 Worker 运行的 new-api 签名旁路（不占用你的服务器）：examples/ai-proxy/worker.js，用单独的主机名，
+# 经 https 调用你的 new-api。
+#
+#   npx --yes wrangler@4.141.0 deploy -c examples/new-api-sidecar/wrangler.toml      (from the root of your fork / 在你 fork 的根目录)
+#
+# Or Workers Builds (Cloudflare dashboard -> Workers & Pages -> Create -> Import a repository -> your fork; build command
+# `npm ci`; deploy command the line above): the path docs/guides/provide.md step 2 describes. OPERATOR-KIT.md has the
+# steps and what is not verified (a "Deploy to Cloudflare" button does not fit this repository's layout).
+# 或者用 Workers Builds（后台导入你的 fork；构建命令 npm ci；部署命令即上面那行），即 docs/guides/provide.md 第 2 节的路径。
+# 步骤与未核实之处见 OPERATOR-KIT.md（“Deploy to Cloudflare”按钮不适合本仓库的结构）。
+#
+# The two hostnames / 两个主机名:
+#   api.example.com   your new-api, as today: unchanged, no receipts / 你的 new-api，照旧，不变，没有回执
+#   tape.example.com  this Worker -> https://api.example.com/v1: the same API with a signed receipt per answer; the one
+#                     written into the on-chain manifest (PUBLIC_URL) / 本 Worker：同一套接口、每个回答带签名回执；写进链上清单的是它
+# Assumption to check first: this Worker can reach your new-api over https from Cloudflare's network (a firewall or a
+# bot check in front of new-api may refuse it). / 先要核实的前提：本 Worker 能从 Cloudflare 网络经 https 访问你的 new-api
+# （new-api 前面的防火墙或人机验证可能拒绝它）。
+#
+# The signing key: a Worker has no disk of its own, so the key is made by the holder console (step 3) and set as the
+# secret SIGNER_KEY in the dashboard; it is never written in this file. / 签名密钥：Worker 没有自己的磁盘，所以密钥由持有人操作台
+# 第 3 步生成，在后台设为机密 SIGNER_KEY；从不写在本文件里。
+name = "my-tapeapi-new-api-sidecar"
+main = "../ai-proxy/worker.js"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+# Variables set in the dashboard survive a redeploy / 后台设置的变量在重新部署后保留
+keep_vars = true
+
+# A subdomain of yours (tape.example.com), never a path on an existing site and never your existing API hostname: add it
+# in the dashboard (Worker -> Settings -> Domains & Routes -> Custom domain) and set PUBLIC_URL to it. No routes here.
+# 用你自己的子域名（tape.example.com），不要用现有站点的路径，也不要用你现有的接口主机名：在后台添加自定义域名并把 PUBLIC_URL 设为它。这里不写路由。
+
+# Logs as in examples/ai-proxy/wrangler.toml: per-request invocation logs and traces off, query strings redacted.
+# 日志同 examples/ai-proxy/wrangler.toml：关闭逐请求调用日志与追踪，隐去查询串。
+[observability]
+enabled = true
+redact_query_string = true
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+
+[observability.traces]
+enabled = false
+
+[vars]
+SERVICE_NAME = "My AI relay"
+# Your new-api's public /v1 base, on the hostname your users already use. Edit this line.
+# 你的 new-api 的公网 /v1 地址（用户已经在用的那个主机名）。改这一行。
+UPSTREAM_BASE_URL = "https://api.example.com/v1"
+# The price table published on chain (pricing-convert.mjs writes one from new-api's price list; paste its JSON here or
+# set it in the dashboard). / 发布到链上的价目表（pricing-convert.mjs 可由 new-api 的价目生成；把 JSON 粘贴到这里或在后台设置）。
+MODELS_JSON = '[{"id":"your-model","prices":[{"currency":"USD","unit":"1M tokens","input":"0.15","output":"0.60"}]}]'
+# Set it: the API formats your new-api REALLY serves. Left for you to choose: unset, the Worker publishes all four and
+# warns in /tapeapi/v1/health, naming FORMATS. OpenAI-compatible channels only: "openai-chat".
+# 请设置：你的 new-api **真正提供**的 API 格式。留给你来选：不设时 Worker 发布全部四种，并在 /tapeapi/v1/health 里警告、点名 FORMATS。渠道只兼容 OpenAI：写 "openai-chat"。
+# FORMATS = "openai-chat"
+# PUBLIC_URL = "https://tape.example.com"    this Worker's own hostname / 本 Worker 自己的主机名
+# Optional: your own site; GET / on tape.example.com answers 302 there, nothing added (never the holder console).
+# 可选：你自己的站点；tape.example.com 上的 GET / 302 过去，不附加任何参数（不能是持有人操作台）。
+# OPERATOR_SITE_URL = "https://www.example.com"
+# CIRCUITS, TOKEN_ID, CONTAINER, DELEGATION_EXPIRES and DELEGATION_SIG: set in the dashboard (Settings -> Variables and
+# Secrets), as the holder console shows them. / 这几个变量在后台设置（操作台会给出值）。
+
+# Secret, set in the dashboard (type Secret) or with `npx wrangler secret put SIGNER_KEY`, never in this file:
+#   SIGNER_KEY   the signing key the delegation names (console step 3) / 委托指定的签名密钥（操作台第 3 步）
+# No UPSTREAM_AUTHORIZATION: your users' new-api tokens pass through as they are. / 不设 UPSTREAM_AUTHORIZATION：用户的 new-api 令牌原样透传。

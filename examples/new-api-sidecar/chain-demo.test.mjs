@@ -26,7 +26,7 @@ test('chain demo: every step passes, in order', async () => {
 })
 
 test('chain demo: runs as a program and exits 0', () => {
-  const p = spawnSync(process.execPath, [fileURLToPath(new URL('chain-demo.mjs', import.meta.url))], { encoding: 'utf8' })
+  const p = spawnSync(process.execPath, [fileURLToPath(new URL('chain-demo.mjs', import.meta.url))], { encoding: 'utf8', timeout: 300_000, killSignal: 'SIGKILL' })
   assert.equal(p.status, 0, p.stdout + p.stderr)
   assert.match(p.stdout, /chain demo passed/)
   assert.match(p.stdout, /not which model ran/)

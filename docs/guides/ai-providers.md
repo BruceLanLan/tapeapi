@@ -12,7 +12,7 @@ Start from nothing (no circuit, no container) and check every step before the ne
 and to run: TapeAPI hosts no one's sidecar and pays for no circuit, container or gas. `42.1013.tape` in this guide is an
 example name; no service is published under it. In the commands, put your own TapeOut name and your sidecar's address.
 
-Step 0 needs a checkout of this repository with its dependencies installed, once, at its root (Node.js 20 or later):
+Step 0 needs a checkout of this repository with its dependencies installed, once, at its root (Node.js 22 or later):
 
 ```sh
 git clone https://github.com/BruceLanLan/tapeapi.git && cd tapeapi
@@ -23,7 +23,7 @@ The checks of steps 1 to 7 are `tapeapi-doctor` (experimental), which ships in t
 Every `tapeapi-doctor` in the table stands for this, run from any directory, with nothing to clone:
 
 ```sh
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-doctor <your name>
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-doctor <your name>
 ```
 
 In a checkout, `node sdk/bin/tapeapi-doctor.js <your name>` at its root does the same. Either way the report writes
@@ -39,9 +39,9 @@ the next command the way you ran it.
 | 4 | Service key and delegation; put the values in `.env` and restart the sidecar | [holder console](https://tapeapi.fun/console/) steps 3 and 4 (no fee, no gas) | `tapeapi-doctor https://api.example.com` | `delegation`, `reach` and `receipt` pass; `manifest-file` warns "not published on chain yet" |
 | 5 | Publish the manifest, price table included | console step 5 (one transaction, your gas) | `tapeapi-doctor <your name>` | every check passes: exit status 0 |
 | 6 | Tell your users | [What your users do](#what-your-users-do) | `tapeapi-verify <your name>` on a user's machine | one `OK` line per call |
-| 7 | Renew the delegation every 90 days, and keep the activation paid | console step 4, "Renew"; pay again as in step 2b | `tapeapi-doctor <your name>`, daily in your CI | `delegation` warns from 30 days before expiry; `activation` warns once the name is no longer paid |
+| 7 | Renew the delegation before it expires (30 days by default), and keep the activation paid | console step 4, "Renew"; pay again as in step 2b | `tapeapi-doctor <your name>`, daily in your CI | `delegation` warns from 7 days before expiry; `activation` warns once the name is no longer paid |
 
-**The same steps as a wizard: `tapeapi init` (experimental, since 2.3, outside the 2.x compatibility promise).**
+**The same steps as a wizard: `tapeapi init` (experimental, since 2.3, outside the compatibility promise).**
 From a checkout, `node sdk/bin/tapeapi.js init --dir <the folder of your sidecar's docker-compose.yml>` runs one step
 at a time: what you do, where, who pays (you, every time), then the step's check from the table above, read-only, and
 the next command. It asks for no key, password or token, never reads your `.env`, pays nothing and sends no
@@ -96,7 +96,7 @@ guarantee or an audit; your service works the same without one.
   per API format and your price table: per model, one price per currency, per 1M tokens, with cache and reasoning
   prices where you charge them. Anyone can recompute what a call should cost.
 - **A signed usage receipt for every call** ([TAPI-21 §3.5](../../spec/TAPI-21.md)): the model, the token counts, the
-  amount per currency, whether the answer completed, and the hashes of the exact request and response bytes, signed by
+  amount per currency, whether the answer completed, and the hashes of the exact request bytes and of the answer (its exact bytes; for a stream, the data of its events), signed by
   the key your circuit's holder delegated. Receipts ride along with the answer (a response header, or an SSE comment the
   official SDKs ignore), so nothing breaks for clients that do not read them. The one exception: a stream with a line
   that starts with U+FEFF before the point where the sidecar signs gets no receipt, since clients read such a line
@@ -109,7 +109,7 @@ guarantee or an audit; your service works the same without one.
 ## What a receipt proves, and what it does not
 
 A receipt proves **who answered** (the on-chain signer), **to exactly which request bytes**, **with exactly which
-response bytes**, and **what usage and price were claimed**. It does **not** prove which model actually ran: a provider
+answer** (its bytes; for a stream, the data of its events), and **what usage and price were claimed**. It does **not** prove which model actually ran: a provider
 could label a cheaper model's answer as a dearer one. What the signature adds is that such a substitution is
 **attributable**: a receipt cannot be disowned, so spot checks (anyone sending test prompts and publishing the
 results) leave evidence. Say this plainly to your users.
@@ -188,7 +188,8 @@ only: save `/api/pricing` and `/api/status` of your own new-api yourself, withou
 The identity steps are those of any TapeAPI service (see [Run a service](provide.md)), done in the holder console at
 [tapeapi.fun/console](https://tapeapi.fun/console/): connect the wallet that holds the circuit, generate the service key
 (it becomes the sidecar's `SIGNER_KEY`), sign the delegation (the console reads the sidecar's signing address from its
-setup-mode health check; the delegation lasts 90 days), then publish the manifest on chain.
+setup-mode health check; the delegation lasts 30 days by default, and the page takes any number of days from 1 to
+366), then publish the manifest on chain.
 
 ### Publish the price table with the console
 
@@ -217,7 +218,7 @@ Prices are published, not settled, on every chain. The console publishes on BNB 
 Base payments are not open, and the page says so: the table is for display only there. Under TAPI-20 §3.9 the currencies
 `BNB`, `USDT`, `USDC`, `ETH` and `USD1` name the tokens on BNB Chain.
 
-**Renewal.** Renew the delegation in its last 30 days: console step 4, "Renew" (same service key), set the new
+**Renewal.** Renew the delegation in its last 7 days at the latest: console step 4, "Renew" (same service key), set the new
 `DELEGATION_EXPIRES` and `DELEGATION_SIG`, restart the sidecar, and publish again. An expired delegation stops the
 service until it is renewed.
 
@@ -270,7 +271,7 @@ and point the client at it. `tapeapi-verify` keeps running in the foreground, so
 
 ```sh
 # Terminal 1. 42.1013.tape is an example name: put your service's TapeOut name here
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi-verify 42.1013.tape
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi-verify 42.1013.tape
 ```
 
 ```sh
@@ -289,13 +290,13 @@ With the example name as written it stops with "no file at /.well-known/tapeapi.
 `42.1013.tape`. No service of your own yet? Run the local trial first ([From zero to live](#from-zero-to-live), step 0):
 it runs this proxy against a local sidecar.
 
-**Before that, `tapeapi connect` (experimental, new in 2.1, outside the 2.x compatibility promise)** shows your
+**Before that, `tapeapi connect` (experimental, new in 2.1, outside the compatibility promise)** shows your
 users your service as the chain has it and prints client settings only for the formats your manifest declares (no
 Claude Code settings without `anthropic-messages`, no Codex settings without `openai-responses`):
 
 ```sh
 # any directory, no clone needed; 42.1013.tape is an example name
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi connect 42.1013.tape            # the service card and the settings
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi connect 42.1013.tape            # the service card and the settings
 # with the SDK installed, the command is tapeapi connect …
 tapeapi connect 42.1013.tape --proxy    # then runs tapeapi-verify for it
 ```
@@ -311,12 +312,12 @@ field is not an AI service: `connect` shows it as unavailable (`not-ai`), unless
 [MCP](mcp.md#see-a-service-with-tapeapi-connect)).
 
 **Afterwards, your users can look at their receipts and set them against your bill** with `tapeapi receipts` and
-`tapeapi reconcile` (experimental, since 2.2, outside the 2.x compatibility promise). Both read files on the
+`tapeapi reconcile` (experimental, since 2.2, outside the compatibility promise). Both read files on the
 user's machine only: no network, no key.
 
 ```sh
 # any directory, no clone needed
-npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v2.5.0/tapeapi-sdk-2.5.0.tgz tapeapi receipts tail --receipts ~/.tapeapi/receipts.jsonl   # what tapeapi-verify --log wrote
+npx -y --package=https://github.com/BruceLanLan/tapeapi/releases/download/v3.0.0/tapeapi-sdk-3.0.0.tgz tapeapi receipts tail --receipts ~/.tapeapi/receipts.jsonl   # what tapeapi-verify --log wrote
 # with the SDK installed, the commands are tapeapi receipts … and tapeapi reconcile …
 tapeapi receipts show <id> --receipts ~/.tapeapi/receipts.jsonl         # one receipt, its checks replayed offline
 tapeapi reconcile --receipts ~/.tapeapi/receipts.jsonl --bill usage.csv # set against a bill file
@@ -337,8 +338,10 @@ as for any other bill.
 Which columns to export so your users can reconcile, the checks on each request, and the comparison with a mandate
 and with local limits: [Reconcile your receipts](reconcile.md) (experimental).
 
-`tapeapi-verify` resolves your service on chain, passes the answers through unchanged, prints one verdict per call, and with
-`--strict` turns a failed receipt into an error the client sees. A single receipt can also be pasted into the
+`tapeapi-verify` resolves your service on chain, passes the answers through unchanged, prints one verdict per call, and
+turns a failed receipt into an error the client sees (HTTP 502, or an error event in place of a stream's final event).
+That is the default since 3.0, as for `createVerifyingFetch`; `--no-strict` only logs the failure and passes the answer
+on, as 2.x did without `--strict` (still accepted, it changes nothing). A single receipt can also be pasted into the
 [verification page](https://tapeapi.fun/verify/). All of these need your manifest on chain (console step 5, above).
 
 **Request salt (on by default in both).** A receipt carries `requestSha256`, the SHA-256 of the exact request bytes,
@@ -365,6 +368,22 @@ the JSON text of each request body on a receipt path, and the receipt is checked
 - **Not yet measured:** the JSON grammar says every upstream must accept the trailing whitespace, and the tests check it
   against the reference sidecar; a check against the live OpenAI Chat, OpenAI Responses and Anthropic Messages APIs is
   still to be done.
+
+### A budget of their own (experimental, 3.0)
+
+A user can also refuse their own calls before they are sent, with a policy file they write
+([Reconcile your receipts](reconcile.md#the-same-file-before-each-call-client-side-budget-experimental-30)):
+
+```sh
+tapeapi-verify 11.1013.tape --policy my-limits.json --budget-store spend.jsonl
+```
+
+A metered call whose worst case would take a rule over its limit gets HTTP 400 with code `budget_exceeded` (one that
+cannot be bounded, such as a request without `max_tokens`, `budget_no_limit`, ...), with `x-should-retry: false`, and is
+not forwarded, strict or not. The store file (mode 600) keeps the verified receipts and one line per call,
+so the count survives a restart; an HTTP 4xx or 5xx answered with no receipt is released, a broken connection keeps
+counting at its worst case. It is a convenience on the user's side: it binds nobody else, and it bounds the prices the
+receipts claim, not what the user pays you. Nothing changes for the service.
 
 ## The usage of a streamed Chat answer: three ways
 
@@ -441,8 +460,8 @@ application receives. What the option does and does not do:
   body that is not UTF-8 or starts with a byte order mark; a custom format that names no member to set; a key that appears
   twice at the top level or in `stream_options`; a result that fails the check. With `strict` (the default for
   `createVerifyingFetch`), the SDK throws `INVALID_ARGUMENT` before sending anything (`data.reason` names the cause) and
-  `tapeapi-verify --strict` answers HTTP 400 (`usage_request_skipped`, with `x-should-retry: false`) without forwarding.
-  Without `strict` the request goes as it is, the report says `usageRequestSkipped: <reason>`, and the usage is
+  `tapeapi-verify` (strict by default since 3.0) answers HTTP 400 (`usage_request_skipped`, with `x-should-retry: false`)
+  without forwarding. Without `strict` (`strict: false`, `--no-strict`) the request goes as it is, the report says `usageRequestSkipped: <reason>`, and the usage is
   `unchecked` as in way 1.
 - **Reports.** With the option on, each report carries `usageRequested`: `true` when this fetch set the member, `false`
   when it did not (the application asked itself, it is not a Chat stream, or the change was skipped). With the option off,
@@ -492,8 +511,10 @@ See [`docs/FEES.md`](../FEES.md).
 - The usage of a streamed OpenAI Chat answer is checked only when the request asks for it (`stream_options.include_usage`,
   by the application or by `requestUsage`); by default it is the sidecar's statement ([above](#the-usage-of-a-streamed-chat-answer-three-ways)).
 - Formats with receipts: OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, OpenAI Embeddings. Other paths
-  under `/v1` pass through without a receipt. Not yet: Gemini's native API, WebSocket modes (Realtime, Responses
-  WebSocket), Batch.
+  under `/v1` pass through without a receipt. A metered path of one of these formats that your sidecar does not serve
+  (left out of `FORMATS`, or of `formats` in `createAIProxy`) is answered HTTP 400 `bad_path`, never forwarded; since
+  3.0 this is also `createAIProxy`'s default (`refuseOtherFormats: false` passes it through without a receipt, as 2.x
+  did). Not yet: Gemini's native API, WebSocket modes (Realtime, Responses WebSocket), Batch.
 - Receipts are kept in the sidecar's memory for one hour (configurable); the copy delivered with the answer is the
   primary one. The free `receipt` method has its own per-IP budget. If your upstream's answer ids are guessable
   (Ollama's are `chatcmpl-` and a number below 999; the sidecar's log says so), turn on `requireRequestHash`

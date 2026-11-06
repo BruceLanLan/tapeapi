@@ -1,6 +1,6 @@
 // @experimental security 1.2: Merkle proofs of chain state (EIP-1186 eth_getProof), checked here against a stateRoot.
-// Outside the 1.0 stability promise; it may change in a 1.x minor release.
-// @experimental 安全加固 1.2：链上状态的默克尔证明（EIP-1186 eth_getProof），在本地对照 stateRoot 核验。不在 1.0 稳定承诺之内。
+// Outside the compatibility promise; it may change in a minor release.
+// @experimental 安全加固 1.2：链上状态的默克尔证明（EIP-1186 eth_getProof），在本地对照 stateRoot 核验。不在兼容承诺之内。
 //
 // What a proof adds (TAPI-20 §3.2, informative): the value of a storage slot no longer rests on the nodes that answer
 // eth_call agreeing, only on the block's stateRoot, which nodes of `quorum` independent operators confirmed (the pinned

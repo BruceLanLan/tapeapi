@@ -11,17 +11,19 @@
 // Instant and later checks are one implementation: the payload and the hint come from eth_getLogs or, when the nodes do
 // not serve logs (as on bsc-dataseed), from eth_getBlockReceipts of the entry's block (TAP-10 §18.3), which public nodes
 // still answer months later; the cost is bandwidth (a block's receipts), so reads are cached per block.
-// Not covered by the 2.x compatibility promise. Designed in internal notes (container agents, phase 0).
+// Not covered by the compatibility promise. Designed in internal notes (container agents, phase 0).
 import { keccak_256 } from '@noble/hashes/sha3'
 import { TapeAPIError } from './errors.js'
 import { findDuplicateKey } from './canon.js'
 import { selector, encodeParams, decodeParams, encodeCall, decodeReturn, hexToBytes, toHex, bytesToHex, concatBytes, isAddress, eqAddr, checksumAddress, ZERO_ADDRESS } from './abi.js'
-import { chainById, parseTapeName, AUDITED_ESCROWS } from './chains.js'
+import { chainById, parseTapeName, AUDITED_ESCROWS, PAYMENT_TOKENS } from './chains.js'
+import { fromUnits8 } from './policy.js'
 import { normalizeMandate, phase1Problems, mandateNamesFunds, mandateHashOf, DEFAULT_FUNDING_PATH, FUNDING_PATHS, withdrawRequestLive, WITHDRAW_COOLDOWN_S, WITHDRAW_WINDOW_S } from './agent-sig.js'
-import { formatUnits } from './manifest.js'
+import { formatUnits, parseUnits, BEM_DECIMALS } from './manifest.js'
 import { endpoint as endpointOf, open as openPayload, messageId } from './tapesend.js'
-import { voucherDigest, recoverAddress, privateKeyToAddress } from './sig.js'
+import { privateKeyToAddress } from './sig.js'
 import { spendKeyContext } from './agent-vault.js'
+import { enforcementBackend } from './enforcement.js'
 
 export const SENT_TOPIC = '0xd75bb8082dd3ae8bb88682115ee1412a8e8051cc81d0e4c01dc3b06c0cf61020'
 export const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
@@ -1177,6 +1179,7 @@ export function closeOutPlan(mandate, { chainId, path = DEFAULT_FUNDING_PATH, ho
   const notes = [
     'experimental phase 1: unsigned transactions only; nothing here is signed or sent',
     `until each withdraw is executed, whoever holds the agent key can still spend the channel in one transaction, and its session lasts until ${m.expires} (${isoOf(m.expires)}): do not fund these channels again before then (draft §2.6)`,
+    'send `sendNow` only: a withdraw in `sendLater` reverts before its window opens and wastes its gas (BEM drill F10); closeOutNext (the kit\'s closeOutStep) hands out each step when it is due and resumes after a restart',
     'a request lapses 48 hours + 7 days after it was made: a withdraw not executed by then must be requested again, and until then honest providers serve the channel again (draft §2.6, R21)',
     'a cancelWithdraw undoes the request at once: show the close-out as done only once the withdraw is executed',
     ...(items.some((it) => it.state === 'requested' && it.remaining !== '0') ? ['a live request asks for less than the channel holds: after its withdraw, request the rest again (or plan with fullRequest: true to replace it now with a request for the whole channel, which restarts the 48-hour clock)'] : []),
@@ -1185,7 +1188,173 @@ export function closeOutPlan(mandate, { chainId, path = DEFAULT_FUNDING_PATH, ho
     ...(m.feeCap !== '0' ? ['the fee channel (feeCap > 0) is not closed by this version'] : []),
     ...(cfees ? [cfees.line] : []),
   ]
-  return { path, consumer, chainId, principal: m.principal, steps: [...requests, ...withdraws], items, checked: { history: hist !== null }, ...(cfees ? { fees: { perExecute: cfees.perExecute, executes: cfees.executes, total: cfees.total } } : {}), notes }
+  // BEM drill F10: `steps` is the whole close-out; `sendNow` is what may be sent at `now` (every requestWithdraw, and a
+  // withdraw whose window is open), `sendLater` the withdraws that revert before their window (send them only then, or
+  // run closeOutNext again) / 演练 F10：steps 是整个收尾；sendNow 是此刻能发的，sendLater 是窗口未开、现在发会回滚的 withdraw
+  const openNow = (st) => st.kind !== 'withdraw' || (st.sendAfter !== undefined && st.sendAfter <= now && now <= st.sendBefore)
+  const all = [...requests, ...withdraws]
+  return { path, consumer, chainId, principal: m.principal, steps: all, sendNow: all.filter(openNow), sendLater: all.filter((st) => !openNow(st)), items, checked: { history: hist !== null }, ...(cfees ? { fees: { perExecute: cfees.perExecute, executes: cfees.executes, total: cfees.total } } : {}), notes }
+}
+
+// ---- the close-out in explicit, resumable steps (BEM drill F10; B §2.2 P-6) / 分步、可恢复的收尾 ----
+// closeOutPlan lists every transaction of the close-out at once, and a withdraw sent with its requestWithdraw reverts
+// (CooldownActive) and wastes its gas (the drill paid 29,482 for one). closeOutNext hands out only what may be sent NOW:
+// requestWithdraw where the chain shows no live request, withdraw where the chain shows a live request whose window is
+// open, nothing while a request cools down; the stage of each channel is decided by the chain facts at the pinned block,
+// and the caller's state (plain JSON, kept between calls) only remembers what was handed out, so that a step handed
+// out is not handed out again while it may still be on its way into a block (CLOSE_OUT_RESEND_S), and logs each
+// transition. A restart anywhere in the 48 hours resumes from the state and the chain: run it again with the state.
+// closeOutPlan 一次列出收尾的全部交易，与 requestWithdraw 一起发出的 withdraw 会回滚（CooldownActive）白付 gas（演练付过 29,482）。
+// closeOutNext 只给出现在能发的：链上没有存活请求的发 requestWithdraw，存活请求的窗口已开的发 withdraw，冷静期内什么都不发；
+// 每条通道的阶段由钉块上的链上事实决定，调用方保存的状态（纯 JSON）只记住给出过什么（在 CLOSE_OUT_RESEND_S 内不重复给出，
+// 以免它还在进块路上），并记录每次转换。48 小时内任意时刻重启：带上状态再调用一次即可恢复。
+export const CLOSE_OUT_STATE_VERSION = 1
+// how long a handed-out step is not handed out again while the chain does not show it yet (seconds)
+// 给出的一步在链上还看不到时，多久之内不再重复给出（秒）
+export const CLOSE_OUT_RESEND_S = 900
+export const CLOSE_OUT_STAGES = Object.freeze(['empty', 'done', 'request-issued', 'cooling', 'withdraw-issued'])
+const CLOSE_OUT_LOG_MAX = 200
+function closeOutStateOf(st, { chainId, consumer, m }) {
+  if (st === null || st === undefined) return null
+  if (!st || typeof st !== 'object' || st.v !== CLOSE_OUT_STATE_VERSION || st.kind !== 'closeOut') bad(`state must be a close-out state (v ${CLOSE_OUT_STATE_VERSION}, kind 'closeOut') as closeOutNext returned it, or null for a new close-out`)
+  if (st.chainId !== chainId || !isAddress(st.consumer) || !eqAddr(st.consumer, consumer) || !isAddress(st.agentKey) || !eqAddr(st.agentKey, m.agentKey) || st.expires !== m.expires) bad(`the state is of another close-out (chain ${st.chainId}, consumer ${st.consumer}, agent key ${st.agentKey}, expires ${st.expires}), not this mandate's for ${consumer}: never resume a close-out from another one's state`)
+  if (!Array.isArray(st.channels) || !Array.isArray(st.log)) bad('state: channels and log must be arrays')
+  const channels = new Map()
+  for (const c of st.channels) {
+    if (!c || !isAddress(c.provider) || !CLOSE_OUT_STAGES.includes(c.stage)) bad('state: each channel needs a provider and a stage of CLOSE_OUT_STAGES')
+    for (const k of ['requestedAt', 'issuedAt', 'issuedBlock', 'nonce']) if (c[k] != null && (!Number.isSafeInteger(c[k]) || c[k] < 0)) bad(`state: ${k} must be a whole number or null`)
+    channels.set(c.provider.toLowerCase(), c)
+  }
+  return { ...st, channelsBy: channels }
+}
+/**
+ * @experimental (phase 1; review decision 6) Record the nonce a handed-out step was sent with, in the close-out state:
+ * returns a new state (the old one is not changed). When that step is handed out again (resendAfterS passed and the chain
+ * still does not show it), it carries `replaceNonce` and must be sent with that nonce, so that it REPLACES the stuck
+ * transaction (a higher fee) instead of joining it: two requestWithdraw landing would push the 48 hours back.
+ * 记下一步发出时用的 nonce（返回新状态）。这一步再次给出时带 replaceNonce，须用同一 nonce 发出以替换卡住的那笔（更高手续费），
+ * 而不是再加一笔：两个 requestWithdraw 都落块会把 48 小时往后推。
+ */
+export function closeOutSent(state, { provider, nonce } = {}) {
+  if (!state || typeof state !== 'object' || state.v !== CLOSE_OUT_STATE_VERSION || state.kind !== 'closeOut' || !Array.isArray(state.channels)) bad('closeOutSent needs a close-out state as closeOutNext returned it')
+  if (!isAddress(provider)) bad('closeOutSent needs the provider of the step sent')
+  if (!Number.isSafeInteger(nonce) || nonce < 0) bad('closeOutSent needs the nonce the step was sent with (a whole number)')
+  const i = state.channels.findIndex((c) => c && isAddress(c.provider) && eqAddr(c.provider, provider))
+  if (i < 0) bad(`the state has no channel toward ${provider}`)
+  const c = state.channels[i]
+  if (c.stage !== 'request-issued' && c.stage !== 'withdraw-issued') bad(`the channel toward ${provider} has no step handed out (stage ${c.stage}): nothing was sent`)
+  return { ...state, channels: state.channels.map((x, j) => (j === i ? { ...x, nonce } : x)) }
+}
+
+/**
+ * @experimental (phase 1) The next step of a close-out (BEM drill F10): what to send now, or how long to wait, from the
+ * chain facts closeOutPlan takes (the same inputs and refusals: holder-not-current, execute-reverts, consumer-unknown,
+ * escrow-unknown, and for a new close-out nothing-to-close) and the state an earlier call returned (null to begin).
+ *   state         null, or the `state` of the previous call, kept by the caller between calls (plain JSON). Keep it
+ *                 BEFORE sending what `send` lists: a state lost after sending hands the same step out again
+ *   pinBlock      the block the facts were read at (the kit passes its pin), written into the log
+ *   resendAfterS  how long a step handed out is not handed out again while the chain does not show it (default
+ *                 CLOSE_OUT_RESEND_S); after it, the step is handed out again (a transaction that never landed)
+ * Each capped channel, from the facts: empty -> 'empty' (or 'done' when the state had it in progress); no live request ->
+ * requestWithdraw for the whole channel (stage 'request-issued'); a live request in its cooldown -> nothing (stage
+ * 'cooling', until withdrawFrom); in its window -> withdraw (stage 'withdraw-issued'); a lapsed request is requested
+ * again. A requestWithdraw is never handed out for a channel whose request is live (it would restart the 48 hours),
+ * except a partial one with fullRequest. Returns { phase: 'send' | 'wait' | 'done', send (the steps to send now, in
+ * closeOutPlan's step form), waitUntil (Unix seconds of the next action when phase is 'wait', else null), items:
+ * [{ provider, escrow, stage, action: 'send' | 'wait' | 'none', step?, withdrawFrom?, withdrawUntil?, waitUntil? }],
+ * state (to keep), log (this call's entries), notes }. Pure: nothing is read, signed or sent.
+ * 收尾的下一步：现在发什么、或者等多久。输入与拒绝同 closeOutPlan；state 为上次返回的状态（开始时为 null），调用方在发送之前保存。
+ * 每条通道按链上事实：空 → empty/done；无存活请求 → 全额 requestWithdraw；存活请求在冷静期 → 不发（cooling）；在窗口内 → withdraw；
+ * 过期请求重新请求。存活请求的通道绝不再发 requestWithdraw（会重新计时 48 小时），fullRequest 的部分请求除外。纯函数。
+ */
+export function closeOutNext(mandate, { state = null, pinBlock, resendAfterS = CLOSE_OUT_RESEND_S, ...o } = {}) {
+  if (!Number.isSafeInteger(o.chainId) || o.chainId <= 0) bad('closeOutNext needs chainId (a positive integer)')
+  if (!Number.isSafeInteger(o.now) || o.now < 0) bad('closeOutNext needs now (Unix seconds)')
+  if (pinBlock !== undefined && pinBlock !== null && (!Number.isSafeInteger(pinBlock) || pinBlock < 0)) bad('pinBlock must be a block number')
+  if (!Number.isSafeInteger(resendAfterS) || resendAfterS < 0) bad('resendAfterS must be whole seconds')
+  const m = normalizeMandate(mandate)
+  const path = o.path ?? DEFAULT_FUNDING_PATH
+  const consumer = path === 'holder' && isAddress(o.holder) ? checksumAddress(o.holder) : m.principal
+  let plan = null, planErr = null
+  try { plan = closeOutPlan(m, o) } catch (e) { planErr = e }
+  if (planErr && planErr.data?.reason !== 'nothing-to-close') throw planErr
+  const prev = closeOutStateOf(state, { chainId: o.chainId, consumer, m })
+  // every channel empty: nothing to close for a new close-out; the end of one in progress / 全空：新收尾无事可做；进行中的即完成
+  if (planErr && !prev) throw planErr
+  const now = o.now, block = pinBlock ?? null
+  const log = []
+  const note = (provider, event, detail) => log.push({ at: now, block, provider, event, ...(detail ? { detail } : {}) })
+  const capped = m.scope.filter((s) => s.cap !== '0')
+  const items = [], send = [], channels = []
+  // review OPS-A1: a state whose issuedAt is after `now` (a tampered file, or a clock set back) would keep that step
+  // "recent" for good and the close-out (the revoke button) would wait forever: such a step is not recent, and it is said
+  // 审查 OPS-A1：issuedAt 晚于 now 的状态（被改过的文件，或时钟回拨）会让那一步永远"刚给出过"，收尾（撤销按钮）就永远等下去：不算刚给出，并记一笔
+  // a step handed out again with the nonce of the one it replaces / 再次给出的一步带上它所替换那笔的 nonce
+  const replacing = (step, nonce) => (nonce === null ? step : { ...step, replaceNonce: nonce })
+  const recent = (c) => c?.issuedAt != null && c.issuedAt <= now && now - c.issuedAt < resendAfterS
+  for (const s of capped) {
+    const key = s.provider.toLowerCase()
+    const was = prev?.channelsBy.get(key) ?? null
+    if (was?.issuedAt != null && was.issuedAt > now) note(s.provider, 'state-from-future', `the state says a step was handed out at ${was.issuedAt}, after now (${now}): a clock set back, or a state file changed by hand; the step is handed out again`)
+    const it = plan ? plan.items.find((x) => eqAddr(x.provider, s.provider)) : { provider: s.provider, escrow: (o.channels ?? []).find((c) => eqAddr(c.provider, s.provider))?.escrow ?? null, state: 'empty' }
+    const escrow = it.escrow ? checksumAddress(it.escrow) : null
+    const stepOf = (kind) => plan.steps.find((x) => x.kind === kind && eqAddr(x.provider, s.provider))
+    let row
+    if (it.state === 'empty') {
+      const inProgress = was && was.stage !== 'empty' && was.stage !== 'done'
+      if (inProgress) note(s.provider, 'channel-empty', was.stage === 'withdraw-issued' ? 'withdrawn' : 'the channel is empty (withdrawn, or settled away)')
+      row = { stage: inProgress || was?.stage === 'done' ? 'done' : 'empty', action: 'none' }
+    } else if (it.state === 'requested') {
+      const at = it.withdrawFrom - WITHDRAW_COOLDOWN_S
+      if (now < it.withdrawFrom) {
+        if (!(was && was.stage === 'cooling' && was.requestedAt === at)) note(s.provider, 'request-seen', `requested at ${at}; withdraw from ${it.withdrawFrom} (${isoOf(it.withdrawFrom)}) until ${it.withdrawUntil}`)
+        row = { stage: 'cooling', action: 'wait', requestedAt: at, waitUntil: it.withdrawFrom, withdrawFrom: it.withdrawFrom, withdrawUntil: it.withdrawUntil }
+      } else if (was && was.stage === 'withdraw-issued' && was.requestedAt === at && recent(was)) {
+        row = { stage: 'withdraw-issued', action: 'wait', requestedAt: at, issuedAt: was.issuedAt, issuedBlock: was.issuedBlock, nonce: was.nonce ?? null, waitUntil: was.issuedAt + resendAfterS, withdrawFrom: it.withdrawFrom, withdrawUntil: it.withdrawUntil }
+      } else {
+        const again = was && was.stage === 'withdraw-issued' && was.requestedAt === at
+        const nonce = again ? was.nonce ?? null : null
+        const step = replacing(stepOf('withdraw'), nonce)
+        note(s.provider, again ? 'withdraw-reissued' : 'withdraw-issued', `inside the window until ${it.withdrawUntil} (${isoOf(it.withdrawUntil)})${nonce !== null ? `; send it with nonce ${nonce}, replacing the one not yet in a block` : ''}`)
+        send.push(step)
+        row = { stage: 'withdraw-issued', action: 'send', step, requestedAt: at, issuedAt: now, issuedBlock: block, nonce, withdrawFrom: it.withdrawFrom, withdrawUntil: it.withdrawUntil }
+      }
+    } else {
+      // 'request', 'lapsed' or 'replace': a requestWithdraw is due, unless one was handed out moments ago
+      // 'request'、'lapsed' 或 'replace'：该发 requestWithdraw，除非刚刚给出过
+      if (was && was.stage === 'request-issued' && recent(was)) {
+        row = { stage: 'request-issued', action: 'wait', issuedAt: was.issuedAt, issuedBlock: was.issuedBlock, nonce: was.nonce ?? null, waitUntil: was.issuedAt + resendAfterS }
+      } else {
+        const event = it.state === 'lapsed' ? 'request-lapsed' : it.state === 'replace' ? 'request-replaced' : was?.stage === 'request-issued' ? 'request-reissued' : was?.stage === 'cooling' || was?.stage === 'withdraw-issued' ? 'request-gone' : 'request-issued'
+        // decision 6: a requestWithdraw handed out again while the first is not in a block replaces it (same nonce)
+        // 决定 6：第一笔还没进块时再给出的 requestWithdraw 替换它（同一 nonce）
+        const nonce = event === 'request-reissued' ? was.nonce ?? null : null
+        const step = replacing(stepOf('requestWithdraw'), nonce)
+        note(s.provider, event, event === 'request-gone' ? 'the request seen before is no longer on chain (cancelled, or withdrawn in part): requested again' : `the whole channel, ${it.amount}${nonce !== null ? `; send it with nonce ${nonce}, replacing the one not yet in a block (a second request landing would restart the 48 hours)` : event === 'request-reissued' ? '; its nonce was not recorded (closeOutSent): send it with the nonce of the one not yet in a block, never a new one' : ''}`)
+        send.push(step)
+        row = { stage: 'request-issued', action: 'send', step, issuedAt: now, issuedBlock: block, nonce }
+      }
+    }
+    items.push({ provider: s.provider, escrow, ...row })
+    channels.push({ provider: s.provider, escrow, stage: row.stage, requestedAt: row.requestedAt ?? null, issuedAt: row.issuedAt ?? null, issuedBlock: row.issuedBlock ?? null, nonce: row.nonce ?? null })
+  }
+  // requestWithdraw first, then withdraw, as closeOutPlan orders them / 与 closeOutPlan 相同：先 requestWithdraw 后 withdraw
+  send.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'requestWithdraw' ? -1 : 1))
+  const waits = items.filter((x) => x.action === 'wait').map((x) => x.waitUntil)
+  const phase = send.length ? 'send' : waits.length ? 'wait' : 'done'
+  if (phase === 'done' && !(prev && prev.done)) note(null, 'close-out-done', 'every channel of this mandate is empty for this consumer')
+  const nextState = {
+    v: CLOSE_OUT_STATE_VERSION, kind: 'closeOut', chainId: o.chainId, consumer, principal: m.principal, agentKey: m.agentKey, expires: m.expires, path,
+    startedAt: prev?.startedAt ?? now, updatedAt: now, done: phase === 'done', channels, log: [...(prev?.log ?? []), ...log].slice(-CLOSE_OUT_LOG_MAX),
+  }
+  const notes = [
+    'experimental phase 1: unsigned transactions only; nothing here is signed or sent',
+    'keep `state` before sending what `send` lists, and call again with it: a restart anywhere in the 48 hours resumes from it and the chain (BEM drill F10: a withdraw sent before its window reverts and wastes its gas)',
+    `until each withdraw is executed, whoever holds the agent key can still spend the channel in one transaction, and its session lasts until ${m.expires} (${isoOf(m.expires)}): do not fund these channels again before then (draft §2.6)`,
+    ...(phase === 'wait' ? [`nothing to send now: next at ${Math.min(...waits)} (${isoOf(Math.min(...waits))})`] : []),
+    ...(plan ? plan.notes.filter((n) => !/^experimental phase 1|^until each withdraw|^send `sendNow`/.test(n)) : []),
+  ]
+  return { phase, send, waitUntil: phase === 'wait' ? Math.min(...waits) : null, items, state: nextState, log, ...(plan?.fees ? { fees: plan.fees } : {}), checked: plan?.checked ?? { history: o.history !== undefined }, notes }
 }
 
 /**
@@ -1272,6 +1441,8 @@ export const SPEND_DEFAULT_CALL_PRICE_PERCENT = 10
 // the reasons that stop an order for good (recorded in the record's `stopped`) / 让一单永久停工的原因
 export const SPEND_STOPS = Object.freeze(['spend-mandate-changed', 'spend-revoked', 'spend-expired', 'spend-other-chain', 'spend-escrow-changed', 'spend-consumer-changed', 'spend-voucher-mismatch'])
 const spendRefuse = (reason, msg, extra) => { throw new TapeAPIError('AGENT_SPEND_REFUSED', msg, { reason, ...extra }) }
+// the backend that enforces a started record (a record without `enforcement` is an escrow-channel one) / 记录的执行后端
+const recordEnforcement = (r) => r.enforcement ?? 'escrow-channel'
 const uintStr = (v, name) => uintOf(v, name).toString()
 const addrOf = (v, name) => { if (!isAddress(v) || eqAddr(v, ZERO_ADDRESS)) bad(`${name} must be a non-zero address`); return checksumAddress(v) }
 /**
@@ -1300,8 +1471,12 @@ export function spendRecord(r) {
     out.stopped = { reasons: [...r.stopped.reasons], at: Number.isSafeInteger(r.stopped.at) ? r.stopped.at : null }
   }
   if (!Array.isArray(r.providers) || r.providers.length === 0) bad('spend record: providers must list the capped providers')
+  // @experimental another enforcement backend than escrow-channel is named, with each provider's channel id (x402-batch:
+  // the settlement is `escrow`, the channel its id); an escrow-channel record names neither / 其它执行后端写明名字与通道 id
+  if (r.enforcement != null && r.enforcement !== 'escrow-channel') { if (!enforcementBackend(r.enforcement)) bad('spend record: enforcement names no backend'); out.enforcement = r.enforcement }
   for (const p of r.providers) {
     const x = { provider: addrOf(p?.provider, 'spend record: provider'), escrow: addrOf(p.escrow, 'spend record: escrow'), token: addrOf(p.token, 'spend record: token'), cap: uintStr(p.cap, 'spend record: cap'), base: uintStr(p.base, 'spend record: base'), hi: uintStr(p.hi, 'spend record: hi') }
+    if (out.enforcement) { if (typeof p.channelId !== 'string' || !HASH_RE.test(p.channelId.toLowerCase())) bad('spend record: each provider names its channelId'); x.channelId = p.channelId.toLowerCase() }
     if (x.cap === '0') bad('spend record: a provider without a cap has no channel to spend on')
     if (BigInt(x.hi) < BigInt(x.base)) bad('spend record: hi is never below base')
     if (out.providers.some((y) => eqAddr(y.provider, x.provider))) bad('spend record: a provider is listed once')
@@ -1316,15 +1491,16 @@ export function spendRecord(r) {
  * 由开工核验的结果钉住每个带金额 provider 的通道：托管、consumer、base = claimedAtCheck。纯函数。
  */
 export function spendPin(check, { chainId, agentKey } = {}) {
-  if (!check || check.ok !== true || check.enforcement !== 'escrow-channel' || check.phase !== 1) spendRefuse('spend-not-enforced', 'only a check that is ok with enforcement escrow-channel starts the spending: verifyMandate(signed, { enforcement: \'escrow-channel\' }) and nothing else', { problems: (check?.problems ?? []).map((p) => p.code) })
+  if (!check || check.ok !== true || !enforcementBackend(check.enforcement) || check.phase !== 1) spendRefuse('spend-not-enforced', 'only a check that is ok with enforcement escrow-channel starts the spending: verifyMandate(signed, { enforcement: \'escrow-channel\' }) and nothing else', { problems: (check?.problems ?? []).map((p) => p.code) })
   const m = normalizeMandate(check.mandate)
   if (agentKey !== undefined && !eqAddr(agentKey, m.agentKey)) spendRefuse('spend-key-mismatch', `the check is of a mandate for agent key ${m.agentKey}, not ${agentKey}`)
+  const other = check.enforcement !== 'escrow-channel'   // another backend pins each channel's id too / 其它后端还钉住通道 id
   const providers = m.scope.filter((s) => s.cap !== '0').map((s) => {
     const item = (check.scope ?? []).find((x) => eqAddr(x.provider, s.provider))
-    if (!item || item.escrow == null || item.claimedAtCheck == null) bad(`the check has no channel reading for ${s.provider}`)
-    return { provider: s.provider, escrow: item.escrow, token: s.token, cap: s.cap, base: item.claimedAtCheck, hi: item.claimedAtCheck }
+    if (!item || item.escrow == null || item.claimedAtCheck == null || (other && item.channelId == null)) bad(`the check has no channel reading for ${s.provider}`)
+    return { provider: s.provider, escrow: item.escrow, token: s.token, cap: s.cap, base: item.claimedAtCheck, hi: item.claimedAtCheck, ...(other ? { channelId: item.channelId } : {}) }
   })
-  return spendRecord({ v: SPEND_RECORD_VERSION, chainId, agentKey: m.agentKey, state: 'started', mandateHash: check.mandateHash, consumer: check.consumer, notBefore: m.notBefore, expires: m.expires, stopped: null, providers })
+  return spendRecord({ v: SPEND_RECORD_VERSION, chainId, agentKey: m.agentKey, state: 'started', mandateHash: check.mandateHash, consumer: check.consumer, notBefore: m.notBefore, expires: m.expires, stopped: null, ...(other ? { enforcement: check.enforcement } : {}), providers })
 }
 /**
  * @experimental (phase 1, M4) May the agent key sign a voucher of `cumulative` for `price` to `provider` on `escrow` for
@@ -1333,13 +1509,17 @@ export function spendPin(check, { chainId, agentKey } = {}) {
  * or cumulative of 0; the per-call price ceiling: `maxPrice` when given (the caller's maxCallPrice for this provider; above
  * the provider's cap is spend-call-price-ceiling-above-cap), otherwise SPEND_DEFAULT_CALL_PRICE_PERCENT of the cap rounded
  * down (0 is spend-call-price-ceiling-unset: set maxCallPrice), and a price above it is spend-call-price-above-ceiling;
+ * `listedPrice` (optional): the method's listed price in the token's smallest unit (its priceBEM; for a USD-priced method
+ * the priceBEM cap of its charge); when given, the ceiling is the lower of it and the one above (3.0), so a
+ * method listed free (0) is never paid (spend-call-price-above-ceiling); left out, only the ceiling above applies;
  * a cumulative above base + cap. None of the three ceiling refusals stops the order. `stop` says whether the reason
  * stops the order for good. Allowed: { ok: true, hi (the new highest cumulative), spent (hi − base: the most this key's
  * vouchers can make the channel pay), remaining (cap − spent) }. Pure.
  * 能否签出这张凭证；按 SPEND_REFUSALS 的顺序给出第一条适用的拒绝。单次调用价格上限：给了 maxPrice 用它（不得高于 cap），
- * 否则为 cap 的 10% 向下取整（为 0 即须显式设置）；三条上限拒绝都不停工。纯函数。
+ * 否则为 cap 的 10% 向下取整（为 0 即须显式设置）；给了 listedPrice（方法公布的价格）则取两者较小者，公布为 0 的方法不付钱；
+ * 三条上限拒绝都不停工。纯函数。
  */
-export function spendDecision(record, { chainId, provider, escrow, consumer, cumulative, price, now, maxPrice } = {}) {
+export function spendDecision(record, { chainId, provider, escrow, consumer, cumulative, price, now, maxPrice, listedPrice } = {}) {
   const r = spendRecord(record)
   const no = (refused, message) => ({ ok: false, refused, stop: SPEND_STOPS.includes(refused), message })
   if (r.state !== 'started') return no('spend-not-started', 'the work has not started: no check started this key')
@@ -1364,6 +1544,16 @@ export function spendDecision(record, { chainId, provider, escrow, consumer, cum
   } else {
     callCeiling = cap * BigInt(SPEND_DEFAULT_CALL_PRICE_PERCENT) / 100n
     if (callCeiling === 0n) return no('spend-call-price-ceiling-unset', `the default per-call ceiling, ${SPEND_DEFAULT_CALL_PRICE_PERCENT}% of the cap ${cap} for ${pin.provider}, rounds down to 0 in the token's smallest unit, so there is none: ${how}`)
+  }
+  // 3.0 (#53): the method's own listed price (its priceBEM in the token's smallest unit; for a USD-priced method
+  // the priceBEM cap of its charge) is a second input: the ceiling is the lower of the two, so maxCallPrice never lifts a
+  // call above what the provider lists for it, and a method listed free (0) is never paid
+  // 3.0（#53）：方法自己公布的价格（priceBEM，最小单位；美元计价方法为其 priceBEM 上限）是第二个输入：上限取两者较小者，
+  // maxCallPrice 永远抬不过 provider 为该方法公布的价格；公布为免费（0）的方法绝不付钱
+  const listed = listedPrice === undefined || listedPrice === null ? null : uintOf(listedPrice, 'listedPrice')
+  if (listed !== null && listed < callCeiling) {
+    if (p > listed) return no('spend-call-price-above-ceiling', listed === 0n ? `the call costs ${p}, but its method is listed free (priceBEM 0) by ${pin.provider}: a free method is never paid; not signed, not stopped` : `the call costs ${p}, above the ${listed} its method is listed at (priceBEM) by ${pin.provider}, which bounds one call below the ${maxPrice !== undefined && maxPrice !== null ? 'maxCallPrice given' : `default ceiling (${SPEND_DEFAULT_CALL_PRICE_PERCENT}% of the cap ${cap})`}; not signed, not stopped`)
+    callCeiling = listed
   }
   if (p > callCeiling) return no('spend-call-price-above-ceiling', `the call costs ${p}, above the per-call ceiling ${callCeiling} for ${pin.provider} (${maxPrice !== undefined && maxPrice !== null ? 'the maxCallPrice given' : `the default, ${SPEND_DEFAULT_CALL_PRICE_PERCENT}% of the cap ${cap}`}); not signed, not stopped: to allow it, ${how}`)
   if (c > ceiling) return no('spend-cap-exceeded', `a voucher of cumulative ${c} on (${r.consumer}, ${pin.provider}) would let ${c - base} be paid since the start (claimedOf ${base}), above the mandate's cap ${cap}`)
@@ -1399,17 +1589,20 @@ export function spendRecheck(record, check) {
   let readings = true
   const hi = r.providers.map((p) => {
     const item = (check.scope ?? []).find((x) => eqAddr(x.provider, p.provider))
-    if (item?.escrow == null || item?.claimedAtCheck == null) readings = false
-    if (item?.escrow != null && !eqAddr(item.escrow, p.escrow) && !stop.includes('spend-escrow-changed')) stop.push('spend-escrow-changed')
+    if (item?.escrow == null || item?.claimedAtCheck == null || (p.channelId && item?.channelId == null)) readings = false
+    // a record that pins a channel id (another backend): another id is another channel, as another escrow is
+    // 钉住通道 id 的记录（其它后端）：id 不同即另一条通道，与托管不同相同
+    const sameChannel = !p.channelId || item?.channelId == null || String(item.channelId).toLowerCase() === p.channelId
+    if (item?.escrow != null && (!eqAddr(item.escrow, p.escrow) || !sameChannel) && !stop.includes('spend-escrow-changed')) stop.push('spend-escrow-changed')
     // review p1m4: only the pinned channel's claimedOf counts: the pinned escrow AND the pinned consumer
     // 审查 p1m4：只有钉住的通道（托管与 consumer 都对）的 claimedOf 才计入
-    const claimed = sameConsumer && item?.claimedAtCheck != null && item?.escrow != null && eqAddr(item.escrow, p.escrow) ? BigInt(item.claimedAtCheck) : 0n
+    const claimed = sameConsumer && sameChannel && item?.claimedAtCheck != null && item?.escrow != null && eqAddr(item.escrow, p.escrow) ? BigInt(item.claimedAtCheck) : 0n
     return (claimed > BigInt(p.hi) ? claimed : BigInt(p.hi)).toString()
   })
   // review p1m4: a check without problems of its own must still be an enforced phase-1 check with every reading
   // (a phase-0 result, enforcement 'none', no scope readings, proves nothing about the channels)
   // 审查 p1m4：没有自身问题的核验也必须是强制执行的阶段 1 核验、读数齐全（阶段 0 的结果不说明通道的任何情况）
-  if (codes.length === 0 && (check.phase !== 1 || check.enforcement !== 'escrow-channel' || !readings)) codes.push('spend-not-enforced')
+  if (codes.length === 0 && (check.phase !== 1 || check.enforcement !== recordEnforcement(r) || !readings)) codes.push('spend-not-enforced')
   return { ok: stop.length === 0 && codes.length === 0 && check.ok === true, stop, problems: codes, hi }
 }
 // the order in which spendResume refuses (phase 1, restart) / spendResume 的拒绝顺序
@@ -1472,7 +1665,19 @@ export function spendResume(record, { chainId, agentKey, key, mandateHash = null
  *                                            voucher is released and never returned; an allowed one carries the
  *                                            unsigned member mandateHash, and the signed mandate `signed` until a
  *                                            voucher to that provider was accepted (its lease committed) through this
- *                                            payer: a released voucher, or a new payer after a restart, attaches it again
+ *                                            payer: a released voucher, or a new payer after a restart, attaches it again.
+ *                                            @experimental (3.0) budget, tokenDecimals: a createBudget(...) over the
+ *                                            local policy file (the one tapeapi reconcile --policy reads) and the
+ *                                            decimals of the providers' token (one number, or { [provider]: n }):
+ *                                            each voucher's price, in the token's label (BEM, USDT) and rounded up
+ *                                            to 8 places, is also admitted by the budget before the voucher is handed
+ *                                            out (rules on service and "*" model only; BUDGET_EXCEEDED: the voucher
+ *                                            is released and never returned),
+ *                                            and written down as a voucher line that counts at its price from then
+ *                                            on, released or not. A client-side convenience next to the cap above,
+ *                                            which it does not replace: checked after the limiter's own rules (a
+ *                                            limiter refusal writes no budget line), and counting the voucher's price,
+ *                                            not the method's listed one
  *   record({ chainId, agentKey }), stop({ chainId, agentKey, reason })
  * Phase 1, restart (with `vault`, a KeyVault: the operator's passphrase, key or KMS; never without one):
  *   keepKey({ chainId, agentKey, secret })   the key's secret sealed by the vault and stored under `<key>:key` (only the
@@ -1580,7 +1785,7 @@ export function createSpendLimiter({ store, clock = () => Math.floor(Date.now() 
         // item 7: remember what the pinned channel has available, from a reading on it only / 只记钉住通道上的读数
         for (const p of rec.providers) {
           const item = (check.scope ?? []).find((x) => eqAddr(x.provider, p.provider))
-          const mine = item?.available != null && item?.escrow != null && eqAddr(item.escrow, p.escrow) && check.consumer != null && eqAddr(check.consumer, rec.consumer)
+          const mine = item?.available != null && item?.escrow != null && eqAddr(item.escrow, p.escrow) && check.consumer != null && eqAddr(check.consumer, rec.consumer) && (!p.channelId || String(item.channelId ?? '').toLowerCase() === p.channelId)
           if (mine) avail.set(`${k}|${p.provider.toLowerCase()}`, uintOf(item.available, 'available'))
           else avail.delete(`${k}|${p.provider.toLowerCase()}`)
         }
@@ -1688,8 +1893,29 @@ export function createSpendLimiter({ store, clock = () => Math.floor(Date.now() 
         return { record: await load(k), secret, recheck: out }
       })
     },
-    payer({ chainId, payer: inner, maxPrice, signed } = {}) {
+    payer({ chainId, payer: inner, maxPrice, signed, budget, tokenDecimals } = {}) {
       if (!inner || typeof inner.reserve !== 'function' || typeof inner.cumulativeOf !== 'function') bad('payer must be an api.payer({ consumer, sessionKey }) payer')
+      // the client-side budget (3.0, experimental; off unless given) / 客户端预算（实验性，默认关闭）
+      if (budget !== undefined && (typeof budget?.admit !== 'function')) bad('budget must come from createBudget()')
+      if (budget !== undefined && tokenDecimals === undefined) bad('budget needs tokenDecimals: the decimals of the providers\' token (one number, or { [provider]: n }), to read a voucher\'s price as an amount')
+      if (budget === undefined && tokenDecimals !== undefined) bad('tokenDecimals applies with budget only')
+      const decOk = (n) => Number.isSafeInteger(n) && n >= 0 && n <= 77
+      if (tokenDecimals !== undefined && !(decOk(tokenDecimals) || (tokenDecimals && typeof tokenDecimals === 'object' && !Array.isArray(tokenDecimals) && Object.values(tokenDecimals).every(decOk)))) bad('tokenDecimals must be a whole number 0..77, or { [provider]: n }')
+      const decimalsOf = (provider) => (typeof tokenDecimals === 'number' ? tokenDecimals : Object.entries(tokenDecimals ?? {}).find(([p]) => eqAddr(p, provider))?.[1])
+      // a voucher's price in 1e-8 units of its token, rounded up / 凭证价格换成代币的 1e-8 单位，向上取整
+      const amount8 = (price, dec) => (dec <= 8 ? price * 10n ** BigInt(8 - dec) : (price + 10n ** BigInt(dec - 8) - 1n) / 10n ** BigInt(dec - 8))
+      async function admitBudget(r, svc, amount) {
+        if (budget === undefined) return
+        const pin = r.providers.find((x) => eqAddr(x.provider, svc.container))
+        const dec = pin ? decimalsOf(pin.provider) : undefined
+        const label = pin ? PAYMENT_TOKENS[chainId]?.[pin.token.toLowerCase()]?.label?.split(' ')[0] ?? null : null
+        return budget.admit({ kind: 'voucher', container: svc.container, format: null, models: [], requestSha256: null, promptTokens: 0, completionTokens: 0,
+          worstCase: label && dec !== undefined ? { [label]: fromUnits8(amount8(amount, dec)) } : {} })
+      }
+      // a voucher released before it was accepted (its lease not committed): its budget line is offset by a released
+      // line; the payer signs that cumulative again next time, and that voucher is counted then
+      // 被接受之前就释放的凭证：用一行 released 抵消它的预算行；payer 下次会再签同一累计额，那张凭证届时再计入
+      const offsetBudget = (held) => { if (held) budget.release(held, { why: 'voucher-released' }).catch(() => { /* the budget warns itself */ }) }
       // the per-call ceiling: one amount, or one per provider (the providers' tokens may differ); none: the default
       // 单次调用价格上限：一个数，或按 provider 各给一个（各 provider 的代币可能不同）；不给即默认值
       // review p1-restart: an explicit ceiling is above 0 (0 would refuse every call: say so instead of signing nothing),
@@ -1706,6 +1932,18 @@ export function createSpendLimiter({ store, clock = () => Math.floor(Date.now() 
         } else ceilingAll = positive(maxPrice, 'maxPrice')
       }
       const ceilingOf = (provider) => (typeof provider === 'string' ? ceilings.get(provider.toLowerCase()) : undefined) ?? ceilingAll
+      // 3.0: api.call passes the method it pays for (extra.method); its priceBEM in the service's manifest bounds
+      // the call (spendDecision's listedPrice). A method the manifest does not list is listed at 0, never unbounded; a
+      // reserve without extra.method (a direct caller) keeps the ceiling alone
+      // 3.0：api.call 传入所付的方法（extra.method），清单里它的 priceBEM 约束这次调用；清单没列的方法按 0 计，绝不是无上限；
+      // 不带 extra.method 的直接调用只用上面的上限
+      const listedOf = (svc, extra) => {
+        if (typeof extra?.method !== 'string') return {}
+        const def = Array.isArray(svc?.manifest?.methods) ? svc.manifest.methods.find((x) => x?.name === extra.method) : undefined
+        let listed = 0n
+        try { listed = def ? parseUnits(String(def.priceBEM ?? '0'), BEM_DECIMALS) : 0n } catch { listed = 0n }
+        return { listedPrice: listed }
+      }
       const agentKey = addrOf(inner.signer, 'payer.signer')
       const k = keyOf(chainId, agentKey)
       // review p1m4: the providers a voucher of this payer was accepted by (its lease committed); until then every voucher
@@ -1732,7 +1970,7 @@ export function createSpendLimiter({ store, clock = () => Math.floor(Date.now() 
           let r = await load(k)
           if (!r) lost(agentKey)
           const amount = uintOf(price, 'price')
-          const req = { chainId, provider: svc?.container, escrow: svc?.manifest?.payment?.escrow, consumer: inner.consumer, price: amount, now: clock(), maxPrice: ceilingOf(svc?.container) }
+          const req = { chainId, provider: svc?.container, escrow: svc?.manifest?.payment?.escrow, consumer: inner.consumer, price: amount, now: clock(), maxPrice: ceilingOf(svc?.container), ...listedOf(svc, extra) }
           const refuse = async (d) => { if (d.stop && r.state === 'started') await stopWith(k, agentKey, [d.refused]); spendRefuse(d.refused, d.message) }
           // before signing: every rule, the cap against the least cumulative the payer can sign (committed + price)
           // 签名之前：全部规则；cap 按 payer 能签的最小累计额（已确认 + 价格）比
@@ -1743,6 +1981,7 @@ export function createSpendLimiter({ store, clock = () => Math.floor(Date.now() 
           const left = avail.get(`${k}|${String(svc.container).toLowerCase()}`)
           if (left !== undefined && left < amount) spendRefuse('spend-channel-short', `the last check read ${left} available on (${r.consumer}, ${svc.container}), below the price ${amount}: the provider would refuse the voucher; nothing signed (not stopped)`)
           const lease = noWait ? await inner.reserve(svc, amount, { ...(extra ?? {}), noWait: true }) : extra === undefined ? await inner.reserve(svc, amount) : await inner.reserve(svc, amount, extra)
+          let held = null   // the budget's sent line of this voucher (3.0) / 本凭证在预算里的 sent 行
           try {
             d = spendDecision(r, { ...req, cumulative: lease.next })
             if (!d.ok) await refuse(d)
@@ -1750,12 +1989,20 @@ export function createSpendLimiter({ store, clock = () => Math.floor(Date.now() 
             // 凭证必须就是被计入的那一张：本钥匙、consumer、provider，钉住的托管与链
             const pin = r.providers.find((x) => eqAddr(x.provider, svc.container))
             const v = lease.voucher
-            let who = null
-            try { who = recoverAddress(voucherDigest(chainId, pin.escrow, { consumer: v.consumer, provider: v.provider, cumulative: BigInt(v.cumulative), expires: v.expires }), v.sig) } catch { who = null }
-            if (!who || !eqAddr(who, agentKey) || !eqAddr(v.consumer, r.consumer) || !eqAddr(v.provider, pin.provider) || BigInt(v.cumulative) !== BigInt(lease.next)) {
+            // the record's enforcement backend reads the voucher (its signer, its terms, its channel) / 由记录的执行后端读凭证
+            const be = enforcementBackend(recordEnforcement(r))
+            const who = be.voucherSigner({ chainId, pin, voucher: v })
+            // the terms are read only once the signature recovered, and again for the message after the stop (as before:
+            // a voucher that is not there stops the order first) / 签名恢复后才读条款；停工之后再为消息读一次（与以前相同）
+            const t = who ? be.voucherTerms(v) : null
+            if (!who || !eqAddr(who, agentKey) || !eqAddr(t.consumer, r.consumer) || !eqAddr(t.provider, pin.provider) || BigInt(t.cumulative) !== BigInt(lease.next) || !be.onPinnedChannel({ chainId, pin, voucher: v })) {
               await stopWith(k, agentKey, ['spend-voucher-mismatch'])
-              spendRefuse('spend-voucher-mismatch', `the payer signed a voucher that is not the one counted (signer ${who}, consumer ${v.consumer}, provider ${v.provider}, cumulative ${v.cumulative}, on escrow ${pin.escrow}): stopped`)
+              const m = be.voucherTerms(v)
+              spendRefuse('spend-voucher-mismatch', `the payer signed a voucher that is not the one counted (signer ${who}, consumer ${m.consumer}, provider ${m.provider}, cumulative ${m.cumulative}, on escrow ${pin.escrow}): stopped`)
             }
+            // the budget (3.0): admitted and written down before the voucher leaves (a refusal releases it, below; a
+            // retry of a busy channel never gets here twice) / 预算：凭证离开之前核对并记下（拒绝即释放；通道忙时的重试不会到这里两次）
+            held = await admitBudget(r, svc, amount)
             // write ahead: the highest cumulative is on record before the voucher leaves; a record that moved on under
             // this voucher (another writer) is decided again, and a stop found there refuses (review p1m4)
             // 先记账：凭证离开之前最高累计额已入记录；记录被别的写者改过即按新记录重判，已停工即拒绝（审查 p1m4）
@@ -1776,9 +2023,11 @@ export function createSpendLimiter({ store, clock = () => Math.floor(Date.now() 
             if (late) stoppedRefusal({ stopped: late })
             const p = String(svc.container).toLowerCase()
             const voucher = { ...v, mandateHash: r.mandateHash, ...(!introduced.has(p) && signed ? { mandate: signed } : {}) }
-            const commit = async () => { await lease.commit(); introduced.add(p) }
-            return { ...lease, commit, voucher, spent: d.spent, remaining: d.remaining }
-          } catch (e) { lease.release(); throw e }
+            let committed = false
+            const commit = async () => { await lease.commit(); committed = true; introduced.add(p) }
+            const release = () => { const out = lease.release(); if (!committed) { offsetBudget(held); held = null } return out }
+            return { ...lease, commit, release, voucher, spent: d.spent, remaining: d.remaining }
+          } catch (e) { lease.release(); offsetBudget(held); throw e }
         })
       }
       const wrapped = {

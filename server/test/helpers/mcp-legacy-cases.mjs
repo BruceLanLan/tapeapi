@@ -168,6 +168,9 @@ export async function buildTargets(d) {
     upstream: { call: (m) => upstream.handle(m) }, signerKey: KEY, log: () => {}, rateLimit: false,
     manifestBase: { name: 'Demo MCP', circuits: CIRCUITS, tokenId: '11', container: CONTAINER, delegation: null, endpoints: { live: ['https://mcp.example/tapeapi/v1'], async: false } },
     name: '11.1013.tape',
+    // 3.0: the proxy refuses browser origins by default; '*' is the 2.x behaviour these bytes were recorded with (2.4.0
+    // had no such option and ignores it). / 3.0 起代理默认拒绝浏览器来源；'*' 即录制这些字节时的 2.x 行为（2.4.0 没有此选项，忽略）。
+    allowedOrigins: '*',
   })
   await proxy.ready
   targets.push({ name: 'createMcpProxy', kind: 'http', url: 'https://mcp.example/mcp', tool: 'add', args: { a: 2, b: 3 }, send: (req) => proxy.handleRequest(req, { clientIp: '2.2.2.2' }) })

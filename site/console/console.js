@@ -3,7 +3,7 @@
 // "Advanced" (A deploy, B verify) is only for someone deploying their own ChannelBus.
 // 持有人操作台的页面脚本（模块，从 index.html 加载，使页面能在 script-src 'self' 下运行）。
 // 步骤：1 连接、2 读电路、3 服务密钥与变量、4 签委托、5 发布清单；“高级”（A 部署、B 核对）只给自己部署 ChannelBus 的人。
-import * as C from './lib.js?v=f805b7a80e'
+import * as C from './lib.js?v=2c7e17688b'
 
 const $ = (id) => document.getElementById(id)
 // ChannelBus (Advanced) runs on BNB Chain only (TapeAPI does not follow it to L2s). / ChannelBus（高级）只在 BNB Chain。
@@ -356,7 +356,8 @@ async function signDelegation(renew) {
       note(out, false, why ? why() : [whyNot(d), bi('。不能续期。', '. There is nothing to renew.')])
       return
     }
-    const expires = Math.floor(Date.now() / 1000) + 90 * 86400
+    // 30 days unless the holder typed another number of days (1 to 366) / 默认 30 天，持有人可另填 1 到 366 天
+    const expires = C.delegationExpiry(Date.now() / 1000, $('deleg-days').value)
     // signed for the page's chain (C.useChain): EIP-712 domain (chainId, DeWebHub) / 为本页的链签：EIP-712 域 (chainId, DeWebHub)
     const typed = renew ? C.delegationTypedData({ container: s.container, signer: d.signer, expires }) : C.delegationTypedData({ container: s.container, signer: s.keyAddress, expires })
     kv(out, [[renew ? bi('授权的签名地址（链上清单里你已授权的密钥）', 'Signing address authorised (the key you already authorised on chain)') : bi('授权的签名地址（第 3 步生成的密钥）', 'Signing address authorised (the key from step 3)'), d.signer], [bi('代表的容器', 'For the container'), s.container], [bi('服务网址', 'Service URL'), `${base}/tapeapi/v1`], [bi('到期', 'Expires'), new Date(expires * 1000).toLocaleString()]])

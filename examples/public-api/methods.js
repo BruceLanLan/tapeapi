@@ -61,11 +61,11 @@ export const MANIFEST_METHODS = [
 // Tool methods (2.4, experimental) / 工具方法（2.4，实验性）
 // ---------------------------------------------------------------------------------------------------------------
 // The same eight reads as methods whose signed result is an MCP tool result, { content: [{ type: 'text', text }],
-// structuredContent }, and nothing else: what TAPI-20 §3.8 and the MCP tools draft (TAPs #16 §4.2) want of a method
+// structuredContent }, and nothing else: what TAPI-20 §3.8 and the MCP tools draft (TAP-15 §4.2) want of a method
 // bound to a tool. They are in the manifest only while the Worker declares `mcp` (MCP_TOOLS_SHA256, worker.js), and are
 // the tools of /mcp/pinned. The REST methods above answer exactly as before.
 // 同样八个读取，作为签名结果恰为 MCP 工具结果（{ content: [{ type: 'text', text }], structuredContent }，没有别的成员）的方法：
-// 这正是 TAPI-20 §3.8 与 MCP 工具草案（TAPs #16 §4.2）对绑定到工具的方法的要求。只有 Worker 声明 `mcp` 时（MCP_TOOLS_SHA256，
+// 这正是 TAPI-20 §3.8 与 MCP 工具草案（TAP-15 §4.2）对绑定到工具的方法的要求。只有 Worker 声明 `mcp` 时（MCP_TOOLS_SHA256，
 // 见 worker.js）才在清单里，是 /mcp/pinned 的工具。上面的 REST 方法回答完全不变。
 const TOOL_RETURNS = { content: 'array', structuredContent: 'object' }
 /** The REST method each tool method calls. / 每个工具方法调用的 REST 方法。 */

@@ -1,4 +1,4 @@
-// Security 1.2 Merkle proofs. Everything here is @experimental: outside the 1.0 stability promise; may change in a 1.x minor release.
+// Security 1.2 Merkle proofs. Everything here is @experimental: outside the compatibility promise; may change in a minor release.
 import type { Address, Hex } from './common.js'
 
 /** keccak256 of the empty string: the code hash of an account without code. */

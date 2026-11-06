@@ -18,10 +18,14 @@ import { delegationDigest, recoverAddress } from './sig.js'
 import { sha256 } from '@noble/hashes/sha256'
 import { toHex, hexToBytes, encodeCall, decodeReturn } from './abi.js'
 import { CONFORM_MODE } from './conform-sibling.js'
+import { PASSPORT_MISSING, passportCheck } from './passport-view.js'
 
 export const DOCTOR_CHECKS = Object.freeze(['name', 'circuit', 'container', 'activation', 'manifest-file', 'manifest-format', 'delegation', 'ai-field', 'prices', 'endpoints', 'reach', 'cors', 'receipt', 'receipt-lookup'])
-/** A delegation with fewer days left than this is a warning (the sidecars log RENEW from the same point). / 少于这么多天即警告。 */
-export const RENEW_DAYS = 30
+/** A delegation with fewer days left than this is a warning (the sidecars log RENEW from the same point). 7 since 3.0:
+ *  the console signs 30 days by default (it was 90, with a warning from 30 days left, which would now warn on day one);
+ *  the same 7 days as the runtime's own log line and the hosted service. / 少于这么多天即警告。3.0 起为 7：操作台默认签 30 天
+ *  （原为 90 天、剩 30 天起警告，按旧值新签的委托第一天就会警告）；与运行时自己的日志提醒、托管服务同为 7 天。 */
+export const RENEW_DAYS = 7
 export const INVALID_KEY = 'sk-tapeapi-doctor-invalid-key-0000000000'
 const MAX_DELEGATION_S = 366 * 86_400
 const ZERO = '0x0000000000000000000000000000000000000000'
@@ -68,6 +72,8 @@ const TITLES = {
   cors: T('CORS for browser clients', '浏览器跨域（CORS）'),
   receipt: T('A real request gets a verifiable receipt', '真实请求拿到可核验的回执'),
   'receipt-lookup': T('Receipt lookup by id (free method)', '按 id 取回执（免费方法）'),
+  // Not one of the 14: only with --passport (3.0, experimental) / 不在 14 项之内：只在 --passport 时出现
+  passport: T('Agent passport (experimental, TAPs #83 draft)', 'Agent 护照（实验性，TAPs #83 草案）'),
 }
 
 // Metered path and the smallest request body per format; the model is filled in. / 每种格式的计量路径与最小请求体。
@@ -285,7 +291,8 @@ export function redactSecret(value, key) {
 // a difference is a report `warning`, and the exit code is unchanged. / 只读比对，只加 warnings。
 export async function diagnose(input, o = {}) {
   if (o.escrows != null && (!Array.isArray(o.escrows) || !o.escrows.length || !o.escrows.every((e) => ADDRESS_RE.test(e)))) throw new TapeAPIError('INVALID_ARGUMENT', 'escrows must be a non-empty array of escrow addresses')
-  const report = await diagnoseChecks(input, o)
+  let report = await diagnoseChecks(input, o)
+  if (o.passport !== undefined) report = await withPassport(report, o)
   if (o.escrows == null) return report
   const container = report.manifest?.container
   const api = o.api && typeof o.api.forChain === 'function' ? o.api.forChain(report.chainId) : o.api
@@ -302,6 +309,32 @@ export async function diagnose(input, o = {}) {
     } catch (e) { warnings.push(T(`contribution across escrow instances not compared: ${e?.code ?? ''} ${e?.message ?? e}`, `未比对多个托管实例上的贡献比例：${e?.code ?? ''} ${e?.message ?? e}`)) }
   }
   return redactSecret({ ...report, warnings: warnings.map((w) => ({ detail: w.en, detailZh: w.zh })) }, o.key)
+}
+
+// `o.passport` (@experimental, 3.0; tapeapi-doctor --passport): one more check, `passport`, right after manifest-format,
+// never one of the 14 (DOCTOR_CHECKS is unchanged). o.passport is { resolve(input) } injected by the bin from the separate
+// package @tapeapi/passport (null: not installed, a skip); this module never imports that package.
+// 再加一项 passport 检查，紧跟 manifest-format，不属于 14 项。o.passport 由 bin 从独立包注入（null：未安装，记为 skip）。
+async function withPassport(report, o) {
+  const m = report.manifest
+  let c
+  if (!o.passport || typeof o.passport.resolve !== 'function') c = { status: 'skip', detail: T(`not checked: ${PASSPORT_MISSING.en}`, `未检查：${PASSPORT_MISSING.zh}`) }
+  else if (report.chainId !== 56) c = { status: 'skip', detail: T('not checked: the passport draft defines passports on BNB Smart Chain only', '未检查：护照草案只在 BNB 链上定义护照') }
+  else if (!m?.circuits || m.tokenId === undefined) c = { status: 'skip', detail: T('not checked: no manifest names the circuit', '未检查：没有清单给出电路') }
+  else {
+    try { c = passportCheck(await o.passport.resolve({ circuit: { processor: m.circuits, tokenId: String(m.tokenId) } })) } catch (e) {
+      c = { status: 'error', detail: T(`could not decide: ${e?.message ?? e}`, `无法判定：${e?.message ?? e}`) }
+    }
+  }
+  const check = redactSecret({ id: 'passport', status: c.status, title: TITLES.passport, detail: c.detail.en, detailZh: c.detail.zh, ...(c.fix ? { fix: c.fix } : {}) }, o.key)
+  const checks = [...report.checks]
+  const i = checks.findIndex((x) => x.id === 'manifest-format')
+  checks.splice(i < 0 ? checks.length : i + 1, 0, check)
+  o.onCheck?.(check)
+  const counts = { pass: 0, warn: 0, fail: 0, skip: 0, error: 0 }
+  for (const x of checks) counts[x.status]++
+  const exitCode = counts.fail ? 1 : counts.error ? 3 : 0
+  return { ...report, checks, counts, exitCode, ok: exitCode === 0 }
 }
 
 async function diagnoseChecks(input, o) {
@@ -451,7 +484,7 @@ async function diagnoseChecks(input, o) {
     const until = new Date(Number(m.delegation.expires) * 1000).toISOString().slice(0, 10)
     const renew = T(`Renew: console step 4 "Renew" (same service key), set DELEGATION_EXPIRES and DELEGATION_SIG, restart the sidecar, publish again (step 5).`, '续期：操作台第 4 步“续期”（服务密钥不变），填入新的 DELEGATION_EXPIRES 与 DELEGATION_SIG，重启旁路，再发布一次（第 5 步）。')
     if (left <= 0) return { status: 'fail', detail: T(`expired on ${until}`, `已于 ${until} 过期`), fix: renew }
-    if (left > MAX_DELEGATION_S) return { status: 'fail', detail: T(`expires ${until}, more than 366 days ahead: clients refuse it (TAPI-20 §3.4)`, `${until} 到期，超过 366 天：客户端会拒绝（TAPI-20 §3.4）`), fix: T('Sign a delegation of at most 366 days (the console signs 90).', '签一份不超过 366 天的委托（操作台签 90 天）。') }
+    if (left > MAX_DELEGATION_S) return { status: 'fail', detail: T(`expires ${until}, more than 366 days ahead: clients refuse it (TAPI-20 §3.4)`, `${until} 到期，超过 366 天：客户端会拒绝（TAPI-20 §3.4）`), fix: T('Sign a delegation of at most 366 days (the console signs 30 by default).', '签一份不超过 366 天的委托（操作台默认签 30 天）。') }
     if (days < RENEW_DAYS) return { status: 'warn', detail: T(`${days} day(s) left, until ${until}`, `还剩 ${days} 天，到 ${until}`), fix: renew, days }
     return { status: 'pass', detail: T(`${days} days left, until ${until}`, `还剩 ${days} 天，到 ${until}`), days }
   }

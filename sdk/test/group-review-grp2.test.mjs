@@ -39,7 +39,7 @@ async function groupOf(ms, opts = {}) {
 function released(rev) {
   const root = fileURLToPath(new URL('../../', import.meta.url))
   let src
-  try { src = execFileSync('git', ['show', `${rev}:sdk/src/group.js`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch { return null }
+  try { src = execFileSync('git', ['show', `${rev}:sdk/src/group.js`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 300_000, killSignal: 'SIGKILL' }) } catch { return null }
   src = src.replace(/from '\.\/([a-z-]+\.js)'/g, (_, f) => `from '${pathToFileURL(join(root, 'sdk/src', f)).href}'`)
     .replace(/from '(@noble\/[^']+)'/g, (_, f) => `from '${import.meta.resolve(f)}'`)
   const dir = mkdtempSync(join(tmpdir(), `tapi27-${rev}-`))
